@@ -170,6 +170,12 @@ definitions live in `libs/flow/types`, and docs, validators, readers, writers
 and web editor fragments should hang from those types instead of one-off Java
 property hacks.
 
+Type editor fragments live in `libs/flow/types/editors`. The generic host maps
+`kind: "path"` to `flow-path-editor`, `kind: "template"` to
+`flow-template-editor`, etc. Each editor must implement `setState(state)`,
+expose `value`, and emit `flow-value` with `{ value }`. The host assigns
+`flowHost` for synchronous requests such as `context` and `requestables`.
+
 ## Analysis Contract
 
 Keep analysis in the JS runtime. Java passes `flowSource` as opaque text.

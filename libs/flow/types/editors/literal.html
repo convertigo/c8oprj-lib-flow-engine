@@ -1,16 +1,125 @@
-<template id="flow-literal-editor">
+<template id="flow-literal-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; }
-		textarea { box-sizing: border-box; width: 100%; min-height: 120px; font: 12px ui-monospace, monospace; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		textarea { box-sizing: border-box; width: 100%; min-height: 220px; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
+		.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+		button.secondary { background: #262c31; border-color: #4b555f; color: #d8e0e5; }
+		.status { color: #9da7af; margin-top: 6px; line-height: 1.35; }
+		.status.error { color: #ffb4a8; }
 	</style>
+	<div class="toolbar">
+		<button class="secondary" data-value="{}">{}</button>
+		<button class="secondary" data-value="[]">[]</button>
+		<button class="secondary" data-value="true">true</button>
+		<button class="secondary" data-value="false">false</button>
+		<button class="secondary" data-value="null">null</button>
+		<button data-format="true">Format JSON</button>
+	</div>
 	<textarea part="input" spellcheck="false"></textarea>
+	<div class="status" part="status"></div>
 </template>
 <script>
-	if (!customElements.get("flow-literal-editor")) customElements.define("flow-literal-editor", class extends HTMLElement {
-		connectedCallback() {
-			if (!this.shadowRoot) {
-				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-literal-editor").content.cloneNode(true));
-			}
+	(function () {
+		if (customElements.get("flow-literal-editor")) {
+			return;
 		}
-	});
+
+		customElements.define("flow-literal-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._value = "";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-literal-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("click", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._value = state && state.value != null ? String(state.value) : "";
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return this._value || "";
+			}
+
+			handleEvent(event) {
+				if (event.type === "input" && event.target && event.target.matches("textarea")) {
+					this._value = event.target.value;
+					this.validate();
+					this.emit();
+					return;
+				}
+				if (event.type === "click") {
+					var value = event.target && event.target.getAttribute && event.target.getAttribute("data-value");
+					if (value !== null && value !== undefined) {
+						this._value = value;
+						this.render();
+						this.emit();
+						return;
+					}
+					if (event.target && event.target.getAttribute && event.target.getAttribute("data-format")) {
+						this.format();
+					}
+				}
+			}
+
+			format() {
+				try {
+					this._value = JSON.stringify(JSON.parse(this.value), null, 2);
+					this.render();
+					this.emit();
+				} catch (e) {
+					this.validate();
+				}
+			}
+
+			validate() {
+				var status = this.shadowRoot && this.shadowRoot.querySelector(".status");
+				if (!status) {
+					return;
+				}
+				var value = this.value.trim();
+				if (!value) {
+					status.textContent = "";
+					status.classList.remove("error");
+					return;
+				}
+				try {
+					JSON.parse(value);
+					status.textContent = "Valid JSON literal";
+					status.classList.remove("error");
+				} catch (e) {
+					status.textContent = "Literal will be saved as text unless the runtime can coerce it. " + (e.message || "");
+					status.classList.add("error");
+				}
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var textarea = this.shadowRoot.querySelector("textarea");
+				if (textarea && textarea.value !== this.value) {
+					textarea.value = this.value;
+				}
+				this.validate();
+			}
+		});
+	}());
 </script>

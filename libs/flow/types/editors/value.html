@@ -1,16 +1,220 @@
-<template id="flow-value-editor">
+<template id="flow-value-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; }
-		textarea { box-sizing: border-box; width: 100%; min-height: 120px; font: 12px ui-monospace, monospace; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.layout { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.9fr); gap: 10px; min-height: 360px; }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		textarea { min-height: 180px; resize: vertical; }
+		.modebar { display: flex; gap: 6px; margin-bottom: 8px; }
+		.modebar button.active { background: #0d9ac2; border-color: #2bb8df; color: white; }
+		.simple { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 6px; margin-bottom: 8px; }
+		.hidden { display: none !important; }
+		.picker { overflow: auto; max-height: 420px; border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
+		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
+		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+		.path { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border-color: #39424a; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.path:hover { border-color: #2786a8; color: white; }
+		.type { color: #85c8ff; }
+		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
 	</style>
-	<textarea part="input" spellcheck="false"></textarea>
+	<div class="layout">
+		<div>
+			<div class="modebar">
+				<button data-mode="simple">Simple</button>
+				<button data-mode="custom">Custom</button>
+			</div>
+			<div class="simple" part="simple">
+				<input data-simple="prefix" placeholder="prefix">
+				<input data-simple="pick" placeholder="pick a path">
+				<input data-simple="suffix" placeholder="suffix">
+			</div>
+			<textarea part="input" spellcheck="false"></textarea>
+			<div class="hint">Use only {{ expression }} to keep the native value type.</div>
+		</div>
+		<div class="picker" part="picker"></div>
+	</div>
 </template>
 <script>
-	if (!customElements.get("flow-value-editor")) customElements.define("flow-value-editor", class extends HTMLElement {
-		connectedCallback() {
-			if (!this.shadowRoot) {
-				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-value-editor").content.cloneNode(true));
-			}
+	(function () {
+		if (customElements.get("flow-value-editor")) {
+			return;
 		}
-	});
+
+		function esc(value) {
+			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+				return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+			});
+		}
+
+		function groups(context) {
+			var scopes = context && context.scopes || {};
+			return Object.keys(scopes).map(function (scope) {
+				var bucket = scopes[scope];
+				return {
+					scope: scope,
+					paths: Array.isArray(bucket) ? bucket : bucket && bucket.paths || []
+				};
+			});
+		}
+
+		function renderPicker(context) {
+			var html = "";
+			groups(context).forEach(function (group) {
+				html += "<div class=\"group\">" + esc(group.scope) + "</div>";
+				(group.paths || []).forEach(function (entry) {
+					var path = typeof entry === "string" ? entry : entry.path;
+					var type = typeof entry === "string" ? "" : entry.type || "";
+					html += "<button class=\"path\" data-path=\"" + esc(path) + "\">" + esc(path)
+						+ (type ? " <span class=\"type\">" + esc(type) + "</span>" : "") + "</button>";
+				});
+			});
+			return html || "<div class=\"empty\">No known path yet.</div>";
+		}
+
+		function parts(value) {
+			value = String(value || "");
+			var start = value.indexOf("{{");
+			var end = start < 0 ? -1 : value.indexOf("}}", start + 2);
+			if (start >= 0 && end >= 0) {
+				return { prefix: value.slice(0, start), path: value.slice(start + 2, end).trim(), suffix: value.slice(end + 2) };
+			}
+			return { prefix: value, path: "", suffix: "" };
+		}
+
+		function canUseSimple(value) {
+			var p = parts(value);
+			return p.path !== "" && p.prefix.indexOf("}}") < 0 && p.suffix.indexOf("{{") < 0;
+		}
+
+		customElements.define("flow-value-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._state = {};
+				this._value = "";
+				this._mode = "custom";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-value-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("click", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._state = state || {};
+				if ((!this._state.context || !this._state.context.scopes) && this.flowHost && this.flowHost.request) {
+					var response = this.flowHost.request("context", {});
+					if (response && response.ok && response.context) {
+						this._state.context = response.context;
+					}
+				}
+				this._value = this._state.value == null ? "" : String(this._state.value);
+				this._mode = canUseSimple(this._value) ? "simple" : "custom";
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return this._value || "";
+			}
+
+			handleEvent(event) {
+				if (event.type === "input") {
+					if (event.target && event.target.matches("[data-simple]")) {
+						this.syncSimple();
+					} else if (event.target && event.target.matches("textarea")) {
+						this._value = event.target.value;
+						this.emit();
+					}
+					return;
+				}
+				if (event.type === "click") {
+					var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
+					if (mode) {
+						this._mode = mode;
+						if (mode === "simple") {
+							this.syncSimple();
+						}
+						this.render();
+						return;
+					}
+					var button = event.target && event.target.closest && event.target.closest("button[data-path]");
+					if (button) {
+						this.pick(button.getAttribute("data-path") || "");
+					}
+				}
+			}
+
+			syncSimple() {
+				var prefix = this.shadowRoot.querySelector("[data-simple=prefix]");
+				var pick = this.shadowRoot.querySelector("[data-simple=pick]");
+				var suffix = this.shadowRoot.querySelector("[data-simple=suffix]");
+				var path = pick && pick.value.trim();
+				this._value = (prefix ? prefix.value : "") + (path ? "{{ " + path + " }}" : "") + (suffix ? suffix.value : "");
+				this.emit();
+			}
+
+			pick(path) {
+				if (this._mode === "simple") {
+					var pick = this.shadowRoot.querySelector("[data-simple=pick]");
+					if (pick) {
+						pick.value = path;
+					}
+					this.syncSimple();
+					this.render();
+					return;
+				}
+				var textarea = this.shadowRoot.querySelector("textarea");
+				var text = "{{ " + path + " }}";
+				var start = textarea.selectionStart || 0;
+				var end = textarea.selectionEnd || start;
+				this._value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
+				this.render();
+				textarea.focus();
+				textarea.selectionStart = textarea.selectionEnd = start + text.length;
+				this.emit();
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var p = parts(this._value);
+				var simple = this.shadowRoot.querySelector(".simple");
+				var textarea = this.shadowRoot.querySelector("textarea");
+				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) {
+					button.classList.toggle("active", button.getAttribute("data-mode") === this._mode);
+				}, this);
+				if (simple) {
+					simple.classList.toggle("hidden", this._mode !== "simple");
+				}
+				if (textarea) {
+					textarea.classList.toggle("hidden", this._mode === "simple");
+					if (textarea.value !== this._value) {
+						textarea.value = this._value;
+					}
+				}
+				var prefix = this.shadowRoot.querySelector("[data-simple=prefix]");
+				var pick = this.shadowRoot.querySelector("[data-simple=pick]");
+				var suffix = this.shadowRoot.querySelector("[data-simple=suffix]");
+				if (prefix && prefix.value !== p.prefix) prefix.value = p.prefix;
+				if (pick && pick.value !== p.path) pick.value = p.path;
+				if (suffix && suffix.value !== p.suffix) suffix.value = p.suffix;
+				var picker = this.shadowRoot.querySelector(".picker");
+				if (picker) {
+					picker.innerHTML = renderPicker(this._state.context);
+				}
+			}
+		});
+	}());
 </script>

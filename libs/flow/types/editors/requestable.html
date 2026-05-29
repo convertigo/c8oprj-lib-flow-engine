@@ -81,6 +81,12 @@
 
 			setState(state) {
 				this._state = state || {};
+				if ((!this._state.requestables || !this._state.requestables.projects) && this.flowHost && this.flowHost.request) {
+					var response = this.flowHost.request("requestables", {});
+					if (response && response.ok && response.requestables) {
+						this._state.requestables = response.requestables;
+					}
+				}
 				this.value = this._state.value == null ? "" : String(this._state.value);
 				this.render();
 			}

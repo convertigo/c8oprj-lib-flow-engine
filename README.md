@@ -107,6 +107,30 @@ validation/read/write hooks and web editor fragments belong there. Block
 property descriptors reference this vocabulary with `kind`, and the catalog can
 still keep usage counts as secondary information.
 
+Type editors are standard web components loaded from `libs/flow/types/editors`.
+For a property `kind: "path"`, the host looks for `flow-path-editor`; for
+`kind: "requestable"`, it looks for `flow-requestable-editor`, and so on. The
+Java side only provides the JxBrowser host and a small bridge.
+
+An editor component should implement:
+
+```javascript
+element.setState(state)
+element.value
+element.dispatchEvent(new CustomEvent("flow-value", { detail: { value } }))
+```
+
+The host also assigns `element.flowHost`, with:
+
+```javascript
+flowHost.request("context", {})
+flowHost.request("requestables", {})
+flowHost.setValue(value)
+```
+
+This keeps editor behavior hot-reloadable from the Flow engine project instead
+of baking each property type into Eclipse Java code.
+
 ## Standard block selection
 
 Core blocks should stay small, generic and predictable. The default move is to

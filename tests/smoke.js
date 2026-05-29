@@ -63,6 +63,23 @@ assertTrue(propertyEditor.ok === true && propertyEditor.html.indexOf("receiveFro
 assertTrue(propertyEditor.html.indexOf("flow-requestable-editor") !== -1 &&
 	propertyEditor.html.indexOf("relativeQName(qname, currentProject)") !== -1,
 	"propertyEditor did not embed standalone requestable editor");
+assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
+	propertyEditor.html.indexOf("flow-template-editor") !== -1 &&
+	propertyEditor.html.indexOf("flow-value-editor") !== -1 &&
+	propertyEditor.html.indexOf("flow-expression-editor") !== -1 &&
+	propertyEditor.html.indexOf("flow-literal-editor") !== -1 &&
+	propertyEditor.html.indexOf("flow-text-editor") !== -1,
+	"propertyEditor did not embed core standalone editors");
+assertTrue(propertyEditor.html.indexOf("hostRequest(name,payload)") !== -1 &&
+	propertyEditor.html.indexOf("typeEditorTag(kind)") !== -1,
+	"propertyEditor did not expose generic type editor host API");
+assertTrue(propertyEditor.html.indexOf("data-picker-property-button") !== -1 &&
+	propertyEditor.html.indexOf("data-picker-editor") !== -1 &&
+	propertyEditor.html.indexOf("data-apply-picked") !== -1 &&
+	propertyEditor.html.indexOf("data-cancel-picked") !== -1,
+	"propertyEditor did not expose picker target property apply actions");
+assertTrue(propertyEditor.html.indexOf("data-picker-format") === -1,
+	"propertyEditor still exposes the confusing path/template picker format selector");
 print(engine.analyze(JSON.stringify({ flowSource: flowSource })));
 var describedFlowTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", flowSource: flowSource })));
 print(JSON.stringify(describedFlowTree));
@@ -71,6 +88,22 @@ assertTrue(describedFlowTree.children[0].name === "flow" &&
 	"describeTree(flow) did not expose flow nodes");
 assertTrue(describedFlowTree.children[0].children[0].summary === "[set] flow.items = [\"Paris\",\"Lyon\"]",
 	"describeTree(flow) did not expose data-centric display names");
+var simpleLoopContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: flowSource,
+	node: "pushCurrent",
+	include: ["current"],
+	detail: "normal"
+})));
+print(JSON.stringify(simpleLoopContext));
+assertTrue(simpleLoopContext.ok === true &&
+	simpleLoopContext.scopes.current.paths.length === 1 &&
+	simpleLoopContext.scopes.current.paths[0].path === "current" &&
+	simpleLoopContext.scopes.current.paths[0].type === "string",
+	"Flow context did not infer current type from a static array set before forEach");
+var simpleOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: flowSource })));
+assertTrue(simpleOutputSchema.schema.properties.cities.type === "array" &&
+	simpleOutputSchema.schema.properties.cities.items.type === "string",
+	"Flow output schema did not infer pushed array item type from current");
 var mutatedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 	target: "flow",
 	flowSource: flowSource,

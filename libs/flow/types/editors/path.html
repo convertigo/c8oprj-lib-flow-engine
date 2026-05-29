@@ -1,16 +1,137 @@
-<template id="flow-path-editor">
+<template id="flow-path-editor-template">
 	<style>
-		:host { display: grid; gap: 6px; font: 12px system-ui, sans-serif; }
-		input { box-sizing: border-box; width: 100%; font: 12px ui-monospace, monospace; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.layout { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 0.9fr); gap: 10px; min-height: 320px; }
+		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		.picker { overflow: auto; max-height: 420px; border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
+		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
+		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+		button:hover { border-color: #2786a8; color: white; }
+		.type { color: #85c8ff; }
+		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
 	</style>
-	<input part="input" placeholder="result.value">
+	<div class="layout">
+		<div>
+			<input part="input" spellcheck="false" placeholder="result.value">
+			<div class="hint">Pick a known scope path or type a target path.</div>
+		</div>
+		<div class="picker" part="picker"></div>
+	</div>
 </template>
 <script>
-	if (!customElements.get("flow-path-editor")) customElements.define("flow-path-editor", class extends HTMLElement {
-		connectedCallback() {
-			if (!this.shadowRoot) {
-				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-path-editor").content.cloneNode(true));
-			}
+	(function () {
+		if (customElements.get("flow-path-editor")) {
+			return;
 		}
-	});
+
+		function esc(value) {
+			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+				return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+			});
+		}
+
+		function groups(context) {
+			var scopes = context && context.scopes || {};
+			return Object.keys(scopes).map(function (scope) {
+				var bucket = scopes[scope];
+				return {
+					scope: scope,
+					paths: Array.isArray(bucket) ? bucket : bucket && bucket.paths || []
+				};
+			});
+		}
+
+		function renderPicker(context) {
+			var html = "";
+			groups(context).forEach(function (group) {
+				html += "<div class=\"group\">" + esc(group.scope) + "</div>";
+				(group.paths || []).forEach(function (entry) {
+					var path = typeof entry === "string" ? entry : entry.path;
+					var type = typeof entry === "string" ? "" : entry.type || "";
+					html += "<button data-path=\"" + esc(path) + "\">" + esc(path)
+						+ (type ? " <span class=\"type\">" + esc(type) + "</span>" : "") + "</button>";
+				});
+			});
+			return html || "<div class=\"empty\">No known path yet.</div>";
+		}
+
+		customElements.define("flow-path-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._state = {};
+				this._value = "";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-path-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("click", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._state = state || {};
+				if ((!this._state.context || !this._state.context.scopes) && this.flowHost && this.flowHost.request) {
+					var response = this.flowHost.request("context", {});
+					if (response && response.ok && response.context) {
+						this._state.context = response.context;
+					}
+				}
+				this.value = this._state.value == null ? "" : String(this._state.value);
+				this.render();
+			}
+
+			get value() {
+				return this._value || "";
+			}
+
+			set value(value) {
+				this._value = value == null ? "" : String(value);
+				var input = this.shadowRoot && this.shadowRoot.querySelector("input");
+				if (input && input.value !== this._value) {
+					input.value = this._value;
+				}
+			}
+
+			handleEvent(event) {
+				if (event.type === "input" && event.target && event.target.matches("input")) {
+					this._value = event.target.value;
+					this.emit();
+					return;
+				}
+				if (event.type === "click") {
+					var button = event.target && event.target.closest && event.target.closest("button[data-path]");
+					if (!button) {
+						return;
+					}
+					this.value = button.getAttribute("data-path") || "";
+					this.emit();
+				}
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var input = this.shadowRoot.querySelector("input");
+				if (input && input.value !== this.value) {
+					input.value = this.value;
+				}
+				var picker = this.shadowRoot.querySelector(".picker");
+				if (picker) {
+					picker.innerHTML = renderPicker(this._state.context);
+				}
+			}
+		});
+	}());
 </script>

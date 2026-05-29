@@ -1,16 +1,75 @@
-<template id="flow-text-editor">
+<template id="flow-text-editor-template">
 	<style>
-		:host { display: grid; gap: 6px; font: 12px system-ui, sans-serif; }
-		input { box-sizing: border-box; width: 100%; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		textarea { min-height: 120px; resize: vertical; }
+		.hint { color: #9da7af; margin-top: 6px; }
 	</style>
-	<input part="input">
+	<div part="container"></div>
+	<div class="hint">Plain text, no expression evaluation.</div>
 </template>
 <script>
-	if (!customElements.get("flow-text-editor")) customElements.define("flow-text-editor", class extends HTMLElement {
-		connectedCallback() {
-			if (!this.shadowRoot) {
-				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-text-editor").content.cloneNode(true));
-			}
+	(function () {
+		if (customElements.get("flow-text-editor")) {
+			return;
 		}
-	});
+
+		customElements.define("flow-text-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._value = "";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-text-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._value = state && state.value != null ? String(state.value) : "";
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return this._value || "";
+			}
+
+			handleEvent(event) {
+				var input = event.target;
+				if (input && (input.matches("input") || input.matches("textarea"))) {
+					this._value = input.value;
+					this.emit();
+				}
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var container = this.shadowRoot.querySelector("[part=container]");
+				var multiline = this.value.length > 80 || this.value.indexOf("\n") !== -1;
+				var tag = multiline ? "textarea" : "input";
+				var input = container.querySelector(tag);
+				if (!input) {
+					container.innerHTML = multiline ? "<textarea part=\"input\" spellcheck=\"false\"></textarea>" : "<input part=\"input\" spellcheck=\"false\">";
+					input = container.querySelector(tag);
+				}
+				if (input.value !== this.value) {
+					input.value = this.value;
+				}
+			}
+		});
+	}());
 </script>
