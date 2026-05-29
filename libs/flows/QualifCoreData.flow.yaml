@@ -1,0 +1,31 @@
+version: 1
+nodes:
+  - id: sourceProfile
+    block: set
+    path: flow.profile
+    value:
+      city: Paris
+      metrics:
+        temperature: 38
+        unit: C
+  - id: pickFields
+    block: object.pick
+    source: flow.profile
+    keys:
+      - city
+      - metrics.temperature
+    out: flow.selected
+  - id: mergeAlert
+    block: object.merge
+    target: flow.selected
+    source:
+      alert: true
+    out: result.payload
+  - id: stringify
+    block: json.stringify
+    value: "{{ result.payload }}"
+    out: flow.payloadText
+  - id: parse
+    block: json.parse
+    text: "{{ flow.payloadText }}"
+    out: result.roundtrip

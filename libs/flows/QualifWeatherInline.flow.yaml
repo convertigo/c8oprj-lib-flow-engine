@@ -1,0 +1,31 @@
+version: 1
+nodes:
+  - id: fetchWeather
+    block: http.request
+    method: GET
+    url: "file://{{ request.engineProjectDir }}/fixtures/weather-alert.json"
+    out: flow.weather
+  - id: selectMetropoles
+    block: json.select
+    source: flow.weather
+    path: body.metropoles
+    out: flow.metropoles
+  - id: filterHot
+    block: list.filter
+    items: flow.metropoles
+    where: current.temperature >= 35
+    out: flow.hotMetropoles
+  - id: sortHot
+    block: list.sort
+    items: flow.hotMetropoles
+    by: current.city
+    out: flow.sortedHotMetropoles
+  - id: mapCities
+    block: list.map
+    items: flow.sortedHotMetropoles
+    select: current.city
+    out: result.hotCities
+  - id: setMessage
+    block: set
+    path: result.message
+    value: Flow engine qualification passed

@@ -1,0 +1,9 @@
+/_private/
+/.settings
+/.gradle
+/.project
+/build/
+/libs/flow/icons/iconify/
+/libs/flow/icons/url/
+/libs/flow/icons/mdi/
+.DS_Store

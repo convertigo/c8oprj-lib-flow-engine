@@ -1,0 +1,57 @@
+(function () {
+	function prop(node, key) {
+		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
+	}
+
+	function objectValue(ctx, value) {
+		if (value === undefined || value === null) {
+			return {};
+		}
+		return typeof value === "string" ? ctx.expr(value) : ctx.template(value);
+	}
+
+	function copy(out, value) {
+		if (!value || Object.prototype.toString.call(value) !== "[object Object]") {
+			return;
+		}
+		Object.keys(value).forEach(function (key) {
+			out[key] = value[key];
+		});
+	}
+
+	return {
+		name: "object.merge",
+
+		catalog: function () {
+			return {
+				name: "object.merge",
+				icon: "mdi:merge",
+				props: {
+					target: { label: "target", kind: "expression", type: "object", "default": "flow.object", description: "Base object expression." },
+					source: { label: "source", kind: "expression", type: "object", "default": "flow.patch", description: "Object expression overriding target keys." },
+					out: { label: "out", kind: "path", mode: "write", "default": "flow.merged", description: "Scope path receiving the merged object." }
+				},
+				description: "Creates a shallow object merge."
+			};
+		},
+
+		displayName: function (node) {
+			var target = flowSummary.prop(node, "target") || "object";
+			var source = flowSummary.prop(node, "source") || "patch";
+			return flowSummary.output(node, flowSummary.text(target + " + " + source));
+		},
+
+		analyze: function (ctx, node) {
+			var props = ctx.props(node);
+			ctx.addPath(props.out);
+		},
+
+		run: function (ctx, node) {
+			var props = ctx.props(node);
+			var out = {};
+			copy(out, objectValue(ctx, props.target));
+			copy(out, objectValue(ctx, props.source));
+			return out;
+		}
+	};
+}())

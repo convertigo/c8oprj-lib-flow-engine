@@ -1,0 +1,20 @@
+{
+  "metropoles": [
+    {
+      "city": "Paris",
+      "temperature": 36.4
+    },
+    {
+      "city": "Lyon",
+      "temperature": 34.2
+    },
+    {
+      "city": "Marseille",
+      "temperature": 37.1
+    },
+    {
+      "city": "Lille",
+      "temperature": 29.8
+    }
+  ]
+}

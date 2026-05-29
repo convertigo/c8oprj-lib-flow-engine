@@ -1,0 +1,7 @@
+↑convertigo: 8.5.0.m006
+↓lib_flow_engine [core.Project]: 
+  comment: Experimental runtime for Convertigo Flow objects
+  version: 0.0.1
+  ↓QualifCoreData [flow.Flow]: 🗏 sequences/QualifCoreData.yaml
+  ↓QualifWeatherInline [flow.Flow]: 🗏 sequences/QualifWeatherInline.yaml
+  ↓FlowEngine [flow.FlowEngine]: 🗏 flowEngine.yaml
