@@ -13,6 +13,7 @@ libs/flow/Engine.js
 ```text
 run(requestJson)     -> responseJson
 analyze(requestJson) -> analysisJson
+context(requestJson) -> contextJson
 catalog(requestJson) -> catalogJson
 ```
 
@@ -178,6 +179,66 @@ nodes:
 `flow-analyze` uses this `output` shape without running the child Flow. A node
 such as `out: flow.custom` then advertises `flow.custom.message` and
 `flow.custom.source` as produced paths.
+
+## Context picker API
+
+`Engine.context()` returns the scope paths visible at a specific point in a
+Flow. It is meant to feed Studio pickers and compact MCP/LLM guidance from the
+same runtime analysis.
+
+Request shape:
+
+```json
+{
+  "flowSource": "version: 1\nnodes:\n...",
+  "node": "notify",
+  "property": "body",
+  "include": ["flow", "result"],
+  "detail": "normal"
+}
+```
+
+`node` can be a node `id`, `uid`, `name` or tree path such as
+`nodes[3].nodes[0]`. `include` is optional; when absent, all visible scope roots
+are returned. Keep `include` to root scope names only, for example `flow`,
+`current`, `input` or `config`. `detail` is `normal` by default; use `compact`
+when an LLM only needs the paths.
+
+Normal response:
+
+```json
+{
+  "ok": true,
+  "target": {
+    "id": "notify",
+    "block": "email.mock",
+    "property": "body",
+    "propertyDefinition": { "kind": "template", "type": "string" }
+  },
+  "scopes": {
+    "flow": {
+      "paths": [
+        { "path": "flow.weather", "type": "unknown", "confidence": "inferred" }
+      ]
+    }
+  }
+}
+```
+
+Compact response:
+
+```json
+{
+  "ok": true,
+  "scopes": {
+    "flow": ["flow", "flow.weather", "flow.metropoles"]
+  }
+}
+```
+
+The analysis is positional. For the default `position: "before"`, paths written
+after the target node are not returned. Inside a `forEach`, the `current` scope
+keeps a producer reference to the iterated source path.
 
 ## Property kinds
 

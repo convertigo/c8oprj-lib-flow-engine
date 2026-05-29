@@ -1335,6 +1335,9 @@
 		ctx.analyzeFlowSource = function (flowSource) {
 			return analyzeFlowSource(blocks, flowSource);
 		};
+		ctx.contextFlowSource = function (args) {
+			return contextForFlowRequest(blocks, args || {});
+		};
 		ctx.runFlowSource = function (flowSource, config, options) {
 			options = options || {};
 			return runFlowRequest({
@@ -1406,7 +1409,7 @@
 	function createAnalysisContext(blocks) {
 		var ctx = {
 			blocks: blocks,
-			paths: ["request", "config", "flow", "result", "trace", "current"],
+			paths: ["request", "input", "config", "flow", "result", "trace", "current"],
 			reads: [],
 			writes: [],
 			providers: {},
@@ -1648,6 +1651,292 @@
 			nodes: ctx.nodes,
 			errors: ctx.errors
 		};
+	}
+
+	function hasChildSlots(catalog) {
+		return slotDefinitions(catalog).length > 0;
+	}
+
+	function analyzeNodeShallow(ctx, node, path) {
+		if (!node || node.disabled) {
+			return null;
+		}
+		var name = blockName(node);
+		var block = ctx.blocks[name];
+		if (!block) {
+			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Call catalog() to list supported blocks.");
+		}
+		var props = nodeProps(node);
+		var catalog = blockCatalog(block);
+		var info = {
+			id: nodePath(node),
+			path: path || "",
+			block: name,
+			props: Object.keys(props),
+			reads: [],
+			writes: [],
+			inputs: [],
+			outputs: [],
+			children: childGroups(node)
+		};
+		var previousNodeInfo = ctx.currentNodeInfo;
+		ctx.currentNodeInfo = info;
+		try {
+			var effects = analyzeProps(ctx, props, catalog);
+			info.reads = effects.reads;
+			info.writes = effects.writes;
+			info.inputs = effects.inputs;
+			info.outputs = effects.outputs;
+			ctx.nodes.push(info);
+			if (!hasChildSlots(catalog) && typeof block.analyze === "function") {
+				block.analyze(ctx, node);
+			}
+		} finally {
+			ctx.currentNodeInfo = previousNodeInfo;
+		}
+		return info;
+	}
+
+	function contextTargetValue(request) {
+		return request.node || request.nodeId || request.id || "";
+	}
+
+	function currentContextSource(ctx) {
+		if (!ctx || !ctx.currentSources || ctx.currentSources.length === 0) {
+			return null;
+		}
+		return cloneSource(ctx.currentSources[ctx.currentSources.length - 1]);
+	}
+
+	function matchesContextTarget(request, node, path) {
+		var target = String(contextTargetValue(request) || "");
+		var targetPath = String(request.path || request.nodePath || "");
+		if (targetPath && targetPath === path) {
+			return true;
+		}
+		if (!target) {
+			return false;
+		}
+		return target === String(node && node.id || "") ||
+			target === String(node && node.uid || "") ||
+			target === String(node && node.name || "") ||
+			target === nodePath(node) ||
+			target === path;
+	}
+
+	function contextWalkNodes(ctx, nodes, request, path) {
+		nodes = nodes || [];
+		for (var i = 0; i < nodes.length; i++) {
+			var node = nodes[i];
+			var nodeListPath = path + "[" + i + "]";
+			var targetHere = matchesContextTarget(request, node, nodeListPath);
+			var position = String(request.position || "before");
+			if (targetHere && position !== "after") {
+				return { found: true, node: node, path: nodeListPath, currentSource: currentContextSource(ctx) };
+			}
+			var name = blockName(node);
+			var block = ctx.blocks[name];
+			var catalog = blockCatalog(block);
+			analyzeNodeShallow(ctx, node, nodeListPath);
+			var slots = activeSlots(node, catalog);
+			for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+				var slot = slots[slotIndex];
+				var childPath = nodeListPath + "." + slot.name;
+				var childResult;
+				if (name === "forEach" && slot.name === "nodes") {
+					var props = nodeProps(node);
+					var items = props.items || props["in"];
+					var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
+					source = source || { path: items };
+					childResult = ctx.withCurrentSource(source, function () {
+						ctx.addPath("current");
+						return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
+					});
+				} else {
+					childResult = contextWalkNodes(ctx, slot.nodes || [], request, childPath);
+				}
+				if (childResult && childResult.found) {
+					return childResult;
+				}
+			}
+			if (targetHere && position === "after") {
+				return { found: true, node: node, path: nodeListPath, currentSource: currentContextSource(ctx) };
+			}
+		}
+		return { found: false };
+	}
+
+	function scopeRoot(path) {
+		return String(path || "").split(".")[0];
+	}
+
+	function normalizeInclude(include) {
+		if (include === undefined || include === null || include === "") {
+			return scopeNames.slice(0);
+		}
+		if (typeof include === "string") {
+			include = [include];
+		}
+		if (Object.prototype.toString.call(include) !== "[object Array]") {
+			raise("INVALID_CONTEXT_INCLUDE", "Flow context include must be an array of scope names.");
+		}
+		var out = [];
+		include.forEach(function (scope) {
+			scope = String(scope || "").trim();
+			if (scopeNames.indexOf(scope) === -1) {
+				raise("INVALID_CONTEXT_SCOPE", "Unknown Flow scope in include: " + scope);
+			}
+			addUnique(out, scope);
+		});
+		return out;
+	}
+
+	function schemaType(schema, path) {
+		if (!schema || !path) {
+			return "";
+		}
+		var current = schema;
+		String(path).split(".").forEach(function (part) {
+			if (!current) {
+				return;
+			}
+			var source = current.properties || current;
+			current = source[part];
+		});
+		if (!current) {
+			return "";
+		}
+		if (typeof current === "string") {
+			return current;
+		}
+		if (current.type) {
+			return String(current.type);
+		}
+		if (current.properties) {
+			return "object";
+		}
+		if (Object.prototype.toString.call(current) === "[object Array]") {
+			return "array";
+		}
+		return "";
+	}
+
+	function declaredSchemaForRoot(definition, root) {
+		if (root === "input") {
+			return definition.input || definition.inputs || {};
+		}
+		if (root === "config") {
+			return definition.config || {};
+		}
+		if (root === "result") {
+			return definition.output || definition.outputs || {};
+		}
+		return {};
+	}
+
+	function pathType(definition, path) {
+		var root = scopeRoot(path);
+		if (path === root) {
+			return root === "current" ? "unknown" : "object";
+		}
+		var local = String(path).substring(root.length + 1);
+		return schemaType(declaredSchemaForRoot(definition, root), local) || "unknown";
+	}
+
+	function pathConfidence(definition, ctx, path) {
+		var root = scopeRoot(path);
+		if (path === root) {
+			return "declared";
+		}
+		if (schemaType(declaredSchemaForRoot(definition, root), String(path).substring(root.length + 1))) {
+			return "declared";
+		}
+		if (ctx.sourceForPath(path)) {
+			return "inferred";
+		}
+		return "unknown";
+	}
+
+	function contextPathEntry(ctx, definition, path, currentSource) {
+		var source = ctx.sourceForPath(path);
+		if (!source && path === "current" && currentSource) {
+			source = cloneSource(currentSource);
+		}
+		var entry = {
+			path: path,
+			type: pathType(definition, path),
+			confidence: pathConfidence(definition, ctx, path)
+		};
+		if (source) {
+			entry.producer = source;
+		}
+		return entry;
+	}
+
+	function targetPropertyDescriptor(blocks, node, property) {
+		if (!node || !property) {
+			return null;
+		}
+		var block = blocks[blockName(node)];
+		var descriptor = blockCatalog(block);
+		return descriptor && descriptor.props ? normalizeTree(descriptor.props[property] || null) : null;
+	}
+
+	function contextForFlowRequest(blocks, request) {
+		request = request || {};
+		var definition = parseSource(request.flowSource);
+		var include = normalizeInclude(request.include);
+		var detail = String(request.detail || "normal");
+		if (["normal", "compact"].indexOf(detail) === -1) {
+			raise("INVALID_CONTEXT_DETAIL", "Unknown Flow context detail: " + detail,
+				null, "Use detail=normal or detail=compact.");
+		}
+		var ctx = createAnalysisContext(blocks);
+		var hasTarget = !!(contextTargetValue(request) || request.path || request.nodePath);
+		var found = contextWalkNodes(ctx, definition.nodes || [], request, "nodes");
+		if (hasTarget && !found.found) {
+			raise("FLOW_CONTEXT_TARGET_NOT_FOUND", "Flow context target not found: " +
+				(contextTargetValue(request) || request.path || request.nodePath));
+		}
+		var scopes = {};
+		var currentSource = found.currentSource || null;
+		include.forEach(function (scope) {
+			var paths = ctx.paths.filter(function (path) {
+				return scopeRoot(path) === scope;
+			});
+			if (paths.length === 0 && ctx.paths.indexOf(scope) !== -1) {
+				paths = [scope];
+			}
+			if (detail === "compact") {
+				scopes[scope] = paths;
+			} else {
+				scopes[scope] = {
+					paths: paths.map(function (path) {
+						return contextPathEntry(ctx, definition, path, currentSource);
+					})
+				};
+			}
+		});
+		var out = {
+			ok: true,
+			node: found.node ? nodePath(found.node) : "",
+			path: found.path || "",
+			property: request.property || "",
+			mode: request.mode || "read",
+			include: include,
+			detail: detail,
+			scopes: scopes
+		};
+		if (found.node) {
+			out.target = {
+				id: nodePath(found.node),
+				block: blockName(found.node),
+				path: found.path || "",
+				property: request.property || "",
+				propertyDefinition: targetPropertyDescriptor(blocks, found.node, request.property)
+			};
+		}
+		return out;
 	}
 
 	function analysisByNodeId(analysis) {
@@ -2319,6 +2608,15 @@
 				return response(analyzeFlowSource(loadBlocks(), request.flowSource));
 			} catch (e) {
 				return response(failure("analyze", e));
+			}
+		},
+
+		context: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(contextForFlowRequest(loadBlocks(), request));
+			} catch (e) {
+				return response(failure("context", e));
 			}
 		},
 

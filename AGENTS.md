@@ -15,6 +15,7 @@ lib_flow_engine.Engine -> libs/flow/Engine.js
 ```text
 run(requestJson)     -> responseJson
 analyze(requestJson) -> analysisJson
+context(requestJson) -> contextJson
 catalog(requestJson) -> catalogJson
 ```
 
@@ -177,6 +178,25 @@ Keep analysis in the JS runtime. Java passes `flowSource` as opaque text.
 - report child groups such as `nodes`, `then` and `else`;
 - return structured static errors when possible.
 
+`Engine.context()` is the picker-oriented API. Use it when an agent or Studio
+needs to know which scope paths are visible at a specific node:
+
+```json
+{
+  "flowSource": "...",
+  "node": "notify",
+  "property": "body",
+  "include": ["flow", "result"],
+  "detail": "compact"
+}
+```
+
+Keep `include` to root scopes only: `request`, `input`, `config`, `flow`,
+`result`, `trace`, `current`. Omit `include` to return all visible roots. Use
+`detail: "compact"` for LLM guidance and `detail: "normal"` for Studio picker
+metadata. The default position is before the target node, so values produced
+later are not suggested.
+
 Do not add Java admin services just to expose this during the POC. Prefer
 standalone Rhino validation first, then block-level or MCP/Studio integration
 later.
@@ -191,6 +211,7 @@ When acting as a Flow authoring agent, use this order:
 tools/list
 flow-catalog
 flow-list / flow-get
+flow-context when choosing paths or expressions
 flow-block-list
 flow-block-create only when the catalog is insufficient
 flow-set

@@ -48,6 +48,26 @@
 				}
 			},
 			{
+				name: "flow-context",
+				description: "Return visible scope paths at a Flow node for Studio pickers or LLM guidance.",
+				inputSchema: {
+					type: "object",
+					properties: {
+						flowSource: { type: "string" },
+						node: { type: "string" },
+						path: { type: "string" },
+						property: { type: "string" },
+						mode: { type: "string" },
+						include: {
+							type: "array",
+							items: { type: "string" }
+						},
+						detail: { type: "string" }
+					},
+					required: ["flowSource"]
+				}
+			},
+			{
 				name: "flow-run",
 				description: "Run a Flow YAML source with optional input and config objects.",
 				inputSchema: {
@@ -172,6 +192,8 @@
 			return toolResult(ctx.catalog());
 		case "flow-analyze":
 			return toolResult(ctx.analyzeFlowSource(args.flowSource || ""));
+		case "flow-context":
+			return toolResult(ctx.contextFlowSource(args));
 		case "flow-run":
 			var execution = ctx.runFlowSource(args.flowSource || "", args.config || {}, {
 				input: args.input || {},

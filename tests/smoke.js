@@ -196,6 +196,44 @@ var weatherFlowSource = [
 	""
 ].join("\n");
 print(engine.analyze(JSON.stringify({ flowSource: weatherFlowSource })));
+var notifyContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: weatherFlowSource,
+	node: "notify",
+	property: "body",
+	include: ["flow", "result"],
+	detail: "normal"
+})));
+print(JSON.stringify(notifyContext));
+assertTrue(notifyContext.ok === true &&
+	notifyContext.scopes.flow.paths.some(function (entry) { return entry.path === "flow.metropoles"; }) &&
+	notifyContext.scopes.result.paths.some(function (entry) { return entry.path === "result.hotCities"; }) &&
+	!notifyContext.scopes.result.paths.some(function (entry) { return entry.path === "result.message"; }),
+	"Flow context did not expose only paths available before notify");
+
+var keepHotCityContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: weatherFlowSource,
+	node: "keepHotCity",
+	property: "condition",
+	include: ["current"],
+	detail: "normal"
+})));
+print(JSON.stringify(keepHotCityContext));
+assertTrue(keepHotCityContext.ok === true &&
+	keepHotCityContext.scopes.current.paths.length === 1 &&
+	keepHotCityContext.scopes.current.paths[0].producer &&
+	keepHotCityContext.scopes.current.paths[0].producer.path === "flow.metropoles",
+	"Flow context did not expose current source inside forEach");
+
+var compactContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: weatherFlowSource,
+	node: "notify",
+	include: ["flow"],
+	detail: "compact"
+})));
+print(JSON.stringify(compactContext));
+assertTrue(Object.keys(compactContext.scopes).join(",") === "flow" &&
+	compactContext.scopes.flow.indexOf("flow.weather") !== -1,
+	"Flow compact context did not filter scopes");
 print(engine.run(JSON.stringify({ flowSource: weatherFlowSource })));
 print(engine.run(JSON.stringify({
 	flowSource: weatherFlowSource,
@@ -861,6 +899,31 @@ var mcpAnalyze = JSON.parse(engine.run(JSON.stringify({
 print(JSON.stringify(mcpAnalyze));
 assertTrue(mcpAnalyze.result.result.structuredContent.writes.indexOf("result.hotCities") !== -1,
 	"MCP Flow flow-analyze did not report result.hotCities");
+
+var mcpContext = JSON.parse(engine.run(JSON.stringify({
+	flowSource: mcpFlowSource,
+	includeTrace: false,
+	config: {
+		request: {
+			jsonrpc: "2.0",
+			id: 11,
+			method: "tools/call",
+			params: {
+				name: "flow-context",
+				arguments: {
+					flowSource: weatherFlowSource,
+					node: "notify",
+					property: "body",
+					include: ["flow"],
+					detail: "compact"
+				}
+			}
+		}
+	}
+})));
+print(JSON.stringify(mcpContext));
+assertTrue(mcpContext.result.result.structuredContent.scopes.flow.indexOf("flow.metropoles") !== -1,
+	"MCP Flow flow-context did not expose compact flow paths");
 
 var mcpRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: mcpFlowSource,
