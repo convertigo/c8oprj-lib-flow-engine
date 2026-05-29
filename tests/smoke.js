@@ -47,7 +47,11 @@ var flowSource = [
 	""
 ].join("\n");
 
-print(engine.catalog("{}"));
+var catalog = JSON.parse(engine.catalog("{}"));
+print(JSON.stringify(catalog));
+assertTrue(catalog.blocks.some(function (block) {
+	return block.name === "requestable.call";
+}), "catalog did not expose requestable.call");
 print(engine.analyze(JSON.stringify({ flowSource: flowSource })));
 var describedFlowTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", flowSource: flowSource })));
 print(JSON.stringify(describedFlowTree));
@@ -77,6 +81,50 @@ assertTrue(mutatedFlow.ok === true && mutatedFlow.analysis.writes.indexOf("resul
 var mutatedFlowRun = JSON.parse(engine.run(JSON.stringify({ flowSource: mutatedFlow.source })));
 assertTrue(mutatedFlowRun.result.mutated === true, "Mutated flow source did not execute");
 print(engine.run(JSON.stringify({ flowSource: flowSource })));
+var staticSchemaFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: sourceItems",
+	"    block: set",
+	"    path: flow.items",
+	"    value:",
+	"      - city: Paris",
+	"        temperature: 36",
+	"  - id: copyItems",
+	"    block: set",
+	"    path: result.items",
+	"    value: \"{{ flow.items }}\"",
+	""
+].join("\n");
+var staticOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: staticSchemaFlowSource })));
+assertTrue(staticOutputSchema.schema.properties.items.type === "array" &&
+	staticOutputSchema.schema.properties.items.items.properties.city.type === "string" &&
+	staticOutputSchema.schema.properties.items.items.properties.temperature.type === "integer",
+	"outputSchema did not derive result from static dataflow analysis");
+var explicitReturnSchemaFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: sourceItems",
+	"    block: set",
+	"    path: flow.items",
+	"    value:",
+	"      - city: Paris",
+	"        temperature: 36",
+	"  - id: done",
+	"    block: return",
+	"    value: \"{{ flow.items }}\"",
+	""
+].join("\n");
+var explicitReturnSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: explicitReturnSchemaFlowSource })));
+assertTrue(explicitReturnSchema.schema.type === "array" &&
+	explicitReturnSchema.schema.items.properties.city.type === "string",
+	"outputSchema did not derive explicit return schema from static dataflow analysis");
+var learnedRun = JSON.parse(engine.run(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource })));
+var learnedSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource })));
+assertTrue(learnedRun.result.message === "Hello Flow", "Named flow did not execute for schema learning");
+assertTrue(learnedSchema.schema.properties.cities.type === "array" &&
+	learnedSchema.schema.properties.message.type === "string",
+	"outputSchema did not expose the learned Flow result structure");
 
 var implicitReturnFlowSource = [
 	"version: 1",
@@ -243,6 +291,49 @@ print(engine.run(JSON.stringify({
 		threshold: 35
 	}
 })));
+var schemaFlowName = "WeatherSchemaLearn";
+var schemaFile = new java.io.File(projectDirFile, "libs/flow/schemas/" + schemaFlowName + "/fetchWeather.out.schema.json");
+assertTrue(!schemaFile.isFile(), "Learned schema should not exist before the first named run");
+var schemaLearnRun = JSON.parse(engine.run(JSON.stringify({
+	flowName: schemaFlowName,
+	flowSource: weatherFlowSource,
+	config: {
+		weatherUrl: fixtureUrl,
+		apiKey: "demo-key",
+		threshold: 35
+	},
+	includeTrace: false
+})));
+assertTrue(schemaLearnRun.ok === true && schemaFile.isFile(),
+	"HTTP block did not learn its output schema when the schema file was missing");
+var learnedContext = JSON.parse(engine.context(JSON.stringify({
+	flowName: schemaFlowName,
+	flowSource: weatherFlowSource,
+	node: "selectMetropoles",
+	include: ["flow"],
+	detail: "compact"
+})));
+print(JSON.stringify(learnedContext));
+assertTrue(learnedContext.scopes.flow.indexOf("flow.weather.body.metropoles.city") !== -1,
+	"Flow context did not expose learned HTTP JSON schema paths");
+var learnedLoopContext = JSON.parse(engine.context(JSON.stringify({
+	flowName: schemaFlowName,
+	flowSource: weatherFlowSource,
+	node: "keepHotCity",
+	include: ["current"],
+	detail: "compact"
+})));
+print(JSON.stringify(learnedLoopContext));
+assertTrue(learnedLoopContext.scopes.current.indexOf("current.city") !== -1 &&
+	learnedLoopContext.scopes.current.indexOf("current.temperature") !== -1,
+	"Flow context did not expose iterated item fields from a learned array schema");
+var schemaReset = JSON.parse(engine.schemaReset(JSON.stringify({
+	flowName: schemaFlowName,
+	node: "fetchWeather"
+})));
+print(JSON.stringify(schemaReset));
+assertTrue(schemaReset.ok === true && schemaReset.deleted === true && !schemaFile.isFile(),
+	"Flow schema reset did not delete the learned node schema");
 
 var compactWeatherFlowSource = [
 	"version: 1",
@@ -430,6 +521,26 @@ print(JSON.stringify(parentFlowCallAnalysis));
 assertTrue(parentFlowCallAnalysis.writes.indexOf("result.greeting.message") !== -1 &&
 	parentFlowCallAnalysis.writes.indexOf("result.greeting.mode") !== -1,
 	"flow.call did not propagate the child Flow output contract");
+var requestableCallSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: callRequestable",
+	"    block: requestable.call",
+	"    requestable: .NamedGreeting",
+	"    input:",
+	"      name: Nicolas",
+	"    out: flow.response",
+	""
+].join("\n");
+var requestableCallAnalysis = JSON.parse(engine.analyze(JSON.stringify({
+	flowSource: requestableCallSource,
+	context: {
+		project: "SmokeProject"
+	}
+})));
+print(JSON.stringify(requestableCallAnalysis));
+assertTrue(requestableCallAnalysis.writes.indexOf("flow.response") !== -1,
+	"requestable.call did not expose its output path during analysis");
 var contractDefaultImplementationSource = [
 	"version: 1",
 	"nodes:",

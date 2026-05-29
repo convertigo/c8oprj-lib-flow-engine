@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "temperature": {
+          "type": "integer"
+        },
+        "alert": {
+          "type": "boolean"
+        }
+      }
+    },
+    "roundtrip": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "temperature": {
+          "type": "integer"
+        },
+        "alert": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

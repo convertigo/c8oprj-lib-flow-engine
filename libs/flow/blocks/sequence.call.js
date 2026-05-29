@@ -34,6 +34,29 @@
 		};
 	}
 
+	function staticTarget(ctx, props) {
+		var project = String(props.project || "").trim();
+		var sequence = String(props.sequence || "").trim();
+		if (project.indexOf("{{") !== -1 || sequence.indexOf("{{") !== -1) {
+			return null;
+		}
+		if (!project && ctx.currentProjectName) {
+			project = ctx.currentProjectName();
+		}
+		var parts = sequence.split(".");
+		if (parts.length >= 2 && !props.project) {
+			project = parts.slice(0, parts.length - 1).join(".");
+			sequence = parts[parts.length - 1];
+		}
+		if (!project || !sequence) {
+			return null;
+		}
+		return {
+			project: project,
+			sequence: sequence
+		};
+	}
+
 	function runInternal(ctx, target, input) {
 		var request = new HashMap();
 		request.put("__project", target.project);
@@ -67,6 +90,11 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.out);
+			var target = staticTarget(ctx, props);
+			var schema = target && ctx.requestableOutputSchema ? ctx.requestableOutputSchema(target) : null;
+			if (schema) {
+				ctx.addSchema(props.out, schema);
+			}
 		},
 
 		run: function (ctx, node) {

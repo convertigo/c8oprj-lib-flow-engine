@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "hotCities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "message": {
+      "type": "string"
+    }
+  }
+}

@@ -47,6 +47,23 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.out);
+			if (!ctx.schemaForPath || !ctx.addSchema) {
+				return;
+			}
+			var source = String(props.source || "");
+			var schema = {
+				type: "object",
+				properties: {}
+			};
+			keys(props.keys).forEach(function (path) {
+				var fieldSchema = ctx.schemaForPath(source + "." + path);
+				if (fieldSchema) {
+					schema.properties[outputKey(path)] = fieldSchema;
+				}
+			});
+			if (Object.keys(schema.properties).length > 0) {
+				ctx.addSchema(props.out, schema);
+			}
 		},
 
 		run: function (ctx, node) {

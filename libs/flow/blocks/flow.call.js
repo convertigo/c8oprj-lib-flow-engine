@@ -43,6 +43,10 @@
 			var props = ctx.props(node);
 			ctx.addPath(props.out);
 			if (props.out && props.flow && String(props.flow).indexOf("{{") === -1) {
+				var schema = ctx.flowOutputSchema(String(props.flow));
+				if (schema) {
+					ctx.addSchema(props.out, schema);
+				}
 				ctx.flowOutputPaths(String(props.flow)).forEach(function (path) {
 					ctx.addOutputPath("out", props.out + "." + path);
 				});

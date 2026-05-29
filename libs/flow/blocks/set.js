@@ -26,6 +26,9 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.path);
+			if (ctx.schemaForValue && ctx.addSchema) {
+				ctx.addSchema(props.path, ctx.schemaForValue(props.value));
+			}
 		},
 
 		run: function (ctx, node) {

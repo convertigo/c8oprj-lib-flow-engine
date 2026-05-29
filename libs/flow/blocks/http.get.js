@@ -50,11 +50,21 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.out);
+			if (ctx.schemaForOutput && ctx.addSchema) {
+				var schema = ctx.schemaForOutput(node, "out", props.out);
+				if (schema) {
+					ctx.addSchema(props.out, schema);
+				}
+			}
 		},
 
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			return readUrl(ctx.template(props.url), ctx.template(props.headers));
+			var response = readUrl(ctx.template(props.url), ctx.template(props.headers));
+			if (props.out && response.status < 400 && ctx.learnOutputSchema) {
+				ctx.learnOutputSchema(node, "out", props.out, response);
+			}
+			return response;
 		}
 	};
 }())

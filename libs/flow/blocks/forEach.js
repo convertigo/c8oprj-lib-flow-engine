@@ -32,6 +32,12 @@
 			var items = props.items || props["in"];
 			var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
 			source = source || { path: items };
+			if (ctx.schemaForPath && ctx.itemSchema) {
+				var currentSchema = ctx.itemSchema(ctx.schemaForPath(items));
+				if (currentSchema) {
+					source.schema = currentSchema;
+				}
+			}
 			if (ctx.withCurrentSource) {
 				ctx.withCurrentSource(source, function () {
 					ctx.visitNodes(node.nodes || []);

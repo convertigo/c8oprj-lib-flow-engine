@@ -40,6 +40,35 @@
 		};
 	}
 
+	function staticTarget(ctx, props) {
+		var project = String(props.project || "").trim();
+		var connector = String(props.connector || "").trim();
+		var transaction = String(props.transaction || "").trim();
+		if (project.indexOf("{{") !== -1 || connector.indexOf("{{") !== -1 || transaction.indexOf("{{") !== -1) {
+			return null;
+		}
+		if (!project && ctx.currentProjectName) {
+			project = ctx.currentProjectName();
+		}
+		var parts = transaction.split(".");
+		if (parts.length >= 3 && !props.project && !props.connector) {
+			project = parts.slice(0, parts.length - 2).join(".");
+			connector = parts[parts.length - 2];
+			transaction = parts[parts.length - 1];
+		} else if (parts.length === 2 && !props.connector) {
+			connector = parts[0];
+			transaction = parts[1];
+		}
+		if (!project || !connector || !transaction) {
+			return null;
+		}
+		return {
+			project: project,
+			connector: connector,
+			transaction: transaction
+		};
+	}
+
 	function runInternal(ctx, target, input) {
 		var request = new HashMap();
 		request.put("__project", target.project);
@@ -77,6 +106,11 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.out);
+			var target = staticTarget(ctx, props);
+			var schema = target && ctx.requestableOutputSchema ? ctx.requestableOutputSchema(target) : null;
+			if (schema) {
+				ctx.addSchema(props.out, schema);
+			}
 		},
 
 		run: function (ctx, node) {

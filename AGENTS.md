@@ -74,9 +74,10 @@ MCP-style JSON-RPC surface for Flow catalog, analysis and execution.
 Use `flow.call` when a Flow should call another Flow in the best-case path. It
 stays inside Rhino, reads the named sidecar from `libs/flows`, passes a JSON
 `input` object, and returns the child Flow `result` directly. Reserve
-`sequence.call` for legacy requestables or SDK/API compatibility checks because
-it goes through Convertigo's internal requester and returns the historical
-XML-to-JSON `document.*` shape.
+`requestable.call` for legacy requestables or SDK/API compatibility checks
+because it goes through Convertigo's internal requester and returns the
+historical XML-to-JSON `document.*` shape. Keep `sequence.call` and
+`transaction.call` for explicit target-type tests.
 
 When creating a reusable Flow, define a minimal static contract with top-level
 `input` and `output` sections. `flow.call` analysis flattens the child `output`
@@ -197,6 +198,26 @@ Keep `include` to root scopes only: `request`, `input`, `config`, `flow`,
 metadata. The default position is before the target node, so values produced
 later are not suggested.
 
+Schema learning is implicit and file-based. A named Flow writes
+`libs/flow/schemas/<flowName>/result.out.schema.json` for its final result when
+there is no declared output contract. `http.request` and `http.get` write
+`libs/flow/schemas/<flowName>/<nodeId>.out.schema.json` only when that file is
+missing and the run succeeds. These files store structure, not data. Use
+`flow-schema-reset` or `Engine.schemaReset()` to delete learned schemas before
+running again. `forEach` maps a known array item schema to `current.*`, so use
+`flow-context` inside loops when choosing iterator expressions.
+
+Flow output schema is static-first: `Engine.outputSchema()` analyzes the graph,
+propagates known schemas through block values, merges writes under `result.*`,
+and uses explicit `return` schemas when known. Learned result files are a
+fallback, not the primary mechanism.
+
+Static call blocks should enrich picker context too. `flow.call` reads the
+called Flow output contract; `requestable.call`, `sequence.call` and
+`transaction.call` use the Convertigo `schemaManager` when a live engine is
+available. Dynamic or templated targets should degrade to the plain `out` path
+instead of guessing.
+
 Do not add Java admin services just to expose this during the POC. Prefer
 standalone Rhino validation first, then block-level or MCP/Studio integration
 later.
@@ -212,6 +233,7 @@ tools/list
 flow-catalog
 flow-list / flow-get
 flow-context when choosing paths or expressions
+flow-schema-reset before rerunning an HTTP learn scenario when the output changed
 flow-block-list
 flow-block-create only when the catalog is insufficient
 flow-set

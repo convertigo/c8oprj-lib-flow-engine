@@ -44,6 +44,15 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.out);
+			if (!ctx.addSchema) {
+				return;
+			}
+			var targetSchema = ctx.schemaForPath ? ctx.schemaForPath(String(props.target || "")) : null;
+			var sourceSchema = ctx.schemaForValue ? ctx.schemaForValue(props.source) : null;
+			var schema = ctx.mergeSchema ? ctx.mergeSchema(targetSchema, sourceSchema) : targetSchema || sourceSchema;
+			if (schema) {
+				ctx.addSchema(props.out, schema);
+			}
 		},
 
 		run: function (ctx, node) {

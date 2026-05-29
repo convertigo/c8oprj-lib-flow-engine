@@ -91,8 +91,8 @@ The current catalog includes low-level composable blocks for:
 - lists: `list.filter`, `list.map`, `list.sort`;
 - control flow: `if`, `forEach`, `flow.call`, `use`, `return`, `throw`;
 - output and text: `set`, `email.mock`;
-- Convertigo runtime: `log`, `sequence.call`, `transaction.call`,
-  `session.get`, `session.set`, `session.remove`;
+- Convertigo runtime: `log`, `requestable.call`, `sequence.call`,
+  `transaction.call`, `session.get`, `session.set`, `session.remove`;
 - runtime tooling: `mcp.flow`.
 
 In the FlowEngine virtual tree and Eclipse palette, blocks are grouped by
@@ -110,9 +110,9 @@ blocks only when the vocabulary is clearly reusable.
 Good first-class candidates from legacy Steps:
 
 - `LogStep` -> `log`;
-- `SequenceStep` / `TransactionStep` -> `sequence.call` and
-  `transaction.call`, because existing requestables must stay easy to reuse from
-  a Flow;
+- `SequenceStep` / `TransactionStep` -> `requestable.call` for the KISS path,
+  with `sequence.call` and `transaction.call` kept when the author needs an
+  explicit target type;
 - `GetRequestHeaderStep`, `SetResponseHeaderStep`, `SetResponseStatusStep` ->
   request/response blocks, once the request and response scopes are finalized;
 - `SessionGetStep`, `SessionSetStep`, `SessionRemoveStep` -> `session.get`,
@@ -159,9 +159,10 @@ implicitly. Use `return` only to stop early or return something other than
 Use `flow.call` for the best-case Flow-to-Flow path. It stays inside the Rhino
 engine, loads a named `libs/flows/<FlowName>.flow.yaml` sidecar, passes a JSON
 `input` object, and returns the child Flow `result` directly. Use
-`sequence.call` only when the target must go through the legacy Convertigo
-requestable path; that path returns the historical XML-to-JSON `document.*`
-shape.
+`requestable.call` when the target must go through the regular Convertigo
+requestable path, like the SDK does. It accepts a sequence/Flow or transaction
+target and returns the historical XML-to-JSON `document.*` shape. Keep
+`sequence.call` and `transaction.call` for explicit low-level cases.
 
 For `flow.call` to be useful to pickers and agents, child Flows should expose a
 small static contract:
@@ -239,6 +240,41 @@ Compact response:
 The analysis is positional. For the default `position: "before"`, paths written
 after the target node are not returned. Inside a `forEach`, the `current` scope
 keeps a producer reference to the iterated source path.
+
+## Learned schemas
+
+Flows learn their final `result` structure on the first successful named run
+when no declared `output` contract and no schema file exist yet. `http.request`
+and `http.get` also learn their node output structure on the first successful
+run when no node schema file exists yet. Stored files contain only types and
+object keys, never response values:
+
+```text
+libs/flow/schemas/<flowName>/result.out.schema.json
+libs/flow/schemas/<flowName>/<nodeId>.out.schema.json
+```
+
+If a file exists, it is reused and never overwritten by runtime execution.
+To relearn, delete it through the `schemaReset()` API or the MCP
+`flow-schema-reset` tool; the next successful run will create it again.
+
+Flow output schema resolution is static-first. `Engine.outputSchema()` starts by
+analyzing the Flow graph, propagates known block output schemas through values,
+merges `result.*` writes, and honors explicit `return` blocks when their value
+schema is known. Learned result schemas are only a fallback when static analysis
+does not know enough.
+
+`Engine.context()` and `Engine.analyze()` read these files and expose deeper
+paths such as `flow.weather.body.metropoles.city` to Studio pickers and LLM
+guidance. When a `forEach` iterates over an array with a known schema, the
+picker context exposes the iterated item under `current.*`; for example
+`current.city` and `current.temperature`.
+
+Call blocks also expose known output shapes during analysis when their target is
+static. `flow.call` reads the target Flow output contract. `requestable.call`,
+`sequence.call` and `transaction.call` ask Convertigo's `schemaManager`, convert
+the generated DOM sample to JSON, then infer a Flow schema that matches the
+internal requestable JSON shape under `document.*`.
 
 ## Property kinds
 
@@ -458,10 +494,14 @@ The current analysis returns:
 - property-kind based reads and writes instead of guessing every string;
 - one entry per node with `id`, `block`, `props`, `reads`, `writes` and child
   groups;
+- learned JSON schemas, when available, attached to the scope path produced by
+  the node;
+- legacy requestable schemas for static `requestable.call`, `sequence.call` and
+  `transaction.call` targets when a live Convertigo engine is available;
 - a first `errors` array for future static diagnostics.
 
-This is the first shape needed by a future Flow picker or MCP tool. It is still
-schema-light: paths are listed, but deep JSON types are not inferred yet.
+This is the first shape needed by a future Flow picker or MCP tool. Deep JSON
+paths are exposed when a node has a declared or learned schema.
 
 ## MCP Flow block
 
@@ -472,6 +512,8 @@ returns an MCP-style response. It currently exposes:
 
 - `flow-catalog`;
 - `flow-analyze`;
+- `flow-context`;
+- `flow-schema-reset`;
 - `flow-run`;
 - `flow-list`;
 - `flow-get`;

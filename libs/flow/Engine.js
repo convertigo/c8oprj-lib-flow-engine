@@ -38,6 +38,11 @@
 		return dir ? new File(dir, "libs/flows") : null;
 	}
 
+	function projectSchemasDir() {
+		var dir = projectDir();
+		return dir ? new File(dir, "libs/flow/schemas") : null;
+	}
+
 	function parseRequest(requestJson) {
 		return JSON.parse(String(requestJson || "{}"));
 	}
@@ -239,6 +244,75 @@
 		return base + "." + leaf;
 	}
 
+	function schemaValueType(value) {
+		if (value === null || value === undefined) {
+			return "null";
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return "array";
+		}
+		if (typeof value === "object") {
+			return "object";
+		}
+		if (typeof value === "number") {
+			return Math.floor(value) === value ? "integer" : "number";
+		}
+		if (typeof value === "boolean") {
+			return "boolean";
+		}
+		return "string";
+	}
+
+	function mergeSchema(left, right) {
+		if (!left) {
+			return right;
+		}
+		if (!right) {
+			return left;
+		}
+		if (left.type !== right.type) {
+			return { type: "unknown" };
+		}
+		if (left.type === "object") {
+			var properties = {};
+			Object.keys(left.properties || {}).forEach(function (key) {
+				properties[key] = left.properties[key];
+			});
+			Object.keys(right.properties || {}).forEach(function (key) {
+				properties[key] = mergeSchema(properties[key], right.properties[key]);
+			});
+			return { type: "object", properties: properties };
+		}
+		if (left.type === "array") {
+			return { type: "array", items: mergeSchema(left.items, right.items) || { type: "unknown" } };
+		}
+		return left;
+	}
+
+	function inferSchema(value, depth) {
+		value = normalizeTree(value);
+		depth = depth || 0;
+		if (depth > 8) {
+			return { type: "unknown" };
+		}
+		var type = schemaValueType(value);
+		if (type === "array") {
+			var itemSchema = null;
+			for (var i = 0; i < value.length && i < 12; i++) {
+				itemSchema = mergeSchema(itemSchema, inferSchema(value[i], depth + 1));
+			}
+			return { type: "array", items: itemSchema || { type: "unknown" } };
+		}
+		if (type === "object") {
+			var properties = {};
+			Object.keys(value || {}).slice(0, 120).forEach(function (key) {
+				properties[key] = inferSchema(value[key], depth + 1);
+			});
+			return { type: "object", properties: properties };
+		}
+		return { type: type };
+	}
+
 	function isSchemaMetaKey(key) {
 		return {
 			type: true,
@@ -267,6 +341,9 @@
 			return true;
 		}
 		if (typeof value === "object" && value.type && value.type !== "object" && !value.properties) {
+			if (value.type === "array" && value.items) {
+				return false;
+			}
 			return true;
 		}
 		return false;
@@ -275,6 +352,15 @@
 	function schemaPaths(schema, prefix) {
 		schema = normalizeTree(schema);
 		prefix = String(prefix || "");
+		if (schema && typeof schema === "object" && schema.type === "array") {
+			var arrayOut = prefix ? [prefix] : [];
+			if (schema.items) {
+				schemaPaths(schema.items, prefix).forEach(function (path) {
+					addUnique(arrayOut, path);
+				});
+			}
+			return arrayOut;
+		}
 		if (isLeafSchema(schema)) {
 			return prefix ? [prefix] : [];
 		}
@@ -298,6 +384,85 @@
 			}
 		});
 		return out;
+	}
+
+	function schemaAtPath(schema, path) {
+		if (!schema) {
+			return null;
+		}
+		var current = schema;
+		var text = String(path || "");
+		if (text === "") {
+			return current;
+		}
+		var parts = text.split(".");
+		for (var i = 0; i < parts.length; i++) {
+			if (!current) {
+				return null;
+			}
+			if (current.type === "array" && current.items) {
+				current = current.items;
+			}
+			var source = current.properties || current;
+			current = source[parts[i]];
+		}
+		return current || null;
+	}
+
+	function hasSchemaContent(schema) {
+		if (!schema) {
+			return false;
+		}
+		if (schema.type && schema.type !== "object") {
+			return true;
+		}
+		return Object.keys(schema.properties || {}).length > 0;
+	}
+
+	function schemaScore(schema) {
+		schema = normalizeTree(schema);
+		if (!schema) {
+			return 0;
+		}
+		if (schema.type === "unknown" || schema.type === "null") {
+			return 0;
+		}
+		if (schema.type === "array") {
+			return schemaScore(schema.items);
+		}
+		if (schema.type === "object" || schema.properties) {
+			var score = 0;
+			Object.keys(schema.properties || {}).forEach(function (key) {
+				score += schemaScore(schema.properties[key]);
+			});
+			return score;
+		}
+		return schema.type ? 1 : 0;
+	}
+
+	function assignSchemaAtPath(root, path, schema) {
+		if (!path || !schema) {
+			return;
+		}
+		var parts = String(path).split(".");
+		var current = root;
+		for (var i = 0; i < parts.length - 1; i++) {
+			var part = parts[i];
+			current.type = "object";
+			current.properties = current.properties || {};
+			if (!current.properties[part]) {
+				current.properties[part] = { type: "object", properties: {} };
+			}
+			current = current.properties[part];
+		}
+		current.type = "object";
+		current.properties = current.properties || {};
+		var leaf = parts[parts.length - 1];
+		current.properties[leaf] = mergeSchema(current.properties[leaf], schema) || schema;
+	}
+
+	function itemSchema(schema) {
+		return schema && schema.type === "array" && schema.items ? schema.items : schema;
 	}
 
 	function writeScopePath(scopes, path, value) {
@@ -754,6 +919,14 @@
 		return refs;
 	}
 
+	function exactTemplateExpression(value) {
+		if (typeof value !== "string") {
+			return null;
+		}
+		var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+		return exact ? exact[1] : null;
+	}
+
 	function collectConfigKeys(value, keys) {
 		keys = keys || [];
 		if (typeof value === "string") {
@@ -852,6 +1025,149 @@
 				null, "Use letters, digits, dot, underscore or dash.");
 		}
 		return flowName + ".flow.yaml";
+	}
+
+	function safeFilePart(value) {
+		return String(value || "").trim().replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
+	}
+
+	function flowNameFor(request, definition) {
+		request = request || {};
+		definition = definition || {};
+		var name = String(request.flowName || request.name || definition.name || "").trim();
+		if (!name && request.flowQName) {
+			var parts = String(request.flowQName).split(".");
+			name = parts[parts.length - 1];
+		}
+		return safeFilePart(name);
+	}
+
+	function schemaNodeKey(node, outPath) {
+		return safeFilePart(nodePath(node) || outPath || blockName(node));
+	}
+
+	function outputSchemaFile(request, definition, node, property, outPath) {
+		var dir = projectSchemasDir();
+		var flowName = flowNameFor(request, definition);
+		var nodeKey = schemaNodeKey(node, outPath);
+		if (!dir || !flowName || !nodeKey) {
+			return null;
+		}
+		var flowDir = new File(dir, flowName);
+		return new File(flowDir, nodeKey + "." + safeFilePart(property || "out") + ".schema.json");
+	}
+
+	function resultSchemaFile(request, definition) {
+		var dir = projectSchemasDir();
+		var flowName = flowNameFor(request, definition);
+		if (!dir || !flowName) {
+			return null;
+		}
+		return new File(new File(dir, flowName), "result.out.schema.json");
+	}
+
+	function readOutputSchema(request, definition, node, property, outPath) {
+		var file = outputSchemaFile(request, definition, node, property, outPath);
+		if (!file || !file.isFile()) {
+			return null;
+		}
+		return JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+	}
+
+	function readResultSchema(request, definition) {
+		var file = resultSchemaFile(request, definition);
+		if (!file || !file.isFile()) {
+			return null;
+		}
+		return JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+	}
+
+	function learnOutputSchema(request, definition, node, property, outPath, value) {
+		var file = outputSchemaFile(request, definition, node, property, outPath);
+		if (!file || file.isFile()) {
+			return { learned: false, file: file ? String(file.getAbsolutePath()) : "" };
+		}
+		var schema = inferSchema(value);
+		file.getParentFile().mkdirs();
+		FileUtils.writeStringToFile(file, JSON.stringify(schema, null, 2), "UTF-8");
+		return {
+			learned: true,
+			file: String(file.getAbsolutePath()),
+			schema: schema
+		};
+	}
+
+	function clearConvertigoSchemaCache(request) {
+		try {
+			var projectName = currentProjectName(request);
+			if (projectName) {
+				Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.clearCache(projectName);
+			}
+		} catch (e) {
+		}
+	}
+
+	function declaredOutputSchema(definition) {
+		var schema = definition && (definition.output || definition.outputs);
+		return schema && Object.keys(schema).length > 0 ? schema : null;
+	}
+
+	function learnResultSchema(request, definition, value) {
+		if (declaredOutputSchema(definition)) {
+			return { learned: false, declared: true };
+		}
+		var file = resultSchemaFile(request, definition);
+		if (!file || file.isFile()) {
+			return { learned: false, file: file ? String(file.getAbsolutePath()) : "" };
+		}
+		var schema = inferSchema(value);
+		file.getParentFile().mkdirs();
+		FileUtils.writeStringToFile(file, JSON.stringify(schema, null, 2), "UTF-8");
+		clearConvertigoSchemaCache(request);
+		return {
+			learned: true,
+			file: String(file.getAbsolutePath()),
+			schema: schema
+		};
+	}
+
+	function resetSchemaRequest(request) {
+		request = request || {};
+		var definition = parseSource(request.flowSource || "");
+		var flowName = flowNameFor(request, definition);
+		var dir = projectSchemasDir();
+		if (!dir) {
+			raise("FLOW_SCHEMA_UNAVAILABLE", "Flow schema storage is unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		if (!flowName) {
+			raise("FLOW_SCHEMA_FLOW_REQUIRED", "Flow schema reset requires a flow name.");
+		}
+		var nodeId = request.node || request.nodeId || request.id || "";
+		if (nodeId) {
+			var file = outputSchemaFile({
+				flowName: flowName
+			}, definition, {
+				id: nodeId,
+				block: request.block || ""
+			}, request.property || "out", request.out || request.path || "");
+			var deleted = file && file.isFile() ? file["delete"]() : false;
+			return {
+				ok: true,
+				deleted: deleted,
+				file: file ? String(file.getAbsolutePath()) : ""
+			};
+		}
+		var flowDir = new File(dir, flowName);
+		var existed = flowDir.isDirectory();
+		if (existed) {
+			FileUtils.deleteDirectory(flowDir);
+		}
+		return {
+			ok: true,
+			deleted: existed,
+			dir: String(flowDir.getAbsolutePath())
+		};
 	}
 
 	function loadBlockFile(blocks, file, origin) {
@@ -1027,9 +1343,82 @@
 		return definition.output || definition.outputs || {};
 	}
 
-	function outputPathsForFlow(name) {
+	function objectSchema(schema) {
+		schema = normalizeTree(schema || {});
+		if (schema.type) {
+			return schema;
+		}
+		return {
+			type: "object",
+			properties: schema
+		};
+	}
+
+	function flowOutputSchema(name) {
 		var flow = getProjectFlow(name);
-		return schemaPaths(outputSchemaForFlowSource(flow.source), "");
+		var definition = parseSource(flow.source);
+		return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: name }, definition) || {});
+	}
+
+	function outputPathsForFlow(name) {
+		return schemaPaths(flowOutputSchema(name), "");
+	}
+
+	function currentProjectName(request) {
+		request = request || {};
+		if (request.context && request.context.project) {
+			return String(request.context.project);
+		}
+		if (request.flowQName) {
+			return String(request.flowQName).split(".")[0];
+		}
+		return "";
+	}
+
+	function requestableOutputSchema(target) {
+		target = target || {};
+		var projectName = String(target.project || "").trim();
+		var connectorName = String(target.connector || "").trim();
+		var requestableName = String(target.requestable || target.sequence || target.transaction || "").trim();
+		if (!projectName || !requestableName) {
+			return null;
+		}
+		try {
+			var qname = projectName + "." + (connectorName ? connectorName + "." : "") + requestableName;
+			var dbo = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager.getDatabaseObjectByQName(qname);
+			if (!dbo) {
+				return null;
+			}
+			var className = String(dbo.getClass().getName());
+			if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
+				var definition = parseSource(String(dbo.getFlowSource()));
+				return {
+					type: "object",
+					properties: {
+						document: objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: String(dbo.getName()) }, definition) || {})
+					}
+				};
+			}
+			var project = dbo.getProject();
+			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
+			var xso = Packages.com.twinsoft.convertigo.engine.enums.SchemaMeta.getXmlSchemaObject(schema, dbo);
+			if (!xso) {
+				return null;
+			}
+			var document = Packages.com.twinsoft.convertigo.engine.util.XmlSchemaUtils.getDomInstance(xso);
+			var jsonString = Packages.com.twinsoft.convertigo.engine.util.XMLUtils.XmlToJson(document.getDocumentElement(), true, true);
+			var sample = JSON.parse(String(jsonString));
+			var responseName = String(dbo.getXsdTypePrefix()) + String(dbo.getName()) + "Response";
+			var output = readObjectPath(sample, "document." + responseName + ".response");
+			if (output === undefined) {
+				output = sample;
+			}
+			return inferSchema({
+				document: output
+			});
+		} catch (e) {
+			return null;
+		}
 	}
 
 	function blockName(node) {
@@ -1260,9 +1649,11 @@
 		var projectEngine = loadProjectEngineDefinition();
 		var ctx = createRunContext(request, definition, blocks, projectEngine);
 		ctx.runNodes(definition.nodes || []);
+		var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
+		learnResultSchema(request, definition, result);
 		return {
 			ok: true,
-			result: ctx.returned === undefined ? ctx.scopes.result : ctx.returned,
+			result: result,
 			flow: ctx.scopes.flow,
 			trace: request.includeTrace === false ? undefined : ctx.scopes.trace
 		};
@@ -1332,11 +1723,25 @@
 		ctx.catalog = function () {
 			return catalogDefinition(blocks);
 		};
-		ctx.analyzeFlowSource = function (flowSource) {
-			return analyzeFlowSource(blocks, flowSource);
+		ctx.analyzeFlowSource = function (flowSource, options) {
+			options = options || {};
+			return analyzeFlowSource(blocks, flowSource, options);
 		};
 		ctx.contextFlowSource = function (args) {
 			return contextForFlowRequest(blocks, args || {});
+		};
+		ctx.schemaForOutput = function (node, property, outPath) {
+			return readOutputSchema(request, definition, node, property || "out", outPath || "");
+		};
+		ctx.learnOutputSchema = function (node, property, outPath, value) {
+			return learnOutputSchema(request, definition, node, property || "out", outPath || "", value);
+		};
+		ctx.schemaReset = function (args) {
+			args = args || {};
+			if (!args.flowName && !args.name) {
+				args.flowName = flowNameFor(request, definition);
+			}
+			return resetSchemaRequest(args);
 		};
 		ctx.runFlowSource = function (flowSource, config, options) {
 			options = options || {};
@@ -1406,13 +1811,19 @@
 		return ctx;
 	}
 
-	function createAnalysisContext(blocks) {
+	function createAnalysisContext(blocks, request, definition) {
+		request = request || {};
+		definition = definition || {};
 		var ctx = {
+			request: request,
+			definition: definition,
 			blocks: blocks,
 			paths: ["request", "input", "config", "flow", "result", "trace", "current"],
 			reads: [],
 			writes: [],
 			providers: {},
+			schemas: {},
+			returnSchemas: [],
 			currentSources: [],
 			currentNodeInfo: null,
 			nodes: [],
@@ -1455,11 +1866,70 @@
 				}
 			}
 		};
+		ctx.addSchema = function (basePath, schema) {
+			if (typeof basePath !== "string" || basePath === "" || !schema) {
+				return;
+			}
+			ctx.schemas[basePath] = normalizeTree(schema);
+			ctx.addPath(basePath);
+			if (ctx.currentNodeInfo) {
+				ctx.providers[basePath] = {
+					id: ctx.currentNodeInfo.id,
+					block: ctx.currentNodeInfo.block,
+					path: basePath
+				};
+			}
+			schemaPaths(schema, "").forEach(function (path) {
+				ctx.addPath(joinPath(basePath, path));
+			});
+		};
+		ctx.schemaForOutput = function (node, property, outPath) {
+			return readOutputSchema(request, definition, node, property || "out", outPath || "");
+		};
+		ctx.schemaForPath = function (path) {
+			return schemaForAnalysisPath(ctx, path);
+		};
+		ctx.schemaForValue = function (value) {
+			if (value && typeof value === "object") {
+				return inferSchema(value);
+			}
+			var expression = exactTemplateExpression(value);
+			if (expression) {
+				var refs = collectExpressionRefs(expression, []);
+				for (var i = 0; i < refs.length; i++) {
+					var schema = schemaForAnalysisPath(ctx, refs[i]);
+					if (schema) {
+						return schema;
+					}
+				}
+				return null;
+			}
+			if (typeof value === "string") {
+				return { type: "string" };
+			}
+			if (typeof value === "number") {
+				return { type: Math.floor(value) === value ? "integer" : "number" };
+			}
+			if (typeof value === "boolean") {
+				return { type: "boolean" };
+			}
+			return null;
+		};
+		ctx.addReturnSchema = function (schema) {
+			if (schema) {
+				ctx.returnSchemas.push(normalizeTree(schema));
+			}
+		};
+		ctx.itemSchema = itemSchema;
+		ctx.inferSchema = inferSchema;
 		ctx.sourceForPath = function (path) {
 			return sourceForPath(ctx, path);
 		};
 		ctx.withCurrentSource = function (source, callback) {
 			ctx.currentSources.push(source || {});
+			if (source && source.schema) {
+				ctx.addSchema("current", source.schema);
+			}
 			try {
 				return callback();
 			} finally {
@@ -1472,6 +1942,16 @@
 		ctx.flowOutputPaths = function (name) {
 			return outputPathsForFlow(name);
 		};
+		ctx.flowOutputSchema = function (name) {
+			return flowOutputSchema(name);
+		};
+		ctx.currentProjectName = function () {
+			return currentProjectName(request);
+		};
+		ctx.mergeSchema = mergeSchema;
+		ctx.requestableOutputSchema = request.allowRequestableSchema === false
+			? function () { return null; }
+			: requestableOutputSchema;
 		ctx.raise = raise;
 		return ctx;
 	}
@@ -1524,6 +2004,21 @@
 		return null;
 	}
 
+	function schemaForAnalysisPath(ctx, path) {
+		var best = "";
+		Object.keys(ctx.schemas || {}).forEach(function (basePath) {
+			if (path === basePath || path.indexOf(basePath + ".") === 0) {
+				if (basePath.length > best.length) {
+					best = basePath;
+				}
+			}
+		});
+		if (!best) {
+			return null;
+		}
+		return schemaAtPath(ctx.schemas[best], path === best ? "" : String(path).substring(best.length + 1));
+	}
+
 	function childGroups(node) {
 		var groups = [];
 		["nodes", "do", "then", "else"].forEach(function (key) {
@@ -1566,6 +2061,8 @@
 			} else if (kind === "expression") {
 				collectExpressionRefs(value, refs);
 			} else if (kind === "template") {
+				collectTemplateRefs(value, refs);
+			} else if (kind === "value") {
 				collectTemplateRefs(value, refs);
 			} else if (kind === "literal" || kind === "text" || kind === "schema" || kind === "secret") {
 				refs = [];
@@ -1634,13 +2131,13 @@
 		});
 	}
 
-	function analyzeFlowSource(blocks, flowSource) {
+	function analyzeFlowSource(blocks, flowSource, request) {
 		var definition = parseSource(flowSource);
-		return analyzeFlowDefinition(blocks, definition);
+		return analyzeFlowDefinition(blocks, definition, request);
 	}
 
-	function analyzeFlowDefinition(blocks, definition) {
-		var ctx = createAnalysisContext(blocks);
+	function analyzeFlowDefinition(blocks, definition, request) {
+		var ctx = createAnalysisContext(blocks, request || {}, definition);
 		ctx.visitNodes(definition.nodes || []);
 		return {
 			ok: true,
@@ -1649,12 +2146,41 @@
 			reads: ctx.reads,
 			writes: ctx.writes,
 			nodes: ctx.nodes,
+			schemas: ctx.schemas,
+			returnSchemas: ctx.returnSchemas,
 			errors: ctx.errors
 		};
 	}
 
+	function resultSchemaFromAnalysis(analysis) {
+		if (analysis.returnSchemas && analysis.returnSchemas.length > 0) {
+			var returned = null;
+			analysis.returnSchemas.forEach(function (schema) {
+				returned = mergeSchema(returned, schema) || schema;
+			});
+			return returned;
+		}
+		var result = { type: "object", properties: {} };
+		Object.keys(analysis.schemas || {}).forEach(function (path) {
+			if (path === "result") {
+				result = mergeSchema(result, objectSchema(analysis.schemas[path])) || result;
+			} else if (path.indexOf("result.") === 0) {
+				assignSchemaAtPath(result, path.substring("result.".length), analysis.schemas[path]);
+			}
+		});
+		(analysis.writes || []).forEach(function (path) {
+			if (path.indexOf("result.") === 0 && !schemaAtPath(result, path.substring("result.".length))) {
+				assignSchemaAtPath(result, path.substring("result.".length), { type: "unknown" });
+			}
+		});
+		return hasSchemaContent(result) ? result : null;
+	}
+
 	function hasChildSlots(catalog) {
-		return slotDefinitions(catalog).length > 0;
+		return !!(catalog && (
+			catalog.slots && Object.prototype.toString.call(catalog.slots) === "[object Array]" ||
+			catalog.children && Object.prototype.toString.call(catalog.children) === "[object Array]"
+		));
 	}
 
 	function analyzeNodeShallow(ctx, node, path) {
@@ -1748,6 +2274,11 @@
 					var items = props.items || props["in"];
 					var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
 					source = source || { path: items };
+					var currentSchema = ctx.schemaForPath ? ctx.schemaForPath(items) : null;
+					currentSchema = ctx.itemSchema ? ctx.itemSchema(currentSchema) : currentSchema;
+					if (currentSchema) {
+						source.schema = currentSchema;
+					}
 					childResult = ctx.withCurrentSource(source, function () {
 						ctx.addPath("current");
 						return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
@@ -1792,13 +2323,19 @@
 	}
 
 	function schemaType(schema, path) {
-		if (!schema || !path) {
+		if (!schema) {
 			return "";
 		}
 		var current = schema;
+		if (!path) {
+			return current.type ? String(current.type) : typeof current === "string" ? current : "object";
+		}
 		String(path).split(".").forEach(function (part) {
 			if (!current) {
 				return;
+			}
+			if (current.type === "array" && current.items) {
+				current = current.items;
 			}
 			var source = current.properties || current;
 			current = source[part];
@@ -1821,6 +2358,22 @@
 		return "";
 	}
 
+	function analysisSchemaType(ctx, path) {
+		var best = "";
+		Object.keys(ctx.schemas || {}).forEach(function (basePath) {
+			if (path === basePath || path.indexOf(basePath + ".") === 0) {
+				if (basePath.length > best.length) {
+					best = basePath;
+				}
+			}
+		});
+		if (!best) {
+			return "";
+		}
+		var local = path === best ? "" : String(path).substring(best.length + 1);
+		return schemaType(ctx.schemas[best], local);
+	}
+
 	function declaredSchemaForRoot(definition, root) {
 		if (root === "input") {
 			return definition.input || definition.inputs || {};
@@ -1834,13 +2387,13 @@
 		return {};
 	}
 
-	function pathType(definition, path) {
+	function pathType(definition, ctx, path) {
 		var root = scopeRoot(path);
 		if (path === root) {
 			return root === "current" ? "unknown" : "object";
 		}
 		var local = String(path).substring(root.length + 1);
-		return schemaType(declaredSchemaForRoot(definition, root), local) || "unknown";
+		return analysisSchemaType(ctx, path) || schemaType(declaredSchemaForRoot(definition, root), local) || "unknown";
 	}
 
 	function pathConfidence(definition, ctx, path) {
@@ -1850,6 +2403,9 @@
 		}
 		if (schemaType(declaredSchemaForRoot(definition, root), String(path).substring(root.length + 1))) {
 			return "declared";
+		}
+		if (analysisSchemaType(ctx, path)) {
+			return "learned";
 		}
 		if (ctx.sourceForPath(path)) {
 			return "inferred";
@@ -1864,7 +2420,7 @@
 		}
 		var entry = {
 			path: path,
-			type: pathType(definition, path),
+			type: pathType(definition, ctx, path),
 			confidence: pathConfidence(definition, ctx, path)
 		};
 		if (source) {
@@ -1891,7 +2447,7 @@
 			raise("INVALID_CONTEXT_DETAIL", "Unknown Flow context detail: " + detail,
 				null, "Use detail=normal or detail=compact.");
 		}
-		var ctx = createAnalysisContext(blocks);
+		var ctx = createAnalysisContext(blocks, request, definition);
 		var hasTarget = !!(contextTargetValue(request) || request.path || request.nodePath);
 		var found = contextWalkNodes(ctx, definition.nodes || [], request, "nodes");
 		if (hasTarget && !found.found) {
@@ -2362,7 +2918,10 @@
 		var children = [];
 		if (target === "flow") {
 			var definition = parseSource(request.flowSource);
-			var analysis = analyzeFlowDefinition(blocks, definition);
+			var analysisRequest = Object.assign({}, request, {
+				allowRequestableSchema: false
+			});
+			var analysis = analyzeFlowDefinition(blocks, definition, analysisRequest);
 			var analysisById = analysisByNodeId(analysis);
 			addContracts(children, definition.contracts, "contracts");
 			addBindings(children, definition.bindings, "bindings");
@@ -2592,6 +3151,19 @@
 		return out;
 	}
 
+	function outputSchemaRequest(request, blocks) {
+		request = request || {};
+		var definition = parseSource(request.flowSource || "");
+		var declaredSchema = declaredOutputSchema(definition);
+		var staticSchema = declaredSchema ? null : resultSchemaFromAnalysis(analyzeFlowDefinition(blocks, definition, request));
+		var learnedSchema = readResultSchema(request, definition);
+		var schema = declaredSchema || (schemaScore(learnedSchema) > schemaScore(staticSchema) ? learnedSchema : staticSchema) || learnedSchema || {};
+		return {
+			ok: true,
+			schema: objectSchema(schema)
+		};
+	}
+
 	return {
 		run: function (requestJson) {
 			try {
@@ -2605,7 +3177,7 @@
 		analyze: function (requestJson) {
 			try {
 				var request = parseRequest(requestJson);
-				return response(analyzeFlowSource(loadBlocks(), request.flowSource));
+				return response(analyzeFlowSource(loadBlocks(), request.flowSource, request));
 			} catch (e) {
 				return response(failure("analyze", e));
 			}
@@ -2617,6 +3189,24 @@
 				return response(contextForFlowRequest(loadBlocks(), request));
 			} catch (e) {
 				return response(failure("context", e));
+			}
+		},
+
+		schemaReset: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(resetSchemaRequest(request));
+			} catch (e) {
+				return response(failure("schemaReset", e));
+			}
+		},
+
+		outputSchema: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(outputSchemaRequest(request, loadBlocks()));
+			} catch (e) {
+				return response(failure("outputSchema", e));
 			}
 		},
 

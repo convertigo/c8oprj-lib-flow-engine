@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "integer"
+    },
+    "contentType": {
+      "type": "string"
+    },
+    "body": {
+      "type": "object",
+      "properties": {
+        "metropoles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "temperature": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "text": {
+      "type": "string"
+    }
+  }
+}

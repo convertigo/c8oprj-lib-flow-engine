@@ -68,6 +68,20 @@
 				}
 			},
 			{
+				name: "flow-schema-reset",
+				description: "Delete learned schema files for a Flow or one Flow node so the next successful run learns them again.",
+				inputSchema: {
+					type: "object",
+					properties: {
+						flowName: { type: "string" },
+						name: { type: "string" },
+						node: { type: "string" },
+						property: { type: "string" },
+						out: { type: "string" }
+					}
+				}
+			},
+			{
 				name: "flow-run",
 				description: "Run a Flow YAML source with optional input and config objects.",
 				inputSchema: {
@@ -191,9 +205,11 @@
 		case "flow-catalog":
 			return toolResult(ctx.catalog());
 		case "flow-analyze":
-			return toolResult(ctx.analyzeFlowSource(args.flowSource || ""));
+			return toolResult(ctx.analyzeFlowSource(args.flowSource || "", args));
 		case "flow-context":
 			return toolResult(ctx.contextFlowSource(args));
+		case "flow-schema-reset":
+			return toolResult(ctx.schemaReset(args));
 		case "flow-run":
 			var execution = ctx.runFlowSource(args.flowSource || "", args.config || {}, {
 				input: args.input || {},
