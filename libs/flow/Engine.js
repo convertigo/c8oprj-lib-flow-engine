@@ -33,6 +33,11 @@
 		return dir ? new File(dir, "libs/flow/blocks") : null;
 	}
 
+	function projectTypesDir() {
+		var dir = projectDir();
+		return dir ? new File(dir, "libs/flow/types") : null;
+	}
+
 	function projectFlowsDir() {
 		var dir = projectDir();
 		return dir ? new File(dir, "libs/flows") : null;
@@ -371,7 +376,7 @@
 		if (keys.length === 0) {
 			return prefix ? [prefix] : [];
 		}
-		var out = [];
+		var out = prefix ? [prefix] : [];
 		keys.forEach(function (key) {
 			var childPrefix = joinPath(prefix, key);
 			var child = source[key];
@@ -407,6 +412,20 @@
 			current = source[parts[i]];
 		}
 		return current || null;
+	}
+
+	function unwrapDocumentSchema(schema) {
+		schema = normalizeTree(schema);
+		if (!schema) {
+			return schema;
+		}
+		if (schema.type === "object" && schema.properties && schema.properties.document) {
+			return schema.properties.document;
+		}
+		if (!schema.type && schema.document !== undefined && Object.keys(schema).length === 1) {
+			return schema.document;
+		}
+		return schema;
 	}
 
 	function hasSchemaContent(schema) {
@@ -1009,6 +1028,18 @@
 		}
 	}
 
+	function resourcePath(baseDir, path) {
+		path = String(path || "").trim();
+		if (path === "") {
+			return "";
+		}
+		var file = new File(path);
+		if (!file.isAbsolute()) {
+			file = new File(baseDir, path);
+		}
+		return canonicalPath(file);
+	}
+
 	function blockFileName(name) {
 		var blockName = String(name || "").trim();
 		if (!blockName.match(/^[A-Za-z0-9_.-]+$/)) {
@@ -1214,6 +1245,50 @@
 		return blocks;
 	}
 
+	function loadTypeFile(types, file, origin) {
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var type = eval(source);
+		if (!type || !type.name) {
+			raise("INVALID_TYPE", "Invalid Flow property type module: " + file.getAbsolutePath());
+		}
+		if (types[type.name]) {
+			raise("DUPLICATE_TYPE", "Duplicate Flow property type: " + type.name,
+				null, "Rename the project type or remove the duplicate.");
+		}
+		type.__flowOrigin = origin;
+		type.__flowFile = file.getAbsolutePath();
+		types[type.name] = type;
+		return type;
+	}
+
+	function loadTypeDir(types, typesDir, origin) {
+		var files = typesDir && typesDir.listFiles();
+		if (!files) {
+			return;
+		}
+		files = Arrays.asList(files).toArray();
+		files.sort(function (a, b) {
+			return String(a.getName()).localeCompare(String(b.getName()));
+		});
+		files.forEach(function (file) {
+			if (!file.isFile() || !String(file.getName()).endsWith(".js")) {
+				return;
+			}
+			loadTypeFile(types, file, origin);
+		});
+	}
+
+	function loadTypes() {
+		var types = {};
+		var coreTypesDir = new File(engineDir(), "types");
+		loadTypeDir(types, coreTypesDir, "core");
+		var localTypesDir = projectTypesDir();
+		if (localTypesDir && canonicalPath(localTypesDir) !== canonicalPath(coreTypesDir)) {
+			loadTypeDir(types, localTypesDir, "project");
+		}
+		return types;
+	}
+
 	function projectBlockFile(name) {
 		var dir = projectBlocksDir();
 		if (!dir) {
@@ -1392,12 +1467,7 @@
 			var className = String(dbo.getClass().getName());
 			if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
 				var definition = parseSource(String(dbo.getFlowSource()));
-				return {
-					type: "object",
-					properties: {
-						document: objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: String(dbo.getName()) }, definition) || {})
-					}
-				};
+				return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: String(dbo.getName()) }, definition) || {});
 			}
 			var project = dbo.getProject();
 			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
@@ -1413,9 +1483,7 @@
 			if (output === undefined) {
 				output = sample;
 			}
-			return inferSchema({
-				document: output
-			});
+			return unwrapDocumentSchema(inferSchema(output));
 		} catch (e) {
 			return null;
 		}
@@ -2520,10 +2588,37 @@
 		return descriptor;
 	}
 
+	function typeDescriptor(type) {
+		var descriptor = {};
+		if (type && typeof type.catalog === "function") {
+			descriptor = type.catalog() || {};
+		} else {
+			descriptor = normalizeTree(type || {});
+		}
+		if (!descriptor.name) {
+			descriptor.name = type.name;
+		}
+		if (descriptor.origin === undefined) {
+			descriptor.origin = type.__flowOrigin || "unknown";
+		}
+		if (descriptor.file === undefined) {
+			descriptor.file = String(type.__flowFile || "");
+		}
+		var baseDir = descriptor.file ? new File(descriptor.file).getParentFile() : engineDir();
+		["editor", "validator", "reader", "writer", "documentation"].forEach(function (key) {
+			var resource = descriptor[key];
+			if (resource && typeof resource === "object" && resource.file) {
+				resource.file = resourcePath(baseDir, resource.file);
+			}
+		});
+		return descriptor;
+	}
+
 	function catalogDefinition(blocks) {
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
 			return blockDescriptor(blocks[name]);
 		});
+		var typeDescriptors = loadTypes();
 		var groups = [];
 		function groupLabel(origin) {
 			if (origin === "core") {
@@ -2571,8 +2666,52 @@
 		});
 		return {
 			blocks: descriptors,
-			groups: groups
+			groups: groups,
+			types: catalogTypes(descriptors, typeDescriptors)
 		};
+	}
+
+	function inferredTypeDescriptor(name) {
+		return {
+			name: name,
+			label: name,
+			icon: "mdi:form-textbox",
+			origin: "inferred",
+			description: "Inferred property type. Add a Flow type descriptor to provide docs, validation and editor resources.",
+			inferred: true,
+			uses: []
+		};
+	}
+
+	function catalogTypes(blocks, types) {
+		var byName = {};
+		Object.keys(types || {}).sort().forEach(function (name) {
+			var descriptor = typeDescriptor(types[name]);
+			descriptor.uses = [];
+			byName[descriptor.name] = descriptor;
+		});
+		(blocks || []).forEach(function (block) {
+			Object.keys(block.props || {}).forEach(function (propName) {
+				var prop = block.props[propName] || {};
+				var name = String(prop.kind || prop.type || "unknown");
+				if (!byName[name]) {
+					byName[name] = inferredTypeDescriptor(name);
+				}
+				if (!byName[name].type && prop.type) {
+					byName[name].type = String(prop.type || "");
+				}
+				byName[name].uses.push({
+					block: block.name,
+					property: propName,
+					type: String(prop.type || ""),
+					mode: String(prop.mode || ""),
+					file: String(block.file || "")
+				});
+			});
+		});
+		return Object.keys(byName).sort().map(function (name) {
+			return byName[name];
+		});
 	}
 
 	function compact(value) {
@@ -2892,13 +3031,14 @@
 
 	function addCatalog(out, blocks) {
 		var catalog = virtualNode("catalog", "folder", "catalog", "catalog", "Catalog", "", null, "mdi:bookshelf");
+		var catalogDefinitionValue = catalogDefinition(blocks);
 		var blocksFolder = virtualNode("blocks", "folder", "blocks", "catalog.blocks", "Blocks", "", null, "mdi:puzzle-outline");
 		catalog.children.push(blocksFolder);
 		var iconByOrigin = {
 			core: "mdi:package-variant-closed",
 			project: "mdi:folder-account-outline"
 		};
-		catalogDefinition(blocks).groups.forEach(function (group) {
+		catalogDefinitionValue.groups.forEach(function (group) {
 			var groupPath = "catalog.blocks." + group.origin;
 			var groupNode = virtualNode("origin_" + group.origin, "folder", group.origin, groupPath,
 				group.name, compact({ origin: group.origin, count: group.blocks.length }), null,
@@ -2907,6 +3047,40 @@
 			group.blocks.forEach(function (block) {
 				groupNode.children.push(virtualNode("block_" + block.name, "block", block.name,
 					groupPath + "." + block.name, block.name, compact(block)));
+			});
+		});
+		var typesFolder = virtualNode("types", "folder", "types", "catalog.types", "Types", "", null, "mdi:shape-outline");
+		catalog.children.push(typesFolder);
+		catalogDefinitionValue.types.forEach(function (type) {
+			var typePath = "catalog.types." + type.name;
+			var summary = (type.label || type.name) + (type.uses && type.uses.length ? " (" + type.uses.length + " uses)" : "");
+			var typeNode = virtualNode("type_" + type.name, "type", type.name,
+				typePath, summary, compact(type), null, type.icon || "mdi:form-textbox");
+			typesFolder.children.push(typeNode);
+			["documentation", "editor", "validator", "reader", "writer"].forEach(function (resourceName) {
+				var resource = type[resourceName];
+				if (!resource || typeof resource !== "object") {
+					return;
+				}
+				if (resource.file && type.file && resource.file === type.file) {
+					return;
+				}
+				typeNode.children.push(virtualNode(resourceName, "typeResource", resourceName,
+					typePath + "." + resourceName,
+					(resource.label || resourceName) + (resource.component ? " [" + resource.component + "]" : ""),
+					compact(Object.assign({ type: type.name, role: resourceName }, resource)),
+					null, resource.icon || "mdi:file-code-outline"));
+			});
+			if (!type.uses || type.uses.length === 0) {
+				return;
+			}
+			var usesFolder = virtualNode("uses", "folder", "uses", typePath + ".uses",
+				"Usages (" + type.uses.length + ")", "", null, "mdi:source-branch");
+			typeNode.children.push(usesFolder);
+			type.uses.forEach(function (use, index) {
+				usesFolder.children.push(virtualNode("type_use_" + use.block + "_" + use.property, "typeUse", type.name,
+					typePath + ".uses[" + index + "]",
+					use.block + "." + use.property, compact(use), null, "mdi:source-branch"));
 			});
 		});
 		out.push(catalog);
@@ -3058,6 +3232,22 @@
 		}
 
 		var parts = parseMutationPath(mutation.path);
+		if (op === "move") {
+			var fromPath = mutation.from || mutation.source;
+			if (!fromPath) {
+				raise("INVALID_MUTATION_PATH", "Move mutation requires a source path.");
+			}
+			var moved = cloneMutationValue(valueAt(root, parseMutationPath(fromPath)));
+			applyOneMutation(root, { op: "delete", path: fromPath });
+			var moveArray = valueAt(root, parts);
+			if (Object.prototype.toString.call(moveArray) !== "[object Array]") {
+				raise("INVALID_MUTATION_TARGET", "Move target is not an array: " + mutation.path);
+			}
+			var moveIndex = mutation.index === undefined || mutation.index === null || mutation.index === "end"
+				? moveArray.length : asArrayIndex(moveArray, String(mutation.index), true);
+			moveArray.splice(moveIndex, 0, moved);
+			return;
+		}
 		if (op === "append") {
 			var array = valueAt(root, parts);
 			if (Object.prototype.toString.call(array) !== "[object Array]") {
@@ -3164,6 +3354,81 @@
 		};
 	}
 
+	function typeEditorFragmentsHtml() {
+		var out = "";
+		var types = loadTypes();
+		Object.keys(types).sort().forEach(function (name) {
+			var descriptor = typeDescriptor(types[name]);
+			var editor = descriptor && descriptor.editor;
+			if (!editor || !editor.file) {
+				return;
+			}
+			var file = new File(String(editor.file));
+			if (!file.isFile()) {
+				return;
+			}
+			out += "\n<!-- Flow type editor: " + descriptor.name + " -->\n";
+			out += String(FileUtils.readFileToString(file, "UTF-8")) + "\n";
+		});
+		return out;
+	}
+
+	function propertyEditorHtml() {
+		return "<!doctype html><html><head><meta charset=\"utf-8\">"
+			+ "<style>"
+			+ ":root{color-scheme:dark light;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px}"
+			+ "body{margin:0;background:#1f2327;color:#e9eef2}"
+			+ ".wrap{display:grid;grid-template-columns:minmax(260px,1fr) 260px;height:100vh}"
+			+ ".main{overflow:auto;padding:12px}.side{border-left:1px solid #3a4148;overflow:auto;padding:10px;background:#171a1d}"
+			+ "h1{font-size:14px;margin:0 0 4px}.sub{color:#9da7af;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+			+ ".field{border-top:1px solid #343b42;padding:10px 0}.field:first-of-type{border-top:0}"
+			+ "label{display:flex;gap:8px;align-items:center;font-weight:600;margin-bottom:4px}.kind{font-weight:400;color:#8fa1ad}"
+			+ ".desc{color:#9da7af;margin:0 0 6px;line-height:1.35}"
+			+ "input,textarea{box-sizing:border-box;width:100%;border:1px solid #48525c;background:#111417;color:#f2f6f8;border-radius:4px;padding:6px;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}"
+			+ "textarea{min-height:120px;resize:vertical}.actions{display:flex;gap:6px;margin-top:6px}"
+			+ ".modebar,.copybar{display:flex;gap:6px;align-items:center;margin:6px 0}.modebar button.active{background:#0d9ac2;border-color:#2bb8df}.simple{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:6px;margin-bottom:6px}.hidden{display:none!important}.copybar input{flex:1}.copybar select{border:1px solid #48525c;background:#111417;color:#f2f6f8;border-radius:4px;padding:5px;font-size:12px}"
+			+ "button{border:1px solid #2786a8;background:#12647e;color:white;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer}"
+			+ "button.secondary{background:#262c31;border-color:#4b555f;color:#d8e0e5}.path{display:block;width:100%;text-align:left;margin:0 0 4px;padding:4px 6px;border-color:#39424a;background:#22282e;color:#d7e1e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+			+ ".picker{height:100vh;box-sizing:border-box;overflow:auto;padding:10px;background:#1f2327}.type{color:#85c8ff}.empty,.error{padding:16px;color:#9da7af}.error{color:#ffb4a8}.scopeTitle{font-weight:700;margin:8px 0 6px;color:#f2f6f8}details{margin:4px 0}summary{cursor:pointer;color:#dce7ed;font-weight:600}.tree{margin-left:12px;padding-left:8px;border-left:1px solid #343b42}"
+			+ "</style></head><body><div id=\"app\" class=\"empty\">Select a Flow node.</div>"
+			+ typeEditorFragmentsHtml()
+			+ "<script>"
+			+ "(function(){"
+			+ "var state=null,focusKey=null,draft='',editorMode='custom',pickerValue='';"
+			+ "function esc(v){return String(v==null?'':v).replace(/[&<>\\\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;',\"'\":'&#39;'}[c];});}"
+			+ "function send(m){if(window.flowEditor&&window.flowEditor.receive){window.flowEditor.receive(JSON.stringify(m));}}"
+			+ "function keys(o){return Object.keys(o||{});}"
+			+ "function propOrder(info,defs,node){var out=[];(info.propertyOrder||[]).forEach(function(k){if(defs[k]&&!defs[k].hidden&&out.indexOf(k)<0)out.push(k);});keys(defs).sort().forEach(function(k){if(!defs[k].hidden&&out.indexOf(k)<0)out.push(k);});keys(node).sort().forEach(function(k){if(['id','block','comment'].indexOf(k)<0&&!defs[k]&&out.indexOf(k)<0)out.push(k);});return out;}"
+			+ "function propValue(node,key){var v=node[key];if(v===undefined||v===null)return '';return typeof v==='object'?JSON.stringify(v,null,2):String(v);}"
+			+ "function templateLike(kind){return kind==='template'||kind==='value';}"
+			+ "function simpleParts(v){v=String(v||'');var a=v.indexOf('{{'),b=a<0?-1:v.indexOf('}}',a+2);if(a>=0&&b>=0){return{prefix:v.slice(0,a),path:v.slice(a+2,b).trim(),suffix:v.slice(b+2)};}return{prefix:v,path:'',suffix:''};}"
+			+ "function simpleCandidate(v){var p=simpleParts(v);return p.path!==''&&p.prefix.indexOf('}}')<0&&p.suffix.indexOf('{{')<0;}"
+			+ "function simpleValue(){var p=document.querySelector('[data-simple=\"prefix\"]');var m=document.querySelector('[data-simple=\"pick\"]');var s=document.querySelector('[data-simple=\"suffix\"]');var path=m?m.value.trim():'';return (p?p.value:'')+(path?'{{ '+path+' }}':'')+(s?s.value:'');}"
+			+ "function setDraft(v){draft=v==null?'':String(v);send({type:'value',value:draft});}"
+			+ "function syncSimple(){var el=document.querySelector('[data-key]');if(el){el.value=simpleValue();setDraft(el.value);}}"
+			+ "function setEditorMode(mode){editorMode=mode==='simple'?'simple':'custom';var simple=document.querySelector('[data-simple-box]');var custom=document.querySelector('[data-key]');if(simple)simple.classList.toggle('hidden',editorMode!=='simple');if(custom)custom.classList.toggle('hidden',editorMode==='simple');document.querySelectorAll('[data-editor-mode]').forEach(function(b){b.classList.toggle('active',b.getAttribute('data-editor-mode')===editorMode);});if(editorMode==='simple')syncSimple();else if(custom)setDraft(custom.value);}"
+			+ "function currentPropertyKind(){var def=state&&state.propertyDefinition||{};return def.kind||def.editor||def.type||'text';}"
+			+ "function pickedText(path){var format=document.querySelector('[data-picker-format]');return format&&format.value==='template'?'{{ '+path+' }}':path;}"
+			+ "function field(key,def,node){def=def||{};var kind=def.kind||'text';var type=def.type||'';var value=propValue(node,key);var rows=(kind==='template'||kind==='expression'||kind==='value'||value.length>80||value.indexOf('\\n')>=0)?'textarea':'input';var ro=def.readOnly||key==='id'||key==='block';var html='<div class=\"field\"><label>'+esc(def.label||key)+' <span class=\"kind\">'+esc(kind+(type?':'+type:''))+'</span></label>';if(def.description||def.shortDescription)html+='<div class=\"desc\">'+esc(def.description||def.shortDescription)+'</div>';if(rows==='textarea')html+='<textarea data-key=\"'+esc(key)+'\" data-kind=\"'+esc(kind)+'\" '+(ro?'readonly':'')+'>'+esc(value)+'</textarea>';else html+='<input data-key=\"'+esc(key)+'\" data-kind=\"'+esc(kind)+'\" value=\"'+esc(value)+'\" '+(ro?'readonly':'')+'>';if(!ro)html+='<div class=\"actions\"><button data-apply=\"'+esc(key)+'\">Apply</button><button class=\"secondary\" data-reset=\"'+esc(key)+'\">Reset</button></div>';return html+'</div>';}"
+			+ "function propertyField(){var def=state.propertyDefinition||{};var key=state.property||'';var kind=def.kind||def.editor||'text';var type=def.type||'';var value=state.value==null?'':String(state.value);var label=def.label||key||'value';if(kind==='requestable'&&customElements.get('flow-requestable-editor')){var htmlType='<div class=\"field\"><label>'+esc(label)+' <span class=\"kind\">'+esc(kind+(type?':'+type:''))+'</span></label>';if(def.description||def.shortDescription)htmlType+='<div class=\"desc\">'+esc(def.description||def.shortDescription)+'</div>';return htmlType+'<flow-requestable-editor data-key=\"'+esc(key)+'\" data-kind=\"requestable\"></flow-requestable-editor></div>';}var simple=templateLike(kind);if(simple)editorMode=simpleCandidate(value)?'simple':'custom';var html='<div class=\"field\"><label>'+esc(label)+' <span class=\"kind\">'+esc(kind+(type?':'+type:''))+'</span></label>';if(def.description||def.shortDescription)html+='<div class=\"desc\">'+esc(def.description||def.shortDescription)+'</div>';if(simple){var p=simpleParts(value);html+='<div class=\"modebar\"><button data-editor-mode=\"simple\" class=\"'+(editorMode==='simple'?'active':'')+'\">Simple</button><button data-editor-mode=\"custom\" class=\"secondary '+(editorMode==='custom'?'active':'')+'\">Custom</button></div>';html+='<div data-simple-box class=\"simple '+(editorMode==='simple'?'':'hidden')+'\"><input data-simple=\"prefix\" placeholder=\"prefix\" value=\"'+esc(p.prefix)+'\"><input data-simple=\"pick\" placeholder=\"pick\" value=\"'+esc(p.path)+'\"><input data-simple=\"suffix\" placeholder=\"suffix\" value=\"'+esc(p.suffix)+'\"></div>';}html+='<textarea data-key=\"'+esc(key)+'\" data-kind=\"'+esc(kind)+'\" class=\"'+(simple&&editorMode==='simple'?'hidden':'')+'\">'+esc(value)+'</textarea>';return html+'</div>';}"
+			+ "function pathList(ctx){var out=[];var scopes=ctx&&ctx.scopes||{};keys(scopes).forEach(function(scope){var bucket=scopes[scope];var paths=Array.isArray(bucket)?bucket:(bucket.paths||[]);out.push({scope:scope,paths:paths});});return out;}"
+			+ "function side(){var html='<div class=\"side\"><h1>Scope picker</h1><div class=\"sub\">Click to insert into the focused editor.</div>';pathList(state.context).forEach(function(group){html+='<div class=\"scopeTitle\">'+esc(group.scope)+'</div>';group.paths.forEach(function(p){var label=typeof p==='string'?p:p.path;var type=typeof p==='string'?'':(p.type||'');html+='<button draggable=\"true\" class=\"path\" data-path=\"'+esc(label)+'\">'+esc(label)+(type?' <span class=\"type\">'+esc(type)+'</span>':'')+'</button>';});});return html+'</div>';}"
+			+ "function attachTypeEditor(){var editor=document.querySelector('flow-requestable-editor[data-key]');if(editor&&editor.setState){editor.setState(state);focusKey=editor.getAttribute('data-key');editor.addEventListener('flow-value',function(e){setDraft(e.detail&&e.detail.value);});setDraft(editor.value||'');return true;}return false;}"
+			+ "function renderProperty(app){var node=state.definition||{};var title=state.summary||node.id||state.virtualPath||'Flow node';var html='<div class=\"wrap\"><div class=\"main\"><h1>'+esc(title)+'</h1><div class=\"sub\">'+esc((state.flowQName||'')+' '+(state.virtualPath||'')+' / '+(state.property||''))+'</div>'+propertyField()+'</div>'+side()+'</div>';app.className='';app.innerHTML=html;if(attachTypeEditor())return;var el=document.querySelector('[data-key]');if(el){focusKey=el.getAttribute('data-key');el.focus();el.setSelectionRange(el.value.length,el.value.length);draft=el.value;send({type:'value',value:draft});}}"
+			+ "function renderPicker(app){var node=state.definition||{};var html='<div class=\"picker\"><h1>'+esc(state.summary||node.id||state.virtualPath||'Flow picker')+'</h1><div class=\"sub\">'+esc((state.flowQName||'')+' '+(state.virtualPath||''))+'</div><div class=\"copybar\"><select data-picker-format><option value=\"path\">path</option><option value=\"template\">template</option></select><input data-picker-value value=\"'+esc(pickerValue)+'\" placeholder=\"pick or drag a value\"><button data-copy-picked=\"true\">Copy</button></div>';pathList(state.context).forEach(function(group){html+='<div class=\"scopeTitle\">'+esc(group.scope)+'</div>';group.paths.forEach(function(p){var label=typeof p==='string'?p:p.path;var type=typeof p==='string'?'':(p.type||'');html+='<button draggable=\"true\" class=\"path\" data-path=\"'+esc(label)+'\">'+esc(label)+(type?' <span class=\"type\">'+esc(type)+'</span>':'')+'</button>';});});app.className='';app.innerHTML=html+'</div>';}"
+			+ "function renderObject(app){var node=state.definition||{};var info=state.info||{};var defs=info.propertyDefinitions||{};var ordered=propOrder(info,defs,node);var html='<div class=\"wrap\"><div class=\"main\"><h1>'+esc(state.summary||node.id||state.virtualPath||'Flow node')+'</h1><div class=\"sub\">'+esc(state.flowQName||'')+' '+esc(state.virtualPath||'')+'</div>';html+=field('id',{label:'id',kind:'text',description:'Stable node identifier.'},node);html+=field('block',{label:'block',kind:'text',description:'Block implementation.'},node);if(node.comment!==undefined||state.virtualKind==='node')html+=field('comment',{label:'Comment',kind:'text',description:'Treeview comment.'},node);ordered.forEach(function(k){html+=field(k,defs[k],node);});html+='</div>'+side()+'</div>';app.className='';app.innerHTML=html;}"
+			+ "function render(){var app=document.getElementById('app');if(!state){app.className='empty';app.textContent='Select a Flow node.';return;}if(state.error){app.className='error';app.textContent=state.error;return;}if(state.mode==='property'){renderProperty(app);}else if(state.mode==='picker'){renderPicker(app);}else{renderObject(app);}}"
+			+ "function input(key){return document.querySelector('[data-key=\"'+key.replace(/[^A-Za-z0-9_-]/g,'\\\\$&')+'\"]');}"
+			+ "function changeValue(el){if(state&&state.mode==='property'&&el){setDraft(el.value);}}"
+			+ "document.addEventListener('focusin',function(e){var k=e.target&&e.target.getAttribute&&e.target.getAttribute('data-key');if(k)focusKey=k;});"
+			+ "document.addEventListener('input',function(e){var k=e.target&&e.target.getAttribute&&e.target.getAttribute('data-key');if(k)changeValue(e.target);if(e.target&&e.target.getAttribute&&e.target.getAttribute('data-simple')!==null)syncSimple();if(e.target&&e.target.getAttribute&&e.target.getAttribute('data-picker-value')!==null)pickerValue=e.target.value;});"
+			+ "document.addEventListener('dragstart',function(e){var path=e.target.getAttribute&&e.target.getAttribute('data-path');if(path&&e.dataTransfer){e.dataTransfer.setData('text/plain',state&&state.mode==='picker'?pickedText(path):path);}});"
+			+ "document.addEventListener('click',function(e){var mode=e.target.getAttribute&&e.target.getAttribute('data-editor-mode');if(mode){setEditorMode(mode);return;}if(e.target.getAttribute&&e.target.getAttribute('data-copy-picked')){var val=document.querySelector('[data-picker-value]');send({type:'copy',value:val?val.value:pickerValue});return;}var apply=e.target.getAttribute&&e.target.getAttribute('data-apply');if(apply){var el=input(apply);send({type:'setProperty',property:apply,value:el?el.value:''});return;}var reset=e.target.getAttribute&&e.target.getAttribute('data-reset');if(reset){var el=input(reset);if(el){el.value=propValue((state&&state.definition)||{},reset);changeValue(el);}return;}var path=e.target.getAttribute&&e.target.getAttribute('data-path');if(path){if(state&&state.mode==='picker'){pickerValue=pickedText(path);var picked=document.querySelector('[data-picker-value]');if(picked)picked.value=pickerValue;return;}var el=focusKey&&input(focusKey);if(el){var kind=el.getAttribute('data-kind')||'';if(kind==='requestable'||e.target.getAttribute('data-raw')){el.value=path;changeValue(el);return;}if(editorMode==='simple'&&templateLike(kind)){var pick=document.querySelector('[data-simple=\"pick\"]');if(pick){pick.value=path;syncSimple();return;}}var text=(kind==='template'||kind==='value')?'{{ '+path+' }}':path;var s=el.selectionStart||0;var epos=el.selectionEnd||s;el.value=el.value.slice(0,s)+text+el.value.slice(epos);el.focus();el.selectionStart=el.selectionEnd=s+text.length;changeValue(el);}return;}});"
+			+ "window.receiveFromJava=function(message){state=message||{};draft=state.value==null?'':String(state.value);render();};"
+			+ "}());"
+			+ "</script></body></html>";
+	}
+
 	return {
 		run: function (requestJson) {
 			try {
@@ -3207,6 +3472,14 @@
 				return response(outputSchemaRequest(request, loadBlocks()));
 			} catch (e) {
 				return response(failure("outputSchema", e));
+			}
+		},
+
+		propertyEditor: function () {
+			try {
+				return response({ ok: true, html: propertyEditorHtml() });
+			} catch (e) {
+				return response(failure("propertyEditor", e));
 			}
 		},
 

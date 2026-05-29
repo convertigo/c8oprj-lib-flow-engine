@@ -1,0 +1,16 @@
+<template id="flow-path-editor">
+	<style>
+		:host { display: grid; gap: 6px; font: 12px system-ui, sans-serif; }
+		input { box-sizing: border-box; width: 100%; font: 12px ui-monospace, monospace; }
+	</style>
+	<input part="input" placeholder="result.value">
+</template>
+<script>
+	if (!customElements.get("flow-path-editor")) customElements.define("flow-path-editor", class extends HTMLElement {
+		connectedCallback() {
+			if (!this.shadowRoot) {
+				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-path-editor").content.cloneNode(true));
+			}
+		}
+	});
+</script>

@@ -1,0 +1,16 @@
+<template id="flow-expression-editor">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; }
+		textarea { box-sizing: border-box; width: 100%; min-height: 96px; font: 12px ui-monospace, monospace; }
+	</style>
+	<textarea part="input" spellcheck="false"></textarea>
+</template>
+<script>
+	if (!customElements.get("flow-expression-editor")) customElements.define("flow-expression-editor", class extends HTMLElement {
+		connectedCallback() {
+			if (!this.shadowRoot) {
+				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-expression-editor").content.cloneNode(true));
+			}
+		}
+	});
+</script>

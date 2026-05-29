@@ -71,18 +71,15 @@ Blocks implement behavior. Even control flow such as `if` and `forEach` is a blo
 Runtime-facing tooling can also be a block: `mcp.flow` exposes a small
 MCP-style JSON-RPC surface for Flow catalog, analysis and execution.
 
-Use `flow.call` when a Flow should call another Flow in the best-case path. It
-stays inside Rhino, reads the named sidecar from `libs/flows`, passes a JSON
-`input` object, and returns the child Flow `result` directly. Reserve
-`requestable.call` for legacy requestables or SDK/API compatibility checks
-because it goes through Convertigo's internal requester and returns the
-historical XML-to-JSON `document.*` shape. Keep `sequence.call` and
-`transaction.call` for explicit target-type tests.
+Use `requestable.call` for Convertigo requestables. It accepts a sequence, Flow
+or transaction target, follows the same requestable path as the SDK, and unwraps
+the historical XML-to-JSON `document` wrapper so Flow authors work with direct
+JSON data.
 
 When creating a reusable Flow, define a minimal static contract with top-level
-`input` and `output` sections. `flow.call` analysis flattens the child `output`
-shape under its `out` path, so downstream nodes, pickers and agents can see
-paths such as `flow.customer.name` without executing the child Flow.
+`input` and `output` sections. Static `requestable.call` analysis should expose
+the target output shape under its `out` path, so downstream nodes, pickers and
+agents can see paths such as `flow.customer.name` without executing the target.
 
 Use `use` when the Flow should depend on a contract instead of a provider
 implementation. A contract should normally declare `defaultImplementation` so a
@@ -167,6 +164,12 @@ props: {
 }
 ```
 
+The engine exposes those property kinds under `Catalog / Types` in the
+FlowEngine virtual tree. Keep this vocabulary small and clear. Type
+definitions live in `libs/flow/types`, and docs, validators, readers, writers
+and web editor fragments should hang from those types instead of one-off Java
+property hacks.
+
 ## Analysis Contract
 
 Keep analysis in the JS runtime. Java passes `flowSource` as opaque text.
@@ -212,11 +215,10 @@ propagates known schemas through block values, merges writes under `result.*`,
 and uses explicit `return` schemas when known. Learned result files are a
 fallback, not the primary mechanism.
 
-Static call blocks should enrich picker context too. `flow.call` reads the
-called Flow output contract; `requestable.call`, `sequence.call` and
-`transaction.call` use the Convertigo `schemaManager` when a live engine is
-available. Dynamic or templated targets should degrade to the plain `out` path
-instead of guessing.
+Static `requestable.call` nodes should enrich picker context too. Flow targets
+read the Flow output contract; legacy sequence and transaction targets use the
+Convertigo `schemaManager` when a live engine is available. Dynamic or templated
+targets should degrade to the plain `out` path instead of guessing.
 
 Do not add Java admin services just to expose this during the POC. Prefer
 standalone Rhino validation first, then block-level or MCP/Studio integration

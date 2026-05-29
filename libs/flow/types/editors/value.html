@@ -1,0 +1,16 @@
+<template id="flow-value-editor">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; }
+		textarea { box-sizing: border-box; width: 100%; min-height: 120px; font: 12px ui-monospace, monospace; }
+	</style>
+	<textarea part="input" spellcheck="false"></textarea>
+</template>
+<script>
+	if (!customElements.get("flow-value-editor")) customElements.define("flow-value-editor", class extends HTMLElement {
+		connectedCallback() {
+			if (!this.shadowRoot) {
+				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-value-editor").content.cloneNode(true));
+			}
+		}
+	});
+</script>

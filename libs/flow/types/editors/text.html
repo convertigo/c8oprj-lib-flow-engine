@@ -1,0 +1,16 @@
+<template id="flow-text-editor">
+	<style>
+		:host { display: grid; gap: 6px; font: 12px system-ui, sans-serif; }
+		input { box-sizing: border-box; width: 100%; }
+	</style>
+	<input part="input">
+</template>
+<script>
+	if (!customElements.get("flow-text-editor")) customElements.define("flow-text-editor", class extends HTMLElement {
+		connectedCallback() {
+			if (!this.shadowRoot) {
+				this.attachShadow({ mode: "open" }).append(document.getElementById("flow-text-editor").content.cloneNode(true));
+			}
+		}
+	});
+</script>

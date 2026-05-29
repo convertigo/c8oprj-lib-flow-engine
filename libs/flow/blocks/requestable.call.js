@@ -133,11 +133,18 @@
 		var request = requestFromTarget(target);
 		putInput(request, input);
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();
-		return JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true)));
+		return unwrapDocument(JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true))));
+	}
+
+	function unwrapDocument(value) {
+		if (value && typeof value === "object" && value.document !== undefined) {
+			return value.document;
+		}
+		return value;
 	}
 
 	function staticTarget(ctx, props) {
-		var target = String(props.requestable || props.target || "").trim();
+		var target = String(props.requestable || "").trim();
 		if (!target || hasTemplate(target)) {
 			return null;
 		}
@@ -154,8 +161,8 @@
 				props: {
 					requestable: {
 						label: "requestable",
-						kind: "template",
-						type: "string",
+						kind: "requestable",
+						type: "requestable",
 						"default": "",
 						description: "Target requestable: project.sequence, project.flow, project.connector.transaction, .sequence or .connector.transaction."
 					},
@@ -178,7 +185,7 @@
 		},
 
 		displayName: function (node) {
-			return flowSummary.output(node, flowSummary.text(prop(node, "requestable") || prop(node, "target") || "requestable"));
+			return flowSummary.output(node, flowSummary.text(prop(node, "requestable") || "requestable"));
 		},
 
 		analyze: function (ctx, node) {
@@ -193,7 +200,7 @@
 
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			var target = resolveTarget(ctx, ctx.template(props.requestable || props.target || ""));
+			var target = resolveTarget(ctx, ctx.template(props.requestable || ""));
 			return runInternal(ctx, target, ctx.template(props.input) || {});
 		}
 	};

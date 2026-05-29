@@ -52,6 +52,17 @@ print(JSON.stringify(catalog));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.name === "requestable.call";
 }), "catalog did not expose requestable.call");
+var expressionType = catalog.types.filter(function (type) {
+	return type.name === "expression";
+})[0];
+assertTrue(expressionType && expressionType.editor && String(expressionType.editor.file).indexOf("expression.html") !== -1,
+	"catalog did not expose type editor resources");
+var propertyEditor = JSON.parse(engine.propertyEditor("{}"));
+assertTrue(propertyEditor.ok === true && propertyEditor.html.indexOf("receiveFromJava") !== -1,
+	"propertyEditor did not expose the web editor host");
+assertTrue(propertyEditor.html.indexOf("flow-requestable-editor") !== -1 &&
+	propertyEditor.html.indexOf("relativeQName(qname, currentProject)") !== -1,
+	"propertyEditor did not embed standalone requestable editor");
 print(engine.analyze(JSON.stringify({ flowSource: flowSource })));
 var describedFlowTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", flowSource: flowSource })));
 print(JSON.stringify(describedFlowTree));
@@ -316,6 +327,8 @@ var learnedContext = JSON.parse(engine.context(JSON.stringify({
 print(JSON.stringify(learnedContext));
 assertTrue(learnedContext.scopes.flow.indexOf("flow.weather.body.metropoles.city") !== -1,
 	"Flow context did not expose learned HTTP JSON schema paths");
+assertTrue(learnedContext.scopes.flow.indexOf("flow.weather.body.metropoles") !== -1,
+	"Flow context did not expose learned array schema path");
 var learnedLoopContext = JSON.parse(engine.context(JSON.stringify({
 	flowName: schemaFlowName,
 	flowSource: weatherFlowSource,
@@ -493,34 +506,6 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	namedGreetingFlowSource,
 	"UTF-8"
 );
-var parentFlowCallSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: callGreeting",
-	"    block: flow.call",
-	"    flow: NamedGreeting",
-	"    input:",
-	"      name: \"{{ input.name }}\"",
-	"    config:",
-	"      suffix: \" from Flow.call\"",
-	"    out: result.greeting",
-	""
-].join("\n");
-var parentFlowCallRun = JSON.parse(engine.run(JSON.stringify({
-	flowSource: parentFlowCallSource,
-	input: {
-		name: "Nicolas"
-	}
-})));
-print(JSON.stringify(parentFlowCallRun));
-assertTrue(parentFlowCallRun.result.greeting.message === "Hello Nicolas from Flow.call" &&
-	parentFlowCallRun.result.greeting.mode === "rhino-flow",
-	"flow.call did not run a named sidecar and return direct JSON");
-var parentFlowCallAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: parentFlowCallSource })));
-print(JSON.stringify(parentFlowCallAnalysis));
-assertTrue(parentFlowCallAnalysis.writes.indexOf("result.greeting.message") !== -1 &&
-	parentFlowCallAnalysis.writes.indexOf("result.greeting.mode") !== -1,
-	"flow.call did not propagate the child Flow output contract");
 var requestableCallSource = [
 	"version: 1",
 	"nodes:",

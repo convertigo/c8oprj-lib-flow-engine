@@ -89,10 +89,10 @@ The current catalog includes low-level composable blocks for:
 - JSON/object data: `json.select`, `json.push`, `json.parse`, `json.stringify`,
   `object.pick`, `object.merge`;
 - lists: `list.filter`, `list.map`, `list.sort`;
-- control flow: `if`, `forEach`, `flow.call`, `use`, `return`, `throw`;
+- control flow: `if`, `forEach`, `use`, `return`, `throw`;
 - output and text: `set`, `email.mock`;
-- Convertigo runtime: `log`, `requestable.call`, `sequence.call`,
-  `transaction.call`, `session.get`, `session.set`, `session.remove`;
+- Convertigo runtime: `log`, `requestable.call`, `session.get`, `session.set`,
+  `session.remove`;
 - runtime tooling: `mcp.flow`.
 
 In the FlowEngine virtual tree and Eclipse palette, blocks are grouped by
@@ -100,6 +100,12 @@ origin: core engine, current project, then external libraries. The runtime still
 receives one flat block name, but the authoring UI should make it clear whether
 a block comes from `lib_flow_engine`, the application project, or a future
 library project.
+
+The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
+first-class engine descriptors stored under `libs/flow/types`: docs,
+validation/read/write hooks and web editor fragments belong there. Block
+property descriptors reference this vocabulary with `kind`, and the catalog can
+still keep usage counts as secondary information.
 
 ## Standard block selection
 
@@ -110,9 +116,7 @@ blocks only when the vocabulary is clearly reusable.
 Good first-class candidates from legacy Steps:
 
 - `LogStep` -> `log`;
-- `SequenceStep` / `TransactionStep` -> `requestable.call` for the KISS path,
-  with `sequence.call` and `transaction.call` kept when the author needs an
-  explicit target type;
+- `SequenceStep` / `TransactionStep` -> `requestable.call` for the KISS path;
 - `GetRequestHeaderStep`, `SetResponseHeaderStep`, `SetResponseStatusStep` ->
   request/response blocks, once the request and response scopes are finalized;
 - `SessionGetStep`, `SessionSetStep`, `SessionRemoveStep` -> `session.get`,
@@ -156,16 +160,13 @@ If no `return` block is executed, the Flow returns the `result` scope
 implicitly. Use `return` only to stop early or return something other than
 `result`. Use `throw` inside error branches to stop with a structured error.
 
-Use `flow.call` for the best-case Flow-to-Flow path. It stays inside the Rhino
-engine, loads a named `libs/flows/<FlowName>.flow.yaml` sidecar, passes a JSON
-`input` object, and returns the child Flow `result` directly. Use
-`requestable.call` when the target must go through the regular Convertigo
-requestable path, like the SDK does. It accepts a sequence/Flow or transaction
-target and returns the historical XML-to-JSON `document.*` shape. Keep
-`sequence.call` and `transaction.call` for explicit low-level cases.
+Use `requestable.call` when the target must go through the regular Convertigo
+requestable path, like the SDK does. It accepts a sequence, Flow or transaction
+target and unwraps the historical XML-to-JSON `document` wrapper so Flow authors
+work with direct JSON data.
 
-For `flow.call` to be useful to pickers and agents, child Flows should expose a
-small static contract:
+For `requestable.call` to be useful to pickers and agents, target Flows should
+expose a small static contract:
 
 ```yaml
 input:
@@ -271,10 +272,10 @@ picker context exposes the iterated item under `current.*`; for example
 `current.city` and `current.temperature`.
 
 Call blocks also expose known output shapes during analysis when their target is
-static. `flow.call` reads the target Flow output contract. `requestable.call`,
-`sequence.call` and `transaction.call` ask Convertigo's `schemaManager`, convert
-the generated DOM sample to JSON, then infer a Flow schema that matches the
-internal requestable JSON shape under `document.*`.
+static. `requestable.call` reads Flow output contracts directly. For legacy
+sequences and transactions, it asks Convertigo's `schemaManager`, converts the
+generated DOM sample to JSON, then infers a Flow schema and unwraps the
+historical `document` container.
 
 ## Property kinds
 
@@ -496,8 +497,8 @@ The current analysis returns:
   groups;
 - learned JSON schemas, when available, attached to the scope path produced by
   the node;
-- legacy requestable schemas for static `requestable.call`, `sequence.call` and
-  `transaction.call` targets when a live Convertigo engine is available;
+- legacy requestable schemas for static `requestable.call` targets when a live
+  Convertigo engine is available;
 - a first `errors` array for future static diagnostics.
 
 This is the first shape needed by a future Flow picker or MCP tool. Deep JSON
