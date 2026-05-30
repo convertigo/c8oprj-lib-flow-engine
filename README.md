@@ -11,10 +11,15 @@ libs/flow/Engine.js
 `Engine.js` exposes:
 
 ```text
-run(requestJson)     -> responseJson
-analyze(requestJson) -> analysisJson
-context(requestJson) -> contextJson
-catalog(requestJson) -> catalogJson
+run(requestJson)           -> responseJson
+analyze(requestJson)       -> analysisJson
+context(requestJson)       -> contextJson
+catalog(requestJson)       -> catalogJson
+search(requestJson)        -> rg-like Flow search results
+describeTree(requestJson)  -> virtual tree JSON
+applyMutation(requestJson) -> mutated YAML source + tree
+outputSchema(requestJson)  -> JSON schema
+types(requestJson)         -> property type descriptors
 ```
 
 The Java side passes `flowSource` as an opaque string. This project owns parsing, catalog, analysis and execution.
@@ -92,14 +97,37 @@ The current catalog includes low-level composable blocks for:
 - control flow: `if`, `forEach`, `use`, `return`, `throw`;
 - output and text: `set`, `email.mock`;
 - Convertigo runtime: `log`, `requestable.call`, `session.get`, `session.set`,
-  `session.remove`;
-- runtime tooling: `mcp.flow`.
+  `session.remove`.
+
+`lib_flow_engine` should stay the standard runtime vocabulary. A block belongs
+there only when it is generally useful in normal application Flows. Tooling
+blocks, MCP server plumbing, benchmark helpers or migration helpers belong in a
+separate library project such as `lib_flow_mcp`. The Flow MCP block lives there,
+not in the standard catalog.
 
 In the FlowEngine virtual tree and Eclipse palette, blocks are grouped by
 origin: core engine, current project, then external libraries. The runtime still
 receives one flat block name, but the authoring UI should make it clear whether
 a block comes from `lib_flow_engine`, the application project, or a future
 library project.
+
+Block names use a light namespace convention. Short names such as `set`,
+`return` and `forEach` are reserved for core primitives. Domain and integration
+blocks should use dotted names such as `json.select`, `requestable.call`,
+`email.send` or `flow.node.add`. Catalog metadata may also expose `package`,
+`namespace` and `private`.
+
+A private block is visible inside the project that defines it, but must not be
+advertised to projects that reference that project as a library. This gives
+authors and agents a safe place for local implementation details, generated
+helpers and one-off glue without polluting the public palette.
+
+Direct Rhino code inside a Flow should remain an escape hatch, not the normal
+model. The preferred equivalent of a small function is a project-local custom
+block, often `private: true`, with a tiny catalog descriptor and optional
+`analyze()` method. A generic script block would be useful only for debugging or
+advanced migration cases because it hides intent, weakens schemas and encourages
+SequenceJS-style low-code bypasses.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored under `libs/flow/types`: docs,
@@ -205,6 +233,46 @@ nodes:
 `flow-analyze` uses this `output` shape without running the child Flow. A node
 such as `out: flow.custom` then advertises `flow.custom.message` and
 `flow.custom.source` as produced paths.
+
+## Search API
+
+`Engine.search()` is the compact discovery API for agents. It searches Flow
+sidecars, nodes, catalog blocks/types and learned schemas, then returns
+references that can be passed to other tools.
+
+Node matches return:
+
+```text
+flowQName + nodeId + JSON Pointer path
+```
+
+Use `nodeId` for semantic edit tools and the `/nodes/...` path for low-level
+mutations. `context` behaves like `rg -C`: it adds nearby parent, previous,
+children and next summaries without returning the whole Flow.
+
+`Engine.applyMutation()` accepts both low-level JSON Pointer paths and semantic
+node targets:
+
+```json
+{ "op": "replace", "nodeId": "setMessage", "property": "value", "value": "Done" }
+```
+
+Use `beforeNodeId`, `afterNodeId`, or `parentNodeId + slot` for insertions when
+an agent should not depend on array indexes. JSON Pointer paths remain the
+escape hatch for exact structural edits.
+
+## Block Authoring API
+
+Blocks can be listed/read from core, shared libraries and the project. Creation
+and editing are project-local:
+
+- `blockGet({ name })` reads any visible block source.
+- `blockCreate({ name, source })` creates a project-local block.
+- `blockDuplicate({ fromName, toName })` copies a visible block into the
+  project.
+- `blockEdit({ name, source })` replaces a project-local block source.
+
+Core/shared blocks are intentionally not editable in place.
 
 ## Context picker API
 
@@ -528,63 +596,11 @@ The current analysis returns:
 This is the first shape needed by a future Flow picker or MCP tool. Deep JSON
 paths are exposed when a node has a declared or learned schema.
 
-## MCP Flow block
+## Flow MCP library
 
-The runtime also dogfoods its own model through `mcp.flow`.
+The MCP-facing experiment lives in `lib_flow_mcp`. It uses the same runtime
+APIs, catalog and context analysis as a normal Flow project, but keeps protocol
+plumbing out of the standard engine vocabulary.
 
-`mcp.flow` is a regular block that receives an MCP-style JSON-RPC request and
-returns an MCP-style response. It currently exposes:
-
-- `flow-catalog`;
-- `flow-analyze`;
-- `flow-context`;
-- `flow-schema-reset`;
-- `flow-run`;
-- `flow-list`;
-- `flow-get`;
-- `flow-set`;
-- `flow-test`;
-- `flow-block-list`;
-- `flow-block-get`;
-- `flow-block-create`;
-- `flow-block-test`.
-
-This is not a replacement for the Convertigo MCP project yet. It is a small
-runtime experiment proving that Flow introspection and execution can be exposed
-from a block without adding Java admin services. `flow-run` returns only the
-execution status and business result by default; internal `flow` and `trace`
-data are opt-in to keep MCP responses compact.
-
-`flow-block-create` writes project-local blocks under:
-
-```text
-<current-project>/libs/flow/blocks/<block-name>.js
-```
-
-This lets an agent add missing vocabulary to the current project without
-modifying the shared core library.
-
-`flow-set` writes project-local Flow sidecars under:
-
-```text
-<current-project>/libs/flows/<FlowName>.flow.yaml
-```
-
-It validates the YAML and runs `analyze()` before writing.
-
-## Agent cycle
-
-For an agent starting from a blank context, the intended development loop is:
-
-```text
-tools/list
-flow-catalog
-flow-list / flow-get
-flow-block-list
-flow-block-create only when the catalog is insufficient
-flow-set
-flow-test
-```
-
-The default path should remain catalog-first and sidecar-first. Custom blocks
-are project vocabulary, not automatic core changes.
+The agent authoring cycle is documented by `lib_flow_mcp`, which owns the MCP
+tool names and protocol surface.

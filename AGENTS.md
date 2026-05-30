@@ -13,10 +13,15 @@ lib_flow_engine.Engine -> libs/flow/Engine.js
 `Engine.js` returns a JavaScript object exposing:
 
 ```text
-run(requestJson)     -> responseJson
-analyze(requestJson) -> analysisJson
-context(requestJson) -> contextJson
-catalog(requestJson) -> catalogJson
+run(requestJson)           -> responseJson
+analyze(requestJson)       -> analysisJson
+context(requestJson)       -> contextJson
+catalog(requestJson)       -> catalogJson
+search(requestJson)        -> rg-like Flow search results
+describeTree(requestJson)  -> virtual tree JSON
+applyMutation(requestJson) -> mutated YAML source + tree
+outputSchema(requestJson)  -> JSON schema
+types(requestJson)         -> property type descriptors
 ```
 
 `flowSource` is opaque to Java. Parsing, catalog loading, analysis and execution are owned by this project.
@@ -68,8 +73,8 @@ Keep `libs/flow/Engine.js` small. It should:
 - collect trace, analysis and structured errors.
 
 Blocks implement behavior. Even control flow such as `if` and `forEach` is a block.
-Runtime-facing tooling can also be a block: `mcp.flow` exposes a small
-MCP-style JSON-RPC surface for Flow catalog, analysis and execution.
+Runtime-facing tooling can also be built as blocks, but protocol plumbing belongs
+in dedicated libraries rather than the standard catalog.
 
 Use `requestable.call` for Convertigo requestables. It accepts a sequence, Flow
 or transaction target, follows the same requestable path as the SDK, and unwraps
@@ -100,6 +105,22 @@ lib_flow_engine/libs/flow/blocks/*.js
 
 Do not silently override core blocks from a project. Use a project-specific
 name, for example `weather.hotCities`, when adding custom vocabulary.
+
+Keep the standard library small. Put only generally useful runtime blocks in
+`lib_flow_engine`. MCP plumbing, Studio tooling, benchmark helpers and migration
+helpers belong in a dedicated library such as `lib_flow_mcp`, not in the core
+catalog.
+
+Use dotted names for non-core vocabulary: `json.select`, `requestable.call`,
+`flow.node.add`, `mcp.server`. Catalog metadata may expose `package`,
+`namespace` and `private`.
+
+Prefer a project-local custom block over inline Rhino code when behavior does
+not fit existing blocks. Mark one-off or implementation-detail blocks
+`private: true` so they are usable in the owning project but not advertised to
+projects that reference it. A generic script-style block is an escape hatch for
+debugging or migration only; it should not be the default authoring path because
+it weakens schemas and recreates SequenceJS-style hidden logic.
 
 Project-wide Flow defaults are read from:
 
@@ -221,6 +242,15 @@ propagates known schemas through block values, merges writes under `result.*`,
 and uses explicit `return` schemas when known. Learned result files are a
 fallback, not the primary mechanism.
 
+Mutation helpers should prefer semantic node targeting when they have a
+`nodeId`: `{op:"replace", nodeId:"setMessage", property:"value", value:"Done"}`.
+Use `beforeNodeId`, `afterNodeId`, or `parentNodeId + slot` for inserts. Keep
+JSON Pointer paths as the exact low-level fallback.
+
+Block authoring must stay project-local. Read any visible block with
+`blockGet`, create new blocks with `blockCreate`, duplicate core/shared blocks
+with `blockDuplicate`, and edit only project-local copies with `blockEdit`.
+
 Static `requestable.call` nodes should enrich picker context too. Flow targets
 read the Flow output contract; legacy sequence and transaction targets use the
 Convertigo `schemaManager` when a live engine is available. Dynamic or templated
@@ -230,11 +260,11 @@ Do not add Java admin services just to expose this during the POC. Prefer
 standalone Rhino validation first, then block-level or MCP/Studio integration
 later.
 
-`mcp.flow` may create project-local blocks through `flow-block-create`. Keep
-those blocks scoped to the current project unless the user explicitly asks to
-promote a block to the shared core library.
+The Flow MCP library may create project-local blocks through `flow-block-create`.
+Keep those blocks scoped to the current project unless the user explicitly asks
+to promote a block to the shared core library.
 
-When acting as a Flow authoring agent, use this order:
+When acting as a Flow authoring agent through `lib_flow_mcp`, use this order:
 
 ```text
 tools/list

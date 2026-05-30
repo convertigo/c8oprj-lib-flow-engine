@@ -13,6 +13,7 @@
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "flow", "result", "trace", "current"];
+	var projectDirOverride = null;
 
 	function engineDir() {
 		if (typeof __flowEngineDir !== "undefined" && String(__flowEngineDir).trim() !== "") {
@@ -22,10 +23,25 @@
 	}
 
 	function projectDir() {
+		if (projectDirOverride) {
+			return new File(String(projectDirOverride));
+		}
 		if (typeof __flowProjectDir !== "undefined" && String(__flowProjectDir).trim() !== "") {
 			return new File(String(__flowProjectDir));
 		}
 		return null;
+	}
+
+	function withProjectDir(dir, callback) {
+		var previous = projectDirOverride;
+		if (dir !== undefined && dir !== null && String(dir).trim() !== "") {
+			projectDirOverride = String(dir);
+		}
+		try {
+			return callback();
+		} finally {
+			projectDirOverride = previous;
+		}
 	}
 
 	function projectBlocksDir() {
@@ -1055,6 +1071,15 @@
 		return blockName + ".js";
 	}
 
+	function typeFileName(name) {
+		var typeName = String(name || "").trim();
+		if (!typeName.match(/^[A-Za-z0-9_.-]+$/)) {
+			raise("INVALID_TYPE_NAME", "Invalid Flow property type name: " + name,
+				null, "Use letters, digits, dot, underscore or dash.");
+		}
+		return typeName + ".js";
+	}
+
 	function flowFileName(name) {
 		var flowName = String(name || "").trim();
 		if (!flowName.match(/^[A-Za-z0-9_.-]+$/)) {
@@ -1316,6 +1341,21 @@
 		return block;
 	}
 
+	function escapeRegExp(text) {
+		return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	}
+
+	function renameBlockSource(source, fromName, toName) {
+		source = String(source || "");
+		var pattern = new RegExp("(\\bname\\s*:\\s*)([\"'])" + escapeRegExp(fromName) + "\\2", "g");
+		var renamed = source.replace(pattern, "$1$2" + String(toName) + "$2");
+		if (renamed === source) {
+			raise("BLOCK_RENAME_FAILED", "Unable to rename block source from \"" + fromName + "\" to \"" + toName + "\".",
+				null, "The block source must use a literal name property, for example name: \"" + fromName + "\".");
+		}
+		return renamed;
+	}
+
 	function createProjectBlock(blocks, name, source, overwrite) {
 		validateBlockSource(name, source);
 		var file = projectBlockFile(name);
@@ -1336,6 +1376,32 @@
 		return blockDescriptor(block);
 	}
 
+	function editProjectBlock(blocks, name, source) {
+		var block = blocks[String(name || "")];
+		var file = projectBlockFile(name);
+		if (!block || block.__flowOrigin !== "project" || !file.isFile()) {
+			raise("BLOCK_NOT_EDITABLE", "Only project-local Flow blocks can be edited: " + name,
+				null, "Duplicate core/shared blocks first, then edit the project-local copy.");
+		}
+		validateBlockSource(name, source);
+		FileUtils.writeStringToFile(file, String(source), "UTF-8");
+		delete blocks[name];
+		return blockDescriptor(loadBlockFile(blocks, file, "project"));
+	}
+
+	function duplicateProjectBlock(blocks, fromName, toName, overwrite) {
+		fromName = String(fromName || "");
+		toName = String(toName || "");
+		if (!fromName || !toName) {
+			raise("MISSING_BLOCK_NAME", "Block duplication requires fromName and toName.");
+		}
+		if (fromName === toName) {
+			raise("INVALID_BLOCK_NAME", "Block duplication target must differ from source: " + toName);
+		}
+		var source = getBlockSource(blocks, fromName).source;
+		return createProjectBlock(blocks, toName, renameBlockSource(source, fromName, toName), overwrite);
+	}
+
 	function getBlockSource(blocks, name) {
 		var block = blocks[String(name || "")];
 		if (!block) {
@@ -1346,6 +1412,69 @@
 			origin: block.__flowOrigin || "unknown",
 			file: String(block.__flowFile || ""),
 			source: String(FileUtils.readFileToString(new File(String(block.__flowFile)), "UTF-8"))
+		};
+	}
+
+	function projectTypeFile(name) {
+		var dir = projectTypesDir();
+		if (!dir) {
+			raise("PROJECT_TYPES_UNAVAILABLE", "Project property types are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		return new File(dir, typeFileName(name));
+	}
+
+	function validateTypeSource(name, source) {
+		var type = eval(String(source || ""));
+		if (!type || !type.name) {
+			raise("INVALID_TYPE", "Invalid property type module: " + name,
+				null, "A type file must evaluate to an object with a name.");
+		}
+		if (String(type.name) !== String(name)) {
+			raise("TYPE_NAME_MISMATCH", "Type source declares \"" + type.name + "\" instead of \"" + name + "\".");
+		}
+		return type;
+	}
+
+	function createProjectType(types, name, source, overwrite) {
+		validateTypeSource(name, source);
+		var file = projectTypeFile(name);
+		if (types[name] && types[name].__flowOrigin !== "project") {
+			raise("DUPLICATE_TYPE", "Cannot override non-project Flow property type: " + name,
+				null, "Choose a project-specific name instead.");
+		}
+		if (file.isFile() && overwrite !== true) {
+			raise("TYPE_ALREADY_EXISTS", "Project property type already exists: " + name,
+				null, "Pass overwrite=true to replace it explicitly.");
+		}
+		file.getParentFile().mkdirs();
+		FileUtils.writeStringToFile(file, String(source), "UTF-8");
+		if (types[name]) {
+			delete types[name];
+		}
+		var type = loadTypeFile(types, file, "project");
+		return typeDescriptor(type);
+	}
+
+	function getTypeSource(types, name) {
+		var type = types[String(name || "")];
+		if (!type) {
+			raise("UNKNOWN_TYPE", "Unknown Flow property type: " + name);
+		}
+		return {
+			name: type.name,
+			origin: type.__flowOrigin || "unknown",
+			file: String(type.__flowFile || ""),
+			descriptor: typeDescriptor(type),
+			source: String(FileUtils.readFileToString(new File(String(type.__flowFile)), "UTF-8"))
+		};
+	}
+
+	function typeList(blocks) {
+		return {
+			types: catalogTypes(Object.keys(blocks).sort().map(function (name) {
+				return blockDescriptor(blocks[name]);
+			}), loadTypes())
 		};
 	}
 
@@ -1447,6 +1576,9 @@
 
 	function currentProjectName(request) {
 		request = request || {};
+		if (request.project) {
+			return String(request.project);
+		}
 		if (request.context && request.context.project) {
 			return String(request.context.project);
 		}
@@ -1797,12 +1929,44 @@
 		ctx.catalog = function () {
 			return catalogDefinition(blocks);
 		};
+		ctx.withProjectDir = function (dir, callback) {
+			return withProjectDir(dir, callback);
+		};
 		ctx.analyzeFlowSource = function (flowSource, options) {
 			options = options || {};
-			return analyzeFlowSource(blocks, flowSource, options);
+			return withProjectDir(options.projectDir, function () {
+				return analyzeFlowSource(loadBlocks(), flowSource, options);
+			});
 		};
 		ctx.contextFlowSource = function (args) {
-			return contextForFlowRequest(blocks, args || {});
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return contextForFlowRequest(loadBlocks(), args);
+			});
+		};
+		ctx.searchFlow = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return searchFlowRequest(args, loadBlocks());
+			});
+		};
+		ctx.describeTreeSource = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return describeTreeRequest(args, loadBlocks());
+			});
+		};
+		ctx.applyMutationSource = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return applyMutationRequest(args, loadBlocks());
+			});
+		};
+		ctx.outputSchemaSource = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return outputSchemaRequest(args, loadBlocks());
+			});
 		};
 		ctx.schemaForOutput = function (node, property, outPath) {
 			return readOutputSchema(request, definition, node, property || "out", outPath || "");
@@ -1815,56 +1979,115 @@
 			if (!args.flowName && !args.name) {
 				args.flowName = flowNameFor(request, definition);
 			}
-			return resetSchemaRequest(args);
+			return withProjectDir(args.projectDir, function () {
+				return resetSchemaRequest(args);
+			});
 		};
 		ctx.runFlowSource = function (flowSource, config, options) {
 			options = options || {};
-			return runFlowRequest({
-				flowSource: flowSource,
-				config: config || {},
-				input: options.input || {},
-				context: mergedContext(ctx.scopes.request, options.context || {}),
-				includeTrace: options.includeTrace === true
-			}, blocks);
+			return withProjectDir(options.projectDir, function () {
+				return runFlowRequest({
+					flowSource: flowSource,
+					config: config || {},
+					input: options.input || {},
+					context: mergedContext(ctx.scopes.request, options.context || {}),
+					includeTrace: options.includeTrace === true
+				}, loadBlocks());
+			});
 		};
-		ctx.blockList = function () {
-			return catalogDefinition(blocks);
+		ctx.blockList = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return catalogDefinition(loadBlocks());
+			});
 		};
-		ctx.blockGet = function (name) {
-			return getBlockSource(blocks, name);
+		ctx.blockGet = function (name, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return getBlockSource(loadBlocks(), name);
+			});
 		};
-		ctx.blockCreate = function (name, source, overwrite) {
-			return createProjectBlock(blocks, name, source, overwrite);
+		ctx.blockCreate = function (name, source, overwrite, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				var targetBlocks = loadBlocks();
+				return createProjectBlock(targetBlocks, name, source, overwrite);
+			});
+		};
+		ctx.blockDuplicate = function (fromName, toName, overwrite, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				var targetBlocks = loadBlocks();
+				return duplicateProjectBlock(targetBlocks, fromName, toName, overwrite);
+			});
+		};
+		ctx.blockEdit = function (name, source, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				var targetBlocks = loadBlocks();
+				return editProjectBlock(targetBlocks, name, source);
+			});
+		};
+		ctx.typeList = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return typeList(loadBlocks());
+			});
+		};
+		ctx.typeGet = function (name, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return getTypeSource(loadTypes(), name);
+			});
+		};
+		ctx.typeCreate = function (name, source, overwrite, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return createProjectType(loadTypes(), name, source, overwrite);
+			});
 		};
 		ctx.blockTest = function (flowSource, config, options) {
 			options = options || {};
-			return runFlowRequest({
-				flowSource: flowSource,
-				config: config || {},
-				input: options.input || {},
-				context: mergedContext(ctx.scopes.request, options.context || {}),
-				includeTrace: options.includeTrace === true
-			}, blocks);
+			return withProjectDir(options.projectDir, function () {
+				return runFlowRequest({
+					flowSource: flowSource,
+					config: config || {},
+					input: options.input || {},
+					context: mergedContext(ctx.scopes.request, options.context || {}),
+					includeTrace: options.includeTrace === true
+				}, loadBlocks());
+			});
 		};
-		ctx.flowList = function () {
-			return listProjectFlows();
+		ctx.flowList = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return listProjectFlows();
+			});
 		};
-		ctx.flowGet = function (name) {
-			return getProjectFlow(name);
+		ctx.flowGet = function (name, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return getProjectFlow(name);
+			});
 		};
-		ctx.flowSet = function (name, source) {
-			return setProjectFlow(blocks, name, source);
+		ctx.flowSet = function (name, source, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return setProjectFlow(loadBlocks(), name, source);
+			});
 		};
 		ctx.flowTest = function (args) {
 			args = args || {};
-			var source = sourceForFlowRequest(args);
-			return runFlowRequest({
-				flowSource: source,
-				config: args.config || {},
-				input: args.input || {},
-				context: mergedContext(ctx.scopes.request, args.context || {}),
-				includeTrace: args.includeTrace === true
-			}, blocks);
+			return withProjectDir(args.projectDir, function () {
+				var source = sourceForFlowRequest(args);
+				return runFlowRequest({
+					flowSource: source,
+					config: args.config || {},
+					input: args.input || {},
+					context: mergedContext(ctx.scopes.request, args.context || {}),
+					includeTrace: args.includeTrace === true
+				}, loadBlocks());
+			});
 		};
 		ctx.returnValue = function (value) {
 			ctx.returned = value;
@@ -2590,6 +2813,16 @@
 		if (descriptor.file === undefined) {
 			descriptor.file = String(block.__flowFile || "");
 		}
+		if (descriptor.namespace === undefined && descriptor.name) {
+			var name = String(descriptor.name);
+			descriptor.namespace = name.indexOf(".") === -1 ? "core" : name.substring(0, name.indexOf("."));
+		}
+		if (descriptor["package"] === undefined) {
+			descriptor["package"] = descriptor.origin;
+		}
+		if (descriptor["private"] === undefined && block["private"] !== undefined) {
+			descriptor["private"] = block["private"] === true;
+		}
 		resolveBlockIcon(block, descriptor);
 		return descriptor;
 	}
@@ -3123,6 +3356,304 @@
 		};
 	}
 
+	function intOption(value, fallback, min, max) {
+		var number = Number(value);
+		if (isNaN(number)) {
+			number = fallback;
+		}
+		number = Math.floor(number);
+		if (min !== undefined && number < min) {
+			number = min;
+		}
+		if (max !== undefined && number > max) {
+			number = max;
+		}
+		return number;
+	}
+
+	function searchKinds(request) {
+		var kinds = request.kinds;
+		if (!kinds) {
+			return { flow: true, node: true, block: true, type: true, schema: true };
+		}
+		if (typeof kinds === "string") {
+			kinds = String(kinds).split(",");
+		}
+		var out = {};
+		(kinds || []).forEach(function (kind) {
+			out[String(kind).trim()] = true;
+		});
+		return out;
+	}
+
+	function searchNeedle(request) {
+		return String(request.query || request.q || "").trim().toLowerCase();
+	}
+
+	function searchMatches(text, needle) {
+		if (!needle) {
+			return true;
+		}
+		return String(text || "").toLowerCase().indexOf(needle) !== -1;
+	}
+
+	function searchSnippet(text, needle) {
+		text = String(text || "").replace(/\s+/g, " ").trim();
+		if (!text) {
+			return "";
+		}
+		var max = 180;
+		var index = needle ? text.toLowerCase().indexOf(needle) : -1;
+		if (index < 0) {
+			return summaryText(text, max);
+		}
+		var start = Math.max(0, index - 60);
+		var end = Math.min(text.length, index + needle.length + 80);
+		return (start > 0 ? "..." : "") + text.substring(start, end) + (end < text.length ? "..." : "");
+	}
+
+	function pointerEscape(part) {
+		return String(part).replace(/~/g, "~0").replace(/\//g, "~1");
+	}
+
+	function pointerPath(parts) {
+		return "/" + (parts || []).map(pointerEscape).join("/");
+	}
+
+	function flowQNameForSearch(request, flowName) {
+		var project = currentProjectName(request);
+		return project ? project + "." + flowName : String(flowName || "");
+	}
+
+	function shallowNodeDefinition(node) {
+		var shallow = {};
+		Object.keys(node || {}).forEach(function (key) {
+			if (["nodes", "do", "then", "else", "catch", "finally"].indexOf(key) === -1) {
+				shallow[key] = node[key];
+			}
+		});
+		return shallow;
+	}
+
+	function searchNodeContext(nodes, index, node, parentSummary, blocks, contextCount) {
+		if (contextCount <= 0) {
+			return undefined;
+		}
+		var context = {
+			parent: parentSummary || "",
+			previous: [],
+			children: [],
+			next: []
+		};
+		for (var previous = Math.max(0, index - contextCount); previous < index; previous++) {
+			context.previous.push(searchNodeSummary(nodes[previous], blocks));
+		}
+		var slots = activeSlots(node, blockCatalog(blocks[blockName(node)]));
+		slots.forEach(function (slot) {
+			(slot.nodes || []).slice(0, contextCount).forEach(function (child) {
+				context.children.push(searchNodeSummary(child, blocks));
+			});
+		});
+		for (var next = index + 1; next < Math.min(nodes.length, index + 1 + contextCount); next++) {
+			context.next.push(searchNodeSummary(nodes[next], blocks));
+		}
+		return context;
+	}
+
+	function searchNodeSummary(node, blocks) {
+		node = node || {};
+		var name = blockName(node);
+		var block = blocks && blocks[name];
+		var catalog = blockCatalog(block);
+		return nodeSummary(block, catalog, node, nodePath(node), name || "unknown");
+	}
+
+	function searchFlowNodes(request, blocks, flowName, definition, matches) {
+		var needle = searchNeedle(request);
+		var contextCount = intOption(request.context || request.around, 0, 0, 5);
+		var includeDefinition = request.includeDefinition === true;
+		var flowQName = flowQNameForSearch(request, flowName);
+
+		function walk(nodes, parts, parentSummary) {
+			nodes = nodes || [];
+			for (var i = 0; i < nodes.length; i++) {
+				var node = nodes[i] || {};
+				var name = blockName(node);
+				var block = blocks && blocks[name];
+				var catalog = blockCatalog(block);
+				var id = nodePath(node);
+				var path = pointerPath(parts.concat([String(i)]));
+				var summary = nodeSummary(block, catalog, node, id, name || "unknown");
+				var shallow = shallowNodeDefinition(node);
+				var text = [flowName, flowQName, id, name, summary, JSON.stringify(normalizeTree(shallow))].join(" ");
+				if (searchMatches(text, needle)) {
+					var match = {
+						kind: "node",
+						project: currentProjectName(request),
+						flow: flowName,
+						flowQName: flowQName,
+						nodeId: id,
+						path: path,
+						block: name,
+						summary: summary,
+						snippet: searchSnippet(text, needle),
+						next: "flow-context name=" + flowName + " node=" + id
+					};
+					var context = searchNodeContext(nodes, i, node, parentSummary, blocks, contextCount);
+					if (context) {
+						match.context = context;
+					}
+					if (includeDefinition) {
+						match.definition = normalizeTree(node);
+					}
+					matches.push(match);
+				}
+				activeSlots(node, catalog).forEach(function (slot) {
+					walk(slot.nodes || [], parts.concat([String(i), slot.name]), summary);
+				});
+			}
+		}
+
+		walk(definition.nodes || [], ["nodes"], "");
+	}
+
+	function searchCatalogEntries(request, blocks, matches) {
+		var needle = searchNeedle(request);
+		var kinds = searchKinds(request);
+		var catalog = catalogDefinition(blocks);
+		if (kinds.block) {
+			(catalog.blocks || []).forEach(function (block) {
+				var text = JSON.stringify(block);
+				if (!searchMatches(text, needle)) {
+					return;
+				}
+				matches.push({
+					kind: "block",
+					name: block.name,
+					origin: block.origin,
+					namespace: block.namespace,
+					summary: "[" + block.name + "] " + summaryText(block.description || ""),
+					snippet: searchSnippet(text, needle),
+					next: "flow-block-get name=" + block.name
+				});
+			});
+		}
+		if (kinds.type) {
+			(catalog.types || []).forEach(function (type) {
+				var text = JSON.stringify(type);
+				if (!searchMatches(text, needle)) {
+					return;
+				}
+				matches.push({
+					kind: "type",
+					name: type.name,
+					origin: type.origin,
+					summary: "[" + type.name + "] " + summaryText(type.description || ""),
+					snippet: searchSnippet(text, needle),
+					next: "flow-type-get name=" + type.name
+				});
+			});
+		}
+	}
+
+	function searchSchemaFiles(request, matches) {
+		var kinds = searchKinds(request);
+		if (!kinds.schema) {
+			return;
+		}
+		var dir = projectSchemasDir();
+		if (!dir || !dir.isDirectory()) {
+			return;
+		}
+		var needle = searchNeedle(request);
+		function walk(file) {
+			var files = file.listFiles();
+			if (!files) {
+				return;
+			}
+			Arrays.asList(files).toArray().forEach(function (child) {
+				if (child.isDirectory()) {
+					walk(child);
+					return;
+				}
+				if (!String(child.getName()).endsWith(".schema.json")) {
+					return;
+				}
+				var text = String(FileUtils.readFileToString(child, "UTF-8"));
+				if (!searchMatches(text, needle)) {
+					return;
+				}
+				matches.push({
+					kind: "schema",
+					file: String(child.getAbsolutePath()),
+					summary: "[schema] " + String(child.getName()),
+					snippet: searchSnippet(text, needle)
+				});
+			});
+		}
+		walk(dir);
+	}
+
+	function searchFlowRequest(request, blocks) {
+		request = request || {};
+		var needle = searchNeedle(request);
+		var kinds = searchKinds(request);
+		var matches = [];
+		var flows = request.name ? [{ name: String(request.name), source: sourceForFlowRequest(request) }] :
+			listProjectFlows().flows.map(function (flow) {
+				return {
+					name: flow.name,
+					file: flow.file,
+					source: String(FileUtils.readFileToString(new File(flow.file), "UTF-8"))
+				};
+			});
+		flows.forEach(function (flow) {
+			var flowQName = flowQNameForSearch(request, flow.name);
+			if (kinds.flow && searchMatches([flow.name, flowQName, flow.source].join(" "), needle)) {
+				matches.push({
+					kind: "flow",
+					project: currentProjectName(request),
+					flow: flow.name,
+					flowQName: flowQName,
+					file: flow.file || "",
+					summary: "[flow] " + flowQName,
+					snippet: searchSnippet(flow.source, needle),
+					next: "flow-tree name=" + flow.name
+				});
+			}
+			if (kinds.node) {
+				searchFlowNodes(request, blocks, flow.name, parseSource(flow.source), matches);
+			}
+		});
+		searchCatalogEntries(request, blocks, matches);
+		searchSchemaFiles(request, matches);
+
+		var offset = intOption(request.cursor, 0, 0);
+		var limit = intOption(request.limit, 50, 1, 500);
+		var page = matches.slice(offset, offset + limit);
+		var out = {
+			ok: true,
+			query: String(request.query || request.q || ""),
+			scope: String(request.scope || "project"),
+			project: currentProjectName(request),
+			count: page.length,
+			total: matches.length,
+			matches: page,
+			nextCursor: offset + limit < matches.length ? String(offset + limit) : null
+		};
+		if (request.doc !== false) {
+			out.doc = "Search Flow sidecars, nodes, catalog entries and learned schemas. Use flow-tree on a match for detailed inspection, then flow-edit with nodeId/path for mutations.";
+		}
+		if (request.hints !== false) {
+			out.hints = [
+				"Use kinds=['node'] to search executable Flow nodes only.",
+				"Use context=1 or 2 to get nearby parent/previous/children/next summaries.",
+				"Set doc=false,hints=false after the tool contract is understood."
+			];
+		}
+		return out;
+	}
+
 	function toYamlSource(value) {
 		var json = JSON.stringify(normalizeTree(value || {}));
 		var root = jsonMapper.readTree(json);
@@ -3203,6 +3734,115 @@
 		return normalizeTree(value);
 	}
 
+	function childSlotNamesForMutation(blocks, node) {
+		var names = {};
+		var block = blocks && blocks[blockName(node)];
+		slotDefinitions(blockCatalog(block)).forEach(function (definition) {
+			names[String(definition.name)] = true;
+			(definition.aliases || []).forEach(function (alias) {
+				names[String(alias)] = true;
+			});
+		});
+		return Object.keys(names);
+	}
+
+	function collectNodeLocations(root, blocks, wantedId) {
+		var matches = [];
+		var wanted = String(wantedId || "");
+		function walk(nodes, arrayParts) {
+			if (Object.prototype.toString.call(nodes) !== "[object Array]") {
+				return;
+			}
+			for (var i = 0; i < nodes.length; i++) {
+				var node = nodes[i] || {};
+				var nodeParts = arrayParts.concat([String(i)]);
+				if (nodePath(node) === wanted) {
+					matches.push({
+						node: node,
+						parts: nodeParts,
+						arrayParts: arrayParts,
+						index: i
+					});
+				}
+				childSlotNamesForMutation(blocks, node).forEach(function (slot) {
+					if (Object.prototype.toString.call(node[slot]) === "[object Array]") {
+						walk(node[slot], nodeParts.concat([slot]));
+					}
+				});
+			}
+		}
+		walk(root.nodes || [], ["nodes"]);
+		return matches;
+	}
+
+	function locateSingleNode(root, blocks, nodeId, role) {
+		var id = String(nodeId || "");
+		if (!id) {
+			raise("MISSING_NODE_ID", "Mutation requires " + role + ".");
+		}
+		var matches = collectNodeLocations(root, blocks, id);
+		if (matches.length === 0) {
+			raise("UNKNOWN_NODE_ID", "No Flow node found for " + role + ": " + id);
+		}
+		if (matches.length > 1) {
+			raise("AMBIGUOUS_NODE_ID", "More than one Flow node matches " + role + ": " + id);
+		}
+		return matches[0];
+	}
+
+	function mutationNodeId(mutation) {
+		return mutation.nodeId || mutation.node || "";
+	}
+
+	function mutationPropertyName(mutation) {
+		return mutation.property || mutation.prop || mutation.field || "";
+	}
+
+	function resolveMutationValueParts(root, mutation, blocks) {
+		if (mutation.path !== undefined && mutation.path !== null) {
+			return parseMutationPath(mutation.path);
+		}
+		var nodeId = mutationNodeId(mutation);
+		if (nodeId) {
+			var location = locateSingleNode(root, blocks, nodeId, "nodeId");
+			var property = mutationPropertyName(mutation);
+			return property ? location.parts.concat([String(property)]) : location.parts;
+		}
+		return [];
+	}
+
+	function resolveMutationArrayParts(root, mutation, blocks) {
+		if (mutation.beforeNodeId || mutation.before) {
+			var before = locateSingleNode(root, blocks, mutation.beforeNodeId || mutation.before, "beforeNodeId");
+			if (mutation.index === undefined || mutation.index === null) {
+				mutation.index = String(before.index);
+			}
+			return before.arrayParts;
+		}
+		if (mutation.afterNodeId || mutation.after) {
+			var after = locateSingleNode(root, blocks, mutation.afterNodeId || mutation.after, "afterNodeId");
+			if (mutation.index === undefined || mutation.index === null) {
+				mutation.index = String(after.index + 1);
+			}
+			return after.arrayParts;
+		}
+		if (mutation.parentNodeId || mutation.parentNode) {
+			var parent = locateSingleNode(root, blocks, mutation.parentNodeId || mutation.parentNode, "parentNodeId");
+			var slot = String(mutation.slot || "nodes");
+			if (parent.node[slot] === undefined || parent.node[slot] === null) {
+				parent.node[slot] = [];
+			}
+			if (Object.prototype.toString.call(parent.node[slot]) !== "[object Array]") {
+				raise("INVALID_MUTATION_TARGET", "Node slot is not an array: " + slot);
+			}
+			return parent.parts.concat([slot]);
+		}
+		if (mutation.path !== undefined && mutation.path !== null) {
+			return parseMutationPath(mutation.path);
+		}
+		return ["nodes"];
+	}
+
 	function mergeObjects(target, patch) {
 		if (!patch || typeof patch !== "object" || Object.prototype.toString.call(patch) === "[object Array]") {
 			return cloneMutationValue(patch);
@@ -3221,7 +3861,7 @@
 		return target;
 	}
 
-	function applyOneMutation(root, mutation) {
+	function applyOneMutation(root, mutation, blocks) {
 		mutation = mutation || {};
 		var op = String(mutation.op || "replace");
 		if (op === "set") {
@@ -3232,22 +3872,39 @@
 		}
 		if (op === "batch") {
 			(mutation.mutations || []).forEach(function (child) {
-				applyOneMutation(root, child);
+				applyOneMutation(root, child, blocks);
 			});
 			return;
 		}
 
-		var parts = parseMutationPath(mutation.path);
-		if (op === "move") {
+		var parts = (op === "insert" || op === "append" || op === "move" || op === "copy")
+			? resolveMutationArrayParts(root, mutation, blocks)
+			: resolveMutationValueParts(root, mutation, blocks);
+		if (op === "move" || op === "copy") {
 			var fromPath = mutation.from || mutation.source;
+			if (!fromPath && (mutation.fromNodeId || mutation.sourceNodeId || mutationNodeId(mutation))) {
+				fromPath = pointerPath(locateSingleNode(root, blocks,
+					mutation.fromNodeId || mutation.sourceNodeId || mutationNodeId(mutation), "fromNodeId").parts);
+			}
 			if (!fromPath) {
-				raise("INVALID_MUTATION_PATH", "Move mutation requires a source path.");
+				raise("INVALID_MUTATION_PATH", "Move/copy mutation requires a source path.");
 			}
 			var moved = cloneMutationValue(valueAt(root, parseMutationPath(fromPath)));
-			applyOneMutation(root, { op: "delete", path: fromPath });
+			if (op === "copy") {
+				var patch = mutation.patch || mutation.properties || mutation.props;
+				if (patch !== undefined && patch !== null) {
+					moved = mergeObjects(moved, patch);
+				}
+				if (mutation.newId || mutation.newNodeId) {
+					moved.id = String(mutation.newId || mutation.newNodeId);
+				}
+			}
+			if (op === "move") {
+				applyOneMutation(root, { op: "delete", path: fromPath }, blocks);
+			}
 			var moveArray = valueAt(root, parts);
 			if (Object.prototype.toString.call(moveArray) !== "[object Array]") {
-				raise("INVALID_MUTATION_TARGET", "Move target is not an array: " + mutation.path);
+				raise("INVALID_MUTATION_TARGET", "Move target is not an array: " + pointerPath(parts));
 			}
 			var moveIndex = mutation.index === undefined || mutation.index === null || mutation.index === "end"
 				? moveArray.length : asArrayIndex(moveArray, String(mutation.index), true);
@@ -3257,7 +3914,7 @@
 		if (op === "append") {
 			var array = valueAt(root, parts);
 			if (Object.prototype.toString.call(array) !== "[object Array]") {
-				raise("INVALID_MUTATION_TARGET", "Append target is not an array: " + mutation.path);
+				raise("INVALID_MUTATION_TARGET", "Append target is not an array: " + pointerPath(parts));
 			}
 			array.push(cloneMutationValue(mutation.value));
 			return;
@@ -3265,7 +3922,7 @@
 		if (op === "insert") {
 			var targetArray = valueAt(root, parts);
 			if (Object.prototype.toString.call(targetArray) !== "[object Array]") {
-				raise("INVALID_MUTATION_TARGET", "Insert target is not an array: " + mutation.path);
+				raise("INVALID_MUTATION_TARGET", "Insert target is not an array: " + pointerPath(parts));
 			}
 			var index = mutation.index === undefined || mutation.index === null || mutation.index === "end"
 				? targetArray.length : asArrayIndex(targetArray, String(mutation.index), true);
@@ -3323,7 +3980,7 @@
 			raise("MISSING_MUTATION", "Flow mutation request requires mutation or mutations.");
 		}
 		mutations.forEach(function (mutation) {
-			applyOneMutation(definition, mutation);
+			applyOneMutation(definition, mutation, blocks);
 		});
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;
@@ -3400,7 +4057,7 @@
 			+ typeEditorFragmentsHtml()
 			+ "<script>"
 			+ "(function(){"
-			+ "var state=null,focusKey=null,draft='',editorMode='custom',pickerValue='',pickerTarget='',pickerOriginal='',pickerLastTarget='';"
+			+ "var state=null,focusKey=null,draft='',editorMode='custom',pickerValue='',pickerTarget='',pickerOriginal='',pickerLastTarget='',pickerUpdatingEditor=false;"
 			+ "function esc(v){return String(v==null?'':v).replace(/[&<>\\\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\\\"':'&quot;',\"'\":'&#39;'}[c];});}"
 			+ "function send(m){if(window.flowEditor&&window.flowEditor.receive){window.flowEditor.receive(JSON.stringify(m));}}"
 			+ "function hostRequest(name,payload){if(window.flowEditor&&window.flowEditor.request){try{return JSON.parse(window.flowEditor.request(JSON.stringify({type:'request',name:name,payload:payload||{}}))||'{}');}catch(e){return{ok:false,error:String(e)}}}return{ok:false,error:'Flow editor bridge is unavailable.'};}"
@@ -3429,10 +4086,10 @@
 			+ "function entryType(entry){return typeof entry==='string'?'unknown':String(entry.type||'unknown').toLowerCase();}"
 			+ "function acceptsPath(prop,entry){if(!prop||pickerKind(prop)==='path')return true;var wanted=targetType(prop);if(!wanted||wanted==='unknown')return true;var actual=entryType(entry);if(isScalarType(wanted)&&(actual==='object'||actual==='array'))return false;if(wanted==='array'&&actual==='object')return false;if(wanted==='object'&&actual==='array')return false;return true;}"
 			+ "function selectPickerTarget(key){pickerTarget=key||'';pickerLastTarget='';render();}"
-			+ "function updatePickerValue(value){pickerValue=value==null?'':String(value);var input=document.querySelector('[data-picker-value]');if(input&&input.value!==pickerValue)input.value=pickerValue;var editor=document.querySelector('[data-picker-editor]');if(editor){editor.value=pickerValue;if(editor.render)editor.render();}}"
+			+ "function updatePickerValue(value,refreshEditor){pickerValue=value==null?'':String(value);var input=document.querySelector('[data-picker-value]');if(input&&input.value!==pickerValue)input.value=pickerValue;if(refreshEditor===false)return;var editor=document.querySelector('[data-picker-editor]');if(editor&&editor.setState&&editor.value!==pickerValue){pickerUpdatingEditor=true;editor.setState(pickerEditorState(pickerProperty(pickerProps((state&&state.info)||{},(state&&state.info&&state.info.propertyDefinitions)||{},(state&&state.definition)||{}))));pickerUpdatingEditor=false;}}"
 			+ "function resetPickerValue(){updatePickerValue(pickerOriginal);}"
 			+ "function pickerEditorState(prop){var next={};keys(state||{}).forEach(function(k){next[k]=state[k];});next.mode='property';next.property=prop.key;next.propertyDefinition=prop.def||{};next.value=pickerValue;return next;}"
-			+ "function attachPickerEditor(prop){if(!prop)return false;var editor=document.querySelector('[data-picker-editor]');if(editor&&editor.setState){window.flowHost={request:hostRequest,setValue:updatePickerValue};editor.flowHost=window.flowHost;editor.setState(pickerEditorState(prop));editor.addEventListener('flow-value',function(e){updatePickerValue(e.detail&&e.detail.value);});return true;}return false;}"
+			+ "function attachPickerEditor(prop){if(!prop)return false;var editor=document.querySelector('[data-picker-editor]');if(editor&&editor.setState){window.flowHost={request:hostRequest,setValue:updatePickerValue};editor.flowHost=window.flowHost;editor.setState(pickerEditorState(prop));editor.addEventListener('flow-value',function(e){if(!pickerUpdatingEditor)updatePickerValue(e.detail&&e.detail.value,false);});return true;}return false;}"
 			+ "function field(key,def,node){def=def||{};var kind=def.kind||'text';var type=def.type||'';var value=propValue(node,key);var rows=(kind==='template'||kind==='expression'||kind==='value'||value.length>80||value.indexOf('\\n')>=0)?'textarea':'input';var ro=def.readOnly||key==='id'||key==='block';var html='<div class=\"field\"><label>'+esc(def.label||key)+' <span class=\"kind\">'+esc(kind+(type?':'+type:''))+'</span></label>';if(def.description||def.shortDescription)html+='<div class=\"desc\">'+esc(def.description||def.shortDescription)+'</div>';if(rows==='textarea')html+='<textarea data-key=\"'+esc(key)+'\" data-kind=\"'+esc(kind)+'\" '+(ro?'readonly':'')+'>'+esc(value)+'</textarea>';else html+='<input data-key=\"'+esc(key)+'\" data-kind=\"'+esc(kind)+'\" value=\"'+esc(value)+'\" '+(ro?'readonly':'')+'>';if(!ro)html+='<div class=\"actions\"><button data-apply=\"'+esc(key)+'\">Apply</button><button class=\"secondary\" data-reset=\"'+esc(key)+'\">Reset</button></div>';return html+'</div>';}"
 			+ "function propertyField(){var def=state.propertyDefinition||{};var key=state.property||'';var kind=def.kind||def.editor||'text';var type=def.type||'';var value=state.value==null?'':String(state.value);var label=def.label||key||'value';var html='<div class=\"field\"><label>'+esc(label)+' <span class=\"kind\">'+esc(kind+(type?':'+type:''))+'</span></label>';if(def.description||def.shortDescription)html+='<div class=\"desc\">'+esc(def.description||def.shortDescription)+'</div>';if(hasTypeEditor(kind)){var tag=typeEditorTag(kind);return html+'<'+tag+' data-key=\"'+esc(key)+'\" data-kind=\"'+esc(kind)+'\"></'+tag+'></div>';}var simple=templateLike(kind);if(simple)editorMode=simpleCandidate(value)?'simple':'custom';if(simple){var p=simpleParts(value);html+='<div class=\"modebar\"><button data-editor-mode=\"simple\" class=\"'+(editorMode==='simple'?'active':'')+'\">Simple</button><button data-editor-mode=\"custom\" class=\"secondary '+(editorMode==='custom'?'active':'')+'\">Custom</button></div>';html+='<div data-simple-box class=\"simple '+(editorMode==='simple'?'':'hidden')+'\"><input data-simple=\"prefix\" placeholder=\"prefix\" value=\"'+esc(p.prefix)+'\"><input data-simple=\"pick\" placeholder=\"pick\" value=\"'+esc(p.path)+'\"><input data-simple=\"suffix\" placeholder=\"suffix\" value=\"'+esc(p.suffix)+'\"></div>';}html+='<textarea data-key=\"'+esc(key)+'\" data-kind=\"'+esc(kind)+'\" class=\"'+(simple&&editorMode==='simple'?'hidden':'')+'\">'+esc(value)+'</textarea>';return html+'</div>';}"
 			+ "function pathList(ctx){var out=[];var scopes=ctx&&ctx.scopes||{};keys(scopes).forEach(function(scope){var bucket=scopes[scope];var paths=Array.isArray(bucket)?bucket:(bucket.paths||[]);out.push({scope:scope,paths:paths});});return out;}"
@@ -3440,7 +4097,7 @@
 			+ "function side(){var html='<div class=\"side\"><h1>Scope picker</h1><div class=\"sub\">Click to insert into the focused editor.</div>';pathList(state.context).forEach(function(group){html+='<div class=\"scopeTitle\">'+esc(group.scope)+'</div>';group.paths.forEach(function(p){var label=typeof p==='string'?p:p.path;var type=typeof p==='string'?'':(p.type||'');html+='<button draggable=\"true\" class=\"path\" data-path=\"'+esc(label)+'\">'+esc(label)+(type?' <span class=\"type\">'+esc(type)+'</span>':'')+'</button>';});});return html+'</div>';}"
 			+ "function attachTypeEditor(){var tag=typeEditorTag(currentPropertyKind());var editor=document.querySelector(tag+'[data-key]');if(editor&&editor.setState){window.flowHost={request:hostRequest,setValue:setDraft};editor.flowHost=window.flowHost;editor.setState(state);focusKey=editor.getAttribute('data-key');editor.addEventListener('flow-value',function(e){setDraft(e.detail&&e.detail.value);});setDraft(editor.value||'');return true;}return false;}"
 			+ "function renderProperty(app){var node=state.definition||{};var title=state.summary||node.id||state.virtualPath||'Flow node';var custom=hasTypeEditor(currentPropertyKind());var html='<div class=\"wrap '+(custom?'single':'')+'\"><div class=\"main\"><h1>'+esc(title)+'</h1><div class=\"sub\">'+esc((state.flowQName||'')+' '+(state.virtualPath||'')+' / '+(state.property||''))+'</div>'+propertyField()+'</div>'+(custom?'':side())+'</div>';app.className='';app.innerHTML=html;if(attachTypeEditor())return;var el=document.querySelector('[data-key]');if(el){focusKey=el.getAttribute('data-key');el.focus();el.setSelectionRange(el.value.length,el.value.length);draft=el.value;send({type:'value',value:draft});}}"
-			+ "function renderPicker(app){var node=state.definition||{};var info=state.info||{};var defs=info.propertyDefinitions||{};var props=pickerProps(info,defs,node);if(props.length&&!pickerProperty(props))pickerTarget=pickerDefaultProperty(props);var target=pickerProperty(props);if(target&&pickerLastTarget!==pickerTarget){pickerValue=target.value;pickerOriginal=target.value;pickerLastTarget=pickerTarget;}var custom=target&&pickerKind(target)==='requestable'&&hasTypeEditor(pickerKind(target));var html='<div class=\"picker\"><div class=\"pickerHeader\"><h1>'+esc(state.summary||node.id||state.virtualPath||'Flow picker')+'</h1><div class=\"sub\">'+esc((state.flowQName||'')+' '+(state.virtualPath||''))+'</div>';if(props.length){html+='<div class=\"target\"><div class=\"propList\">';props.forEach(function(prop){var kind=pickerKind(prop);var type=pickerType(prop);html+='<button class=\"prop '+(prop.key===pickerTarget?'active':'')+'\" data-picker-property-button=\"'+esc(prop.key)+'\"><span>'+esc(pickerLabel(prop))+'</span><span class=\"type\">'+esc(kind+(type?':'+type:''))+'</span></button>';});html+='</div>'+(state.applied?'<div class=\"applied\">Applied '+esc(state.applied.property||'')+'</div>':'')+'</div>';}if(custom){var tag=typeEditorTag(pickerKind(target));html+='<div class=\"pickerEditor\"><'+tag+' data-picker-editor=\"true\"></'+tag+'></div><div class=\"pickerActions\"><button data-apply-picked=\"true\">Apply</button><button class=\"secondary\" data-cancel-picked=\"true\">Cancel</button></div>';}else{html+='<div class=\"copybar\"><input data-picker-value value=\"'+esc(pickerValue)+'\" placeholder=\"pick a value\"><button data-apply-picked=\"true\">'+(pickerTarget?'Apply':'Copy')+'</button>'+(pickerTarget?'<button class=\"secondary\" data-cancel-picked=\"true\">Cancel</button>':'')+'</div>';}html+='</div>'+(custom?'':pathGroups(target));app.className='';app.innerHTML=html+'</div>';if(custom)attachPickerEditor(target);}"
+			+ "function renderPicker(app){var node=state.definition||{};var info=state.info||{};var defs=info.propertyDefinitions||{};var props=pickerProps(info,defs,node);if(props.length&&!pickerProperty(props))pickerTarget=pickerDefaultProperty(props);var target=pickerProperty(props);if(target&&pickerLastTarget!==pickerTarget){pickerValue=target.value;pickerOriginal=target.value;pickerLastTarget=pickerTarget;}var custom=target&&hasTypeEditor(pickerKind(target));var html='<div class=\"picker\"><div class=\"pickerHeader\"><h1>'+esc(state.summary||node.id||state.virtualPath||'Flow picker')+'</h1><div class=\"sub\">'+esc((state.flowQName||'')+' '+(state.virtualPath||''))+'</div>';if(props.length){html+='<div class=\"target\"><div class=\"propList\">';props.forEach(function(prop){var kind=pickerKind(prop);var type=pickerType(prop);html+='<button class=\"prop '+(prop.key===pickerTarget?'active':'')+'\" data-picker-property-button=\"'+esc(prop.key)+'\"><span>'+esc(pickerLabel(prop))+'</span><span class=\"type\">'+esc(kind+(type?':'+type:''))+'</span></button>';});html+='</div>'+(state.applied?'<div class=\"applied\">Applied '+esc(state.applied.property||'')+'</div>':'')+'</div>';}if(custom){var tag=typeEditorTag(pickerKind(target));html+='<div class=\"pickerEditor\"><'+tag+' data-picker-editor=\"true\"></'+tag+'></div><div class=\"pickerActions\"><button data-apply-picked=\"true\">Apply</button><button class=\"secondary\" data-cancel-picked=\"true\">Cancel</button></div>';}else{html+='<div class=\"copybar\"><input data-picker-value value=\"'+esc(pickerValue)+'\" placeholder=\"pick a value\"><button data-apply-picked=\"true\">'+(pickerTarget?'Apply':'Copy')+'</button>'+(pickerTarget?'<button class=\"secondary\" data-cancel-picked=\"true\">Cancel</button>':'')+'</div>';}html+='</div>'+(custom?'':pathGroups(target));app.className='';app.innerHTML=html+'</div>';if(custom)attachPickerEditor(target);}"
 			+ "function renderObject(app){var node=state.definition||{};var info=state.info||{};var defs=info.propertyDefinitions||{};var ordered=propOrder(info,defs,node);var html='<div class=\"wrap\"><div class=\"main\"><h1>'+esc(state.summary||node.id||state.virtualPath||'Flow node')+'</h1><div class=\"sub\">'+esc(state.flowQName||'')+' '+esc(state.virtualPath||'')+'</div>';html+=field('id',{label:'id',kind:'text',description:'Stable node identifier.'},node);html+=field('block',{label:'block',kind:'text',description:'Block implementation.'},node);if(node.comment!==undefined||state.virtualKind==='node')html+=field('comment',{label:'Comment',kind:'text',description:'Treeview comment.'},node);ordered.forEach(function(k){html+=field(k,defs[k],node);});html+='</div>'+side()+'</div>';app.className='';app.innerHTML=html;}"
 			+ "function render(){var app=document.getElementById('app');if(!state){app.className='empty';app.textContent='Select a Flow node.';return;}if(state.error){app.className='error';app.textContent=state.error;return;}if(state.mode==='property'){renderProperty(app);}else if(state.mode==='picker'){renderPicker(app);}else{renderObject(app);}}"
 			+ "function input(key){return document.querySelector('[data-key=\"'+key.replace(/[^A-Za-z0-9_-]/g,'\\\\$&')+'\"]');}"
@@ -3479,6 +4136,15 @@
 				return response(contextForFlowRequest(loadBlocks(), request));
 			} catch (e) {
 				return response(failure("context", e));
+			}
+		},
+
+		search: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(searchFlowRequest(request, loadBlocks()));
+			} catch (e) {
+				return response(failure("search", e));
 			}
 		},
 
@@ -3531,6 +4197,68 @@
 				return response(applyMutationRequest(request, loadBlocks()));
 			} catch (e) {
 				return response(failure("applyMutation", e));
+			}
+		},
+
+		types: function (requestJson) {
+			try {
+				return response(Object.assign({ ok: true }, typeList(loadBlocks())));
+			} catch (e) {
+				return response(failure("types", e));
+			}
+		},
+
+		typeGet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(getTypeSource(loadTypes(), request.name));
+			} catch (e) {
+				return response(failure("typeGet", e));
+			}
+		},
+
+		typeCreate: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(createProjectType(loadTypes(), request.name, request.source || "", request.overwrite === true));
+			} catch (e) {
+				return response(failure("typeCreate", e));
+			}
+		},
+
+		blockGet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(getBlockSource(loadBlocks(), request.name));
+			} catch (e) {
+				return response(failure("blockGet", e));
+			}
+		},
+
+		blockCreate: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(createProjectBlock(loadBlocks(), request.name, request.source || "", request.overwrite === true));
+			} catch (e) {
+				return response(failure("blockCreate", e));
+			}
+		},
+
+		blockDuplicate: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(duplicateProjectBlock(loadBlocks(), request.fromName || request.from, request.toName || request.name, request.overwrite === true));
+			} catch (e) {
+				return response(failure("blockDuplicate", e));
+			}
+		},
+
+		blockEdit: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(editProjectBlock(loadBlocks(), request.name, request.source || ""));
+			} catch (e) {
+				return response(failure("blockEdit", e));
 			}
 		}
 	};

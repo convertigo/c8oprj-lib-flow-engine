@@ -9,7 +9,8 @@
 		.simple { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 6px; margin-bottom: 8px; }
 		.hidden { display: none !important; }
 		.picker { overflow: auto; max-height: 420px; border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
-		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
+		details.scopeGroup { margin: 6px 0; }
+		details.scopeGroup > summary { cursor: pointer; font-weight: 700; padding: 4px 0; color: #f2f6f8; }
 		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
 		.path { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border-color: #39424a; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		.path:hover { border-color: #2786a8; color: white; }
@@ -56,16 +57,55 @@
 			});
 		}
 
-		function renderPicker(context) {
+		function targetType(propertyDefinition) {
+			var type = propertyDefinition && (propertyDefinition.type || propertyDefinition.kind);
+			return String(type || "unknown").toLowerCase();
+		}
+
+		function isScalarType(type) {
+			return type === "string" || type === "number" || type === "integer" || type === "boolean";
+		}
+
+		function entryType(entry) {
+			return typeof entry === "string" ? "unknown" : String(entry.type || "unknown").toLowerCase();
+		}
+
+		function acceptsPath(propertyDefinition, entry) {
+			var wanted = targetType(propertyDefinition);
+			if (!wanted || wanted === "unknown") {
+				return true;
+			}
+			var actual = entryType(entry);
+			if (isScalarType(wanted) && (actual === "object" || actual === "array")) {
+				return false;
+			}
+			if (wanted === "array" && actual === "object") {
+				return false;
+			}
+			if (wanted === "object" && actual === "array") {
+				return false;
+			}
+			return true;
+		}
+
+		function renderPicker(context, propertyDefinition) {
 			var html = "";
 			groups(context).forEach(function (group) {
-				html += "<div class=\"group\">" + esc(group.scope) + "</div>";
-				(group.paths || []).forEach(function (entry) {
+				var rows = (group.paths || []).filter(function (entry) {
+					return acceptsPath(propertyDefinition, entry);
+				});
+				if (rows.length === 0) {
+					return;
+				}
+				html += "<details class=\"scopeGroup\"><summary>" + esc(group.scope)
+					+ " <span class=\"type\">" + rows.length + "</span></summary>";
+				rows.forEach(function (entry) {
 					var path = typeof entry === "string" ? entry : entry.path;
 					var type = typeof entry === "string" ? "" : entry.type || "";
 					html += "<button class=\"path\" data-path=\"" + esc(path) + "\">" + esc(path)
 						+ (type ? " <span class=\"type\">" + esc(type) + "</span>" : "") + "</button>";
 				});
+				html += "</details>";
 			});
 			return html || "<div class=\"empty\">No known path yet.</div>";
 		}
@@ -212,7 +252,7 @@
 				if (suffix && suffix.value !== p.suffix) suffix.value = p.suffix;
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
-					picker.innerHTML = renderPicker(this._state.context);
+					picker.innerHTML = renderPicker(this._state.context, this._state.propertyDefinition);
 				}
 			}
 		});

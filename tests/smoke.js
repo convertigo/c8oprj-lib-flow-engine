@@ -52,11 +52,39 @@ print(JSON.stringify(catalog));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.name === "requestable.call";
 }), "catalog did not expose requestable.call");
+assertTrue(catalog.blocks.some(function (block) {
+	return block.name === "json.push" && block.namespace === "json" && block["package"] === "core";
+}), "catalog did not expose package/namespace metadata");
 var expressionType = catalog.types.filter(function (type) {
 	return type.name === "expression";
 })[0];
 assertTrue(expressionType && expressionType.editor && String(expressionType.editor.file).indexOf("expression.html") !== -1,
 	"catalog did not expose type editor resources");
+var typeListApi = JSON.parse(engine.types("{}"));
+assertTrue(typeListApi.ok === true && typeListApi.types.some(function (type) {
+	return type.name === "requestable";
+}), "types API did not expose core property types");
+var customTypeSource = [
+	"(function () {",
+	"\treturn {",
+	"\t\tname: \"custom.note\",",
+	"\t\tlabel: \"Custom note\",",
+	"\t\ttype: \"string\",",
+	"\t\tdescription: \"Project-local smoke test type.\"",
+	"\t};",
+	"}())",
+	""
+].join("\n");
+var createdType = JSON.parse(engine.typeCreate(JSON.stringify({
+	name: "custom.note",
+	source: customTypeSource
+})));
+assertTrue(createdType.name === "custom.note", "typeCreate did not create a project-local type");
+var readType = JSON.parse(engine.typeGet(JSON.stringify({
+	name: "custom.note"
+})));
+assertTrue(readType.descriptor.description === "Project-local smoke test type.",
+	"typeGet did not return the custom type descriptor");
 var propertyEditor = JSON.parse(engine.propertyEditor("{}"));
 assertTrue(propertyEditor.ok === true && propertyEditor.html.indexOf("receiveFromJava") !== -1,
 	"propertyEditor did not expose the web editor host");
@@ -78,6 +106,12 @@ assertTrue(propertyEditor.html.indexOf("data-picker-property-button") !== -1 &&
 	propertyEditor.html.indexOf("data-apply-picked") !== -1 &&
 	propertyEditor.html.indexOf("data-cancel-picked") !== -1,
 	"propertyEditor did not expose picker target property apply actions");
+assertTrue(propertyEditor.html.indexOf("target&&hasTypeEditor(pickerKind(target))") !== -1 &&
+	propertyEditor.html.indexOf("pickerUpdatingEditor") !== -1,
+	"propertyEditor did not route picker properties through standalone type editors");
+assertTrue(propertyEditor.html.indexOf("details.scopeGroup") !== -1 &&
+	propertyEditor.html.indexOf("acceptsPath(propertyDefinition, entry)") !== -1,
+	"template/value editors did not expose collapsible filtered picker groups");
 assertTrue(propertyEditor.html.indexOf("data-picker-format") === -1,
 	"propertyEditor still exposes the confusing path/template picker format selector");
 print(engine.analyze(JSON.stringify({ flowSource: flowSource })));
@@ -124,6 +158,38 @@ assertTrue(mutatedFlow.ok === true && mutatedFlow.analysis.writes.indexOf("resul
 	"applyMutation(flow) did not append and analyze a node");
 var mutatedFlowRun = JSON.parse(engine.run(JSON.stringify({ flowSource: mutatedFlow.source })));
 assertTrue(mutatedFlowRun.result.mutated === true, "Mutated flow source did not execute");
+var semanticMutatedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
+	target: "flow",
+	flowSource: flowSource,
+	mutation: {
+		op: "replace",
+		nodeId: "setMessage",
+		property: "value",
+		value: "Hello semantic mutation"
+	}
+})));
+print(JSON.stringify(semanticMutatedFlow));
+var semanticMutatedRun = JSON.parse(engine.run(JSON.stringify({ flowSource: semanticMutatedFlow.source })));
+assertTrue(semanticMutatedRun.result.message === "Hello semantic mutation",
+	"applyMutation(flow) did not replace a node property by nodeId");
+var semanticInsertedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
+	target: "flow",
+	flowSource: flowSource,
+	mutation: {
+		op: "insert",
+		afterNodeId: "setMessage",
+		value: {
+			id: "setAfterMessage",
+			block: "set",
+			path: "result.afterMessage",
+			value: "after"
+		}
+	}
+})));
+print(JSON.stringify(semanticInsertedFlow));
+assertTrue(semanticInsertedFlow.ok === true &&
+	semanticInsertedFlow.analysis.writes.indexOf("result.afterMessage") !== -1,
+	"applyMutation(flow) did not insert a node after nodeId");
 print(engine.run(JSON.stringify({ flowSource: flowSource })));
 var staticSchemaFlowSource = [
 	"version: 1",
@@ -539,6 +605,32 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	namedGreetingFlowSource,
 	"UTF-8"
 );
+var namedSearch = JSON.parse(engine.search(JSON.stringify({
+	project: "SmokeProject",
+	name: "NamedGreeting",
+	query: "setMessage",
+	kinds: ["node"],
+	context: 1
+})));
+print(JSON.stringify(namedSearch));
+assertTrue(namedSearch.ok === true &&
+	namedSearch.matches[0].flowQName === "SmokeProject.NamedGreeting" &&
+	namedSearch.matches[0].nodeId === "setMessage" &&
+	namedSearch.matches[0].path === "/nodes/0",
+	"search did not return flowQName, nodeId and canonical path for a named Flow node");
+var catalogSearch = JSON.parse(engine.search(JSON.stringify({
+	query: "requestable",
+	kinds: ["block", "type"],
+	limit: 5,
+	doc: false,
+	hints: false
+})));
+print(JSON.stringify(catalogSearch));
+assertTrue(catalogSearch.matches.some(function (match) {
+	return match.kind === "block" && match.name === "requestable.call";
+}) && catalogSearch.matches.some(function (match) {
+	return match.kind === "type" && match.name === "requestable";
+}), "search did not return catalog block/type matches");
 var requestableCallSource = [
 	"version: 1",
 	"nodes:",
@@ -758,324 +850,3 @@ print(JSON.stringify(projectBindingRun));
 assertTrue(projectBindingRun.result.weather.temperature === 12 &&
 	projectBindingRun.result.weather.provider === "ProjectEngineMock",
 	"Contract use did not honor project FlowEngine binding");
-
-var mcpFlowSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: handleMcp",
-	"    block: mcp.flow",
-	"    request: config.request",
-	"    out: result.response",
-	"  - id: done",
-	"    block: return",
-	"    value: \"{{ result.response }}\"",
-	""
-].join("\n");
-
-var mcpList = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 1,
-			method: "tools/list"
-		}
-	}
-})));
-print(JSON.stringify(mcpList));
-assertTrue(mcpList.ok === true, "MCP Flow tools/list wrapper failed");
-assertTrue(mcpList.result.result.tools.length >= 11, "MCP Flow tools/list returned too few tools");
-
-var customBlockSource = [
-	"(function () {",
-	"	return {",
-	"		name: \"weather.hotCities\",",
-	"		catalog: function () {",
-	"			return {",
-	"				name: \"weather.hotCities\",",
-	"				props: {",
-	"					items: { kind: \"expression\", type: \"array\" },",
-	"					threshold: { kind: \"expression\", type: \"number\" },",
-	"					out: { kind: \"path\", mode: \"write\" }",
-	"				},",
-	"				description: \"Returns sorted city names whose temperature is greater than or equal to a threshold.\"",
-	"			};",
-	"		},",
-	"		analyze: function (ctx, node) {",
-	"			var props = ctx.props(node);",
-	"			ctx.addPath(props.out);",
-	"		},",
-	"		run: function (ctx, node) {",
-	"			var props = ctx.props(node);",
-	"			var items = ctx.expr(props.items) || [];",
-	"			var threshold = Number(ctx.expr(props.threshold));",
-	"			var cities = [];",
-	"			for (var i = 0; i < items.length; i++) {",
-	"				var item = items[i];",
-	"				if (Number(item.temperature) >= threshold) {",
-	"					cities.push(String(item.city));",
-	"				}",
-	"			}",
-	"			cities.sort();",
-	"			return cities;",
-	"		}",
-	"	};",
-	"}())",
-	""
-].join("\n");
-
-var mcpCreateBlock = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 4,
-			method: "tools/call",
-			params: {
-				name: "flow-block-create",
-				arguments: {
-					name: "weather.hotCities",
-					source: customBlockSource
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpCreateBlock));
-assertTrue(mcpCreateBlock.result.result.structuredContent.origin === "project",
-	"MCP Flow flow-block-create did not create a project block");
-
-var mcpGetBlock = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 5,
-			method: "tools/call",
-			params: {
-				name: "flow-block-get",
-				arguments: {
-					name: "weather.hotCities"
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpGetBlock));
-assertTrue(mcpGetBlock.result.result.structuredContent.source.indexOf("weather.hotCities") !== -1,
-	"MCP Flow flow-block-get did not return the custom block source");
-
-var customBlockFlowSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: fetchWeather",
-	"    block: http.request",
-	"    method: GET",
-	"    url: \"{{ config.weatherUrl }}\"",
-	"    headers:",
-	"      X-Api-Key: \"{{ config.apiKey }}\"",
-	"    out: flow.weather",
-	"  - id: selectMetropoles",
-	"    block: json.select",
-	"    source: flow.weather",
-	"    path: body.metropoles",
-	"    out: flow.metropoles",
-	"  - id: hotCities",
-	"    block: weather.hotCities",
-	"    items: flow.metropoles",
-	"    threshold: config.threshold",
-	"    out: result.hotCities",
-	""
-].join("\n");
-
-var mcpTestBlock = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 6,
-			method: "tools/call",
-			params: {
-				name: "flow-block-test",
-				arguments: {
-					flowSource: customBlockFlowSource,
-					config: {
-						weatherUrl: fixtureUrl,
-						apiKey: "demo-key",
-						threshold: 35
-					}
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpTestBlock));
-assertTrue(mcpTestBlock.result.result.structuredContent.result.hotCities.join(",") === "Marseille,Paris",
-	"MCP Flow flow-block-test did not run the custom project block");
-
-var mcpSetFlow = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 7,
-			method: "tools/call",
-			params: {
-				name: "flow-set",
-				arguments: {
-					name: "WeatherAlertCustom",
-					flowSource: customBlockFlowSource
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpSetFlow));
-assertTrue(mcpSetFlow.result.result.structuredContent.ok === true,
-	"MCP Flow flow-set did not write the sidecar");
-
-var mcpListFlows = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 8,
-			method: "tools/call",
-			params: {
-				name: "flow-list",
-				arguments: {}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpListFlows));
-var flowNames = mcpListFlows.result.result.structuredContent.flows.map(function (flow) {
-	return flow.name;
-});
-assertTrue(flowNames.indexOf("WeatherAlertCustom") !== -1,
-	"MCP Flow flow-list did not return the created sidecar");
-
-var mcpGetFlow = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 9,
-			method: "tools/call",
-			params: {
-				name: "flow-get",
-				arguments: {
-					name: "WeatherAlertCustom"
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpGetFlow));
-assertTrue(mcpGetFlow.result.result.structuredContent.source.indexOf("weather.hotCities") !== -1,
-	"MCP Flow flow-get did not return the sidecar source");
-
-var mcpTestFlow = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 10,
-			method: "tools/call",
-			params: {
-				name: "flow-test",
-				arguments: {
-					name: "WeatherAlertCustom",
-					config: {
-						weatherUrl: fixtureUrl,
-						apiKey: "demo-key",
-						threshold: 35
-					}
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpTestFlow));
-assertTrue(mcpTestFlow.result.result.structuredContent.result.hotCities.join(",") === "Marseille,Paris",
-	"MCP Flow flow-test did not run the named sidecar");
-
-var mcpAnalyze = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 2,
-			method: "tools/call",
-			params: {
-				name: "flow-analyze",
-				arguments: {
-					flowSource: weatherFlowSource
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpAnalyze));
-assertTrue(mcpAnalyze.result.result.structuredContent.writes.indexOf("result.hotCities") !== -1,
-	"MCP Flow flow-analyze did not report result.hotCities");
-
-var mcpContext = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 11,
-			method: "tools/call",
-			params: {
-				name: "flow-context",
-				arguments: {
-					flowSource: weatherFlowSource,
-					node: "notify",
-					property: "body",
-					include: ["flow"],
-					detail: "compact"
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpContext));
-assertTrue(mcpContext.result.result.structuredContent.scopes.flow.indexOf("flow.metropoles") !== -1,
-	"MCP Flow flow-context did not expose compact flow paths");
-
-var mcpRun = JSON.parse(engine.run(JSON.stringify({
-	flowSource: mcpFlowSource,
-	includeTrace: false,
-	config: {
-		request: {
-			jsonrpc: "2.0",
-			id: 3,
-			method: "tools/call",
-			params: {
-				name: "flow-run",
-				arguments: {
-					flowSource: weatherFlowSource,
-					config: {
-						weatherUrl: fixtureUrl,
-						apiKey: "demo-key",
-						threshold: 35
-					}
-				}
-			}
-		}
-	}
-})));
-print(JSON.stringify(mcpRun));
-assertTrue(mcpRun.result.result.structuredContent.result.hotCities.length === 2,
-	"MCP Flow flow-run did not return the expected hot cities");
