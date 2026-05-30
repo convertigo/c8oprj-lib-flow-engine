@@ -85,6 +85,64 @@ var readType = JSON.parse(engine.typeGet(JSON.stringify({
 })));
 assertTrue(readType.descriptor.description === "Project-local smoke test type.",
 	"typeGet did not return the custom type descriptor");
+var resourceBlockSource = [
+	"(function () {",
+	"\treturn {",
+	"\t\tname: \"resource.echo\",",
+	"\t\tcatalog: function () {",
+	"\t\t\treturn {",
+	"\t\t\t\tname: \"resource.echo\",",
+	"\t\t\t\tdescription: \"Resource smoke block.\",",
+	"\t\t\t\tprops: {}",
+	"\t\t\t};",
+	"\t\t},",
+	"\t\trun: function () {",
+	"\t\t\treturn \"ok\";",
+	"\t\t}",
+	"\t};",
+	"}())",
+	""
+].join("\n");
+var createdResourceBlock = JSON.parse(engine.blockCreate(JSON.stringify({
+	name: "resource.echo",
+	source: resourceBlockSource
+})));
+assertTrue(createdResourceBlock.name === "resource.echo", "blockCreate did not prepare a resource block");
+var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
+	query: "Resource smoke",
+	doc: false,
+	hints: false
+})));
+assertTrue(resourceSearch.resources.some(function (resource) {
+	return resource.path === "libs/flow/blocks/resource.echo.js";
+}), "resourceSearch did not find the project block source");
+var resourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
+	path: "libs/flow/blocks/resource.echo.js"
+})));
+assertTrue(resourceGet.hash && resourceGet.content.indexOf("Resource smoke block.") !== -1,
+	"resourceGet did not return content and hash");
+var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
+	path: "libs/flow/blocks/resource.echo.js",
+	baseHash: resourceGet.hash,
+	patch: [
+		"--- a/libs/flow/blocks/resource.echo.js",
+		"+++ b/libs/flow/blocks/resource.echo.js",
+		"@@ -1,7 +1,7 @@",
+		" \t\t\treturn {",
+		" \t\t\t\tname: \"resource.echo\",",
+		"-\t\t\t\tdescription: \"Resource smoke block.\",",
+		"+\t\t\t\tdescription: \"Resource patched block.\",",
+		" \t\t\t\tprops: {}",
+		" \t\t\t};"
+	].join("\n")
+})));
+assertTrue(resourcePatch.ok === true && resourcePatch.changed === true && resourcePatch.validation.ok === true,
+	"resourcePatch did not patch and validate the project block source");
+var patchedResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
+	path: "libs/flow/blocks/resource.echo.js"
+})));
+assertTrue(patchedResourceGet.content.indexOf("Resource patched block.") !== -1,
+	"resourcePatch did not persist the patched source");
 var propertyEditor = JSON.parse(engine.propertyEditor("{}"));
 assertTrue(propertyEditor.ok === true && propertyEditor.html.indexOf("receiveFromJava") !== -1,
 	"propertyEditor did not expose the web editor host");
@@ -642,6 +700,23 @@ var requestableCallSource = [
 	"    out: flow.response",
 	""
 ].join("\n");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(smokeFlowsDir, "RequestableBridge.flow.yaml"),
+	requestableCallSource,
+	"UTF-8"
+);
+var multiTokenSearch = JSON.parse(engine.search(JSON.stringify({
+	project: "SmokeProject",
+	query: "NamedGreeting requestable call",
+	kinds: ["node"],
+	context: 1,
+	doc: false,
+	hints: false
+})));
+print(JSON.stringify(multiTokenSearch));
+assertTrue(multiTokenSearch.matches.some(function (match) {
+	return match.flow === "RequestableBridge" && match.nodeId === "callRequestable";
+}), "search did not match Flow nodes with unordered query tokens");
 var requestableCallAnalysis = JSON.parse(engine.analyze(JSON.stringify({
 	flowSource: requestableCallSource,
 	context: {

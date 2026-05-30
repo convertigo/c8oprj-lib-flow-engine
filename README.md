@@ -129,6 +129,14 @@ block, often `private: true`, with a tiny catalog descriptor and optional
 advanced migration cases because it hides intent, weakens schemas and encourages
 SequenceJS-style low-code bypasses.
 
+Custom block sources are Rhino ES6 JavaScript evaluated inside the Convertigo
+JVM. They may use Java classes through `Packages`, for example for integration
+adapters, but they must not assume Node.js APIs such as `require`, npm modules
+or browser globals. The normal source shape is an IIFE returning `{ name,
+catalog, analyze, run }`; `ctx.props(node)`, `ctx.template(value)`,
+`ctx.expr(value)`, `ctx.read(path)` and `ctx.write(path,value)` are the small
+runtime API.
+
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored under `libs/flow/types`: docs,
 validation/read/write hooks and web editor fragments belong there. Block
@@ -239,6 +247,8 @@ such as `out: flow.custom` then advertises `flow.custom.message` and
 `Engine.search()` is the compact discovery API for agents. It searches Flow
 sidecars, nodes, catalog blocks/types and learned schemas, then returns
 references that can be passed to other tools.
+Multi-word queries match unordered tokens, so `GetFeed requestable call` can
+find a `requestable.call` node targeting `AAAProject.GetFeed`.
 
 Node matches return:
 
@@ -258,8 +268,14 @@ node targets:
 ```
 
 Use `beforeNodeId`, `afterNodeId`, or `parentNodeId + slot` for insertions when
-an agent should not depend on array indexes. JSON Pointer paths remain the
-escape hatch for exact structural edits.
+the target is clear; an agent should not depend on array indexes. JSON Pointer
+paths remain the escape hatch for exact structural edits.
+
+For broader edits, callers can also avoid YAML rewriting: `flow-get` returns the
+parsed Flow `definition`, and `flow-set`, `flow-run`, `flow-test`, `flow-tree`,
+`flow-apply` and `flow-output-schema` accept that same definition object. This
+keeps the MCP surface small while preserving the legacy “read a tree, patch it,
+write the same shape” authoring pattern.
 
 ## Block Authoring API
 
@@ -273,6 +289,29 @@ and editing are project-local:
 - `blockEdit({ name, source })` replaces a project-local block source.
 
 Core/shared blocks are intentionally not editable in place.
+
+## Resource Patch API
+
+For code-like maintenance, the engine also exposes project-local text resource
+APIs:
+
+- `resourceSearch({ query })` searches whitelisted resources, like a small
+  `rg`.
+- `resourceGet({ path })` reads content and returns a `hash`.
+- `resourcePatch({ path, baseHash, patch })` applies a unified diff, then
+  validates block/type JavaScript by default. Hunk line numbers may be
+  approximate when the surrounding context is unique.
+
+The writable surface is intentionally narrow:
+
+```text
+libs/flow/blocks/**/*.js
+libs/flow/types/**/*.js
+libs/flow/types/editors/**/*.{html,css,js}
+```
+
+Flow graph changes should still use `flow-edit`/`flow-set` mutations. Resource
+patching is for block implementations and custom property editors.
 
 ## Context picker API
 

@@ -1232,6 +1232,386 @@
 		};
 	}
 
+	function normalizeResourcePath(path) {
+		var text = String(path || "").trim().replace(/\\/g, "/");
+		if (text === "") {
+			raise("MISSING_RESOURCE_PATH", "A Flow resource path is required.");
+		}
+		if (text.charAt(0) === "/" || text.match(/^[A-Za-z]:\//)) {
+			raise("INVALID_RESOURCE_PATH", "Flow resource paths must be project-relative: " + text);
+		}
+		var parts = [];
+		text.split("/").forEach(function (part) {
+			if (!part || part === ".") {
+				return;
+			}
+			if (part === "..") {
+				raise("INVALID_RESOURCE_PATH", "Flow resource paths cannot contain '..': " + text);
+			}
+			parts.push(part);
+		});
+		return parts.join("/");
+	}
+
+	function resourceExtension(path) {
+		var dot = String(path || "").lastIndexOf(".");
+		return dot < 0 ? "" : String(path).substring(dot + 1).toLowerCase();
+	}
+
+	function isAllowedResourcePath(path) {
+		var ext = resourceExtension(path);
+		if (String(path).indexOf("libs/flow/blocks/") === 0) {
+			return ext === "js";
+		}
+		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
+			return ["html", "css", "js"].indexOf(ext) !== -1;
+		}
+		if (String(path).indexOf("libs/flow/types/") === 0) {
+			return ext === "js";
+		}
+		return false;
+	}
+
+	function resourceKind(path) {
+		if (String(path).indexOf("libs/flow/blocks/") === 0) {
+			return "block";
+		}
+		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
+			return "typeEditor";
+		}
+		if (String(path).indexOf("libs/flow/types/") === 0) {
+			return "type";
+		}
+		return "resource";
+	}
+
+	function resourceName(path) {
+		var filename = String(path || "");
+		var slash = filename.lastIndexOf("/");
+		if (slash >= 0) {
+			filename = filename.substring(slash + 1);
+		}
+		if (filename.endsWith(".js")) {
+			return filename.substring(0, filename.length - 3);
+		}
+		return filename;
+	}
+
+	function projectResourceFile(path, mustExist) {
+		var base = projectDir();
+		if (!base) {
+			raise("PROJECT_RESOURCES_UNAVAILABLE", "Project Flow resources are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		var normalized = normalizeResourcePath(path);
+		if (!isAllowedResourcePath(normalized)) {
+			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
+				null, "Allowed paths: libs/flow/blocks/**/*.js, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
+		}
+		var file = new File(base, normalized);
+		var basePath = canonicalPath(base);
+		var filePath = canonicalPath(file);
+		if (filePath !== basePath && filePath.indexOf(basePath + File.separator) !== 0) {
+			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path escapes the project: " + normalized);
+		}
+		if (mustExist && !file.isFile()) {
+			raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + normalized);
+		}
+		return {
+			path: normalized,
+			file: file
+		};
+	}
+
+	function resourceRelativePath(base, file) {
+		var basePath = canonicalPath(base);
+		var filePath = canonicalPath(file);
+		if (filePath.indexOf(basePath + File.separator) !== 0) {
+			return "";
+		}
+		return filePath.substring(basePath.length + 1).replace(/\\/g, "/");
+	}
+
+	function collectResourceFiles(dir, base, out) {
+		var listed = dir && dir.listFiles();
+		if (!listed) {
+			return;
+		}
+		var files = Arrays.asList(listed).toArray();
+		files.sort(function (a, b) {
+			return String(a.getName()).localeCompare(String(b.getName()));
+		});
+		files.forEach(function (file) {
+			if (file.isDirectory()) {
+				collectResourceFiles(file, base, out);
+				return;
+			}
+			if (!file.isFile()) {
+				return;
+			}
+			var path = resourceRelativePath(base, file);
+			if (path && isAllowedResourcePath(path)) {
+				out.push({
+					path: path,
+					file: file
+				});
+			}
+		});
+	}
+
+	function projectResourceEntries() {
+		var base = projectDir();
+		if (!base || !base.isDirectory()) {
+			return [];
+		}
+		var out = [];
+		["libs/flow/blocks", "libs/flow/types"].forEach(function (path) {
+			collectResourceFiles(new File(base, path), base, out);
+		});
+		return out;
+	}
+
+	function resourceSummary(entry, content) {
+		content = content === undefined ? String(FileUtils.readFileToString(entry.file, "UTF-8")) : String(content);
+		return {
+			path: entry.path,
+			kind: resourceKind(entry.path),
+			name: resourceName(entry.path),
+			file: String(entry.file.getAbsolutePath()),
+			size: Number(entry.file.length()),
+			lastModified: Number(entry.file.lastModified()),
+			hash: sha256Hex(content)
+		};
+	}
+
+	function resourceSearchRequest(request) {
+		request = request || {};
+		var needle = searchNeedle(request);
+		var maxFileBytes = intOption(request.maxFileBytes, 500000, 1000, 5000000);
+		var matches = [];
+		projectResourceEntries().forEach(function (entry) {
+			if (entry.file.length() > maxFileBytes) {
+				return;
+			}
+			var content = String(FileUtils.readFileToString(entry.file, "UTF-8"));
+			var text = [entry.path, resourceKind(entry.path), resourceName(entry.path), content].join(" ");
+			if (!searchMatches(text, needle)) {
+				return;
+			}
+			matches.push(Object.assign(resourceSummary(entry, content), {
+				snippet: searchSnippet(content || entry.path, needle),
+				next: "flow-resource-get path=" + entry.path
+			}));
+		});
+		var offset = intOption(request.cursor, 0, 0);
+		var limit = intOption(request.limit, 50, 1, 500);
+		var page = matches.slice(offset, offset + limit);
+		var out = {
+			ok: true,
+			query: String(request.query || request.q || ""),
+			count: page.length,
+			total: matches.length,
+			resources: page,
+			nextCursor: offset + limit < matches.length ? String(offset + limit) : null
+		};
+		if (request.doc !== false) {
+			out.doc = "Search project-local Flow text resources. Patch only these whitelisted files through flow-resource-patch.";
+		}
+		if (request.hints !== false) {
+			out.hints = [
+				"Use this for block/type/editor JS, HTML or CSS. Use flow-search for Flow graph nodes.",
+				"Call flow-resource-get before patching; pass its hash as baseHash.",
+				"Set doc=false,hints=false after the tool contract is understood."
+			];
+		}
+		return out;
+	}
+
+	function resourceGetRequest(request) {
+		request = request || {};
+		var entry = projectResourceFile(request.path, true);
+		var maxBytes = intOption(request.maxBytes, 1000000, 1000, 5000000);
+		if (entry.file.length() > maxBytes && request.allowLarge !== true) {
+			raise("RESOURCE_TOO_LARGE", "Flow resource is too large to return: " + entry.path,
+				null, "Pass a higher maxBytes or allowLarge=true if this file is intentionally large.");
+		}
+		var content = String(FileUtils.readFileToString(entry.file, "UTF-8"));
+		return Object.assign({ ok: true, content: content }, resourceSummary(entry, content));
+	}
+
+	function splitContentLines(content) {
+		var text = String(content || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+		var trailingNewline = text.length > 0 && text.charAt(text.length - 1) === "\n";
+		var lines = text.split("\n");
+		if (trailingNewline) {
+			lines.pop();
+		}
+		return {
+			lines: lines,
+			trailingNewline: trailingNewline
+		};
+	}
+
+	function joinContentLines(parts) {
+		return parts.lines.join("\n") + (parts.trailingNewline ? "\n" : "");
+	}
+
+	function assertPatchLine(actual, expected, lineNumber) {
+		if (actual !== expected) {
+			raise("PATCH_CONTEXT_MISMATCH", "Patch context mismatch at line " + lineNumber,
+				null, "Read the resource again and regenerate the patch from the current content.");
+		}
+	}
+
+	function oldLinesForHunk(hunkLines) {
+		var oldLines = [];
+		hunkLines.forEach(function (patchLine) {
+			var marker = patchLine.charAt(0);
+			if (marker === " " || marker === "-") {
+				oldLines.push(patchLine.substring(1));
+			}
+		});
+		return oldLines;
+	}
+
+	function hunkMatchesAt(lines, position, oldLines) {
+		if (position < 0 || position + oldLines.length > lines.length) {
+			return false;
+		}
+		for (var i = 0; i < oldLines.length; i++) {
+			if (lines[position + i] !== oldLines[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	function findHunkPosition(lines, preferred, oldLines) {
+		if (oldLines.length === 0 || hunkMatchesAt(lines, preferred, oldLines)) {
+			return preferred;
+		}
+		var best = -1;
+		var bestDistance = Number.MAX_VALUE;
+		for (var i = 0; i <= lines.length - oldLines.length; i++) {
+			if (hunkMatchesAt(lines, i, oldLines)) {
+				var distance = Math.abs(i - preferred);
+				if (distance < bestDistance) {
+					best = i;
+					bestDistance = distance;
+				}
+			}
+		}
+		if (best >= 0) {
+			return best;
+		}
+		assertPatchLine(lines[preferred], oldLines[0], preferred + 1);
+		return preferred;
+	}
+
+	function applyHunkLines(lines, parts, position, hunkLines) {
+		var delta = 0;
+		hunkLines.forEach(function (patchLine) {
+			if (patchLine.indexOf("\\ No newline at end of file") === 0) {
+				parts.trailingNewline = false;
+				return;
+			}
+			var marker = patchLine.charAt(0);
+			var value = patchLine.substring(1);
+			if (marker === " ") {
+				assertPatchLine(lines[position], value, position + 1);
+				position++;
+			} else if (marker === "-") {
+				assertPatchLine(lines[position], value, position + 1);
+				lines.splice(position, 1);
+				delta--;
+			} else if (marker === "+") {
+				lines.splice(position, 0, value);
+				position++;
+				delta++;
+			}
+		});
+		return delta;
+	}
+
+	function applyUnifiedPatchText(content, patch) {
+		var parts = splitContentLines(content);
+		var lines = parts.lines.slice(0);
+		var patchLines = String(patch || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+		var hunkHeader = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/;
+		var delta = 0;
+		var hunks = 0;
+		var index = 0;
+		while (index < patchLines.length) {
+			var line = patchLines[index++];
+			var match = line.match(hunkHeader);
+			if (!match) {
+				continue;
+			}
+			hunks++;
+			var hunkLines = [];
+			while (index < patchLines.length && !patchLines[index].match(hunkHeader)) {
+				var patchLine = patchLines[index++];
+				if (patchLine === "" && index >= patchLines.length) {
+					break;
+				}
+				hunkLines.push(patchLine);
+			}
+			var preferred = Number(match[1]) - 1 + delta;
+			var position = findHunkPosition(lines, preferred, oldLinesForHunk(hunkLines));
+			delta += applyHunkLines(lines, parts, position, hunkLines);
+		}
+		if (hunks === 0) {
+			raise("INVALID_PATCH", "Unified patch does not contain any @@ hunk.");
+		}
+		parts.lines = lines;
+		return {
+			content: joinContentLines(parts),
+			hunks: hunks
+		};
+	}
+
+	function validateResourceContent(path, content) {
+		var kind = resourceKind(path);
+		if (kind === "block") {
+			validateBlockSource(resourceName(path), content);
+		} else if (kind === "type") {
+			validateTypeSource(resourceName(path), content);
+		}
+		return {
+			ok: true,
+			kind: kind
+		};
+	}
+
+	function resourcePatchRequest(request) {
+		request = request || {};
+		var entry = projectResourceFile(request.path, true);
+		var oldContent = String(FileUtils.readFileToString(entry.file, "UTF-8"));
+		var oldHash = sha256Hex(oldContent);
+		if (request.baseHash && String(request.baseHash) !== oldHash) {
+			raise("RESOURCE_BASE_HASH_MISMATCH", "Flow resource changed since it was read: " + entry.path,
+				null, "Read the resource again and patch from the new hash.");
+		}
+		var applied = applyUnifiedPatchText(oldContent, request.patch || request.unifiedDiff || request.diff || "");
+		var validation = request.validate === false
+			? { ok: true, skipped: true }
+			: validateResourceContent(entry.path, applied.content);
+		var newHash = sha256Hex(applied.content);
+		if (request.dryRun !== true) {
+			FileUtils.writeStringToFile(entry.file, applied.content, "UTF-8");
+		}
+		return Object.assign({
+			ok: true,
+			path: entry.path,
+			dryRun: request.dryRun === true,
+			hunks: applied.hunks,
+			oldHash: oldHash,
+			newHash: newHash,
+			changed: oldHash !== newHash,
+			validation: validation
+		}, request.includeContent === true ? { content: applied.content } : {});
+	}
+
 	function loadBlockFile(blocks, file, origin) {
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
 		var block = eval(source);
@@ -1520,14 +1900,42 @@
 		if (!file.isFile()) {
 			raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name);
 		}
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
 		return {
 			name: String(name),
 			file: String(file.getAbsolutePath()),
-			source: String(FileUtils.readFileToString(file, "UTF-8"))
+			source: source,
+			definition: parseSource(source)
 		};
 	}
 
-	function setProjectFlow(blocks, name, source) {
+	function sourceFromDefinition(definition) {
+		var normalized = normalizeTree(definition || {});
+		if (normalized.version === undefined || normalized.version === null) {
+			normalized.version = 1;
+		}
+		if (!normalized.nodes && !normalized.contracts && !normalized.bindings && !normalized.input && !normalized.output && !normalized.outputs) {
+			normalized.nodes = [];
+		}
+		return toYamlSource(normalized);
+	}
+
+	function sourceForWriteRequest(args, fallback) {
+		args = args || {};
+		if (args.definition !== undefined && args.definition !== null) {
+			return sourceFromDefinition(args.definition);
+		}
+		if (fallback !== undefined && fallback !== null && String(fallback).trim() !== "") {
+			return String(fallback);
+		}
+		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
+			return String(args.flowSource);
+		}
+		return "";
+	}
+
+	function setProjectFlow(blocks, name, source, args) {
+		source = sourceForWriteRequest(args, source);
 		var analysis = analyzeFlowSource(blocks, source);
 		var file = projectFlowFile(name);
 		file.getParentFile().mkdirs();
@@ -1536,12 +1944,17 @@
 			ok: true,
 			name: String(name),
 			file: String(file.getAbsolutePath()),
+			source: String(source),
+			definition: parseSource(source),
 			analysis: analysis
 		};
 	}
 
 	function sourceForFlowRequest(args) {
 		args = args || {};
+		if (args.definition !== undefined && args.definition !== null) {
+			return sourceFromDefinition(args.definition);
+		}
 		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
 			return String(args.flowSource);
 		}
@@ -1935,7 +2348,7 @@
 		ctx.analyzeFlowSource = function (flowSource, options) {
 			options = options || {};
 			return withProjectDir(options.projectDir, function () {
-				return analyzeFlowSource(loadBlocks(), flowSource, options);
+				return analyzeFlowSource(loadBlocks(), sourceForWriteRequest(options, flowSource), options);
 			});
 		};
 		ctx.contextFlowSource = function (args) {
@@ -1983,11 +2396,30 @@
 				return resetSchemaRequest(args);
 			});
 		};
+		ctx.resourceSearch = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return resourceSearchRequest(args);
+			});
+		};
+		ctx.resourceGet = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return resourceGetRequest(args);
+			});
+		};
+		ctx.resourcePatch = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return resourcePatchRequest(args);
+			});
+		};
 		ctx.runFlowSource = function (flowSource, config, options) {
 			options = options || {};
 			return withProjectDir(options.projectDir, function () {
+				var source = sourceForWriteRequest(options, flowSource);
 				return runFlowRequest({
-					flowSource: flowSource,
+					flowSource: source,
 					config: config || {},
 					input: options.input || {},
 					context: mergedContext(ctx.scopes.request, options.context || {}),
@@ -1998,7 +2430,9 @@
 		ctx.blockList = function (args) {
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
-				return catalogDefinition(loadBlocks());
+				return catalogDefinition(loadBlocks(), {
+					detail: args.detail || args.mode || "summary"
+				});
 			});
 		};
 		ctx.blockGet = function (name, args) {
@@ -2049,8 +2483,9 @@
 		ctx.blockTest = function (flowSource, config, options) {
 			options = options || {};
 			return withProjectDir(options.projectDir, function () {
+				var source = sourceForWriteRequest(options, flowSource);
 				return runFlowRequest({
-					flowSource: flowSource,
+					flowSource: source,
 					config: config || {},
 					input: options.input || {},
 					context: mergedContext(ctx.scopes.request, options.context || {}),
@@ -2073,7 +2508,7 @@
 		ctx.flowSet = function (name, source, args) {
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
-				return setProjectFlow(loadBlocks(), name, source);
+				return setProjectFlow(loadBlocks(), name, source, args);
 			});
 		};
 		ctx.flowTest = function (args) {
@@ -2740,9 +3175,12 @@
 		var definition = parseSource(request.flowSource);
 		var include = normalizeInclude(request.include);
 		var detail = String(request.detail || "normal");
+		if (detail === "summary") {
+			detail = "compact";
+		}
 		if (["normal", "compact"].indexOf(detail) === -1) {
 			raise("INVALID_CONTEXT_DETAIL", "Unknown Flow context detail: " + detail,
-				null, "Use detail=normal or detail=compact.");
+				null, "Use detail=normal or detail=compact. detail=summary is accepted as compact.");
 		}
 		var ctx = createAnalysisContext(blocks, request, definition);
 		var hasTarget = !!(contextTargetValue(request) || request.path || request.nodePath);
@@ -2853,7 +3291,154 @@
 		return descriptor;
 	}
 
-	function catalogDefinition(blocks) {
+	function compactPropertyDescriptor(property) {
+		var out = {};
+		["kind", "type", "mode", "default", "description"].forEach(function (key) {
+			if (property && property[key] !== undefined && property[key] !== null && property[key] !== "") {
+				out[key] = property[key];
+			}
+		});
+		return out;
+	}
+
+	function compactBlockDescriptor(block) {
+		var descriptor = blockDescriptor(block);
+		var props = {};
+		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
+			props[name] = compactPropertyDescriptor(descriptor.props[name]);
+		});
+		var out = {
+			name: descriptor.name,
+			origin: descriptor.origin,
+			namespace: descriptor.namespace,
+			description: descriptor.description || ""
+		};
+		if (Object.keys(props).length > 0) {
+			out.props = props;
+		}
+		if (descriptor.kind) {
+			out.kind = descriptor.kind;
+		}
+		if (descriptor.slots) {
+			out.slots = descriptor.slots.map(function (slot) {
+				return {
+					name: slot.name,
+					label: slot.label || slot.name,
+					inline: slot.inline === true
+				};
+			});
+		}
+		return out;
+	}
+
+	function compactTypeDescriptor(type) {
+		var out = {
+			name: type.name,
+			label: type.label || type.name,
+			type: type.type || "unknown",
+			origin: type.origin || "unknown",
+			description: type.description || ""
+		};
+		if (type.editor && type.editor.component) {
+			out.editor = type.editor.component;
+		}
+		return out;
+	}
+
+	function summaryPropertyDescriptor(property) {
+		var parts = [];
+		if (property && property.kind) {
+			parts.push(String(property.kind));
+		}
+		if (property && property.type) {
+			parts.push(String(property.type));
+		}
+		if (property && property.mode) {
+			parts.push(String(property.mode));
+		}
+		return parts.join(":") || "value";
+	}
+
+	function summaryBlockDescriptor(block) {
+		var descriptor = blockDescriptor(block);
+		var props = {};
+		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
+			props[name] = summaryPropertyDescriptor(descriptor.props[name]);
+		});
+		var out = {
+			name: descriptor.name,
+			origin: descriptor.origin,
+			namespace: descriptor.namespace
+		};
+		if (Object.keys(props).length > 0) {
+			out.props = props;
+		}
+		if (descriptor.kind) {
+			out.kind = descriptor.kind;
+		}
+		if (descriptor.slots) {
+			out.slots = descriptor.slots.map(function (slot) {
+				return slot.name;
+			});
+		}
+		return out;
+	}
+
+	function summaryCatalogDefinition(blocks) {
+		var descriptors = Object.keys(blocks).sort().map(function (name) {
+			return summaryBlockDescriptor(blocks[name]);
+		});
+		var types = loadTypes();
+		return {
+			detail: "summary",
+			blocks: descriptors,
+			types: Object.keys(types).sort().map(function (name) {
+				var type = typeDescriptor(types[name]);
+				return {
+					name: type.name,
+					type: type.type || "unknown",
+					origin: type.origin || "unknown"
+				};
+			}),
+			next: "Use flow-search for examples. Use flow-catalog detail='compact' for docs, detail='full' for icon/type resources."
+		};
+	}
+
+	function compactCatalogDefinition(blocks) {
+		var descriptors = Object.keys(blocks).sort().map(function (name) {
+			return compactBlockDescriptor(blocks[name]);
+		});
+		var groupsByOrigin = {};
+		descriptors.forEach(function (block) {
+			var origin = block.origin || "unknown";
+			if (!groupsByOrigin[origin]) {
+				groupsByOrigin[origin] = [];
+			}
+			groupsByOrigin[origin].push(block.name);
+		});
+		return {
+			detail: "compact",
+			blocks: descriptors,
+			groups: Object.keys(groupsByOrigin).sort().map(function (origin) {
+				return {
+					origin: origin,
+					blocks: groupsByOrigin[origin]
+				};
+			}),
+			types: catalogTypes(descriptors, loadTypes()).map(compactTypeDescriptor),
+			next: "Use flow-search for examples and flow-block-get or flow-catalog detail='full' only when source-level detail is needed."
+		};
+	}
+
+	function catalogDefinition(blocks, options) {
+		options = options || {};
+		var detail = String(options.detail || options.mode || "full");
+		if (detail === "summary") {
+			return summaryCatalogDefinition(blocks);
+		}
+		if (detail === "compact") {
+			return compactCatalogDefinition(blocks);
+		}
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
 			return blockDescriptor(blocks[name]);
 		});
@@ -2904,6 +3489,7 @@
 			delete group.order;
 		});
 		return {
+			detail: "full",
 			blocks: descriptors,
 			groups: groups,
 			types: catalogTypes(descriptors, typeDescriptors)
@@ -3330,10 +3916,13 @@
 		var target = String(request.target || "flow");
 		var children = [];
 		if (target === "flow") {
-			var definition = parseSource(request.flowSource);
+			var definition = request.definition !== undefined && request.definition !== null
+				? normalizeTree(request.definition)
+				: parseSource(request.flowSource);
 			var analysisRequest = Object.assign({}, request, {
 				allowRequestableSchema: false
 			});
+			analysisRequest.flowSource = sourceFromDefinition(definition);
 			var analysis = analyzeFlowDefinition(blocks, definition, analysisRequest);
 			var analysisById = analysisByNodeId(analysis);
 			addContracts(children, definition.contracts, "contracts");
@@ -3390,11 +3979,31 @@
 		return String(request.query || request.q || "").trim().toLowerCase();
 	}
 
+	function searchTokens(needle) {
+		var tokens = [];
+		String(needle || "").toLowerCase().split(/[^a-z0-9_]+/).forEach(function (part) {
+			if (part) {
+				tokens.push(part);
+			}
+		});
+		return tokens;
+	}
+
 	function searchMatches(text, needle) {
 		if (!needle) {
 			return true;
 		}
-		return String(text || "").toLowerCase().indexOf(needle) !== -1;
+		var haystack = String(text || "").toLowerCase();
+		if (haystack.indexOf(needle) !== -1) {
+			return true;
+		}
+		var tokens = searchTokens(needle);
+		if (!tokens.length) {
+			return true;
+		}
+		return tokens.every(function (token) {
+			return haystack.indexOf(token) !== -1;
+		});
 	}
 
 	function searchSnippet(text, needle) {
@@ -3403,12 +4012,24 @@
 			return "";
 		}
 		var max = 180;
-		var index = needle ? text.toLowerCase().indexOf(needle) : -1;
+		var lower = text.toLowerCase();
+		var index = needle ? lower.indexOf(needle) : -1;
+		var matchLength = String(needle || "").length;
+		if (index < 0 && needle) {
+			searchTokens(needle).some(function (token) {
+				index = lower.indexOf(token);
+				if (index >= 0) {
+					matchLength = token.length;
+					return true;
+				}
+				return false;
+			});
+		}
 		if (index < 0) {
 			return summaryText(text, max);
 		}
 		var start = Math.max(0, index - 60);
-		var end = Math.min(text.length, index + needle.length + 80);
+		var end = Math.min(text.length, index + matchLength + 80);
 		return (start > 0 ? "..." : "") + text.substring(start, end) + (end < text.length ? "..." : "");
 	}
 
@@ -3974,7 +4595,9 @@
 		var target = String(request.target || "flow");
 		var definition = target === "engine"
 			? parseYamlSource(request.engineSource, "version: 1\n")
-			: parseSource(request.flowSource);
+			: request.definition !== undefined && request.definition !== null
+				? normalizeTree(request.definition)
+				: parseSource(request.flowSource);
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		if (mutations.length === 0) {
 			raise("MISSING_MUTATION", "Flow mutation request requires mutation or mutations.");
@@ -4006,7 +4629,9 @@
 
 	function outputSchemaRequest(request, blocks) {
 		request = request || {};
-		var definition = parseSource(request.flowSource || "");
+		var definition = request.definition !== undefined && request.definition !== null
+			? normalizeTree(request.definition)
+			: parseSource(request.flowSource || "");
 		var declaredSchema = declaredOutputSchema(definition);
 		var staticSchema = declaredSchema ? null : resultSchemaFromAnalysis(analyzeFlowDefinition(blocks, definition, request));
 		var learnedSchema = readResultSchema(request, definition);
@@ -4154,6 +4779,33 @@
 				return response(resetSchemaRequest(request));
 			} catch (e) {
 				return response(failure("schemaReset", e));
+			}
+		},
+
+		resourceSearch: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(resourceSearchRequest(request));
+			} catch (e) {
+				return response(failure("resourceSearch", e));
+			}
+		},
+
+		resourceGet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(resourceGetRequest(request));
+			} catch (e) {
+				return response(failure("resourceGet", e));
+			}
+		},
+
+		resourcePatch: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(resourcePatchRequest(request));
+			} catch (e) {
+				return response(failure("resourcePatch", e));
 			}
 		},
 
