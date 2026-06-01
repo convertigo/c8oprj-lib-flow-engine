@@ -11,16 +11,11 @@ props:
     kind: "text"
     type: "string"
     description: "Project-local Flow block name."
-  source:
-    label: "source"
-    kind: "text"
-    type: "string"
-    description: "Rhino ES6 implementation source. Old standalone blocks are converted to canonical descriptors."
   implementationSource:
     label: "implementationSource"
     kind: "text"
     type: "string"
-    description: "Explicit Rhino ES6 implementation source."
+    description: "Rhino ES6 implementation source for descriptor-backed Rhino blocks."
   descriptorSource:
     label: "descriptorSource"
     kind: "text"

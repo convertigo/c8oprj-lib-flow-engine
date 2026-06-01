@@ -104,17 +104,20 @@ var readType = JSON.parse(engine.typeGet(JSON.stringify({
 })));
 assertTrue(readType.descriptor.description === "Project-local smoke test type.",
 	"typeGet did not return the custom type descriptor");
-var resourceBlockSource = [
+var resourceBlockDescriptorSource = [
+	"version: 1",
+	"name: resource.echo",
+	"description: Resource smoke block.",
+	"props: {}",
+	"implementation:",
+	"  runtime: rhino",
+	"  file: resource.echo.js",
+	""
+].join("\n");
+var resourceBlockImplementationSource = [
 	"(function () {",
 	"\treturn {",
 	"\t\tname: \"resource.echo\",",
-	"\t\tcatalog: function () {",
-	"\t\t\treturn {",
-	"\t\t\t\tname: \"resource.echo\",",
-	"\t\t\t\tdescription: \"Resource smoke block.\",",
-	"\t\t\t\tprops: {}",
-	"\t\t\t};",
-	"\t\t},",
 	"\t\trun: function () {",
 	"\t\t\treturn \"ok\";",
 	"\t\t}",
@@ -124,7 +127,8 @@ var resourceBlockSource = [
 ].join("\n");
 var createdResourceBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	name: "resource.echo",
-	source: resourceBlockSource
+	descriptorSource: resourceBlockDescriptorSource,
+	implementationSource: resourceBlockImplementationSource
 })));
 assertTrue(createdResourceBlock.name === "resource.echo", "blockCreate did not prepare a resource block");
 assertTrue(new java.io.File(projectDirFile, "libs/flow/blocks/resource.echo.block.yaml").isFile() &&
@@ -143,12 +147,12 @@ var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	hints: false
 })));
 assertTrue(resourceSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/blocks/resource.echo.js";
+	return resource.path === "libs/flow/blocks/resource.echo.block.yaml";
 }), "resourceSearch did not find the project block source");
 var resourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 	path: "libs/flow/blocks/resource.echo.js"
 })));
-assertTrue(resourceGet.hash && resourceGet.content.indexOf("Resource smoke block.") !== -1,
+assertTrue(resourceGet.hash && resourceGet.content.indexOf("return \"ok\";") !== -1,
 	"resourceGet did not return content and hash");
 var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
 	path: "libs/flow/blocks/resource.echo.js",
@@ -156,13 +160,15 @@ var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
 	patch: [
 		"--- a/libs/flow/blocks/resource.echo.js",
 		"+++ b/libs/flow/blocks/resource.echo.js",
-		"@@ -1,7 +1,7 @@",
-		" \t\t\treturn {",
-		" \t\t\t\tname: \"resource.echo\",",
-		"-\t\t\t\tdescription: \"Resource smoke block.\",",
-		"+\t\t\t\tdescription: \"Resource patched block.\",",
-		" \t\t\t\tprops: {}",
-		" \t\t\t};"
+		"@@ -2,7 +2,7 @@",
+		" \treturn {",
+		" \t\tname: \"resource.echo\",",
+		" \t\trun: function () {",
+		"-\t\t\treturn \"ok\";",
+		"+\t\t\treturn \"patched ok\";",
+		" \t\t}",
+		" \t};",
+		" }())"
 	].join("\n")
 })));
 assertTrue(resourcePatch.ok === true && resourcePatch.changed === true && resourcePatch.validation.ok === true,
@@ -170,7 +176,7 @@ assertTrue(resourcePatch.ok === true && resourcePatch.changed === true && resour
 var patchedResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 	path: "libs/flow/blocks/resource.echo.js"
 })));
-assertTrue(patchedResourceGet.content.indexOf("Resource patched block.") !== -1,
+assertTrue(patchedResourceGet.content.indexOf("patched ok") !== -1,
 	"resourcePatch did not persist the patched source");
 var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
@@ -184,7 +190,7 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 	].join("\n"),
 	includeTrace: false
 })));
-assertTrue(resourceGetRun.result.resource.content.indexOf("Resource patched block.") !== -1,
+assertTrue(resourceGetRun.result.resource.content.indexOf("patched ok") !== -1,
 	"resource.get block did not read project Flow resources");
 var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
@@ -192,7 +198,7 @@ var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: searchResource",
 		"    block: resource.search",
-		"    query: Resource patched",
+		"    query: patched ok",
 		"    doc: false",
 		"    hints: false",
 		"    out: result.search",
@@ -286,19 +292,23 @@ var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(canonicalRun.result.message === "Hello canonical",
 	"canonical YAML Rhino block did not execute through its implementation file");
-var callBlockSource = [
+var callBlockDescriptorSource = [
+	"version: 1",
+	"name: smoke.callBlock",
+	"description: Calls core blocks as capabilities.",
+	"props:",
+	"  out:",
+	"    kind: path",
+	"    mode: write",
+	"implementation:",
+	"  runtime: rhino",
+	"  file: smoke.callBlock.js",
+	""
+].join("\n");
+var callBlockImplementationSource = [
 	"(function () {",
 	"\treturn {",
 	"\t\tname: \"smoke.callBlock\",",
-	"\t\tcatalog: function () {",
-	"\t\t\treturn {",
-	"\t\t\t\tname: \"smoke.callBlock\",",
-	"\t\t\t\tdescription: \"Calls core blocks as capabilities.\",",
-	"\t\t\t\tprops: {",
-	"\t\t\t\t\tout: { kind: \"path\", mode: \"write\" }",
-	"\t\t\t\t}",
-	"\t\t\t};",
-	"\t\t},",
 	"\t\trun: function (ctx, node) {",
 	"\t\t\tvar props = ctx.props(node);",
 	"\t\t\tctx.callBlock(\"set\", { path: \"flow.called\", value: \"{{ input.name }}\" }, { trace: false });",
@@ -312,7 +322,8 @@ var callBlockSource = [
 ].join("\n");
 var createdCallBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	name: "smoke.callBlock",
-	source: callBlockSource
+	descriptorSource: callBlockDescriptorSource,
+	implementationSource: callBlockImplementationSource
 })));
 assertTrue(createdCallBlock.name === "smoke.callBlock", "blockCreate did not create the callBlock smoke block");
 var callBlockRun = JSON.parse(engine.run(JSON.stringify({
@@ -344,20 +355,26 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(libD
 	"}())",
 	""
 ].join("\n"), "UTF-8");
-var libBackedBlockSource = [
+var libBackedBlockDescriptorSource = [
+	"version: 1",
+	"name: smoke.lib",
+	"description: Uses a project Flow library.",
+	"props:",
+	"  value:",
+	"    kind: expression",
+	"    type: string",
+	"  out:",
+	"    kind: path",
+	"    mode: write",
+	"implementation:",
+	"  runtime: rhino",
+	"  file: smoke.lib.js",
+	""
+].join("\n");
+var libBackedBlockImplementationSource = [
 	"(function () {",
 	"\treturn {",
 	"\t\tname: \"smoke.lib\",",
-	"\t\tcatalog: function () {",
-	"\t\t\treturn {",
-	"\t\t\t\tname: \"smoke.lib\",",
-	"\t\t\t\tdescription: \"Uses a project Flow library.\",",
-	"\t\t\t\tprops: {",
-	"\t\t\t\t\tvalue: { kind: \"expression\", type: \"string\" },",
-	"\t\t\t\t\tout: { kind: \"path\", mode: \"write\" }",
-	"\t\t\t\t}",
-	"\t\t\t};",
-	"\t\t},",
 	"\t\trun: function (ctx, node) {",
 	"\t\t\tvar props = ctx.props(node);",
 	"\t\t\treturn ctx.lib(\"smoke\").decorate(ctx.expr(props.value || \"input.name\"));",
@@ -368,7 +385,8 @@ var libBackedBlockSource = [
 ].join("\n");
 var createdLibBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	name: "smoke.lib",
-	source: libBackedBlockSource
+	descriptorSource: libBackedBlockDescriptorSource,
+	implementationSource: libBackedBlockImplementationSource
 })));
 assertTrue(createdLibBlock.name === "smoke.lib", "blockCreate did not create a library-backed block");
 var flowDir = new java.io.File(projectDirFile, "libs/flows");
