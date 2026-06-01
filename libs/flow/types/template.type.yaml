@@ -1,0 +1,12 @@
+version: 1
+name: "template"
+label: "Template"
+icon: "mdi:code-braces"
+type: "string"
+description: "Text with embedded {{ expression }} fragments."
+editor:
+  label: "Template editor"
+  kind: "webcomponent"
+  component: "flow-template-editor"
+  file: "editors/template.html"
+  icon: "mdi:application-brackets-outline"

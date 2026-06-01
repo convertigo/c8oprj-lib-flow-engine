@@ -233,21 +233,30 @@ For generic values, expose a single `value` property. A literal string is a
 literal, mixed text can contain `{{ expression }}`, and a string containing only
 `{{ expression }}` returns the expression value with its native type.
 
-Block `catalog()` should declare property kinds:
+Block descriptors should declare property kinds:
 
-```javascript
-props: {
-	path: { kind: "path", mode: "write" },
-	value: { kind: "value", type: "unknown" },
-	body: { kind: "template", type: "string" }
-}
+```yaml
+props:
+  path:
+    kind: path
+    mode: write
+  value:
+    kind: value
+    type: unknown
+  body:
+    kind: template
+    type: string
 ```
 
 The engine exposes those property kinds under `Catalog / Types` in the
-FlowEngine virtual tree. Keep this vocabulary small and clear. Type
-definitions live in `libs/flow/types`, and docs, validators, readers, writers
-and web editor fragments should hang from those types instead of one-off Java
+FlowEngine virtual tree. Keep this vocabulary small and clear. Type descriptors
+live in `libs/flow/types/*.type.yaml`, and docs, validators, readers, writers and
+web editor fragments should hang from those types instead of one-off Java
 property hacks.
+
+The descriptor file is `libs/flow/types/<name>.type.yaml`. Optional JavaScript
+files under `libs/flow/types` are implementation resources referenced by that
+descriptor; they are not the type contract.
 
 Type editor fragments live in `libs/flow/types/editors`. The generic host maps
 `kind: "path"` to `flow-path-editor`, `kind: "template"` to

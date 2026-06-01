@@ -211,7 +211,7 @@ are still supported during the POC, but new blocks should prefer the canonical
 descriptor form.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
-first-class engine descriptors stored under `libs/flow/types`: docs,
+first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,
 validation/read/write hooks and web editor fragments belong there. Block
 property descriptors reference this vocabulary with `kind`, and the catalog can
 still keep usage counts as secondary information.
@@ -407,21 +407,20 @@ write the same shape” authoring pattern.
 
 Blocks can be listed/read from core, shared libraries and the project. Creation
 and editing are project-local. New blocks are canonical by default:
-`blockCreate({ name, source })` writes `<name>.block.yaml` plus a Rhino
-implementation file, extracting descriptor metadata from `catalog()` when the
-source still uses the old standalone shape.
+`blockCreate({ name, descriptorSource|descriptor, implementationSource })`
+writes `<name>.block.yaml` plus either `<name>.flow.yaml` or `<name>.js`
+depending on the descriptor runtime.
 
 - `blockGet({ name })` reads any visible block as one logical unit. Canonical
   blocks return `descriptorSource`, `descriptor`, `implementationRuntime` and,
   for Rhino-backed blocks, `implementationSource`.
-- `blockCreate({ name, descriptorSource|descriptor|definition, source|implementationSource })`
-  creates a project-local canonical block. Use `runtime: "flow"` plus `nodes`
-  for graph-backed blocks, or `runtime: "rhino"` plus an implementation source
-  for native blocks. `format: "legacy-js"` remains available only as an escape
-  hatch during the POC.
+- `blockCreate({ name, descriptorSource|descriptor|definition, implementationSource })`
+  creates a project-local canonical block. Use `implementation.runtime: "flow"`
+  plus a Flow YAML implementation source, or `implementation.runtime: "rhino"`
+  plus Rhino ES6 source.
 - `blockDuplicate({ fromName, toName })` copies a visible block into the
   project using the canonical format.
-- `blockEdit({ name, descriptorSource|descriptor|definition, source|implementationSource })`
+- `blockEdit({ name, descriptorSource|descriptor|definition, implementationSource })`
   edits the descriptor and/or the implementation of a project-local block.
 
 Core/shared blocks are intentionally not editable in place.
@@ -435,7 +434,8 @@ APIs:
   `rg`.
 - `resourceGet({ path })` reads content and returns a `hash`.
 - `resourcePatch({ path, baseHash, patch })` applies a unified diff, then
-  validates block/type/library JavaScript and parses fragment YAML by default.
+  validates block/library JavaScript, Flow block/type descriptors and parses
+  Flow/fragment YAML by default.
   Hunk line numbers may be approximate when the surrounding context is unique.
 
 The writable surface is intentionally narrow:
@@ -443,9 +443,11 @@ The writable surface is intentionally narrow:
 ```text
 libs/flow/blocks/**/*.js
 libs/flow/blocks/**/*.block.yaml
+libs/flow/blocks/**/*.flow.yaml
 libs/flow/fragments/**/*.fragment.yaml
 libs/flow/lib/**/*.js
 libs/flow/resources/**/*.{md,txt,json,yaml,yml}
+libs/flow/types/**/*.type.yaml
 libs/flow/types/**/*.js
 libs/flow/types/editors/**/*.{html,css,js}
 ```

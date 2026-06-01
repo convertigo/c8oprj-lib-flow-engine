@@ -11,11 +11,11 @@ props:
     kind: "text"
     type: "string"
     description: "Project-local Flow property type name."
-  source:
-    label: "source"
+  descriptorSource:
+    label: "descriptorSource"
     kind: "text"
     type: "string"
-    description: "Replacement Rhino ES6 JavaScript type source."
+    description: "Flow property type descriptor YAML source."
   overwrite:
     label: "overwrite"
     kind: "literal"

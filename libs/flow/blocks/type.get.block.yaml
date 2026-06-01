@@ -4,7 +4,7 @@ private: true
 icon: "mdi:shape-outline"
 package: "core"
 namespace: "type"
-description: "Reads one Flow property type source."
+description: "Reads one Flow property type descriptor."
 props:
   name:
     label: "name"
@@ -20,7 +20,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    description: "Scope path receiving type source and descriptor."
+    description: "Scope path receiving type descriptor source and descriptor."
 implementation:
   runtime: "rhino"
   file: "type.get.js"

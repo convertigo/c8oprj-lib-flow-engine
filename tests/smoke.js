@@ -84,19 +84,16 @@ assertTrue(typeListApi.ok === true && typeListApi.types.some(function (type) {
 	return type.name === "requestable";
 }), "types API did not expose core property types");
 var customTypeSource = [
-	"(function () {",
-	"\treturn {",
-	"\t\tname: \"custom.note\",",
-	"\t\tlabel: \"Custom note\",",
-	"\t\ttype: \"string\",",
-	"\t\tdescription: \"Project-local smoke test type.\"",
-	"\t};",
-	"}())",
+	"version: 1",
+	"name: custom.note",
+	"label: Custom note",
+	"type: string",
+	"description: Project-local smoke test type.",
 	""
 ].join("\n");
 var createdType = JSON.parse(engine.typeCreate(JSON.stringify({
 	name: "custom.note",
-	source: customTypeSource
+	descriptorSource: customTypeSource
 })));
 assertTrue(createdType.name === "custom.note", "typeCreate did not create a project-local type");
 var readType = JSON.parse(engine.typeGet(JSON.stringify({

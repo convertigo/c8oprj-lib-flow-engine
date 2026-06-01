@@ -1,0 +1,12 @@
+version: 1
+name: "requestable"
+label: "Requestable"
+icon: "mdi:link-variant"
+type: "string"
+description: "Sequence, Flow or Transaction target using SDK-like Convertigo qname syntax."
+editor:
+  label: "Requestable picker"
+  kind: "webcomponent"
+  component: "flow-requestable-editor"
+  file: "editors/requestable.html"
+  icon: "mdi:application-brackets-outline"

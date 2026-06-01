@@ -1,0 +1,12 @@
+version: 1
+name: "path"
+label: "Scope path"
+icon: "mdi:map-marker-path"
+type: "string"
+description: "Path inside input, config, flow, result, trace or current scopes."
+editor:
+  label: "Path picker"
+  kind: "webcomponent"
+  component: "flow-path-editor"
+  file: "editors/path.html"
+  icon: "mdi:application-brackets-outline"

@@ -1255,13 +1255,13 @@
 		return blockName + ".flow.yaml";
 	}
 
-	function typeFileName(name) {
+	function typeDescriptorFileName(name) {
 		var typeName = String(name || "").trim();
 		if (!typeName.match(/^[A-Za-z0-9_.-]+$/)) {
 			raise("INVALID_TYPE_NAME", "Invalid Flow property type name: " + name,
 				null, "Use letters, digits, dot, underscore or dash.");
 		}
-		return typeName + ".js";
+		return typeName + ".type.yaml";
 	}
 
 	function flowFileName(name) {
@@ -1469,7 +1469,7 @@
 			return ["html", "css", "js"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("libs/flow/types/") === 0) {
-			return ext === "js";
+			return ext === "js" || String(path).endsWith(".type.yaml");
 		}
 		return false;
 	}
@@ -1494,7 +1494,7 @@
 			return "typeEditor";
 		}
 		if (String(path).indexOf("libs/flow/types/") === 0) {
-			return "type";
+			return String(path).endsWith(".type.yaml") ? "typeDescriptor" : "typeResource";
 		}
 		return "resource";
 	}
@@ -1514,6 +1514,9 @@
 		if (filename.endsWith(".flow.yaml")) {
 			return filename.substring(0, filename.length - ".flow.yaml".length);
 		}
+		if (filename.endsWith(".type.yaml")) {
+			return filename.substring(0, filename.length - ".type.yaml".length);
+		}
 		if (filename.endsWith(".js")) {
 			return filename.substring(0, filename.length - 3);
 		}
@@ -1529,7 +1532,7 @@
 		var normalized = normalizeResourcePath(path);
 		if (!isAllowedResourcePath(normalized)) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.{js,flow.yaml,block.yaml}, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/blocks/**/*.{js,flow.yaml,block.yaml}, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new File(base, normalized);
 		var basePath = canonicalPath(base);
@@ -1823,8 +1826,8 @@
 				raise("INVALID_LIBRARY", "Invalid Flow library resource: " + path,
 					null, "A Flow library must evaluate to an object.");
 			}
-		} else if (kind === "type") {
-			validateTypeSource(resourceName(path), content);
+		} else if (kind === "typeDescriptor") {
+			validateTypeDescriptorSource(resourceName(path), content);
 		}
 		return {
 			ok: true,
@@ -1888,12 +1891,9 @@
 		return blocks;
 	}
 
-	function loadTypeFile(types, file, origin) {
+	function loadTypeDescriptorFile(types, file, origin) {
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var type = eval(source);
-		if (!type || !type.name) {
-			raise("INVALID_TYPE", "Invalid Flow property type module: " + file.getAbsolutePath());
-		}
+		var type = validateTypeDescriptorSource(resourceName(file.getName()), source);
 		if (types[type.name]) {
 			raise("DUPLICATE_TYPE", "Duplicate Flow property type: " + type.name,
 				null, "Rename the project type or remove the duplicate.");
@@ -1914,10 +1914,10 @@
 			return String(a.getName()).localeCompare(String(b.getName()));
 		});
 		files.forEach(function (file) {
-			if (!file.isFile() || !String(file.getName()).endsWith(".js")) {
+			if (!file.isFile() || !String(file.getName()).endsWith(".type.yaml")) {
 				return;
 			}
-			loadTypeFile(types, file, origin);
+			loadTypeDescriptorFile(types, file, origin);
 		});
 	}
 
@@ -2560,30 +2560,56 @@
 		return out;
 	}
 
-	function projectTypeFile(name) {
+	function projectTypeDescriptorFile(name) {
 		var dir = projectTypesDir();
 		if (!dir) {
 			raise("PROJECT_TYPES_UNAVAILABLE", "Project property types are unavailable.",
 				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
 		}
-		return new File(dir, typeFileName(name));
+		return new File(dir, typeDescriptorFileName(name));
 	}
 
-	function validateTypeSource(name, source) {
-		var type = eval(String(source || ""));
-		if (!type || !type.name) {
-			raise("INVALID_TYPE", "Invalid property type module: " + name,
-				null, "A type file must evaluate to an object with a name.");
+	function validateTypeDescriptorDefinition(name, definition) {
+		var type = normalizeTree(definition || {});
+		if (type.version === undefined || type.version === null) {
+			type.version = 1;
+		}
+		if (!type.name) {
+			type.name = String(name || "");
+		}
+		if (!type.name) {
+			raise("INVALID_TYPE", "Invalid property type descriptor: " + name,
+				null, "A type descriptor must define a name.");
 		}
 		if (String(type.name) !== String(name)) {
-			raise("TYPE_NAME_MISMATCH", "Type source declares \"" + type.name + "\" instead of \"" + name + "\".");
+			raise("TYPE_NAME_MISMATCH", "Type descriptor declares \"" + type.name + "\" instead of \"" + name + "\".");
 		}
 		return type;
 	}
 
-	function createProjectType(types, name, source, overwrite) {
-		validateTypeSource(name, source);
-		var file = projectTypeFile(name);
+	function validateTypeDescriptorSource(name, source) {
+		return validateTypeDescriptorDefinition(name, parseYamlSource(source, "version: 1\nname: " + String(name || "") + "\n"));
+	}
+
+	function typeDescriptorSourceForWriteRequest(name, request) {
+		request = request || {};
+		var source = request.descriptorSource !== undefined ? request.descriptorSource : request.source;
+		if (source !== undefined && source !== null && String(source).trim() !== "") {
+			return String(source);
+		}
+		var definition = request.descriptor || request.definition;
+		if (definition !== undefined && definition !== null) {
+			var type = validateTypeDescriptorDefinition(name, definition);
+			return toYamlSource(type);
+		}
+		raise("MISSING_TYPE_DESCRIPTOR", "Project property type \"" + name + "\" needs descriptorSource or descriptor.",
+			null, "Define the type contract in libs/flow/types/" + typeDescriptorFileName(name) + ".");
+	}
+
+	function createProjectType(types, name, request, overwrite) {
+		var descriptorSource = typeDescriptorSourceForWriteRequest(name, request);
+		validateTypeDescriptorSource(name, descriptorSource);
+		var file = projectTypeDescriptorFile(name);
 		if (types[name] && types[name].__flowOrigin !== "project") {
 			raise("DUPLICATE_TYPE", "Cannot override non-project Flow property type: " + name,
 				null, "Choose a project-specific name instead.");
@@ -2593,11 +2619,11 @@
 				null, "Pass overwrite=true to replace it explicitly.");
 		}
 		file.getParentFile().mkdirs();
-		FileUtils.writeStringToFile(file, String(source), "UTF-8");
+		FileUtils.writeStringToFile(file, descriptorSource, "UTF-8");
 		if (types[name]) {
 			delete types[name];
 		}
-		var type = loadTypeFile(types, file, "project");
+		var type = loadTypeDescriptorFile(types, file, "project");
 		return typeDescriptor(type);
 	}
 
@@ -2606,12 +2632,14 @@
 		if (!type) {
 			raise("UNKNOWN_TYPE", "Unknown Flow property type: " + name);
 		}
+		var descriptorSource = String(FileUtils.readFileToString(new File(String(type.__flowFile)), "UTF-8"));
 		return {
 			name: type.name,
 			origin: type.__flowOrigin || "unknown",
 			file: String(type.__flowFile || ""),
+			descriptorFile: String(type.__flowFile || ""),
 			descriptor: typeDescriptor(type),
-			source: String(FileUtils.readFileToString(new File(String(type.__flowFile)), "UTF-8"))
+			descriptorSource: descriptorSource
 		};
 	}
 
@@ -3469,7 +3497,11 @@
 		ctx.typeCreate = function (name, source, overwrite, args) {
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
-				return createProjectType(loadTypes(), name, source, overwrite);
+				var request = typeof source === "object" && source !== null ? source : args;
+				if (typeof source !== "object" || source === null) {
+					request.descriptorSource = source;
+				}
+				return createProjectType(loadTypes(), name, request, overwrite);
 			});
 		};
 		ctx.blockTest = function (flowSource, config, options) {
@@ -6068,7 +6100,7 @@
 		typeCreate: function (requestJson) {
 			try {
 				var request = parseRequest(requestJson);
-				return response(createProjectType(loadTypes(), request.name, request.source || "", request.overwrite === true));
+				return response(createProjectType(loadTypes(), request.name, request, request.overwrite === true));
 			} catch (e) {
 				return response(failure("typeCreate", e));
 			}

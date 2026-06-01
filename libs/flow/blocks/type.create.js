@@ -24,7 +24,10 @@
 
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			return ctx.typeCreate(props.name, props.source || "", bool(props.overwrite), props);
+			return ctx.typeCreate(props.name, {
+				descriptorSource: props.descriptorSource || "",
+				projectDir: props.projectDir
+			}, bool(props.overwrite), props);
 		}
 	};
 }())
