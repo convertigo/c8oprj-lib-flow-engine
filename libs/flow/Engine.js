@@ -1444,6 +1444,9 @@
 		if (String(path).indexOf("libs/flow/lib/") === 0) {
 			return ext === "js";
 		}
+		if (String(path).indexOf("libs/flow/resources/") === 0) {
+			return ["md", "txt", "json", "yaml", "yml"].indexOf(ext) !== -1;
+		}
 		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
 			return ["html", "css", "js"].indexOf(ext) !== -1;
 		}
@@ -1499,7 +1502,7 @@
 		var normalized = normalizeResourcePath(path);
 		if (!isAllowedResourcePath(normalized)) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.js, libs/flow/blocks/**/*.block.yaml, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/blocks/**/*.js, libs/flow/blocks/**/*.block.yaml, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new File(base, normalized);
 		var basePath = canonicalPath(base);
@@ -1558,7 +1561,7 @@
 			return [];
 		}
 		var out = [];
-		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/types"].forEach(function (path) {
+		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/resources", "libs/flow/types"].forEach(function (path) {
 			collectResourceFiles(new File(base, path), base, out);
 		});
 		return out;

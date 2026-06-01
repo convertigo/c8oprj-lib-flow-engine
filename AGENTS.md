@@ -148,6 +148,11 @@ it weakens schemas and recreates SequenceJS-style hidden logic.
 Use `fragment.use` when the behavior is graph-shaped and should stay visible in
 the tree. Fragments live in `libs/flow/fragments/<Name>.fragment.yaml`, execute
 inline in the current scopes, and are expanded by analysis/tree/picker APIs.
+
+Use `libs/flow/resources/**/*` for project-local documentation or data files
+that should be searchable and patchable by agents without becoming executable
+code. The `flow-resource-*` APIs accept `.md`, `.txt`, `.json`, `.yaml` and
+`.yml` files under that directory.
 Prefer fragments over `flow.call` for internal factoring when no requestable
 boundary or new input/output contract is needed.
 

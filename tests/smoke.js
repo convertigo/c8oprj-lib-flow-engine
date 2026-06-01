@@ -184,6 +184,23 @@ var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 assertTrue(resourceSearchRun.result.search.resources.some(function (resource) {
 	return resource.path === "libs/flow/blocks/resource.echo.js";
 }), "resource.search block did not find project Flow resources");
+var docsDir = new java.io.File(projectDirFile, "libs/flow/resources/guide");
+docsDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(docsDir, "start.md"), "# Start\n\nFlow documentation resource.", "UTF-8");
+var docResourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
+	query: "documentation resource",
+	doc: false,
+	hints: false
+})));
+assertTrue(docResourceSearch.resources.some(function (resource) {
+	return resource.path === "libs/flow/resources/guide/start.md";
+}), "resourceSearch did not include project Flow documentation resources");
+var docResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
+	path: "libs/flow/resources/guide/start.md"
+})));
+assertTrue(docResourceGet.content.indexOf("Flow documentation resource.") !== -1,
+	"resourceGet did not read project Flow documentation resources");
 var callBlockSource = [
 	"(function () {",
 	"\treturn {",

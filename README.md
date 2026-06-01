@@ -82,6 +82,7 @@ lib_flow_engine/libs/flow/blocks/*.block.yaml # core composite blocks
 <current-project>/libs/flow/fragments/*.fragment.yaml # project-local fragments
 lib_flow_engine/libs/flow/lib/*.js         # core helper libraries
 <current-project>/libs/flow/lib/*.js      # project-local helper libraries
+<current-project>/libs/flow/resources/**/* # editable docs/data resources
 ```
 
 Project-local blocks are meant for application-specific vocabulary. They cannot
@@ -400,15 +401,17 @@ The writable surface is intentionally narrow:
 
 ```text
 libs/flow/blocks/**/*.js
+libs/flow/blocks/**/*.block.yaml
 libs/flow/fragments/**/*.fragment.yaml
 libs/flow/lib/**/*.js
+libs/flow/resources/**/*.{md,txt,json,yaml,yml}
 libs/flow/types/**/*.js
 libs/flow/types/editors/**/*.{html,css,js}
 ```
 
 Flow graph changes should still use `flow-edit`/`flow-set` mutations. Resource
-patching is for block implementations, helper libraries and custom property
-editors.
+patching is for block implementations, composite blocks, helper libraries,
+custom property editors and project-local documentation/data resources.
 
 ## Context picker API
 
