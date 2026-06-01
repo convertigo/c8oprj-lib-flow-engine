@@ -406,13 +406,23 @@ write the same shape” authoring pattern.
 ## Block Authoring API
 
 Blocks can be listed/read from core, shared libraries and the project. Creation
-and editing are project-local:
+and editing are project-local. New blocks are canonical by default:
+`blockCreate({ name, source })` writes `<name>.block.yaml` plus a Rhino
+implementation file, extracting descriptor metadata from `catalog()` when the
+source still uses the old standalone shape.
 
-- `blockGet({ name })` reads any visible block source.
-- `blockCreate({ name, source })` creates a project-local block.
+- `blockGet({ name })` reads any visible block as one logical unit. Canonical
+  blocks return `descriptorSource`, `descriptor`, `implementationRuntime` and,
+  for Rhino-backed blocks, `implementationSource`.
+- `blockCreate({ name, descriptorSource|descriptor|definition, source|implementationSource })`
+  creates a project-local canonical block. Use `runtime: "flow"` plus `nodes`
+  for graph-backed blocks, or `runtime: "rhino"` plus an implementation source
+  for native blocks. `format: "legacy-js"` remains available only as an escape
+  hatch during the POC.
 - `blockDuplicate({ fromName, toName })` copies a visible block into the
-  project.
-- `blockEdit({ name, source })` replaces a project-local block source.
+  project using the canonical format.
+- `blockEdit({ name, descriptorSource|descriptor|definition, source|implementationSource })`
+  edits the descriptor and/or the implementation of a project-local block.
 
 Core/shared blocks are intentionally not editable in place.
 

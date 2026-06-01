@@ -17,9 +17,9 @@
 				props: {
 					name: { label: "name", kind: "text", type: "string", description: "Flow block name." },
 					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving block source and metadata." }
+					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving descriptor and implementation sources." }
 				},
-				description: "Reads one Flow block source."
+				description: "Reads one Flow block as a logical descriptor plus implementation unit."
 			};
 		},
 

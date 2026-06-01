@@ -118,6 +118,16 @@ var createdResourceBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	source: resourceBlockSource
 })));
 assertTrue(createdResourceBlock.name === "resource.echo", "blockCreate did not prepare a resource block");
+assertTrue(new java.io.File(projectDirFile, "libs/flow/blocks/resource.echo.block.yaml").isFile() &&
+	new java.io.File(projectDirFile, "libs/flow/blocks/resource.echo.js").isFile(),
+	"blockCreate did not write the canonical descriptor plus implementation files");
+var createdResourceBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
+	name: "resource.echo"
+})));
+assertTrue(createdResourceBlockGet.format === "canonical" &&
+	createdResourceBlockGet.descriptorSource.indexOf("Resource smoke block.") !== -1 &&
+	createdResourceBlockGet.implementationSource.indexOf("resource.echo") !== -1,
+	"blockGet did not expose canonical descriptor and implementation sources");
 var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	query: "Resource smoke",
 	doc: false,

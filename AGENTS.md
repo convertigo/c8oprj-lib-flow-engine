@@ -308,6 +308,11 @@ JSON Pointer paths as the exact low-level fallback.
 Block authoring must stay project-local. Read any visible block with
 `blockGet`, create new blocks with `blockCreate`, duplicate core/shared blocks
 with `blockDuplicate`, and edit only project-local copies with `blockEdit`.
+These APIs now treat a block as one logical unit. `blockCreate` writes
+`<name>.block.yaml` by default and keeps Rhino code in a peer JS implementation
+file when needed. `blockGet` returns `descriptorSource` and
+`implementationSource` for canonical blocks. Use `format: "legacy-js"` only
+when deliberately testing the old standalone JS path.
 
 Static `requestable.call` nodes should enrich picker context too. Flow targets
 read the Flow output contract; legacy sequence and transaction targets use the

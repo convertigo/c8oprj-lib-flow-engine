@@ -1237,6 +1237,15 @@
 		return blockName + ".js";
 	}
 
+	function blockDescriptorFileName(name) {
+		var blockName = String(name || "").trim();
+		if (!blockName.match(/^[A-Za-z0-9_.-]+$/)) {
+			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
+				null, "Use letters, digits, dot, underscore or dash.");
+		}
+		return blockName + ".block.yaml";
+	}
+
 	function typeFileName(name) {
 		var typeName = String(name || "").trim();
 		if (!typeName.match(/^[A-Za-z0-9_.-]+$/)) {
@@ -1769,7 +1778,14 @@
 	function validateResourceContent(path, content) {
 		var kind = resourceKind(path);
 		if (kind === "block") {
-			validateBlockSource(resourceName(path), content);
+			var descriptorFile = projectBlocksDir()
+				? new File(projectBlocksDir(), blockDescriptorFileName(resourceName(path)))
+				: null;
+			if (descriptorFile && descriptorFile.isFile()) {
+				validateBlockImplementationSource(resourceName(path), content);
+			} else {
+				validateBlockSource(resourceName(path), content);
+			}
 		} else if (kind === "graphBlock") {
 			validateGraphBlockSource(resourceName(path), content);
 		} else if (kind === "fragment") {
@@ -1931,6 +1947,15 @@
 		return new File(dir, blockFileName(name));
 	}
 
+	function projectBlockDescriptorFile(name) {
+		var dir = projectBlocksDir();
+		if (!dir) {
+			raise("PROJECT_BLOCKS_UNAVAILABLE", "Project blocks are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		return new File(dir, blockDescriptorFileName(name));
+	}
+
 	function flowLibraryFile(name) {
 		name = safeFilePart(name);
 		if (!name) {
@@ -1971,6 +1996,18 @@
 		}
 		if (String(block.name) !== String(name)) {
 			raise("BLOCK_NAME_MISMATCH", "Block source declares \"" + block.name + "\" instead of \"" + name + "\".");
+		}
+		return block;
+	}
+
+	function validateBlockImplementationSource(name, source) {
+		var block = eval(String(source || ""));
+		if (!block || typeof block.run !== "function") {
+			raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid block implementation: " + name,
+				null, "A descriptor-backed Rhino implementation must evaluate to an object with run(ctx, node).");
+		}
+		if (block.name && String(block.name) !== String(name)) {
+			raise("BLOCK_NAME_MISMATCH", "Block implementation declares \"" + block.name + "\" instead of \"" + name + "\".");
 		}
 		return block;
 	}
@@ -2333,14 +2370,91 @@
 		return renamed;
 	}
 
-	function createProjectBlock(blocks, name, source, overwrite) {
+	function renameBlockImplementationSource(source, fromName, toName) {
+		source = String(source || "");
+		var pattern = new RegExp("(\\bname\\s*:\\s*)([\"'])" + escapeRegExp(fromName) + "\\2", "g");
+		return source.replace(pattern, "$1$2" + String(toName) + "$2");
+	}
+
+	function descriptorFromBlockSource(name, source) {
+		var block = validateBlockSource(name, source);
+		var descriptor = {};
+		if (typeof block.catalog === "function") {
+			descriptor = normalizeTree(block.catalog() || {});
+		}
+		descriptor.name = String(name);
+		if (descriptor.version === undefined) {
+			descriptor.version = 1;
+		}
+		if (descriptor["private"] === undefined && block["private"] !== undefined) {
+			descriptor["private"] = block["private"] === true;
+		}
+		if (descriptor.icon === undefined && block.icon !== undefined) {
+			descriptor.icon = block.icon;
+		}
+		delete descriptor.origin;
+		delete descriptor.file;
+		delete descriptor.runtime;
+		delete descriptor.implementationFile;
+		descriptor.implementation = {
+			runtime: "rhino",
+			file: blockFileName(name)
+		};
+		return descriptor;
+	}
+
+	function canonicalBlockDefinition(name, request) {
+		request = request || {};
+		var implementationSource = request.implementationSource !== undefined
+			? request.implementationSource
+			: request.source;
+		var definition;
+		if (request.descriptorSource !== undefined && request.descriptorSource !== null) {
+			definition = parseYamlSource(request.descriptorSource, "version: 1\n");
+		} else if (request.descriptor !== undefined && request.descriptor !== null) {
+			definition = normalizeTree(request.descriptor);
+		} else if (request.definition !== undefined && request.definition !== null) {
+			definition = normalizeTree(request.definition);
+		} else if (implementationSource !== undefined && implementationSource !== null && String(implementationSource).trim() !== "") {
+			definition = descriptorFromBlockSource(name, implementationSource);
+		} else {
+			definition = { version: 1, name: String(name), implementation: { runtime: "flow" }, nodes: [] };
+		}
+		definition.name = String(name);
+		if (definition.version === undefined) {
+			definition.version = 1;
+		}
+		var implementation = blockImplementation(definition);
+		if (request.runtime && !definition.nodes) {
+			implementation.runtime = String(request.runtime);
+		}
+		if (implementation.runtime !== "flow" && !implementation.file) {
+			implementation.file = blockFileName(name);
+		}
+		definition.implementation = implementation;
+		return validateGraphBlockDefinition(name, definition);
+	}
+
+	function implementationTargetFile(descriptorFile, definition) {
+		var implementation = blockImplementation(definition);
+		if (implementation.runtime === "flow") {
+			return null;
+		}
+		var file = new File(String(implementation.file || blockFileName(definition.name)));
+		if (!file.isAbsolute()) {
+			file = new File(descriptorFile.getParentFile(), String(implementation.file || blockFileName(definition.name)));
+		}
+		return file;
+	}
+
+	function createProjectLegacyBlock(blocks, name, source, overwrite) {
 		validateBlockSource(name, source);
 		var file = projectBlockFile(name);
 		if (blocks[name] && blocks[name].__flowOrigin !== "project") {
 			raise("DUPLICATE_BLOCK", "Cannot override non-project Flow block: " + name,
 				null, "Choose a project-specific name instead.");
 		}
-		if (file.isFile() && overwrite !== true) {
+		if ((file.isFile() || projectBlockDescriptorFile(name).isFile()) && overwrite !== true) {
 			raise("BLOCK_ALREADY_EXISTS", "Project block already exists: " + name,
 				null, "Pass overwrite=true to replace it explicitly.");
 		}
@@ -2353,17 +2467,87 @@
 		return blockDescriptor(block);
 	}
 
-	function editProjectBlock(blocks, name, source) {
+	function createProjectBlock(blocks, name, request, overwrite) {
+		request = typeof request === "object" && request !== null ? request : { source: request };
+		overwrite = overwrite === true || request.overwrite === true;
+		if (request.format === "legacy" || request.format === "legacy-js") {
+			return createProjectLegacyBlock(blocks, name, request.source || "", overwrite);
+		}
+		var descriptorFile = projectBlockDescriptorFile(name);
+		var legacyFile = projectBlockFile(name);
 		var block = blocks[String(name || "")];
-		var file = projectBlockFile(name);
-		if (!block || block.__flowOrigin !== "project" || !file.isFile()) {
+		if (block && block.__flowOrigin !== "project") {
+			raise("DUPLICATE_BLOCK", "Cannot override non-project Flow block: " + name,
+				null, "Choose a project-specific name instead.");
+		}
+		if ((descriptorFile.isFile() || legacyFile.isFile()) && overwrite !== true) {
+			raise("BLOCK_ALREADY_EXISTS", "Project block already exists: " + name,
+				null, "Pass overwrite=true to replace it explicitly.");
+		}
+		var definition = canonicalBlockDefinition(name, request);
+		var implementation = blockImplementation(definition);
+		var implementationSource = request.implementationSource !== undefined
+			? request.implementationSource
+			: request.source;
+		if (implementation.runtime !== "flow") {
+			if (implementationSource === undefined || implementationSource === null || String(implementationSource).trim() === "") {
+				raise("MISSING_BLOCK_IMPLEMENTATION", "Block \"" + name + "\" needs implementationSource.",
+					null, "Pass implementationSource or source for descriptor-backed Rhino blocks.");
+			}
+			validateBlockImplementationSource(name, implementationSource);
+		}
+		descriptorFile.getParentFile().mkdirs();
+		FileUtils.writeStringToFile(descriptorFile, toYamlSource(definition), "UTF-8");
+		var implementationFile = implementationTargetFile(descriptorFile, definition);
+		if (implementationFile) {
+			FileUtils.writeStringToFile(implementationFile, String(implementationSource), "UTF-8");
+		}
+		if (blocks[name]) {
+			delete blocks[name];
+		}
+		return blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project"));
+	}
+
+	function editProjectBlock(blocks, name, request) {
+		request = typeof request === "object" && request !== null ? request : { source: request };
+		var block = blocks[String(name || "")];
+		var descriptorFile = projectBlockDescriptorFile(name);
+		var legacyFile = projectBlockFile(name);
+		if (!block || block.__flowOrigin !== "project") {
 			raise("BLOCK_NOT_EDITABLE", "Only project-local Flow blocks can be edited: " + name,
 				null, "Duplicate core/shared blocks first, then edit the project-local copy.");
 		}
-		validateBlockSource(name, source);
-		FileUtils.writeStringToFile(file, String(source), "UTF-8");
+		if (descriptorFile.isFile()) {
+			var hasDescriptor = request.descriptorSource !== undefined || request.descriptor !== undefined || request.definition !== undefined;
+			var hasImplementation = request.implementationSource !== undefined || request.source !== undefined;
+			var descriptorSource = hasDescriptor
+				? (request.descriptorSource !== undefined ? request.descriptorSource : toYamlSource(request.descriptor || request.definition || {}))
+				: String(FileUtils.readFileToString(descriptorFile, "UTF-8"));
+			var definition = validateGraphBlockSource(name, descriptorSource);
+			var implementationFile = implementationTargetFile(descriptorFile, definition);
+			if (hasImplementation && implementationFile) {
+				var implementationSource = request.implementationSource !== undefined ? request.implementationSource : request.source;
+				var implementationBlock = validateBlockImplementationSource(name, implementationSource);
+				FileUtils.writeStringToFile(implementationFile, String(implementationSource), "UTF-8");
+				if (!hasDescriptor && implementationBlock.name && typeof implementationBlock.catalog === "function") {
+					definition = descriptorFromBlockSource(name, implementationSource);
+					descriptorSource = toYamlSource(definition);
+					hasDescriptor = true;
+				}
+			}
+			if (hasDescriptor) {
+				FileUtils.writeStringToFile(descriptorFile, toYamlSource(definition), "UTF-8");
+			}
+			delete blocks[name];
+			return blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project"));
+		}
+		if (!legacyFile.isFile()) {
+			raise("BLOCK_NOT_EDITABLE", "Project block source is missing: " + name);
+		}
+		validateBlockSource(name, request.source || "");
+		FileUtils.writeStringToFile(legacyFile, String(request.source || ""), "UTF-8");
 		delete blocks[name];
-		return blockDescriptor(loadBlockFile(blocks, file, "project"));
+		return blockDescriptor(loadBlockFile(blocks, legacyFile, "project"));
 	}
 
 	function duplicateProjectBlock(blocks, fromName, toName, overwrite) {
@@ -2375,8 +2559,27 @@
 		if (fromName === toName) {
 			raise("INVALID_BLOCK_NAME", "Block duplication target must differ from source: " + toName);
 		}
-		var source = getBlockSource(blocks, fromName).source;
-		return createProjectBlock(blocks, toName, renameBlockSource(source, fromName, toName), overwrite);
+		var sourceInfo = getBlockSource(blocks, fromName);
+		if (sourceInfo.format === "canonical") {
+			var definition = normalizeTree(sourceInfo.descriptor || {});
+			definition.name = toName;
+			var implementation = blockImplementation(definition);
+			var implementationSource = sourceInfo.implementationSource;
+			if (implementation.runtime !== "flow") {
+				implementation.file = blockFileName(toName);
+				definition.implementation = implementation;
+				implementationSource = renameBlockImplementationSource(implementationSource || "", fromName, toName);
+			}
+			return createProjectBlock(blocks, toName, {
+				descriptor: definition,
+				implementationSource: implementationSource,
+				overwrite: overwrite === true
+			}, overwrite);
+		}
+		return createProjectBlock(blocks, toName, {
+			source: renameBlockSource(sourceInfo.source, fromName, toName),
+			overwrite: overwrite === true
+		}, overwrite);
 	}
 
 	function getBlockSource(blocks, name) {
@@ -2384,11 +2587,35 @@
 		if (!block) {
 			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name);
 		}
+		var file = new File(String(block.__flowFile || ""));
+		if (String(block.__flowFile || "").endsWith(".block.yaml")) {
+			var descriptorSource = String(FileUtils.readFileToString(file, "UTF-8"));
+			var descriptor = validateGraphBlockSource(block.name, descriptorSource);
+			var implementation = blockImplementation(descriptor);
+			var out = {
+				name: block.name,
+				origin: block.__flowOrigin || "unknown",
+				format: "canonical",
+				file: String(block.__flowFile || ""),
+				descriptorFile: String(block.__flowFile || ""),
+				descriptorSource: descriptorSource,
+				descriptor: descriptor,
+				implementationRuntime: implementation.runtime,
+				source: descriptorSource
+			};
+			if (block.__flowImplementationFile) {
+				out.implementationFile = String(block.__flowImplementationFile);
+				out.implementationSource = String(FileUtils.readFileToString(new File(String(block.__flowImplementationFile)), "UTF-8"));
+				out.source = out.implementationSource;
+			}
+			return out;
+		}
 		return {
 			name: block.name,
 			origin: block.__flowOrigin || "unknown",
+			format: "legacy-js",
 			file: String(block.__flowFile || ""),
-			source: String(FileUtils.readFileToString(new File(String(block.__flowFile)), "UTF-8"))
+			source: String(FileUtils.readFileToString(file, "UTF-8"))
 		};
 	}
 
@@ -3266,7 +3493,11 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				var targetBlocks = loadBlocks();
-				return createProjectBlock(targetBlocks, name, source, overwrite);
+				var request = typeof source === "object" && source !== null ? source : Object.assign({}, args, {
+					source: source,
+					overwrite: overwrite === true
+				});
+				return createProjectBlock(targetBlocks, name, request, overwrite);
 			});
 		};
 		ctx.blockDuplicate = function (fromName, toName, overwrite, args) {
@@ -3280,7 +3511,10 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				var targetBlocks = loadBlocks();
-				return editProjectBlock(targetBlocks, name, source);
+				var request = typeof source === "object" && source !== null ? source : Object.assign({}, args, {
+					source: source
+				});
+				return editProjectBlock(targetBlocks, name, request);
 			});
 		};
 		ctx.typeList = function (args) {
@@ -5914,7 +6148,7 @@
 		blockCreate: function (requestJson) {
 			try {
 				var request = parseRequest(requestJson);
-				return response(createProjectBlock(loadBlocks(), request.name, request.source || "", request.overwrite === true));
+				return response(createProjectBlock(loadBlocks(), request.name, request, request.overwrite === true));
 			} catch (e) {
 				return response(failure("blockCreate", e));
 			}
@@ -5932,7 +6166,7 @@
 		blockEdit: function (requestJson) {
 			try {
 				var request = parseRequest(requestJson);
-				return response(editProjectBlock(loadBlocks(), request.name, request.source || ""));
+				return response(editProjectBlock(loadBlocks(), request.name, request));
 			} catch (e) {
 				return response(failure("blockEdit", e));
 			}

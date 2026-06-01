@@ -20,12 +20,14 @@
 				icon: "mdi:puzzle-plus-outline",
 				props: {
 					name: { label: "name", kind: "text", type: "string", description: "Project-local Flow block name." },
-					source: { label: "source", kind: "text", type: "string", description: "Rhino ES6 JavaScript block source." },
+					source: { label: "source", kind: "text", type: "string", description: "Rhino ES6 implementation source. Old standalone blocks are converted to canonical descriptors." },
+					implementationSource: { label: "implementationSource", kind: "text", type: "string", description: "Explicit Rhino ES6 implementation source." },
+					descriptorSource: { label: "descriptorSource", kind: "text", type: "string", description: "Optional canonical *.block.yaml descriptor source." },
 					overwrite: { label: "overwrite", kind: "literal", type: "boolean", description: "Allow replacing an existing project-local block." },
 					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
 					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving creation result." }
 				},
-				description: "Creates one project-local Flow block."
+				description: "Creates one project-local canonical Flow block."
 			};
 		},
 
@@ -42,7 +44,7 @@
 
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			return ctx.blockCreate(props.name, props.source || "", bool(props.overwrite), props);
+			return ctx.blockCreate(props.name, props, bool(props.overwrite), props);
 		}
 	};
 }())
