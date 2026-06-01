@@ -66,7 +66,8 @@ Avoid:
 Keep `libs/flow/Engine.js` small. It should:
 
 - parse the request and Flow source;
-- load blocks from `libs/flow/blocks/*.js`;
+- load native blocks from `libs/flow/blocks/*.js` and composite graph blocks
+  from `libs/flow/blocks/*.block.yaml`;
 - prepare scopes;
 - execute nodes in order;
 - delegate each node to its block;
@@ -96,15 +97,35 @@ Returning `result` is implicit. Add a `return` block only when the Flow must sto
 early or return another value. Use `throw` to stop with a structured error from
 an error branch.
 
+Runtime handles are allowed for live objects that cannot be serialized, such as
+DBO instances, file writers, OpenDocument objects, XLS workbooks and JDBC
+transactions. Treat them as typed values like `handle<dbo>` or
+`handle<jdbc.transaction>`. Handles may live in `flow`, `local`, `current` and
+`request`, but never in `result`, persisted YAML, learned schemas or MCP/SDK
+responses. Traces and pickers must show only a serializable summary.
+
+Prefer scoped `with*` blocks for handles that require cleanup, like Java
+try-with-resources. A block such as `file.withWriter` should open the handle,
+write it to an `as` path, run child nodes, then close it in a finally-style
+cleanup. Only add explicit `open` / `close` blocks for advanced cases.
+
 Blocks are loaded from the core engine first, then from the current project:
 
 ```text
 lib_flow_engine/libs/flow/blocks/*.js
+lib_flow_engine/libs/flow/blocks/*.block.yaml
 <current-project>/libs/flow/blocks/*.js
+<current-project>/libs/flow/blocks/*.block.yaml
 ```
 
 Do not silently override core blocks from a project. Use a project-specific
 name, for example `weather.hotCities`, when adding custom vocabulary.
+
+Use a composite graph block when a reusable behavior is naturally expressed as
+existing blocks. It keeps the item in the palette/catalog while making the
+implementation visible as nodes. Use `props.*` for evaluated instance
+properties and `local.*` for implementation-private state. Use a native JS block
+only when the behavior needs Rhino/Java code or would be awkward as a graph.
 
 Keep the standard library small. Put only generally useful runtime blocks in
 `lib_flow_engine`. MCP plumbing, Studio tooling, benchmark helpers and migration
@@ -121,6 +142,12 @@ not fit existing blocks. Mark one-off or implementation-detail blocks
 projects that reference it. A generic script-style block is an escape hatch for
 debugging or migration only; it should not be the default authoring path because
 it weakens schemas and recreates SequenceJS-style hidden logic.
+
+Use `fragment.use` when the behavior is graph-shaped and should stay visible in
+the tree. Fragments live in `libs/flow/fragments/<Name>.fragment.yaml`, execute
+inline in the current scopes, and are expanded by analysis/tree/picker APIs.
+Prefer fragments over `flow.call` for internal factoring when no requestable
+boundary or new input/output contract is needed.
 
 Project-wide Flow defaults are read from:
 
@@ -166,6 +193,7 @@ ctx.input(props)      standard value resolution with {{ expression }} support
 ctx.read(path)        read scope path
 ctx.write(path, val)  write scope path
 ctx.runNodes(nodes)   execute child nodes
+ctx.callBlock(name, props, options) call another block as a capability
 ctx.runFlowSource(src, config, options) run another Flow source
 ctx.flowGet(name)     read a named project Flow sidecar
 ctx.props(node)       merged node properties

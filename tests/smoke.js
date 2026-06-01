@@ -16,6 +16,16 @@ function assertTrue(condition, message) {
 	}
 }
 
+function findChild(parent, name) {
+	var children = parent && parent.children || [];
+	for (var i = 0; i < children.length; i++) {
+		if (children[i].name === name) {
+			return children[i];
+		}
+	}
+	return null;
+}
+
 var flowSource = [
 	"version: 1",
 	"nodes:",
@@ -143,6 +153,204 @@ var patchedResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 })));
 assertTrue(patchedResourceGet.content.indexOf("Resource patched block.") !== -1,
 	"resourcePatch did not persist the patched source");
+var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: readResource",
+		"    block: resource.get",
+		"    path: libs/flow/blocks/resource.echo.js",
+		"    out: result.resource",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(resourceGetRun.result.resource.content.indexOf("Resource patched block.") !== -1,
+	"resource.get block did not read project Flow resources");
+var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: searchResource",
+		"    block: resource.search",
+		"    query: Resource patched",
+		"    doc: false",
+		"    hints: false",
+		"    out: result.search",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(resourceSearchRun.result.search.resources.some(function (resource) {
+	return resource.path === "libs/flow/blocks/resource.echo.js";
+}), "resource.search block did not find project Flow resources");
+var callBlockSource = [
+	"(function () {",
+	"\treturn {",
+	"\t\tname: \"smoke.callBlock\",",
+	"\t\tcatalog: function () {",
+	"\t\t\treturn {",
+	"\t\t\t\tname: \"smoke.callBlock\",",
+	"\t\t\t\tdescription: \"Calls core blocks as capabilities.\",",
+	"\t\t\t\tprops: {",
+	"\t\t\t\t\tout: { kind: \"path\", mode: \"write\" }",
+	"\t\t\t\t}",
+	"\t\t\t};",
+	"\t\t},",
+	"\t\trun: function (ctx, node) {",
+	"\t\t\tvar props = ctx.props(node);",
+	"\t\t\tctx.callBlock(\"set\", { path: \"flow.called\", value: \"{{ input.name }}\" }, { trace: false });",
+	"\t\t\tvar returned = ctx.callBlock(\"return\", { value: \"{{ flow.called }}\" }, { trace: false });",
+	"\t\t\tctx.callBlock(\"set\", { path: \"flow.afterReturn\", value: \"still-running\" }, { trace: false });",
+	"\t\t\treturn { value: returned, afterReturn: ctx.read(\"flow.afterReturn\"), out: props.out || \"\" };",
+	"\t\t}",
+	"\t};",
+	"}())",
+	""
+].join("\n");
+var createdCallBlock = JSON.parse(engine.blockCreate(JSON.stringify({
+	name: "smoke.callBlock",
+	source: callBlockSource
+})));
+assertTrue(createdCallBlock.name === "smoke.callBlock", "blockCreate did not create the callBlock smoke block");
+var callBlockRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: callSmoke",
+		"    block: smoke.callBlock",
+		"    out: result.call",
+		""
+	].join("\n"),
+	input: {
+		name: "Ada"
+	},
+	includeTrace: false
+})));
+assertTrue(callBlockRun.result.call.value === "Ada" &&
+	callBlockRun.result.call.afterReturn === "still-running",
+	"ctx.callBlock did not isolate props/local/return state");
+var libDir = new java.io.File(projectDirFile, "libs/flow/lib");
+libDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(libDir, "smoke.js"), [
+	"(function () {",
+	"\treturn {",
+	"\t\tdecorate: function (value) {",
+	"\t\t\treturn String(value || \"\") + \" from lib\";",
+	"\t\t}",
+	"\t};",
+	"}())",
+	""
+].join("\n"), "UTF-8");
+var libBackedBlockSource = [
+	"(function () {",
+	"\treturn {",
+	"\t\tname: \"smoke.lib\",",
+	"\t\tcatalog: function () {",
+	"\t\t\treturn {",
+	"\t\t\t\tname: \"smoke.lib\",",
+	"\t\t\t\tdescription: \"Uses a project Flow library.\",",
+	"\t\t\t\tprops: {",
+	"\t\t\t\t\tvalue: { kind: \"expression\", type: \"string\" },",
+	"\t\t\t\t\tout: { kind: \"path\", mode: \"write\" }",
+	"\t\t\t\t}",
+	"\t\t\t};",
+	"\t\t},",
+	"\t\trun: function (ctx, node) {",
+	"\t\t\tvar props = ctx.props(node);",
+	"\t\t\treturn ctx.lib(\"smoke\").decorate(ctx.expr(props.value || \"input.name\"));",
+	"\t\t}",
+	"\t};",
+	"}())",
+	""
+].join("\n");
+var createdLibBlock = JSON.parse(engine.blockCreate(JSON.stringify({
+	name: "smoke.lib",
+	source: libBackedBlockSource
+})));
+assertTrue(createdLibBlock.name === "smoke.lib", "blockCreate did not create a library-backed block");
+var flowDir = new java.io.File(projectDirFile, "libs/flows");
+flowDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(flowDir, "ChildSmoke.flow.yaml"), [
+	"version: 1",
+	"nodes:",
+	"  - id: decorate",
+	"    block: smoke.lib",
+	"    value: input.name",
+	"    out: result.message",
+	""
+].join("\n"), "UTF-8");
+var flowCallRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: child",
+		"    block: flow.call",
+		"    flow: ChildSmoke",
+		"    input:",
+		"      name: input.name",
+		"    out: result.child",
+		""
+	].join("\n"),
+	input: {
+		name: "Hello"
+	}
+})));
+assertTrue(flowCallRun.result.child.message === "Hello from lib",
+	"flow.call did not execute a child Flow sidecar with project library support");
+var fragmentDir = new java.io.File(projectDirFile, "libs/flow/fragments");
+fragmentDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(fragmentDir, "DecorateMessage.fragment.yaml"), [
+	"version: 1",
+	"nodes:",
+	"  - id: fragmentDecorate",
+	"    block: smoke.lib",
+	"    value: input.name",
+	"    out: result.fragmentMessage",
+	""
+].join("\n"), "UTF-8");
+var fragmentFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: useDecorate",
+	"    block: fragment.use",
+	"    fragment: DecorateMessage",
+	""
+].join("\n");
+var fragmentRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: fragmentFlowSource,
+	input: {
+		name: "Hello"
+	}
+})));
+assertTrue(fragmentRun.result.fragmentMessage === "Hello from lib",
+	"fragment.use did not execute project fragment nodes inline");
+var fragmentAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: fragmentFlowSource })));
+assertTrue(fragmentAnalysis.writes.indexOf("result.fragmentMessage") !== -1,
+	"Flow analysis did not see writes produced inside fragment.use");
+var fragmentTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", flowSource: fragmentFlowSource })));
+assertTrue(fragmentTree.children[0].children[0].type === "fragment.use" &&
+	fragmentTree.children[0].children[0].children[0].type === "smoke.lib",
+	"describeTree(flow) did not expand fragment.use children");
+var fragmentContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: fragmentFlowSource,
+	node: "fragmentDecorate",
+	include: ["input"],
+	detail: "compact"
+})));
+assertTrue(fragmentContext.ok === true && fragmentContext.path === "nodes[0].nodes[0]",
+	"Flow context did not find nodes expanded from fragment.use");
+var resourceLibSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
+	query: "decorate",
+	doc: false,
+	hints: false
+})));
+assertTrue(resourceLibSearch.resources.some(function (resource) {
+	return resource.path === "libs/flow/lib/smoke.js";
+}), "resourceSearch did not include project Flow libraries");
+assertTrue(resourceLibSearch.resources.some(function (resource) {
+	return resource.path === "libs/flow/fragments/DecorateMessage.fragment.yaml";
+}), "resourceSearch did not include project Flow fragments");
 var propertyEditor = JSON.parse(engine.propertyEditor("{}"));
 assertTrue(propertyEditor.ok === true && propertyEditor.html.indexOf("receiveFromJava") !== -1,
 	"propertyEditor did not expose the web editor host");
@@ -638,6 +846,69 @@ assertTrue(inputRun.result.city === "Paris" &&
 	inputRun.result.message === "from body",
 	"Flow input scope did not expose request input");
 
+var writerFile = new java.io.File(projectDirFile, "handle-writer.txt");
+var writerFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: initLines",
+	"    block: set",
+	"    path: flow.lines",
+	"    value:",
+	"      - Alpha",
+	"      - Beta",
+	"  - id: writeFile",
+	"    block: file.withWriter",
+	"    path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	"    as: local.writer",
+	"    nodes:",
+	"      - id: loopLines",
+	"        block: forEach",
+	"        items: flow.lines",
+	"        nodes:",
+	"          - id: writeLine",
+	"            block: file.write",
+	"            writer: local.writer",
+	"            value: \"{{ current }}\"",
+	"            newline: true",
+	"  - id: done",
+	"    block: set",
+	"    path: result.file",
+	"    value: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	""
+].join("\n");
+var writerRun = JSON.parse(engine.run(JSON.stringify({ flowSource: writerFlowSource })));
+print(JSON.stringify(writerRun));
+var writerText = String(Packages.org.apache.commons.io.FileUtils.readFileToString(writerFile, "UTF-8")).replace(/\r\n/g, "\n");
+assertTrue(writerRun.ok === true &&
+	writerText === "Alpha\nBeta\n" &&
+	writerRun.trace.nodes.some(function (entry) {
+		return entry.id === "writeFile" &&
+			entry.result &&
+			entry.result.handle === "file.writer" &&
+			entry.result.state === "closed";
+	}),
+	"file.withWriter/file.write did not write lines and close the runtime handle");
+
+var forbiddenHandleResultFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: openFile",
+	"    block: file.withWriter",
+	"    path: " + JSON.stringify(String(new java.io.File(projectDirFile, "handle-leak.txt").getAbsolutePath())),
+	"    as: flow.writer",
+	"    nodes:",
+	"      - id: leakHandle",
+	"        block: set",
+	"        path: result.writer",
+	"        value: \"{{ flow.writer }}\"",
+	""
+].join("\n");
+var forbiddenHandleResultRun = JSON.parse(engine.run(JSON.stringify({ flowSource: forbiddenHandleResultFlowSource })));
+print(JSON.stringify(forbiddenHandleResultRun));
+assertTrue(forbiddenHandleResultRun.ok === false &&
+	forbiddenHandleResultRun.error.code === "RUNTIME_HANDLE_IN_RESULT",
+	"Runtime handles should be rejected from result payloads");
+
 var smokeFlowsDir = new java.io.File(projectDirFile, "libs/flows");
 smokeFlowsDir.mkdirs();
 var namedGreetingFlowSource = [
@@ -836,6 +1107,20 @@ print(JSON.stringify(describedEngineTree));
 assertTrue(describedEngineTree.children[0].kind === "engine" &&
 	describedEngineTree.children.some(function (child) { return child.name === "catalog"; }),
 	"describeTree(engine) did not expose engine metadata and catalog");
+var describedCatalog = findChild(describedEngineTree, "catalog");
+var describedBlocks = findChild(describedCatalog, "blocks");
+var describedCoreBlocks = findChild(describedBlocks, "origin_core");
+var describedSetBlock = findChild(describedCoreBlocks, "block_set");
+assertTrue(describedSetBlock && describedSetBlock.children.some(function (child) {
+	var definition = child.definition ? JSON.parse(child.definition) : {};
+	return child.summary === "Implementation" && definition.implementationKind === "javascript";
+}), "describeTree(engine) did not expose JavaScript block implementation resources");
+var describedFragments = findChild(describedEngineTree, "fragments");
+var describedFragment = describedFragments && describedFragments.children[0];
+assertTrue(describedFragment && describedFragment.children.some(function (child) {
+	var definition = child.definition ? JSON.parse(child.definition) : {};
+	return child.summary === "Implementation" && definition.implementationKind === "flow";
+}), "describeTree(engine) did not expose fragment implementation nodes");
 var mutatedEngine = JSON.parse(engine.applyMutation(JSON.stringify({
 	target: "engine",
 	engineSource: [

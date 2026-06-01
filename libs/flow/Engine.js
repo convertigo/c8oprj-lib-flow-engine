@@ -12,7 +12,7 @@
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
-	var scopeNames = ["request", "input", "config", "flow", "result", "trace", "current"];
+	var scopeNames = ["request", "input", "config", "flow", "result", "trace", "current", "props", "local"];
 	var projectDirOverride = null;
 
 	function engineDir() {
@@ -59,6 +59,16 @@
 		return dir ? new File(dir, "libs/flows") : null;
 	}
 
+	function projectFragmentsDir() {
+		var dir = projectDir();
+		return dir ? new File(dir, "libs/flow/fragments") : null;
+	}
+
+	function projectLibDir() {
+		var dir = projectDir();
+		return dir ? new File(dir, "libs/flow/lib") : null;
+	}
+
 	function projectSchemasDir() {
 		var dir = projectDir();
 		return dir ? new File(dir, "libs/flow/schemas") : null;
@@ -86,7 +96,7 @@
 	}
 
 	function response(value) {
-		return JSON.stringify(value || {});
+		return JSON.stringify(sanitizeRuntimeValue(value || {}));
 	}
 
 	function failure(operation, error) {
@@ -137,7 +147,7 @@
 		var structural = {
 			id: true, uid: true, name: true, block: true, type: true,
 			props: true, nodes: true, "do": true, then: true, "else": true,
-			disabled: true
+			disabled: true, __fragment: true, __graphBlock: true
 		};
 		if (node.props) {
 			Object.keys(node.props).forEach(function (key) {
@@ -225,8 +235,95 @@
 		return value;
 	}
 
+	function isRuntimeHandle(value) {
+		return value && value.__flowHandle === true;
+	}
+
+	function runtimeHandleType(value) {
+		return String(value && value.__flowHandleType || "unknown");
+	}
+
+	function runtimeHandleSummary(value) {
+		if (!isRuntimeHandle(value)) {
+			return null;
+		}
+		var out = {
+			handle: runtimeHandleType(value),
+			id: String(value.__flowHandleId || "")
+		};
+		if (value.__flowHandleLabel !== undefined && value.__flowHandleLabel !== null && value.__flowHandleLabel !== "") {
+			out.label = String(value.__flowHandleLabel);
+		}
+		out.state = value.__flowHandleClosed === true ? "closed" : String(value.__flowHandleState || "open");
+		return out;
+	}
+
+	function sanitizeRuntimeValue(value, seen) {
+		value = jsValue(value);
+		if (isRuntimeHandle(value)) {
+			return runtimeHandleSummary(value);
+		}
+		if (value && Object.prototype.toString.call(value) === "[object Array]") {
+			return value.map(function (item) {
+				return sanitizeRuntimeValue(item, seen);
+			});
+		}
+		if (value && typeof value === "object") {
+			seen = seen || [];
+			if (seen.indexOf(value) !== -1) {
+				return "[Circular]";
+			}
+			seen.push(value);
+			var out = {};
+			Object.keys(value).forEach(function (key) {
+				out[key] = sanitizeRuntimeValue(value[key], seen);
+			});
+			seen.pop();
+			return out;
+		}
+		return value;
+	}
+
+	function containsRuntimeHandle(value, seen) {
+		value = jsValue(value);
+		if (isRuntimeHandle(value)) {
+			return true;
+		}
+		if (!value || typeof value !== "object") {
+			return false;
+		}
+		seen = seen || [];
+		if (seen.indexOf(value) !== -1) {
+			return false;
+		}
+		seen.push(value);
+		var found = false;
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			for (var i = 0; i < value.length && !found; i++) {
+				found = containsRuntimeHandle(value[i], seen);
+			}
+		} else {
+			Object.keys(value).forEach(function (key) {
+				if (!found) {
+					found = containsRuntimeHandle(value[key], seen);
+				}
+			});
+		}
+		seen.pop();
+		return found;
+	}
+
+	function assertNoRuntimeHandle(value, where) {
+		if (containsRuntimeHandle(value)) {
+			raise("RUNTIME_HANDLE_IN_RESULT", "Runtime handles cannot be written to " + where + ". Convert them to serializable data first.");
+		}
+	}
+
 	function normalizeTree(value) {
 		value = jsValue(value);
+		if (isRuntimeHandle(value)) {
+			return runtimeHandleSummary(value);
+		}
 		if (value && Object.prototype.toString.call(value) === "[object Array]") {
 			return value.map(function (item) {
 				return normalizeTree(item);
@@ -317,6 +414,9 @@
 	}
 
 	function inferSchema(value, depth) {
+		if (isRuntimeHandle(value)) {
+			return { type: "handle<" + runtimeHandleType(value) + ">", handle: true };
+		}
 		value = normalizeTree(value);
 		depth = depth || 0;
 		if (depth > 8) {
@@ -511,6 +611,9 @@
 		if (parts.length === 0 || scopeNames.indexOf(parts[0]) === -1) {
 			raise("INVALID_SCOPE_PATH", "Invalid scope path: " + path);
 		}
+		if (parts[0] === "result") {
+			assertNoRuntimeHandle(value, "result");
+		}
 		var current = scopes[parts[0]];
 		for (var i = 1; i < parts.length - 1; i++) {
 			var part = parts[i];
@@ -533,6 +636,9 @@
 			var value = evaluateExpression(ctx, path);
 			if (value === undefined || value === null) {
 				return "";
+			}
+			if (isRuntimeHandle(value)) {
+				return JSON.stringify(runtimeHandleSummary(value));
 			}
 			return isStructuredValue(value) ? JSON.stringify(value) : String(value);
 		});
@@ -605,7 +711,7 @@
 				return value === undefined || value === null || value === "" ? fallback : value;
 			},
 			json: function (value) {
-				return JSON.stringify(value);
+				return JSON.stringify(sanitizeRuntimeValue(value));
 			}
 		};
 	}
@@ -923,7 +1029,9 @@
 	function collectExpressionRefs(value, refs) {
 		refs = refs || [];
 		if (typeof value === "string") {
-			value.replace(/\b(request|input|config|flow|result|trace|current)(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*/g, function (path) {
+			var scopePattern = scopeNames.join("|");
+			var scopeRegExp = new RegExp("\\b(" + scopePattern + ")(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*", "g");
+			value.replace(scopeRegExp, function (path) {
 				if (isScopePath(path)) {
 					addUnique(refs, path);
 				}
@@ -1036,10 +1144,68 @@
 			return value;
 		}
 		try {
-			return JSON.parse(JSON.stringify(value));
+			return JSON.parse(JSON.stringify(sanitizeRuntimeValue(value)));
 		} catch (e) {
 			return String(value);
 		}
+	}
+
+	function createRuntimeHandle(ctx, type, value, options) {
+		options = options || {};
+		ctx.handleSeq++;
+		var id = String(options.id || "h" + ctx.handleSeq);
+		var handle = {
+			__flowHandle: true,
+			__flowHandleId: id,
+			__flowHandleType: String(type || "unknown"),
+			__flowHandleValue: value,
+			__flowHandleLabel: options.label || "",
+			__flowHandleState: options.state || "open",
+			__flowHandleClosed: false,
+			__flowHandleClose: typeof options.close === "function" ? options.close : null
+		};
+		ctx.handles[id] = handle;
+		return handle;
+	}
+
+	function closeRuntimeHandle(ctx, handle) {
+		if (!isRuntimeHandle(handle)) {
+			raise("INVALID_RUNTIME_HANDLE", "Expected a runtime handle.");
+		}
+		if (handle.__flowHandleClosed === true) {
+			return runtimeHandleSummary(handle);
+		}
+		try {
+			if (handle.__flowHandleClose) {
+				handle.__flowHandleClose(handle.__flowHandleValue, handle);
+			}
+		} finally {
+			handle.__flowHandleClosed = true;
+			handle.__flowHandleState = "closed";
+		}
+		return runtimeHandleSummary(handle);
+	}
+
+	function closeRuntimeHandles(ctx) {
+		Object.keys(ctx.handles || {}).forEach(function (id) {
+			var handle = ctx.handles[id];
+			if (handle && handle.__flowHandleClosed !== true) {
+				closeRuntimeHandle(ctx, handle);
+			}
+		});
+	}
+
+	function runtimeHandleValue(handle, expectedType) {
+		if (!isRuntimeHandle(handle)) {
+			raise("INVALID_RUNTIME_HANDLE", "Expected runtime handle" + (expectedType ? " " + expectedType : "") + ".");
+		}
+		if (expectedType && runtimeHandleType(handle) !== String(expectedType)) {
+			raise("INVALID_RUNTIME_HANDLE_TYPE", "Expected runtime handle " + expectedType + " but got " + runtimeHandleType(handle) + ".");
+		}
+		if (handle.__flowHandleClosed === true) {
+			raise("CLOSED_RUNTIME_HANDLE", "Runtime handle is closed: " + String(handle.__flowHandleId || ""));
+		}
+		return handle.__flowHandleValue;
 	}
 
 	function canonicalPath(file) {
@@ -1087,6 +1253,15 @@
 				null, "Use letters, digits, dot, underscore or dash.");
 		}
 		return flowName + ".flow.yaml";
+	}
+
+	function fragmentFileName(name) {
+		var fragmentName = String(name || "").trim();
+		if (!fragmentName.match(/^[A-Za-z0-9_.-]+$/)) {
+			raise("INVALID_FRAGMENT_NAME", "Invalid Flow fragment name: " + name,
+				null, "Use letters, digits, dot, underscore or dash.");
+		}
+		return fragmentName + ".fragment.yaml";
 	}
 
 	function safeFilePart(value) {
@@ -1261,6 +1436,12 @@
 	function isAllowedResourcePath(path) {
 		var ext = resourceExtension(path);
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
+			return ext === "js" || String(path).endsWith(".block.yaml");
+		}
+		if (String(path).indexOf("libs/flow/fragments/") === 0) {
+			return String(path).endsWith(".fragment.yaml");
+		}
+		if (String(path).indexOf("libs/flow/lib/") === 0) {
 			return ext === "js";
 		}
 		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
@@ -1274,7 +1455,13 @@
 
 	function resourceKind(path) {
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
-			return "block";
+			return String(path).endsWith(".block.yaml") ? "graphBlock" : "block";
+		}
+		if (String(path).indexOf("libs/flow/fragments/") === 0) {
+			return "fragment";
+		}
+		if (String(path).indexOf("libs/flow/lib/") === 0) {
+			return "library";
 		}
 		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
 			return "typeEditor";
@@ -1291,6 +1478,12 @@
 		if (slash >= 0) {
 			filename = filename.substring(slash + 1);
 		}
+		if (filename.endsWith(".fragment.yaml")) {
+			return filename.substring(0, filename.length - ".fragment.yaml".length);
+		}
+		if (filename.endsWith(".block.yaml")) {
+			return filename.substring(0, filename.length - ".block.yaml".length);
+		}
 		if (filename.endsWith(".js")) {
 			return filename.substring(0, filename.length - 3);
 		}
@@ -1306,7 +1499,7 @@
 		var normalized = normalizeResourcePath(path);
 		if (!isAllowedResourcePath(normalized)) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.js, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/blocks/**/*.js, libs/flow/blocks/**/*.block.yaml, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new File(base, normalized);
 		var basePath = canonicalPath(base);
@@ -1365,7 +1558,7 @@
 			return [];
 		}
 		var out = [];
-		["libs/flow/blocks", "libs/flow/types"].forEach(function (path) {
+		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/types"].forEach(function (path) {
 			collectResourceFiles(new File(base, path), base, out);
 		});
 		return out;
@@ -1419,7 +1612,7 @@
 		}
 		if (request.hints !== false) {
 			out.hints = [
-				"Use this for block/type/editor JS, HTML or CSS. Use flow-search for Flow graph nodes.",
+				"Use this for block/fragment/type/editor/library sources. Use flow-search for Flow graph nodes.",
 				"Call flow-resource-get before patching; pass its hash as baseHash.",
 				"Set doc=false,hints=false after the tool contract is understood."
 			];
@@ -1574,6 +1767,16 @@
 		var kind = resourceKind(path);
 		if (kind === "block") {
 			validateBlockSource(resourceName(path), content);
+		} else if (kind === "graphBlock") {
+			validateGraphBlockSource(resourceName(path), content);
+		} else if (kind === "fragment") {
+			parseYamlSource(content, "version: 1\nnodes: []\n");
+		} else if (kind === "library") {
+			var library = eval(String(content || ""));
+			if (!library || typeof library !== "object") {
+				raise("INVALID_LIBRARY", "Invalid Flow library resource: " + path,
+					null, "A Flow library must evaluate to an object.");
+			}
 		} else if (kind === "type") {
 			validateTypeSource(resourceName(path), content);
 		}
@@ -1638,10 +1841,15 @@
 			return String(a.getName()).localeCompare(String(b.getName()));
 		});
 		files.forEach(function (file) {
-			if (!file.isFile() || !String(file.getName()).endsWith(".js")) {
+			if (!file.isFile()) {
 				return;
 			}
-			loadBlockFile(blocks, file, origin);
+			var filename = String(file.getName());
+			if (filename.endsWith(".js")) {
+				loadBlockFile(blocks, file, origin);
+			} else if (filename.endsWith(".block.yaml")) {
+				loadGraphBlockFile(blocks, file, origin);
+			}
 		});
 	}
 
@@ -1709,6 +1917,38 @@
 		return new File(dir, blockFileName(name));
 	}
 
+	function flowLibraryFile(name) {
+		name = safeFilePart(name);
+		if (!name) {
+			raise("MISSING_LIBRARY_NAME", "Flow library name is required.");
+		}
+		var localDir = projectLibDir();
+		if (localDir) {
+			var localFile = new File(localDir, name + ".js");
+			if (localFile.isFile()) {
+				return localFile;
+			}
+		}
+		var engineFile = new File(new File(engineDir(), "lib"), name + ".js");
+		if (engineFile.isFile()) {
+			return engineFile;
+		}
+		raise("UNKNOWN_LIBRARY", "Unknown Flow library: " + name,
+			null, "Create libs/flow/lib/" + name + ".js in the project or engine.");
+	}
+
+	function loadFlowLibrary(name) {
+		var file = flowLibraryFile(name);
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var library = eval(source);
+		if (!library || typeof library !== "object") {
+			raise("INVALID_LIBRARY", "Invalid Flow library: " + file.getAbsolutePath(),
+				null, "A Flow library must evaluate to an object.");
+		}
+		library.__flowFile = String(file.getAbsolutePath());
+		return library;
+	}
+
 	function validateBlockSource(name, source) {
 		var block = eval(String(source || ""));
 		if (!block || !block.name || typeof block.run !== "function") {
@@ -1718,6 +1958,235 @@
 		if (String(block.name) !== String(name)) {
 			raise("BLOCK_NAME_MISMATCH", "Block source declares \"" + block.name + "\" instead of \"" + name + "\".");
 		}
+		return block;
+	}
+
+	function normalizeGraphBlockProps(definition) {
+		var props = definition.props || definition.properties || {};
+		if (Object.prototype.toString.call(props) === "[object Array]") {
+			var out = {};
+			props.forEach(function (prop) {
+				if (prop && prop.name) {
+					var copy = normalizeTree(prop);
+					delete copy.name;
+					out[String(prop.name)] = copy;
+				}
+			});
+			return out;
+		}
+		return normalizeTree(props || {});
+	}
+
+	function normalizeGraphBlockSlots(definition) {
+		var slots = definition.slots || definition.children;
+		if (!slots) {
+			return [];
+		}
+		if (Object.prototype.toString.call(slots) === "[object Array]") {
+			return slots.map(function (slot) {
+				if (slot && typeof slot === "object") {
+					return normalizeTree(slot);
+				}
+				return { name: String(slot), label: String(slot) };
+			}).filter(function (slot) {
+				return slot.name;
+			});
+		}
+		if (typeof slots === "object") {
+			return Object.keys(slots).map(function (name) {
+				var slot = slots[name];
+				if (slot && typeof slot === "object") {
+					slot = normalizeTree(slot);
+					if (!slot.name) {
+						slot.name = name;
+					}
+					return slot;
+				}
+				return { name: name, label: String(slot || name) };
+			});
+		}
+		return [];
+	}
+
+	function graphBlockCatalog(definition) {
+		var props = normalizeGraphBlockProps(definition);
+		var slots = normalizeGraphBlockSlots(definition);
+		var descriptor = {
+			name: String(definition.name || ""),
+			icon: definition.icon || "mdi:puzzle-outline",
+			kind: definition.kind || "composite",
+			implementation: "flow",
+			props: props,
+			description: definition.description || "Composite Flow block implemented with child nodes.",
+			longDescription: definition.longDescription || definition.documentation || ""
+		};
+		if (slots.length > 0) {
+			descriptor.slots = slots;
+		}
+		["private", "namespace", "package", "label", "display"].forEach(function (key) {
+			if (definition[key] !== undefined) {
+				descriptor[key] = definition[key];
+			}
+		});
+		return descriptor;
+	}
+
+	function validateGraphBlockDefinition(name, definition) {
+		definition = normalizeTree(definition || {});
+		if (!definition.name) {
+			definition.name = String(name || "");
+		}
+		if (!definition.name) {
+			raise("INVALID_GRAPH_BLOCK", "Composite block name is required.");
+		}
+		if (String(definition.name) !== String(name)) {
+			raise("BLOCK_NAME_MISMATCH", "Composite block source declares \"" + definition.name + "\" instead of \"" + name + "\".");
+		}
+		if (!definition.nodes) {
+			definition.nodes = [];
+		}
+		if (Object.prototype.toString.call(definition.nodes) !== "[object Array]") {
+			raise("INVALID_GRAPH_BLOCK", "Composite block \"" + name + "\" must define a nodes array.");
+		}
+		normalizeGraphBlockProps(definition);
+		return definition;
+	}
+
+	function validateGraphBlockSource(name, source) {
+		return validateGraphBlockDefinition(name, parseYamlSource(source, "version: 1\nnodes: []\n"));
+	}
+
+	function graphBlockDisplayName(definition, node) {
+		var props = nodeProps(node);
+		var display = definition.displayName || definition.display || "";
+		if (display) {
+			return summaryText(renderTemplateTree({
+				scopes: {
+					props: props,
+					request: {},
+					input: {},
+					config: {},
+					flow: {},
+					result: {},
+					trace: {},
+					current: null,
+					local: {}
+				},
+				read: function (path) {
+					return readScopePath(this.scopes, path);
+				}
+			}, display));
+		}
+		return props.out ? definition.name + " -> " + props.out : definition.name;
+	}
+
+	function resolveGraphBlockProp(ctx, descriptor, value) {
+		descriptor = descriptor || {};
+		var kind = descriptor.kind || descriptor.type || "";
+		var mode = descriptor.mode || "";
+		if (value === undefined && descriptor["default"] !== undefined) {
+			value = descriptor["default"];
+		}
+		if (kind === "expression") {
+			return ctx.expr(value);
+		}
+		if (kind === "template") {
+			return ctx.template(value);
+		}
+		if (kind === "literal" || kind === "text" || kind === "schema" || kind === "secret") {
+			return ctx.literal(value);
+		}
+		if (kind === "path" && mode === "write") {
+			return value;
+		}
+		if (kind === "value" || kind === "") {
+			return ctx.template(ctx.literal(value));
+		}
+		return ctx.template(ctx.literal(value));
+	}
+
+	function resolveGraphBlockProps(ctx, node, catalog) {
+		var raw = nodeProps(node);
+		var descriptors = catalog.props || {};
+		var props = {};
+		Object.keys(descriptors).forEach(function (key) {
+			props[key] = resolveGraphBlockProp(ctx, descriptors[key], raw[key]);
+		});
+		Object.keys(raw).forEach(function (key) {
+			if (props[key] === undefined) {
+				props[key] = raw[key];
+			}
+		});
+		return props;
+	}
+
+	function runGraphBlock(ctx, node, block) {
+		var catalog = blockCatalog(block);
+		var previousProps = ctx.scopes.props;
+		var previousLocal = ctx.scopes.local;
+		var previousCurrent = ctx.scopes.current;
+		var previousReturned = ctx.returned;
+		var previousStopped = ctx.stopped;
+		ctx.scopes.props = resolveGraphBlockProps(ctx, node, catalog);
+		ctx.scopes.local = {};
+		ctx.returned = undefined;
+		ctx.stopped = false;
+		try {
+			var result = ctx.runNodes(block.__graphDefinition.nodes || []);
+			if (ctx.returned !== undefined) {
+				result = ctx.returned;
+			}
+			return result;
+		} finally {
+			ctx.scopes.props = previousProps;
+			ctx.scopes.local = previousLocal;
+			ctx.scopes.current = previousCurrent;
+			ctx.returned = previousReturned;
+			ctx.stopped = previousStopped;
+		}
+	}
+
+	function graphBlockFromDefinition(definition, file, origin) {
+		var catalog = graphBlockCatalog(definition);
+		var block = {
+			name: String(definition.name),
+			"private": definition["private"] === true,
+			__graphDefinition: definition,
+			catalog: function () {
+				return normalizeTree(catalog);
+			},
+			displayName: function (node) {
+				return graphBlockDisplayName(definition, node);
+			},
+			analyze: function (ctx, node) {
+				if (ctx.withGraphBlock) {
+					ctx.withGraphBlock(node, block, function () {
+						ctx.visitNodes(definition.nodes || []);
+					});
+				} else {
+					ctx.visitNodes(definition.nodes || []);
+				}
+			},
+			run: function (ctx, node) {
+				return runGraphBlock(ctx, node, block);
+			}
+		};
+		block.__flowOrigin = origin;
+		block.__flowFile = String(file.getAbsolutePath());
+		return block;
+	}
+
+	function loadGraphBlockFile(blocks, file, origin) {
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var name = String(file.getName());
+		name = name.substring(0, name.length - ".block.yaml".length);
+		var definition = validateGraphBlockSource(name, source);
+		var block = graphBlockFromDefinition(definition, file, origin);
+		if (blocks[block.name]) {
+			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
+				null, "Rename the project block or remove the duplicate.");
+		}
+		blocks[block.name] = block;
 		return block;
 	}
 
@@ -1867,6 +2336,47 @@
 		return new File(dir, flowFileName(name));
 	}
 
+	function projectFragmentFile(name) {
+		var dir = projectFragmentsDir();
+		if (!dir) {
+			raise("PROJECT_FRAGMENTS_UNAVAILABLE", "Project Flow fragments are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		return new File(dir, fragmentFileName(name));
+	}
+
+	function fragmentCandidates(name) {
+		var out = [];
+		var dir = projectFragmentsDir();
+		if (dir) {
+			out.push(new File(dir, fragmentFileName(name)));
+		}
+		out.push(new File(new File(engineDir(), "fragments"), fragmentFileName(name)));
+		return out;
+	}
+
+	function fragmentFile(name) {
+		var candidates = fragmentCandidates(name);
+		for (var i = 0; i < candidates.length; i++) {
+			if (candidates[i].isFile()) {
+				return candidates[i];
+			}
+		}
+		raise("UNKNOWN_FRAGMENT", "Unknown Flow fragment: " + name,
+			null, "Create libs/flow/fragments/" + fragmentFileName(name) + " in the current project.");
+	}
+
+	function readFragment(name) {
+		var file = fragmentFile(name);
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		return {
+			name: String(name),
+			file: String(file.getAbsolutePath()),
+			source: source,
+			definition: parseYamlSource(source, "version: 1\nnodes: []\n")
+		};
+	}
+
 	function listProjectFlows() {
 		var dir = projectFlowsDir();
 		if (!dir || !dir.isDirectory()) {
@@ -1887,6 +2397,34 @@
 				var filename = String(file.getName());
 				return {
 					name: filename.substring(0, filename.length - ".flow.yaml".length),
+					file: String(file.getAbsolutePath()),
+					size: Number(file.length()),
+					lastModified: Number(file.lastModified())
+				};
+			})
+		};
+	}
+
+	function listProjectFragments() {
+		var dir = projectFragmentsDir();
+		if (!dir || !dir.isDirectory()) {
+			return { fragments: [] };
+		}
+		var listed = dir.listFiles();
+		if (!listed) {
+			return { fragments: [] };
+		}
+		var files = Arrays.asList(listed).toArray();
+		files.sort(function (a, b) {
+			return String(a.getName()).localeCompare(String(b.getName()));
+		});
+		return {
+			fragments: files.filter(function (file) {
+				return file.isFile() && String(file.getName()).endsWith(".fragment.yaml");
+			}).map(function (file) {
+				var filename = String(file.getName());
+				return {
+					name: filename.substring(0, filename.length - ".fragment.yaml".length),
 					file: String(file.getAbsolutePath()),
 					size: Number(file.length()),
 					lastModified: Number(file.lastModified())
@@ -2046,6 +2584,76 @@
 
 	function blockCatalog(block) {
 		return block && typeof block.catalog === "function" ? block.catalog() : {};
+	}
+
+	function fragmentNameForNode(node) {
+		var props = nodeProps(node);
+		return String(props.fragment || props.name || props.ref || "").trim();
+	}
+
+	function expandNodeSlotNames(blocks, node) {
+		var names = [];
+		var catalog = blockCatalog(blocks && blocks[blockName(node)]);
+		slotDefinitions(catalog).forEach(function (definition) {
+			addUnique(names, definition.name);
+			(definition.aliases || []).forEach(function (alias) {
+				addUnique(names, alias);
+			});
+		});
+		["nodes", "do", "then", "else", "catch", "finally"].forEach(function (name) {
+			addUnique(names, name);
+		});
+		return names;
+	}
+
+	function expandFragmentNodes(blocks, nodes, stack, options) {
+		stack = stack || [];
+		options = options || {};
+		return (nodes || []).map(function (sourceNode) {
+			var node = normalizeTree(sourceNode || {});
+			if (blockName(node) === "fragment.use") {
+				var fragmentName = fragmentNameForNode(node);
+				if (!fragmentName) {
+					raise("MISSING_FRAGMENT_NAME", "fragment.use requires a fragment name.", node);
+				}
+				var fragmentKey = "fragment:" + fragmentName;
+				if (stack.indexOf(fragmentKey) !== -1) {
+					raise("RECURSIVE_FRAGMENT", "Recursive Flow fragment: " + stack.concat([fragmentKey]).join(" -> "), node);
+				}
+				var fragment = readFragment(fragmentName);
+				node.__fragment = {
+					name: fragment.name,
+					file: fragment.file
+				};
+				node.nodes = expandFragmentNodes(blocks, fragment.definition.nodes || [], stack.concat([fragmentKey]), options);
+				return node;
+			}
+			var block = blocks && blocks[blockName(node)];
+			if (options.expandGraphBlocks === true && block && block.__graphDefinition) {
+				var blockKey = "block:" + block.name;
+				if (stack.indexOf(blockKey) !== -1) {
+					raise("RECURSIVE_GRAPH_BLOCK", "Recursive composite Flow block: " + stack.concat([blockKey]).join(" -> "), node);
+				}
+				node.__graphBlock = {
+					name: block.name,
+					file: String(block.__flowFile || "")
+				};
+				node.nodes = expandFragmentNodes(blocks, block.__graphDefinition.nodes || [], stack.concat([blockKey]), options);
+				return node;
+			}
+			expandNodeSlotNames(blocks, node).forEach(function (slotName) {
+				if (node[slotName] && Object.prototype.toString.call(node[slotName]) === "[object Array]") {
+					node[slotName] = expandFragmentNodes(blocks, node[slotName], stack, options);
+				}
+			});
+			return node;
+		});
+	}
+
+	function expandFlowDefinition(blocks, definition) {
+		var out = normalizeTree(definition || {});
+		out.nodes = expandFragmentNodes(blocks, out.nodes || [], []);
+		return out;
 	}
 
 	function isIconifyIcon(icon) {
@@ -2250,6 +2858,58 @@
 		return result;
 	}
 
+	function callBlock(ctx, name, props, options) {
+		name = String(name || "");
+		options = options || {};
+		if (!name) {
+			raise("MISSING_BLOCK_NAME", "ctx.callBlock requires a block name.");
+		}
+		var block = ctx.blocks[name];
+		if (!block) {
+			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, null, "Call catalog() to list supported blocks.");
+		}
+		if (typeof block.run !== "function") {
+			raise("INVALID_BLOCK", "Flow block has no runnable implementation: " + name);
+		}
+		var node = normalizeTree(props || {});
+		node.block = name;
+		if (!node.id && options.id) {
+			node.id = String(options.id);
+		}
+		if (!node.id) {
+			node.id = "call:" + name;
+		}
+		var previousProps = ctx.scopes.props;
+		var previousLocal = ctx.scopes.local;
+		var previousCurrent = ctx.scopes.current;
+		var previousReturned = ctx.returned;
+		var previousStopped = ctx.stopped;
+		ctx.scopes.props = nodeProps(node);
+		ctx.scopes.local = {};
+		ctx.returned = undefined;
+		ctx.stopped = false;
+		try {
+			var nodeProperties = nodeProps(node);
+			var result = block.run(ctx, node);
+			if (ctx.returned !== undefined) {
+				result = ctx.returned;
+			}
+			if (nodeProperties.out && result !== undefined) {
+				ctx.write(nodeProperties.out, result);
+			}
+			if (options.trace !== false) {
+				ctx.trace(node, name, result);
+			}
+			return result;
+		} finally {
+			ctx.scopes.props = previousProps;
+			ctx.scopes.local = previousLocal;
+			ctx.scopes.current = previousCurrent;
+			ctx.returned = previousReturned;
+			ctx.stopped = previousStopped;
+		}
+	}
+
 	function executeNodes(ctx, nodes) {
 		var result;
 		nodes = nodes || [];
@@ -2264,18 +2924,24 @@
 	}
 
 	function runFlowRequest(request, blocks) {
-		var definition = parseSource(request.flowSource);
+		var definition = expandFlowDefinition(blocks, parseSource(request.flowSource));
 		var projectEngine = loadProjectEngineDefinition();
 		var ctx = createRunContext(request, definition, blocks, projectEngine);
-		ctx.runNodes(definition.nodes || []);
-		var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
-		learnResultSchema(request, definition, result);
-		return {
-			ok: true,
-			result: result,
-			flow: ctx.scopes.flow,
-			trace: request.includeTrace === false ? undefined : ctx.scopes.trace
-		};
+		try {
+			ctx.runNodes(definition.nodes || []);
+			var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
+			assertNoRuntimeHandle(result, "result");
+			learnResultSchema(request, definition, result);
+			closeRuntimeHandles(ctx);
+			return {
+				ok: true,
+				result: snapshot(result),
+				flow: snapshot(ctx.scopes.flow),
+				trace: request.includeTrace === false ? undefined : snapshot(ctx.scopes.trace)
+			};
+		} finally {
+			closeRuntimeHandles(ctx);
+		}
 	}
 
 	function createRunContext(request, definition, blocks, projectEngine) {
@@ -2283,6 +2949,7 @@
 		requestScope.engineDir = canonicalPath(engineDir());
 		requestScope.engineProjectDir = canonicalPath(new File(engineDir(), "../.."));
 		var currentProjectDir = projectDir();
+		var libraries = {};
 		requestScope.projectDir = currentProjectDir ? canonicalPath(currentProjectDir) : "";
 		var ctx = {
 			request: request,
@@ -2291,15 +2958,19 @@
 			blocks: blocks,
 			returned: undefined,
 			stopped: false,
+			handles: {},
+			handleSeq: 0,
 			scopes: {
 				request: requestScope,
 				input: normalizeTree(request.input || {}),
 				config: effectiveConfig(request, definition, projectEngine || {}),
-				flow: {},
-				result: {},
-				trace: { nodes: [] },
-				current: null
-			}
+					flow: {},
+					result: {},
+					trace: { nodes: [] },
+					current: null,
+					props: {},
+					local: {}
+				}
 		};
 		ctx.props = nodeProps;
 		ctx.read = function (path) {
@@ -2330,6 +3001,17 @@
 		ctx.input = function (props, fallback) {
 			return inputValue(ctx, props || {}, fallback);
 		};
+		ctx.isHandle = isRuntimeHandle;
+		ctx.handleSummary = runtimeHandleSummary;
+		ctx.createHandle = function (type, value, options) {
+			return createRuntimeHandle(ctx, type, value, options);
+		};
+		ctx.handleValue = function (handle, expectedType) {
+			return runtimeHandleValue(handle, expectedType);
+		};
+		ctx.closeHandle = function (handle) {
+			return closeRuntimeHandle(ctx, handle);
+		};
 		ctx.convertigoContext = function () {
 			if (typeof context === "undefined" || context === null) {
 				raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
@@ -2339,8 +3021,18 @@
 		ctx.runNodes = function (nodes) {
 			return executeNodes(ctx, nodes);
 		};
+		ctx.callBlock = function (name, props, options) {
+			return callBlock(ctx, name, props, options);
+		};
 		ctx.catalog = function () {
 			return catalogDefinition(blocks);
+		};
+		ctx.lib = function (name) {
+			name = safeFilePart(name);
+			if (!libraries[name]) {
+				libraries[name] = loadFlowLibrary(name);
+			}
+			return libraries[name];
 		};
 		ctx.withProjectDir = function (dir, callback) {
 			return withProjectDir(dir, callback);
@@ -2431,7 +3123,8 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				return catalogDefinition(loadBlocks(), {
-					detail: args.detail || args.mode || "summary"
+					detail: args.detail || args.mode || "summary",
+					includePrivate: args.includePrivate === true
 				});
 			});
 		};
@@ -2525,6 +3218,7 @@
 			});
 		};
 		ctx.returnValue = function (value) {
+			assertNoRuntimeHandle(value, "result");
 			ctx.returned = value;
 			ctx.stopped = true;
 			return value;
@@ -2550,7 +3244,7 @@
 			request: request,
 			definition: definition,
 			blocks: blocks,
-			paths: ["request", "input", "config", "flow", "result", "trace", "current"],
+				paths: scopeNames.slice(0),
 			reads: [],
 			writes: [],
 			providers: {},
@@ -2667,6 +3361,31 @@
 			} finally {
 				ctx.currentSources.pop();
 			}
+		};
+		ctx.withGraphBlock = function (node, block, callback) {
+			var catalog = blockCatalog(block);
+			var props = nodeProps(node);
+			ctx.addPath("props");
+			ctx.addPath("local");
+			Object.keys(catalog.props || {}).forEach(function (key) {
+				var descriptor = catalog.props[key] || {};
+				var value = props[key] === undefined ? descriptor["default"] : props[key];
+				var schema = null;
+				if (descriptor.kind === "expression" && typeof value === "string") {
+					schema = ctx.schemaForPath(value);
+				} else {
+					schema = ctx.schemaForValue(value);
+				}
+				if (!schema && descriptor.type) {
+					schema = { type: String(descriptor.type) };
+				}
+				if (schema) {
+					ctx.addSchema("props." + key, schema);
+				} else {
+					ctx.addPath("props." + key);
+				}
+			});
+			return callback();
 		};
 		ctx.visitNodes = function (nodes) {
 			analyzeNodes(ctx, nodes);
@@ -2869,6 +3588,7 @@
 	}
 
 	function analyzeFlowDefinition(blocks, definition, request) {
+		definition = expandFlowDefinition(blocks, definition);
 		var ctx = createAnalysisContext(blocks, request || {}, definition);
 		ctx.visitNodes(definition.nodes || []);
 		return {
@@ -2996,31 +3716,40 @@
 			var block = ctx.blocks[name];
 			var catalog = blockCatalog(block);
 			analyzeNodeShallow(ctx, node, nodeListPath);
-			var slots = activeSlots(node, catalog);
-			for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
-				var slot = slots[slotIndex];
-				var childPath = nodeListPath + "." + slot.name;
-				var childResult;
-				if (name === "forEach" && slot.name === "nodes") {
-					var props = nodeProps(node);
-					var items = props.items || props["in"];
-					var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
-					source = source || { path: items };
-					var currentSchema = ctx.schemaForPath ? ctx.schemaForPath(items) : null;
-					currentSchema = ctx.itemSchema ? ctx.itemSchema(currentSchema) : currentSchema;
-					if (currentSchema) {
-						source.schema = currentSchema;
+			function walkSlots() {
+				var slots = activeSlots(node, catalog);
+				for (var slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+					var slot = slots[slotIndex];
+					var childPath = nodeListPath + "." + slot.name;
+					var childResult;
+					if (name === "forEach" && slot.name === "nodes") {
+						var props = nodeProps(node);
+						var items = props.items || props["in"];
+						var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
+						source = source || { path: items };
+						var currentSchema = ctx.schemaForPath ? ctx.schemaForPath(items) : null;
+						currentSchema = ctx.itemSchema ? ctx.itemSchema(currentSchema) : currentSchema;
+						if (currentSchema) {
+							source.schema = currentSchema;
+						}
+						childResult = ctx.withCurrentSource(source, function () {
+							ctx.addPath("current");
+							return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
+						});
+					} else {
+						childResult = contextWalkNodes(ctx, slot.nodes || [], request, childPath);
 					}
-					childResult = ctx.withCurrentSource(source, function () {
-						ctx.addPath("current");
-						return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
-					});
-				} else {
-					childResult = contextWalkNodes(ctx, slot.nodes || [], request, childPath);
+					if (childResult && childResult.found) {
+						return childResult;
+					}
 				}
-				if (childResult && childResult.found) {
-					return childResult;
-				}
+				return { found: false };
+			}
+			var slotResult = block && block.__graphDefinition && ctx.withGraphBlock
+				? ctx.withGraphBlock(node, block, walkSlots)
+				: walkSlots();
+			if (slotResult && slotResult.found) {
+				return slotResult;
 			}
 			if (targetHere && position === "after") {
 				return { found: true, node: node, path: nodeListPath, currentSource: currentContextSource(ctx) };
@@ -3172,7 +3901,7 @@
 
 	function contextForFlowRequest(blocks, request) {
 		request = request || {};
-		var definition = parseSource(request.flowSource);
+		var definition = expandFlowDefinition(blocks, parseSource(request.flowSource));
 		var include = normalizeInclude(request.include);
 		var detail = String(request.detail || "normal");
 		if (detail === "summary") {
@@ -3251,6 +3980,9 @@
 		if (descriptor.file === undefined) {
 			descriptor.file = String(block.__flowFile || "");
 		}
+		if (descriptor.implementation === undefined) {
+			descriptor.implementation = block.__graphDefinition ? "flow" : "javascript";
+		}
 		if (descriptor.namespace === undefined && descriptor.name) {
 			var name = String(descriptor.name);
 			descriptor.namespace = name.indexOf(".") === -1 ? "core" : name.substring(0, name.indexOf("."));
@@ -3319,6 +4051,12 @@
 		if (descriptor.kind) {
 			out.kind = descriptor.kind;
 		}
+		if (descriptor.implementation) {
+			out.implementation = descriptor.implementation;
+		}
+		if (descriptor["private"] === true) {
+			out["private"] = true;
+		}
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(function (slot) {
 				return {
@@ -3376,6 +4114,12 @@
 		if (descriptor.kind) {
 			out.kind = descriptor.kind;
 		}
+		if (descriptor.implementation) {
+			out.implementation = descriptor.implementation;
+		}
+		if (descriptor["private"] === true) {
+			out["private"] = true;
+		}
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(function (slot) {
 				return slot.name;
@@ -3384,10 +4128,21 @@
 		return out;
 	}
 
-	function summaryCatalogDefinition(blocks) {
+	function filterPrivateDescriptors(descriptors, options) {
+		options = options || {};
+		if (options.includePrivate === true) {
+			return descriptors;
+		}
+		return descriptors.filter(function (descriptor) {
+			return descriptor["private"] !== true;
+		});
+	}
+
+	function summaryCatalogDefinition(blocks, options) {
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
 			return summaryBlockDescriptor(blocks[name]);
 		});
+		descriptors = filterPrivateDescriptors(descriptors, options);
 		var types = loadTypes();
 		return {
 			detail: "summary",
@@ -3404,10 +4159,11 @@
 		};
 	}
 
-	function compactCatalogDefinition(blocks) {
+	function compactCatalogDefinition(blocks, options) {
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
 			return compactBlockDescriptor(blocks[name]);
 		});
+		descriptors = filterPrivateDescriptors(descriptors, options);
 		var groupsByOrigin = {};
 		descriptors.forEach(function (block) {
 			var origin = block.origin || "unknown";
@@ -3434,14 +4190,15 @@
 		options = options || {};
 		var detail = String(options.detail || options.mode || "full");
 		if (detail === "summary") {
-			return summaryCatalogDefinition(blocks);
+			return summaryCatalogDefinition(blocks, options);
 		}
 		if (detail === "compact") {
-			return compactCatalogDefinition(blocks);
+			return compactCatalogDefinition(blocks, options);
 		}
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
 			return blockDescriptor(blocks[name]);
 		});
+		descriptors = filterPrivateDescriptors(descriptors, options);
 		var typeDescriptors = loadTypes();
 		var groups = [];
 		function groupLabel(origin) {
@@ -3570,6 +4327,18 @@
 					info[key] = String(catalog[key]);
 				}
 			});
+			if (catalog.file) {
+				var source = sourceDefinitionForFile(catalog.file, catalog.implementation || "");
+				info.implementationKind = source.implementationKind;
+				info.sourcePath = source.sourcePath;
+				info.sourceRelativePath = source.sourceRelativePath;
+				info.sourceOrigin = source.sourceOrigin;
+				info.sourceWritable = source.sourceWritable;
+				if (source.implementationKind === "flow") {
+					info.flowImplementation = true;
+					info.readOnlyReference = true;
+				}
+			}
 		}
 		return info;
 	}
@@ -3828,20 +4597,32 @@
 			var id = String(node && (node.id || node.uid || node.name) || "node" + index);
 			var blockType = String(blockName(node) || "unknown");
 			var block = blocks && blocks[blockType];
-			var catalog = blockCatalog(block);
+			var catalog = blockDescriptor(block);
 			resolveBlockIcon(block, catalog);
 			var nodeAnalysis = analysisById && analysisById[id];
 			var nodePath = path + "[" + index + "]";
 			var shallow = {};
 			Object.keys(node || {}).forEach(function (key) {
-				if (["nodes", "do", "then", "else", "catch", "finally"].indexOf(key) === -1) {
+				if (key.indexOf("__") !== 0 && ["nodes", "do", "then", "else", "catch", "finally"].indexOf(key) === -1) {
 					shallow[key] = node[key];
 				}
 				});
 				var nodeObject = virtualNode("node_" + id, "node", blockType, nodePath,
 					nodeSummary(block, catalog, node, id, blockType), compact(shallow), compact(nodeInfo(nodeAnalysis, catalog)));
 				parent.children.push(nodeObject);
-				addNodeSlots(nodeObject, node, nodePath, catalog, blocks, analysisById);
+				if (node.__graphBlock && node.nodes) {
+					var implementationNode = virtualNode("implementation", "blockImplementation", "flow",
+						nodePath + ".implementation", "Implementation",
+						compact(sourceDefinitionForFile(node.__graphBlock.file, "flow")), null, "mdi:source-branch");
+					nodeObject.children.push(implementationNode);
+					addNodeList(implementationNode, node.nodes, nodePath + ".implementation.nodes", blocks, analysisById);
+				}
+				var slotNode = node;
+				if (node.__graphBlock && node.nodes) {
+					slotNode = normalizeTree(node);
+					delete slotNode.nodes;
+				}
+				addNodeSlots(nodeObject, slotNode, nodePath, catalog, blocks, analysisById);
 			});
 	}
 
@@ -3854,9 +4635,71 @@
 		addNodeList(folder, nodes, path, blocks, analysisById);
 	}
 
-	function addCatalog(out, blocks) {
+	function sourceDefinitionForFile(file, implementation) {
+		var text = String(file || "");
+		var definition = {
+			implementation: implementation,
+			implementationKind: implementation,
+			file: text,
+			sourcePath: text,
+			sourceOrigin: "",
+			sourceRelativePath: "",
+			sourceWritable: false,
+			writable: false,
+			readOnly: true
+		};
+		if (text) {
+			var sourceFile = new File(text);
+			var projectRelative = projectDir() ? resourceRelativePath(projectDir(), sourceFile) : "";
+			var engineRelative = resourceRelativePath(new File(engineDir(), "../.."), sourceFile);
+			if (projectRelative) {
+				definition.path = projectRelative;
+				definition.origin = "project";
+				definition.sourceOrigin = "project";
+				definition.sourceRelativePath = projectRelative;
+				definition.sourceWritable = true;
+				definition.writable = true;
+				definition.readOnly = false;
+			} else if (engineRelative) {
+				definition.path = engineRelative;
+				definition.origin = "engine";
+				definition.sourceOrigin = "engine";
+				definition.sourceRelativePath = engineRelative;
+			}
+		}
+		return definition;
+	}
+
+	function addImplementationNodes(parent, nodes, path, blocks, stack) {
+		var implementationNodes = expandFragmentNodes(blocks, nodes || [], stack || [], {
+			expandGraphBlocks: false
+		});
+		addNodeList(parent, implementationNodes, path, blocks, {});
+	}
+
+	function addBlockImplementation(parent, block, descriptor, path, blocks) {
+		if (!descriptor || !descriptor.file) {
+			return;
+		}
+		if (block && block.__graphDefinition) {
+			var flowSource = sourceDefinitionForFile(descriptor.file, "flow");
+			var flowNode = virtualNode("implementation", "blockImplementation", "flow",
+				path + ".implementation", "Implementation",
+				compact(flowSource), compact(flowSource), "mdi:source-branch");
+			parent.children.push(flowNode);
+			addImplementationNodes(flowNode, block.__graphDefinition.nodes || [],
+				path + ".implementation.nodes", blocks, ["block:" + block.name]);
+			return;
+		}
+		var jsSource = sourceDefinitionForFile(descriptor.file, "javascript");
+		parent.children.push(virtualNode("implementation", "blockImplementation", "javascript",
+			path + ".implementation", "Implementation",
+			compact(jsSource), compact(jsSource), "mdi:language-javascript"));
+	}
+
+	function addCatalog(out, blocks, options) {
 		var catalog = virtualNode("catalog", "folder", "catalog", "catalog", "Catalog", "", null, "mdi:bookshelf");
-		var catalogDefinitionValue = catalogDefinition(blocks);
+		var catalogDefinitionValue = catalogDefinition(blocks, options || {});
 		var blocksFolder = virtualNode("blocks", "folder", "blocks", "catalog.blocks", "Blocks", "", null, "mdi:puzzle-outline");
 		catalog.children.push(blocksFolder);
 		var iconByOrigin = {
@@ -3870,8 +4713,20 @@
 				iconByOrigin[group.origin] || "mdi:source-repository");
 			blocksFolder.children.push(groupNode);
 			group.blocks.forEach(function (block) {
-				groupNode.children.push(virtualNode("block_" + block.name, "block", block.name,
-					groupPath + "." + block.name, block.name, compact(block)));
+				var blockPath = groupPath + "." + block.name;
+				var blockSource = sourceDefinitionForFile(block.file, block.implementation || "");
+				var blockDefinition = normalizeTree(block);
+				blockDefinition.implementationKind = blockSource.implementationKind;
+				blockDefinition.sourcePath = blockSource.sourcePath;
+				blockDefinition.sourceOrigin = blockSource.sourceOrigin;
+				blockDefinition.sourceRelativePath = blockSource.sourceRelativePath;
+				blockDefinition.sourceWritable = blockSource.sourceWritable;
+				blockDefinition.writable = blockSource.writable;
+				blockDefinition.readOnly = blockSource.readOnly;
+				var blockNode = virtualNode("block_" + block.name, "block", block.name,
+					blockPath, block.name, compact(blockDefinition), compact(blockSource));
+				groupNode.children.push(blockNode);
+				addBlockImplementation(blockNode, blocks[block.name], block, blockPath, blocks);
 			});
 		});
 		var typesFolder = virtualNode("types", "folder", "types", "catalog.types", "Types", "", null, "mdi:shape-outline");
@@ -3911,17 +4766,46 @@
 		out.push(catalog);
 	}
 
+	function addFragments(out, blocks) {
+		var fragments = listProjectFragments().fragments;
+		if (fragments.length === 0) {
+			return;
+		}
+		var folder = virtualNode("fragments", "folder", "fragments", "fragments",
+			"Fragments", compact(fragments), null, "mdi:folder-sync-outline");
+		fragments.forEach(function (fragment) {
+			var fragmentPath = "fragments." + fragment.name;
+			var fragmentNode = virtualNode("fragment_" + fragment.name, "fragment", fragment.name,
+				fragmentPath, fragment.name, compact(fragment), null, "mdi:folder-sync-outline");
+			folder.children.push(fragmentNode);
+			try {
+				var loaded = readFragment(fragment.name);
+				var implementationNode = virtualNode("implementation", "fragmentImplementation", "flow",
+					fragmentPath + ".implementation", "Implementation",
+					compact(sourceDefinitionForFile(loaded.file, "flow")), null, "mdi:source-branch");
+				fragmentNode.children.push(implementationNode);
+				addImplementationNodes(implementationNode, loaded.definition.nodes || [],
+					fragmentPath + ".implementation.nodes", blocks, ["fragment:" + fragment.name]);
+			} catch (e) {
+				fragmentNode.children.push(virtualNode("error", "error", "fragment",
+					fragmentPath + ".error", String(e.message || e), compact({ error: String(e.message || e) }), null, "mdi:alert-outline"));
+			}
+		});
+		out.push(folder);
+	}
+
 	function describeTreeRequest(request, blocks) {
 		request = request || {};
 		var target = String(request.target || "flow");
 		var children = [];
-		if (target === "flow") {
-			var definition = request.definition !== undefined && request.definition !== null
-				? normalizeTree(request.definition)
-				: parseSource(request.flowSource);
-			var analysisRequest = Object.assign({}, request, {
-				allowRequestableSchema: false
-			});
+			if (target === "flow") {
+				var definition = request.definition !== undefined && request.definition !== null
+					? normalizeTree(request.definition)
+					: parseSource(request.flowSource);
+				definition = expandFlowDefinition(blocks, definition);
+				var analysisRequest = Object.assign({}, request, {
+					allowRequestableSchema: false
+				});
 			analysisRequest.flowSource = sourceFromDefinition(definition);
 			var analysis = analyzeFlowDefinition(blocks, definition, analysisRequest);
 			var analysisById = analysisByNodeId(analysis);
@@ -3931,11 +4815,14 @@
 		} else if (target === "engine") {
 			var engine = parseYamlSource(request.engineSource, "version: 1\n");
 			var engineQName = String(engine.engineQName || request.engineQName || "");
-			children.push(virtualNode("engine", "engine", engineQName, "engineQName", engineQName, engineQName, null, "mdi:engine-outline"));
-			addBindings(children, engine.bindings, "bindings");
-			addConfig(children, engine.config, "config");
-			addCatalog(children, blocks);
-		} else {
+				children.push(virtualNode("engine", "engine", engineQName, "engineQName", engineQName, engineQName, null, "mdi:engine-outline"));
+				addBindings(children, engine.bindings, "bindings");
+				addConfig(children, engine.config, "config");
+				addFragments(children, blocks);
+				addCatalog(children, blocks, {
+					includePrivate: request.includePrivate !== false
+				});
+			} else {
 			raise("UNKNOWN_TREE_TARGET", "Unknown Flow tree target: " + target);
 		}
 		return {
@@ -4046,12 +4933,12 @@
 		return project ? project + "." + flowName : String(flowName || "");
 	}
 
-	function shallowNodeDefinition(node) {
-		var shallow = {};
-		Object.keys(node || {}).forEach(function (key) {
-			if (["nodes", "do", "then", "else", "catch", "finally"].indexOf(key) === -1) {
-				shallow[key] = node[key];
-			}
+		function shallowNodeDefinition(node) {
+			var shallow = {};
+			Object.keys(node || {}).forEach(function (key) {
+				if (key.indexOf("__") !== 0 && ["nodes", "do", "then", "else", "catch", "finally"].indexOf(key) === -1) {
+					shallow[key] = node[key];
+				}
 		});
 		return shallow;
 	}
@@ -4241,11 +5128,11 @@
 					snippet: searchSnippet(flow.source, needle),
 					next: "flow-tree name=" + flow.name
 				});
-			}
-			if (kinds.node) {
-				searchFlowNodes(request, blocks, flow.name, parseSource(flow.source), matches);
-			}
-		});
+				}
+				if (kinds.node) {
+					searchFlowNodes(request, blocks, flow.name, expandFlowDefinition(blocks, parseSource(flow.source)), matches);
+				}
+			});
 		searchCatalogEntries(request, blocks, matches);
 		searchSchemaFiles(request, matches);
 
@@ -4826,9 +5713,13 @@
 			}
 		},
 
-		catalog: function () {
+		catalog: function (requestJson) {
 			try {
-				return response(Object.assign({ ok: true }, catalogDefinition(loadBlocks())));
+				var request = parseRequest(requestJson);
+				return response(Object.assign({ ok: true }, catalogDefinition(loadBlocks(), {
+					detail: request.detail || request.mode || "full",
+					includePrivate: request.includePrivate === true
+				})));
 			} catch (e) {
 				return response(failure("catalog", e));
 			}

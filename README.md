@@ -34,23 +34,62 @@ libs/flows/<FlowName>.flow.yaml
 
 The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
 
-The runtime core is intentionally small. Concrete behavior is implemented by block modules in:
+The runtime core is intentionally small. Concrete behavior is implemented by
+native JavaScript blocks and composite graph blocks in:
 
 ```text
 libs/flow/blocks/*.js
+libs/flow/blocks/*.block.yaml
 ```
 
 Control flow is also implemented as blocks, for example `if` and `forEach`.
+The `flow.call` block calls another Flow sidecar inside the Flow engine. This is
+the preferred low-overhead composition path when a project wants subflows
+without going through Convertigo requestable/XML execution.
 
-At runtime, the engine loads blocks from two places:
+Composite graph blocks are stored as:
+
+```text
+<current-project>/libs/flow/blocks/<blockName>.block.yaml
+```
+
+They are regular catalog blocks: they define `props`, icons, documentation and
+an internal `nodes` implementation. At runtime the engine exposes evaluated
+instance properties through `props` and a private mutable `local` scope for the
+block implementation. An internal `return` stops only the composite block, then
+the parent Flow continues normally.
+
+The `fragment.use` block expands a reusable graph inline from:
+
+```text
+<current-project>/libs/flow/fragments/<FragmentName>.fragment.yaml
+```
+
+A fragment is not a requestable and does not create a new scope. It behaves like
+the fragment nodes were written at that exact position, so it can read and write
+`input`, `config`, `flow`, `result` and `current` directly. The Flow tree and
+analysis expand fragment children logically while the disk representation keeps
+the fragment as a separate source file.
+
+At runtime, the engine loads blocks and optional shared helper libraries from
+two places:
 
 ```text
 lib_flow_engine/libs/flow/blocks/*.js      # core blocks
+lib_flow_engine/libs/flow/blocks/*.block.yaml # core composite blocks
 <current-project>/libs/flow/blocks/*.js   # project-local blocks
+<current-project>/libs/flow/blocks/*.block.yaml # project-local composite blocks
+<current-project>/libs/flow/fragments/*.fragment.yaml # project-local fragments
+lib_flow_engine/libs/flow/lib/*.js         # core helper libraries
+<current-project>/libs/flow/lib/*.js      # project-local helper libraries
 ```
 
 Project-local blocks are meant for application-specific vocabulary. They cannot
 silently override core blocks; a name collision is reported as an error.
+Blocks can call `ctx.lib("name")` to load `libs/flow/lib/name.js` once per Flow
+execution context. When a reusable behavior has a clear input/output contract,
+prefer a block over a helper library: blocks can be used in Flow graphs and can
+also be called from JavaScript implementations with `ctx.callBlock(name, props)`.
 
 ## Project FlowEngine
 
@@ -121,6 +160,8 @@ A private block is visible inside the project that defines it, but must not be
 advertised to projects that reference that project as a library. This gives
 authors and agents a safe place for local implementation details, generated
 helpers and one-off glue without polluting the public palette.
+Catalog APIs hide private blocks by default; diagnostic callers can pass
+`includePrivate: true` when they intentionally inspect implementation details.
 
 Direct Rhino code inside a Flow should remain an escape hatch, not the normal
 model. The preferred equivalent of a small function is a project-local custom
@@ -134,8 +175,8 @@ JVM. They may use Java classes through `Packages`, for example for integration
 adapters, but they must not assume Node.js APIs such as `require`, npm modules
 or browser globals. The normal source shape is an IIFE returning `{ name,
 catalog, analyze, run }`; `ctx.props(node)`, `ctx.template(value)`,
-`ctx.expr(value)`, `ctx.read(path)` and `ctx.write(path,value)` are the small
-runtime API.
+`ctx.expr(value)`, `ctx.read(path)`, `ctx.write(path,value)` and
+`ctx.callBlock(name, props)` are the small runtime API.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored under `libs/flow/types`: docs,
@@ -220,6 +261,42 @@ If no `return` block is executed, the Flow returns the `result` scope
 implicitly. Use `return` only to stop early or return something other than
 `result`. Use `throw` inside error branches to stop with a structured error.
 
+## Runtime handles
+
+Most Flow data should remain JSON-serializable, but some low-level blocks need
+to keep live runtime objects between nodes: Java DBO instances, file writers,
+OpenDocument handles, XLS workbooks, JDBC connections or transactions. Model
+those values as typed handles such as `handle<dbo>`, `handle<file.writer>`,
+`handle<xls.workbook>` or `handle<jdbc.transaction>`.
+
+Handles may live in execution scopes such as `flow`, `local`, `current` and
+`request`. They must not be returned in `result`, persisted in Flow YAML, learned
+as JSON schemas, or sent through MCP/SDK responses. When a trace or picker needs
+to show a handle, show a small serializable summary: handle type, label, state
+and optional QName/path. Never serialize the Java object itself.
+
+Prefer scoped `with*` blocks for resources that must be closed, mirroring Java
+`try-with-resources`:
+
+```yaml
+- block: file.withWriter
+  path: flow.outputPath
+  as: local.writer
+  nodes:
+    - block: forEach
+      items: flow.lines
+      nodes:
+        - block: file.write
+          writer: local.writer
+          value: "{{ current }}"
+```
+
+The `with*` block opens the handle, writes it to the requested scope path, runs
+child nodes, then closes the handle in a `finally`-style cleanup. Explicit
+`open` / `close` blocks may exist for advanced cases, but standard libraries
+should prefer the scoped form so authors and agents do not need to manage
+cleanup manually.
+
 Use `requestable.call` when the target must go through the regular Convertigo
 requestable path, like the SDK does. It accepts a sequence, Flow or transaction
 target and unwraps the historical XML-to-JSON `document` wrapper so Flow authors
@@ -299,19 +376,22 @@ APIs:
   `rg`.
 - `resourceGet({ path })` reads content and returns a `hash`.
 - `resourcePatch({ path, baseHash, patch })` applies a unified diff, then
-  validates block/type JavaScript by default. Hunk line numbers may be
-  approximate when the surrounding context is unique.
+  validates block/type/library JavaScript and parses fragment YAML by default.
+  Hunk line numbers may be approximate when the surrounding context is unique.
 
 The writable surface is intentionally narrow:
 
 ```text
 libs/flow/blocks/**/*.js
+libs/flow/fragments/**/*.fragment.yaml
+libs/flow/lib/**/*.js
 libs/flow/types/**/*.js
 libs/flow/types/editors/**/*.{html,css,js}
 ```
 
 Flow graph changes should still use `flow-edit`/`flow-set` mutations. Resource
-patching is for block implementations and custom property editors.
+patching is for block implementations, helper libraries and custom property
+editors.
 
 ## Context picker API
 
@@ -423,6 +503,11 @@ path        scope path to read or write
 literal     raw JSON value, no resolution
 schema      data shape metadata
 ```
+
+The property `type` may be a runtime handle type, for example
+`handle<file.writer>`. A consumer block should only accept compatible handles,
+and a producer block should expose handle outputs through its `out` or `as`
+property documentation.
 
 Examples:
 
