@@ -6,23 +6,6 @@
 	return {
 		name: "file.forEachLine",
 
-		catalog: function () {
-			return {
-				name: "file.forEachLine",
-				icon: "mdi:file-tree-outline",
-				kind: "control",
-				props: {
-					reader: { label: "reader", kind: "expression", type: "handle<file.reader>", "default": "local.reader", description: "Reader handle produced by file.withReader." },
-					out: { label: "out", kind: "path", mode: "write", description: "Optional scope path receiving {count}." }
-				},
-				children: ["nodes"],
-				slots: [
-					{ name: "nodes", label: "Flow", inline: true }
-				],
-				description: "Runs child nodes once per line and exposes the current line as current."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.text(prop(node, "reader") || "reader");
 		},

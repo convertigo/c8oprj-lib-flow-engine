@@ -1,0 +1,26 @@
+version: 1
+name: "type.get"
+private: true
+icon: "mdi:shape-outline"
+package: "core"
+namespace: "type"
+description: "Reads one Flow property type source."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Flow property type name."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving type source and descriptor."
+implementation:
+  runtime: "rhino"
+  file: "type.get.js"

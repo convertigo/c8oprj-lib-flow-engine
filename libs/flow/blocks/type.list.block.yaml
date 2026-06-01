@@ -1,0 +1,21 @@
+version: 1
+name: "type.list"
+private: true
+icon: "mdi:shape-outline"
+package: "core"
+namespace: "type"
+description: "Lists Flow property types visible from a project."
+props:
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving property type descriptors."
+implementation:
+  runtime: "rhino"
+  file: "type.list.js"

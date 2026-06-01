@@ -17,28 +17,6 @@
 		name: "resource.search",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "resource.search",
-				"package": "core",
-				namespace: "resource",
-				private: true,
-				icon: "mdi:file-search-outline",
-				props: {
-					query: { label: "query", kind: "text", type: "string", description: "Text query over project Flow resources." },
-					q: { label: "q", kind: "text", type: "string", description: "Short alias for query." },
-					limit: { label: "limit", kind: "literal", type: "number", description: "Maximum number of resources to return." },
-					cursor: { label: "cursor", kind: "text", type: "string", description: "Pagination cursor returned by a previous search." },
-					maxFileBytes: { label: "maxFileBytes", kind: "literal", type: "number", description: "Skip files larger than this size." },
-					doc: { label: "doc", kind: "literal", type: "boolean", description: "Include short tool documentation." },
-					hints: { label: "hints", kind: "literal", type: "boolean", description: "Include short usage hints." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving search results." }
-				},
-				description: "Searches project-local Flow text resources."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.output(node, flowSummary.text(prop(node, "query") || prop(node, "q") || "resources"));
 		},

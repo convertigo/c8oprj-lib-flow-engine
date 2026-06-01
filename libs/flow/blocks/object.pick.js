@@ -25,19 +25,6 @@
 	return {
 		name: "object.pick",
 
-		catalog: function () {
-			return {
-				name: "object.pick",
-				icon: "mdi:select-group",
-				props: {
-					source: { label: "source", kind: "expression", type: "object", "default": "flow.object", description: "Object expression to read from." },
-					keys: { label: "keys", kind: "literal", type: "array|string", "default": "", description: "Comma-separated list or array of fields to copy. Nested paths are supported." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.picked", description: "Scope path receiving the selected fields." }
-				},
-				description: "Builds an object from selected fields."
-			};
-		},
-
 		displayName: function (node) {
 			var source = flowSummary.prop(node, "source") || "object";
 			var selected = flowSummary.prop(node, "keys") || "keys";

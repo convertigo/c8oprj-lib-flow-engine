@@ -27,25 +27,6 @@
 		name: "flow.outputSchema",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "flow.outputSchema",
-				"package": "core",
-				namespace: "flow",
-				private: true,
-				icon: "mdi:code-json",
-				props: {
-					name: { label: "name", kind: "text", type: "string", description: "Project Flow sidecar name." },
-					flowName: { label: "flowName", kind: "text", type: "string", description: "Alias for name." },
-					flowSource: { label: "flowSource", kind: "text", type: "string", description: "Flow YAML source." },
-					definition: { label: "definition", kind: "literal", type: "object", description: "Flow definition object." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving output schema." }
-				},
-				description: "Returns the best known JSON output schema for a Flow."
-			};
-		},
-
 		displayName: function () {
 			return "flow output schema";
 		},

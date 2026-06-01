@@ -38,20 +38,6 @@
 	return {
 		name: "log",
 
-		catalog: function () {
-			return {
-				name: "log",
-				icon: "mdi:console",
-				props: {
-					level: { label: "level", kind: "text", type: "string", "default": "info", description: "Log level: error, warn, info, debug or trace." },
-					logger: { label: "logger", kind: "text", type: "string", "default": "context", description: "Convertigo logger: context, engine, user, audit or beans." },
-					message: { label: "message", kind: "template", type: "string", "default": "", description: "Message template to write." },
-					data: { label: "data", kind: "value", type: "unknown", description: "Optional structured value appended as JSON." }
-				},
-				description: "Writes a diagnostic message to a Convertigo logger."
-			};
-		},
-
 		displayName: function (node) {
 			var level = prop(node, "level") || "info";
 			var message = flowSummary.prop(node, "message") || "message";

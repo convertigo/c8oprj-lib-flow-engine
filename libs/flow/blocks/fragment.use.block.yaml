@@ -1,0 +1,21 @@
+version: 1
+name: "fragment.use"
+icon: "mdi:folder-sync-outline"
+kind: "composition"
+description: "Expands and runs a reusable Flow fragment in the current scopes."
+longDescription: "A fragment is stored in libs/flow/fragments/<name>.fragment.yaml and behaves like the nodes were written inline. It has closure-style access to input, config, flow, result and current."
+props:
+  fragment:
+    label: "fragment"
+    kind: "text"
+    type: "string"
+    description: "Project Flow fragment to expand inline."
+children:
+  - "nodes"
+slots:
+  - name: "nodes"
+    label: "Fragment"
+    inline: true
+implementation:
+  runtime: "rhino"
+  file: "fragment.use.js"

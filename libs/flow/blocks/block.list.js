@@ -13,24 +13,6 @@
 		name: "block.list",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "block.list",
-				"package": "core",
-				namespace: "block",
-				private: true,
-				icon: "mdi:puzzle-outline",
-				props: {
-					detail: { label: "detail", kind: "text", type: "string", description: "Catalog detail: summary, compact or full." },
-					mode: { label: "mode", kind: "text", type: "string", description: "Alias for detail." },
-					includePrivate: { label: "includePrivate", kind: "literal", type: "boolean", description: "Include private blocks." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving the block catalog." }
-				},
-				description: "Lists Flow blocks visible from a project."
-			};
-		},
-
 		displayName: function () {
 			return "list blocks";
 		},

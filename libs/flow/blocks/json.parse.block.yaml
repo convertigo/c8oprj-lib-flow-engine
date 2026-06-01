@@ -1,0 +1,20 @@
+version: 1
+name: "json.parse"
+icon: "mdi:code-json"
+description: "Parses JSON text into a native value."
+props:
+  text:
+    label: "text"
+    kind: "template"
+    type: "string"
+    default: "{{ flow.text }}"
+    description: "JSON text to parse."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.json"
+    description: "Scope path receiving the parsed value."
+implementation:
+  runtime: "rhino"
+  file: "json.parse.js"

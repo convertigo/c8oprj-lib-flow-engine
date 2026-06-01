@@ -1,0 +1,26 @@
+version: 1
+name: "object.pick"
+icon: "mdi:select-group"
+description: "Builds an object from selected fields."
+props:
+  source:
+    label: "source"
+    kind: "expression"
+    type: "object"
+    default: "flow.object"
+    description: "Object expression to read from."
+  keys:
+    label: "keys"
+    kind: "literal"
+    type: "array|string"
+    default: ""
+    description: "Comma-separated list or array of fields to copy. Nested paths are supported."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.picked"
+    description: "Scope path receiving the selected fields."
+implementation:
+  runtime: "rhino"
+  file: "object.pick.js"

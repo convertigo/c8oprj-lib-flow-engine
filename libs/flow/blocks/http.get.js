@@ -30,19 +30,6 @@
 	return {
 		name: "http.get",
 
-		catalog: function () {
-			return {
-				name: "http.get",
-				icon: "mdi:web",
-				props: {
-					url: { kind: "template", type: "string", "default": "", description: "HTTP URL template to call." },
-					headers: { kind: "template", type: "object", description: "Optional HTTP headers object." },
-					out: { kind: "path", mode: "write", "default": "flow.response", description: "Scope path receiving status, contentType, body and text." }
-				},
-				description: "Calls an HTTP endpoint with GET."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.output(node, "GET " + flowSummary.text(prop(node, "url") || "url"));
 		},

@@ -1,0 +1,26 @@
+version: 1
+name: "json.select"
+icon: "mdi:select-search"
+description: "Reads a nested value from a JSON object."
+props:
+  source:
+    label: "source"
+    kind: "expression"
+    type: "object"
+    default: "flow.source"
+    description: "Object expression used as source."
+  path:
+    label: "path"
+    kind: "text"
+    type: "string"
+    default: ""
+    description: "Dot path to read inside the source object."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.value"
+    description: "Scope path receiving the selected value."
+implementation:
+  runtime: "rhino"
+  file: "json.select.js"

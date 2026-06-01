@@ -99,21 +99,6 @@
 	return {
 		name: "use",
 
-		catalog: function () {
-			return {
-				name: "use",
-				icon: "mdi:puzzle-outline",
-				kind: "control",
-				props: {
-					contract: { label: "contract", kind: "text", type: "string", "default": "", description: "Contract name to resolve." },
-					implementation: { label: "implementation", kind: "text", type: "string", description: "Optional implementation flow overriding the binding." },
-					input: { label: "input", kind: "expression", type: "object", description: "Object expression passed to the implementation flow." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.value", description: "Scope path receiving the implementation result." }
-				},
-				description: "Runs the implementation bound to a contract. Falls back to contract.defaultImplementation."
-			};
-		},
-
 		displayName: function (node) {
 			var props = node && node.props || node || {};
 			return flowSummary.output(node, flowSummary.text(props.contract || "contract"));

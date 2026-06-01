@@ -6,19 +6,6 @@
 	return {
 		name: "list.filter",
 
-		catalog: function () {
-			return {
-				name: "list.filter",
-				icon: "mdi:filter-outline",
-				props: {
-					items: { label: "items", kind: "expression", type: "array", "default": "flow.items", description: "Array expression to filter." },
-					where: { label: "where", kind: "expression", type: "boolean", "default": "true", description: "Boolean expression evaluated for each current item." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.filtered", description: "Scope path receiving the filtered array." }
-				},
-				description: "Filters an array using a pure expression evaluated with current.*."
-			};
-		},
-
 		displayName: function (node) {
 			var items = flowSummary.prop(node, "items") || flowSummary.prop(node, "in") || "items";
 			var condition = flowSummary.prop(node, "where") || "true";

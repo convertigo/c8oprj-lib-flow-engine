@@ -37,20 +37,6 @@
 	return {
 		name: "flow.call",
 
-		catalog: function () {
-			return {
-				name: "flow.call",
-				icon: "mdi:transit-connection-variant",
-				kind: "flow",
-				props: {
-					flow: { label: "flow", kind: "text", type: "string", description: "Project Flow sidecar to execute in the Flow engine." },
-					input: { label: "input", kind: "expression", type: "object", description: "Object passed as input to the called Flow." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving the called Flow result." }
-				},
-				description: "Calls another Flow sidecar without going through Convertigo requestable/XML execution."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.output(node, flowSummary.text(prop(node, "flow") || "flow"));
 		},

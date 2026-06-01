@@ -26,25 +26,6 @@
 	return {
 		name: "file.withReader",
 
-		catalog: function () {
-			return {
-				name: "file.withReader",
-				icon: "mdi:file-eye-outline",
-				kind: "resource",
-				props: {
-					path: { label: "path", kind: "template", type: "string", description: "File path. Relative paths resolve from the current project directory." },
-					file: { label: "file", kind: "template", type: "string", description: "Alias for path." },
-					charset: { label: "charset", kind: "text", type: "string", "default": "UTF-8", description: "Reader charset." },
-					as: { label: "as", kind: "path", mode: "write", "default": "local.reader", type: "handle<file.reader>", description: "Scope path receiving the reader handle while child nodes run." }
-				},
-				children: ["nodes"],
-				slots: [
-					{ name: "nodes", label: "Flow", inline: true }
-				],
-				description: "Opens a file reader handle, runs child nodes, then closes it."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.output({ out: prop(node, "as") }, flowSummary.text(prop(node, "path") || prop(node, "file") || "reader"));
 		},

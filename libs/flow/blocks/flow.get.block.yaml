@@ -1,0 +1,31 @@
+version: 1
+name: "flow.get"
+private: true
+icon: "mdi:sitemap"
+package: "core"
+namespace: "flow"
+description: "Reads one project Flow sidecar."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Project Flow sidecar name."
+  flowName:
+    label: "flowName"
+    kind: "text"
+    type: "string"
+    description: "Alias for name."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving Flow source and definition."
+implementation:
+  runtime: "rhino"
+  file: "flow.get.js"

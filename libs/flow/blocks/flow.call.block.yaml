@@ -1,0 +1,24 @@
+version: 1
+name: "flow.call"
+icon: "mdi:transit-connection-variant"
+kind: "flow"
+description: "Calls another Flow sidecar without going through Convertigo requestable/XML execution."
+props:
+  flow:
+    label: "flow"
+    kind: "text"
+    type: "string"
+    description: "Project Flow sidecar to execute in the Flow engine."
+  input:
+    label: "input"
+    kind: "expression"
+    type: "object"
+    description: "Object passed as input to the called Flow."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving the called Flow result."
+implementation:
+  runtime: "rhino"
+  file: "flow.call.js"

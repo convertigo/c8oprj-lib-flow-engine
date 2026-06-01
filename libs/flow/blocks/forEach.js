@@ -6,22 +6,6 @@
 	return {
 		name: "forEach",
 
-		catalog: function () {
-			return {
-				name: "forEach",
-				icon: "mdi:repeat",
-				kind: "control",
-				props: {
-					items: { kind: "expression", type: "array", "default": "flow.items", description: "Array expression iterated by this block." }
-				},
-				children: ["nodes"],
-				slots: [
-					{ name: "nodes", label: "Flow", inline: true }
-				],
-				description: "Runs child nodes once per item and exposes the item as current."
-			};
-		},
-
 		displayName: function (node) {
 			var items = prop(node, "items") || prop(node, "in");
 			return items ? flowSummary.text(items) : "items";

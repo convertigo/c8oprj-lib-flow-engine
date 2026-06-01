@@ -6,21 +6,6 @@
 	return {
 		name: "file.readLine",
 
-		catalog: function () {
-			return {
-				name: "file.readLine",
-				icon: "mdi:file-find-outline",
-				kind: "resource",
-				props: {
-					reader: { label: "reader", kind: "expression", type: "handle<file.reader>", "default": "local.reader", description: "Reader handle produced by file.withReader." },
-					line: { label: "line", kind: "path", mode: "write", description: "Optional scope path receiving the line or null at EOF." },
-					eof: { label: "eof", kind: "path", mode: "write", description: "Optional scope path receiving true when the reader reached EOF." },
-					out: { label: "out", kind: "path", mode: "write", description: "Optional scope path receiving {line, eof}." }
-				},
-				description: "Reads one line from a file reader handle."
-			};
-		},
-
 		displayName: function (node) {
 			var target = prop(node, "line") || prop(node, "out") || "line";
 			return flowSummary.text((prop(node, "reader") || "reader") + " -> " + target);

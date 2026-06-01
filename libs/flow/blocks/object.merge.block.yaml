@@ -1,0 +1,26 @@
+version: 1
+name: "object.merge"
+icon: "mdi:merge"
+description: "Creates a shallow object merge."
+props:
+  target:
+    label: "target"
+    kind: "expression"
+    type: "object"
+    default: "flow.object"
+    description: "Base object expression."
+  source:
+    label: "source"
+    kind: "expression"
+    type: "object"
+    default: "flow.patch"
+    description: "Object expression overriding target keys."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.merged"
+    description: "Scope path receiving the merged object."
+implementation:
+  runtime: "rhino"
+  file: "object.merge.js"

@@ -1,0 +1,20 @@
+version: 1
+name: "forEach"
+icon: "mdi:repeat"
+kind: "control"
+description: "Runs child nodes once per item and exposes the item as current."
+props:
+  items:
+    kind: "expression"
+    type: "array"
+    default: "flow.items"
+    description: "Array expression iterated by this block."
+children:
+  - "nodes"
+slots:
+  - name: "nodes"
+    label: "Flow"
+    inline: true
+implementation:
+  runtime: "rhino"
+  file: "forEach.js"

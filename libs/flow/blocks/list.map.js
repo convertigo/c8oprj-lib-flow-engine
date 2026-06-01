@@ -2,19 +2,6 @@
 	return {
 		name: "list.map",
 
-		catalog: function () {
-			return {
-				name: "list.map",
-				icon: "mdi:vector-polyline",
-				props: {
-					items: { label: "items", kind: "expression", type: "array", "default": "flow.items", description: "Array expression to map." },
-					select: { label: "select", kind: "expression", type: "unknown", "default": "current", description: "Expression evaluated for each current item." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.mapped", description: "Scope path receiving the mapped array." }
-				},
-				description: "Maps an array to a new array while exposing each item as current."
-			};
-		},
-
 		displayName: function (node) {
 			var items = flowSummary.prop(node, "items") || flowSummary.prop(node, "in") || "items";
 			var select = flowSummary.prop(node, "select") === undefined ? "current" : flowSummary.prop(node, "select");

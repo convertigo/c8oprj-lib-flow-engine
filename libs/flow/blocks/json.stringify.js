@@ -6,19 +6,6 @@
 	return {
 		name: "json.stringify",
 
-		catalog: function () {
-			return {
-				name: "json.stringify",
-				icon: "mdi:code-json",
-				props: {
-					value: { label: "value", kind: "value", type: "unknown", "default": "{{ flow.value }}", description: "Value to serialize as JSON." },
-					pretty: { label: "pretty", kind: "literal", type: "boolean", "default": false, description: "Write indented JSON when true." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.text", description: "Scope path receiving the JSON text." }
-				},
-				description: "Serializes a native value as JSON text."
-			};
-		},
-
 		displayName: function (node) {
 			var value = flowSummary.value(node) || flowSummary.text("value");
 			return flowSummary.output(node, value);

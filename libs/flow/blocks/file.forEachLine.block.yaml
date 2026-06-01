@@ -1,0 +1,26 @@
+version: 1
+name: "file.forEachLine"
+icon: "mdi:file-tree-outline"
+kind: "control"
+description: "Runs child nodes once per line and exposes the current line as current."
+props:
+  reader:
+    label: "reader"
+    kind: "expression"
+    type: "handle<file.reader>"
+    default: "local.reader"
+    description: "Reader handle produced by file.withReader."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Optional scope path receiving {count}."
+children:
+  - "nodes"
+slots:
+  - name: "nodes"
+    label: "Flow"
+    inline: true
+implementation:
+  runtime: "rhino"
+  file: "file.forEachLine.js"

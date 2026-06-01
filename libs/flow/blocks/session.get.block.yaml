@@ -1,0 +1,25 @@
+version: 1
+name: "session.get"
+icon: "mdi:key-outline"
+description: "Reads a value from the current HTTP session."
+props:
+  key:
+    label: "key"
+    kind: "template"
+    type: "string"
+    default: ""
+    description: "HTTP session attribute name."
+  default:
+    label: "default"
+    kind: "value"
+    type: "unknown"
+    description: "Value returned when the session key is missing."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.sessionValue"
+    description: "Scope path receiving the session value."
+implementation:
+  runtime: "rhino"
+  file: "session.get.js"

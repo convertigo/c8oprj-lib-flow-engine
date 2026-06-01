@@ -7,25 +7,6 @@
 		name: "block.edit",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "block.edit",
-				"package": "core",
-				namespace: "block",
-				private: true,
-				icon: "mdi:puzzle-edit-outline",
-				props: {
-					name: { label: "name", kind: "text", type: "string", description: "Project-local Flow block name." },
-					source: { label: "source", kind: "text", type: "string", description: "Replacement Rhino ES6 implementation source." },
-					implementationSource: { label: "implementationSource", kind: "text", type: "string", description: "Explicit replacement Rhino ES6 implementation source." },
-					descriptorSource: { label: "descriptorSource", kind: "text", type: "string", description: "Optional replacement canonical *.block.yaml descriptor source." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving edit result." }
-				},
-				description: "Edits one project-local Flow block descriptor and/or implementation."
-			};
-		},
-
 		displayName: function (node) {
 			return "edit block " + (prop(node, "name") || "");
 		},

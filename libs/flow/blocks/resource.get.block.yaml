@@ -1,0 +1,36 @@
+version: 1
+name: "resource.get"
+private: true
+icon: "mdi:file-code-outline"
+package: "core"
+namespace: "resource"
+description: "Reads a project-local Flow source resource."
+props:
+  path:
+    label: "path"
+    kind: "text"
+    type: "string"
+    description: "Project-local Flow resource path."
+  maxBytes:
+    label: "maxBytes"
+    kind: "literal"
+    type: "number"
+    description: "Maximum content size to return."
+  allowLarge:
+    label: "allowLarge"
+    kind: "literal"
+    type: "boolean"
+    description: "Allow returning a resource larger than maxBytes."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving the resource content and metadata."
+implementation:
+  runtime: "rhino"
+  file: "resource.get.js"

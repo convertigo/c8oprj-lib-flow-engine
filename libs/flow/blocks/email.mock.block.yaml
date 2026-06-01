@@ -1,0 +1,28 @@
+version: 1
+name: "email.mock"
+icon: "mdi:email-outline"
+description: "Creates a mock email result without sending anything."
+props:
+  to:
+    kind: "template"
+    type: "string"
+    default: ""
+    description: "Recipient email address template."
+  subject:
+    kind: "template"
+    type: "string"
+    default: ""
+    description: "Email subject template."
+  body:
+    kind: "template"
+    type: "string"
+    default: ""
+    description: "Email body template."
+  out:
+    kind: "path"
+    mode: "write"
+    default: "flow.email"
+    description: "Scope path receiving the mock send result."
+implementation:
+  runtime: "rhino"
+  file: "email.mock.js"

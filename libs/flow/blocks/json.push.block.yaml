@@ -1,0 +1,21 @@
+version: 1
+name: "json.push"
+icon: "mdi:playlist-plus"
+description: "Pushes a value into an array stored in a scope path."
+longDescription: "Use path for the target array and value for the pushed content. A value containing only {{ expression }} keeps the native expression type."
+props:
+  path:
+    label: "path"
+    kind: "path"
+    mode: "write"
+    default: "result.items"
+    description: "Array scope path receiving the pushed value."
+  value:
+    label: "value"
+    kind: "value"
+    type: "unknown"
+    default: "{{ current }}"
+    description: "Value to push. Use {{ expression }} for dynamic values."
+implementation:
+  runtime: "rhino"
+  file: "json.push.js"

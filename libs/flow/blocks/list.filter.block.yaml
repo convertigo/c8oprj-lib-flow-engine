@@ -1,0 +1,26 @@
+version: 1
+name: "list.filter"
+icon: "mdi:filter-outline"
+description: "Filters an array using a pure expression evaluated with current.*."
+props:
+  items:
+    label: "items"
+    kind: "expression"
+    type: "array"
+    default: "flow.items"
+    description: "Array expression to filter."
+  where:
+    label: "where"
+    kind: "expression"
+    type: "boolean"
+    default: "true"
+    description: "Boolean expression evaluated for each current item."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.filtered"
+    description: "Scope path receiving the filtered array."
+implementation:
+  runtime: "rhino"
+  file: "list.filter.js"

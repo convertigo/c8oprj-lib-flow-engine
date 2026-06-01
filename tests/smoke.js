@@ -65,6 +65,15 @@ assertTrue(catalog.blocks.some(function (block) {
 assertTrue(catalog.blocks.some(function (block) {
 	return block.name === "json.push" && block.namespace === "json" && block["package"] === "core";
 }), "catalog did not expose package/namespace metadata");
+var coreSetBlock = JSON.parse(engine.blockGet(JSON.stringify({
+	name: "set"
+})));
+assertTrue(coreSetBlock.format === "canonical" &&
+	String(coreSetBlock.descriptorFile).indexOf("set.block.yaml") !== -1 &&
+	String(coreSetBlock.implementationFile).indexOf("set.js") !== -1 &&
+	coreSetBlock.descriptorSource.indexOf("Writes a value to a scope path.") !== -1 &&
+	coreSetBlock.implementationSource.indexOf("catalog: function") === -1,
+	"core set block is not exposed as canonical descriptor plus implementation");
 var expressionType = catalog.types.filter(function (type) {
 	return type.name === "expression";
 })[0];

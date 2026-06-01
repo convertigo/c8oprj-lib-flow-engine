@@ -6,18 +6,6 @@
 	return {
 		name: "session.remove",
 
-		catalog: function () {
-			return {
-				name: "session.remove",
-				icon: "mdi:trash-can-outline",
-				props: {
-					key: { label: "key", kind: "template", type: "string", "default": "", description: "HTTP session attribute name to remove." },
-					out: { label: "out", kind: "path", mode: "write", description: "Optional scope path receiving true when the key was removed." }
-				},
-				description: "Removes a value from the current HTTP session."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.output(node, flowSummary.text(prop(node, "key") || "session key"));
 		},

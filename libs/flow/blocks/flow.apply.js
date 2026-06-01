@@ -26,28 +26,6 @@
 		name: "flow.apply",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "flow.apply",
-				"package": "core",
-				namespace: "flow",
-				private: true,
-				icon: "mdi:source-branch-sync",
-				props: {
-					target: { label: "target", kind: "text", type: "string", description: "Mutation target: flow or engine. Defaults to flow." },
-					name: { label: "name", kind: "text", type: "string", description: "Project Flow sidecar name." },
-					flowSource: { label: "flowSource", kind: "text", type: "string", description: "Flow YAML source." },
-					definition: { label: "definition", kind: "literal", type: "object", description: "Flow definition object." },
-					engineSource: { label: "engineSource", kind: "text", type: "string", description: "FlowEngine YAML source." },
-					mutation: { label: "mutation", kind: "literal", type: "object", description: "Single mutation to apply." },
-					mutations: { label: "mutations", kind: "literal", type: "array", description: "Mutations to apply in order." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving the updated source and tree." }
-				},
-				description: "Applies Flow or FlowEngine mutations without writing files."
-			};
-		},
-
 		displayName: function () {
 			return "apply flow mutations";
 		},

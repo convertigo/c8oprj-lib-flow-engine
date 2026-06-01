@@ -22,19 +22,6 @@
 	return {
 		name: "object.merge",
 
-		catalog: function () {
-			return {
-				name: "object.merge",
-				icon: "mdi:merge",
-				props: {
-					target: { label: "target", kind: "expression", type: "object", "default": "flow.object", description: "Base object expression." },
-					source: { label: "source", kind: "expression", type: "object", "default": "flow.patch", description: "Object expression overriding target keys." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.merged", description: "Scope path receiving the merged object." }
-				},
-				description: "Creates a shallow object merge."
-			};
-		},
-
 		displayName: function (node) {
 			var target = flowSummary.prop(node, "target") || "object";
 			var source = flowSummary.prop(node, "source") || "patch";

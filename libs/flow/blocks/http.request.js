@@ -69,22 +69,6 @@
 	return {
 		name: "http.request",
 
-		catalog: function () {
-			return {
-				name: "http.request",
-				icon: "mdi:web",
-				props: {
-					method: { kind: "text", type: "string", "default": "GET", description: "HTTP method to use." },
-					url: { kind: "template", type: "string", "default": "", description: "HTTP URL template to call." },
-					query: { kind: "template", type: "object", description: "Optional query parameters object." },
-					headers: { kind: "template", type: "object", description: "Optional HTTP headers object." },
-					body: { kind: "expression", type: "unknown", description: "Optional request body expression." },
-					out: { kind: "path", mode: "write", "default": "flow.response", description: "Scope path receiving status, contentType, body and text." }
-				},
-				description: "Calls an HTTP endpoint with method, query, headers and optional body."
-			};
-		},
-
 		displayName: function (node) {
 			var method = prop(node, "method") || "GET";
 			return flowSummary.output(node, String(method).toUpperCase() + " " + flowSummary.text(prop(node, "url") || "url"));

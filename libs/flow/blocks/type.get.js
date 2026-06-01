@@ -7,22 +7,6 @@
 		name: "type.get",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "type.get",
-				"package": "core",
-				namespace: "type",
-				private: true,
-				icon: "mdi:shape-outline",
-				props: {
-					name: { label: "name", kind: "text", type: "string", description: "Flow property type name." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving type source and descriptor." }
-				},
-				description: "Reads one Flow property type source."
-			};
-		},
-
 		displayName: function (node) {
 			return "get type " + (prop(node, "name") || "");
 		},

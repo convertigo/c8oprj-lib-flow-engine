@@ -27,21 +27,6 @@
 	return {
 		name: "file.write",
 
-		catalog: function () {
-			return {
-				name: "file.write",
-				icon: "mdi:file-document-edit-outline",
-				kind: "resource",
-				props: {
-					writer: { label: "writer", kind: "expression", type: "handle<file.writer>", "default": "local.writer", description: "Writer handle produced by file.withWriter." },
-					value: { label: "value", kind: "value", type: "unknown", "default": "", description: "Value written to the file." },
-					newline: { label: "newline", kind: "literal", type: "boolean", "default": false, description: "Append a newline after the value." },
-					flush: { label: "flush", kind: "literal", type: "boolean", "default": false, description: "Flush the writer after this write." }
-				},
-				description: "Writes text to a file writer handle."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.text((prop(node, "writer") || "writer") + " <= " + (flowSummary.prop(node, "value") || "value"));
 		},

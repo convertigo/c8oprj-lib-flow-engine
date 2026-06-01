@@ -11,26 +11,6 @@
 		name: "block.create",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "block.create",
-				"package": "core",
-				namespace: "block",
-				private: true,
-				icon: "mdi:puzzle-plus-outline",
-				props: {
-					name: { label: "name", kind: "text", type: "string", description: "Project-local Flow block name." },
-					source: { label: "source", kind: "text", type: "string", description: "Rhino ES6 implementation source. Old standalone blocks are converted to canonical descriptors." },
-					implementationSource: { label: "implementationSource", kind: "text", type: "string", description: "Explicit Rhino ES6 implementation source." },
-					descriptorSource: { label: "descriptorSource", kind: "text", type: "string", description: "Optional canonical *.block.yaml descriptor source." },
-					overwrite: { label: "overwrite", kind: "literal", type: "boolean", description: "Allow replacing an existing project-local block." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving creation result." }
-				},
-				description: "Creates one project-local canonical Flow block."
-			};
-		},
-
 		displayName: function (node) {
 			return "create block " + (prop(node, "name") || "");
 		},

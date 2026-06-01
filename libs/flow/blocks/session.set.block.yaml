@@ -1,0 +1,25 @@
+version: 1
+name: "session.set"
+icon: "mdi:account-key-outline"
+description: "Writes a value into the current HTTP session."
+props:
+  key:
+    label: "key"
+    kind: "template"
+    type: "string"
+    default: ""
+    description: "HTTP session attribute name."
+  value:
+    label: "value"
+    kind: "value"
+    type: "unknown"
+    default: ""
+    description: "Value stored in the session. Non-string values are stored as JSON text."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Optional scope path receiving the stored value."
+implementation:
+  runtime: "rhino"
+  file: "session.set.js"

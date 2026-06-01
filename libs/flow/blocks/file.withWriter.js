@@ -30,26 +30,6 @@
 	return {
 		name: "file.withWriter",
 
-		catalog: function () {
-			return {
-				name: "file.withWriter",
-				icon: "mdi:file-edit-outline",
-				kind: "resource",
-				props: {
-					path: { label: "path", kind: "template", type: "string", description: "File path. Relative paths resolve from the current project directory." },
-					file: { label: "file", kind: "template", type: "string", description: "Alias for path." },
-					append: { label: "append", kind: "literal", type: "boolean", "default": false, description: "Append to the file instead of replacing it." },
-					charset: { label: "charset", kind: "text", type: "string", "default": "UTF-8", description: "Writer charset." },
-					as: { label: "as", kind: "path", mode: "write", "default": "local.writer", type: "handle<file.writer>", description: "Scope path receiving the writer handle while child nodes run." }
-				},
-				children: ["nodes"],
-				slots: [
-					{ name: "nodes", label: "Flow", inline: true }
-				],
-				description: "Opens a file writer handle, runs child nodes, then closes it."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.output({ out: prop(node, "as") }, flowSummary.text(prop(node, "path") || prop(node, "file") || "writer"));
 		},

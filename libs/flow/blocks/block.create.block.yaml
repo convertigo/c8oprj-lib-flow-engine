@@ -1,0 +1,46 @@
+version: 1
+name: "block.create"
+private: true
+icon: "mdi:puzzle-plus-outline"
+package: "core"
+namespace: "block"
+description: "Creates one project-local canonical Flow block."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Project-local Flow block name."
+  source:
+    label: "source"
+    kind: "text"
+    type: "string"
+    description: "Rhino ES6 implementation source. Old standalone blocks are converted to canonical descriptors."
+  implementationSource:
+    label: "implementationSource"
+    kind: "text"
+    type: "string"
+    description: "Explicit Rhino ES6 implementation source."
+  descriptorSource:
+    label: "descriptorSource"
+    kind: "text"
+    type: "string"
+    description: "Optional canonical *.block.yaml descriptor source."
+  overwrite:
+    label: "overwrite"
+    kind: "literal"
+    type: "boolean"
+    description: "Allow replacing an existing project-local block."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving creation result."
+implementation:
+  runtime: "rhino"
+  file: "block.create.js"

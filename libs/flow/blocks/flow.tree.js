@@ -26,27 +26,6 @@
 		name: "flow.tree",
 		private: true,
 
-		catalog: function () {
-			return {
-				name: "flow.tree",
-				"package": "core",
-				namespace: "flow",
-				private: true,
-				icon: "mdi:file-tree-outline",
-				props: {
-					target: { label: "target", kind: "text", type: "string", description: "Tree target: flow or engine. Defaults to flow." },
-					name: { label: "name", kind: "text", type: "string", description: "Project Flow sidecar name." },
-					flowSource: { label: "flowSource", kind: "text", type: "string", description: "Flow YAML source." },
-					definition: { label: "definition", kind: "literal", type: "object", description: "Flow definition object." },
-					engineSource: { label: "engineSource", kind: "text", type: "string", description: "FlowEngine YAML source." },
-					engineQName: { label: "engineQName", kind: "text", type: "string", description: "Engine QName used for display." },
-					projectDir: { label: "projectDir", kind: "text", type: "string", description: "Optional project directory override." },
-					out: { label: "out", kind: "path", mode: "write", description: "Scope path receiving the virtual tree." }
-				},
-				description: "Describes the virtual Flow or FlowEngine tree."
-			};
-		},
-
 		displayName: function () {
 			return "describe flow tree";
 		},

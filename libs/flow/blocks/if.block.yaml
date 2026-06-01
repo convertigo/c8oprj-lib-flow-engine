@@ -1,0 +1,22 @@
+version: 1
+name: "if"
+icon: "mdi:source-branch"
+kind: "control"
+description: "Runs then when condition is truthy, else otherwise."
+props:
+  condition:
+    kind: "expression"
+    type: "boolean"
+    default: "true"
+    description: "Boolean expression deciding which branch runs."
+children:
+  - "then"
+  - "else"
+slots:
+  - name: "then"
+    label: "Then"
+  - name: "else"
+    label: "Else"
+implementation:
+  runtime: "rhino"
+  file: "if.js"

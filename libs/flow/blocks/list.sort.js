@@ -12,20 +12,6 @@
 	return {
 		name: "list.sort",
 
-		catalog: function () {
-			return {
-				name: "list.sort",
-				icon: "mdi:sort",
-				props: {
-					items: { kind: "expression", type: "array", "default": "flow.items", description: "Array expression to sort." },
-					by: { kind: "expression", type: "unknown", "default": "current", description: "Expression evaluated as the sort key for each current item." },
-					direction: { kind: "text", type: "string", "default": "asc", description: "Sort direction: asc or desc." },
-					out: { kind: "path", mode: "write", "default": "flow.sorted", description: "Scope path receiving the sorted array." }
-				},
-				description: "Sorts an array copy by a current.* expression."
-			};
-		},
-
 		displayName: function (node) {
 			var items = flowSummary.prop(node, "items") || flowSummary.prop(node, "in") || "items";
 			var by = flowSummary.prop(node, "by") === undefined ? "current" : flowSummary.prop(node, "by");

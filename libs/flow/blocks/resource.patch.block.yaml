@@ -1,0 +1,56 @@
+version: 1
+name: "resource.patch"
+private: true
+icon: "mdi:file-edit-outline"
+package: "core"
+namespace: "resource"
+description: "Applies a unified patch to a project-local Flow source resource."
+props:
+  path:
+    label: "path"
+    kind: "text"
+    type: "string"
+    description: "Project-local Flow resource path."
+  baseHash:
+    label: "baseHash"
+    kind: "text"
+    type: "string"
+    description: "Hash returned by resource.get before editing."
+  patch:
+    label: "patch"
+    kind: "text"
+    type: "string"
+    description: "Unified patch to apply."
+  unifiedDiff:
+    label: "unifiedDiff"
+    kind: "text"
+    type: "string"
+    description: "Alias for patch."
+  dryRun:
+    label: "dryRun"
+    kind: "literal"
+    type: "boolean"
+    description: "Validate without writing the file."
+  validate:
+    label: "validate"
+    kind: "literal"
+    type: "boolean"
+    description: "Validate resource syntax after patching."
+  includeContent:
+    label: "includeContent"
+    kind: "literal"
+    type: "boolean"
+    description: "Return patched content."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving patch result."
+implementation:
+  runtime: "rhino"
+  file: "resource.patch.js"

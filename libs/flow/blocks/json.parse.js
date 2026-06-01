@@ -6,18 +6,6 @@
 	return {
 		name: "json.parse",
 
-		catalog: function () {
-			return {
-				name: "json.parse",
-				icon: "mdi:code-json",
-				props: {
-					text: { label: "text", kind: "template", type: "string", "default": "{{ flow.text }}", description: "JSON text to parse." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.json", description: "Scope path receiving the parsed value." }
-				},
-				description: "Parses JSON text into a native value."
-			};
-		},
-
 		displayName: function (node) {
 			var text = flowSummary.text(prop(node, "text") || "json");
 			return flowSummary.output(node, text);

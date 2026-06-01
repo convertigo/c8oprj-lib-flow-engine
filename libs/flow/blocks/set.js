@@ -6,19 +6,6 @@
 	return {
 		name: "set",
 
-		catalog: function () {
-			return {
-				name: "set",
-				icon: "mdi:variable",
-				props: {
-					path: { label: "path", kind: "path", mode: "write", "default": "result.value", description: "Scope path receiving the value." },
-					value: { label: "value", kind: "value", type: "unknown", "default": "", description: "Value to write. Use {{ expression }} for dynamic values." }
-				},
-				description: "Writes a value to a scope path.",
-				longDescription: "Use path to choose the destination and value for the content. A value containing only {{ expression }} keeps the native expression type."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.assignment(node, "=") || flowSummary.text(prop(node, "path") || "value");
 		},

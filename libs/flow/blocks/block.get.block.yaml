@@ -1,0 +1,26 @@
+version: 1
+name: "block.get"
+private: true
+icon: "mdi:puzzle-outline"
+package: "core"
+namespace: "block"
+description: "Reads one Flow block as a logical descriptor plus implementation unit."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Flow block name."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving descriptor and implementation sources."
+implementation:
+  runtime: "rhino"
+  file: "block.get.js"

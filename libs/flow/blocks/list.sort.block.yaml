@@ -1,0 +1,28 @@
+version: 1
+name: "list.sort"
+icon: "mdi:sort"
+description: "Sorts an array copy by a current.* expression."
+props:
+  items:
+    kind: "expression"
+    type: "array"
+    default: "flow.items"
+    description: "Array expression to sort."
+  by:
+    kind: "expression"
+    type: "unknown"
+    default: "current"
+    description: "Expression evaluated as the sort key for each current item."
+  direction:
+    kind: "text"
+    type: "string"
+    default: "asc"
+    description: "Sort direction: asc or desc."
+  out:
+    kind: "path"
+    mode: "write"
+    default: "flow.sorted"
+    description: "Scope path receiving the sorted array."
+implementation:
+  runtime: "rhino"
+  file: "list.sort.js"

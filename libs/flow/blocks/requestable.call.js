@@ -154,36 +154,6 @@
 	return {
 		name: "requestable.call",
 
-		catalog: function () {
-			return {
-				name: "requestable.call",
-				icon: "mdi:link-variant",
-				props: {
-					requestable: {
-						label: "requestable",
-						kind: "requestable",
-						type: "requestable",
-						"default": "",
-						description: "Target requestable: project.sequence, project.flow, project.connector.transaction, .sequence or .connector.transaction."
-					},
-					input: {
-						label: "input",
-						kind: "template",
-						type: "object",
-						description: "Input variables passed to the requestable."
-					},
-					out: {
-						label: "out",
-						kind: "path",
-						mode: "write",
-						"default": "flow.requestable",
-						description: "Scope path receiving the requestable JSON response."
-					}
-				},
-				description: "Calls a Convertigo sequence, Flow or transaction through the regular requestable path."
-			};
-		},
-
 		displayName: function (node) {
 			return flowSummary.output(node, flowSummary.text(prop(node, "requestable") || "requestable"));
 		},

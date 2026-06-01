@@ -1,0 +1,21 @@
+version: 1
+name: "flow.list"
+private: true
+icon: "mdi:sitemap-outline"
+package: "core"
+namespace: "flow"
+description: "Lists project Flow sidecars."
+props:
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving project Flow sidecars."
+implementation:
+  runtime: "rhino"
+  file: "flow.list.js"

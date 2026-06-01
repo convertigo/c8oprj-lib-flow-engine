@@ -1,0 +1,31 @@
+version: 1
+name: "flow.analyze"
+private: true
+icon: "mdi:chart-timeline-variant"
+package: "core"
+namespace: "flow"
+description: "Analyzes a Flow source or definition."
+props:
+  flowSource:
+    label: "flowSource"
+    kind: "text"
+    type: "string"
+    description: "Flow YAML source to analyze."
+  definition:
+    label: "definition"
+    kind: "literal"
+    type: "object"
+    description: "Flow definition object to analyze."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving reads, writes and nodes."
+implementation:
+  runtime: "rhino"
+  file: "flow.analyze.js"

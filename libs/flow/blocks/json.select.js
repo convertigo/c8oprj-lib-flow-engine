@@ -6,19 +6,6 @@
 	return {
 		name: "json.select",
 
-		catalog: function () {
-			return {
-				name: "json.select",
-				icon: "mdi:select-search",
-				props: {
-					source: { label: "source", kind: "expression", type: "object", "default": "flow.source", description: "Object expression used as source." },
-					path: { label: "path", kind: "text", type: "string", "default": "", description: "Dot path to read inside the source object." },
-					out: { label: "out", kind: "path", mode: "write", "default": "flow.value", description: "Scope path receiving the selected value." }
-				},
-				description: "Reads a nested value from a JSON object."
-			};
-		},
-
 		displayName: function (node) {
 			var source = prop(node, "source") || "source";
 			var path = prop(node, "path");

@@ -1,0 +1,26 @@
+version: 1
+name: "json.stringify"
+icon: "mdi:code-json"
+description: "Serializes a native value as JSON text."
+props:
+  value:
+    label: "value"
+    kind: "value"
+    type: "unknown"
+    default: "{{ flow.value }}"
+    description: "Value to serialize as JSON."
+  pretty:
+    label: "pretty"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Write indented JSON when true."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.text"
+    description: "Scope path receiving the JSON text."
+implementation:
+  runtime: "rhino"
+  file: "json.stringify.js"

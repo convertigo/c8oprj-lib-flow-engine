@@ -5058,7 +5058,8 @@
 				path + ".implementation.nodes", blocks, ["block:" + block.name]);
 			return;
 		}
-		var jsSource = sourceDefinitionForFile(descriptor.file, "javascript");
+		var jsFile = block && block.__flowImplementationFile ? block.__flowImplementationFile : descriptor.implementationFile || descriptor.file;
+		var jsSource = sourceDefinitionForFile(jsFile, "javascript");
 		parent.children.push(virtualNode("implementation", "blockImplementation", "javascript",
 			path + ".implementation", "Implementation",
 			compact(jsSource), compact(jsSource), "mdi:language-javascript"));
