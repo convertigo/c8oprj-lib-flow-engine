@@ -35,11 +35,11 @@ libs/flows/<FlowName>.flow.yaml
 The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
 
 The runtime core is intentionally small. Concrete behavior is implemented by
-native JavaScript blocks and composite graph blocks in:
+block descriptors in:
 
 ```text
-libs/flow/blocks/*.js
 libs/flow/blocks/*.block.yaml
+libs/flow/blocks/*.js
 ```
 
 Control flow is also implemented as blocks, for example `if` and `forEach`.
@@ -47,17 +47,44 @@ The `flow.call` block calls another Flow sidecar inside the Flow engine. This is
 the preferred low-overhead composition path when a project wants subflows
 without going through Convertigo requestable/XML execution.
 
-Composite graph blocks are stored as:
+`*.block.yaml` is the canonical block source format. It defines the visible
+contract: name, props, icons, documentation and implementation runtime. A
+flow-backed block stores its implementation as graph nodes:
 
-```text
-<current-project>/libs/flow/blocks/<blockName>.block.yaml
+```yaml
+version: 1
+name: demo.decorate
+props:
+  input:
+    kind: value
+implementation:
+  runtime: flow
+nodes:
+  - block: set
+    path: result.value
+    value: "{{ props.input }}"
 ```
 
-They are regular catalog blocks: they define `props`, icons, documentation and
-an internal `nodes` implementation. At runtime the engine exposes evaluated
-instance properties through `props` and a private mutable `local` scope for the
-block implementation. An internal `return` stops only the composite block, then
-the parent Flow continues normally.
+A Rhino-backed block keeps the same YAML descriptor and points to a peer
+implementation file:
+
+```yaml
+version: 1
+name: demo.native
+implementation:
+  runtime: rhino
+  file: demo.native.js
+```
+
+When `<blockName>.block.yaml` and `<blockName>.js` both exist, the engine loads
+the YAML descriptor and does not load the JS file as a second standalone block.
+This keeps metadata, docs and future implementation kinds (`java`, `kotlin`,
+etc.) in one stable shape while preserving a small Rhino escape hatch.
+
+Flow-backed blocks are regular catalog blocks. At runtime the engine exposes
+evaluated instance properties through `props` and a private mutable `local`
+scope for the block implementation. An internal `return` stops only the
+composite block, then the parent Flow continues normally.
 
 The `fragment.use` block expands a reusable graph inline from:
 
@@ -75,10 +102,10 @@ At runtime, the engine loads blocks and optional shared helper libraries from
 two places:
 
 ```text
-lib_flow_engine/libs/flow/blocks/*.js      # core blocks
-lib_flow_engine/libs/flow/blocks/*.block.yaml # core composite blocks
-<current-project>/libs/flow/blocks/*.js   # project-local blocks
-<current-project>/libs/flow/blocks/*.block.yaml # project-local composite blocks
+lib_flow_engine/libs/flow/blocks/*.block.yaml # core block descriptors
+lib_flow_engine/libs/flow/blocks/*.js      # legacy/native core blocks or descriptor implementations
+<current-project>/libs/flow/blocks/*.block.yaml # project-local block descriptors
+<current-project>/libs/flow/blocks/*.js   # legacy/native project blocks or descriptor implementations
 <current-project>/libs/flow/fragments/*.fragment.yaml # project-local fragments
 lib_flow_engine/libs/flow/lib/*.js         # core helper libraries
 <current-project>/libs/flow/lib/*.js      # project-local helper libraries
@@ -171,13 +198,17 @@ block, often `private: true`, with a tiny catalog descriptor and optional
 advanced migration cases because it hides intent, weakens schemas and encourages
 SequenceJS-style low-code bypasses.
 
-Custom block sources are Rhino ES6 JavaScript evaluated inside the Convertigo
-JVM. They may use Java classes through `Packages`, for example for integration
-adapters, but they must not assume Node.js APIs such as `require`, npm modules
-or browser globals. The normal source shape is an IIFE returning `{ name,
-catalog, analyze, run }`; `ctx.props(node)`, `ctx.template(value)`,
-`ctx.expr(value)`, `ctx.read(path)`, `ctx.write(path,value)` and
-`ctx.callBlock(name, props)` are the small runtime API.
+Custom block metadata should live in `*.block.yaml`. Rhino ES6 JavaScript is
+only the implementation runtime when a block needs JVM/Java integration or
+algorithmic code. It may use Java classes through `Packages`, for example for
+integration adapters, but it must not assume Node.js APIs such as `require`,
+npm modules or browser globals. A descriptor-backed Rhino implementation is an
+IIFE returning `run`, and optionally `displayName` / `analyze`; `ctx.props(node)`,
+`ctx.template(value)`, `ctx.expr(value)`, `ctx.read(path)`,
+`ctx.write(path,value)` and `ctx.callBlock(name, props)` are the small runtime
+API. Legacy standalone JS blocks returning `{ name, catalog, analyze, run }`
+are still supported during the POC, but new blocks should prefer the canonical
+descriptor form.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored under `libs/flow/types`: docs,

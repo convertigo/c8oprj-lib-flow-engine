@@ -1843,12 +1843,23 @@
 		files.sort(function (a, b) {
 			return String(a.getName()).localeCompare(String(b.getName()));
 		});
+		var descriptorNames = {};
+		files.forEach(function (file) {
+			var filename = String(file.getName());
+			if (file.isFile() && filename.endsWith(".block.yaml")) {
+				descriptorNames[filename.substring(0, filename.length - ".block.yaml".length)] = true;
+			}
+		});
 		files.forEach(function (file) {
 			if (!file.isFile()) {
 				return;
 			}
 			var filename = String(file.getName());
 			if (filename.endsWith(".js")) {
+				var jsName = filename.substring(0, filename.length - ".js".length);
+				if (descriptorNames[jsName]) {
+					return;
+				}
 				loadBlockFile(blocks, file, origin);
 			} else if (filename.endsWith(".block.yaml")) {
 				loadGraphBlockFile(blocks, file, origin);
@@ -2011,18 +2022,102 @@
 		return [];
 	}
 
+	function blockImplementation(definition) {
+		var implementation = definition.implementation || {};
+		if (typeof implementation === "string") {
+			implementation = { runtime: implementation };
+		}
+		implementation = normalizeTree(implementation || {});
+		var runtime = String(implementation.runtime || implementation.kind || "").trim();
+		if (!runtime) {
+			runtime = definition.nodes ? "flow" : "rhino";
+		}
+		implementation.runtime = runtime;
+		return implementation;
+	}
+
+	function blockImplementationFile(definition, file, config) {
+		config = config || blockImplementation(definition);
+		var filename = String(config.file || config.source || "").trim();
+		if (!filename) {
+			raise("MISSING_BLOCK_IMPLEMENTATION", "Block \"" + definition.name + "\" needs an implementation file.",
+				null, "Use implementation.file in the block YAML.");
+		}
+		var implementationFile = new File(filename);
+		if (!implementationFile.isAbsolute()) {
+			implementationFile = new File(file.getParentFile(), filename);
+		}
+		if (!implementationFile.isFile()) {
+			raise("UNKNOWN_BLOCK_IMPLEMENTATION", "Unknown block implementation file: " + implementationFile.getAbsolutePath());
+		}
+		return implementationFile;
+	}
+
+	function loadBlockScript(file, label) {
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var script = eval(source);
+		if (!script || typeof script !== "object") {
+			raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid " + label + ": " + file.getAbsolutePath(),
+				null, "The script must evaluate to an object.");
+		}
+		script.__flowFile = String(file.getAbsolutePath());
+		return script;
+	}
+
+	function loadRhinoBlockImplementation(definition, file) {
+		var implementation = blockImplementation(definition);
+		var scriptFile = blockImplementationFile(definition, file, implementation);
+		var script = loadBlockScript(scriptFile, "block implementation");
+		var entry = String(implementation.entry || "run");
+		if (typeof script[entry] !== "function") {
+			raise("INVALID_BLOCK_IMPLEMENTATION", "Block implementation has no " + entry + "(ctx, node): " + scriptFile.getAbsolutePath());
+		}
+		return {
+			file: scriptFile,
+			script: script,
+			entry: entry
+		};
+	}
+
+	function loadBlockHooks(definition, file) {
+		var hooks = definition.hooks;
+		if (!hooks) {
+			return {};
+		}
+		if (typeof hooks === "string") {
+			hooks = { file: hooks };
+		}
+		hooks = normalizeTree(hooks);
+		if (!hooks.file) {
+			return hooks;
+		}
+		var hookFile = blockImplementationFile(definition, file, hooks);
+		var script = loadBlockScript(hookFile, "block hooks");
+		Object.keys(hooks).forEach(function (key) {
+			if (key !== "file" && script[key] === undefined) {
+				script[key] = hooks[key];
+			}
+		});
+		return script;
+	}
+
 	function graphBlockCatalog(definition) {
 		var props = normalizeGraphBlockProps(definition);
 		var slots = normalizeGraphBlockSlots(definition);
+		var implementation = blockImplementation(definition);
 		var descriptor = {
 			name: String(definition.name || ""),
 			icon: definition.icon || "mdi:puzzle-outline",
-			kind: definition.kind || "composite",
-			implementation: "flow",
+			kind: definition.kind || (implementation.runtime === "flow" ? "composite" : "native"),
+			implementation: implementation.runtime,
+			runtime: implementation.runtime,
 			props: props,
 			description: definition.description || "Composite Flow block implemented with child nodes.",
 			longDescription: definition.longDescription || definition.documentation || ""
 		};
+		if (implementation.file) {
+			descriptor.implementationFile = implementation.file;
+		}
 		if (slots.length > 0) {
 			descriptor.slots = slots;
 		}
@@ -2045,11 +2140,15 @@
 		if (String(definition.name) !== String(name)) {
 			raise("BLOCK_NAME_MISMATCH", "Composite block source declares \"" + definition.name + "\" instead of \"" + name + "\".");
 		}
-		if (!definition.nodes) {
+		var implementation = blockImplementation(definition);
+		if (implementation.runtime === "flow" && !definition.nodes) {
 			definition.nodes = [];
 		}
-		if (Object.prototype.toString.call(definition.nodes) !== "[object Array]") {
+		if (implementation.runtime === "flow" && Object.prototype.toString.call(definition.nodes) !== "[object Array]") {
 			raise("INVALID_GRAPH_BLOCK", "Composite block \"" + name + "\" must define a nodes array.");
+		}
+		if (implementation.runtime === "rhino" && !implementation.file) {
+			raise("INVALID_GRAPH_BLOCK", "Rhino block \"" + name + "\" must define implementation.file.");
 		}
 		normalizeGraphBlockProps(definition);
 		return definition;
@@ -2151,31 +2250,57 @@
 
 	function graphBlockFromDefinition(definition, file, origin) {
 		var catalog = graphBlockCatalog(definition);
+		var implementation = blockImplementation(definition);
+		var runtime = implementation.runtime;
+		var rhino = runtime === "rhino" ? loadRhinoBlockImplementation(definition, file) : null;
+		var hooks = loadBlockHooks(definition, file);
 		var block = {
 			name: String(definition.name),
 			"private": definition["private"] === true,
-			__graphDefinition: definition,
+			__blockDefinition: definition,
+			__blockImplementationRuntime: runtime,
 			catalog: function () {
 				return normalizeTree(catalog);
 			},
 			displayName: function (node) {
+				if (typeof hooks.displayName === "function") {
+					return hooks.displayName(node);
+				}
+				if (rhino && typeof rhino.script.displayName === "function") {
+					return rhino.script.displayName(node);
+				}
 				return graphBlockDisplayName(definition, node);
 			},
 			analyze: function (ctx, node) {
-				if (ctx.withGraphBlock) {
+				if (typeof hooks.analyze === "function") {
+					return hooks.analyze(ctx, node);
+				}
+				if (rhino && typeof rhino.script.analyze === "function") {
+					return rhino.script.analyze(ctx, node);
+				}
+				if (runtime === "flow" && ctx.withGraphBlock) {
 					ctx.withGraphBlock(node, block, function () {
 						ctx.visitNodes(definition.nodes || []);
 					});
-				} else {
+				} else if (runtime === "flow") {
 					ctx.visitNodes(definition.nodes || []);
 				}
 			},
 			run: function (ctx, node) {
+				if (rhino) {
+					return rhino.script[rhino.entry](ctx, node);
+				}
 				return runGraphBlock(ctx, node, block);
 			}
 		};
+		if (runtime === "flow") {
+			block.__graphDefinition = definition;
+		}
 		block.__flowOrigin = origin;
 		block.__flowFile = String(file.getAbsolutePath());
+		if (rhino) {
+			block.__flowImplementationFile = String(rhino.file.getAbsolutePath());
+		}
 		return block;
 	}
 

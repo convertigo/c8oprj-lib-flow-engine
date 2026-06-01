@@ -201,6 +201,72 @@ var docResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 })));
 assertTrue(docResourceGet.content.indexOf("Flow documentation resource.") !== -1,
 	"resourceGet did not read project Flow documentation resources");
+var canonicalYaml = [
+	"version: 1",
+	"name: canonical.echo",
+	"icon: mdi:puzzle-outline",
+	"description: Canonical YAML descriptor backed by Rhino.",
+	"props:",
+	"  value:",
+	"    kind: value",
+	"    type: unknown",
+	"    description: Value returned by the block.",
+	"  out:",
+	"    kind: path",
+	"    mode: write",
+	"    description: Scope path receiving the value.",
+	"implementation:",
+	"  runtime: rhino",
+	"  file: canonical.echo.js",
+	""
+].join("\n");
+var canonicalJs = [
+	"(function () {",
+	"\treturn {",
+	"\t\tname: \"canonical.echo\",",
+	"\t\tdisplayName: function (node) {",
+	"\t\t\tvar props = node.props || node;",
+	"\t\t\treturn \"canonical -> \" + (props.out || \"result.value\");",
+	"\t\t},",
+	"\t\trun: function (ctx, node) {",
+	"\t\t\tvar props = ctx.props(node);",
+	"\t\t\tvar value = ctx.template(props.value);",
+	"\t\t\tctx.write(props.out || \"result.value\", value);",
+	"\t\t\treturn value;",
+	"\t\t}",
+	"\t};",
+	"}())",
+	""
+].join("\n");
+var canonicalBlocksDir = new java.io.File(projectDirFile, "libs/flow/blocks");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(canonicalBlocksDir, "canonical.echo.block.yaml"), canonicalYaml, "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(canonicalBlocksDir, "canonical.echo.js"), canonicalJs, "UTF-8");
+var canonicalCatalog = JSON.parse(engine.catalog(JSON.stringify({ detail: "compact" })));
+var canonicalBlock = null;
+canonicalCatalog.blocks.forEach(function (block) {
+	if (block.name === "canonical.echo") {
+		canonicalBlock = block;
+	}
+});
+assertTrue(canonicalBlock && canonicalBlock.implementation === "rhino" &&
+	canonicalBlock.props.value.kind === "value",
+	"catalog did not expose canonical YAML metadata for a Rhino block");
+var canonicalRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: echo",
+		"    block: canonical.echo",
+		"    value: Hello canonical",
+		"    out: result.message",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(canonicalRun.result.message === "Hello canonical",
+	"canonical YAML Rhino block did not execute through its implementation file");
 var callBlockSource = [
 	"(function () {",
 	"\treturn {",

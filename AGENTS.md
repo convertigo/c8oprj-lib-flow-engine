@@ -114,19 +114,41 @@ iterator blocks like `file.forEachLine` consuming the handle and exposing
 Blocks are loaded from the core engine first, then from the current project:
 
 ```text
-lib_flow_engine/libs/flow/blocks/*.js
 lib_flow_engine/libs/flow/blocks/*.block.yaml
-<current-project>/libs/flow/blocks/*.js
+lib_flow_engine/libs/flow/blocks/*.js
 <current-project>/libs/flow/blocks/*.block.yaml
+<current-project>/libs/flow/blocks/*.js
 ```
+
+Prefer `*.block.yaml` for new blocks. It is the canonical descriptor format for
+both graph-backed and native-backed blocks:
+
+```yaml
+implementation:
+  runtime: flow
+nodes: []
+```
+
+or:
+
+```yaml
+implementation:
+  runtime: rhino
+  file: my.block.js
+```
+
+When a peer `my.block.yaml` / `my.block.js` pair exists, the engine loads the
+YAML descriptor and treats the JS file as that block's implementation instead
+of exposing it as another standalone block. Use this shape so metadata,
+properties, docs and future runtimes stay uniform.
 
 Do not silently override core blocks from a project. Use a project-specific
 name, for example `weather.hotCities`, when adding custom vocabulary.
 
-Use a composite graph block when a reusable behavior is naturally expressed as
+Use a `runtime: flow` block when a reusable behavior is naturally expressed as
 existing blocks. It keeps the item in the palette/catalog while making the
 implementation visible as nodes. Use `props.*` for evaluated instance
-properties and `local.*` for implementation-private state. Use a native JS block
+properties and `local.*` for implementation-private state. Use `runtime: rhino`
 only when the behavior needs Rhino/Java code or would be awkward as a graph.
 
 Keep the standard library small. Put only generally useful runtime blocks in
@@ -167,7 +189,8 @@ during the POC. Put project-level bindings and config defaults there. Keep
 Flow-level overrides in the Flow sidecar when a specific Flow must deviate from
 the project default.
 
-Each block module is an IIFE returning:
+Legacy standalone JS blocks are still accepted during the POC. They are IIFEs
+returning:
 
 ```javascript
 (function () {
