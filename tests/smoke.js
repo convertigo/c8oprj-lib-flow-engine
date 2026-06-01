@@ -909,6 +909,82 @@ assertTrue(forbiddenHandleResultRun.ok === false &&
 	forbiddenHandleResultRun.error.code === "RUNTIME_HANDLE_IN_RESULT",
 	"Runtime handles should be rejected from result payloads");
 
+var readerFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: initReadLines",
+	"    block: set",
+	"    path: result.lines",
+	"    value: []",
+	"  - id: readFile",
+	"    block: file.withReader",
+	"    path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	"    as: local.reader",
+	"    nodes:",
+	"      - id: eachLine",
+	"        block: file.forEachLine",
+	"        reader: local.reader",
+	"        out: result.readStats",
+	"        nodes:",
+	"          - id: pushReadLine",
+	"            block: json.push",
+	"            path: result.lines",
+	"            value: \"{{ current }}\"",
+	""
+].join("\n");
+var readerRun = JSON.parse(engine.run(JSON.stringify({ flowSource: readerFlowSource })));
+print(JSON.stringify(readerRun));
+assertTrue(readerRun.ok === true &&
+	readerRun.result.lines.join(",") === "Alpha,Beta" &&
+	readerRun.result.readStats.count === 2 &&
+	readerRun.trace.nodes.some(function (entry) {
+		return entry.id === "readFile" &&
+			entry.result &&
+			entry.result.handle === "file.reader" &&
+			entry.result.state === "closed";
+	}),
+	"file.withReader/file.forEachLine did not read lines and close the runtime handle");
+var readerContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: readerFlowSource,
+	node: "pushReadLine",
+	include: ["current"],
+	detail: "normal"
+})));
+print(JSON.stringify(readerContext));
+assertTrue(readerContext.ok === true &&
+	readerContext.scopes.current.paths.length === 1 &&
+	readerContext.scopes.current.paths[0].path === "current" &&
+	readerContext.scopes.current.paths[0].type === "string",
+	"Flow context did not expose current as string inside file.forEachLine");
+
+var readLineFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: readFile",
+	"    block: file.withReader",
+	"    path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	"    as: local.reader",
+	"    nodes:",
+	"      - id: firstLine",
+	"        block: file.readLine",
+	"        reader: local.reader",
+	"        line: result.first",
+	"        eof: result.firstEof",
+	"      - id: secondLine",
+	"        block: file.readLine",
+	"        reader: local.reader",
+	"        out: result.second",
+	""
+].join("\n");
+var readLineRun = JSON.parse(engine.run(JSON.stringify({ flowSource: readLineFlowSource })));
+print(JSON.stringify(readLineRun));
+assertTrue(readLineRun.ok === true &&
+	readLineRun.result.first === "Alpha" &&
+	readLineRun.result.firstEof === false &&
+	readLineRun.result.second.line === "Beta" &&
+	readLineRun.result.second.eof === false,
+	"file.readLine did not read individual lines from the reader handle");
+
 var smokeFlowsDir = new java.io.File(projectDirFile, "libs/flows");
 smokeFlowsDir.mkdirs();
 var namedGreetingFlowSource = [

@@ -297,6 +297,23 @@ child nodes, then closes the handle in a `finally`-style cleanup. Explicit
 should prefer the scoped form so authors and agents do not need to manage
 cleanup manually.
 
+The same pattern works for readers and other Java-backed resources. For
+example, `file.withReader` exposes a `handle<file.reader>` and `file.forEachLine`
+iterates over it while setting `current` to the current line:
+
+```yaml
+- block: file.withReader
+  path: flow.inputPath
+  as: local.reader
+  nodes:
+    - block: file.forEachLine
+      reader: local.reader
+      nodes:
+        - block: json.push
+          path: result.lines
+          value: "{{ current }}"
+```
+
 Use `requestable.call` when the target must go through the regular Convertigo
 requestable path, like the SDK does. It accepts a sequence, Flow or transaction
 target and unwraps the historical XML-to-JSON `document` wrapper so Flow authors

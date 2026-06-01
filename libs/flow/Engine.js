@@ -3736,6 +3736,11 @@
 							ctx.addPath("current");
 							return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
 						});
+					} else if (name === "file.forEachLine" && slot.name === "nodes") {
+						childResult = ctx.withCurrentSource({ path: "file.line", schema: { type: "string" } }, function () {
+							ctx.addPath("current");
+							return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
+						});
 					} else {
 						childResult = contextWalkNodes(ctx, slot.nodes || [], request, childPath);
 					}

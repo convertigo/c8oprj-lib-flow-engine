@@ -107,7 +107,9 @@ responses. Traces and pickers must show only a serializable summary.
 Prefer scoped `with*` blocks for handles that require cleanup, like Java
 try-with-resources. A block such as `file.withWriter` should open the handle,
 write it to an `as` path, run child nodes, then close it in a finally-style
-cleanup. Only add explicit `open` / `close` blocks for advanced cases.
+cleanup. A block such as `file.withReader` should follow the same shape, with
+iterator blocks like `file.forEachLine` consuming the handle and exposing
+`current`. Only add explicit `open` / `close` blocks for advanced cases.
 
 Blocks are loaded from the core engine first, then from the current project:
 
