@@ -1246,6 +1246,15 @@
 		return blockName + ".block.yaml";
 	}
 
+	function blockFlowFileName(name) {
+		var blockName = String(name || "").trim();
+		if (!blockName.match(/^[A-Za-z0-9_.-]+$/)) {
+			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
+				null, "Use letters, digits, dot, underscore or dash.");
+		}
+		return blockName + ".flow.yaml";
+	}
+
 	function typeFileName(name) {
 		var typeName = String(name || "").trim();
 		if (!typeName.match(/^[A-Za-z0-9_.-]+$/)) {
@@ -1445,7 +1454,7 @@
 	function isAllowedResourcePath(path) {
 		var ext = resourceExtension(path);
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
-			return ext === "js" || String(path).endsWith(".block.yaml");
+			return ext === "js" || String(path).endsWith(".block.yaml") || String(path).endsWith(".flow.yaml");
 		}
 		if (String(path).indexOf("libs/flow/fragments/") === 0) {
 			return String(path).endsWith(".fragment.yaml");
@@ -1467,7 +1476,13 @@
 
 	function resourceKind(path) {
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
-			return String(path).endsWith(".block.yaml") ? "graphBlock" : "block";
+			if (String(path).endsWith(".block.yaml")) {
+				return "graphBlock";
+			}
+			if (String(path).endsWith(".flow.yaml")) {
+				return "blockFlow";
+			}
+			return "block";
 		}
 		if (String(path).indexOf("libs/flow/fragments/") === 0) {
 			return "fragment";
@@ -1496,6 +1511,9 @@
 		if (filename.endsWith(".block.yaml")) {
 			return filename.substring(0, filename.length - ".block.yaml".length);
 		}
+		if (filename.endsWith(".flow.yaml")) {
+			return filename.substring(0, filename.length - ".flow.yaml".length);
+		}
 		if (filename.endsWith(".js")) {
 			return filename.substring(0, filename.length - 3);
 		}
@@ -1511,7 +1529,7 @@
 		var normalized = normalizeResourcePath(path);
 		if (!isAllowedResourcePath(normalized)) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.js, libs/flow/blocks/**/*.block.yaml, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/blocks/**/*.{js,flow.yaml,block.yaml}, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.js, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new File(base, normalized);
 		var basePath = canonicalPath(base);
@@ -1786,6 +1804,15 @@
 					null, "Create or patch libs/flow/blocks/" + blockDescriptorFileName(resourceName(path)) + " first.");
 			}
 			validateBlockImplementationSource(resourceName(path), content);
+		} else if (kind === "blockFlow") {
+			var flowDescriptorFile = projectBlocksDir()
+				? new File(projectBlocksDir(), blockDescriptorFileName(resourceName(path)))
+				: null;
+			if (!flowDescriptorFile || !flowDescriptorFile.isFile()) {
+				raise("BLOCK_DESCRIPTOR_REQUIRED", "Flow block implementation resources require a peer *.block.yaml descriptor: " + path,
+					null, "Create or patch libs/flow/blocks/" + blockDescriptorFileName(resourceName(path)) + " first.");
+			}
+			validateBlockFlowImplementationSource(resourceName(path), content);
 		} else if (kind === "graphBlock") {
 			validateGraphBlockSource(resourceName(path), content);
 		} else if (kind === "fragment") {
@@ -2062,6 +2089,34 @@
 		};
 	}
 
+	function validateBlockFlowImplementationDefinition(name, definition) {
+		definition = normalizeTree(definition || {});
+		if (!definition.version) {
+			definition.version = 1;
+		}
+		if (!definition.nodes) {
+			definition.nodes = [];
+		}
+		if (Object.prototype.toString.call(definition.nodes) !== "[object Array]") {
+			raise("INVALID_BLOCK_IMPLEMENTATION", "Flow block implementation \"" + name + "\" must define a nodes array.");
+		}
+		return definition;
+	}
+
+	function validateBlockFlowImplementationSource(name, source) {
+		return validateBlockFlowImplementationDefinition(name, parseYamlSource(source, "version: 1\nnodes: []\n"));
+	}
+
+	function loadFlowBlockImplementation(definition, file) {
+		var implementation = blockImplementation(definition);
+		var flowFile = blockImplementationFile(definition, file, implementation);
+		var source = String(FileUtils.readFileToString(flowFile, "UTF-8"));
+		return {
+			file: flowFile,
+			definition: validateBlockFlowImplementationSource(definition.name, source)
+		};
+	}
+
 	function loadBlockHooks(definition, file) {
 		var hooks = definition.hooks;
 		if (!hooks) {
@@ -2124,11 +2179,12 @@
 			raise("BLOCK_NAME_MISMATCH", "Composite block source declares \"" + definition.name + "\" instead of \"" + name + "\".");
 		}
 		var implementation = blockImplementation(definition);
-		if (implementation.runtime === "flow" && !definition.nodes) {
-			definition.nodes = [];
+		if (implementation.runtime === "flow" && definition.nodes !== undefined) {
+			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must move nodes to implementation.file.",
+				null, "Keep *.block.yaml as the contract and put executable nodes in a separate *.flow.yaml file.");
 		}
-		if (implementation.runtime === "flow" && Object.prototype.toString.call(definition.nodes) !== "[object Array]") {
-			raise("INVALID_GRAPH_BLOCK", "Composite block \"" + name + "\" must define a nodes array.");
+		if (implementation.runtime === "flow" && !implementation.file) {
+			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must define implementation.file.");
 		}
 		if (implementation.runtime === "rhino" && !implementation.file) {
 			raise("INVALID_GRAPH_BLOCK", "Rhino block \"" + name + "\" must define implementation.file.");
@@ -2236,6 +2292,7 @@
 		var implementation = blockImplementation(definition);
 		var runtime = implementation.runtime;
 		var rhino = runtime === "rhino" ? loadRhinoBlockImplementation(definition, file) : null;
+		var flow = runtime === "flow" ? loadFlowBlockImplementation(definition, file) : null;
 		var hooks = loadBlockHooks(definition, file);
 		var block = {
 			name: String(definition.name),
@@ -2263,10 +2320,10 @@
 				}
 				if (runtime === "flow" && ctx.withGraphBlock) {
 					ctx.withGraphBlock(node, block, function () {
-						ctx.visitNodes(definition.nodes || []);
+						ctx.visitNodes(block.__graphDefinition.nodes || []);
 					});
 				} else if (runtime === "flow") {
-					ctx.visitNodes(definition.nodes || []);
+					ctx.visitNodes(block.__graphDefinition.nodes || []);
 				}
 			},
 			run: function (ctx, node) {
@@ -2276,13 +2333,15 @@
 				return runGraphBlock(ctx, node, block);
 			}
 		};
-		if (runtime === "flow") {
-			block.__graphDefinition = definition;
+		if (flow) {
+			block.__graphDefinition = flow.definition;
 		}
 		block.__flowOrigin = origin;
 		block.__flowFile = String(file.getAbsolutePath());
 		if (rhino) {
 			block.__flowImplementationFile = String(rhino.file.getAbsolutePath());
+		} else if (flow) {
+			block.__flowImplementationFile = String(flow.file.getAbsolutePath());
 		}
 		return block;
 	}
@@ -2329,7 +2388,7 @@
 				raise("BLOCK_DESCRIPTOR_REQUIRED", "Block \"" + name + "\" needs descriptorSource or descriptor with implementationSource.",
 					null, "Define the contract in *.block.yaml and keep JS for implementation only.");
 			}
-			definition = { version: 1, name: String(name), implementation: { runtime: "flow" }, nodes: [] };
+			definition = { version: 1, name: String(name), implementation: { runtime: "flow", file: blockFlowFileName(name) } };
 		}
 		definition.name = String(name);
 		if (definition.version === undefined) {
@@ -2339,8 +2398,8 @@
 		if (request.runtime && !hasDefinition) {
 			implementation.runtime = String(request.runtime);
 		}
-		if (implementation.runtime !== "flow" && !implementation.file) {
-			implementation.file = blockFileName(name);
+		if (!implementation.file) {
+			implementation.file = implementation.runtime === "flow" ? blockFlowFileName(name) : blockFileName(name);
 		}
 		definition.implementation = implementation;
 		return validateGraphBlockDefinition(name, definition);
@@ -2348,12 +2407,10 @@
 
 	function implementationTargetFile(descriptorFile, definition) {
 		var implementation = blockImplementation(definition);
-		if (implementation.runtime === "flow") {
-			return null;
-		}
-		var file = new File(String(implementation.file || blockFileName(definition.name)));
+		var defaultFile = implementation.runtime === "flow" ? blockFlowFileName(definition.name) : blockFileName(definition.name);
+		var file = new File(String(implementation.file || defaultFile));
 		if (!file.isAbsolute()) {
-			file = new File(descriptorFile.getParentFile(), String(implementation.file || blockFileName(definition.name)));
+			file = new File(descriptorFile.getParentFile(), String(implementation.file || defaultFile));
 		}
 		return file;
 	}
@@ -2378,15 +2435,20 @@
 		var implementation = blockImplementation(definition);
 		var implementationFile = implementationTargetFile(descriptorFile, definition);
 		var implementationSource = request.implementationSource;
-		if (implementation.runtime !== "flow") {
-			if (implementationSource === undefined || implementationSource === null || String(implementationSource).trim() === "") {
-				raise("MISSING_BLOCK_IMPLEMENTATION", "Block \"" + name + "\" needs implementationSource.",
-					null, "Pass implementationSource for descriptor-backed Rhino blocks.");
-			}
-			if (implementationFile && implementationFile.isFile() && overwrite !== true) {
-				raise("BLOCK_ALREADY_EXISTS", "Block implementation already exists: " + implementationFile.getAbsolutePath(),
-					null, "Pass overwrite=true to replace it explicitly.");
-			}
+		if (implementation.runtime === "flow" && (implementationSource === undefined || implementationSource === null)) {
+			implementationSource = "version: 1\nnodes: []\n";
+		}
+		if (implementationSource === undefined || implementationSource === null || String(implementationSource).trim() === "") {
+			raise("MISSING_BLOCK_IMPLEMENTATION", "Block \"" + name + "\" needs implementationSource.",
+				null, "Pass Flow YAML for runtime=flow or Rhino ES6 source for runtime=rhino.");
+		}
+		if (implementationFile && implementationFile.isFile() && overwrite !== true) {
+			raise("BLOCK_ALREADY_EXISTS", "Block implementation already exists: " + implementationFile.getAbsolutePath(),
+				null, "Pass overwrite=true to replace it explicitly.");
+		}
+		if (implementation.runtime === "flow") {
+			validateBlockFlowImplementationSource(name, implementationSource);
+		} else {
 			validateBlockImplementationSource(name, implementationSource);
 		}
 		descriptorFile.getParentFile().mkdirs();
@@ -2423,7 +2485,12 @@
 		var definition = validateGraphBlockSource(name, descriptorSource);
 		var implementationFile = implementationTargetFile(descriptorFile, definition);
 		if (hasImplementation && implementationFile) {
-			validateBlockImplementationSource(name, request.implementationSource);
+			var implementation = blockImplementation(definition);
+			if (implementation.runtime === "flow") {
+				validateBlockFlowImplementationSource(name, request.implementationSource);
+			} else {
+				validateBlockImplementationSource(name, request.implementationSource);
+			}
 			FileUtils.writeStringToFile(implementationFile, String(request.implementationSource), "UTF-8");
 		}
 		if (hasDescriptor) {
@@ -2447,7 +2514,10 @@
 		definition.name = toName;
 		var implementation = blockImplementation(definition);
 		var implementationSource = sourceInfo.implementationSource;
-		if (implementation.runtime !== "flow") {
+		if (implementation.runtime === "flow") {
+			implementation.file = blockFlowFileName(toName);
+			definition.implementation = implementation;
+		} else {
 			implementation.file = blockFileName(toName);
 			definition.implementation = implementation;
 			implementationSource = renameBlockImplementationSource(implementationSource || "", fromName, toName);
@@ -2862,7 +2932,7 @@
 				}
 				node.__graphBlock = {
 					name: block.name,
-					file: String(block.__flowFile || "")
+					file: String(block.__flowImplementationFile || block.__flowFile || "")
 				};
 				node.nodes = expandFragmentNodes(blocks, block.__graphDefinition.nodes || [], stack.concat([blockKey]), options);
 				return node;
@@ -4916,7 +4986,7 @@
 			return;
 		}
 		if (block && block.__graphDefinition) {
-			var flowSource = sourceDefinitionForFile(descriptor.file, "flow");
+			var flowSource = sourceDefinitionForFile(block.__flowImplementationFile || descriptor.implementationFile || descriptor.file, "flow");
 			var flowNode = virtualNode("implementation", "blockImplementation", "flow",
 				path + ".implementation", "Implementation",
 				compact(flowSource), compact(flowSource), "mdi:source-branch");

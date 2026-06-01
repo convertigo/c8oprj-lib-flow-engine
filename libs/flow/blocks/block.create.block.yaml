@@ -15,7 +15,7 @@ props:
     label: "implementationSource"
     kind: "text"
     type: "string"
-    description: "Rhino ES6 implementation source for descriptor-backed Rhino blocks."
+    description: "Implementation source. Use Flow YAML for runtime=flow or Rhino ES6 source for runtime=rhino."
   descriptorSource:
     label: "descriptorSource"
     kind: "text"

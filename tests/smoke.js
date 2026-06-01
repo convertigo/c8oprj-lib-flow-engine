@@ -292,6 +292,56 @@ var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(canonicalRun.result.message === "Hello canonical",
 	"canonical YAML Rhino block did not execute through its implementation file");
+var flowBackedDescriptorSource = [
+	"version: 1",
+	"name: smoke.flowBacked",
+	"description: Canonical YAML descriptor backed by Flow nodes.",
+	"props:",
+	"  value:",
+	"    kind: value",
+	"    type: unknown",
+	"implementation:",
+	"  runtime: flow",
+	"  file: smoke.flowBacked.flow.yaml",
+	""
+].join("\n");
+var flowBackedImplementationSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: done",
+	"    block: return",
+	"    value: \"{{ props.value }}\"",
+	""
+].join("\n");
+var createdFlowBackedBlock = JSON.parse(engine.blockCreate(JSON.stringify({
+	name: "smoke.flowBacked",
+	descriptorSource: flowBackedDescriptorSource,
+	implementationSource: flowBackedImplementationSource
+})));
+assertTrue(createdFlowBackedBlock.name === "smoke.flowBacked" &&
+	new java.io.File(projectDirFile, "libs/flow/blocks/smoke.flowBacked.block.yaml").isFile() &&
+	new java.io.File(projectDirFile, "libs/flow/blocks/smoke.flowBacked.flow.yaml").isFile(),
+	"blockCreate did not write descriptor plus Flow implementation files");
+var flowBackedBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
+	name: "smoke.flowBacked"
+})));
+assertTrue(flowBackedBlockGet.implementationRuntime === "flow" &&
+	flowBackedBlockGet.implementationSource.indexOf("block: return") !== -1,
+	"blockGet did not expose Flow implementation source");
+var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: flowBacked",
+		"    block: smoke.flowBacked",
+		"    value: Hello flow backed block",
+		"    out: result.message",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(flowBackedRun.result.message === "Hello flow backed block",
+	"canonical YAML Flow block did not execute through its implementation file");
 var callBlockDescriptorSource = [
 	"version: 1",
 	"name: smoke.callBlock",
