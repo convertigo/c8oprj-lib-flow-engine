@@ -76,10 +76,10 @@ implementation:
   file: demo.native.js
 ```
 
-When `<blockName>.block.yaml` and `<blockName>.js` both exist, the engine loads
-the YAML descriptor and does not load the JS file as a second standalone block.
-This keeps metadata, docs and future implementation kinds (`java`, `kotlin`,
-etc.) in one stable shape while preserving a small Rhino escape hatch.
+The engine only discovers blocks through `<blockName>.block.yaml`. A peer
+`<blockName>.js` is an implementation file, not a block definition. This keeps
+metadata, docs and future implementation kinds (`java`, `kotlin`, etc.) in one
+stable shape while preserving a small Rhino escape hatch.
 
 Flow-backed blocks are regular catalog blocks. At runtime the engine exposes
 evaluated instance properties through `props` and a private mutable `local`
@@ -206,9 +206,8 @@ npm modules or browser globals. A descriptor-backed Rhino implementation is an
 IIFE returning `run`, and optionally `displayName` / `analyze`; `ctx.props(node)`,
 `ctx.template(value)`, `ctx.expr(value)`, `ctx.read(path)`,
 `ctx.write(path,value)` and `ctx.callBlock(name, props)` are the small runtime
-API. Legacy standalone JS blocks returning `{ name, catalog, analyze, run }`
-are still supported during the POC, but new blocks should prefer the canonical
-descriptor form.
+API. Metadata, properties and docs must stay in the peer `*.block.yaml`
+descriptor; Rhino implementations defining `catalog()` are rejected.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,

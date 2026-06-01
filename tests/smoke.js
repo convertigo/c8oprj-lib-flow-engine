@@ -175,6 +175,29 @@ var patchedResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 })));
 assertTrue(patchedResourceGet.content.indexOf("patched ok") !== -1,
 	"resourcePatch did not persist the patched source");
+var legacyCatalogBlock = JSON.parse(engine.blockCreate(JSON.stringify({
+	name: "resource.legacyCatalog",
+	descriptor: {
+		version: 1,
+		name: "resource.legacyCatalog",
+		implementation: {
+			runtime: "rhino",
+			file: "resource.legacyCatalog.js"
+		}
+	},
+	implementationSource: [
+		"(function () {",
+		"\treturn {",
+		"\t\tcatalog: function () { return {}; },",
+		"\t\trun: function () { return \"legacy\"; }",
+		"\t};",
+		"}())"
+	].join("\n")
+})));
+assertTrue(legacyCatalogBlock.ok === false &&
+	legacyCatalogBlock.error &&
+	legacyCatalogBlock.error.code === "INVALID_BLOCK_IMPLEMENTATION",
+	"blockCreate accepted a legacy catalog() implementation");
 var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
 		"version: 1",

@@ -1979,6 +1979,10 @@
 			raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid block implementation: " + name,
 				null, "A descriptor-backed Rhino implementation must evaluate to an object with run(ctx, node).");
 		}
+		if (block.catalog !== undefined) {
+			raise("INVALID_BLOCK_IMPLEMENTATION", "Rhino implementation must not define catalog(): " + name,
+				null, "Move metadata, properties and docs to the peer *.block.yaml descriptor.");
+		}
 		if (block.name && String(block.name) !== String(name)) {
 			raise("BLOCK_NAME_MISMATCH", "Block implementation declares \"" + block.name + "\" instead of \"" + name + "\".");
 		}
@@ -2078,6 +2082,10 @@
 		var implementation = blockImplementation(definition);
 		var scriptFile = blockImplementationFile(definition, file, implementation);
 		var script = loadBlockScript(scriptFile, "block implementation");
+		if (script.catalog !== undefined) {
+			raise("INVALID_BLOCK_IMPLEMENTATION", "Block implementation must not define catalog(): " + scriptFile.getAbsolutePath(),
+				null, "Move metadata, properties and docs to the peer *.block.yaml descriptor.");
+		}
 		var entry = String(implementation.entry || "run");
 		if (typeof script[entry] !== "function") {
 			raise("INVALID_BLOCK_IMPLEMENTATION", "Block implementation has no " + entry + "(ctx, node): " + scriptFile.getAbsolutePath());
@@ -2549,13 +2557,11 @@
 			descriptorFile: String(block.__flowFile || ""),
 			descriptorSource: descriptorSource,
 			descriptor: descriptor,
-			implementationRuntime: implementation.runtime,
-			source: descriptorSource
+			implementationRuntime: implementation.runtime
 		};
 		if (block.__flowImplementationFile) {
 			out.implementationFile = String(block.__flowImplementationFile);
 			out.implementationSource = String(FileUtils.readFileToString(new File(String(block.__flowImplementationFile)), "UTF-8"));
-			out.source = out.implementationSource;
 		}
 		return out;
 	}
@@ -3171,7 +3177,7 @@
 		var name = blockName(node);
 		var block = ctx.blocks[name];
 		if (!block) {
-			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Call catalog() to list supported blocks.");
+			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 		}
 		var props = nodeProps(node);
 		var result = block.run(ctx, node);
@@ -3190,7 +3196,7 @@
 		}
 		var block = ctx.blocks[name];
 		if (!block) {
-			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, null, "Call catalog() to list supported blocks.");
+			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, null, "Use flow-catalog or blockList to list supported blocks.");
 		}
 		if (typeof block.run !== "function") {
 			raise("INVALID_BLOCK", "Flow block has no runnable implementation: " + name);
@@ -3876,7 +3882,7 @@
 		var name = blockName(node);
 		var block = ctx.blocks[name];
 		if (!block) {
-			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Call catalog() to list supported blocks.");
+			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 		}
 		var props = nodeProps(node);
 		var catalog = blockCatalog(block);
@@ -3973,7 +3979,7 @@
 		var name = blockName(node);
 		var block = ctx.blocks[name];
 		if (!block) {
-			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Call catalog() to list supported blocks.");
+			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 		}
 		var props = nodeProps(node);
 		var catalog = blockCatalog(block);
@@ -4334,12 +4340,7 @@
 	}
 
 	function typeDescriptor(type) {
-		var descriptor = {};
-		if (type && typeof type.catalog === "function") {
-			descriptor = type.catalog() || {};
-		} else {
-			descriptor = normalizeTree(type || {});
-		}
+		var descriptor = normalizeTree(type || {});
 		if (!descriptor.name) {
 			descriptor.name = type.name;
 		}

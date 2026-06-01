@@ -137,10 +137,10 @@ implementation:
   file: my.block.js
 ```
 
-When a peer `my.block.yaml` / `my.block.js` pair exists, the engine loads the
-YAML descriptor and treats the JS file as that block's implementation instead
-of exposing it as another standalone block. Use this shape so metadata,
-properties, docs and future runtimes stay uniform.
+The engine discovers blocks only through `*.block.yaml`. A peer JS file is only
+the implementation named by `implementation.file`; it is never a separate block
+definition. Use this shape so metadata, properties, docs and future runtimes
+stay uniform.
 
 Do not silently override core blocks from a project. Use a project-specific
 name, for example `weather.hotCities`, when adding custom vocabulary.
@@ -189,17 +189,15 @@ during the POC. Put project-level bindings and config defaults there. Keep
 Flow-level overrides in the Flow sidecar when a specific Flow must deviate from
 the project default.
 
-Legacy standalone JS blocks are still accepted during the POC. They are IIFEs
-returning:
+Rhino implementation files are IIFEs returning runtime hooks only. They must not
+define `catalog()`; metadata, properties and docs belong in `*.block.yaml`.
 
 ```javascript
 (function () {
 	return {
-		name: "set",
-		icon: "mdi:variable",
-		catalog: function () {},
-		analyze: function (ctx, node) {},
-		run: function (ctx, node) {}
+		run: function (ctx, node) {
+			// ...
+		}
 	};
 }())
 ```
@@ -320,8 +318,7 @@ with `blockDuplicate`, and edit only project-local copies with `blockEdit`.
 These APIs now treat a block as one logical unit. `blockCreate` writes
 `<name>.block.yaml` by default and keeps Rhino code in a peer JS implementation
 file when needed. `blockGet` returns `descriptorSource` and
-`implementationSource` for canonical blocks. Use `format: "legacy-js"` only
-when deliberately testing the old standalone JS path.
+`implementationSource` for Rhino-backed blocks.
 
 Static `requestable.call` nodes should enrich picker context too. Flow targets
 read the Flow output contract; legacy sequence and transaction targets use the
