@@ -23,6 +23,8 @@ props:
     mode: "write"
     default: "flow.sorted"
     description: "Scope path receiving the sorted array."
+hooks:
+  file: "list.sort.hooks.js"
 implementation:
   runtime: "rhino"
   file: "list.sort.js"

@@ -23,20 +23,6 @@
 	}
 
 	return {
-		name: "flow.tree",
-		private: true,
-
-		displayName: function () {
-			return "describe flow tree";
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			return ctx.describeTreeSource(withNamedFlowSource(ctx, argsFrom(ctx.props(node))));
 		}

@@ -31,6 +31,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving duplicate result."
+hooks:
+  file: "block.duplicate.hooks.js"
 implementation:
   runtime: "rhino"
   file: "block.duplicate.js"

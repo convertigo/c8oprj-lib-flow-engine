@@ -25,6 +25,8 @@ props:
     kind: "template"
     type: "string"
     description: "Optional remediation hint template."
+hooks:
+  file: "throw.hooks.js"
 implementation:
   runtime: "rhino"
   file: "throw.js"

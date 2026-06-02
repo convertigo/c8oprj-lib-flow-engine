@@ -31,6 +31,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving edit result."
+hooks:
+  file: "block.edit.hooks.js"
 implementation:
   runtime: "rhino"
   file: "block.edit.js"

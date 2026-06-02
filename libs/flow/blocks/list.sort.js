@@ -10,20 +10,6 @@
 	}
 
 	return {
-		name: "list.sort",
-
-		displayName: function (node) {
-			var items = flowSummary.prop(node, "items") || flowSummary.prop(node, "in") || "items";
-			var by = flowSummary.prop(node, "by") === undefined ? "current" : flowSummary.prop(node, "by");
-			var direction = flowSummary.prop(node, "direction") || flowSummary.prop(node, "order") || "asc";
-			return flowSummary.output(node, flowSummary.text(items + " by " + by + " " + direction));
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			ctx.addPath(props.out);
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var items = (ctx.expr(props.items || props["in"]) || []).slice(0);

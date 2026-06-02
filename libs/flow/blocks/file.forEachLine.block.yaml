@@ -21,6 +21,8 @@ slots:
   - name: "nodes"
     label: "Flow"
     inline: true
+hooks:
+  file: "file.forEachLine.hooks.js"
 implementation:
   runtime: "rhino"
   file: "file.forEachLine.js"

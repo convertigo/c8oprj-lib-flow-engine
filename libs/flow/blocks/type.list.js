@@ -10,20 +10,6 @@
 	}
 
 	return {
-		name: "type.list",
-		private: true,
-
-		displayName: function () {
-			return "list types";
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			return ctx.typeList(argsFrom(ctx.props(node)));
 		}

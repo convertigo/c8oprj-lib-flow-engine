@@ -23,6 +23,8 @@ props:
     mode: "write"
     default: "flow.email"
     description: "Scope path receiving the mock send result."
+hooks:
+  file: "email.mock.hooks.js"
 implementation:
   runtime: "rhino"
   file: "email.mock.js"

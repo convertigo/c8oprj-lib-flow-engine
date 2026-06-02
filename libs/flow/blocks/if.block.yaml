@@ -17,6 +17,8 @@ slots:
     label: "Then"
   - name: "else"
     label: "Else"
+hooks:
+  file: "if.hooks.js"
 implementation:
   runtime: "rhino"
   file: "if.js"

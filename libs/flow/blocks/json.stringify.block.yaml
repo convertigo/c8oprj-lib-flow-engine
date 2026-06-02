@@ -21,6 +21,8 @@ props:
     mode: "write"
     default: "flow.text"
     description: "Scope path receiving the JSON text."
+hooks:
+  file: "json.stringify.hooks.js"
 implementation:
   runtime: "rhino"
   file: "json.stringify.js"

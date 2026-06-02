@@ -14,20 +14,6 @@
 	}
 
 	return {
-		name: "resource.patch",
-		private: true,
-
-		displayName: function (node) {
-			return flowSummary.output(node, flowSummary.text(prop(node, "path") || "resource"));
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			return ctx.resourcePatch(argsFrom(ctx.props(node)));
 		}

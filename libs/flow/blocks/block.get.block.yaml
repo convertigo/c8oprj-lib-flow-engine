@@ -21,6 +21,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving descriptor and implementation sources."
+hooks:
+  file: "block.get.hooks.js"
 implementation:
   runtime: "rhino"
   file: "block.get.js"

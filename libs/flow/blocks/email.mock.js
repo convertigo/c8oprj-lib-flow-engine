@@ -4,18 +4,6 @@
 	}
 
 	return {
-		name: "email.mock",
-
-		displayName: function (node) {
-			var to = prop(node, "to");
-			return to ? "to " + flowSummary.text(to) : "email.mock";
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			ctx.addPath(props.out);
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return {

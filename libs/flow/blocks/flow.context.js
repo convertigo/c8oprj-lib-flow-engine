@@ -23,20 +23,6 @@
 	}
 
 	return {
-		name: "flow.context",
-		private: true,
-
-		displayName: function () {
-			return "flow context";
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			return ctx.contextFlowSource(withNamedFlowSource(ctx, argsFrom(ctx.props(node))));
 		}

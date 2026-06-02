@@ -21,6 +21,8 @@ props:
     mode: "write"
     default: "flow.mapped"
     description: "Scope path receiving the mapped array."
+hooks:
+  file: "list.map.hooks.js"
 implementation:
   runtime: "rhino"
   file: "list.map.js"

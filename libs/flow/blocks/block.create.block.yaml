@@ -36,6 +36,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving creation result."
+hooks:
+  file: "block.create.hooks.js"
 implementation:
   runtime: "rhino"
   file: "block.create.js"

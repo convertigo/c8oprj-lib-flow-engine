@@ -1255,6 +1255,15 @@
 		return blockName + ".flow.yaml";
 	}
 
+	function blockHooksFileName(name) {
+		var blockName = String(name || "").trim();
+		if (!blockName.match(/^[A-Za-z0-9_.-]+$/)) {
+			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
+				null, "Use letters, digits, dot, underscore or dash.");
+		}
+		return blockName + ".hooks.js";
+	}
+
 	function typeDescriptorFileName(name) {
 		var typeName = String(name || "").trim();
 		if (!typeName.match(/^[A-Za-z0-9_.-]+$/)) {
@@ -1482,6 +1491,9 @@
 			if (String(path).endsWith(".flow.yaml")) {
 				return "blockFlow";
 			}
+			if (String(path).endsWith(".hooks.js")) {
+				return "blockHooks";
+			}
 			return "block";
 		}
 		if (String(path).indexOf("libs/flow/fragments/") === 0) {
@@ -1513,6 +1525,9 @@
 		}
 		if (filename.endsWith(".flow.yaml")) {
 			return filename.substring(0, filename.length - ".flow.yaml".length);
+		}
+		if (filename.endsWith(".hooks.js")) {
+			return filename.substring(0, filename.length - ".hooks.js".length);
 		}
 		if (filename.endsWith(".type.yaml")) {
 			return filename.substring(0, filename.length - ".type.yaml".length);
@@ -1816,6 +1831,15 @@
 					null, "Create or patch libs/flow/blocks/" + blockDescriptorFileName(resourceName(path)) + " first.");
 			}
 			validateBlockFlowImplementationSource(resourceName(path), content);
+		} else if (kind === "blockHooks") {
+			var hooksDescriptorFile = projectBlocksDir()
+				? new File(projectBlocksDir(), blockDescriptorFileName(resourceName(path)))
+				: null;
+			if (!hooksDescriptorFile || !hooksDescriptorFile.isFile()) {
+				raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.yaml descriptor: " + path,
+					null, "Create or patch libs/flow/blocks/" + blockDescriptorFileName(resourceName(path)) + " first.");
+			}
+			validateBlockHooksSource(resourceName(path), content);
 		} else if (kind === "graphBlock") {
 			validateGraphBlockSource(resourceName(path), content);
 		} else if (kind === "fragment") {
@@ -1979,14 +2003,22 @@
 			raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid block implementation: " + name,
 				null, "A descriptor-backed Rhino implementation must evaluate to an object with run(ctx, node).");
 		}
-		if (block.catalog !== undefined) {
-			raise("INVALID_BLOCK_IMPLEMENTATION", "Rhino implementation must not define catalog(): " + name,
-				null, "Move metadata, properties and docs to the peer *.block.yaml descriptor.");
-		}
-		if (block.name && String(block.name) !== String(name)) {
-			raise("BLOCK_NAME_MISMATCH", "Block implementation declares \"" + block.name + "\" instead of \"" + name + "\".");
-		}
+		["catalog", "name", "private", "displayName", "analyze"].forEach(function (key) {
+			if (block[key] !== undefined) {
+				raise("INVALID_BLOCK_IMPLEMENTATION", "Rhino implementation must not define " + key + ": " + name,
+					null, "Move static metadata to *.block.yaml and dynamic display/analyze code to hooks.file.");
+			}
+		});
 		return block;
+	}
+
+	function validateBlockHooksSource(name, source) {
+		var hooks = eval(String(source || ""));
+		if (!hooks || typeof hooks !== "object") {
+			raise("INVALID_BLOCK_HOOKS", "Invalid block hooks: " + name,
+				null, "A hooks script must evaluate to an object, usually with displayName(node) and/or analyze(ctx, node).");
+		}
+		return hooks;
 	}
 
 	function normalizeGraphBlockProps(definition) {
@@ -2082,10 +2114,12 @@
 		var implementation = blockImplementation(definition);
 		var scriptFile = blockImplementationFile(definition, file, implementation);
 		var script = loadBlockScript(scriptFile, "block implementation");
-		if (script.catalog !== undefined) {
-			raise("INVALID_BLOCK_IMPLEMENTATION", "Block implementation must not define catalog(): " + scriptFile.getAbsolutePath(),
-				null, "Move metadata, properties and docs to the peer *.block.yaml descriptor.");
-		}
+		["catalog", "name", "private", "displayName", "analyze"].forEach(function (key) {
+			if (script[key] !== undefined) {
+				raise("INVALID_BLOCK_IMPLEMENTATION", "Block runtime implementation must not define " + key + ": " + scriptFile.getAbsolutePath(),
+					null, "Move static metadata to *.block.yaml and dynamic display/analyze code to hooks.file.");
+			}
+		});
 		var entry = String(implementation.entry || "run");
 		if (typeof script[entry] !== "function") {
 			raise("INVALID_BLOCK_IMPLEMENTATION", "Block implementation has no " + entry + "(ctx, node): " + scriptFile.getAbsolutePath());
@@ -2167,7 +2201,7 @@
 		if (slots.length > 0) {
 			descriptor.slots = slots;
 		}
-		["private", "namespace", "package", "label", "display"].forEach(function (key) {
+		["private", "namespace", "package", "label", "display", "hooks"].forEach(function (key) {
 			if (definition[key] !== undefined) {
 				descriptor[key] = definition[key];
 			}
@@ -2295,6 +2329,21 @@
 		}
 	}
 
+	function analyzeGraphBlockDescriptor(ctx, node, catalog) {
+		var raw = nodeProps(node);
+		Object.keys(catalog.props || {}).forEach(function (key) {
+			var descriptor = catalog.props[key] || {};
+			var kind = String(descriptor.kind || descriptor.type || "");
+			var mode = String(descriptor.mode || "");
+			if (kind === "path" && mode === "write") {
+				var value = raw[key] !== undefined ? raw[key] : descriptor["default"];
+				if (value !== undefined && value !== null && String(value) !== "") {
+					ctx.addPath(String(value));
+				}
+			}
+		});
+	}
+
 	function graphBlockFromDefinition(definition, file, origin) {
 		var catalog = graphBlockCatalog(definition);
 		var implementation = blockImplementation(definition);
@@ -2314,18 +2363,13 @@
 				if (typeof hooks.displayName === "function") {
 					return hooks.displayName(node);
 				}
-				if (rhino && typeof rhino.script.displayName === "function") {
-					return rhino.script.displayName(node);
-				}
 				return graphBlockDisplayName(definition, node);
 			},
 			analyze: function (ctx, node) {
 				if (typeof hooks.analyze === "function") {
 					return hooks.analyze(ctx, node);
 				}
-				if (rhino && typeof rhino.script.analyze === "function") {
-					return rhino.script.analyze(ctx, node);
-				}
+				analyzeGraphBlockDescriptor(ctx, node, catalog);
 				if (runtime === "flow" && ctx.withGraphBlock) {
 					ctx.withGraphBlock(node, block, function () {
 						ctx.visitNodes(block.__graphDefinition.nodes || []);
@@ -2350,6 +2394,9 @@
 			block.__flowImplementationFile = String(rhino.file.getAbsolutePath());
 		} else if (flow) {
 			block.__flowImplementationFile = String(flow.file.getAbsolutePath());
+		}
+		if (hooks.__flowFile) {
+			block.__flowHooksFile = String(hooks.__flowFile);
 		}
 		return block;
 	}
@@ -2423,6 +2470,26 @@
 		return file;
 	}
 
+	function hooksTargetFile(descriptorFile, definition) {
+		var hooks = definition && definition.hooks;
+		if (!hooks) {
+			return null;
+		}
+		if (typeof hooks === "string") {
+			hooks = { file: hooks };
+			definition.hooks = hooks;
+		}
+		hooks = normalizeTree(hooks);
+		if (!hooks.file) {
+			return null;
+		}
+		var file = new File(String(hooks.file));
+		if (!file.isAbsolute()) {
+			file = new File(descriptorFile.getParentFile(), String(hooks.file));
+		}
+		return file;
+	}
+
 	function createProjectBlock(blocks, name, request, overwrite) {
 		if (typeof request !== "object" || request === null) {
 			raise("INVALID_BLOCK_REQUEST", "Block creation expects a canonical descriptor request object.",
@@ -2442,7 +2509,9 @@
 		var definition = canonicalBlockDefinition(name, request);
 		var implementation = blockImplementation(definition);
 		var implementationFile = implementationTargetFile(descriptorFile, definition);
+		var hooksFile = hooksTargetFile(descriptorFile, definition);
 		var implementationSource = request.implementationSource;
+		var hooksSource = request.hooksSource;
 		if (implementation.runtime === "flow" && (implementationSource === undefined || implementationSource === null)) {
 			implementationSource = "version: 1\nnodes: []\n";
 		}
@@ -2454,15 +2523,29 @@
 			raise("BLOCK_ALREADY_EXISTS", "Block implementation already exists: " + implementationFile.getAbsolutePath(),
 				null, "Pass overwrite=true to replace it explicitly.");
 		}
+		if (hooksFile && hooksSource !== undefined && hooksSource !== null && hooksFile.isFile() && overwrite !== true) {
+			raise("BLOCK_ALREADY_EXISTS", "Block hooks already exists: " + hooksFile.getAbsolutePath(),
+				null, "Pass overwrite=true to replace it explicitly.");
+		}
+		if (hooksFile && (hooksSource === undefined || hooksSource === null) && !hooksFile.isFile()) {
+			raise("MISSING_BLOCK_HOOKS", "Block \"" + name + "\" declares hooks.file but no hooksSource was provided.",
+				null, "Pass hooksSource or remove hooks.file from the descriptor.");
+		}
 		if (implementation.runtime === "flow") {
 			validateBlockFlowImplementationSource(name, implementationSource);
 		} else {
 			validateBlockImplementationSource(name, implementationSource);
 		}
+		if (hooksFile && hooksSource !== undefined && hooksSource !== null) {
+			validateBlockHooksSource(name, hooksSource);
+		}
 		descriptorFile.getParentFile().mkdirs();
 		FileUtils.writeStringToFile(descriptorFile, toYamlSource(definition), "UTF-8");
 		if (implementationFile) {
 			FileUtils.writeStringToFile(implementationFile, String(implementationSource), "UTF-8");
+		}
+		if (hooksFile && hooksSource !== undefined && hooksSource !== null) {
+			FileUtils.writeStringToFile(hooksFile, String(hooksSource), "UTF-8");
 		}
 		if (blocks[name]) {
 			delete blocks[name];
@@ -2492,6 +2575,8 @@
 			: String(FileUtils.readFileToString(descriptorFile, "UTF-8"));
 		var definition = validateGraphBlockSource(name, descriptorSource);
 		var implementationFile = implementationTargetFile(descriptorFile, definition);
+		var hooksFile = hooksTargetFile(descriptorFile, definition);
+		var hasHooks = request.hooksSource !== undefined;
 		if (hasImplementation && implementationFile) {
 			var implementation = blockImplementation(definition);
 			if (implementation.runtime === "flow") {
@@ -2500,6 +2585,14 @@
 				validateBlockImplementationSource(name, request.implementationSource);
 			}
 			FileUtils.writeStringToFile(implementationFile, String(request.implementationSource), "UTF-8");
+		}
+		if (hasHooks) {
+			if (!hooksFile) {
+				raise("MISSING_BLOCK_HOOKS", "Block \"" + name + "\" has hooksSource but no hooks.file in descriptor.",
+					null, "Add hooks.file to the block descriptor or omit hooksSource.");
+			}
+			validateBlockHooksSource(name, request.hooksSource);
+			FileUtils.writeStringToFile(hooksFile, String(request.hooksSource), "UTF-8");
 		}
 		if (hasDescriptor) {
 			FileUtils.writeStringToFile(descriptorFile, toYamlSource(definition), "UTF-8");
@@ -2522,6 +2615,7 @@
 		definition.name = toName;
 		var implementation = blockImplementation(definition);
 		var implementationSource = sourceInfo.implementationSource;
+		var hooksSource = sourceInfo.hooksSource;
 		if (implementation.runtime === "flow") {
 			implementation.file = blockFlowFileName(toName);
 			definition.implementation = implementation;
@@ -2530,9 +2624,21 @@
 			definition.implementation = implementation;
 			implementationSource = renameBlockImplementationSource(implementationSource || "", fromName, toName);
 		}
+		if (hooksSource !== undefined && hooksSource !== null) {
+			var hooks = definition.hooks;
+			if (typeof hooks === "string") {
+				hooks = { file: hooks };
+			}
+			hooks = normalizeTree(hooks || {});
+			hooks.file = blockHooksFileName(toName);
+			definition.hooks = hooks;
+		} else {
+			delete definition.hooks;
+		}
 		return createProjectBlock(blocks, toName, {
 			descriptor: definition,
 			implementationSource: implementationSource,
+			hooksSource: hooksSource,
 			overwrite: overwrite === true
 		}, overwrite);
 	}
@@ -2562,6 +2668,10 @@
 		if (block.__flowImplementationFile) {
 			out.implementationFile = String(block.__flowImplementationFile);
 			out.implementationSource = String(FileUtils.readFileToString(new File(String(block.__flowImplementationFile)), "UTF-8"));
+		}
+		if (block.__flowHooksFile) {
+			out.hooksFile = String(block.__flowHooksFile);
+			out.hooksSource = String(FileUtils.readFileToString(new File(String(block.__flowHooksFile)), "UTF-8"));
 		}
 		return out;
 	}
@@ -3168,6 +3278,90 @@
 		}
 		exposeLocalIcon(descriptor, iconFile);
 		return descriptor;
+	}
+
+	function iconNameFromCacheFile(file) {
+		var name = String(file.getName() || "");
+		if (name.indexOf(".") === -1) {
+			return "";
+		}
+		name = name.replace(/\.(svg|png|gif|jpg|jpeg|webp|ico)$/i, "");
+		name = name.replace(/_(16|32)x(16|32)$/i, "");
+		return name;
+	}
+
+	function collectIconifyProviderIcons(providerDir, provider, origin, icons, seen) {
+		var files = providerDir && providerDir.listFiles();
+		if (!files) {
+			return;
+		}
+		files = Arrays.asList(files).toArray();
+		files.forEach(function (file) {
+			if (!file.isFile()) {
+				return;
+			}
+			var name = iconNameFromCacheFile(file);
+			if (!name || name === ".gitignore") {
+				return;
+			}
+			var id = provider + ":" + name;
+			if (seen[id]) {
+				return;
+			}
+			seen[id] = true;
+			icons.push({
+				id: id,
+				provider: provider,
+				name: name,
+				origin: origin
+			});
+		});
+	}
+
+	function collectIconifyIcons(flowDir, origin, provider, icons, seen) {
+		var root = flowDir ? new File(new File(flowDir, "icons"), "iconify") : null;
+		if (!root || !root.isDirectory()) {
+			return;
+		}
+		if (provider) {
+			collectIconifyProviderIcons(new File(root, safeIconName(provider)), safeIconName(provider), origin, icons, seen);
+			return;
+		}
+		var providers = root.listFiles();
+		if (!providers) {
+			return;
+		}
+		providers = Arrays.asList(providers).toArray();
+		providers.forEach(function (dir) {
+			if (dir.isDirectory()) {
+				collectIconifyProviderIcons(dir, String(dir.getName()), origin, icons, seen);
+			}
+		});
+	}
+
+	function iconCatalogRequest(request) {
+		request = request || {};
+		var provider = String(request.provider || "mdi").trim();
+		var query = String(request.query || "").trim().toLowerCase();
+		var limit = Math.max(1, Math.min(Number(request.limit || 200), 500));
+		var icons = [];
+		var seen = {};
+		collectIconifyIcons(projectDir() ? new File(projectDir(), "libs/flow") : null, "project", provider, icons, seen);
+		collectIconifyIcons(engineDir(), "core", provider, icons, seen);
+		icons.sort(function (a, b) {
+			return String(a.id).localeCompare(String(b.id));
+		});
+		if (query) {
+			icons = icons.filter(function (icon) {
+				return String(icon.id).toLowerCase().indexOf(query) !== -1;
+			});
+		}
+		return {
+			ok: true,
+			provider: provider,
+			count: icons.length,
+			icons: icons.slice(0, limit)
+		};
 	}
 
 	function executeNode(ctx, node) {
@@ -4576,6 +4770,23 @@
 			}
 			group.blocks.push(block);
 		});
+		if (projectDir()) {
+			var hasProjectGroup = false;
+			for (var i = 0; i < groups.length; i++) {
+				if (groups[i].origin === "project") {
+					hasProjectGroup = true;
+					break;
+				}
+			}
+			if (!hasProjectGroup) {
+				groups.push({
+					origin: "project",
+					name: groupLabel("project"),
+					order: groupOrder("project"),
+					blocks: []
+				});
+			}
+		}
 		groups.sort(function (a, b) {
 			return a.order - b.order || a.name.localeCompare(b.name);
 		});
@@ -4779,6 +4990,22 @@
 	}
 
 	function virtualNode(name, kind, type, path, summary, definition, info, icon) {
+		var nodeInfo = info === undefined || info === null ? "" : String(info);
+		if (icon) {
+			var baseInfo = {};
+			if (nodeInfo) {
+				try {
+					baseInfo = normalizeTree(JSON.parse(nodeInfo));
+				} catch (e) {
+					baseInfo = {};
+				}
+			}
+			var iconInfo = virtualIcon(icon);
+			Object.keys(iconInfo).forEach(function (key) {
+				baseInfo[key] = iconInfo[key];
+			});
+			nodeInfo = compact(baseInfo);
+		}
 		return {
 			name: safeVirtualName(kind || "item", name),
 			kind: String(kind || ""),
@@ -4786,7 +5013,7 @@
 			path: String(path || ""),
 			summary: String(summary || name || ""),
 			definition: definition === undefined || definition === null ? "" : String(definition),
-			info: icon ? compact(virtualIcon(icon)) : info === undefined || info === null ? "" : String(info),
+			info: nodeInfo,
 			children: []
 		};
 	}
@@ -4916,20 +5143,44 @@
 		return "[" + blockName + "] " + summaryText(label);
 	}
 
-	function addNodeSlots(parent, node, nodePath, catalog, blocks, analysisById) {
+	function addNodeSlots(parent, node, nodePath, catalog, blocks, analysisById, sourceInfo, sourceNodePath) {
 		activeSlots(node, catalog).forEach(function (slot) {
 			var path = nodePath + "." + slot.name;
+			var slotSourcePath = sourceNodePath ? sourceNodePath + "." + slot.name : "";
 			if (slot.inline) {
-				addNodeList(parent, slot.nodes, path, blocks, analysisById);
+				addNodeList(parent, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath);
 			} else {
-				var folder = virtualNode(slot.name, "slot", slot.name, path, slot.label, compact(slot.nodes), null, "mdi:call-split");
+				var slotInfo = sourceInfo ? sourceInfoForPath(sourceInfo, slotSourcePath) : null;
+				var folder = virtualNode(slot.name, "slot", slot.name, path, slot.label, compact(slot.nodes), compact(slotInfo), "mdi:call-split");
 				parent.children.push(folder);
-				addNodeList(folder, slot.nodes, path, blocks, analysisById);
+				addNodeList(folder, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath);
 			}
 		});
 	}
 
-	function addNodeList(parent, nodes, path, blocks, analysisById) {
+	function sourceInfoForPath(sourceInfo, mutationPath) {
+		if (!sourceInfo) {
+			return null;
+		}
+		var info = normalizeTree(sourceInfo);
+		if (mutationPath !== undefined && mutationPath !== null && String(mutationPath) !== "") {
+			info.sourceMutationPath = String(mutationPath);
+		}
+		return info;
+	}
+
+	function mergeSourceInfo(info, sourceInfo, mutationPath) {
+		info = info || {};
+		var source = sourceInfoForPath(sourceInfo, mutationPath);
+		if (source) {
+			Object.keys(source).forEach(function (key) {
+				info[key] = source[key];
+			});
+		}
+		return info;
+	}
+
+	function addNodeList(parent, nodes, path, blocks, analysisById, sourceInfo, sourceBasePath) {
 		(nodes || []).forEach(function (node, index) {
 			var id = String(node && (node.id || node.uid || node.name) || "node" + index);
 			var blockType = String(blockName(node) || "unknown");
@@ -4938,28 +5189,36 @@
 			resolveBlockIcon(block, catalog);
 			var nodeAnalysis = analysisById && analysisById[id];
 			var nodePath = path + "[" + index + "]";
+			var sourceNodePath = sourceBasePath ? sourceBasePath + "[" + index + "]" : "";
 			var shallow = {};
 			Object.keys(node || {}).forEach(function (key) {
 				if (key.indexOf("__") !== 0 && ["nodes", "do", "then", "else", "catch", "finally"].indexOf(key) === -1) {
 					shallow[key] = node[key];
 				}
 				});
+				var nodeInformation = mergeSourceInfo(nodeInfo(nodeAnalysis, catalog), sourceInfo, sourceNodePath);
 				var nodeObject = virtualNode("node_" + id, "node", blockType, nodePath,
-					nodeSummary(block, catalog, node, id, blockType), compact(shallow), compact(nodeInfo(nodeAnalysis, catalog)));
+					nodeSummary(block, catalog, node, id, blockType), compact(shallow), compact(nodeInformation));
 				parent.children.push(nodeObject);
 				if (node.__graphBlock && node.nodes) {
+					var graphSource = sourceDefinitionForFile(node.__graphBlock.file, "flow");
+					graphSource.sourceWritable = false;
+					graphSource.writable = false;
+					graphSource.readOnly = true;
+					graphSource.readOnlyReference = true;
 					var implementationNode = virtualNode("implementation", "blockImplementation", "flow",
 						nodePath + ".implementation", "Implementation",
-						compact(sourceDefinitionForFile(node.__graphBlock.file, "flow")), null, "mdi:source-branch");
+						compact(graphSource), compact(sourceObjectInfo(graphSource, sourcePropertyDefinitions(),
+							["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"])), "mdi:source-branch");
 					nodeObject.children.push(implementationNode);
-					addNodeList(implementationNode, node.nodes, nodePath + ".implementation.nodes", blocks, analysisById);
+					addNodeList(implementationNode, node.nodes, nodePath + ".implementation.nodes", blocks, analysisById, graphSource, "nodes");
 				}
 				var slotNode = node;
 				if (node.__graphBlock && node.nodes) {
 					slotNode = normalizeTree(node);
 					delete slotNode.nodes;
 				}
-				addNodeSlots(nodeObject, slotNode, nodePath, catalog, blocks, analysisById);
+				addNodeSlots(nodeObject, slotNode, nodePath, catalog, blocks, analysisById, sourceInfo, sourceNodePath);
 			});
 	}
 
@@ -5007,11 +5266,160 @@
 		return definition;
 	}
 
-	function addImplementationNodes(parent, nodes, path, blocks, stack) {
+	function propertyDefinition(label, category, description, options) {
+		options = options || {};
+		var definition = {
+			label: label,
+			category: category || "Base properties",
+			description: description || "",
+			readOnly: options.readOnly === true
+		};
+		if (options.kind) {
+			definition.kind = options.kind;
+		}
+		if (options.type) {
+			definition.type = options.type;
+		}
+		if (options.defaultValue !== undefined) {
+			definition.default = options.defaultValue;
+		}
+		if (options.hidden === true) {
+			definition.hidden = true;
+		}
+		if (options.expert === true) {
+			definition.expert = true;
+		}
+		return definition;
+	}
+
+	function sourceObjectInfo(sourceInfo, propertyDefinitions, propertyOrder) {
+		var info = normalizeTree(sourceInfo || {});
+		if (propertyDefinitions) {
+			info.propertyDefinitions = propertyDefinitions;
+		}
+		if (propertyOrder) {
+			info.propertyOrder = propertyOrder;
+		}
+		return info;
+	}
+
+	function sourcePropertyDefinitions() {
+		return {
+			implementation: propertyDefinition("Implementation", "Information", "Internal implementation kind.", { readOnly: true, hidden: true }),
+			file: propertyDefinition("File", "Information", "Internal source file.", { readOnly: true, hidden: true }),
+			path: propertyDefinition("Path", "Information", "Internal relative source path.", { readOnly: true, hidden: true }),
+			origin: propertyDefinition("Origin", "Information", "Internal source origin.", { readOnly: true, hidden: true }),
+			writable: propertyDefinition("Writable", "Information", "Internal writable flag.", { readOnly: true, hidden: true }),
+			sourcePath: propertyDefinition("Source path", "Information", "Internal absolute source path.", { readOnly: true, hidden: true }),
+			sourceMutationPath: propertyDefinition("Mutation path", "Information", "Internal mutation path.", { readOnly: true, hidden: true }),
+			sourceBlockName: propertyDefinition("Block", "Information", "Internal source block name.", { readOnly: true, hidden: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project or engine relative source path.", { readOnly: true }),
+			sourceOrigin: propertyDefinition("Origin", "Information", "Source origin: project, core engine or library.", { readOnly: true }),
+			implementationKind: propertyDefinition("Implementation", "Information", "Implementation source kind.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this source can be edited from the current project.", { readOnly: true }),
+			flowImplementation: propertyDefinition("Flow implementation", "Information", "Whether this source is a Flow implementation.", { readOnly: true, hidden: true }),
+			readOnlyReference: propertyDefinition("Read-only reference", "Information", "Whether this source is shown as a read-only reference.", { readOnly: true, hidden: true }),
+			readOnly: propertyDefinition("Read only", "Information", "Whether this virtual object is read-only.", { readOnly: true })
+		};
+	}
+
+	function catalogGroupPropertyDefinitions() {
+		return {
+			origin: propertyDefinition("Origin", "Information", "Catalog origin.", { readOnly: true }),
+			count: propertyDefinition("Count", "Information", "Number of blocks in this group.", { readOnly: true })
+		};
+	}
+
+	function blockPropertyDefinitions() {
+		return {
+			version: propertyDefinition("Version", "Information", "Descriptor version.", { readOnly: true, hidden: true }),
+			name: propertyDefinition("Name", "Information", "Block name. It is owned by the descriptor file name.", { readOnly: true }),
+			file: propertyDefinition("File", "Information", "Internal descriptor file.", { readOnly: true, hidden: true }),
+			origin: propertyDefinition("Origin", "Information", "Catalog origin.", { readOnly: true, hidden: true }),
+			__flowFile: propertyDefinition("Source file", "Information", "Internal descriptor file.", { readOnly: true, hidden: true }),
+			__flowOrigin: propertyDefinition("Source origin", "Information", "Internal source origin.", { readOnly: true, hidden: true }),
+			implementationFile: propertyDefinition("Implementation file", "Information", "Internal implementation file.", { readOnly: true, hidden: true }),
+			runtime: propertyDefinition("Runtime", "Information", "Internal runtime kind.", { readOnly: true, hidden: true }),
+			iconify: propertyDefinition("Iconify", "Information", "Resolved Iconify id.", { readOnly: true, hidden: true }),
+			iconUrl: propertyDefinition("Icon URL", "Information", "Resolved remote icon URL.", { readOnly: true, hidden: true }),
+			iconSvg: propertyDefinition("Icon SVG", "Information", "Resolved SVG icon file.", { readOnly: true, hidden: true }),
+			iconFile: propertyDefinition("Icon file", "Information", "Resolved icon file.", { readOnly: true, hidden: true }),
+			iconFile16: propertyDefinition("Icon 16", "Information", "Resolved 16x16 icon file.", { readOnly: true, hidden: true }),
+			iconFile32: propertyDefinition("Icon 32", "Information", "Resolved 32x32 icon file.", { readOnly: true, hidden: true }),
+			implementation: propertyDefinition("Implementation", "Information", "Runtime and source file. Edit the Implementation child instead.", { readOnly: true }),
+			hooks: propertyDefinition("Hooks", "Information", "Dynamic display/analyze source. Edit the Hooks child instead.", { readOnly: true }),
+			description: propertyDefinition("Description", "Base properties", "Short block description.", { kind: "text", type: "string" }),
+			longDescription: propertyDefinition("Long description", "Base properties", "Detailed block documentation.", { kind: "markdown", type: "string" }),
+			icon: propertyDefinition("Icon", "Base properties", "Icon id, relative icon file, or URL.", { kind: "icon", type: "string" }),
+			display: propertyDefinition("Display template", "Information", "Legacy static display fallback. Prefer the Hooks displayName function.", { readOnly: true, hidden: true }),
+			private: propertyDefinition("Private", "Expert", "Hide this block from projects referencing this library.", { kind: "boolean", type: "boolean", defaultValue: false }),
+			kind: propertyDefinition("Kind", "Expert", "Block family used for grouping and documentation.", { kind: "text", type: "string" }),
+			namespace: propertyDefinition("Namespace", "Expert", "Logical namespace.", { kind: "text", type: "string" }),
+			package: propertyDefinition("Package", "Expert", "Logical package or library group.", { kind: "text", type: "string" }),
+			props: propertyDefinition("Properties", "Properties", "Block property contract.", { kind: "literal", type: "object" }),
+			slots: propertyDefinition("Slots", "Properties", "Child node slots accepted by this block.", { kind: "literal", type: "array" }),
+			defaults: propertyDefinition("Defaults", "Properties", "Default node values applied when the block is dropped from the palette.", { kind: "literal", type: "object" })
+		};
+	}
+
+	function typePropertyDefinitions() {
+		return {
+			version: propertyDefinition("Version", "Information", "Descriptor version.", { readOnly: true, hidden: true }),
+			name: propertyDefinition("Name", "Information", "Type name. It is owned by the descriptor file name.", { readOnly: true }),
+			file: propertyDefinition("File", "Information", "Internal type descriptor file.", { readOnly: true, hidden: true }),
+			__flowFile: propertyDefinition("Source file", "Information", "Internal type descriptor file.", { readOnly: true, hidden: true }),
+			__flowOrigin: propertyDefinition("Source origin", "Information", "Internal source origin.", { readOnly: true, hidden: true }),
+			sourcePath: propertyDefinition("Source path", "Information", "Internal absolute source path.", { readOnly: true, hidden: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project or engine relative source path.", { readOnly: true }),
+			sourceOrigin: propertyDefinition("Origin", "Information", "Source origin: project, core engine or library.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this type can be edited from the current project.", { readOnly: true }),
+			origin: propertyDefinition("Origin", "Information", "Catalog origin.", { readOnly: true, hidden: true }),
+			iconify: propertyDefinition("Iconify", "Information", "Resolved Iconify id.", { readOnly: true, hidden: true }),
+			iconUrl: propertyDefinition("Icon URL", "Information", "Resolved remote icon URL.", { readOnly: true, hidden: true }),
+			iconSvg: propertyDefinition("Icon SVG", "Information", "Resolved SVG icon file.", { readOnly: true, hidden: true }),
+			iconFile: propertyDefinition("Icon file", "Information", "Resolved icon file.", { readOnly: true, hidden: true }),
+			iconFile16: propertyDefinition("Icon 16", "Information", "Resolved 16x16 icon file.", { readOnly: true, hidden: true }),
+			iconFile32: propertyDefinition("Icon 32", "Information", "Resolved 32x32 icon file.", { readOnly: true, hidden: true }),
+			label: propertyDefinition("Label", "Base properties", "Human-readable type label.", { kind: "text", type: "string" }),
+			description: propertyDefinition("Description", "Base properties", "Type documentation.", { kind: "markdown", type: "string" }),
+			icon: propertyDefinition("Icon", "Base properties", "Icon id, relative icon file, or URL.", { kind: "icon", type: "string" }),
+			type: propertyDefinition("Value type", "Base properties", "JSON value type handled by this property type.", { kind: "text", type: "string" }),
+			editor: propertyDefinition("Editor", "Editor", "Editor descriptor. Edit the Editor child/source for implementation code.", { readOnly: true, hidden: true }),
+			validator: propertyDefinition("Validator", "Editor", "Validator descriptor.", { readOnly: true, hidden: true }),
+			reader: propertyDefinition("Reader", "Editor", "Reader descriptor.", { readOnly: true, hidden: true }),
+			writer: propertyDefinition("Writer", "Editor", "Writer descriptor.", { readOnly: true, hidden: true }),
+			uses: propertyDefinition("Usages", "Information", "Blocks using this type.", { readOnly: true })
+		};
+	}
+
+	function typeResourcePropertyDefinitions() {
+		return {
+			type: propertyDefinition("Type", "Information", "Owner property type.", { readOnly: true }),
+			role: propertyDefinition("Role", "Information", "Resource role.", { readOnly: true }),
+			file: propertyDefinition("File", "Information", "Internal source file.", { readOnly: true, hidden: true }),
+			sourcePath: propertyDefinition("Source path", "Information", "Internal absolute source path.", { readOnly: true, hidden: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Resource source file. Open the tree item to edit the source.", { readOnly: true }),
+			sourceOrigin: propertyDefinition("Origin", "Information", "Source origin: project, core engine or library.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this resource can be edited from the current project.", { readOnly: true }),
+			iconify: propertyDefinition("Iconify", "Information", "Resolved Iconify id.", { readOnly: true, hidden: true }),
+			iconUrl: propertyDefinition("Icon URL", "Information", "Resolved remote icon URL.", { readOnly: true, hidden: true }),
+			iconSvg: propertyDefinition("Icon SVG", "Information", "Resolved SVG icon file.", { readOnly: true, hidden: true }),
+			iconFile: propertyDefinition("Icon file", "Information", "Resolved icon file.", { readOnly: true, hidden: true }),
+			iconFile16: propertyDefinition("Icon 16", "Information", "Resolved 16x16 icon file.", { readOnly: true, hidden: true }),
+			iconFile32: propertyDefinition("Icon 32", "Information", "Resolved 32x32 icon file.", { readOnly: true, hidden: true }),
+			label: propertyDefinition("Label", "Base properties", "Resource label.", { kind: "text", type: "string" }),
+			kind: propertyDefinition("Kind", "Base properties", "Resource kind.", { kind: "text", type: "string" }),
+			component: propertyDefinition("Component", "Base properties", "Web component or editor component name.", { kind: "text", type: "string" }),
+			icon: propertyDefinition("Icon", "Base properties", "Icon id, relative icon file, or URL.", { kind: "icon", type: "string" }),
+			function: propertyDefinition("Function", "Expert", "Runtime function exported by this resource.", { kind: "text", type: "string" })
+		};
+	}
+
+	function addImplementationNodes(parent, nodes, path, blocks, stack, sourceInfo, sourceBasePath) {
 		var implementationNodes = expandFragmentNodes(blocks, nodes || [], stack || [], {
 			expandGraphBlocks: false
 		});
-		addNodeList(parent, implementationNodes, path, blocks, {});
+		addNodeList(parent, implementationNodes, path, blocks, {}, sourceInfo, sourceBasePath || "nodes");
 	}
 
 	function addBlockImplementation(parent, block, descriptor, path, blocks) {
@@ -5020,25 +5428,43 @@
 		}
 		if (block && block.__graphDefinition) {
 			var flowSource = sourceDefinitionForFile(block.__flowImplementationFile || descriptor.implementationFile || descriptor.file, "flow");
+			flowSource.sourceBlockName = descriptor.name || block.name || "";
+			flowSource.sourceMutationPath = "nodes";
+			flowSource.flowImplementation = true;
+			var flowSourceInfo = sourceObjectInfo(flowSource, sourcePropertyDefinitions(),
+				["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"]);
 			var flowNode = virtualNode("implementation", "blockImplementation", "flow",
 				path + ".implementation", "Implementation",
-				compact(flowSource), compact(flowSource), "mdi:source-branch");
+				compact(flowSource), compact(flowSourceInfo), "mdi:source-branch");
 			parent.children.push(flowNode);
 			addImplementationNodes(flowNode, block.__graphDefinition.nodes || [],
-				path + ".implementation.nodes", blocks, ["block:" + block.name]);
+				path + ".implementation.nodes", blocks, ["block:" + block.name], flowSource, "nodes");
 			return;
 		}
 		var jsFile = block && block.__flowImplementationFile ? block.__flowImplementationFile : descriptor.implementationFile || descriptor.file;
 		var jsSource = sourceDefinitionForFile(jsFile, "javascript");
+		var jsSourceInfo = sourceObjectInfo(jsSource, sourcePropertyDefinitions(),
+			["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"]);
 		parent.children.push(virtualNode("implementation", "blockImplementation", "javascript",
 			path + ".implementation", "Implementation",
-			compact(jsSource), compact(jsSource), "mdi:language-javascript"));
+			compact(jsSource), compact(jsSourceInfo), "mdi:language-javascript"));
+	}
+
+	function addBlockHooks(parent, block, path) {
+		if (!block || !block.__flowHooksFile) {
+			return;
+		}
+		var hooksSource = sourceDefinitionForFile(block.__flowHooksFile, "javascript-hooks");
+		var hooksSourceInfo = sourceObjectInfo(hooksSource, sourcePropertyDefinitions(),
+			["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"]);
+		parent.children.push(virtualNode("hooks", "blockHooks", "javascript",
+			path + ".hooks", "Hooks", compact(hooksSource), compact(hooksSourceInfo), "mdi:script-text-outline"));
 	}
 
 	function addCatalog(out, blocks, options) {
-		var catalog = virtualNode("catalog", "folder", "catalog", "catalog", "Catalog", "", null, "mdi:bookshelf");
+		var catalog = virtualNode("catalog", "folder", "catalog", "catalog", "Catalog", compact({}), null, "mdi:bookshelf");
 		var catalogDefinitionValue = catalogDefinition(blocks, options || {});
-		var blocksFolder = virtualNode("blocks", "folder", "blocks", "catalog.blocks", "Blocks", "", null, "mdi:puzzle-outline");
+		var blocksFolder = virtualNode("blocks", "folder", "blocks", "catalog.blocks", "Blocks", compact({}), null, "mdi:puzzle-outline");
 		catalog.children.push(blocksFolder);
 		var iconByOrigin = {
 			core: "mdi:package-variant-closed",
@@ -5046,34 +5472,36 @@
 		};
 		catalogDefinitionValue.groups.forEach(function (group) {
 			var groupPath = "catalog.blocks." + group.origin;
+			var groupDefinition = compact({ origin: group.origin, count: group.blocks.length });
+			var groupInfo = sourceObjectInfo({}, catalogGroupPropertyDefinitions(), ["origin", "count"]);
 			var groupNode = virtualNode("origin_" + group.origin, "folder", group.origin, groupPath,
-				group.name, compact({ origin: group.origin, count: group.blocks.length }), null,
+				group.name, groupDefinition, compact(groupInfo),
 				iconByOrigin[group.origin] || "mdi:source-repository");
 			blocksFolder.children.push(groupNode);
 			group.blocks.forEach(function (block) {
 				var blockPath = groupPath + "." + block.name;
 				var blockSource = sourceDefinitionForFile(block.file, block.implementation || "");
-				var blockDefinition = normalizeTree(block);
-				blockDefinition.implementationKind = blockSource.implementationKind;
-				blockDefinition.sourcePath = blockSource.sourcePath;
-				blockDefinition.sourceOrigin = blockSource.sourceOrigin;
-				blockDefinition.sourceRelativePath = blockSource.sourceRelativePath;
-				blockDefinition.sourceWritable = blockSource.sourceWritable;
-				blockDefinition.writable = blockSource.writable;
-				blockDefinition.readOnly = blockSource.readOnly;
+				var loadedBlock = blocks[block.name] || {};
+				var blockDefinition = normalizeTree(loadedBlock.__blockDefinition || block);
+				var blockInfo = sourceObjectInfo(blockSource, blockPropertyDefinitions(),
+					["name", "description", "longDescription", "icon", "display", "props", "slots", "private", "kind", "namespace", "package", "implementation", "hooks"]);
 				var blockNode = virtualNode("block_" + block.name, "block", block.name,
-					blockPath, block.name, compact(blockDefinition), compact(blockSource));
+					blockPath, block.name, compact(blockDefinition), compact(blockInfo));
 				groupNode.children.push(blockNode);
 				addBlockImplementation(blockNode, blocks[block.name], block, blockPath, blocks);
+				addBlockHooks(blockNode, blocks[block.name], blockPath);
 			});
 		});
-		var typesFolder = virtualNode("types", "folder", "types", "catalog.types", "Types", "", null, "mdi:shape-outline");
+		var typesFolder = virtualNode("types", "folder", "types", "catalog.types", "Types", compact({}), null, "mdi:shape-outline");
 		catalog.children.push(typesFolder);
 		catalogDefinitionValue.types.forEach(function (type) {
 			var typePath = "catalog.types." + type.name;
 			var summary = (type.label || type.name) + (type.uses && type.uses.length ? " (" + type.uses.length + " uses)" : "");
+			var typeSource = sourceDefinitionForFile(type.file, "type");
+			var typeInfo = sourceObjectInfo(typeSource, typePropertyDefinitions(),
+				["name", "sourceRelativePath", "sourceOrigin", "sourceWritable", "label", "description", "icon", "type", "uses"]);
 			var typeNode = virtualNode("type_" + type.name, "type", type.name,
-				typePath, summary, compact(type), null, type.icon || "mdi:form-textbox");
+				typePath, summary, compact(type), compact(typeInfo), type.icon || "mdi:form-textbox");
 			typesFolder.children.push(typeNode);
 			["documentation", "editor", "validator", "reader", "writer"].forEach(function (resourceName) {
 				var resource = type[resourceName];
@@ -5083,11 +5511,14 @@
 				if (resource.file && type.file && resource.file === type.file) {
 					return;
 				}
+				var resourceInfo = sourceObjectInfo(sourceDefinitionForFile(resource.file || "", resourceName),
+					typeResourcePropertyDefinitions(),
+					["type", "role", "sourceRelativePath", "sourceOrigin", "sourceWritable", "label", "kind", "component", "function"]);
 				typeNode.children.push(virtualNode(resourceName, "typeResource", resourceName,
 					typePath + "." + resourceName,
 					(resource.label || resourceName) + (resource.component ? " [" + resource.component + "]" : ""),
 					compact(Object.assign({ type: type.name, role: resourceName }, resource)),
-					null, resource.icon || "mdi:file-code-outline"));
+					compact(resourceInfo), resource.icon || "mdi:file-code-outline"));
 			});
 			if (!type.uses || type.uses.length === 0) {
 				return;
@@ -6048,6 +6479,15 @@
 				return response({ ok: true, html: propertyEditorHtml() });
 			} catch (e) {
 				return response(failure("propertyEditor", e));
+			}
+		},
+
+		icons: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(iconCatalogRequest(request));
+			} catch (e) {
+				return response(failure("icons", e));
 			}
 		},
 

@@ -16,6 +16,8 @@ slots:
   - name: "nodes"
     label: "Fragment"
     inline: true
+hooks:
+  file: "fragment.use.hooks.js"
 implementation:
   runtime: "rhino"
   file: "fragment.use.js"

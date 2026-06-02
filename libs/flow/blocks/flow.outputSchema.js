@@ -24,20 +24,6 @@
 	}
 
 	return {
-		name: "flow.outputSchema",
-		private: true,
-
-		displayName: function () {
-			return "flow output schema";
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			return ctx.outputSchemaSource(withNamedFlowSource(ctx, argsFrom(ctx.props(node))));
 		}

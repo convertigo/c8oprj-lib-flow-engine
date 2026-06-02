@@ -1,0 +1,12 @@
+version: 1
+name: "markdown"
+label: "Markdown"
+icon: "mdi:language-markdown-outline"
+type: "string"
+description: "Markdown text value."
+editor:
+  label: "Markdown editor"
+  kind: "webcomponent"
+  component: "flow-markdown-editor"
+  file: "editors/markdown.html"
+  icon: "mdi:application-brackets-outline"

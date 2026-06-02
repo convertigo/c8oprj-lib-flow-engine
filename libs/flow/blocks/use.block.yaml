@@ -26,6 +26,8 @@ props:
     mode: "write"
     default: "flow.value"
     description: "Scope path receiving the implementation result."
+hooks:
+  file: "use.hooks.js"
 implementation:
   runtime: "rhino"
   file: "use.js"

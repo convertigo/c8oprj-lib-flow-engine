@@ -1,12 +1,5 @@
 (function () {
 	return {
-		name: "throw",
-
-		displayName: function (node) {
-			var props = node && node.props || node || {};
-			return flowSummary.text(props.code || props.message || "error");
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.throwFlow({

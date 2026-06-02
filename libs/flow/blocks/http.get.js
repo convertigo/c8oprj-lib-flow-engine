@@ -28,23 +28,6 @@
 	}
 
 	return {
-		name: "http.get",
-
-		displayName: function (node) {
-			return flowSummary.output(node, "GET " + flowSummary.text(prop(node, "url") || "url"));
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			ctx.addPath(props.out);
-			if (ctx.schemaForOutput && ctx.addSchema) {
-				var schema = ctx.schemaForOutput(node, "out", props.out);
-				if (schema) {
-					ctx.addSchema(props.out, schema);
-				}
-			}
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var response = readUrl(ctx.template(props.url), ctx.template(props.headers));

@@ -1,0 +1,12 @@
+version: 1
+name: "icon"
+label: "Icon"
+icon: "mdi:palette-outline"
+type: "string"
+description: "Icon reference, such as mdi:power, a project-relative file, or an URL."
+editor:
+  label: "Icon picker"
+  kind: "webcomponent"
+  component: "flow-icon-editor"
+  file: "editors/icon.html"
+  icon: "mdi:application-brackets-outline"

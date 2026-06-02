@@ -20,6 +20,8 @@ props:
     mode: "write"
     default: "flow.requestable"
     description: "Scope path receiving the requestable JSON response."
+hooks:
+  file: "requestable.call.hooks.js"
 implementation:
   runtime: "rhino"
   file: "requestable.call.js"

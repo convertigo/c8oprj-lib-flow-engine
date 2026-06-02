@@ -25,19 +25,6 @@
 	}
 
 	return {
-		name: "file.write",
-
-		displayName: function (node) {
-			return flowSummary.text((prop(node, "writer") || "writer") + " <= " + (flowSummary.prop(node, "value") || "value"));
-		},
-
-		analyze: function (ctx, node) {
-			var writer = ctx.props(node).writer || "local.writer";
-			if (ctx.addRead && typeof writer === "string") {
-				ctx.addRead(writer);
-			}
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var writer = ctx.handleValue(ctx.expr(props.writer || "local.writer"), "file.writer");

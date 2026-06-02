@@ -114,7 +114,6 @@ var resourceBlockDescriptorSource = [
 var resourceBlockImplementationSource = [
 	"(function () {",
 	"\treturn {",
-	"\t\tname: \"resource.echo\",",
 	"\t\trun: function () {",
 	"\t\t\treturn \"ok\";",
 	"\t\t}",
@@ -136,7 +135,7 @@ var createdResourceBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
 })));
 assertTrue(createdResourceBlockGet.format === "canonical" &&
 	createdResourceBlockGet.descriptorSource.indexOf("Resource smoke block.") !== -1 &&
-	createdResourceBlockGet.implementationSource.indexOf("resource.echo") !== -1,
+	createdResourceBlockGet.implementationSource.indexOf("return \"ok\"") !== -1,
 	"blockGet did not expose canonical descriptor and implementation sources");
 var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	query: "Resource smoke",
@@ -157,9 +156,8 @@ var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
 	patch: [
 		"--- a/libs/flow/blocks/resource.echo.js",
 		"+++ b/libs/flow/blocks/resource.echo.js",
-		"@@ -2,7 +2,7 @@",
+		"@@ -2,6 +2,6 @@",
 		" \treturn {",
-		" \t\tname: \"resource.echo\",",
 		" \t\trun: function () {",
 		"-\t\t\treturn \"ok\";",
 		"+\t\t\treturn \"patched ok\";",
@@ -263,16 +261,13 @@ var canonicalYaml = [
 	"implementation:",
 	"  runtime: rhino",
 	"  file: canonical.echo.js",
+	"hooks:",
+	"  file: canonical.echo.hooks.js",
 	""
 ].join("\n");
 var canonicalJs = [
 	"(function () {",
 	"\treturn {",
-	"\t\tname: \"canonical.echo\",",
-	"\t\tdisplayName: function (node) {",
-	"\t\t\tvar props = node.props || node;",
-	"\t\t\treturn \"canonical -> \" + (props.out || \"result.value\");",
-	"\t\t},",
 	"\t\trun: function (ctx, node) {",
 	"\t\t\tvar props = ctx.props(node);",
 	"\t\t\tvar value = ctx.template(props.value);",
@@ -283,11 +278,24 @@ var canonicalJs = [
 	"}())",
 	""
 ].join("\n");
+var canonicalHooksJs = [
+	"(function () {",
+	"\treturn {",
+	"\t\tdisplayName: function (node) {",
+	"\t\t\tvar props = node.props || node;",
+	"\t\t\treturn \"canonical -> \" + (props.out || \"result.value\");",
+	"\t\t}",
+	"\t};",
+	"}())",
+	""
+].join("\n");
 var canonicalBlocksDir = new java.io.File(projectDirFile, "libs/flow/blocks");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	new java.io.File(canonicalBlocksDir, "canonical.echo.block.yaml"), canonicalYaml, "UTF-8");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	new java.io.File(canonicalBlocksDir, "canonical.echo.js"), canonicalJs, "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(canonicalBlocksDir, "canonical.echo.hooks.js"), canonicalHooksJs, "UTF-8");
 var canonicalCatalog = JSON.parse(engine.catalog(JSON.stringify({ detail: "compact" })));
 var canonicalBlock = null;
 canonicalCatalog.blocks.forEach(function (block) {
@@ -378,7 +386,6 @@ var callBlockDescriptorSource = [
 var callBlockImplementationSource = [
 	"(function () {",
 	"\treturn {",
-	"\t\tname: \"smoke.callBlock\",",
 	"\t\trun: function (ctx, node) {",
 	"\t\t\tvar props = ctx.props(node);",
 	"\t\t\tctx.callBlock(\"set\", { path: \"flow.called\", value: \"{{ input.name }}\" }, { trace: false });",
@@ -444,7 +451,6 @@ var libBackedBlockDescriptorSource = [
 var libBackedBlockImplementationSource = [
 	"(function () {",
 	"\treturn {",
-	"\t\tname: \"smoke.lib\",",
 	"\t\trun: function (ctx, node) {",
 	"\t\t\tvar props = ctx.props(node);",
 	"\t\t\treturn ctx.lib(\"smoke\").decorate(ctx.expr(props.value || \"input.name\"));",

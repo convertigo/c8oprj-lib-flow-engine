@@ -10,6 +10,8 @@ props:
     type: "unknown"
     default: "{{ result }}"
     description: "Value returned by the flow. Use {{ expression }} for dynamic values."
+hooks:
+  file: "return.hooks.js"
 implementation:
   runtime: "rhino"
   file: "return.js"

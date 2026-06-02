@@ -97,18 +97,6 @@
 	}
 
 	return {
-		name: "use",
-
-		displayName: function (node) {
-			var props = node && node.props || node || {};
-			return flowSummary.output(node, flowSummary.text(props.contract || "contract"));
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			ctx.addPath(props.out);
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var contract = findContract(ctx.definition, String(props.contract || ""));

@@ -152,22 +152,6 @@
 	}
 
 	return {
-		name: "requestable.call",
-
-		displayName: function (node) {
-			return flowSummary.output(node, flowSummary.text(prop(node, "requestable") || "requestable"));
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			ctx.addPath(props.out);
-			var target = staticTarget(ctx, props);
-			var schema = target && ctx.requestableOutputSchema ? ctx.requestableOutputSchema(target) : null;
-			if (schema) {
-				ctx.addSchema(props.out, schema);
-			}
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var target = resolveTarget(ctx, ctx.template(props.requestable || ""));

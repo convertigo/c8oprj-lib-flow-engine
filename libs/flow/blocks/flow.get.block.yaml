@@ -26,6 +26,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving Flow source and definition."
+hooks:
+  file: "flow.get.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.get.js"

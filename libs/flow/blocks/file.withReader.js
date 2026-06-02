@@ -24,26 +24,6 @@
 	}
 
 	return {
-		name: "file.withReader",
-
-		displayName: function (node) {
-			return flowSummary.output({ out: prop(node, "as") }, flowSummary.text(prop(node, "path") || prop(node, "file") || "reader"));
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			var asPath = props.as || "local.reader";
-			if (ctx.addOutputPath) {
-				ctx.addOutputPath("as", asPath);
-			} else {
-				ctx.addPath(asPath);
-			}
-			if (ctx.addSchema) {
-				ctx.addSchema(asPath, { type: "handle<file.reader>", handle: true });
-			}
-			ctx.visitNodes(node.nodes || []);
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var file = resolveFile(ctx, props.path || props.file);

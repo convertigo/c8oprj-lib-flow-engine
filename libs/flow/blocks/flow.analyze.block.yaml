@@ -26,6 +26,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving reads, writes and nodes."
+hooks:
+  file: "flow.analyze.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.analyze.js"

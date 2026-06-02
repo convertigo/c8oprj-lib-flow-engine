@@ -20,6 +20,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Optional scope path receiving the stored value."
+hooks:
+  file: "session.set.hooks.js"
 implementation:
   runtime: "rhino"
   file: "session.set.js"

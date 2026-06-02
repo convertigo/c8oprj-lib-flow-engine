@@ -20,6 +20,8 @@ props:
     mode: "write"
     default: "flow.sessionValue"
     description: "Scope path receiving the session value."
+hooks:
+  file: "session.get.hooks.js"
 implementation:
   runtime: "rhino"
   file: "session.get.js"

@@ -28,6 +28,8 @@ props:
     type: "boolean"
     default: false
     description: "Flush the writer after this write."
+hooks:
+  file: "file.write.hooks.js"
 implementation:
   runtime: "rhino"
   file: "file.write.js"

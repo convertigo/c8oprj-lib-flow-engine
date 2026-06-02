@@ -33,6 +33,8 @@ slots:
   - name: "nodes"
     label: "Flow"
     inline: true
+hooks:
+  file: "file.withReader.hooks.js"
 implementation:
   runtime: "rhino"
   file: "file.withReader.js"

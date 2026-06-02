@@ -36,6 +36,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving output schema."
+hooks:
+  file: "flow.outputSchema.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.outputSchema.js"

@@ -1,0 +1,79 @@
+<template id="flow-boolean-editor-template">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+		input { width: 16px; height: 16px; accent-color: #14a7cf; }
+		.value { color: #85c8ff; font-family: ui-monospace, monospace; }
+	</style>
+	<label>
+		<input part="input" type="checkbox">
+		<span>Enabled</span>
+		<span class="value" part="value"></span>
+	</label>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-boolean-editor")) {
+			return;
+		}
+
+		customElements.define("flow-boolean-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._value = "false";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-boolean-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("change", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._value = this.normalize(state && state.value);
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return this._value === "true" ? "true" : "false";
+			}
+
+			normalize(value) {
+				return String(value === true || String(value).toLowerCase() === "true");
+			}
+
+			handleEvent(event) {
+				if (event.target && event.target.matches("input")) {
+					this._value = event.target.checked ? "true" : "false";
+					this.render();
+					this.emit();
+				}
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var input = this.shadowRoot.querySelector("input");
+				var value = this.shadowRoot.querySelector("[part=value]");
+				if (input) {
+					input.checked = this.value === "true";
+				}
+				if (value) {
+					value.textContent = this.value;
+				}
+			}
+		});
+	}());
+</script>

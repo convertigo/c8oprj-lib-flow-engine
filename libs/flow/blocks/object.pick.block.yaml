@@ -21,6 +21,8 @@ props:
     mode: "write"
     default: "flow.picked"
     description: "Scope path receiving the selected fields."
+hooks:
+  file: "object.pick.hooks.js"
 implementation:
   runtime: "rhino"
   file: "object.pick.js"

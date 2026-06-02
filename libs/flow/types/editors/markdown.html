@@ -1,0 +1,110 @@
+<template id="flow-markdown-editor-template">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.grid { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(200px, .8fr); gap: 10px; min-height: 260px; }
+		textarea { box-sizing: border-box; width: 100%; min-height: 260px; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 8px; font: 12px ui-monospace, monospace; resize: vertical; }
+		.preview { border: 1px solid #343b42; border-radius: 4px; padding: 8px; overflow: auto; background: #171a1d; line-height: 1.45; }
+		.preview h1, .preview h2, .preview h3 { margin: 0 0 8px; font-size: 14px; }
+		.preview p { margin: 0 0 8px; }
+		.preview code { background: #111417; border: 1px solid #343b42; border-radius: 3px; padding: 1px 3px; }
+	</style>
+	<div class="grid">
+		<textarea part="input" spellcheck="true"></textarea>
+		<div class="preview" part="preview"></div>
+	</div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-markdown-editor")) {
+			return;
+		}
+
+		customElements.define("flow-markdown-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._value = "";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-markdown-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._value = state && state.value != null ? String(state.value) : "";
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return this._value || "";
+			}
+
+			handleEvent(event) {
+				if (event.target && event.target.matches("textarea")) {
+					this._value = event.target.value;
+					this.renderPreview();
+					this.emit();
+				}
+			}
+
+			escape(value) {
+				return String(value || "").replace(/[&<>"']/g, function (c) {
+					return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+				});
+			}
+
+			inline(text) {
+				return this.escape(text)
+					.replace(/`([^`]+)`/g, "<code>$1</code>")
+					.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+					.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+			}
+
+			markdownToHtml(text) {
+				var html = "";
+				String(text || "").split(/\r?\n/).forEach((line) => {
+					if (/^###\s+/.test(line)) {
+						html += "<h3>" + this.inline(line.replace(/^###\s+/, "")) + "</h3>";
+					} else if (/^##\s+/.test(line)) {
+						html += "<h2>" + this.inline(line.replace(/^##\s+/, "")) + "</h2>";
+					} else if (/^#\s+/.test(line)) {
+						html += "<h1>" + this.inline(line.replace(/^#\s+/, "")) + "</h1>";
+					} else if (line.trim()) {
+						html += "<p>" + this.inline(line) + "</p>";
+					}
+				});
+				return html || "<p></p>";
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			renderPreview() {
+				var preview = this.shadowRoot && this.shadowRoot.querySelector("[part=preview]");
+				if (preview) {
+					preview.innerHTML = this.markdownToHtml(this.value);
+				}
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var textarea = this.shadowRoot.querySelector("textarea");
+				if (textarea && textarea.value !== this.value) {
+					textarea.value = this.value;
+				}
+				this.renderPreview();
+			}
+		});
+	}());
+</script>

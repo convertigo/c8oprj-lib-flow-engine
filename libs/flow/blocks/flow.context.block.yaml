@@ -66,6 +66,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving visible paths."
+hooks:
+  file: "flow.context.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.context.js"

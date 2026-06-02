@@ -1,0 +1,12 @@
+version: 1
+name: "boolean"
+label: "Boolean"
+icon: "mdi:toggle-switch-outline"
+type: "boolean"
+description: "Boolean true or false value."
+editor:
+  label: "Boolean editor"
+  kind: "webcomponent"
+  component: "flow-boolean-editor"
+  file: "editors/boolean.html"
+  icon: "mdi:application-brackets-outline"

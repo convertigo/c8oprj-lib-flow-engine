@@ -51,6 +51,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving the updated source and tree."
+hooks:
+  file: "flow.apply.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.apply.js"

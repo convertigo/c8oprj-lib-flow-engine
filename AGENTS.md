@@ -189,14 +189,34 @@ during the POC. Put project-level bindings and config defaults there. Keep
 Flow-level overrides in the Flow sidecar when a specific Flow must deviate from
 the project default.
 
-Rhino implementation files are IIFEs returning runtime hooks only. They must not
-define `catalog()`; metadata, properties and docs belong in `*.block.yaml`.
+Rhino implementation files are IIFEs returning runtime implementation only. They
+must not define `catalog()`, `name`, `private`, `displayName()` or `analyze()`;
+static metadata, properties and docs belong in `*.block.yaml`. Optional dynamic
+hooks belong in a peer file declared with `hooks.file`.
 
 ```javascript
 (function () {
 	return {
 		run: function (ctx, node) {
 			// ...
+		}
+	};
+}())
+```
+
+```yaml
+hooks:
+  file: my.block.hooks.js
+```
+
+```javascript
+(function () {
+	return {
+		displayName: function (node) {
+			return "short tree label";
+		},
+		analyze: function (ctx, node) {
+			ctx.addPath("flow.value");
 		}
 	};
 }())

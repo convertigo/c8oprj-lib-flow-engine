@@ -21,6 +21,8 @@ props:
     mode: "write"
     default: "flow.value"
     description: "Scope path receiving the selected value."
+hooks:
+  file: "json.select.hooks.js"
 implementation:
   runtime: "rhino"
   file: "json.select.js"

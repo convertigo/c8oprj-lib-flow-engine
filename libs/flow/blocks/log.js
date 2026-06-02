@@ -36,14 +36,6 @@
 	}
 
 	return {
-		name: "log",
-
-		displayName: function (node) {
-			var level = prop(node, "level") || "info";
-			var message = flowSummary.prop(node, "message") || "message";
-			return flowSummary.text(String(level).toLowerCase() + " " + message);
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var message = String(ctx.template(props.message || ""));

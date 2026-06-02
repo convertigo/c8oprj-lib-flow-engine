@@ -1,0 +1,131 @@
+<template id="flow-icon-editor-template">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		.list { max-height: 300px; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; }
+		button { border: 1px solid #39424a; background: #22282e; color: #d7e1e7; border-radius: 4px; padding: 5px 6px; font-size: 12px; cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		button.active { background: #0d5268; border-color: #2bb8df; color: #fff; }
+		.meta { color: #9da7af; margin-top: 6px; }
+	</style>
+	<div class="toolbar">
+		<input part="value" placeholder="mdi:power, relative file, or URL">
+		<input part="filter" placeholder="filter cached mdi icons">
+	</div>
+	<div class="list" part="list"></div>
+	<div class="meta" part="meta"></div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-icon-editor")) {
+			return;
+		}
+
+		customElements.define("flow-icon-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._value = "";
+				this._filter = "";
+				this._icons = [];
+				this._loaded = false;
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-icon-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("click", this);
+				}
+				this.loadIcons();
+				this.render();
+			}
+
+			setState(state) {
+				this._value = state && state.value != null ? String(state.value) : "";
+				this.loadIcons();
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return this._value || "";
+			}
+
+			host() {
+				return this.flowHost || window.flowHost || {};
+			}
+
+			loadIcons() {
+				if (this._loaded) {
+					return;
+				}
+				this._loaded = true;
+				var request = this.host().request;
+				if (request) {
+					var response = request("icons", { provider: "mdi", limit: 500 });
+					if (response && response.icons) {
+						this._icons = response.icons;
+					}
+				}
+				if (!this._icons.length) {
+					this._icons = ["mdi:puzzle-outline", "mdi:source-branch", "mdi:language-javascript", "mdi:tools", "mdi:email-outline", "mdi:web", "mdi:database-arrow-right-outline"].map(function (id) {
+						return { id: id, origin: "fallback" };
+					});
+				}
+			}
+
+			handleEvent(event) {
+				if (event.type === "input") {
+					var valueInput = event.target && event.target.getAttribute && event.target.getAttribute("part") === "value";
+					var filterInput = event.target && event.target.getAttribute && event.target.getAttribute("part") === "filter";
+					if (valueInput) {
+						this._value = event.target.value;
+						this.emit();
+					}
+					if (filterInput) {
+						this._filter = event.target.value.toLowerCase();
+					}
+					this.render();
+					return;
+				}
+				var icon = event.target && event.target.getAttribute && event.target.getAttribute("data-icon");
+				if (icon) {
+					this._value = icon;
+					this.render();
+					this.emit();
+				}
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var value = this.shadowRoot.querySelector("[part=value]");
+				var filter = this.shadowRoot.querySelector("[part=filter]");
+				var list = this.shadowRoot.querySelector("[part=list]");
+				var meta = this.shadowRoot.querySelector("[part=meta]");
+				if (value && value.value !== this.value) {
+					value.value = this.value;
+				}
+				if (filter && filter.value !== this._filter) {
+					filter.value = this._filter;
+				}
+				var rows = this._icons.filter((icon) => !this._filter || String(icon.id).toLowerCase().indexOf(this._filter) !== -1).slice(0, 120);
+				if (list) {
+					list.innerHTML = rows.map((icon) => "<button class=\"" + (icon.id === this.value ? "active" : "") + "\" data-icon=\"" + icon.id + "\">" + icon.id + "</button>").join("");
+				}
+				if (meta) {
+					meta.textContent = rows.length + " cached icon(s) shown. You can also type any mdi:* id directly.";
+				}
+			}
+		});
+	}());
+</script>

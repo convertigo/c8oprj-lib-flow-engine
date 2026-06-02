@@ -21,6 +21,8 @@ props:
     mode: "write"
     default: "flow.filtered"
     description: "Scope path receiving the filtered array."
+hooks:
+  file: "list.filter.hooks.js"
 implementation:
   runtime: "rhino"
   file: "list.filter.js"

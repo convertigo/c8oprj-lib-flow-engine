@@ -26,6 +26,8 @@ props:
     kind: "value"
     type: "unknown"
     description: "Optional structured value appended as JSON."
+hooks:
+  file: "log.hooks.js"
 implementation:
   runtime: "rhino"
   file: "log.js"

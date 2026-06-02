@@ -21,6 +21,8 @@ props:
     mode: "write"
     default: "flow.merged"
     description: "Scope path receiving the merged object."
+hooks:
+  file: "object.merge.hooks.js"
 implementation:
   runtime: "rhino"
   file: "object.merge.js"

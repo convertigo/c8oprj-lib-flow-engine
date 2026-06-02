@@ -46,6 +46,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving execution result."
+hooks:
+  file: "flow.run.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.run.js"

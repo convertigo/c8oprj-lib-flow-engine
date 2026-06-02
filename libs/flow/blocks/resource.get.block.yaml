@@ -31,6 +31,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving the resource content and metadata."
+hooks:
+  file: "resource.get.hooks.js"
 implementation:
   runtime: "rhino"
   file: "resource.get.js"

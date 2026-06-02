@@ -19,6 +19,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving the called Flow result."
+hooks:
+  file: "flow.call.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.call.js"

@@ -16,6 +16,8 @@ props:
     type: "unknown"
     default: "{{ current }}"
     description: "Value to push. Use {{ expression }} for dynamic values."
+hooks:
+  file: "json.push.hooks.js"
 implementation:
   runtime: "rhino"
   file: "json.push.js"

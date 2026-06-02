@@ -31,6 +31,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving the block catalog."
+hooks:
+  file: "block.list.hooks.js"
 implementation:
   runtime: "rhino"
   file: "block.list.js"

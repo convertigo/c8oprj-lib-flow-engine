@@ -14,6 +14,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Optional scope path receiving true when the key was removed."
+hooks:
+  file: "session.remove.hooks.js"
 implementation:
   runtime: "rhino"
   file: "session.remove.js"

@@ -14,20 +14,6 @@
 	}
 
 	return {
-		name: "resource.search",
-		private: true,
-
-		displayName: function (node) {
-			return flowSummary.output(node, flowSummary.text(prop(node, "query") || prop(node, "q") || "resources"));
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			return ctx.resourceSearch(argsFrom(ctx.props(node)));
 		}

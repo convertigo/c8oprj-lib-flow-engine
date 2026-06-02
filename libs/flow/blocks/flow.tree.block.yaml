@@ -46,6 +46,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving the virtual tree."
+hooks:
+  file: "flow.tree.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.tree.js"

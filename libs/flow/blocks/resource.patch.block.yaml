@@ -51,6 +51,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving patch result."
+hooks:
+  file: "resource.patch.hooks.js"
 implementation:
   runtime: "rhino"
   file: "resource.patch.js"

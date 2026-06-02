@@ -28,20 +28,6 @@
 	}
 
 	return {
-		name: "flow.test",
-		private: true,
-
-		displayName: function (node) {
-			return "test flow " + (prop(node, "name") || prop(node, "flowName") || "");
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var args = argsFrom(props);

@@ -51,6 +51,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving search results."
+hooks:
+  file: "resource.search.hooks.js"
 implementation:
   runtime: "rhino"
   file: "resource.search.js"

@@ -16,6 +16,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving project Flow sidecars."
+hooks:
+  file: "flow.list.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.list.js"

@@ -23,20 +23,6 @@
 	}
 
 	return {
-		name: "flow.apply",
-		private: true,
-
-		displayName: function () {
-			return "apply flow mutations";
-		},
-
-		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
-			if (out) {
-				ctx.addPath(out);
-			}
-		},
-
 		run: function (ctx, node) {
 			return ctx.applyMutationSource(withNamedFlowSource(ctx, argsFrom(ctx.props(node))));
 		}

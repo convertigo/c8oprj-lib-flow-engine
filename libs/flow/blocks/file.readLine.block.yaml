@@ -25,6 +25,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Optional scope path receiving {line, eof}."
+hooks:
+  file: "file.readLine.hooks.js"
 implementation:
   runtime: "rhino"
   file: "file.readLine.js"

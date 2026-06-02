@@ -36,6 +36,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving reset status."
+hooks:
+  file: "flow.schema.reset.hooks.js"
 implementation:
   runtime: "rhino"
   file: "flow.schema.reset.js"

@@ -16,6 +16,8 @@ props:
     kind: "path"
     mode: "write"
     description: "Scope path receiving property type descriptors."
+hooks:
+  file: "type.list.hooks.js"
 implementation:
   runtime: "rhino"
   file: "type.list.js"

@@ -35,17 +35,6 @@
 	}
 
 	return {
-		name: "flow.call",
-
-		displayName: function (node) {
-			return flowSummary.output(node, flowSummary.text(prop(node, "flow") || "flow"));
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			ctx.addPath(props.out);
-		},
-
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var name = flowName(ctx, prop(node, "flow") || prop(node, "name"));
