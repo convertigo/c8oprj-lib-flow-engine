@@ -1,0 +1,29 @@
+version: 1
+icon: "mdi:form-textbox"
+tags:
+- json
+description: "Adds one field to the nearest parent JSON object."
+props:
+  key:
+    label: "key"
+    kind: "text"
+    type: "string"
+    default: "field"
+    description: "JSON object key."
+  value:
+    label: "value"
+    kind: "value"
+    type: "unknown"
+    default: ""
+    description: "Field value. Use {{ expression }} for dynamic values."
+children:
+  - "nodes"
+slots:
+  - name: "nodes"
+    label: "Value"
+    inline: true
+hooks:
+  file: "json.field.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "json.field.js"

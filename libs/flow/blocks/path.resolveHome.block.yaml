@@ -1,0 +1,28 @@
+version: 1
+icon: "mdi:folder-home-outline"
+tags:
+- resource
+description: "Resolves a home-relative filesystem path."
+props:
+  path:
+    label: "path"
+    kind: "template"
+    type: "string"
+    default: "~"
+    description: "Base path. Supports ~ and ~/ prefixes."
+  suffix:
+    label: "suffix"
+    kind: "template"
+    type: "string"
+    description: "Optional child path appended after the base path is resolved."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.path"
+    description: "Scope path receiving the canonical absolute path."
+hooks:
+  file: "path.resolveHome.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "path.resolveHome.js"

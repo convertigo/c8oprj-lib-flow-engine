@@ -1,0 +1,24 @@
+version: 1
+icon: "mdi:api"
+tags:
+- platform
+description: "Returns the current Convertigo endpoint URLs."
+longDescription: "Uses the Convertigo engine configuration to expose common local URLs such as the Convertigo base URL, REST API URL and Flow MCP endpoint URL."
+props:
+  mcpPath:
+    label: "mcpPath"
+    kind: "text"
+    type: "string"
+    default: "/api/flow-mcp"
+    description: "Endpoint path appended to the Convertigo base URL for the Flow MCP endpoint."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    default: "flow.endpoint"
+    description: "Scope path receiving endpoint information."
+hooks:
+  file: "endpoint.current.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "endpoint.current.js"
