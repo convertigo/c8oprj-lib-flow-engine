@@ -10,7 +10,8 @@
 			if (!array) {
 				array = ctx.write(props.path, []);
 			}
-			array.push(ctx.input(props));
+			var value = node.nodes && node.nodes.length ? ctx.runNodes(node.nodes) : ctx.input(props);
+			array.push(value);
 			return array;
 		}
 	};

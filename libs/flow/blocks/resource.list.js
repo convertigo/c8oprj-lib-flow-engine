@@ -1,8 +1,4 @@
 (function () {
-	function prop(node, key) {
-		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
-	}
-
 	function argsFrom(ctx, props) {
 		var args = {};
 		Object.keys(props || {}).forEach(function (key) {
@@ -15,7 +11,7 @@
 
 	return {
 		run: function (ctx, node) {
-			return ctx.resourceGet(argsFrom(ctx, ctx.props(node)));
+			return ctx.resourceList(argsFrom(ctx, ctx.props(node)));
 		}
 	};
 }())

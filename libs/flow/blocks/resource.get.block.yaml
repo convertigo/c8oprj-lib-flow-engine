@@ -7,7 +7,12 @@ props:
     label: "path"
     kind: "text"
     type: "string"
-    description: "Project-local Flow resource path."
+    description: "Project-local Flow resource path. Takes precedence over uri."
+  uri:
+    label: "uri"
+    kind: "text"
+    type: "string"
+    description: "Flow resource URI such as flow://guide/start."
   maxBytes:
     label: "maxBytes"
     kind: "literal"

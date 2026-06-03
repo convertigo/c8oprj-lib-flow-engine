@@ -15,6 +15,12 @@ props:
     type: "unknown"
     default: "{{ current }}"
     description: "Value to push. Use {{ expression }} for dynamic values."
+children:
+  - "nodes"
+slots:
+  - name: "nodes"
+    label: "Value"
+    inline: true
 hooks:
   file: "json.push.hooks.js"
 implementation:

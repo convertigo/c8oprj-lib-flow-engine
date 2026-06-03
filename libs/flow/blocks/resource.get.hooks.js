@@ -15,7 +15,7 @@
 
 	return {
 		displayName: function (node) {
-			return flowSummary.output(node, flowSummary.text(prop(node, "path") || "resource"));
+			return flowSummary.output(node, flowSummary.text(prop(node, "path") || prop(node, "uri") || "resource"));
 		},
 
 		analyze: function (ctx, node) {

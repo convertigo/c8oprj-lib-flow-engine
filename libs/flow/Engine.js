@@ -1561,6 +1561,85 @@
 		return filename;
 	}
 
+	function resourceMimeType(path) {
+		var ext = resourceExtension(path);
+		if (ext === "md") {
+			return "text/markdown";
+		}
+		if (ext === "txt") {
+			return "text/plain";
+		}
+		if (ext === "json") {
+			return "application/json";
+		}
+		if (ext === "yaml" || ext === "yml") {
+			return "text/yaml";
+		}
+		if (ext === "html") {
+			return "text/html";
+		}
+		if (ext === "css") {
+			return "text/css";
+		}
+		if (ext === "js") {
+			return "text/javascript";
+		}
+		return "application/octet-stream";
+	}
+
+	function resourceUri(path) {
+		var prefix = "libs/flow/resources/";
+		var text = String(path || "");
+		if (text.indexOf(prefix) !== 0) {
+			return "";
+		}
+		text = text.substring(prefix.length);
+		var dot = text.lastIndexOf(".");
+		if (dot > 0) {
+			text = text.substring(0, dot);
+		}
+		return "flow://" + text;
+	}
+
+	function markdownBody(content) {
+		var text = String(content || "");
+		var lines = text.split(/\r?\n/);
+		if (lines.length && String(lines[0]).trim() === "---") {
+			for (var i = 1; i < lines.length; i++) {
+				if (String(lines[i]).trim() === "---") {
+					return lines.slice(i + 1).join("\n");
+				}
+			}
+		}
+		return text;
+	}
+
+	function firstMarkdownHeading(content, fallback) {
+		var lines = markdownBody(content).split(/\r?\n/);
+		for (var i = 0; i < lines.length; i++) {
+			var match = lines[i].match(/^#\s+(.+?)\s*$/);
+			if (match) {
+				return match[1];
+			}
+		}
+		return fallback;
+	}
+
+	function firstMarkdownParagraph(content) {
+		var lines = markdownBody(content).split(/\r?\n/);
+		for (var i = 0; i < lines.length; i++) {
+			var line = String(lines[i] || "").trim();
+			if (line === "" || line.charAt(0) === "#") {
+				continue;
+			}
+			if (line.charAt(0) === "-" || /^[0-9]+\.\s/.test(line)) {
+				continue;
+			}
+			return line;
+		}
+		return "";
+	}
+
 	function blockIdFromResourcePath(path) {
 		var text = String(path || "").replace(/\\/g, "/");
 		var prefix = "libs/flow/blocks/";
@@ -1653,17 +1732,186 @@
 		return out;
 	}
 
+	function projectResourceEntryForUri(uri) {
+		var wanted = String(uri || "").trim();
+		if (wanted === "") {
+			raise("MISSING_RESOURCE_URI", "A Flow resource uri is required.");
+		}
+		var entries = projectResourceEntries();
+		for (var i = 0; i < entries.length; i++) {
+			if (resourceUri(entries[i].path) === wanted) {
+				return entries[i];
+			}
+		}
+		raise("UNKNOWN_RESOURCE", "Unknown Flow resource uri: " + wanted);
+	}
+
 	function resourceSummary(entry, content) {
 		content = content === undefined ? String(FileUtils.readFileToString(entry.file, "UTF-8")) : String(content);
-		return {
+		var summary = {
 			path: entry.path,
 			kind: resourceKind(entry.path),
 			name: resourceName(entry.path),
+			mimeType: resourceMimeType(entry.path),
 			file: String(entry.file.getAbsolutePath()),
 			size: Number(entry.file.length()),
 			lastModified: Number(entry.file.lastModified()),
 			hash: sha256Hex(content)
 		};
+		var uri = resourceUri(entry.path);
+		if (uri) {
+			summary.uri = uri;
+			summary.name = firstMarkdownHeading(content, summary.name);
+			summary.description = firstMarkdownParagraph(content);
+		}
+		return summary;
+	}
+
+	function resourceListSummary(entry, includeHash) {
+		var summary = {
+			path: entry.path,
+			kind: resourceKind(entry.path),
+			name: resourceName(entry.path),
+			mimeType: resourceMimeType(entry.path),
+			size: Number(entry.file.length()),
+			lastModified: Number(entry.file.lastModified())
+		};
+		var uri = resourceUri(entry.path);
+		if (uri) {
+			summary.uri = uri;
+		}
+		if (includeHash === true || uri) {
+			var content = String(FileUtils.readFileToString(entry.file, "UTF-8"));
+			if (includeHash === true) {
+				summary.hash = sha256Hex(content);
+			}
+			if (uri) {
+				summary.name = firstMarkdownHeading(content, summary.name);
+				summary.description = firstMarkdownParagraph(content);
+			}
+		}
+		return summary;
+	}
+
+	function globPatterns(value, fallback) {
+		if (value === undefined || value === null || value === "") {
+			value = fallback;
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return value.map(function (item) {
+				return String(item || "").trim().replace(/\\/g, "/");
+			}).filter(function (item) {
+				return item !== "";
+			});
+		}
+		return String(value || "").split(/[\n,]/).map(function (item) {
+			return item.trim().replace(/\\/g, "/");
+		}).filter(function (item) {
+			return item !== "";
+		});
+	}
+
+	function globToRegExp(pattern) {
+		var text = String(pattern || "").replace(/\\/g, "/");
+		var out = "^";
+		for (var i = 0; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (ch === "*") {
+				if (text.charAt(i + 1) === "*") {
+					i++;
+					if (text.charAt(i + 1) === "/") {
+						i++;
+						out += "(?:.*/)?";
+					} else {
+						out += ".*";
+					}
+				} else {
+					out += "[^/]*";
+				}
+				continue;
+			}
+			if (ch === "?") {
+				out += "[^/]";
+				continue;
+			}
+			if ("\\.^$+{}()|[]".indexOf(ch) !== -1) {
+				out += "\\";
+			}
+			out += ch;
+		}
+		return new RegExp(out + "$");
+	}
+
+	function globMatches(path, patterns) {
+		if (!patterns || patterns.length === 0) {
+			return true;
+		}
+		for (var i = 0; i < patterns.length; i++) {
+			if (globToRegExp(patterns[i]).test(path)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function resourceListRequest(request) {
+		request = request || {};
+		var rootDir = String(request.rootDir || request.root || "").trim().replace(/\\/g, "/");
+		var patterns = globPatterns(request.pattern || request.glob, rootDir ? "**/*" : "libs/flow/resources/**/*");
+		if (rootDir) {
+			rootDir = normalizeResourcePath(rootDir);
+			patterns = patterns.map(function (pattern) {
+				if (pattern.indexOf("libs/flow/") === 0) {
+					return pattern;
+				}
+				return rootDir.replace(/\/+$/, "") + "/" + pattern.replace(/^\/+/, "");
+			});
+		}
+		var kind = String(request.kind || "").trim();
+		var query = String(request.query || request.q || "").trim().toLowerCase();
+		var resources = [];
+		projectResourceEntries().forEach(function (entry) {
+			if (!globMatches(entry.path, patterns)) {
+				return;
+			}
+			if (kind && resourceKind(entry.path) !== kind) {
+				return;
+			}
+			var summary = resourceListSummary(entry, request.includeHash === true);
+			if (query) {
+				var haystack = [summary.path, summary.uri, summary.name, summary.description, summary.kind].join(" ").toLowerCase();
+				if (haystack.indexOf(query) === -1) {
+					return;
+				}
+			}
+			resources.push(summary);
+		});
+		resources.sort(function (a, b) {
+			return String(a.path).localeCompare(String(b.path));
+		});
+		var offset = request.cursor !== undefined && request.cursor !== null && String(request.cursor) !== ""
+			? intOption(request.cursor, 0, 0)
+			: intOption(request.skip || request.offset, 0, 0);
+		var limit = intOption(request.limit, 100, 1, 500);
+		var page = resources.slice(offset, offset + limit);
+		var out = {
+			ok: true,
+			pattern: patterns,
+			count: page.length,
+			total: resources.length,
+			resources: page,
+			nextCursor: offset + limit < resources.length ? String(offset + limit) : null
+		};
+		if (request.doc !== false) {
+			out.doc = "List project-local Flow resources using glob patterns such as libs/flow/resources/**/*.md.";
+		}
+		if (request.hints !== false) {
+			out.hints = [
+				"Use resource.get with uri or path to read one listed resource.",
+				"Use pattern to stay narrow; repeated calls can pass doc=false,hints=false."
+			];
+		}
+		return out;
 	}
 
 	function resourceSearchRequest(request) {
@@ -1711,7 +1959,9 @@
 
 	function resourceGetRequest(request) {
 		request = request || {};
-		var entry = projectResourceFile(request.path, true);
+		var entry = request.path !== undefined && request.path !== null && String(request.path).trim() !== ""
+			? projectResourceFile(request.path, true)
+			: projectResourceEntryForUri(request.uri);
 		var maxBytes = intOption(request.maxBytes, 1000000, 1000, 5000000);
 		if (entry.file.length() > maxBytes && request.allowLarge !== true) {
 			raise("RESOURCE_TOO_LARGE", "Flow resource is too large to return: " + entry.path,
@@ -2393,12 +2643,14 @@
 
 	function runGraphBlock(ctx, node, block) {
 		var catalog = blockCatalog(block);
+		var previousInput = ctx.scopes.input;
 		var previousProps = ctx.scopes.props;
 		var previousLocal = ctx.scopes.local;
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
 		ctx.scopes.props = resolveGraphBlockProps(ctx, node, catalog);
+		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
 		ctx.returned = undefined;
 		ctx.stopped = false;
@@ -2409,6 +2661,7 @@
 			}
 			return result;
 		} finally {
+			ctx.scopes.input = previousInput;
 			ctx.scopes.props = previousProps;
 			ctx.scopes.local = previousLocal;
 			ctx.scopes.current = previousCurrent;
@@ -3732,6 +3985,12 @@
 				return resourceSearchRequest(args);
 			});
 		};
+		ctx.resourceList = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return resourceListRequest(args);
+			});
+		};
 		ctx.resourceGet = function (args) {
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
@@ -4010,6 +4269,7 @@
 		ctx.withGraphBlock = function (node, block, callback) {
 			var catalog = blockCatalog(block);
 			var props = nodeProps(node);
+			ctx.addPath("input");
 			ctx.addPath("props");
 			ctx.addPath("local");
 			Object.keys(catalog.props || {}).forEach(function (key) {
@@ -4025,8 +4285,10 @@
 					schema = { type: String(descriptor.type) };
 				}
 				if (schema) {
+					ctx.addSchema("input." + key, schema);
 					ctx.addSchema("props." + key, schema);
 				} else {
+					ctx.addPath("input." + key);
 					ctx.addPath("props." + key);
 				}
 			});
@@ -4048,6 +4310,27 @@
 		ctx.requestableOutputSchema = request.allowRequestableSchema === false
 			? function () { return null; }
 			: requestableOutputSchema;
+		var sourceBlockName = String(request.sourceBlockName || request.blockName || "").trim();
+		var sourceBlock = sourceBlockName ? blocks[sourceBlockName] : null;
+		if (sourceBlock) {
+			var sourceCatalog = blockCatalog(sourceBlock);
+			ctx.addPath("input");
+			ctx.addPath("props");
+			Object.keys(sourceCatalog.props || {}).forEach(function (key) {
+				var descriptor = sourceCatalog.props[key] || {};
+				var schema = descriptor.type ? { type: String(descriptor.type) } : null;
+				if (!schema && descriptor.kind === "array") {
+					schema = { type: "array" };
+				}
+				if (schema) {
+					ctx.addSchema("input." + key, schema);
+					ctx.addSchema("props." + key, schema);
+				} else {
+					ctx.addPath("input." + key);
+					ctx.addPath("props." + key);
+				}
+			});
+		}
 		ctx.raise = raise;
 		return ctx;
 	}
@@ -4988,10 +5271,6 @@
 				defaults[key] = descriptor["default"];
 			}
 		});
-		if (propertyOrder.length > 0) {
-			info.propertyDefinitions = propertyDefinitions;
-			info.propertyOrder = propertyOrder;
-		}
 		if (Object.keys(defaults).length > 0) {
 			info.propertyDefaults = defaults;
 		}
@@ -5013,6 +5292,25 @@
 					info.readOnlyReference = true;
 				}
 			}
+			if (catalog.provider) {
+				info.blockProvider = String(catalog.provider);
+				propertyDefinitions.blockProvider = propertyDefinition("Block provider", "Information",
+					"Project or library providing this block.", { readOnly: true });
+				propertyOrder.push("blockProvider");
+			}
+			if (catalog.file) {
+				var blockSource = sourceDefinitionForFile(catalog.file, catalog.implementation || "");
+				if (blockSource.sourceRelativePath) {
+					info.blockSource = blockSource.sourceRelativePath;
+					propertyDefinitions.blockSource = propertyDefinition("Block source", "Information",
+						"Descriptor source for this block.", { readOnly: true });
+					propertyOrder.push("blockSource");
+				}
+			}
+		}
+		if (propertyOrder.length > 0) {
+			info.propertyDefinitions = propertyDefinitions;
+			info.propertyOrder = propertyOrder;
 		}
 		return info;
 	}
@@ -5490,9 +5788,29 @@
 			tags: propertyDefinition("Tags", "Base properties", "Searchable labels used for filtering and documentation.", { kind: "array", type: "array", items: { kind: "text", type: "string", trim: true, unique: true }, defaultValue: [] }),
 			kind: propertyDefinition("Kind", "Information", "Legacy field migrated to tags.", { readOnly: true, hidden: true }),
 			package: propertyDefinition("Package", "Information", "Legacy field replaced by provider.", { readOnly: true, hidden: true }),
-			props: propertyDefinition("Properties", "Properties", "Block property contract.", { kind: "literal", type: "object" }),
+			props: propertyDefinition("Properties", "Information", "Block property contract. Edit the Properties child instead.", { readOnly: true, hidden: true }),
 			slots: propertyDefinition("Slots", "Properties", "Child node slots accepted by this block.", { kind: "literal", type: "array" }),
 			defaults: propertyDefinition("Defaults", "Properties", "Default node values applied when the block is dropped from the palette.", { kind: "literal", type: "object" })
+		};
+	}
+
+	function blockPropertiesFolderDefinitions() {
+		return {
+			count: propertyDefinition("Count", "Information", "Number of properties declared by this block.", { readOnly: true })
+		};
+	}
+
+	function blockPropertyDefinitionDefinitions() {
+		return {
+			name: propertyDefinition("Name", "Information", "Property name computed from the descriptor key.", { readOnly: true }),
+			label: propertyDefinition("Label", "Base properties", "Human-readable property label.", { kind: "text", type: "string" }),
+			kind: propertyDefinition("Kind", "Base properties", "Flow property editor kind.", { kind: "text", type: "string" }),
+			type: propertyDefinition("Value type", "Base properties", "JSON value type handled by this property.", { kind: "text", type: "string" }),
+			mode: propertyDefinition("Mode", "Base properties", "Property usage mode such as read or write.", { kind: "text", type: "string" }),
+			description: propertyDefinition("Description", "Base properties", "Property documentation.", { kind: "markdown", type: "string" }),
+			default: propertyDefinition("Default", "Base properties", "Default property value.", { kind: "literal" }),
+			items: propertyDefinition("Items", "Expert", "Array item descriptor.", { kind: "literal", type: "object" }),
+			component: propertyDefinition("Component", "Expert", "Optional custom editor component.", { kind: "text", type: "string" })
 		};
 	}
 
@@ -5562,7 +5880,7 @@
 		}
 		if (block && block.__graphDefinition) {
 			var flowSource = sourceDefinitionForFile(block.__flowImplementationFile || descriptor.implementationFile || descriptor.file, "flow");
-			flowSource.sourceBlockName = descriptor.name || block.name || "";
+			flowSource.sourceBlockName = descriptor.blockId || block.name || descriptor.name || "";
 			flowSource.sourceMutationPath = "nodes";
 			flowSource.flowImplementation = true;
 			var flowSourceInfo = sourceObjectInfo(flowSource, sourcePropertyDefinitions(),
@@ -5593,6 +5911,61 @@
 			["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"]);
 		parent.children.push(virtualNode("hooks", "blockHooks", "javascript",
 			path + ".hooks", "Hooks", compact(hooksSource), compact(hooksSourceInfo), "mdi:script-text-outline"));
+	}
+
+	function propertyDefinitionIcon(definition) {
+		var kind = String(definition && (definition.kind || definition.type) || "");
+		if (kind === "expression") {
+			return "mdi:function-variant";
+		}
+		if (kind === "path") {
+			return "mdi:map-marker-path";
+		}
+		if (kind === "template") {
+			return "mdi:code-braces";
+		}
+		if (kind === "boolean") {
+			return "mdi:toggle-switch-outline";
+		}
+		if (kind === "array") {
+			return "mdi:format-list-bulleted";
+		}
+		if (kind === "object" || kind === "literal") {
+			return "mdi:code-json";
+		}
+		return "mdi:form-textbox";
+	}
+
+	function propertyDefinitionSummary(name, definition) {
+		definition = definition || {};
+		var kind = String(definition.kind || definition.type || "value");
+		var type = String(definition.type || "");
+		var suffix = type && type !== kind ? kind + ":" + type : kind;
+		return name + " [" + suffix + "]";
+	}
+
+	function addBlockProperties(parent, descriptor, path) {
+		var props = normalizeTree(descriptor && descriptor.props || {});
+		var keys = Object.keys(props);
+		var propsSource = sourceDefinitionForFile(descriptor.file, "properties");
+		propsSource.sourceMutationPath = "props";
+		var folderInfo = sourceObjectInfo(propsSource, blockPropertiesFolderDefinitions(), ["count"]);
+		var folder = virtualNode("properties", "folder", "blockProperties",
+			path + ".properties", "Properties", compact({ count: keys.length }), compact(folderInfo), "mdi:form-textbox");
+		parent.children.push(folder);
+		keys.forEach(function (key) {
+			var propDefinition = normalizeTree(props[key] || {});
+			propDefinition.name = key;
+			var propSource = sourceDefinitionForFile(descriptor.file, "property");
+			propSource.sourceMutationPath = "props." + key;
+			var propInfo = sourceObjectInfo(propSource, blockPropertyDefinitionDefinitions(),
+				["name", "label", "kind", "type", "mode", "description", "default", "items", "component",
+					"sourceRelativePath", "sourceOrigin", "sourceWritable"]);
+			folder.children.push(virtualNode("property_" + safeVirtualName("property", key), "blockProperty", key,
+				path + ".properties." + safeVirtualName("property", key),
+				propertyDefinitionSummary(key, propDefinition), compact(propDefinition), compact(propInfo),
+				propertyDefinitionIcon(propDefinition)));
+		});
 	}
 
 	function addCatalog(out, blocks, options) {
@@ -5642,12 +6015,14 @@
 				blockDefinition.localName = block.localName || block.name || blockId;
 				blockDefinition.namespace = block.namespace || "";
 				blockDefinition.provider = block.provider || "";
+				blockDefinition.file = block.file || blockDefinition.file || "";
 				var blockInfo = sourceObjectInfo(blockSource, blockPropertyDefinitions(),
-					["name", "provider", "namespace", "blockId", "description", "longDescription", "icon", "tags", "private", "props", "slots", "implementation", "hooks"]);
+					["name", "provider", "namespace", "blockId", "description", "longDescription", "icon", "tags", "private", "slots", "implementation", "hooks"]);
 				var blockNode = virtualNode("block_" + blockId, "block", blockId,
 					blockPath, block.name || blockId, compact(blockDefinition), compact(blockInfo),
 					block.icon || block.iconify || "mdi:puzzle-outline");
 				parentNode.children.push(blockNode);
+				addBlockProperties(blockNode, blockDefinition, blockPath);
 				addBlockImplementation(blockNode, blocks[blockId], block, blockPath, blocks);
 				addBlockHooks(blockNode, blocks[blockId], blockPath);
 			});
@@ -6609,6 +6984,15 @@
 				return response(resourceSearchRequest(request));
 			} catch (e) {
 				return response(failure("resourceSearch", e));
+			}
+		},
+
+		resourceList: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(resourceListRequest(request));
+			} catch (e) {
+				return response(failure("resourceList", e));
 			}
 		},
 

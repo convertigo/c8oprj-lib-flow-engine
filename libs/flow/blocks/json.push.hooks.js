@@ -11,6 +11,7 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.path);
+			ctx.visitNodes(node.nodes || []);
 			if (ctx.schemaForValue && ctx.addSchema) {
 				var itemSchema = ctx.schemaForValue(props.value);
 				if (itemSchema) {
