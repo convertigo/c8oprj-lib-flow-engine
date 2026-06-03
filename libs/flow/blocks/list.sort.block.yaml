@@ -5,7 +5,7 @@ props:
   items:
     kind: "expression"
     type: "array"
-    default: "flow.items"
+    default: "local.items"
     description: "Array expression to sort."
   by:
     kind: "expression"
@@ -20,7 +20,7 @@ props:
   out:
     kind: "path"
     mode: "write"
-    default: "flow.sorted"
+    default: "local.sorted"
     description: "Scope path receiving the sorted array."
 hooks:
   file: "list.sort.hooks.js"

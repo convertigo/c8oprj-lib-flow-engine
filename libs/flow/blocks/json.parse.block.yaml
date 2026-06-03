@@ -6,13 +6,13 @@ props:
     label: "text"
     kind: "template"
     type: "string"
-    default: "{{ flow.text }}"
+    default: "{{ local.text }}"
     description: "JSON text to parse."
   out:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.json"
+    default: "local.json"
     description: "Scope path receiving the parsed value."
 hooks:
   file: "json.parse.hooks.js"

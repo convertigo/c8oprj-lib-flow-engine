@@ -6,7 +6,7 @@ props:
     label: "items"
     kind: "expression"
     type: "array"
-    default: "flow.items"
+    default: "local.items"
     description: "Array expression to map."
   select:
     label: "select"
@@ -18,7 +18,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.mapped"
+    default: "local.mapped"
     description: "Scope path receiving the mapped array."
 hooks:
   file: "list.map.hooks.js"

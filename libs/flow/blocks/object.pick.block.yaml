@@ -6,7 +6,7 @@ props:
     label: "source"
     kind: "expression"
     type: "object"
-    default: "flow.object"
+    default: "local.object"
     description: "Object expression to read from."
   keys:
     label: "keys"
@@ -18,7 +18,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.picked"
+    default: "local.picked"
     description: "Scope path receiving the selected fields."
 hooks:
   file: "object.pick.hooks.js"

@@ -15,7 +15,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.endpoint"
+    default: "local.endpoint"
     description: "Scope path receiving endpoint information."
 hooks:
   file: "endpoint.current.hooks.js"

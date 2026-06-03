@@ -15,7 +15,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.asset"
+    default: "local.asset"
     description: "Scope path receiving the asset text."
 hooks:
   file: "asset.read.hooks.js"

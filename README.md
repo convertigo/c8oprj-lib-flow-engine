@@ -48,22 +48,22 @@ the preferred low-overhead composition path when a project wants subflows
 without going through Convertigo requestable/XML execution.
 
 `*.block.yaml` is the canonical block source format. It defines the visible
-contract: name, props, icons, documentation and implementation runtime. A
+contract: typed props, icons, documentation, slots, declared `uses` and implementation runtime. A
 flow-backed block stores its implementation as graph nodes:
 
 ```yaml
 version: 1
-name: demo.decorate
 props:
   input:
     kind: value
+uses: []
 implementation:
   runtime: flow
-nodes:
-  - block: set
-    path: result.value
-    value: "{{ props.input }}"
+  file: decorate.flow.yaml
 ```
+
+The block id is derived from the descriptor path, for example
+`libs/flow/blocks/demo/decorate.block.yaml` becomes `demo.decorate`.
 
 A Rhino-backed block keeps the same YAML descriptor and points to a peer
 implementation file:
@@ -82,8 +82,9 @@ metadata, docs and future implementation kinds (`java`, `kotlin`, etc.) in one
 stable shape while preserving a small Rhino escape hatch.
 
 Flow-backed blocks are regular catalog blocks. At runtime the engine exposes
-evaluated instance properties through `props` and a private mutable `local`
-scope for the block implementation. An internal `return` stops only the
+evaluated instance properties through `input` and a private mutable `local`
+scope for the block implementation. `props` remains a raw-node/hook compatibility
+alias. An internal `return` stops only the
 composite block, then the parent Flow continues normally.
 
 The `fragment.use` block expands a reusable graph inline from:
@@ -94,7 +95,8 @@ The `fragment.use` block expands a reusable graph inline from:
 
 A fragment is not a requestable and does not create a new scope. It behaves like
 the fragment nodes were written at that exact position, so it can read and write
-`input`, `config`, `flow`, `result` and `current` directly. The Flow tree and
+`input`, `config`, `local`, `result` and `current` directly. `flow` remains a
+temporary compatibility alias of `local`. The Flow tree and
 analysis expand fragment children logically while the disk representation keeps
 the fragment as a separate source file.
 
@@ -115,7 +117,8 @@ lib_flow_engine/libs/flow/lib/*.js         # core helper libraries
 Project-local blocks are meant for application-specific vocabulary. They cannot
 silently override core blocks; a name collision is reported as an error.
 Blocks can call `ctx.lib("name")` to load `libs/flow/lib/name.js` once per Flow
-execution context. When a reusable behavior has a clear input/output contract,
+execution context. Blocks should declare that dependency with `uses: [name]` so
+the library is visible in the catalog/treeview and patchable through MCP. When a reusable behavior has a clear input/output contract,
 prefer a block over a helper library: blocks can be used in Flow graphs and can
 also be called from JavaScript implementations with `ctx.callBlock(name, props)`.
 
@@ -300,7 +303,7 @@ OpenDocument handles, XLS workbooks, JDBC connections or transactions. Model
 those values as typed handles such as `handle<dbo>`, `handle<file.writer>`,
 `handle<xls.workbook>` or `handle<jdbc.transaction>`.
 
-Handles may live in execution scopes such as `flow`, `local`, `current` and
+Handles may live in execution scopes such as `local`, `current` and
 `request`. They must not be returned in `result`, persisted in Flow YAML, learned
 as JSON schemas, or sent through MCP/SDK responses. When a trace or picker needs
 to show a handle, show a small serializable summary: handle type, label, state
@@ -311,11 +314,11 @@ Prefer scoped `with*` blocks for resources that must be closed, mirroring Java
 
 ```yaml
 - block: file.withWriter
-  path: flow.outputPath
+  path: local.outputPath
   as: local.writer
   nodes:
     - block: forEach
-      items: flow.lines
+      items: local.lines
       nodes:
         - block: file.write
           writer: local.writer
@@ -334,7 +337,7 @@ iterates over it while setting `current` to the current line:
 
 ```yaml
 - block: file.withReader
-  path: flow.inputPath
+  path: local.inputPath
   as: local.reader
   nodes:
     - block: file.forEachLine
@@ -364,8 +367,8 @@ nodes:
 ```
 
 `flow-analyze` uses this `output` shape without running the child Flow. A node
-such as `out: flow.custom` then advertises `flow.custom.message` and
-`flow.custom.source` as produced paths.
+such as `out: local.custom` then advertises `local.custom.message` and
+`local.custom.source` as produced paths.
 
 ## Search API
 
@@ -491,9 +494,9 @@ Normal response:
     "propertyDefinition": { "kind": "template", "type": "string" }
   },
   "scopes": {
-    "flow": {
+    "local": {
       "paths": [
-        { "path": "flow.weather", "type": "unknown", "confidence": "inferred" }
+        { "path": "local.weather", "type": "unknown", "confidence": "inferred" }
       ]
     }
   }
@@ -506,7 +509,7 @@ Compact response:
 {
   "ok": true,
   "scopes": {
-    "flow": ["flow", "flow.weather", "flow.metropoles"]
+    "local": ["local", "local.weather", "local.metropoles"]
   }
 }
 ```
@@ -539,7 +542,7 @@ schema is known. Learned result schemas are only a fallback when static analysis
 does not know enough.
 
 `Engine.context()` and `Engine.analyze()` read these files and expose deeper
-paths such as `flow.weather.body.metropoles.city` to Studio pickers and LLM
+paths such as `local.weather.body.metropoles.city` to Studio pickers and LLM
 guidance. When a `forEach` iterates over an array with a known schema, the
 picker context exposes the iterated item under `current.*`; for example
 `current.city` and `current.temperature`.
@@ -579,7 +582,7 @@ Examples:
   url: "{{ config.weatherUrl }}"
   headers:
     X-Api-Key: "{{ config.apiKey }}"
-  out: flow.weather
+  out: local.weather
 
 - block: if
   condition: current.temperature >= config.threshold
@@ -646,12 +649,12 @@ Example call site:
     city: current.city
     latitude: current.latitude
     longitude: current.longitude
-    unit: flow.unit
-  out: flow.temperature
+    unit: local.unit
+  out: local.temperature
 ```
 
 The chosen implementation is a named Flow sidecar. It receives the call input in
-`request.input` and inherits the caller `config` scope, so provider URLs, API
+`input` and inherits the caller `config` scope, so provider URLs, API
 keys and environment choices stay injectable.
 
 `WeatherAlertContract` demonstrates this style: the main alert flow manipulates

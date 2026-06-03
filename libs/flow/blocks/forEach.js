@@ -7,14 +7,18 @@
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var items = ctx.expr(props.items || props["in"]) || [];
-			for (var i = 0; i < items.length; i++) {
-				if (ctx.stopped) {
-					break;
+			var previousCurrent = ctx.scopes.current;
+			try {
+				for (var i = 0; i < items.length; i++) {
+					if (ctx.stopped) {
+						break;
+					}
+					ctx.scopes.current = items[i];
+					ctx.runNodes(node.nodes || []);
 				}
-				ctx.scopes.current = items[i];
-				ctx.runNodes(node.nodes || []);
+			} finally {
+				ctx.scopes.current = previousCurrent;
 			}
-			ctx.scopes.current = null;
 			return items;
 		}
 	};

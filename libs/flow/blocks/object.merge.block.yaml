@@ -6,19 +6,19 @@ props:
     label: "target"
     kind: "expression"
     type: "object"
-    default: "flow.object"
+    default: "local.object"
     description: "Base object expression."
   source:
     label: "source"
     kind: "expression"
     type: "object"
-    default: "flow.patch"
+    default: "local.patch"
     description: "Object expression overriding target keys."
   out:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.merged"
+    default: "local.merged"
     description: "Scope path receiving the merged object."
 hooks:
   file: "object.merge.hooks.js"

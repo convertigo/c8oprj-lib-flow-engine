@@ -85,7 +85,7 @@ JSON data.
 When creating a reusable Flow, define a minimal static contract with top-level
 `input` and `output` sections. Static `requestable.call` analysis should expose
 the target output shape under its `out` path, so downstream nodes, pickers and
-agents can see paths such as `flow.customer.name` without executing the target.
+agents can see paths such as `local.customer.name` without executing the target.
 
 Use `use` when the Flow should depend on a contract instead of a provider
 implementation. A contract should normally declare `defaultImplementation` so a
@@ -100,7 +100,7 @@ an error branch.
 Runtime handles are allowed for live objects that cannot be serialized, such as
 DBO instances, file writers, OpenDocument objects, XLS workbooks and JDBC
 transactions. Treat them as typed values like `handle<dbo>` or
-`handle<jdbc.transaction>`. Handles may live in `flow`, `local`, `current` and
+`handle<jdbc.transaction>`. Handles may live in `local`, `current` and
 `request`, but never in `result`, persisted YAML, learned schemas or MCP/SDK
 responses. Traces and pickers must show only a serializable summary.
 
@@ -147,9 +147,15 @@ name, for example `weather.hotCities`, when adding custom vocabulary.
 
 Use a `runtime: flow` block when a reusable behavior is naturally expressed as
 existing blocks. It keeps the item in the palette/catalog while making the
-implementation visible as nodes. Use `props.*` for evaluated instance
-properties and `local.*` for implementation-private state. Use `runtime: rhino`
+implementation visible as nodes. Use `input.*` for evaluated instance
+properties and `local.*` for implementation-private state. `props.*` is reserved
+for hooks/raw node compatibility, and `flow.*` is only a compatibility alias of
+`local.*`. Use `runtime: rhino`
 only when the behavior needs Rhino/Java code or would be awkward as a graph.
+
+When a Rhino block calls `ctx.lib("name")`, declare the dependency in the
+descriptor with `uses: [name]` so the library appears under `Catalog >
+Libraries` and under the block's `Uses` node.
 
 Keep the standard library small. Put only generally useful runtime blocks in
 `lib_flow_engine`. MCP plumbing, Studio tooling, benchmark helpers and migration
@@ -216,7 +222,7 @@ hooks:
 			return "short tree label";
 		},
 		analyze: function (ctx, node) {
-			ctx.addPath("flow.value");
+			ctx.addPath("local.value");
 		}
 	};
 }())

@@ -7,7 +7,7 @@ props:
   items:
     kind: "expression"
     type: "array"
-    default: "flow.items"
+    default: "local.items"
     description: "Array expression iterated by this block."
 children:
   - "nodes"
@@ -15,6 +15,9 @@ slots:
   - name: "nodes"
     label: "Flow"
     inline: true
+    scope: "caller"
+    current: "item"
+    description: "Runs in the caller scope and exposes each iterated item as current."
 hooks:
   file: "forEach.hooks.js"
 implementation:

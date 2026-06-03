@@ -6,7 +6,7 @@ props:
     label: "source"
     kind: "expression"
     type: "object"
-    default: "flow.source"
+    default: "local.source"
     description: "Object expression used as source."
   path:
     label: "path"
@@ -18,7 +18,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.value"
+    default: "local.value"
     description: "Scope path receiving the selected value."
 hooks:
   file: "json.select.hooks.js"

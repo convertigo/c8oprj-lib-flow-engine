@@ -14,7 +14,7 @@ props:
   out:
     kind: "path"
     mode: "write"
-    default: "flow.response"
+    default: "local.response"
     description: "Scope path receiving status, contentType, body and text."
 hooks:
   file: "http.get.hooks.js"

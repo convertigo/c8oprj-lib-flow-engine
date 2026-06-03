@@ -15,8 +15,12 @@ children:
 slots:
   - name: "then"
     label: "Then"
+    scope: "caller"
+    description: "Runs in the caller scope when the condition is truthy."
   - name: "else"
     label: "Else"
+    scope: "caller"
+    description: "Runs in the caller scope when the condition is falsy."
 hooks:
   file: "if.hooks.js"
 implementation:

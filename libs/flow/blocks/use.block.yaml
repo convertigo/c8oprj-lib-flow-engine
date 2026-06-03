@@ -24,7 +24,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.value"
+    default: "local.value"
     description: "Scope path receiving the implementation result."
 hooks:
   file: "use.hooks.js"

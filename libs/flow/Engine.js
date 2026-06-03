@@ -13,7 +13,7 @@
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
-	var scopeNames = ["request", "input", "config", "flow", "result", "trace", "current", "props", "local"];
+	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current", "flow", "props"];
 	var projectDirOverride = null;
 
 	function engineDir() {
@@ -68,6 +68,10 @@
 	function projectLibDir() {
 		var dir = projectDir();
 		return dir ? new File(dir, "libs/flow/lib") : null;
+	}
+
+	function engineLibDir() {
+		return new File(engineDir(), "lib");
 	}
 
 	function projectSchemasDir() {
@@ -2288,12 +2292,50 @@
 				return localFile;
 			}
 		}
-		var engineFile = new File(new File(engineDir(), "lib"), name + ".js");
+		var engineFile = new File(engineLibDir(), name + ".js");
 		if (engineFile.isFile()) {
 			return engineFile;
 		}
 		raise("UNKNOWN_LIBRARY", "Unknown Flow library: " + name,
 			null, "Create libs/flow/lib/" + name + ".js in the project or engine.");
+	}
+
+	function collectFlowLibraries(out, dir, origin, provider) {
+		var files = dir && dir.listFiles();
+		if (!files) {
+			return;
+		}
+		files = Arrays.asList(files).toArray();
+		files.sort(function (a, b) {
+			return String(a.getName()).localeCompare(String(b.getName()));
+		});
+		files.forEach(function (file) {
+			if (!file.isFile() || !String(file.getName()).endsWith(".js")) {
+				return;
+			}
+			var name = String(file.getName());
+			name = name.substring(0, name.length - 3);
+			out[name] = {
+				name: name,
+				provider: provider,
+				origin: origin,
+				file: String(file.getAbsolutePath()),
+				description: "Flow JavaScript library loaded with ctx.lib(\"" + name + "\")."
+			};
+		});
+	}
+
+	function listFlowLibraries() {
+		var libraries = {};
+		collectFlowLibraries(libraries, engineLibDir(), "core", flowProviderName(engineDir(), "lib_flow_engine"));
+		var localDir = projectLibDir();
+		if (localDir && canonicalPath(localDir) !== canonicalPath(engineLibDir())) {
+			collectFlowLibraries(libraries, localDir, "project",
+				flowProviderName(new File(projectDir(), "libs/flow"), "project"));
+		}
+		return Object.keys(libraries).sort().map(function (name) {
+			return libraries[name];
+		});
 	}
 
 	function loadFlowLibrary(name) {
@@ -2377,6 +2419,30 @@
 			});
 		}
 		return [];
+	}
+
+	function normalizeGraphBlockUses(definition) {
+		var uses = definition.uses || definition.libraries || [];
+		if (typeof uses === "string") {
+			uses = uses.split(",");
+		}
+		if (typeof uses === "object" && Object.prototype.toString.call(uses) !== "[object Array]") {
+			uses = Object.keys(uses).map(function (key) {
+				var value = uses[key];
+				if (value && typeof value === "object" && value.name) {
+					return value.name;
+				}
+				return key;
+			});
+		}
+		var out = [];
+		(uses || []).forEach(function (use) {
+			use = safeFilePart(use);
+			if (use && out.indexOf(use) === -1) {
+				out.push(use);
+			}
+		});
+		return out;
 	}
 
 	function blockImplementation(definition) {
@@ -2495,6 +2561,7 @@
 	function graphBlockCatalog(definition) {
 		var props = normalizeGraphBlockProps(definition);
 		var slots = normalizeGraphBlockSlots(definition);
+		var uses = normalizeGraphBlockUses(definition);
 		var implementation = blockImplementation(definition);
 		var blockId = String(definition.__flowBlockId || definition.blockId || definition.name || "");
 		var namespace = blockNamespace(blockId);
@@ -2517,6 +2584,9 @@
 		}
 		if (slots.length > 0) {
 			descriptor.slots = slots;
+		}
+		if (uses.length > 0) {
+			descriptor.uses = uses;
 		}
 		["private", "label", "display", "hooks"].forEach(function (key) {
 			if (definition[key] !== undefined) {
@@ -2646,12 +2716,14 @@
 		var previousInput = ctx.scopes.input;
 		var previousProps = ctx.scopes.props;
 		var previousLocal = ctx.scopes.local;
+		var previousFlow = ctx.scopes.flow;
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
 		ctx.scopes.props = resolveGraphBlockProps(ctx, node, catalog);
 		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
+		ctx.scopes.flow = ctx.scopes.local;
 		ctx.returned = undefined;
 		ctx.stopped = false;
 		try {
@@ -2664,6 +2736,7 @@
 			ctx.scopes.input = previousInput;
 			ctx.scopes.props = previousProps;
 			ctx.scopes.local = previousLocal;
+			ctx.scopes.flow = previousFlow;
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
@@ -3770,13 +3843,17 @@
 		if (!node.id) {
 			node.id = "call:" + name;
 		}
+		var previousInput = ctx.scopes.input;
 		var previousProps = ctx.scopes.props;
 		var previousLocal = ctx.scopes.local;
+		var previousFlow = ctx.scopes.flow;
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
 		ctx.scopes.props = nodeProps(node);
+		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
+		ctx.scopes.flow = ctx.scopes.local;
 		ctx.returned = undefined;
 		ctx.stopped = false;
 		try {
@@ -3793,8 +3870,10 @@
 			}
 			return result;
 		} finally {
+			ctx.scopes.input = previousInput;
 			ctx.scopes.props = previousProps;
 			ctx.scopes.local = previousLocal;
+			ctx.scopes.flow = previousFlow;
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
@@ -3855,14 +3934,15 @@
 				request: requestScope,
 				input: normalizeTree(request.input || {}),
 				config: effectiveConfig(request, definition, projectEngine || {}),
-					flow: {},
-					result: {},
-					trace: { nodes: [] },
-					current: null,
-					props: {},
-					local: {}
-				}
+				flow: {},
+				result: {},
+				trace: { nodes: [] },
+				current: null,
+				props: {},
+				local: {}
+			}
 		};
+		ctx.scopes.flow = ctx.scopes.local;
 		ctx.props = nodeProps;
 		ctx.read = function (path) {
 			return readScopePath(ctx.scopes, path);
@@ -4630,6 +4710,39 @@
 			target === path;
 	}
 
+	function currentSourceForSlot(ctx, node, slot) {
+		var current = String(slot && slot.current || "");
+		if (!current) {
+			return null;
+		}
+		if (current === "item") {
+			var props = nodeProps(node);
+			var items = props.items || props["in"];
+			var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
+			source = source || { path: items };
+			var currentSchema = ctx.schemaForPath ? ctx.schemaForPath(items) : null;
+			currentSchema = ctx.itemSchema ? ctx.itemSchema(currentSchema) : currentSchema;
+			if (currentSchema) {
+				source.schema = currentSchema;
+			}
+			return source;
+		}
+		if (current === "error") {
+			return {
+				path: "error",
+				schema: {
+					type: "object",
+					properties: {
+						code: { type: "string" },
+						message: { type: "string" },
+						details: { type: "object" }
+					}
+				}
+			};
+		}
+		return { path: current };
+	}
+
 	function contextWalkNodes(ctx, nodes, request, path) {
 		nodes = nodes || [];
 		for (var i = 0; i < nodes.length; i++) {
@@ -4650,17 +4763,9 @@
 					var slot = slots[slotIndex];
 					var childPath = nodeListPath + "." + slot.name;
 					var childResult;
-					if (name === "forEach" && slot.name === "nodes") {
-						var props = nodeProps(node);
-						var items = props.items || props["in"];
-						var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
-						source = source || { path: items };
-						var currentSchema = ctx.schemaForPath ? ctx.schemaForPath(items) : null;
-						currentSchema = ctx.itemSchema ? ctx.itemSchema(currentSchema) : currentSchema;
-						if (currentSchema) {
-							source.schema = currentSchema;
-						}
-						childResult = ctx.withCurrentSource(source, function () {
+					var currentSource = currentSourceForSlot(ctx, node, slot);
+					if (currentSource) {
+						childResult = ctx.withCurrentSource(currentSource, function () {
 							ctx.addPath("current");
 							return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
 						});
@@ -4961,6 +5066,16 @@
 		return out;
 	}
 
+	function compactSlotDescriptor(slot) {
+		var out = {};
+		["name", "label", "inline", "scope", "input", "local", "current", "error", "description"].forEach(function (key) {
+			if (slot && slot[key] !== undefined && slot[key] !== null && slot[key] !== "") {
+				out[key] = slot[key];
+			}
+		});
+		return out;
+	}
+
 	function compactBlockDescriptor(block) {
 		var descriptor = blockDescriptor(block);
 		var props = {};
@@ -4982,6 +5097,9 @@
 		if (descriptor.tags && descriptor.tags.length) {
 			out.tags = descriptor.tags;
 		}
+		if (descriptor.uses && descriptor.uses.length) {
+			out.uses = descriptor.uses;
+		}
 		if (descriptor.implementation) {
 			out.implementation = descriptor.implementation;
 		}
@@ -4989,13 +5107,7 @@
 			out["private"] = true;
 		}
 		if (descriptor.slots) {
-			out.slots = descriptor.slots.map(function (slot) {
-				return {
-					name: slot.name,
-					label: slot.label || slot.name,
-					inline: slot.inline === true
-				};
-			});
+			out.slots = descriptor.slots.map(compactSlotDescriptor);
 		}
 		return out;
 	}
@@ -5047,6 +5159,9 @@
 		if (descriptor.tags && descriptor.tags.length) {
 			out.tags = descriptor.tags;
 		}
+		if (descriptor.uses && descriptor.uses.length) {
+			out.uses = descriptor.uses;
+		}
 		if (descriptor.implementation) {
 			out.implementation = descriptor.implementation;
 		}
@@ -5055,6 +5170,12 @@
 		}
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(function (slot) {
+				var semanticKeys = ["scope", "input", "local", "current", "error"];
+				for (var i = 0; i < semanticKeys.length; i++) {
+					if (slot[semanticKeys[i]] !== undefined && slot[semanticKeys[i]] !== null && slot[semanticKeys[i]] !== "") {
+						return compactSlotDescriptor(slot);
+					}
+				}
 				return slot.name;
 			});
 		}
@@ -5080,6 +5201,13 @@
 		return {
 			detail: "summary",
 			blocks: descriptors,
+			libraries: listFlowLibraries().map(function (library) {
+				return {
+					name: library.name,
+					provider: library.provider,
+					origin: library.origin
+				};
+			}),
 			types: Object.keys(types).sort().map(function (name) {
 				var type = typeDescriptor(types[name]);
 				return {
@@ -5114,6 +5242,7 @@
 					blocks: groupsByProvider[provider]
 				};
 			}),
+			libraries: listFlowLibraries(),
 			types: catalogTypes(descriptors, loadTypes()).map(compactTypeDescriptor),
 			next: "Use flow-search for examples and flow-block-get or flow-catalog detail='full' only when source-level detail is needed."
 		};
@@ -5206,6 +5335,7 @@
 			detail: "full",
 			blocks: descriptors,
 			groups: groups,
+			libraries: listFlowLibraries(),
 			types: catalogTypes(descriptors, typeDescriptors)
 		};
 	}
@@ -5512,12 +5642,18 @@
 			return { name: slot, label: slot, aliases: [], inline: false };
 		}
 		slot = slot || {};
-		return {
+		var out = {
 			name: String(slot.name || "nodes"),
 			label: String(slot.label || slot.name || "nodes"),
 			aliases: slot.aliases || [],
 			inline: slot.inline === true
 		};
+		["scope", "input", "local", "current", "error", "description"].forEach(function (key) {
+			if (slot[key] !== undefined && slot[key] !== null && String(slot[key]) !== "") {
+				out[key] = slot[key];
+			}
+		});
+		return out;
 	}
 
 	function slotDefinitions(catalog) {
@@ -5544,6 +5680,11 @@
 						name: name,
 						label: definition.label,
 						inline: definition.inline,
+						scope: definition.scope || "",
+						input: definition.input || "",
+						local: definition.local || "",
+						current: definition.current || "",
+						error: definition.error || "",
 						nodes: nodes
 					});
 					break;
@@ -5574,7 +5715,12 @@
 			if (slot.inline) {
 				addNodeList(parent, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath);
 			} else {
-				var slotInfo = sourceInfo ? sourceInfoForPath(sourceInfo, slotSourcePath) : null;
+				var slotMeta = normalizeTree(slot);
+				delete slotMeta.nodes;
+				var slotInfo = sourceInfo ? sourceInfoForPath(sourceInfo, slotSourcePath) : {};
+				Object.keys(slotMeta).forEach(function (key) {
+					slotInfo[key] = slotMeta[key];
+				});
 				var folder = virtualNode(slot.name, "slot", slot.name, path, slot.label, compact(slot.nodes), compact(slotInfo), "mdi:call-split");
 				parent.children.push(folder);
 				addNodeList(folder, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath);
@@ -5758,6 +5904,18 @@
 		};
 	}
 
+	function libraryPropertyDefinitions() {
+		return {
+			name: propertyDefinition("Name", "Information", "Library name used by ctx.lib(name).", { readOnly: true }),
+			provider: propertyDefinition("Provider", "Information", "Project providing this library.", { readOnly: true }),
+			origin: propertyDefinition("Origin", "Information", "Library origin.", { readOnly: true }),
+			description: propertyDefinition("Description", "Information", "Library documentation.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project or engine relative source path.", { readOnly: true }),
+			sourceOrigin: propertyDefinition("Source origin", "Information", "Source origin: project or core engine.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this library can be edited from the current project.", { readOnly: true })
+		};
+	}
+
 	function blockPropertyDefinitions() {
 		return {
 			version: propertyDefinition("Version", "Information", "Descriptor version.", { readOnly: true, hidden: true }),
@@ -5783,6 +5941,7 @@
 			description: propertyDefinition("Description", "Base properties", "Short block description.", { kind: "text", type: "string" }),
 			longDescription: propertyDefinition("Long description", "Base properties", "Detailed block documentation.", { kind: "markdown", type: "string" }),
 			icon: propertyDefinition("Icon", "Base properties", "Icon id, relative icon file, or URL.", { kind: "icon", type: "string" }),
+			uses: propertyDefinition("Libraries", "Base properties", "JavaScript libraries explicitly used by this block implementation.", { kind: "array", type: "array", items: { kind: "text", type: "string", trim: true, unique: true }, defaultValue: [] }),
 			display: propertyDefinition("Display template", "Information", "Legacy static display fallback. Prefer the Hooks displayName function.", { readOnly: true, hidden: true }),
 			private: propertyDefinition("Private", "Expert", "Hide this block from projects referencing this library.", { kind: "boolean", type: "boolean", defaultValue: false }),
 			tags: propertyDefinition("Tags", "Base properties", "Searchable labels used for filtering and documentation.", { kind: "array", type: "array", items: { kind: "text", type: "string", trim: true, unique: true }, defaultValue: [] }),
@@ -5913,6 +6072,52 @@
 			path + ".hooks", "Hooks", compact(hooksSource), compact(hooksSourceInfo), "mdi:script-text-outline"));
 	}
 
+	function librarySourceInfo(library) {
+		var source = sourceDefinitionForFile(library.file || "", "javascript-library");
+		Object.keys(library).forEach(function (key) {
+			if (source[key] === undefined) {
+				source[key] = library[key];
+			}
+		});
+		return sourceObjectInfo(source, libraryPropertyDefinitions(),
+			["name", "provider", "origin", "description", "sourceRelativePath", "sourceOrigin", "sourceWritable"]);
+	}
+
+	function libraryForName(libraries, name) {
+		name = String(name || "");
+		for (var i = 0; i < libraries.length; i++) {
+			if (libraries[i].name === name) {
+				return libraries[i];
+			}
+		}
+		return null;
+	}
+
+	function addBlockUses(parent, descriptor, path) {
+		var uses = normalizeGraphBlockUses(descriptor || {});
+		if (uses.length === 0) {
+			return;
+		}
+		var libraries = listFlowLibraries();
+		var folder = virtualNode("uses", "folder", "uses", path + ".uses",
+			"Uses (" + uses.length + ")", compact({ count: uses.length, uses: uses }), null, "mdi:library-outline");
+		parent.children.push(folder);
+		uses.forEach(function (name, index) {
+			var library = libraryForName(libraries, name);
+			var definition = library || {
+				name: name,
+				provider: "",
+				origin: "missing",
+				file: "",
+				description: "Missing Flow JavaScript library."
+			};
+			var summary = library ? name + " [" + library.provider + "]" : name + " [missing]";
+			folder.children.push(virtualNode("library_" + name, "libraryUse", name,
+				path + ".uses[" + index + "]", summary, compact(definition),
+				compact(librarySourceInfo(definition)), library ? "mdi:script-text-outline" : "mdi:alert-outline"));
+		});
+	}
+
 	function propertyDefinitionIcon(definition) {
 		var kind = String(definition && (definition.kind || definition.type) || "");
 		if (kind === "expression") {
@@ -5968,6 +6173,33 @@
 		});
 	}
 
+	function addCatalogLibraries(catalog) {
+		var libraries = listFlowLibraries();
+		var folder = virtualNode("libraries", "folder", "libraries", "catalog.libraries",
+			"Libraries", compact({ count: libraries.length }), null, "mdi:library-outline");
+		catalog.children.push(folder);
+		var groups = {};
+		libraries.forEach(function (library) {
+			var provider = String(library.provider || library.origin || "unknown");
+			if (!groups[provider]) {
+				var groupPath = "catalog.libraries." + safeVirtualName("provider", provider);
+				groups[provider] = virtualNode("provider_" + provider, "folder", library.origin || "unknown",
+					groupPath, provider, compact({ provider: provider, origin: library.origin || "", count: 0 }),
+					compact(sourceObjectInfo({ provider: provider, origin: library.origin || "", count: 0 },
+						catalogGroupPropertyDefinitions(), ["provider", "origin", "count"])),
+					library.origin === "core" ? "mdi:package-variant-closed" : "mdi:folder-account-outline");
+				folder.children.push(groups[provider]);
+			}
+			var group = groups[provider];
+			var definition = JSON.parse(group.definition || "{}");
+			definition.count = Number(definition.count || 0) + 1;
+			group.definition = compact(definition);
+			group.children.push(virtualNode("library_" + library.name, "library", library.name,
+				group.path + "." + safeVirtualName("library", library.name),
+				library.name, compact(library), compact(librarySourceInfo(library)), "mdi:script-text-outline"));
+		});
+	}
+
 	function addCatalog(out, blocks, options) {
 		var catalog = virtualNode("catalog", "folder", "catalog", "catalog", "Catalog", compact({}), null, "mdi:bookshelf");
 		var catalogDefinitionValue = catalogDefinition(blocks, options || {});
@@ -6017,7 +6249,7 @@
 				blockDefinition.provider = block.provider || "";
 				blockDefinition.file = block.file || blockDefinition.file || "";
 				var blockInfo = sourceObjectInfo(blockSource, blockPropertyDefinitions(),
-					["name", "provider", "namespace", "blockId", "description", "longDescription", "icon", "tags", "private", "slots", "implementation", "hooks"]);
+					["name", "provider", "namespace", "blockId", "description", "longDescription", "icon", "tags", "uses", "private", "slots", "implementation", "hooks"]);
 				var blockNode = virtualNode("block_" + blockId, "block", blockId,
 					blockPath, block.name || blockId, compact(blockDefinition), compact(blockInfo),
 					block.icon || block.iconify || "mdi:puzzle-outline");
@@ -6025,8 +6257,10 @@
 				addBlockProperties(blockNode, blockDefinition, blockPath);
 				addBlockImplementation(blockNode, blocks[blockId], block, blockPath, blocks);
 				addBlockHooks(blockNode, blocks[blockId], blockPath);
+				addBlockUses(blockNode, blockDefinition, blockPath);
 			});
 		});
+		addCatalogLibraries(catalog);
 		var typesFolder = virtualNode("types", "folder", "types", "catalog.types", "Types", compact({}), null, "mdi:shape-outline");
 		catalog.children.push(typesFolder);
 		catalogDefinitionValue.types.forEach(function (type) {

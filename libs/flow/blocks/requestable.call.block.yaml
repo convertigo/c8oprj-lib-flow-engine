@@ -17,7 +17,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.requestable"
+    default: "local.requestable"
     description: "Scope path receiving the requestable JSON response."
 hooks:
   file: "requestable.call.hooks.js"

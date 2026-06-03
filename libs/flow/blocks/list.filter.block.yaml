@@ -6,7 +6,7 @@ props:
     label: "items"
     kind: "expression"
     type: "array"
-    default: "flow.items"
+    default: "local.items"
     description: "Array expression to filter."
   where:
     label: "where"
@@ -18,7 +18,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.filtered"
+    default: "local.filtered"
     description: "Scope path receiving the filtered array."
 hooks:
   file: "list.filter.hooks.js"

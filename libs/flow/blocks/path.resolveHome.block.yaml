@@ -19,7 +19,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.path"
+    default: "local.path"
     description: "Scope path receiving the canonical absolute path."
 hooks:
   file: "path.resolveHome.hooks.js"

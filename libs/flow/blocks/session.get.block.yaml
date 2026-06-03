@@ -17,7 +17,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.sessionValue"
+    default: "local.sessionValue"
     description: "Scope path receiving the session value."
 hooks:
   file: "session.get.hooks.js"

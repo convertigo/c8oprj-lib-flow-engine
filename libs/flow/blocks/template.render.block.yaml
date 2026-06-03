@@ -15,7 +15,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.text"
+    default: "local.text"
     description: "Scope path receiving the rendered text."
 hooks:
   file: "template.render.hooks.js"

@@ -6,7 +6,7 @@ props:
     label: "value"
     kind: "value"
     type: "unknown"
-    default: "{{ flow.value }}"
+    default: "{{ local.value }}"
     description: "Value to serialize as JSON."
   pretty:
     label: "pretty"
@@ -18,7 +18,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.text"
+    default: "local.text"
     description: "Scope path receiving the JSON text."
 hooks:
   file: "json.stringify.hooks.js"

@@ -33,7 +33,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.toml"
+    default: "local.toml"
     description: "Scope path receiving patch status."
 hooks:
   file: "toml.ensureSection.hooks.js"

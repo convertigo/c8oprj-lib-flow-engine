@@ -27,7 +27,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    default: "flow.fileWrite"
+    default: "local.fileWrite"
     description: "Scope path receiving write status."
 hooks:
   file: "file.writeIfChanged.hooks.js"
