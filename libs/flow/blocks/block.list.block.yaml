@@ -53,6 +53,16 @@ props:
     kind: "literal"
     type: "boolean"
     description: "Include private blocks."
+  includeTypes:
+    label: "includeTypes"
+    kind: "literal"
+    type: "boolean"
+    description: "Include referenced property type descriptors in compact mode."
+  includeLibraries:
+    label: "includeLibraries"
+    kind: "literal"
+    type: "boolean"
+    description: "Include visible Flow library descriptors in compact mode."
   doc:
     label: "doc"
     kind: "literal"

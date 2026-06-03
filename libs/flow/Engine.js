@@ -3005,8 +3005,8 @@
 		if (blocks[name]) {
 			delete blocks[name];
 		}
-		return blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
-			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir()));
+		return publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
+			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
 	}
 
 	function editProjectBlock(blocks, name, request) {
@@ -3054,8 +3054,8 @@
 			FileUtils.writeStringToFile(descriptorFile, toYamlSource(graphBlockDefinitionForWrite(definition)), "UTF-8");
 		}
 		delete blocks[name];
-		return blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
-			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir()));
+		return publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
+			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
 	}
 
 	function duplicateProjectBlock(blocks, fromName, toName, overwrite) {
@@ -3100,6 +3100,15 @@
 		}, overwrite);
 	}
 
+	function publicBlockDescriptor(descriptor) {
+		var out = normalizeTree(descriptor || {});
+		if (out.props) {
+			out.properties = out.props;
+			delete out.props;
+		}
+		return out;
+	}
+
 	function getBlockSource(blocks, name) {
 		var block = blocks[String(name || "")];
 		if (!block) {
@@ -3119,7 +3128,7 @@
 			file: String(block.__flowFile || ""),
 			descriptorFile: String(block.__flowFile || ""),
 			descriptorSource: descriptorSource,
-			descriptor: descriptor,
+			descriptor: publicBlockDescriptor(descriptor),
 			implementationRuntime: implementation.runtime
 		};
 		if (block.__flowImplementationFile) {
@@ -3872,9 +3881,11 @@
 		if (typeof block.run !== "function") {
 			raise("INVALID_BLOCK", "Flow block has no runnable implementation: " + name);
 		}
-		var node = normalizeTree(props || {});
-		node.block = name;
-		if (!node.id && options.id) {
+		var node = {
+			block: name,
+			props: normalizeTree(props || {})
+		};
+		if (options.id) {
 			node.id = String(options.id);
 		}
 		if (!node.id) {
@@ -4146,6 +4157,8 @@
 					origin: args.origin || "",
 					limit: args.limit,
 					cursor: args.cursor,
+					includeTypes: args.includeTypes === true || String(args.includeTypes || "") === "true",
+					includeLibraries: args.includeLibraries === true || String(args.includeLibraries || "") === "true",
 					doc: args.doc,
 					hints: args.hints
 				});
@@ -5122,9 +5135,9 @@
 	}
 
 	function compactBlockDescriptor(descriptor) {
-		var props = {};
+		var properties = {};
 		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
-			props[name] = compactPropertyDescriptor(descriptor.props[name]);
+			properties[name] = compactPropertyDescriptor(descriptor.props[name]);
 		});
 		var out = {
 			blockId: descriptor.blockId,
@@ -5135,8 +5148,8 @@
 			namespace: descriptor.namespace,
 			description: descriptor.description || ""
 		};
-		if (Object.keys(props).length > 0) {
-			out.props = props;
+		if (Object.keys(properties).length > 0) {
+			out.properties = properties;
 		}
 		if (descriptor.tags && descriptor.tags.length) {
 			out.tags = descriptor.tags;
@@ -5342,7 +5355,7 @@
 	function addCatalogDocs(out, options) {
 		options = options || {};
 		if (options.doc !== false) {
-			out.doc = "Flow palette. Use summary to discover block names, compact for typed properties, and full only when source-level metadata is required.";
+			out.doc = "Flow palette. Use summary to discover block names, compact for typed properties, and full only when source-level metadata is required. Compact block descriptors expose typed properties under 'properties'.";
 		}
 		if (options.hints !== false) {
 			out.hints = [
@@ -5350,6 +5363,7 @@
 				"Natural queries are scored token-by-token, so query='requestable call transaction sequence connector' still returns requestable.call even if not every word matches.",
 				"Keep calls narrow with query, namespace, provider, origin, limit and cursor. Prefer limit<=20 for discovery.",
 				"After finding a candidate block, call flow-block-get for the exact block instead of requesting detail='full' for the whole palette.",
+				"Use includeTypes=true or includeLibraries=true only when a compact catalog response must include type or library details.",
 				"Use flow-search before palette browsing when an existing Flow example may already show the intended pattern."
 			];
 		}
@@ -5374,6 +5388,8 @@
 	function compactCatalogDefinition(blocks, options) {
 		var page = catalogPage(blocks, options, compactBlockDescriptor);
 		var descriptors = page.blocks;
+		var includeTypes = options.includeTypes === true || String(options.includeTypes || "") === "true";
+		var includeLibraries = options.includeLibraries === true || String(options.includeLibraries || "") === "true";
 		var groupsByProvider = {};
 		descriptors.forEach(function (block) {
 			var provider = block.provider || block.origin || "unknown";
@@ -5394,9 +5410,11 @@
 					blocks: groupsByProvider[provider]
 				};
 			}),
-			libraries: listFlowLibraries(),
-			types: catalogTypes(descriptors, loadTypes()).map(compactTypeDescriptor),
-			next: "Use flow-search for examples and flow-block-get or flow-catalog detail='full' only when source-level detail is needed."
+			libraryCount: listFlowLibraries().length,
+			typeCount: Object.keys(loadTypes()).length,
+			libraries: includeLibraries ? listFlowLibraries() : undefined,
+			types: includeTypes ? catalogTypes(descriptors, loadTypes()).map(compactTypeDescriptor) : undefined,
+			next: "Use flow-search for examples and flow-block-get for one block. Add includeTypes=true/includeLibraries=true only when those details are needed."
 		}, options);
 	}
 
@@ -6485,6 +6503,67 @@
 		out.push(folder);
 	}
 
+	function compactTreeNode(node, depth, maxDepth, includeDefinition) {
+		var out = {
+			name: node.name,
+			kind: node.kind,
+			type: node.type,
+			path: node.path,
+			summary: node.summary
+		};
+		if (node.definition) {
+			try {
+				var definition = JSON.parse(node.definition);
+				if (definition && typeof definition === "object" && Object.prototype.toString.call(definition) !== "[object Array]") {
+					if (definition.id !== undefined) {
+						out.nodeId = definition.id;
+					}
+					if (definition.block !== undefined) {
+						out.block = definition.block;
+					}
+				}
+			} catch (e) {
+			}
+			if (includeDefinition === true) {
+				out.definition = node.definition;
+			}
+		}
+		var children = node.children || [];
+		out.childCount = children.length;
+		if (children.length && depth < maxDepth) {
+			out.children = children.map(function (child) {
+				return compactTreeNode(child, depth + 1, maxDepth, includeDefinition);
+			});
+		}
+		return out;
+	}
+
+	function compactTreeResponse(tree, request) {
+		request = request || {};
+		var detail = String(request.detail || request.mode || "full");
+		if (detail === "full") {
+			return tree;
+		}
+		var maxDepth = intOption(request.maxDepth, detail === "summary" ? 2 : 4, 0, 20);
+		var includeDefinition = request.includeDefinition === true || String(request.includeDefinition || "") === "true";
+		var out = {
+			ok: tree.ok,
+			target: tree.target,
+			detail: detail,
+			childCount: (tree.children || []).length,
+			children: (tree.children || []).map(function (child) {
+				return compactTreeNode(child, 0, maxDepth, includeDefinition);
+			})
+		};
+		if (tree.source && request.includeSource === true) {
+			out.source = tree.source;
+		}
+		if (tree.analysis && request.includeAnalysis === true) {
+			out.analysis = tree.analysis;
+		}
+		return out;
+	}
+
 	function describeTreeRequest(request, blocks) {
 		request = request || {};
 		var target = String(request.target || "flow");
@@ -6516,11 +6595,11 @@
 			} else {
 			raise("UNKNOWN_TREE_TARGET", "Unknown Flow tree target: " + target);
 		}
-		return {
+		return compactTreeResponse({
 			ok: true,
 			target: target,
 			children: children
-		};
+		}, request);
 	}
 
 	function intOption(value, fallback, min, max) {

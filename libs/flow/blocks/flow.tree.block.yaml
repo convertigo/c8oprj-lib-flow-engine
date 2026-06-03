@@ -33,6 +33,31 @@ props:
     kind: "text"
     type: "string"
     description: "Engine QName used for display."
+  detail:
+    label: "detail"
+    kind: "text"
+    type: "string"
+    description: "Tree detail: compact, summary or full."
+  maxDepth:
+    label: "maxDepth"
+    kind: "literal"
+    type: "number"
+    description: "Maximum child depth returned in compact or summary detail."
+  includeDefinition:
+    label: "includeDefinition"
+    kind: "literal"
+    type: "boolean"
+    description: "Include raw node definition strings in compact or summary detail."
+  includeSource:
+    label: "includeSource"
+    kind: "literal"
+    type: "boolean"
+    description: "Include rewritten source when available."
+  includeAnalysis:
+    label: "includeAnalysis"
+    kind: "literal"
+    type: "boolean"
+    description: "Include static analysis when available."
   projectDir:
     label: "projectDir"
     kind: "text"
