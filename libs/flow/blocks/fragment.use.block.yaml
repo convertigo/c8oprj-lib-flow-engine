@@ -3,7 +3,7 @@ icon: "mdi:folder-sync-outline"
 tags:
 - composition
 description: "Expands and runs a reusable Flow fragment in the current scopes."
-longDescription: "A fragment is stored in libs/flow/fragments/<name>.fragment.yaml and behaves like the nodes were written inline. It has closure-style access to input, config, flow, result and current."
+longDescription: "A fragment is stored in libs/flow/fragments/<name>.fragment.yaml and behaves like the nodes were written inline. It has closure-style access to input, config, local, result and current."
 props:
   fragment:
     label: "fragment"

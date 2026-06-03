@@ -31,7 +31,7 @@ var flowSource = [
 	"nodes:",
 	"  - id: initItems",
 	"    block: set",
-	"    path: flow.items",
+	"    path: local.items",
 	"    value:",
 	"      - Paris",
 	"      - Lyon",
@@ -41,7 +41,7 @@ var flowSource = [
 	"    value: []",
 	"  - id: loopItems",
 	"    block: forEach",
-	"    items: flow.items",
+	"    items: local.items",
 	"    nodes:",
 		"      - id: pushCurrent",
 		"        block: json.push",
@@ -60,10 +60,11 @@ var flowSource = [
 var catalog = JSON.parse(engine.catalog("{}"));
 print(JSON.stringify(catalog));
 assertTrue(catalog.blocks.some(function (block) {
-	return block.name === "requestable.call";
+	return block.blockId === "requestable.call";
 }), "catalog did not expose requestable.call");
 assertTrue(catalog.blocks.some(function (block) {
-	return block.name === "json.push" && block.namespace === "json" && block["package"] === "core";
+	return block.blockId === "json.push" && block.namespace === "json" && block.name === "push" &&
+		block.provider === "lib_flow_engine" && block.origin === "core";
 }), "catalog did not expose package/namespace metadata");
 var coreSetBlock = JSON.parse(engine.blockGet(JSON.stringify({
 	name: "set"
@@ -108,7 +109,7 @@ var resourceBlockDescriptorSource = [
 	"props: {}",
 	"implementation:",
 	"  runtime: rhino",
-	"  file: resource.echo.js",
+	"  file: echo.js",
 	""
 ].join("\n");
 var resourceBlockImplementationSource = [
@@ -126,9 +127,9 @@ var createdResourceBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	descriptorSource: resourceBlockDescriptorSource,
 	implementationSource: resourceBlockImplementationSource
 })));
-assertTrue(createdResourceBlock.name === "resource.echo", "blockCreate did not prepare a resource block");
-assertTrue(new java.io.File(projectDirFile, "libs/flow/blocks/resource.echo.block.yaml").isFile() &&
-	new java.io.File(projectDirFile, "libs/flow/blocks/resource.echo.js").isFile(),
+assertTrue(createdResourceBlock.blockId === "resource.echo", "blockCreate did not prepare a resource block");
+assertTrue(new java.io.File(projectDirFile, "libs/flow/blocks/resource/echo.block.yaml").isFile() &&
+	new java.io.File(projectDirFile, "libs/flow/blocks/resource/echo.js").isFile(),
 	"blockCreate did not write the canonical descriptor plus implementation files");
 var createdResourceBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
 	name: "resource.echo"
@@ -143,19 +144,19 @@ var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	hints: false
 })));
 assertTrue(resourceSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/blocks/resource.echo.block.yaml";
+	return resource.path === "libs/flow/blocks/resource/echo.block.yaml";
 }), "resourceSearch did not find the project block source");
 var resourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/blocks/resource.echo.js"
+	path: "libs/flow/blocks/resource/echo.js"
 })));
 assertTrue(resourceGet.hash && resourceGet.content.indexOf("return \"ok\";") !== -1,
 	"resourceGet did not return content and hash");
 var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
-	path: "libs/flow/blocks/resource.echo.js",
+	path: "libs/flow/blocks/resource/echo.js",
 	baseHash: resourceGet.hash,
 	patch: [
-		"--- a/libs/flow/blocks/resource.echo.js",
-		"+++ b/libs/flow/blocks/resource.echo.js",
+		"--- a/libs/flow/blocks/resource/echo.js",
+		"+++ b/libs/flow/blocks/resource/echo.js",
 		"@@ -2,6 +2,6 @@",
 		" \treturn {",
 		" \t\trun: function () {",
@@ -169,7 +170,7 @@ var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
 assertTrue(resourcePatch.ok === true && resourcePatch.changed === true && resourcePatch.validation.ok === true,
 	"resourcePatch did not patch and validate the project block source");
 var patchedResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/blocks/resource.echo.js"
+	path: "libs/flow/blocks/resource/echo.js"
 })));
 assertTrue(patchedResourceGet.content.indexOf("patched ok") !== -1,
 	"resourcePatch did not persist the patched source");
@@ -180,7 +181,7 @@ var legacyCatalogBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 		name: "resource.legacyCatalog",
 		implementation: {
 			runtime: "rhino",
-			file: "resource.legacyCatalog.js"
+			file: "legacyCatalog.js"
 		}
 	},
 	implementationSource: [
@@ -202,7 +203,7 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: readResource",
 		"    block: resource.get",
-		"    path: libs/flow/blocks/resource.echo.js",
+		"    path: libs/flow/blocks/resource/echo.js",
 		"    out: result.resource",
 		""
 	].join("\n"),
@@ -225,7 +226,7 @@ var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 assertTrue(resourceSearchRun.result.search.resources.some(function (resource) {
-	return resource.path === "libs/flow/blocks/resource.echo.js";
+	return resource.path === "libs/flow/blocks/resource/echo.js";
 }), "resource.search block did not find project Flow resources");
 var docsDir = new java.io.File(projectDirFile, "libs/flow/resources/guide");
 docsDir.mkdirs();
@@ -299,7 +300,7 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 var canonicalCatalog = JSON.parse(engine.catalog(JSON.stringify({ detail: "compact" })));
 var canonicalBlock = null;
 canonicalCatalog.blocks.forEach(function (block) {
-	if (block.name === "canonical.echo") {
+	if (block.blockId === "canonical.echo") {
 		canonicalBlock = block;
 	}
 });
@@ -330,7 +331,7 @@ var flowBackedDescriptorSource = [
 	"    type: unknown",
 	"implementation:",
 	"  runtime: flow",
-	"  file: smoke.flowBacked.flow.yaml",
+	"  file: flowBacked.flow.yaml",
 	""
 ].join("\n");
 var flowBackedImplementationSource = [
@@ -338,7 +339,7 @@ var flowBackedImplementationSource = [
 	"nodes:",
 	"  - id: done",
 	"    block: return",
-	"    value: \"{{ props.value }}\"",
+	"    value: \"{{ input.value }}\"",
 	""
 ].join("\n");
 var createdFlowBackedBlock = JSON.parse(engine.blockCreate(JSON.stringify({
@@ -346,9 +347,9 @@ var createdFlowBackedBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	descriptorSource: flowBackedDescriptorSource,
 	implementationSource: flowBackedImplementationSource
 })));
-assertTrue(createdFlowBackedBlock.name === "smoke.flowBacked" &&
-	new java.io.File(projectDirFile, "libs/flow/blocks/smoke.flowBacked.block.yaml").isFile() &&
-	new java.io.File(projectDirFile, "libs/flow/blocks/smoke.flowBacked.flow.yaml").isFile(),
+assertTrue(createdFlowBackedBlock.blockId === "smoke.flowBacked" &&
+	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.block.yaml").isFile() &&
+	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.flow.yaml").isFile(),
 	"blockCreate did not write descriptor plus Flow implementation files");
 var flowBackedBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
 	name: "smoke.flowBacked"
@@ -375,12 +376,15 @@ var callBlockDescriptorSource = [
 	"name: smoke.callBlock",
 	"description: Calls core blocks as capabilities.",
 	"props:",
+		"  message:",
+		"    kind: template",
+		"    type: string",
 	"  out:",
 	"    kind: path",
 	"    mode: write",
 	"implementation:",
 	"  runtime: rhino",
-	"  file: smoke.callBlock.js",
+	"  file: callBlock.js",
 	""
 ].join("\n");
 var callBlockImplementationSource = [
@@ -388,10 +392,10 @@ var callBlockImplementationSource = [
 	"\treturn {",
 	"\t\trun: function (ctx, node) {",
 	"\t\t\tvar props = ctx.props(node);",
-	"\t\t\tctx.callBlock(\"set\", { path: \"flow.called\", value: \"{{ input.name }}\" }, { trace: false });",
-	"\t\t\tvar returned = ctx.callBlock(\"return\", { value: \"{{ flow.called }}\" }, { trace: false });",
-	"\t\t\tctx.callBlock(\"set\", { path: \"flow.afterReturn\", value: \"still-running\" }, { trace: false });",
-	"\t\t\treturn { value: returned, afterReturn: ctx.read(\"flow.afterReturn\"), out: props.out || \"\" };",
+			"\t\t\tvar value = ctx.callBlock(\"set\", { path: \"local.called\", value: ctx.template(props.message) }, { trace: false });",
+	"\t\t\tvar returned = ctx.callBlock(\"return\", { value: \"still-running\" }, { trace: false });",
+	"\t\t\tctx.callBlock(\"set\", { path: \"local.afterReturn\", value: \"still-running\" }, { trace: false });",
+	"\t\t\treturn { value: value, returned: returned, afterReturn: ctx.read(\"local.afterReturn\"), out: props.out || \"\" };",
 	"\t\t}",
 	"\t};",
 	"}())",
@@ -402,13 +406,14 @@ var createdCallBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	descriptorSource: callBlockDescriptorSource,
 	implementationSource: callBlockImplementationSource
 })));
-assertTrue(createdCallBlock.name === "smoke.callBlock", "blockCreate did not create the callBlock smoke block");
+assertTrue(createdCallBlock.blockId === "smoke.callBlock", "blockCreate did not create the callBlock smoke block");
 var callBlockRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
 		"version: 1",
 		"nodes:",
 		"  - id: callSmoke",
 		"    block: smoke.callBlock",
+		"    message: \"{{ input.name }}\"",
 		"    out: result.call",
 		""
 	].join("\n"),
@@ -418,7 +423,8 @@ var callBlockRun = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 assertTrue(callBlockRun.result.call.value === "Ada" &&
-	callBlockRun.result.call.afterReturn === "still-running",
+	callBlockRun.result.call.returned === "still-running" &&
+	callBlockRun.result.call.afterReturn === undefined,
 	"ctx.callBlock did not isolate props/local/return state");
 var libDir = new java.io.File(projectDirFile, "libs/flow/lib");
 libDir.mkdirs();
@@ -445,7 +451,7 @@ var libBackedBlockDescriptorSource = [
 	"    mode: write",
 	"implementation:",
 	"  runtime: rhino",
-	"  file: smoke.lib.js",
+	"  file: lib.js",
 	""
 ].join("\n");
 var libBackedBlockImplementationSource = [
@@ -464,7 +470,7 @@ var createdLibBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	descriptorSource: libBackedBlockDescriptorSource,
 	implementationSource: libBackedBlockImplementationSource
 })));
-assertTrue(createdLibBlock.name === "smoke.lib", "blockCreate did not create a library-backed block");
+assertTrue(createdLibBlock.blockId === "smoke.lib", "blockCreate did not create a library-backed block");
 var flowDir = new java.io.File(projectDirFile, "libs/flows");
 flowDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(flowDir, "ChildSmoke.flow.yaml"), [
@@ -582,7 +588,7 @@ print(JSON.stringify(describedFlowTree));
 assertTrue(describedFlowTree.children[0].name === "flow" &&
 	describedFlowTree.children[0].children[2].type === "forEach",
 	"describeTree(flow) did not expose flow nodes");
-assertTrue(describedFlowTree.children[0].children[0].summary === "[set] flow.items = [\"Paris\",\"Lyon\"]",
+assertTrue(describedFlowTree.children[0].children[0].summary === "[set] local.items = [\"Paris\",\"Lyon\"]",
 	"describeTree(flow) did not expose data-centric display names");
 var simpleLoopContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: flowSource,
@@ -658,14 +664,14 @@ var staticSchemaFlowSource = [
 	"nodes:",
 	"  - id: sourceItems",
 	"    block: set",
-	"    path: flow.items",
+	"    path: local.items",
 	"    value:",
 	"      - city: Paris",
 	"        temperature: 36",
 	"  - id: copyItems",
 	"    block: set",
 	"    path: result.items",
-	"    value: \"{{ flow.items }}\"",
+	"    value: \"{{ local.items }}\"",
 	""
 ].join("\n");
 var staticOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: staticSchemaFlowSource })));
@@ -678,13 +684,13 @@ var explicitReturnSchemaFlowSource = [
 	"nodes:",
 	"  - id: sourceItems",
 	"    block: set",
-	"    path: flow.items",
+	"    path: local.items",
 	"    value:",
 	"      - city: Paris",
 	"        temperature: 36",
 	"  - id: done",
 	"    block: return",
-	"    value: \"{{ flow.items }}\"",
+	"    value: \"{{ local.items }}\"",
 	""
 ].join("\n");
 var explicitReturnSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: explicitReturnSchemaFlowSource })));
@@ -778,19 +784,19 @@ var weatherFlowSource = [
 	"    url: \"{{ config.weatherUrl }}\"",
 	"    headers:",
 	"      X-Api-Key: \"{{ config.apiKey }}\"",
-	"    out: flow.weather",
+	"    out: local.weather",
 	"  - id: selectMetropoles",
 	"    block: json.select",
-	"    source: flow.weather",
+	"    source: local.weather",
 	"    path: body.metropoles",
-	"    out: flow.metropoles",
+	"    out: local.metropoles",
 	"  - id: initHotCities",
 	"    block: set",
 	"    path: result.hotCities",
 	"    value: []",
 	"  - id: eachCity",
 	"    block: forEach",
-	"    items: flow.metropoles",
+	"    items: local.metropoles",
 	"    nodes:",
 	"      - id: keepHotCity",
 	"        block: if",
@@ -820,12 +826,12 @@ var notifyContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: weatherFlowSource,
 	node: "notify",
 	property: "body",
-	include: ["flow", "result"],
+	include: ["local", "result"],
 	detail: "normal"
 })));
 print(JSON.stringify(notifyContext));
 assertTrue(notifyContext.ok === true &&
-	notifyContext.scopes.flow.paths.some(function (entry) { return entry.path === "flow.metropoles"; }) &&
+	notifyContext.scopes.local.paths.some(function (entry) { return entry.path === "local.metropoles"; }) &&
 	notifyContext.scopes.result.paths.some(function (entry) { return entry.path === "result.hotCities"; }) &&
 	!notifyContext.scopes.result.paths.some(function (entry) { return entry.path === "result.message"; }),
 	"Flow context did not expose only paths available before notify");
@@ -841,18 +847,18 @@ print(JSON.stringify(keepHotCityContext));
 assertTrue(keepHotCityContext.ok === true &&
 	keepHotCityContext.scopes.current.paths.length === 1 &&
 	keepHotCityContext.scopes.current.paths[0].producer &&
-	keepHotCityContext.scopes.current.paths[0].producer.path === "flow.metropoles",
+	keepHotCityContext.scopes.current.paths[0].producer.path === "local.metropoles",
 	"Flow context did not expose current source inside forEach");
 
 var compactContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: weatherFlowSource,
 	node: "notify",
-	include: ["flow"],
+	include: ["local"],
 	detail: "compact"
 })));
 print(JSON.stringify(compactContext));
-assertTrue(Object.keys(compactContext.scopes).join(",") === "flow" &&
-	compactContext.scopes.flow.indexOf("flow.weather") !== -1,
+assertTrue(Object.keys(compactContext.scopes).join(",") === "local" &&
+	compactContext.scopes.local.indexOf("local.weather") !== -1,
 	"Flow compact context did not filter scopes");
 print(engine.run(JSON.stringify({ flowSource: weatherFlowSource })));
 print(engine.run(JSON.stringify({
@@ -882,13 +888,13 @@ var learnedContext = JSON.parse(engine.context(JSON.stringify({
 	flowName: schemaFlowName,
 	flowSource: weatherFlowSource,
 	node: "selectMetropoles",
-	include: ["flow"],
+	include: ["local"],
 	detail: "compact"
 })));
 print(JSON.stringify(learnedContext));
-assertTrue(learnedContext.scopes.flow.indexOf("flow.weather.body.metropoles.city") !== -1,
+assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles.city") !== -1,
 	"Flow context did not expose learned HTTP JSON schema paths");
-assertTrue(learnedContext.scopes.flow.indexOf("flow.weather.body.metropoles") !== -1,
+assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles") !== -1,
 	"Flow context did not expose learned array schema path");
 var learnedLoopContext = JSON.parse(engine.context(JSON.stringify({
 	flowName: schemaFlowName,
@@ -918,25 +924,25 @@ var compactWeatherFlowSource = [
 	"    url: \"{{ config.weatherUrl }}\"",
 	"    headers:",
 	"      X-Api-Key: \"{{ config.apiKey }}\"",
-	"    out: flow.weather",
+	"    out: local.weather",
 	"  - id: selectMetropoles",
 	"    block: json.select",
-	"    source: flow.weather",
+	"    source: local.weather",
 	"    path: body.metropoles",
-	"    out: flow.metropoles",
+	"    out: local.metropoles",
 	"  - id: filterHot",
 	"    block: list.filter",
-	"    items: flow.metropoles",
+	"    items: local.metropoles",
 	"    where: current.temperature >= config.threshold",
-	"    out: flow.hotMetropoles",
+	"    out: local.hotMetropoles",
 	"  - id: sortHot",
 	"    block: list.sort",
-	"    items: flow.hotMetropoles",
+	"    items: local.hotMetropoles",
 	"    by: current.city",
-	"    out: flow.sortedHotMetropoles",
+	"    out: local.sortedHotMetropoles",
 	"  - id: mapCities",
 	"    block: list.map",
-	"    items: flow.sortedHotMetropoles",
+	"    items: local.sortedHotMetropoles",
 	"    select: current.city",
 	"    out: result.hotCities",
 	"  - id: notify",
@@ -954,7 +960,7 @@ var compactWeatherFlowSource = [
 
 var compactWeatherAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: compactWeatherFlowSource })));
 print(JSON.stringify(compactWeatherAnalysis));
-assertTrue(compactWeatherAnalysis.writes.indexOf("flow.hotMetropoles") !== -1,
+assertTrue(compactWeatherAnalysis.writes.indexOf("local.hotMetropoles") !== -1,
 	"Compact weather analysis did not report list.filter output");
 
 var compactWeatherRun = JSON.parse(engine.run(JSON.stringify({
@@ -974,7 +980,7 @@ var standardDataFlowSource = [
 	"nodes:",
 	"  - id: sourceProfile",
 	"    block: set",
-	"    path: flow.profile",
+	"    path: local.profile",
 	"    value:",
 	"      city: Paris",
 	"      metrics:",
@@ -982,24 +988,24 @@ var standardDataFlowSource = [
 	"        unit: C",
 	"  - id: pickFields",
 	"    block: object.pick",
-	"    source: flow.profile",
+	"    source: local.profile",
 	"    keys:",
 	"      - city",
 	"      - metrics.temperature",
-	"    out: flow.selected",
+	"    out: local.selected",
 	"  - id: mergeAlert",
 	"    block: object.merge",
-	"    target: flow.selected",
+	"    target: local.selected",
 	"    source:",
 	"      alert: true",
 	"    out: result.payload",
 	"  - id: stringify",
 	"    block: json.stringify",
 	"    value: \"{{ result.payload }}\"",
-	"    out: flow.payloadText",
+	"    out: local.payloadText",
 	"  - id: parse",
 	"    block: json.parse",
-	"    text: \"{{ flow.payloadText }}\"",
+	"    text: \"{{ local.payloadText }}\"",
 	"    out: result.roundtrip",
 	""
 ].join("\n");
@@ -1048,7 +1054,7 @@ var writerFlowSource = [
 	"nodes:",
 	"  - id: initLines",
 	"    block: set",
-	"    path: flow.lines",
+	"    path: local.lines",
 	"    value:",
 	"      - Alpha",
 	"      - Beta",
@@ -1059,7 +1065,7 @@ var writerFlowSource = [
 	"    nodes:",
 	"      - id: loopLines",
 	"        block: forEach",
-	"        items: flow.lines",
+	"        items: local.lines",
 	"        nodes:",
 	"          - id: writeLine",
 	"            block: file.write",
@@ -1091,12 +1097,12 @@ var forbiddenHandleResultFlowSource = [
 	"  - id: openFile",
 	"    block: file.withWriter",
 	"    path: " + JSON.stringify(String(new java.io.File(projectDirFile, "handle-leak.txt").getAbsolutePath())),
-	"    as: flow.writer",
+	"    as: local.writer",
 	"    nodes:",
 	"      - id: leakHandle",
 	"        block: set",
 	"        path: result.writer",
-	"        value: \"{{ flow.writer }}\"",
+	"        value: \"{{ local.writer }}\"",
 	""
 ].join("\n");
 var forbiddenHandleResultRun = JSON.parse(engine.run(JSON.stringify({ flowSource: forbiddenHandleResultFlowSource })));
@@ -1240,7 +1246,7 @@ var requestableCallSource = [
 	"    requestable: .NamedGreeting",
 	"    input:",
 	"      name: Nicolas",
-	"    out: flow.response",
+	"    out: local.response",
 	""
 ].join("\n");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
@@ -1267,7 +1273,7 @@ var requestableCallAnalysis = JSON.parse(engine.analyze(JSON.stringify({
 	}
 })));
 print(JSON.stringify(requestableCallAnalysis));
-assertTrue(requestableCallAnalysis.writes.indexOf("flow.response") !== -1,
+assertTrue(requestableCallAnalysis.writes.indexOf("local.response") !== -1,
 	"requestable.call did not expose its output path during analysis");
 var contractDefaultImplementationSource = [
 	"version: 1",
@@ -1381,7 +1387,7 @@ assertTrue(describedEngineTree.children[0].kind === "engine" &&
 	"describeTree(engine) did not expose engine metadata and catalog");
 var describedCatalog = findChild(describedEngineTree, "catalog");
 var describedBlocks = findChild(describedCatalog, "blocks");
-var describedCoreBlocks = findChild(describedBlocks, "origin_core");
+var describedCoreBlocks = findChild(describedBlocks, "provider_lib_flow_engine");
 var describedSetBlock = findChild(describedCoreBlocks, "block_set");
 assertTrue(describedSetBlock && describedSetBlock.children.some(function (child) {
 	var definition = child.definition ? JSON.parse(child.definition) : {};

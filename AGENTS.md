@@ -148,9 +148,9 @@ name, for example `weather.hotCities`, when adding custom vocabulary.
 Use a `runtime: flow` block when a reusable behavior is naturally expressed as
 existing blocks. It keeps the item in the palette/catalog while making the
 implementation visible as nodes. Use `input.*` for evaluated instance
-properties and `local.*` for implementation-private state. `props.*` is reserved
-for hooks/raw node compatibility, and `flow.*` is only a compatibility alias of
-`local.*`. Use `runtime: rhino`
+properties and `local.*` for implementation-private state. `props.*` and
+`flow.*` are not expression scopes; JS hooks/raw implementations can inspect the
+raw node with `ctx.props(node)`. Use `runtime: rhino`
 only when the behavior needs Rhino/Java code or would be awkward as a graph.
 
 When a Rhino block calls `ctx.lib("name")`, declare the dependency in the
@@ -308,12 +308,12 @@ needs to know which scope paths are visible at a specific node:
   "flowSource": "...",
   "node": "notify",
   "property": "body",
-  "include": ["flow", "result"],
+  "include": ["local", "result"],
   "detail": "compact"
 }
 ```
 
-Keep `include` to root scopes only: `request`, `input`, `config`, `flow`,
+Keep `include` to root scopes only: `request`, `input`, `config`, `local`,
 `result`, `trace`, `current`. Omit `include` to return all visible roots. Use
 `detail: "compact"` for LLM guidance and `detail: "normal"` for Studio picker
 metadata. The default position is before the target node, so values produced

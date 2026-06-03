@@ -13,7 +13,7 @@
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
-	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current", "flow", "props"];
+	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
 
 	function engineDir() {
@@ -2653,11 +2653,9 @@
 		if (display) {
 			return summaryText(renderTemplateTree({
 				scopes: {
-					props: props,
 					request: {},
-					input: {},
+					input: props,
 					config: {},
-					flow: {},
 					result: {},
 					trace: {},
 					current: null,
@@ -2716,14 +2714,12 @@
 		var previousInput = ctx.scopes.input;
 		var previousProps = ctx.scopes.props;
 		var previousLocal = ctx.scopes.local;
-		var previousFlow = ctx.scopes.flow;
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
 		ctx.scopes.props = resolveGraphBlockProps(ctx, node, catalog);
 		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
-		ctx.scopes.flow = ctx.scopes.local;
 		ctx.returned = undefined;
 		ctx.stopped = false;
 		try {
@@ -2736,7 +2732,6 @@
 			ctx.scopes.input = previousInput;
 			ctx.scopes.props = previousProps;
 			ctx.scopes.local = previousLocal;
-			ctx.scopes.flow = previousFlow;
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
@@ -3846,14 +3841,12 @@
 		var previousInput = ctx.scopes.input;
 		var previousProps = ctx.scopes.props;
 		var previousLocal = ctx.scopes.local;
-		var previousFlow = ctx.scopes.flow;
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
 		ctx.scopes.props = nodeProps(node);
 		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
-		ctx.scopes.flow = ctx.scopes.local;
 		ctx.returned = undefined;
 		ctx.stopped = false;
 		try {
@@ -3873,7 +3866,6 @@
 			ctx.scopes.input = previousInput;
 			ctx.scopes.props = previousProps;
 			ctx.scopes.local = previousLocal;
-			ctx.scopes.flow = previousFlow;
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
@@ -3906,7 +3898,7 @@
 			return {
 				ok: true,
 				result: snapshot(result),
-				flow: snapshot(ctx.scopes.flow),
+				local: snapshot(ctx.scopes.local),
 				trace: request.includeTrace === false ? undefined : snapshot(ctx.scopes.trace)
 			};
 		} finally {
@@ -3934,15 +3926,13 @@
 				request: requestScope,
 				input: normalizeTree(request.input || {}),
 				config: effectiveConfig(request, definition, projectEngine || {}),
-				flow: {},
+				local: {},
 				result: {},
 				trace: { nodes: [] },
 				current: null,
-				props: {},
-				local: {}
+				props: {}
 			}
 		};
-		ctx.scopes.flow = ctx.scopes.local;
 		ctx.props = nodeProps;
 		ctx.read = function (path) {
 			return readScopePath(ctx.scopes, path);
@@ -4350,7 +4340,6 @@
 			var catalog = blockCatalog(block);
 			var props = nodeProps(node);
 			ctx.addPath("input");
-			ctx.addPath("props");
 			ctx.addPath("local");
 			Object.keys(catalog.props || {}).forEach(function (key) {
 				var descriptor = catalog.props[key] || {};
@@ -4366,10 +4355,8 @@
 				}
 				if (schema) {
 					ctx.addSchema("input." + key, schema);
-					ctx.addSchema("props." + key, schema);
 				} else {
 					ctx.addPath("input." + key);
-					ctx.addPath("props." + key);
 				}
 			});
 			return callback();
@@ -4395,7 +4382,6 @@
 		if (sourceBlock) {
 			var sourceCatalog = blockCatalog(sourceBlock);
 			ctx.addPath("input");
-			ctx.addPath("props");
 			Object.keys(sourceCatalog.props || {}).forEach(function (key) {
 				var descriptor = sourceCatalog.props[key] || {};
 				var schema = descriptor.type ? { type: String(descriptor.type) } : null;
@@ -4404,10 +4390,8 @@
 				}
 				if (schema) {
 					ctx.addSchema("input." + key, schema);
-					ctx.addSchema("props." + key, schema);
 				} else {
 					ctx.addPath("input." + key);
-					ctx.addPath("props." + key);
 				}
 			});
 		}

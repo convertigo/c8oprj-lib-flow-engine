@@ -83,8 +83,9 @@ stable shape while preserving a small Rhino escape hatch.
 
 Flow-backed blocks are regular catalog blocks. At runtime the engine exposes
 evaluated instance properties through `input` and a private mutable `local`
-scope for the block implementation. `props` remains a raw-node/hook compatibility
-alias. An internal `return` stops only the
+scope for the block implementation. JS hooks/raw implementations can still call
+`ctx.props(node)` to inspect the raw instance, but `props.*` is not an expression
+scope. An internal `return` stops only the
 composite block, then the parent Flow continues normally.
 
 The `fragment.use` block expands a reusable graph inline from:
@@ -95,8 +96,7 @@ The `fragment.use` block expands a reusable graph inline from:
 
 A fragment is not a requestable and does not create a new scope. It behaves like
 the fragment nodes were written at that exact position, so it can read and write
-`input`, `config`, `local`, `result` and `current` directly. `flow` remains a
-temporary compatibility alias of `local`. The Flow tree and
+`input`, `config`, `local`, `result` and `current` directly. The Flow tree and
 analysis expand fragment children logically while the disk representation keeps
 the fragment as a separate source file.
 
@@ -471,14 +471,14 @@ Request shape:
   "flowSource": "version: 1\nnodes:\n...",
   "node": "notify",
   "property": "body",
-  "include": ["flow", "result"],
+  "include": ["local", "result"],
   "detail": "normal"
 }
 ```
 
 `node` can be a node `id`, `uid`, `name` or tree path such as
 `nodes[3].nodes[0]`. `include` is optional; when absent, all visible scope roots
-are returned. Keep `include` to root scope names only, for example `flow`,
+are returned. Keep `include` to root scope names only, for example `local`,
 `current`, `input` or `config`. `detail` is `normal` by default; use `compact`
 when an LLM only needs the paths.
 

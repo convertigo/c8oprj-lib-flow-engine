@@ -3,7 +3,7 @@ name: "path"
 label: "Scope path"
 icon: "mdi:map-marker-path"
 type: "string"
-description: "Path inside input, config, flow, result, trace or current scopes."
+description: "Path inside request, input, config, local, result, trace or current scopes."
 editor:
   label: "Path picker"
   kind: "webcomponent"

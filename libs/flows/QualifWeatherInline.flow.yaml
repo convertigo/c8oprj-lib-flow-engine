@@ -4,25 +4,25 @@ nodes:
     block: http.request
     method: GET
     url: "file://{{ request.engineProjectDir }}/fixtures/weather-alert.json"
-    out: flow.weather
+    out: local.weather
   - id: selectMetropoles
     block: json.select
-    source: flow.weather
+    source: local.weather
     path: body.metropoles
-    out: flow.metropoles
+    out: local.metropoles
   - id: filterHot
     block: list.filter
-    items: flow.metropoles
+    items: local.metropoles
     where: current.temperature >= 35
-    out: flow.hotMetropoles
+    out: local.hotMetropoles
   - id: sortHot
     block: list.sort
-    items: flow.hotMetropoles
+    items: local.hotMetropoles
     by: current.city
-    out: flow.sortedHotMetropoles
+    out: local.sortedHotMetropoles
   - id: mapCities
     block: list.map
-    items: flow.sortedHotMetropoles
+    items: local.sortedHotMetropoles
     select: current.city
     out: result.hotCities
   - id: setMessage
