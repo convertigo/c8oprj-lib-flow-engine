@@ -1,7 +1,7 @@
 version: 1
-name: "if"
 icon: "mdi:source-branch"
-kind: "control"
+tags:
+- control
 description: "Runs then when condition is truthy, else otherwise."
 props:
   condition:

@@ -1,7 +1,7 @@
 version: 1
-name: "file.withReader"
 icon: "mdi:file-eye-outline"
-kind: "resource"
+tags:
+- resource
 description: "Opens a file reader handle, runs child nodes, then closes it."
 props:
   path:

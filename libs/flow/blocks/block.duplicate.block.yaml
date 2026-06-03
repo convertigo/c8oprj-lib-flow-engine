@@ -1,9 +1,6 @@
 version: 1
-name: "block.duplicate"
 private: true
 icon: "mdi:content-duplicate"
-package: "core"
-namespace: "block"
 description: "Duplicates one Flow block into a project-local block."
 props:
   fromName:

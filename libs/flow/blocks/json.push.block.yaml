@@ -1,5 +1,4 @@
 version: 1
-name: "json.push"
 icon: "mdi:playlist-plus"
 description: "Pushes a value into an array stored in a scope path."
 longDescription: "Use path for the target array and value for the pushed content. A value containing only {{ expression }} keeps the native expression type."

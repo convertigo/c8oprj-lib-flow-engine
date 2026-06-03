@@ -1,7 +1,7 @@
 version: 1
-name: "file.withWriter"
 icon: "mdi:file-edit-outline"
-kind: "resource"
+tags:
+- resource
 description: "Opens a file writer handle, runs child nodes, then closes it."
 props:
   path:

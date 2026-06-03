@@ -1,5 +1,4 @@
 version: 1
-name: "json.stringify"
 icon: "mdi:code-json"
 description: "Serializes a native value as JSON text."
 props:

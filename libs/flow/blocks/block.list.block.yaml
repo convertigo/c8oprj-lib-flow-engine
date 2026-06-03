@@ -1,9 +1,6 @@
 version: 1
-name: "block.list"
 private: true
 icon: "mdi:puzzle-outline"
-package: "core"
-namespace: "block"
 description: "Lists Flow blocks visible from a project."
 props:
   detail:

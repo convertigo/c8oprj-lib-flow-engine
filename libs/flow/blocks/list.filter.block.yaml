@@ -1,5 +1,4 @@
 version: 1
-name: "list.filter"
 icon: "mdi:filter-outline"
 description: "Filters an array using a pure expression evaluated with current.*."
 props:

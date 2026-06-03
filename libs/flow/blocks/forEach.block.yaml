@@ -1,7 +1,7 @@
 version: 1
-name: "forEach"
 icon: "mdi:repeat"
-kind: "control"
+tags:
+- control
 description: "Runs child nodes once per item and exposes the item as current."
 props:
   items:

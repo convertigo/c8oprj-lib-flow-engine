@@ -1,5 +1,4 @@
 version: 1
-name: "object.pick"
 icon: "mdi:select-group"
 description: "Builds an object from selected fields."
 props:

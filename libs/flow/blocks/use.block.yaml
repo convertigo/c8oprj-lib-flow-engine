@@ -1,7 +1,7 @@
 version: 1
-name: "use"
 icon: "mdi:puzzle-outline"
-kind: "control"
+tags:
+- control
 description: "Runs the implementation bound to a contract. Falls back to contract.defaultImplementation."
 props:
   contract:

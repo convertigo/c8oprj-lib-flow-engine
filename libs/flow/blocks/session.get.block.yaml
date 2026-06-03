@@ -1,5 +1,4 @@
 version: 1
-name: "session.get"
 icon: "mdi:key-outline"
 description: "Reads a value from the current HTTP session."
 props:

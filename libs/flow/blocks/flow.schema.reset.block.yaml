@@ -1,9 +1,6 @@
 version: 1
-name: "flow.schema.reset"
 private: true
 icon: "mdi:database-refresh-outline"
-package: "core"
-namespace: "flow"
 description: "Deletes learned Flow schema files so the next run learns them again."
 props:
   flowName:

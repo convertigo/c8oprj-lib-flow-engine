@@ -1,7 +1,7 @@
 version: 1
-name: "file.write"
 icon: "mdi:file-document-edit-outline"
-kind: "resource"
+tags:
+- resource
 description: "Writes text to a file writer handle."
 props:
   writer:

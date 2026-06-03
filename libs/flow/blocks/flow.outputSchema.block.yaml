@@ -1,9 +1,6 @@
 version: 1
-name: "flow.outputSchema"
 private: true
 icon: "mdi:code-json"
-package: "core"
-namespace: "flow"
 description: "Returns the best known JSON output schema for a Flow."
 props:
   name:

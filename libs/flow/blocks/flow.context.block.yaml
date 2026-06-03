@@ -1,9 +1,6 @@
 version: 1
-name: "flow.context"
 private: true
 icon: "mdi:graph-outline"
-package: "core"
-namespace: "flow"
 description: "Returns visible scope paths at a Flow node."
 props:
   name:

@@ -1,9 +1,6 @@
 version: 1
-name: "block.edit"
 private: true
 icon: "mdi:puzzle-edit-outline"
-package: "core"
-namespace: "block"
 description: "Edits one project-local Flow block descriptor and/or implementation."
 props:
   name:

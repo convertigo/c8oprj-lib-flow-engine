@@ -1,9 +1,6 @@
 version: 1
-name: "type.create"
 private: true
 icon: "mdi:shape-plus-outline"
-package: "core"
-namespace: "type"
 description: "Creates one project-local Flow property type."
 props:
   name:

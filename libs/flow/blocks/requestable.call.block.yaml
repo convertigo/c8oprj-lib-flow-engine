@@ -1,5 +1,4 @@
 version: 1
-name: "requestable.call"
 icon: "mdi:link-variant"
 description: "Calls a Convertigo sequence, Flow or transaction through the regular requestable path."
 props:

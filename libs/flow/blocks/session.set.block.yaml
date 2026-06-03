@@ -1,5 +1,4 @@
 version: 1
-name: "session.set"
 icon: "mdi:account-key-outline"
 description: "Writes a value into the current HTTP session."
 props:

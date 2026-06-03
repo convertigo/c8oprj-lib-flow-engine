@@ -1,9 +1,6 @@
 version: 1
-name: "flow.run"
 private: true
 icon: "mdi:play-circle-outline"
-package: "core"
-namespace: "flow"
 description: "Runs a Flow source or definition."
 props:
   flowSource:

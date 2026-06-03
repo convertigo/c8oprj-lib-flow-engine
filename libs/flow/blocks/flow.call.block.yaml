@@ -1,7 +1,7 @@
 version: 1
-name: "flow.call"
 icon: "mdi:transit-connection-variant"
-kind: "flow"
+tags:
+- flow
 description: "Calls another Flow sidecar without going through Convertigo requestable/XML execution."
 props:
   flow:

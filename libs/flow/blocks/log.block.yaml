@@ -1,5 +1,4 @@
 version: 1
-name: "log"
 icon: "mdi:console"
 description: "Writes a diagnostic message to a Convertigo logger."
 props:

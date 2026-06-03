@@ -1,9 +1,6 @@
 version: 1
-name: "type.get"
 private: true
 icon: "mdi:shape-outline"
-package: "core"
-namespace: "type"
 description: "Reads one Flow property type descriptor."
 props:
   name:

@@ -1,0 +1,202 @@
+<template id="flow-array-editor-template">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+		.rows { display: grid; gap: 6px; }
+		.row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		textarea { min-height: 80px; resize: vertical; margin-top: 8px; }
+		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+		button.secondary { background: #262c31; border-color: #4b555f; color: #d8e0e5; }
+		button.danger { background: #452326; border-color: #8a3a42; }
+		.hint, .status { color: #9da7af; line-height: 1.35; }
+		.status.error { color: #ffb4a8; }
+		.hidden { display: none !important; }
+	</style>
+	<div class="toolbar">
+		<button data-add="true">Add</button>
+		<button class="secondary" data-mode="list">List</button>
+		<button class="secondary" data-mode="json">JSON</button>
+	</div>
+	<div class="rows" part="rows"></div>
+	<textarea class="hidden" part="json" spellcheck="false"></textarea>
+	<div class="hint" part="hint"></div>
+	<div class="status" part="status"></div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-array-editor")) {
+			return;
+		}
+
+		function parseItems(value) {
+			if (Array.isArray(value)) {
+				return value.map(function (item) { return item == null ? "" : String(item); });
+			}
+			var text = String(value == null ? "" : value).trim();
+			if (!text) {
+				return [];
+			}
+			try {
+				var parsed = JSON.parse(text);
+				if (Array.isArray(parsed)) {
+					return parsed.map(function (item) { return item == null ? "" : String(item); });
+				}
+			} catch (e) {
+			}
+			return text.split(/[,\n]/).map(function (item) {
+				return item.trim();
+			}).filter(function (item) {
+				return item !== "";
+			});
+		}
+
+		function itemKind(state) {
+			var def = state && state.propertyDefinition || {};
+			var item = def.items || {};
+			return item.kind || item.editor || item.type || "value";
+		}
+
+		customElements.define("flow-array-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._state = {};
+				this._items = [];
+				this._mode = "list";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-array-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("click", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._state = state || {};
+				this._items = parseItems(state && state.value);
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return JSON.stringify(this.normalizedItems());
+			}
+
+			handleEvent(event) {
+				if (event.type === "input") {
+					var target = event.target;
+					if (target && target.matches("[data-index]")) {
+						this._items[Number(target.getAttribute("data-index"))] = target.value;
+						this.emit();
+						return;
+					}
+					if (target && target.matches("textarea")) {
+						this._items = parseItems(target.value);
+						this.emit();
+					}
+					return;
+				}
+				if (event.type === "click") {
+					var add = event.target && event.target.getAttribute && event.target.getAttribute("data-add");
+					if (add) {
+						this._items.push("");
+						this.render();
+						this.emit();
+						return;
+					}
+					var remove = event.target && event.target.getAttribute && event.target.getAttribute("data-remove");
+					if (remove !== null && remove !== undefined) {
+						this._items.splice(Number(remove), 1);
+						this.render();
+						this.emit();
+						return;
+					}
+					var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
+					if (mode) {
+						this._mode = mode === "json" ? "json" : "list";
+						if (this._mode === "json") {
+							this._items = this.normalizedItems();
+						} else {
+							var json = this.shadowRoot.querySelector("textarea");
+							this._items = parseItems(json && json.value);
+						}
+						this.render();
+						this.emit();
+					}
+				}
+			}
+
+			normalizedItems() {
+				var def = this._state && this._state.propertyDefinition || {};
+				var itemDef = def.items || {};
+				var trim = itemDef.trim !== false;
+				var unique = itemDef.unique === true;
+				var allowEmpty = itemDef.allowEmpty === true;
+				var seen = {};
+				var out = [];
+				this._items.forEach(function (item) {
+					item = String(item == null ? "" : item);
+					if (trim) {
+						item = item.trim();
+					}
+					if (!item && !allowEmpty) {
+						return;
+					}
+					if (unique) {
+						if (seen[item]) {
+							return;
+						}
+						seen[item] = true;
+					}
+					out.push(item);
+				});
+				return out;
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var rows = this.shadowRoot.querySelector("[part=rows]");
+				var json = this.shadowRoot.querySelector("textarea");
+				var hint = this.shadowRoot.querySelector("[part=hint]");
+				var status = this.shadowRoot.querySelector("[part=status]");
+				var item = itemKind(this._state);
+				if (hint) {
+					hint.textContent = "Item type: " + item + ". Saved as a JSON array.";
+				}
+				if (rows) {
+					rows.classList.toggle("hidden", this._mode !== "list");
+					rows.innerHTML = this._items.map(function (value, index) {
+						return "<div class=\"row\"><input data-index=\"" + index + "\" value=\""
+							+ String(value == null ? "" : value).replace(/[&<>\"]/g, function (c) {
+								return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c];
+							})
+							+ "\"><button class=\"danger\" data-remove=\"" + index + "\">Remove</button></div>";
+					}).join("");
+				}
+				if (json) {
+					json.classList.toggle("hidden", this._mode !== "json");
+					if (this._mode === "json" && json.value !== this.value) {
+						json.value = this.value;
+					}
+				}
+				if (status) {
+					status.textContent = this.normalizedItems().length + " item(s)";
+					status.classList.remove("error");
+				}
+			}
+		});
+	}());
+</script>

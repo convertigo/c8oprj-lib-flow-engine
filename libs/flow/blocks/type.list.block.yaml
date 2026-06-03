@@ -1,9 +1,6 @@
 version: 1
-name: "type.list"
 private: true
 icon: "mdi:shape-outline"
-package: "core"
-namespace: "type"
 description: "Lists Flow property types visible from a project."
 props:
   projectDir:

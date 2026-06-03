@@ -1,5 +1,4 @@
 version: 1
-name: "object.merge"
 icon: "mdi:merge"
 description: "Creates a shallow object merge."
 props:

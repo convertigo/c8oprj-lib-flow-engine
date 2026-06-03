@@ -1,9 +1,6 @@
 version: 1
-name: "flow.tree"
 private: true
 icon: "mdi:file-tree-outline"
-package: "core"
-namespace: "flow"
 description: "Describes the virtual Flow or FlowEngine tree."
 props:
   target:

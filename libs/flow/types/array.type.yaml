@@ -1,0 +1,12 @@
+version: 1
+name: "array"
+label: "Array"
+icon: "mdi:format-list-bulleted"
+type: "array"
+description: "Ordered list of values. The item type is declared by the property descriptor."
+editor:
+  label: "Array editor"
+  kind: "webcomponent"
+  component: "flow-array-editor"
+  file: "editors/array.html"
+  icon: "mdi:application-brackets-outline"

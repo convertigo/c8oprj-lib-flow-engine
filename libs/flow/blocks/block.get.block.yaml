@@ -1,9 +1,6 @@
 version: 1
-name: "block.get"
 private: true
 icon: "mdi:puzzle-outline"
-package: "core"
-namespace: "block"
 description: "Reads one Flow block as a logical descriptor plus implementation unit."
 props:
   name:

@@ -1,5 +1,4 @@
 version: 1
-name: "throw"
 icon: "mdi:alert-circle-outline"
 description: "Stops the Flow with a structured error."
 props:

@@ -1,12 +1,18 @@
 <template id="flow-icon-editor-template">
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
-		.toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+		.toolbar { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, .75fr); gap: 8px; margin-bottom: 8px; }
 		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
-		.list { max-height: 300px; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; }
-		button { border: 1px solid #39424a; background: #22282e; color: #d7e1e7; border-radius: 4px; padding: 5px 6px; font-size: 12px; cursor: pointer; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.list { max-height: 320px; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+		button { border: 1px solid #39424a; background: #22282e; color: #d7e1e7; border-radius: 4px; padding: 6px; font-size: 11px; cursor: pointer; overflow: hidden; }
 		button.active { background: #0d5268; border-color: #2bb8df; color: #fff; }
+		.icon { height: 32px; display: grid; place-items: center; margin-bottom: 4px; color: #14a7cf; }
+		.icon img { max-width: 28px; max-height: 28px; display: block; }
+		.glyph { font-size: 22px; line-height: 1; color: #14a7cf; }
+		.name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 		.meta { color: #9da7af; margin-top: 6px; }
+		button.link { border: 0; background: transparent; color: #7bd8ff; padding: 0; font: inherit; text-align: left; }
+		button.link:hover { text-decoration: underline; }
 	</style>
 	<div class="toolbar">
 		<input part="value" placeholder="mdi:power, relative file, or URL">
@@ -75,6 +81,37 @@
 				}
 			}
 
+			fileUrl(path) {
+				path = String(path || "");
+				if (!path) {
+					return "";
+				}
+				if (path.match(/^https?:\/\//i) || path.match(/^file:\/\//i)) {
+					return path;
+				}
+				if (path.charAt(0) === "/") {
+					return "file://" + path;
+				}
+				return path;
+			}
+
+			iconImage(icon) {
+				return icon.iconData || this.fileUrl(icon.iconSvg || icon.iconFile32 || icon.iconFile16 || icon.iconFile || "");
+			}
+
+			openExternal(url) {
+				var host = this.host();
+				if (host.openExternal) {
+					host.openExternal(url);
+					return;
+				}
+				if (window.flowEditor && window.flowEditor.receive) {
+					window.flowEditor.receive(JSON.stringify({ type: "openExternal", url: url }));
+					return;
+				}
+				window.open(url, "_blank");
+			}
+
 			handleEvent(event) {
 				if (event.type === "input") {
 					var valueInput = event.target && event.target.getAttribute && event.target.getAttribute("part") === "value";
@@ -87,6 +124,11 @@
 						this._filter = event.target.value.toLowerCase();
 					}
 					this.render();
+					return;
+				}
+				var openUrl = event.target && event.target.getAttribute && event.target.getAttribute("data-open-url");
+				if (openUrl) {
+					this.openExternal(openUrl);
 					return;
 				}
 				var icon = event.target && event.target.getAttribute && event.target.getAttribute("data-icon");
@@ -120,10 +162,19 @@
 				}
 				var rows = this._icons.filter((icon) => !this._filter || String(icon.id).toLowerCase().indexOf(this._filter) !== -1).slice(0, 120);
 				if (list) {
-					list.innerHTML = rows.map((icon) => "<button class=\"" + (icon.id === this.value ? "active" : "") + "\" data-icon=\"" + icon.id + "\">" + icon.id + "</button>").join("");
+					list.innerHTML = rows.map((icon) => {
+						var image = this.iconImage(icon);
+						var label = icon.name || String(icon.id || "").replace(/^[^:]+:/, "");
+						var preview = image
+							? "<img src=\"" + image.replace(/"/g, "&quot;") + "\" alt=\"\">"
+							: "<span class=\"glyph\">*</span>";
+						return "<button title=\"" + icon.id + "\" class=\"" + (icon.id === this.value ? "active" : "") + "\" data-icon=\"" + icon.id + "\"><span class=\"icon\">" + preview + "</span><span class=\"name\">" + label + "</span></button>";
+					}).join("");
 				}
 				if (meta) {
-					meta.textContent = rows.length + " cached icon(s) shown. You can also type any mdi:* id directly.";
+					var q = encodeURIComponent(this._filter || this.value.replace(/^mdi:/, "") || "");
+					var url = "https://icon-sets.iconify.design/mdi/?query=" + q;
+					meta.innerHTML = rows.length + " cached icon(s) shown. Type any icon id directly, or <button class=\"link\" data-open-url=\"" + url + "\">find more on Iconify</button>.";
 				}
 			}
 		});

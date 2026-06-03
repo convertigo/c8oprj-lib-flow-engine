@@ -1,7 +1,7 @@
 version: 1
-name: "fragment.use"
 icon: "mdi:folder-sync-outline"
-kind: "composition"
+tags:
+- composition
 description: "Expands and runs a reusable Flow fragment in the current scopes."
 longDescription: "A fragment is stored in libs/flow/fragments/<name>.fragment.yaml and behaves like the nodes were written inline. It has closure-style access to input, config, flow, result and current."
 props:

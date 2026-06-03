@@ -1,5 +1,4 @@
 version: 1
-name: "http.get"
 icon: "mdi:web"
 description: "Calls an HTTP endpoint with GET."
 props:

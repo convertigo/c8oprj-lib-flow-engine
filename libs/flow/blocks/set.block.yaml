@@ -1,5 +1,4 @@
 version: 1
-name: "set"
 icon: "mdi:variable"
 description: "Writes a value to a scope path."
 longDescription: "Use path to choose the destination and value for the content. A value containing only {{ expression }} keeps the native expression type."

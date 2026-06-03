@@ -1,7 +1,7 @@
 version: 1
-name: "file.readLine"
 icon: "mdi:file-find-outline"
-kind: "resource"
+tags:
+- resource
 description: "Reads one line from a file reader handle."
 props:
   reader:

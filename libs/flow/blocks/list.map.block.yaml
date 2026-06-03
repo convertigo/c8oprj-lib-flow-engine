@@ -1,5 +1,4 @@
 version: 1
-name: "list.map"
 icon: "mdi:vector-polyline"
 description: "Maps an array to a new array while exposing each item as current."
 props:

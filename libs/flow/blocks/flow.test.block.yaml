@@ -1,9 +1,6 @@
 version: 1
-name: "flow.test"
 private: true
 icon: "mdi:test-tube"
-package: "core"
-namespace: "flow"
 description: "Runs a named project Flow sidecar, source or definition."
 props:
   name:

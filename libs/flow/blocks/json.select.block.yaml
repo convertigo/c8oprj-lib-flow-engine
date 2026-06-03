@@ -1,5 +1,4 @@
 version: 1
-name: "json.select"
 icon: "mdi:select-search"
 description: "Reads a nested value from a JSON object."
 props:

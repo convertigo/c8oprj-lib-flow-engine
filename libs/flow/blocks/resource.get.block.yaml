@@ -1,9 +1,6 @@
 version: 1
-name: "resource.get"
 private: true
 icon: "mdi:file-code-outline"
-package: "core"
-namespace: "resource"
 description: "Reads a project-local Flow source resource."
 props:
   path:

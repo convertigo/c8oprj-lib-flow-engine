@@ -1,9 +1,6 @@
 version: 1
-name: "flow.apply"
 private: true
 icon: "mdi:source-branch-sync"
-package: "core"
-namespace: "flow"
 description: "Applies Flow or FlowEngine mutations without writing files."
 props:
   target:

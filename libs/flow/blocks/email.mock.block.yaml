@@ -1,5 +1,4 @@
 version: 1
-name: "email.mock"
 icon: "mdi:email-outline"
 description: "Creates a mock email result without sending anything."
 props:

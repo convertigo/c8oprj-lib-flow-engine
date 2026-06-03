@@ -1,9 +1,6 @@
 version: 1
-name: "flow.analyze"
 private: true
 icon: "mdi:chart-timeline-variant"
-package: "core"
-namespace: "flow"
 description: "Analyzes a Flow source or definition."
 props:
   flowSource:

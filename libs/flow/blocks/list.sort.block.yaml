@@ -1,5 +1,4 @@
 version: 1
-name: "list.sort"
 icon: "mdi:sort"
 description: "Sorts an array copy by a current.* expression."
 props:

@@ -1,9 +1,6 @@
 version: 1
-name: "block.create"
 private: true
 icon: "mdi:puzzle-plus-outline"
-package: "core"
-namespace: "block"
 description: "Creates one project-local canonical Flow block."
 props:
   name:

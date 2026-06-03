@@ -1,5 +1,4 @@
 version: 1
-name: "session.remove"
 icon: "mdi:trash-can-outline"
 description: "Removes a value from the current HTTP session."
 props:
