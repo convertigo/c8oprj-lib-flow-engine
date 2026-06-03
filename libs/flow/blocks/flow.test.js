@@ -20,6 +20,7 @@
 	function cleanup(execution, props) {
 		if (!include(props.includeFlow)) {
 			delete execution.flow;
+			delete execution.local;
 		}
 		if (!include(props.includeTrace)) {
 			delete execution.trace;

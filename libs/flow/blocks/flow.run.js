@@ -10,6 +10,7 @@
 	function cleanup(execution, props) {
 		if (!include(props.includeFlow)) {
 			delete execution.flow;
+			delete execution.local;
 		}
 		if (!include(props.includeTrace)) {
 			delete execution.trace;
@@ -24,6 +25,7 @@
 				input: props.input || {},
 				projectDir: props.projectDir,
 				definition: props.definition,
+				includeFlow: include(props.includeFlow),
 				includeTrace: include(props.includeTrace)
 			}), props);
 		}

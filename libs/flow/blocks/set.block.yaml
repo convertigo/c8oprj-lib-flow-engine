@@ -14,7 +14,7 @@ props:
     kind: "value"
     type: "unknown"
     default: ""
-    description: "Value to write. Use {{ expression }} for dynamic values."
+    description: "Value to write. Use {{ expression }} for dynamic values; scope paths are null-safe, so prefer {{ local.feed.rss.channel.item ?? null }}."
 hooks:
   file: "set.hooks.js"
 implementation:

@@ -3,11 +3,46 @@ private: true
 icon: "mdi:puzzle-outline"
 description: "Lists Flow blocks visible from a project."
 props:
+  query:
+    label: "query"
+    kind: "text"
+    type: "string"
+    description: "Optional text filter over block id, namespace, description and property names."
+  q:
+    label: "q"
+    kind: "text"
+    type: "string"
+    description: "Short alias for query."
+  namespace:
+    label: "namespace"
+    kind: "text"
+    type: "string"
+    description: "Optional namespace filter, such as json or mcp.tool.flow."
+  provider:
+    label: "provider"
+    kind: "text"
+    type: "string"
+    description: "Optional provider project filter, such as lib_flow_engine."
+  origin:
+    label: "origin"
+    kind: "text"
+    type: "string"
+    description: "Optional origin filter: core or project."
+  limit:
+    label: "limit"
+    kind: "literal"
+    type: "number"
+    description: "Maximum number of blocks to return."
+  cursor:
+    label: "cursor"
+    kind: "text"
+    type: "string"
+    description: "Pagination cursor returned by a previous catalog call."
   detail:
     label: "detail"
     kind: "text"
     type: "string"
-    description: "Catalog detail: summary, compact or full."
+    description: "Palette detail: summary, compact or full."
   mode:
     label: "mode"
     kind: "text"
@@ -18,6 +53,18 @@ props:
     kind: "literal"
     type: "boolean"
     description: "Include private blocks."
+  doc:
+    label: "doc"
+    kind: "literal"
+    type: "boolean"
+    default: true
+    description: "Include short palette documentation."
+  hints:
+    label: "hints"
+    kind: "literal"
+    type: "boolean"
+    default: true
+    description: "Include usage hints. Call with hints=false once understood."
   projectDir:
     label: "projectDir"
     kind: "text"
@@ -27,7 +74,7 @@ props:
     label: "out"
     kind: "path"
     mode: "write"
-    description: "Scope path receiving the block catalog."
+    description: "Scope path receiving the block palette."
 hooks:
   file: "block.list.hooks.js"
 implementation:

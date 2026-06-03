@@ -33,6 +33,37 @@ props:
     kind: "literal"
     type: "boolean"
     description: "Include execution trace in the response."
+  includeFullTrace:
+    label: "includeFullTrace"
+    kind: "literal"
+    type: "boolean"
+    description: "MCP authoring hint: return full per-node trace values instead of a compact preview."
+  includeFullResult:
+    label: "includeFullResult"
+    kind: "literal"
+    type: "boolean"
+    description: "MCP authoring hint: return full result only while it stays below maxResultChars."
+  allowHugeResult:
+    label: "allowHugeResult"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Explicitly allow returning a result larger than maxResultChars. Use rarely."
+  maxResultChars:
+    label: "maxResultChars"
+    kind: "literal"
+    type: "number"
+    description: "MCP authoring hint: compact result payloads larger than this JSON size."
+  maxArrayItems:
+    label: "maxArrayItems"
+    kind: "literal"
+    type: "number"
+    description: "MCP authoring hint: number of leading array items kept in compact previews."
+  maxTraceChars:
+    label: "maxTraceChars"
+    kind: "literal"
+    type: "number"
+    description: "MCP authoring hint: compact trace payloads larger than this JSON size."
   projectDir:
     label: "projectDir"
     kind: "text"

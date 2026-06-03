@@ -3,7 +3,7 @@ name: "expression"
 label: "Expression"
 icon: "mdi:function-variant"
 type: "string"
-description: "JavaScript expression evaluated against the current Flow scopes."
+description: "Flow expression evaluated against the current scopes. Scope paths are null-safe; use local.feed.rss.channel.item ?? null instead of defensive && chains."
 editor:
   label: "Expression editor"
   kind: "webcomponent"

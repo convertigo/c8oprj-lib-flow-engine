@@ -12,7 +12,7 @@ props:
     label: "uri"
     kind: "text"
     type: "string"
-    description: "Flow resource URI such as flow://guide/start."
+    description: "Project-local Flow resource URI returned by resource.list/search. MCP guide URIs use resources/read."
   maxBytes:
     label: "maxBytes"
     kind: "literal"

@@ -97,7 +97,7 @@
 		if (source.trim() === "") {
 			source = "version: 1\nnodes: []\n";
 		}
-		return parseYamlSource(source, "version: 1\nnodes: []\n");
+		return canonicalFlowDefinition(parseYamlSource(source, "version: 1\nnodes: []\n"));
 	}
 
 	function response(value) {
@@ -160,11 +160,47 @@
 			});
 		}
 		Object.keys(node).forEach(function (key) {
-			if (!structural[key] && props[key] === undefined) {
+			if (!structural[key]) {
 				props[key] = node[key];
 			}
 		});
 		return props;
+	}
+
+	function isFlowNodeLike(value) {
+		return value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]" &&
+			(value.block !== undefined || value.id !== undefined || value.uid !== undefined || value.props !== undefined);
+	}
+
+	function canonicalFlowNode(node) {
+		node = normalizeTree(node || {});
+		if (node.props && typeof node.props === "object" && Object.prototype.toString.call(node.props) !== "[object Array]") {
+			Object.keys(node.props).forEach(function (key) {
+				if (node[key] === undefined) {
+					node[key] = node.props[key];
+				}
+			});
+			delete node.props;
+		}
+		Object.keys(node).forEach(function (key) {
+			var value = node[key];
+			if (Object.prototype.toString.call(value) === "[object Array]") {
+				node[key] = value.map(function (item) {
+					return isFlowNodeLike(item) ? canonicalFlowNode(item) : normalizeTree(item);
+				});
+			}
+		});
+		return node;
+	}
+
+	function canonicalFlowDefinition(definition) {
+		var out = normalizeTree(definition || {});
+		if (Object.prototype.toString.call(out.nodes) === "[object Array]") {
+			out.nodes = out.nodes.map(function (node) {
+				return canonicalFlowNode(node);
+			});
+		}
+		return out;
 	}
 
 	function isScopePath(value) {
@@ -1747,7 +1783,10 @@
 				return entries[i];
 			}
 		}
-		raise("UNKNOWN_RESOURCE", "Unknown Flow resource uri: " + wanted);
+		raise("UNKNOWN_RESOURCE", "Unknown Flow resource uri: " + wanted,
+			null, wanted.indexOf("flow://guide/") === 0 || wanted.indexOf("flow://skills/") === 0
+				? "Use MCP resources/read for Flow MCP guides and skills; use flow-resource-get for project-local source resources."
+				: "Use flow-resource-search or flow-resource-list first, then flow-resource-get with the returned path or uri.");
 	}
 
 	function resourceSummary(entry, content) {
@@ -1911,8 +1950,9 @@
 		}
 		if (request.hints !== false) {
 			out.hints = [
+				"If you understood, call with hints=false.",
 				"Use resource.get with uri or path to read one listed resource.",
-				"Use pattern to stay narrow; repeated calls can pass doc=false,hints=false."
+				"Use pattern to stay narrow; repeated calls can also pass doc=false."
 			];
 		}
 		return out;
@@ -1953,9 +1993,10 @@
 		}
 		if (request.hints !== false) {
 			out.hints = [
+				"If you understood, call with hints=false.",
 				"Use this for block/fragment/type/editor/library sources. Use flow-search for Flow graph nodes.",
 				"Call flow-resource-get before patching; pass its hash as baseHash.",
-				"Set doc=false,hints=false after the tool contract is understood."
+				"Pass doc=false on repeated calls when the short tool contract is already known."
 			];
 		}
 		return out;
@@ -3304,7 +3345,7 @@
 	}
 
 	function sourceFromDefinition(definition) {
-		var normalized = normalizeTree(definition || {});
+		var normalized = canonicalFlowDefinition(definition || {});
 		if (normalized.version === undefined || normalized.version === null) {
 			normalized.version = 1;
 		}
@@ -3330,6 +3371,7 @@
 
 	function setProjectFlow(blocks, name, source, args) {
 		source = sourceForWriteRequest(args, source);
+		source = sourceFromDefinition(parseSource(source));
 		var analysis = analyzeFlowSource(blocks, source);
 		var file = projectFlowFile(name);
 		file.getParentFile().mkdirs();
@@ -3895,12 +3937,17 @@
 			assertNoRuntimeHandle(result, "result");
 			learnResultSchema(request, definition, result);
 			closeRuntimeHandles(ctx);
-			return {
+			var out = {
 				ok: true,
-				result: snapshot(result),
-				local: snapshot(ctx.scopes.local),
-				trace: request.includeTrace === false ? undefined : snapshot(ctx.scopes.trace)
+				result: snapshot(result)
 			};
+			if (request.includeFlow === true || request.includeLocal === true) {
+				out.local = snapshot(ctx.scopes.local);
+			}
+			if (request.includeTrace !== false) {
+				out.trace = snapshot(ctx.scopes.trace);
+			}
+			return out;
 		} finally {
 			closeRuntimeHandles(ctx);
 		}
@@ -4082,6 +4129,7 @@
 					config: config || {},
 					input: options.input || {},
 					context: mergedContext(ctx.scopes.request, options.context || {}),
+					includeFlow: options.includeFlow === true || options.includeLocal === true,
 					includeTrace: options.includeTrace === true
 				}, loadBlocks());
 			});
@@ -4091,7 +4139,15 @@
 			return withProjectDir(args.projectDir, function () {
 				return catalogDefinition(loadBlocks(), {
 					detail: args.detail || args.mode || "summary",
-					includePrivate: args.includePrivate === true
+					includePrivate: args.includePrivate === true,
+					query: args.query || args.q || "",
+					namespace: args.namespace || "",
+					provider: args.provider || "",
+					origin: args.origin || "",
+					limit: args.limit,
+					cursor: args.cursor,
+					doc: args.doc,
+					hints: args.hints
 				});
 			});
 		};
@@ -4156,6 +4212,7 @@
 					config: config || {},
 					input: options.input || {},
 					context: mergedContext(ctx.scopes.request, options.context || {}),
+					includeFlow: options.includeFlow === true || options.includeLocal === true,
 					includeTrace: options.includeTrace === true
 				}, loadBlocks());
 			});
@@ -4187,6 +4244,7 @@
 					config: args.config || {},
 					input: args.input || {},
 					context: mergedContext(ctx.scopes.request, args.context || {}),
+					includeFlow: args.includeFlow === true || args.includeLocal === true,
 					includeTrace: args.includeTrace === true
 				}, loadBlocks());
 			});
@@ -4544,7 +4602,7 @@
 		var info = {
 			id: nodePath(node),
 			block: name,
-			props: Object.keys(props),
+			properties: Object.keys(props),
 			reads: [],
 			writes: [],
 			inputs: [],
@@ -4642,7 +4700,7 @@
 			id: nodePath(node),
 			path: path || "",
 			block: name,
-			props: Object.keys(props),
+			properties: Object.keys(props),
 			reads: [],
 			writes: [],
 			inputs: [],
@@ -4923,7 +4981,10 @@
 
 	function contextForFlowRequest(blocks, request) {
 		request = request || {};
-		var definition = expandFlowDefinition(blocks, parseSource(request.flowSource));
+		var definition = request.definition !== undefined && request.definition !== null
+			? canonicalFlowDefinition(normalizeTree(request.definition))
+			: parseSource(request.flowSource);
+		definition = expandFlowDefinition(blocks, definition);
 		var include = normalizeInclude(request.include);
 		var detail = String(request.detail || "normal");
 		if (detail === "summary") {
@@ -5060,8 +5121,7 @@
 		return out;
 	}
 
-	function compactBlockDescriptor(block) {
-		var descriptor = blockDescriptor(block);
+	function compactBlockDescriptor(descriptor) {
 		var props = {};
 		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
 			props[name] = compactPropertyDescriptor(descriptor.props[name]);
@@ -5124,42 +5184,24 @@
 		return parts.join(":") || "value";
 	}
 
-	function summaryBlockDescriptor(block) {
-		var descriptor = blockDescriptor(block);
-		var props = {};
+	function summaryBlockDescriptor(descriptor) {
+		var inputs = [];
+		var outputs = [];
 		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
-			props[name] = summaryPropertyDescriptor(descriptor.props[name]);
+			var property = descriptor.props[name] || {};
+			if (property.mode === "write" || name === "out") {
+				outputs.push(name);
+			} else {
+				inputs.push(name);
+			}
 		});
 		var out = {
-			blockId: descriptor.blockId,
-			name: descriptor.name,
-			provider: descriptor.provider,
-			origin: descriptor.origin,
-			namespace: descriptor.namespace
+			block: descriptor.blockId,
+			sig: (inputs.length ? inputs.join(", ") : "-") + (outputs.length ? " -> " + outputs.join(", ") : ""),
+			desc: descriptor.description || ""
 		};
-		if (Object.keys(props).length > 0) {
-			out.props = props;
-		}
-		if (descriptor.tags && descriptor.tags.length) {
-			out.tags = descriptor.tags;
-		}
-		if (descriptor.uses && descriptor.uses.length) {
-			out.uses = descriptor.uses;
-		}
-		if (descriptor.implementation) {
-			out.implementation = descriptor.implementation;
-		}
-		if (descriptor["private"] === true) {
-			out["private"] = true;
-		}
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(function (slot) {
-				var semanticKeys = ["scope", "input", "local", "current", "error"];
-				for (var i = 0; i < semanticKeys.length; i++) {
-					if (slot[semanticKeys[i]] !== undefined && slot[semanticKeys[i]] !== null && slot[semanticKeys[i]] !== "") {
-						return compactSlotDescriptor(slot);
-					}
-				}
 				return slot.name;
 			});
 		}
@@ -5176,39 +5218,162 @@
 		});
 	}
 
-	function summaryCatalogDefinition(blocks, options) {
-		var descriptors = Object.keys(blocks).sort().map(function (name) {
-			return summaryBlockDescriptor(blocks[name]);
+	function catalogSearchText(descriptor) {
+		return [
+			descriptor.blockId,
+			descriptor.name,
+			descriptor.localName,
+			descriptor.namespace,
+			descriptor.provider,
+			descriptor.origin,
+			descriptor.description,
+			(descriptor.tags || []).join(" "),
+			Object.keys(descriptor.props || {}).join(" ")
+		].join(" ").toLowerCase();
+	}
+
+	function catalogQueryScore(descriptor, query) {
+		query = String(query || "").toLowerCase().trim();
+		if (!query) {
+			return 1;
+		}
+		var text = catalogSearchText(descriptor);
+		var blockId = String(descriptor.blockId || descriptor.name || "").toLowerCase();
+		var localName = String(descriptor.localName || "").toLowerCase();
+		var namespace = String(descriptor.namespace || "").toLowerCase();
+		var tokens = query.split(/\s+/);
+		var score = 0;
+		if (blockId === query || localName === query) {
+			score += 100;
+		} else if (blockId.indexOf(query) !== -1) {
+			score += 30;
+		}
+		for (var i = 0; i < tokens.length; i++) {
+			var token = tokens[i];
+			if (!token) {
+				continue;
+			}
+			if (blockId === token || localName === token) {
+				score += 12;
+			} else if (blockId.indexOf(token) !== -1 || localName.indexOf(token) !== -1) {
+				score += 8;
+			} else if (namespace.indexOf(token) !== -1) {
+				score += 4;
+			} else if (text.indexOf(token) !== -1) {
+				score += 1;
+			}
+		}
+		return score;
+	}
+
+	function filterCatalogDescriptors(descriptors, options) {
+		options = options || {};
+		var query = String(options.query || options.q || "").toLowerCase().trim();
+		var namespace = String(options.namespace || "").trim();
+		var provider = String(options.provider || "").trim();
+		var origin = String(options.origin || "").trim();
+		var filtered = descriptors.filter(function (descriptor) {
+			if (namespace && String(descriptor.namespace || "") !== namespace &&
+					String(descriptor.namespace || "").indexOf(namespace + ".") !== 0) {
+				return false;
+			}
+			if (provider && String(descriptor.provider || "") !== provider) {
+				return false;
+			}
+			if (origin && String(descriptor.origin || "") !== origin) {
+				return false;
+			}
+			if (query) {
+				return catalogQueryScore(descriptor, query) > 0;
+			}
+			return true;
 		});
-		descriptors = filterPrivateDescriptors(descriptors, options);
-		var types = loadTypes();
+		if (query) {
+			filtered.sort(function (a, b) {
+				var scoreDiff = catalogQueryScore(b, query) - catalogQueryScore(a, query);
+				if (scoreDiff !== 0) {
+					return scoreDiff;
+				}
+				return String(a.blockId || a.name).localeCompare(String(b.blockId || b.name));
+			});
+		}
+		return filtered;
+	}
+
+	function pagedCatalogDescriptors(descriptors, options) {
+		options = options || {};
+		var offset = parseInt(String(options.cursor || "0"), 10);
+		if (isNaN(offset) || offset < 0) {
+			offset = 0;
+		}
+		var limit = parseInt(String(options.limit || "0"), 10);
+		if (isNaN(limit) || limit < 0) {
+			limit = 0;
+		}
+		if (limit === 0) {
+			return {
+				items: descriptors,
+				total: descriptors.length,
+				nextCursor: null
+			};
+		}
+		var items = descriptors.slice(offset, offset + limit);
 		return {
-			detail: "summary",
-			blocks: descriptors,
-			libraries: listFlowLibraries().map(function (library) {
-				return {
-					name: library.name,
-					provider: library.provider,
-					origin: library.origin
-				};
-			}),
-			types: Object.keys(types).sort().map(function (name) {
-				var type = typeDescriptor(types[name]);
-				return {
-					name: type.name,
-					type: type.type || "unknown",
-					origin: type.origin || "unknown"
-				};
-			}),
-			next: "Use flow-search for examples. Use flow-catalog detail='compact' for docs, detail='full' for icon/type resources."
+			items: items,
+			total: descriptors.length,
+			nextCursor: offset + limit < descriptors.length ? String(offset + limit) : null
 		};
 	}
 
-	function compactCatalogDefinition(blocks, options) {
+	function catalogPage(blocks, options, mapper) {
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
-			return compactBlockDescriptor(blocks[name]);
+			return blockDescriptor(blocks[name]);
 		});
 		descriptors = filterPrivateDescriptors(descriptors, options);
+		descriptors = filterCatalogDescriptors(descriptors, options);
+		var page = pagedCatalogDescriptors(descriptors, options);
+		return {
+			blocks: page.items.map(mapper),
+			total: page.total,
+			nextCursor: page.nextCursor
+		};
+	}
+
+	function addCatalogDocs(out, options) {
+		options = options || {};
+		if (options.doc !== false) {
+			out.doc = "Flow palette. Use summary to discover block names, compact for typed properties, and full only when source-level metadata is required.";
+		}
+		if (options.hints !== false) {
+			out.hints = [
+				"If you understood, call with hints=false.",
+				"Natural queries are scored token-by-token, so query='requestable call transaction sequence connector' still returns requestable.call even if not every word matches.",
+				"Keep calls narrow with query, namespace, provider, origin, limit and cursor. Prefer limit<=20 for discovery.",
+				"After finding a candidate block, call flow-block-get for the exact block instead of requesting detail='full' for the whole palette.",
+				"Use flow-search before palette browsing when an existing Flow example may already show the intended pattern."
+			];
+		}
+		return out;
+	}
+
+	function summaryCatalogDefinition(blocks, options) {
+		var page = catalogPage(blocks, options, summaryBlockDescriptor);
+		var types = loadTypes();
+		return addCatalogDocs({
+			detail: "summary",
+			count: page.blocks.length,
+			total: page.total,
+			nextCursor: page.nextCursor,
+			blocks: page.blocks,
+			libraryCount: listFlowLibraries().length,
+			typeCount: Object.keys(types).length,
+			next: "This is the short palette. Use query/namespace/provider to stay narrow, detail='compact' for typed properties, detail='full' only for source-level details."
+		}, options);
+	}
+
+	function compactCatalogDefinition(blocks, options) {
+		var page = catalogPage(blocks, options, compactBlockDescriptor);
+		var descriptors = page.blocks;
 		var groupsByProvider = {};
 		descriptors.forEach(function (block) {
 			var provider = block.provider || block.origin || "unknown";
@@ -5217,8 +5382,11 @@
 			}
 			groupsByProvider[provider].push(block.blockId || block.name);
 		});
-		return {
+		return addCatalogDocs({
 			detail: "compact",
+			count: descriptors.length,
+			total: page.total,
+			nextCursor: page.nextCursor,
 			blocks: descriptors,
 			groups: Object.keys(groupsByProvider).sort().map(function (provider) {
 				return {
@@ -5229,7 +5397,7 @@
 			libraries: listFlowLibraries(),
 			types: catalogTypes(descriptors, loadTypes()).map(compactTypeDescriptor),
 			next: "Use flow-search for examples and flow-block-get or flow-catalog detail='full' only when source-level detail is needed."
-		};
+		}, options);
 	}
 
 	function catalogDefinition(blocks, options) {
@@ -5241,10 +5409,8 @@
 		if (detail === "compact") {
 			return compactCatalogDefinition(blocks, options);
 		}
-		var descriptors = Object.keys(blocks).sort().map(function (name) {
-			return blockDescriptor(blocks[name]);
-		});
-		descriptors = filterPrivateDescriptors(descriptors, options);
+		var page = catalogPage(blocks, options, function (descriptor) { return descriptor; });
+		var descriptors = page.blocks;
 		var typeDescriptors = loadTypes();
 		var groups = [];
 		function groupLabel(provider, origin) {
@@ -5315,13 +5481,16 @@
 		groups.forEach(function (group) {
 			delete group.order;
 		});
-		return {
+		return addCatalogDocs({
 			detail: "full",
+			count: descriptors.length,
+			total: page.total,
+			nextCursor: page.nextCursor,
 			blocks: descriptors,
 			groups: groups,
 			libraries: listFlowLibraries(),
 			types: catalogTypes(descriptors, typeDescriptors)
-		};
+		}, options);
 	}
 
 	function inferredTypeDescriptor(name) {
@@ -6322,7 +6491,7 @@
 		var children = [];
 			if (target === "flow") {
 				var definition = request.definition !== undefined && request.definition !== null
-					? normalizeTree(request.definition)
+					? canonicalFlowDefinition(normalizeTree(request.definition))
 					: parseSource(request.flowSource);
 				definition = expandFlowDefinition(blocks, definition);
 				var analysisRequest = Object.assign({}, request, {
@@ -6678,9 +6847,10 @@
 		}
 		if (request.hints !== false) {
 			out.hints = [
+				"If you understood, call with hints=false.",
 				"Use kinds=['node'] to search executable Flow nodes only.",
 				"Use context=1 or 2 to get nearby parent/previous/children/next summaries.",
-				"Set doc=false,hints=false after the tool contract is understood."
+				"Pass doc=false on repeated calls when the short tool contract is already known."
 			];
 		}
 		return out;
@@ -7007,7 +7177,7 @@
 		var definition = target === "engine"
 			? parseYamlSource(request.engineSource, "version: 1\n")
 			: request.definition !== undefined && request.definition !== null
-				? normalizeTree(request.definition)
+				? canonicalFlowDefinition(normalizeTree(request.definition))
 				: parseSource(request.flowSource);
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		if (mutations.length === 0) {
@@ -7041,7 +7211,7 @@
 	function outputSchemaRequest(request, blocks) {
 		request = request || {};
 		var definition = request.definition !== undefined && request.definition !== null
-			? normalizeTree(request.definition)
+			? canonicalFlowDefinition(normalizeTree(request.definition))
 			: parseSource(request.flowSource || "");
 		var declaredSchema = declaredOutputSchema(definition);
 		var staticSchema = declaredSchema ? null : resultSchemaFromAnalysis(analyzeFlowDefinition(blocks, definition, request));
@@ -7098,8 +7268,8 @@
 			+ "function send(m){if(window.flowEditor&&window.flowEditor.receive){window.flowEditor.receive(JSON.stringify(m));}}"
 			+ "function hostRequest(name,payload){if(window.flowEditor&&window.flowEditor.request){try{return JSON.parse(window.flowEditor.request(JSON.stringify({type:'request',name:name,payload:payload||{}}))||'{}');}catch(e){return{ok:false,error:String(e)}}}return{ok:false,error:'Flow editor bridge is unavailable.'};}"
 			+ "function keys(o){return Object.keys(o||{});}"
-			+ "function propOrder(info,defs,node){var out=[];(info.propertyOrder||[]).forEach(function(k){if(defs[k]&&!defs[k].hidden&&out.indexOf(k)<0)out.push(k);});keys(defs).sort().forEach(function(k){if(!defs[k].hidden&&out.indexOf(k)<0)out.push(k);});keys(node).sort().forEach(function(k){if(['id','block','comment'].indexOf(k)<0&&!defs[k]&&out.indexOf(k)<0)out.push(k);});return out;}"
-			+ "function propValue(node,key){var v=node[key];if(v===undefined||v===null)return '';return typeof v==='object'?JSON.stringify(v,null,2):String(v);}"
+			+ "function propOrder(info,defs,node){var out=[];(info.propertyOrder||[]).forEach(function(k){if(defs[k]&&!defs[k].hidden&&out.indexOf(k)<0)out.push(k);});keys(defs).sort().forEach(function(k){if(!defs[k].hidden&&out.indexOf(k)<0)out.push(k);});keys(node).sort().forEach(function(k){if(['id','block','comment','props'].indexOf(k)<0&&!defs[k]&&out.indexOf(k)<0)out.push(k);});return out;}"
+			+ "function propValue(node,key){var v=node[key];if((v===undefined||v===null)&&node&&node.props)v=node.props[key];if(v===undefined||v===null)return '';return typeof v==='object'?JSON.stringify(v,null,2):String(v);}"
 			+ "function templateLike(kind){return kind==='template'||kind==='value';}"
 			+ "function simpleParts(v){v=String(v||'');var a=v.indexOf('{{'),b=a<0?-1:v.indexOf('}}',a+2);if(a>=0&&b>=0){return{prefix:v.slice(0,a),path:v.slice(a+2,b).trim(),suffix:v.slice(b+2)};}return{prefix:v,path:'',suffix:''};}"
 			+ "function simpleCandidate(v){var p=simpleParts(v);return p.path!==''&&p.prefix.indexOf('}}')<0&&p.suffix.indexOf('{{')<0;}"
@@ -7263,7 +7433,13 @@
 				var request = parseRequest(requestJson);
 				return response(Object.assign({ ok: true }, catalogDefinition(loadBlocks(), {
 					detail: request.detail || request.mode || "full",
-					includePrivate: request.includePrivate === true
+					includePrivate: request.includePrivate === true,
+					query: request.query || request.q || "",
+					namespace: request.namespace || "",
+					provider: request.provider || "",
+					origin: request.origin || "",
+					limit: request.limit,
+					cursor: request.cursor
 				})));
 			} catch (e) {
 				return response(failure("catalog", e));
