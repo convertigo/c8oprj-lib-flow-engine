@@ -761,6 +761,15 @@
 		var text = String(source || "");
 		var tokens = [];
 		var i = 0;
+		function unsupportedHint(ch) {
+			if (ch === "[") {
+				return "Flow expressions do not support JavaScript array indexing or array literals. Use literal properties for static arrays, or forEach/list.map/list.filter/list.sort with current.* for array items.";
+			}
+			if (ch === "{") {
+				return "Flow expressions do not support JavaScript object literals. Build objects with json.object/json.field or parse literal JSON with json.parse.";
+			}
+			return "Flow expressions support scope paths, literals, function calls, arithmetic/comparison/logical operators, ternary and ??; use blocks for object/array construction.";
+		}
 		function isDigit(ch) {
 			return ch >= "0" && ch <= "9";
 		}
@@ -829,7 +838,7 @@
 				i++;
 				continue;
 			}
-			raise("INVALID_EXPRESSION", "Unsupported expression character: " + ch);
+			raise("INVALID_EXPRESSION", "Unsupported expression character: " + ch, null, unsupportedHint(ch));
 		}
 		tokens.push({ type: "eof", value: "" });
 		return tokens;
@@ -3109,7 +3118,19 @@
 		return out;
 	}
 
-	function getBlockSource(blocks, name) {
+	function sourceLength(path) {
+		if (!path) {
+			return 0;
+		}
+		try {
+			return Number(new File(String(path)).length());
+		} catch (e) {
+			return 0;
+		}
+	}
+
+	function getBlockSource(blocks, name, args) {
+		args = args || {};
 		var block = blocks[String(name || "")];
 		if (!block) {
 			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name);
@@ -3120,8 +3141,34 @@
 		}
 		var descriptorSource = String(FileUtils.readFileToString(file, "UTF-8"));
 		var descriptor = validateGraphBlockSource(block.name, descriptorSource);
+		var catalog = blockDescriptor(block);
 		var implementation = blockImplementation(descriptor);
+		var detail = String(args.detail || args.mode || "compact").toLowerCase();
+		if (detail !== "full") {
+			var compact = {
+				ok: true,
+				detail: detail === "summary" ? "summary" : "compact",
+				name: block.name,
+				origin: block.__flowOrigin || "unknown",
+				provider: block.__flowProvider || block.__flowOrigin || "unknown",
+				format: "canonical",
+				implementationRuntime: implementation.runtime,
+				descriptorChars: descriptorSource.length,
+				implementationChars: sourceLength(block.__flowImplementationFile),
+				hooksChars: sourceLength(block.__flowHooksFile)
+			};
+			if (detail === "summary") {
+				compact.block = summaryBlockDescriptor(catalog);
+				compact.next = "Use detail='compact' for typed properties or detail='full' for descriptor/implementation sources.";
+			} else {
+				compact.block = compactBlockDescriptor(catalog);
+				compact.next = "Sources omitted. Use detail='full' only when editing descriptorSource, implementationSource or hooksSource.";
+			}
+			return compact;
+		}
 		var out = {
+			ok: true,
+			detail: "full",
 			name: block.name,
 			origin: block.__flowOrigin || "unknown",
 			format: "canonical",
@@ -4167,7 +4214,7 @@
 		ctx.blockGet = function (name, args) {
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
-				return getBlockSource(loadBlocks(), name);
+				return getBlockSource(loadBlocks(), name, args);
 			});
 		};
 		ctx.blockCreate = function (name, source, overwrite, args) {
@@ -7572,7 +7619,7 @@
 		blockGet: function (requestJson) {
 			try {
 				var request = parseRequest(requestJson);
-				return response(getBlockSource(loadBlocks(), request.name));
+				return response(getBlockSource(loadBlocks(), request.name, request));
 			} catch (e) {
 				return response(failure("blockGet", e));
 			}
