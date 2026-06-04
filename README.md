@@ -226,6 +226,38 @@ as FlowScript, accepts a revision-checked patch or full replacement, parses it
 back into a Flow definition, validates block names/properties, and writes the
 normal sidecar only when diagnostics are clean.
 
+For new Flows, prefer the natural code-like form:
+
+```javascript
+flow GetFeedSorted({ input, config }) {
+  const feed = requestable.call("RSSConnector.GetFeed");
+  const sortedItems = list.sort(feed.rss.channel.item, {
+    by: current.title,
+    direction: "asc"
+  });
+  const news = list.map(sortedItems, {
+    title: current.title,
+    description: current.description,
+    imageUrl: current.enclosure.attr.url
+  });
+  return {
+    news,
+    count: news.length
+  };
+}
+```
+
+This is syntax sugar, not free-form JavaScript. `const name = block(...)`
+becomes `out: local.name`, paths like `feed.rss.channel.item` become
+`local.feed.rss.channel.item`, object-style `list.map` expands to
+`forEach/json.object/json.push`, and `return { key: value }` writes
+`result.key`. The lower-level canonical call form remains valid for precise
+edits:
+
+```javascript
+list.sort({ id: "sort", items: "local.feed.rss.channel.item", by: "current.title", out: "local.sorted" })
+```
+
 Core blocks:
 
 - `flow.source.get`

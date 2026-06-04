@@ -3705,6 +3705,419 @@
 		target.root[target.slot].push(node);
 	}
 
+	function flowScriptBalance(text) {
+		var balance = { paren: 0, brace: 0, bracket: 0 };
+		var inString = false;
+		var quote = "";
+		for (var i = 0; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (inString) {
+				if (ch === "\\" && i + 1 < text.length) {
+					i++;
+				} else if (ch === quote) {
+					inString = false;
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'") {
+				inString = true;
+				quote = ch;
+			} else if (ch === "(") {
+				balance.paren++;
+			} else if (ch === ")") {
+				balance.paren--;
+			} else if (ch === "{") {
+				balance.brace++;
+			} else if (ch === "}") {
+				balance.brace--;
+			} else if (ch === "[") {
+				balance.bracket++;
+			} else if (ch === "]") {
+				balance.bracket--;
+			}
+		}
+		return balance;
+	}
+
+	function flowScriptStatementComplete(text) {
+		var balance = flowScriptBalance(text);
+		return balance.paren <= 0 && balance.brace <= 0 && balance.bracket <= 0 && String(text).trim().match(/;\s*$/);
+	}
+
+	function flowScriptStatements(code) {
+		var out = [];
+		var pending = null;
+		String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").forEach(function (raw, index) {
+			var line = stripFlowScriptComment(raw).trim();
+			if (line === "") {
+				return;
+			}
+			if (pending) {
+				pending.text += " " + line;
+				if (flowScriptStatementComplete(pending.text)) {
+					out.push(pending);
+					pending = null;
+				}
+				return;
+			}
+			if (line.match(/^(const|let|var)\s+/) || line.match(/^return\b/)) {
+				pending = { line: index + 1, text: line };
+				if (flowScriptStatementComplete(pending.text)) {
+					out.push(pending);
+					pending = null;
+				}
+				return;
+			}
+			out.push({ line: index + 1, text: line });
+		});
+		if (pending) {
+			out.push(pending);
+		}
+		return out;
+	}
+
+	function stripFlowScriptSemicolon(text) {
+		return String(text || "").trim().replace(/;\s*$/, "").trim();
+	}
+
+	function splitFlowScriptTopLevel(text, separator) {
+		var out = [];
+		var start = 0;
+		var inString = false;
+		var quote = "";
+		var paren = 0;
+		var brace = 0;
+		var bracket = 0;
+		separator = separator || ",";
+		for (var i = 0; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (inString) {
+				if (ch === "\\" && i + 1 < text.length) {
+					i++;
+				} else if (ch === quote) {
+					inString = false;
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'") {
+				inString = true;
+				quote = ch;
+			} else if (ch === "(") {
+				paren++;
+			} else if (ch === ")") {
+				paren--;
+			} else if (ch === "{") {
+				brace++;
+			} else if (ch === "}") {
+				brace--;
+			} else if (ch === "[") {
+				bracket++;
+			} else if (ch === "]") {
+				bracket--;
+			} else if (ch === separator && paren === 0 && brace === 0 && bracket === 0) {
+				out.push(text.substring(start, i).trim());
+				start = i + 1;
+			}
+		}
+		var last = text.substring(start).trim();
+		if (last !== "") {
+			out.push(last);
+		}
+		return out;
+	}
+
+	function isFlowScriptQuoted(text) {
+		text = String(text || "").trim();
+		return text.length >= 2 && (text.charAt(0) === "\"" && text.charAt(text.length - 1) === "\"" ||
+			text.charAt(0) === "'" && text.charAt(text.length - 1) === "'");
+	}
+
+	function unquoteFlowScriptString(text) {
+		text = String(text || "").trim();
+		if (!isFlowScriptQuoted(text)) {
+			return text;
+		}
+		if (text.charAt(0) === "\"") {
+			try {
+				return JSON.parse(text);
+			} catch (e) {
+				return text.substring(1, text.length - 1);
+			}
+		}
+		return text.substring(1, text.length - 1)
+			.replace(/\\'/g, "'")
+			.replace(/\\"/g, "\"")
+			.replace(/\\n/g, "\n")
+			.replace(/\\t/g, "\t")
+			.replace(/\\\\/g, "\\");
+	}
+
+	function isFlowScriptObjectLiteral(text) {
+		text = String(text || "").trim();
+		return text.charAt(0) === "{" && text.charAt(text.length - 1) === "}";
+	}
+
+	function isFlowScriptArrayLiteral(text) {
+		text = String(text || "").trim();
+		return text.charAt(0) === "[" && text.charAt(text.length - 1) === "]";
+	}
+
+	function parseFlowScriptObjectLiteral(text, lineNumber) {
+		text = String(text || "").trim();
+		if (!isFlowScriptObjectLiteral(text)) {
+			raise("FLOWSCRIPT_INVALID_OBJECT", "Expected object literal at line " + lineNumber + ": " + text);
+		}
+		var body = text.substring(1, text.length - 1);
+		var tokens = {};
+		splitFlowScriptTopLevel(body, ",").forEach(function (part) {
+			var pair = splitFlowScriptTopLevel(part, ":");
+			if (pair.length < 2) {
+				return;
+			}
+			var key = unquoteFlowScriptString(pair.shift().trim());
+			tokens[key] = pair.join(":").trim();
+		});
+		return {
+			value: parseFlowScriptArgs(text, lineNumber),
+			tokens: tokens
+		};
+	}
+
+	function flowScriptPropKind(blocks, block, key) {
+		var descriptor = blockCatalog(blocks && blocks[block]) || {};
+		var prop = descriptor.props && descriptor.props[key];
+		return prop && prop.kind ? String(prop.kind) : "";
+	}
+
+	function flowScriptRewriteExpression(expr, locals) {
+		expr = String(expr || "").trim();
+		var exact = expr.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+		if (exact) {
+			expr = exact[1].trim();
+		}
+		Object.keys(locals || {}).sort(function (a, b) {
+			return b.length - a.length;
+		}).forEach(function (name) {
+			var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])" + escaped + "(?=\\b|\\.)", "g"), "$1local." + name);
+		});
+		return expr;
+	}
+
+	function flowScriptPathFromToken(token, locals) {
+		token = String(token || "").trim();
+		if (isFlowScriptQuoted(token)) {
+			token = unquoteFlowScriptString(token);
+		}
+		return flowScriptRewriteExpression(token, locals);
+	}
+
+	function flowScriptLiteralTokenValue(token, lineNumber) {
+		token = String(token || "").trim();
+		if (isFlowScriptQuoted(token)) {
+			return unquoteFlowScriptString(token);
+		}
+		if (isFlowScriptArrayLiteral(token) || isFlowScriptObjectLiteral(token)) {
+			return normalizeTree(parseYamlSource(token, "{}"));
+		}
+		if (token === "true") {
+			return true;
+		}
+		if (token === "false") {
+			return false;
+		}
+		if (token === "null") {
+			return null;
+		}
+		if (token.match(/^-?\d+(?:\.\d+)?$/)) {
+			return Number(token);
+		}
+		return undefined;
+	}
+
+	function flowScriptValueFromToken(token, locals, lineNumber) {
+		var literal = flowScriptLiteralTokenValue(token, lineNumber);
+		if (literal !== undefined) {
+			return literal;
+		}
+		return "{{ " + flowScriptRewriteExpression(token, locals) + " }}";
+	}
+
+	function normalizeNaturalFlowScriptProps(blocks, block, parsed, locals, lineNumber) {
+		var args = normalizeTree(parsed.value || {});
+		var tokens = parsed.tokens || {};
+		Object.keys(tokens).forEach(function (key) {
+			var kind = flowScriptPropKind(blocks, block, key);
+			if (kind === "expression") {
+				args[key] = flowScriptRewriteExpression(tokens[key], locals);
+			} else if (kind === "path") {
+				args[key] = flowScriptPathFromToken(tokens[key], locals);
+			} else if (kind === "template" || kind === "value") {
+				args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
+			}
+		});
+		return args;
+	}
+
+	function parseNaturalFlowScriptCall(text) {
+		text = stripFlowScriptSemicolon(text);
+		var match = text.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\((.*)\)$/);
+		return match ? { name: match[1], args: match[2] || "" } : null;
+	}
+
+	function capitalizedIdentifier(value) {
+		value = safeIdentifier(value || "value");
+		return value.substring(0, 1).toUpperCase() + value.substring(1);
+	}
+
+	function naturalFlowScriptObjectFields(text) {
+		text = String(text || "").trim();
+		if (!isFlowScriptObjectLiteral(text)) {
+			return [];
+		}
+		var fields = [];
+		var body = text.substring(1, text.length - 1);
+		splitFlowScriptTopLevel(body, ",").forEach(function (part) {
+			var pair = splitFlowScriptTopLevel(part, ":");
+			if (pair.length >= 2) {
+				fields.push({
+					key: unquoteFlowScriptString(pair.shift().trim()),
+					token: pair.join(":").trim()
+				});
+			} else if (part.trim() !== "") {
+				fields.push({
+					key: part.trim(),
+					token: part.trim()
+				});
+			}
+		});
+		return fields;
+	}
+
+	function naturalFlowScriptJsonObjectNode(id, outPath, fields, locals, lineNumber) {
+		return {
+			id: safeIdentifier(id),
+			block: "json.object",
+			out: outPath,
+			__flowScriptLine: lineNumber,
+			fields: fields.map(function (field) {
+				return {
+					id: safeIdentifier(field.key),
+					block: "json.field",
+					key: field.key,
+					value: flowScriptValueFromToken(field.token, locals, lineNumber),
+					__flowScriptLine: lineNumber
+				};
+			})
+		};
+	}
+
+	function buildNaturalListMapNodes(varName, args, locals, lineNumber) {
+		if (args.length < 2 || !isFlowScriptObjectLiteral(args[1])) {
+			return null;
+		}
+		var objectFields = naturalFlowScriptObjectFields(args[1]);
+		if (!objectFields.length) {
+			return null;
+		}
+		var cap = capitalizedIdentifier(varName);
+		var itemName = safeIdentifier(varName + "Item");
+		return [
+			{
+				id: "init" + cap,
+				block: "set",
+				path: "local." + varName,
+				value: [],
+				__flowScriptLine: lineNumber
+			},
+			{
+				id: "each" + cap,
+				block: "forEach",
+				items: flowScriptRewriteExpression(args[0], locals),
+				__flowScriptLine: lineNumber,
+				nodes: [
+					naturalFlowScriptJsonObjectNode(itemName, "local." + itemName, objectFields, locals, lineNumber),
+					{
+						id: "push" + cap,
+						block: "json.push",
+						path: "local." + varName,
+						value: "{{ local." + itemName + " }}",
+						__flowScriptLine: lineNumber
+					}
+				]
+			}
+		];
+	}
+
+	function buildNaturalFlowScriptCall(blocks, imports, locals, varName, rhs, lineNumber) {
+		var call = parseNaturalFlowScriptCall(rhs);
+		if (!call) {
+			raise("FLOWSCRIPT_UNSUPPORTED_ASSIGNMENT", "Unsupported FlowScript assignment at line " + lineNumber + ": " + rhs,
+				null, "Assign a Flow block call, for example const feed = requestable.call(\"Connector.Transaction\");");
+		}
+		var block = resolveFlowScriptName(call.name, imports);
+		var args = splitFlowScriptTopLevel(call.args, ",");
+		if (block === "list.map") {
+			var mapNodes = buildNaturalListMapNodes(varName, args, locals, lineNumber);
+			if (mapNodes) {
+				return mapNodes;
+			}
+		}
+		var node = {};
+		if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
+			node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
+		} else if (block === "requestable.call") {
+			node.requestable = isFlowScriptQuoted(args[0]) ? unquoteFlowScriptString(args[0]) : flowScriptRewriteExpression(args[0], locals);
+			if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
+				Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+			}
+		} else if (block === "list.sort") {
+			node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
+			if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
+				Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+			}
+		} else if (block === "list.filter") {
+			node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
+			if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
+				Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+			}
+		} else {
+			if (args.length > 0 && isFlowScriptObjectLiteral(args[args.length - 1])) {
+				node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[args.length - 1], lineNumber), locals, lineNumber);
+			}
+		}
+		node.block = block;
+		if (!node.id) {
+			node.id = safeIdentifier(varName);
+		}
+		if (!node.out && flowScriptPropKind(blocks, block, "out") === "path") {
+			node.out = "local." + safeIdentifier(varName);
+		}
+		node.__flowScriptLine = lineNumber;
+		return [node];
+	}
+
+	function buildNaturalFlowScriptReturn(expr, locals, lineNumber) {
+		expr = stripFlowScriptSemicolon(String(expr || "").replace(/^return\b/, ""));
+		if (isFlowScriptObjectLiteral(expr)) {
+			return naturalFlowScriptObjectFields(expr).map(function (field) {
+				return {
+					id: "return" + capitalizedIdentifier(field.key),
+					block: "set",
+					path: "result." + field.key,
+					value: flowScriptValueFromToken(field.token, locals, lineNumber),
+					__flowScriptLine: lineNumber
+				};
+			});
+		}
+		return [{
+			id: "returnValue",
+			block: "return",
+			value: flowScriptValueFromToken(expr, locals, lineNumber),
+			__flowScriptLine: lineNumber
+		}];
+	}
+
 	function resolveFlowScriptName(name, imports) {
 		name = String(name || "");
 		if (imports[name]) {
@@ -3713,15 +4126,15 @@
 		return name;
 	}
 
-	function parseFlowScript(code) {
+	function parseFlowScript(blocks, code) {
 		var root = { version: 1, nodes: [] };
 		var imports = {};
+		var locals = {};
 		var stack = [{ root: root, slot: "nodes" }];
-		var lines = String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-		for (var i = 0; i < lines.length; i++) {
-			var lineNumber = i + 1;
-			var raw = lines[i];
-			var line = stripFlowScriptComment(raw).trim();
+		var statements = flowScriptStatements(code);
+		for (var i = 0; i < statements.length; i++) {
+			var lineNumber = statements[i].line;
+			var line = statements[i].text;
 			if (line === "") {
 				continue;
 			}
@@ -3738,6 +4151,22 @@
 				continue;
 			}
 			if (line.match(/^flow\s+/)) {
+				continue;
+			}
+			var declaration = line.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+			if (declaration) {
+				var varName = safeIdentifier(declaration[1]);
+				var nodes = buildNaturalFlowScriptCall(blocks, imports, locals, varName, declaration[2], lineNumber);
+				nodes.forEach(function (node) {
+					addFlowScriptNode(stack[stack.length - 1], node);
+				});
+				locals[varName] = true;
+				continue;
+			}
+			if (line.match(/^return\b/)) {
+				buildNaturalFlowScriptReturn(line, locals, lineNumber).forEach(function (node) {
+					addFlowScriptNode(stack[stack.length - 1], node);
+				});
 				continue;
 			}
 			if (line === "}" || line === "};") {
@@ -3845,7 +4274,7 @@
 			var source = sourceForFlowRequest(request);
 			code = renderFlowScript(blocks, request.name || request.flowName || "Flow", source, request);
 		}
-		var definition = parseFlowScript(code);
+		var definition = parseFlowScript(blocks, code);
 		var diagnostics = validateFlowScriptDefinition(blocks, definition);
 		var clean = stripFlowScriptMetadata(definition);
 		var source = sourceFromDefinition(clean);

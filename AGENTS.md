@@ -59,7 +59,34 @@ flow.source.validate
 flow.source.patch
 ```
 
-The first syntax is intentionally small:
+FlowScript accepts a natural code-like sugar for the common LLM path:
+
+```javascript
+flow MyFlow({ input, config }) {
+  const feed = requestable.call("RSSConnector.GetFeed");
+  const sorted = list.sort(feed.rss.channel.item, {
+    by: current.title,
+    direction: "asc"
+  });
+  const news = list.map(sorted, {
+    title: current.title,
+    description: current.description,
+    imageUrl: current.enclosure.attr.url
+  });
+  return {
+    news,
+    count: news.length
+  };
+}
+```
+
+The compiler lowers this to regular Flow nodes. `const name = block(...)`
+writes to `local.name`, unqualified local variables are rewritten to `local.*`,
+`list.map(items, { field: current.value })` becomes an explicit
+`forEach/json.object/json.push` graph, and `return { key: value }` writes
+`result.key`.
+
+The canonical syntax remains available:
 
 ```javascript
 flow MyFlow({ input, config }) => result {
@@ -75,7 +102,9 @@ flow MyFlow({ input, config }) => result {
 ```
 
 Do not broaden this into full JavaScript during the spike. Add syntax only when
-it demonstrably reduces LLM retries on the benchmark.
+it demonstrably reduces LLM retries on the benchmark. Do not add native JS
+control flow, promises, `await`, array `.map()` or arbitrary object literals in
+expressions unless they compile to deterministic Flow nodes.
 
 ## RhinoJS Profile
 
