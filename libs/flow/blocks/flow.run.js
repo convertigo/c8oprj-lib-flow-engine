@@ -23,6 +23,7 @@
 			var props = ctx.props(node);
 			return cleanup(ctx.runFlowSource(props.flowSource || "", props.config || {}, {
 				input: props.input || {},
+				project: props.project,
 				projectDir: props.projectDir,
 				definition: props.definition,
 				includeFlow: include(props.includeFlow),

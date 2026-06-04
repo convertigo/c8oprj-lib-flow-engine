@@ -69,6 +69,11 @@ props:
     kind: "text"
     type: "string"
     description: "Optional project directory override."
+  project:
+    label: "project"
+    kind: "text"
+    type: "string"
+    description: "Optional logical project name used for relative requestables."
   out:
     label: "out"
     kind: "path"

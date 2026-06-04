@@ -2238,6 +2238,11 @@
 		}
 	}
 
+	function flowProjectRootFromFlowDir(flowDir) {
+		var dir = new File(flowDir);
+		return dir.getParentFile() ? dir.getParentFile().getParentFile() : null;
+	}
+
 	function blockIdFromDescriptorFile(file, blocksDir) {
 		var relative = resourceRelativePath(blocksDir, file);
 		if (!relative || !String(relative).endsWith(".block.yaml")) {
@@ -3358,6 +3363,72 @@
 		};
 	}
 
+	function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
+		root = root ? new File(root) : null;
+		var dir = root ? new File(root, "libs/flows") : null;
+		if (!dir || !dir.isDirectory()) {
+			return [];
+		}
+		var listed = dir.listFiles();
+		if (!listed) {
+			return [];
+		}
+		var files = Arrays.asList(listed).toArray();
+		files.sort(function (a, b) {
+			return String(a.getName()).localeCompare(String(b.getName()));
+		});
+		return files.filter(function (file) {
+			if (!file.isFile() || !String(file.getName()).endsWith(".flow.yaml")) {
+				return false;
+			}
+			var filename = String(file.getName());
+			var name = filename.substring(0, filename.length - ".flow.yaml".length);
+			return samplesOnly !== true || isSampleFlowName(name);
+		}).map(function (file) {
+			var filename = String(file.getName());
+			var name = filename.substring(0, filename.length - ".flow.yaml".length);
+			return {
+				name: name,
+				project: projectName || (root ? String(root.getName()) : ""),
+				origin: origin || "project",
+				file: String(file.getAbsolutePath()),
+				source: String(FileUtils.readFileToString(file, "UTF-8")),
+				size: Number(file.length()),
+				lastModified: Number(file.lastModified())
+			};
+		});
+	}
+
+	function visibleSearchFlows(request) {
+		var flows = [];
+		var currentRoot = projectDir();
+		var currentProject = currentProjectName(request) || (currentRoot ? String(new File(currentRoot).getName()) : "");
+		listProjectFlows().flows.forEach(function (flow) {
+			flows.push(Object.assign({}, flow, {
+				project: currentProject,
+				origin: "project",
+				source: String(FileUtils.readFileToString(new File(flow.file), "UTF-8"))
+			}));
+		});
+		if (request.includeLibrarySamples === false) {
+			return flows;
+		}
+		var seen = {};
+		flows.forEach(function (flow) {
+			seen[canonicalPath(new File(flow.file))] = true;
+		});
+		var engineRoot = flowProjectRootFromFlowDir(engineDir());
+		var engineProvider = flowProviderName(engineDir(), "lib_flow_engine");
+		listFlowsFromRoot(engineRoot, engineProvider, "core", true).forEach(function (flow) {
+			var key = canonicalPath(new File(flow.file));
+			if (!seen[key]) {
+				seen[key] = true;
+				flows.push(flow);
+			}
+		});
+		return flows;
+	}
+
 	function listProjectFragments() {
 		var dir = projectFragmentsDir();
 		if (!dir || !dir.isDirectory()) {
@@ -4013,6 +4084,10 @@
 
 	function createRunContext(request, definition, blocks, projectEngine) {
 		var requestScope = normalizeTree(request.context || {});
+		var projectName = currentProjectName(request);
+		if (projectName) {
+			requestScope.project = projectName;
+		}
 		requestScope.engineDir = canonicalPath(engineDir());
 		requestScope.engineProjectDir = canonicalPath(new File(engineDir(), "../.."));
 		var currentProjectDir = projectDir();
@@ -4183,6 +4258,7 @@
 			return withProjectDir(options.projectDir, function () {
 				var source = sourceForWriteRequest(options, flowSource);
 				return runFlowRequest({
+					project: options.project || currentProjectName(ctx.request),
 					flowSource: source,
 					config: config || {},
 					input: options.input || {},
@@ -4268,6 +4344,7 @@
 			return withProjectDir(options.projectDir, function () {
 				var source = sourceForWriteRequest(options, flowSource);
 				return runFlowRequest({
+					project: options.project || currentProjectName(ctx.request),
 					flowSource: source,
 					config: config || {},
 					input: options.input || {},
@@ -4300,6 +4377,7 @@
 			return withProjectDir(args.projectDir, function () {
 				var source = sourceForFlowRequest(args);
 				return runFlowRequest({
+					project: args.project || currentProjectName(ctx.request),
 					flowSource: source,
 					config: args.config || {},
 					input: args.input || {},
@@ -6806,6 +6884,24 @@
 		return project ? project + "." + flowName : String(flowName || "");
 	}
 
+	function searchTokenScore(text, needle) {
+		if (!needle) {
+			return 1;
+		}
+		var haystack = String(text || "").toLowerCase();
+		if (haystack.indexOf(needle) !== -1) {
+			return 100;
+		}
+		var tokens = searchTokens(needle);
+		var score = 0;
+		tokens.forEach(function (token) {
+			if (haystack.indexOf(token) !== -1) {
+				score += 10;
+			}
+		});
+		return score;
+	}
+
 		function shallowNodeDefinition(node) {
 			var shallow = {};
 			Object.keys(node || {}).forEach(function (key) {
@@ -6983,38 +7079,42 @@
 		var kinds = searchKinds(request);
 		var matches = [];
 		var flows = request.name ? [{ name: String(request.name), source: sourceForFlowRequest(request) }] :
-			listProjectFlows().flows.map(function (flow) {
-				return {
-					name: flow.name,
-					file: flow.file,
-					source: String(FileUtils.readFileToString(new File(flow.file), "UTF-8"))
-				};
-			});
+			visibleSearchFlows(request);
 		flows.forEach(function (flow) {
+			var flowProject = flow.project || currentProjectName(request);
 			var flowQName = flowQNameForSearch(request, flow.name);
+			if (flowProject && flowProject !== currentProjectName(request)) {
+				flowQName = flowQNameForSearch(Object.assign({}, request, { project: flowProject }), flow.name);
+			}
 			var definition = expandFlowDefinition(blocks, parseSource(flow.source));
 			var sample = isSampleFlowName(flow.name);
-			var flowText = [flow.name, flowQName, flow.source, sample ? "sample example tutorial usage pattern" : ""].join(" ");
-			if (sample && kinds.sample && searchMatches(flowText, needle)) {
-				var uses = collectFlowBlockUses(definition, blocks);
+			var uses = sample ? collectFlowBlockUses(definition, blocks) : [];
+			var flowText = [flow.name, flowQName, flow.source, uses.join(" "), sample ? "sample example tutorial usage pattern" : ""].join(" ");
+			if (sample && kinds.sample) {
+				var sampleScore = searchTokenScore(flowText, needle);
+				if (sampleScore <= 0) {
+					return;
+				}
 				matches.push({
 					kind: "sample",
-					score: 90,
-					project: currentProjectName(request),
+					score: 90 + sampleScore,
+					project: flowProject || currentProjectName(request),
 					flow: flow.name,
 					flowQName: flowQName,
 					file: flow.file || "",
 					uses: uses,
 					summary: "[sample] " + flowQName + (uses.length ? " uses " + uses.join(", ") : ""),
 					snippet: searchSnippet(flow.source, needle),
-					next: "flow-tree name=" + flow.name + ", flow-test name=" + flow.name + ", then copy the definition into a new Flow"
+					next: "flow-tree project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
+						", flow-test project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
+						", then copy the pattern into a new Flow"
 				});
 			}
 			if (kinds.flow && !sample && searchMatches(flowText, needle)) {
 				matches.push({
 					kind: "flow",
 					score: 50,
-					project: currentProjectName(request),
+					project: flowProject || currentProjectName(request),
 					flow: flow.name,
 					flowQName: flowQName,
 					file: flow.file || "",
