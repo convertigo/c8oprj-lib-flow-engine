@@ -19,6 +19,12 @@ props:
     type: "string"
     default: "compact"
     description: "Response detail: compact (default), summary or full. Full includes descriptor and implementation sources."
+  includeMeta:
+    label: "includeMeta"
+    kind: "expression"
+    type: "boolean"
+    default: false
+    description: "Include provider, origin and source sizes in compact responses."
   out:
     label: "out"
     kind: "path"

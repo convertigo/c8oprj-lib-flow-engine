@@ -3210,15 +3210,17 @@
 			var compact = {
 				ok: true,
 				detail: detail === "summary" ? "summary" : "compact",
-				name: block.name,
-				origin: block.__flowOrigin || "unknown",
-				provider: block.__flowProvider || block.__flowOrigin || "unknown",
-				format: "canonical",
-				implementationRuntime: implementation.runtime,
-				descriptorChars: descriptorSource.length,
-				implementationChars: sourceLength(block.__flowImplementationFile),
-				hooksChars: sourceLength(block.__flowHooksFile)
+				name: block.name
 			};
+			if (args.includeMeta === true || String(args.includeMeta || "") === "true") {
+				compact.origin = block.__flowOrigin || "unknown";
+				compact.provider = block.__flowProvider || block.__flowOrigin || "unknown";
+				compact.format = "canonical";
+				compact.implementationRuntime = implementation.runtime;
+				compact.descriptorChars = descriptorSource.length;
+				compact.implementationChars = sourceLength(block.__flowImplementationFile);
+				compact.hooksChars = sourceLength(block.__flowHooksFile);
+			}
 			if (detail === "summary") {
 				compact.block = summaryBlockDescriptor(catalog);
 				compact.next = "Use detail='compact' for typed properties or detail='full' for descriptor/implementation sources.";
@@ -7135,6 +7137,7 @@
 		var needle = searchNeedle(request);
 		var kinds = searchKinds(request);
 		var matches = [];
+		var includeSampleMatches = kinds.sample || request.includeLibrarySamples === true;
 		var flows = request.name ? [{ name: String(request.name), source: sourceForFlowRequest(request) }] :
 			visibleSearchFlows(request);
 		flows.forEach(function (flow) {
@@ -7147,7 +7150,7 @@
 			var sample = isSampleFlowName(flow.name);
 			var uses = sample ? collectFlowBlockUses(definition, blocks) : [];
 			var flowText = [flow.name, flowQName, flow.source, uses.join(" "), sample ? "sample example tutorial usage pattern" : ""].join(" ");
-			if (sample && kinds.sample) {
+			if (sample && includeSampleMatches) {
 				var sampleScore = searchTokenScore(flowText, needle);
 				if (sampleScore <= 0) {
 					return;
