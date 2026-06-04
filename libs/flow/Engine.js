@@ -4244,7 +4244,7 @@
 		if (!node.id) {
 			node.id = safeIdentifier(varName);
 		}
-		if (!node.out && flowScriptPropKind(blocks, block, "out") === "path") {
+		if (!node.out) {
 			node.out = "local." + safeIdentifier(varName);
 		}
 		node.__flowScriptLine = lineNumber;
@@ -4410,7 +4410,7 @@
 						slotMap[slot] = true;
 					});
 					flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
-						if (key !== "id" && key !== "comment" && !props[key]) {
+						if (key !== "id" && key !== "comment" && key !== "out" && !props[key]) {
 							diagnostics.push({
 								severity: "error",
 								code: "UNKNOWN_BLOCK_PROPERTY",

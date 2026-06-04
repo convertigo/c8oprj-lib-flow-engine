@@ -1,0 +1,93 @@
+version: 1
+private: true
+icon: "mdi:puzzle-edit-outline"
+tags:
+- block
+- code
+- flowscript
+description: "Creates or updates one project-local Flow block implemented with FlowScript code."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Project-local block name, for example text.initials."
+  code:
+    label: "code"
+    kind: "text"
+    type: "string"
+    description: "FlowScript implementation code. Use input.* for block properties and return value for the block result."
+  descriptor:
+    label: "descriptor"
+    kind: "literal"
+    type: "object"
+    description: "Optional block descriptor object. If omitted, description/properties/outputs are used."
+  descriptorSource:
+    label: "descriptorSource"
+    kind: "text"
+    type: "string"
+    description: "Optional canonical *.block.yaml descriptor source."
+  description:
+    label: "description"
+    kind: "text"
+    type: "string"
+    description: "Short block description when descriptor is omitted."
+  icon:
+    label: "icon"
+    kind: "text"
+    type: "string"
+    default: "mdi:puzzle-outline"
+    description: "Icon id, for example mdi:format-letter-case."
+  properties:
+    label: "properties"
+    kind: "literal"
+    type: "object"
+    description: "Block property descriptors keyed by property name."
+  outputs:
+    label: "outputs"
+    kind: "literal"
+    type: "object"
+    description: "Optional block output schemas keyed by output property."
+  tags:
+    label: "tags"
+    kind: "literal"
+    type: "array"
+    description: "Optional searchable block tags."
+  private:
+    label: "private"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Hide the block from referencing projects."
+  hooksSource:
+    label: "hooksSource"
+    kind: "text"
+    type: "string"
+    description: "Optional hooks JavaScript source for displayName/analyze."
+  overwrite:
+    label: "overwrite"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Allow replacing an existing project-local block."
+  dry:
+    label: "dry"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Validate without writing."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving compact block write result."
+hooks:
+  file: "block.code.set.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "block.code.set.js"
