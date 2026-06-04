@@ -42,18 +42,18 @@ props:
     label: "includeFullResult"
     kind: "literal"
     type: "boolean"
-    description: "MCP authoring hint: return full result only while it stays below maxResultChars."
+    description: "MCP authoring hint: request a full result. Large results still require detail full and allowHugeResult."
   allowHugeResult:
     label: "allowHugeResult"
     kind: "literal"
     type: "boolean"
     default: false
-    description: "Explicitly allow returning a result larger than maxResultChars. Use rarely."
+    description: "Explicitly allow a result larger than maxResultChars, only when detail is full. Use rarely."
   maxResultChars:
     label: "maxResultChars"
     kind: "literal"
     type: "number"
-    description: "MCP authoring hint: compact result payloads larger than this JSON size."
+    description: "MCP authoring hint: compact result payloads larger than this JSON size. Compact responses cap this value."
   maxArrayItems:
     label: "maxArrayItems"
     kind: "literal"
