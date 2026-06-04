@@ -4435,6 +4435,79 @@
 		return diagnostics;
 	}
 
+	function collectPotentialArrayPaths(schema, prefix, out) {
+		schema = normalizeTree(schema);
+		if (!schema || typeof schema !== "object") {
+			return;
+		}
+		if (schema.type === "array") {
+			addUnique(out, prefix);
+			return;
+		}
+		if (schema.type === "unknown") {
+			if (prefix) {
+				addUnique(out, prefix);
+			}
+			return;
+		}
+		var source = schema.properties || schema;
+		Object.keys(source || {}).filter(function (key) {
+			return !isSchemaMetaKey(key);
+		}).forEach(function (key) {
+			collectPotentialArrayPaths(source[key], joinPath(prefix, key), out);
+		});
+	}
+
+	function flowScriptArrayPathCandidates(basePath, schema) {
+		var paths = [];
+		collectPotentialArrayPaths(schema, "", paths);
+		return paths.map(function (path) {
+			return path ? basePath + "." + path : basePath;
+		}).filter(function (path) {
+			return path !== basePath;
+		}).slice(0, 8);
+	}
+
+	function flowScriptAnalysisDiagnostics(blocks, analysis) {
+		var diagnostics = [];
+		if (!analysis || !analysis.nodes) {
+			return diagnostics;
+		}
+		analysis.nodes.forEach(function (node) {
+			var catalog = blockCatalog(blocks[node.block]);
+			(node.inputs || []).forEach(function (input) {
+				var descriptor = catalog.props && catalog.props[input.property] || {};
+				var expected = String(descriptor.type || "");
+				if (descriptor.kind !== "expression" || expected !== "array" || !input.path) {
+					return;
+				}
+				var schema = schemaForSchemasPath(analysis.schemas || {}, input.path);
+				if (!schema) {
+					return;
+				}
+				var actual = schemaSimpleType(schema);
+				if (actual === "array" || actual === "unknown") {
+					return;
+				}
+				var candidates = flowScriptArrayPathCandidates(input.path, schema);
+				diagnostics.push({
+					severity: "warning",
+					code: "FLOWSCRIPT_EXPECTED_ARRAY",
+					block: node.block,
+					property: input.property,
+					path: input.path,
+					actual: actual,
+					candidates: candidates,
+					message: node.block + "." + input.property + " expects an array but " + input.path + " is " + actual + ".",
+					hint: candidates.length
+						? "Use " + candidates[0] + " or another array path from candidates."
+						: "Use a path whose schema type is array."
+				});
+			});
+		});
+		return diagnostics;
+	}
+
 	function flowScriptValidateRequest(blocks, request) {
 		request = request || {};
 		var code = String(request.code || request.flowScript || "");
@@ -4449,6 +4522,12 @@
 		var ok = diagnostics.filter(function (diagnostic) {
 			return diagnostic.severity === "error";
 		}).length === 0;
+		var analysis = ok ? analyzeFlowSource(blocks, source, request) : null;
+		if (analysis) {
+			flowScriptAnalysisDiagnostics(blocks, analysis).forEach(function (diagnostic) {
+				diagnostics.push(diagnostic);
+			});
+		}
 		return {
 			ok: ok,
 			revision: sha256Hex(code),
@@ -4456,7 +4535,7 @@
 			definition: clean,
 			source: source,
 			diagnostics: diagnostics,
-			analysis: ok ? analyzeFlowSource(blocks, source, request) : null
+			analysis: analysis
 		};
 	}
 
@@ -4563,7 +4642,7 @@
 			return !severity || diagnostic.severity === severity;
 		}).map(function (diagnostic) {
 			var out = {};
-			["severity", "line", "message", "block", "property", "expected", "hint"].forEach(function (key) {
+			["severity", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "hint"].forEach(function (key) {
 				if (diagnostic[key] !== undefined && diagnostic[key] !== null && diagnostic[key] !== "") {
 					out[key] = diagnostic[key];
 				}
@@ -6345,9 +6424,9 @@
 		return null;
 	}
 
-	function schemaForAnalysisPath(ctx, path) {
+	function schemaForSchemasPath(schemas, path) {
 		var best = "";
-		Object.keys(ctx.schemas || {}).forEach(function (basePath) {
+		Object.keys(schemas || {}).forEach(function (basePath) {
 			if (path === basePath || path.indexOf(basePath + ".") === 0) {
 				if (basePath.length > best.length) {
 					best = basePath;
@@ -6357,7 +6436,11 @@
 		if (!best) {
 			return null;
 		}
-		return schemaAtPath(ctx.schemas[best], path === best ? "" : String(path).substring(best.length + 1));
+		return schemaAtPath(schemas[best], path === best ? "" : String(path).substring(best.length + 1));
+	}
+
+	function schemaForAnalysisPath(ctx, path) {
+		return schemaForSchemasPath(ctx.schemas, path);
 	}
 
 	function childGroups(node) {

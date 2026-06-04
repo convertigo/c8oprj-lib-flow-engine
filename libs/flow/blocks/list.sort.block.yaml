@@ -28,6 +28,11 @@ props:
     mode: "write"
     default: "local.sorted"
     description: "Scope path receiving the sorted array."
+outputs:
+  out:
+    type: "array"
+    items:
+      type: "unknown"
 hooks:
   file: "list.sort.hooks.js"
 implementation:

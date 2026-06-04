@@ -26,6 +26,11 @@ props:
     mode: "write"
     default: "local.filtered"
     description: "Scope path receiving the filtered array."
+outputs:
+  out:
+    type: "array"
+    items:
+      type: "unknown"
 hooks:
   file: "list.filter.hooks.js"
 implementation:
