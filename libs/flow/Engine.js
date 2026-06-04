@@ -4045,7 +4045,21 @@
 	function flowScriptPropKind(blocks, block, key) {
 		var descriptor = blockCatalog(blocks && blocks[block]) || {};
 		var prop = descriptor.props && descriptor.props[key];
-		return prop && prop.kind ? String(prop.kind) : "";
+		if (!prop) {
+			return "";
+		}
+		if (prop.kind) {
+			return String(prop.kind);
+		}
+		var type = String(prop.type || "").toLowerCase();
+		if (type === "string") {
+			return "template";
+		}
+		if (type === "array" || type === "object" || type === "boolean" ||
+				type === "number" || type === "integer") {
+			return "expression";
+		}
+		return "value";
 	}
 
 	function flowScriptRewriteExpression(expr, locals) {
@@ -4428,7 +4442,10 @@
 					null, "Use block.name({ prop: value }) and optional { child calls } blocks.");
 			}
 			var block = resolveFlowScriptName(match[1], imports);
-			var node = parseFlowScriptArgs(match[2] || "{}", lineNumber);
+			var callArgs = match[2] || "{}";
+			var node = isFlowScriptObjectLiteral(callArgs)
+				? normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(callArgs, lineNumber), locals, lineNumber)
+				: parseFlowScriptArgs(callArgs, lineNumber);
 			node.block = block;
 			node.__flowScriptLine = lineNumber;
 			addFlowScriptNode(stack[stack.length - 1], node);
