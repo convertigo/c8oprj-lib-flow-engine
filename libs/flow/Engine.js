@@ -150,7 +150,7 @@
 	function nodeProps(node) {
 		var props = {};
 		var structural = {
-			id: true, uid: true, name: true, block: true, type: true,
+			id: true, uid: true, block: true, type: true,
 			props: true, nodes: true, "do": true, then: true, "else": true,
 			disabled: true, __fragment: true, __graphBlock: true
 		};
