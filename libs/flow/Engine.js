@@ -4052,6 +4052,18 @@
 			return String(prop.kind);
 		}
 		var type = String(prop.type || "").toLowerCase();
+		if (type === "expression") {
+			return "expression";
+		}
+		if (type === "path") {
+			return "path";
+		}
+		if (type === "template") {
+			return "template";
+		}
+		if (type === "value" || type === "literal") {
+			return "value";
+		}
 		if (type === "string") {
 			return "template";
 		}
@@ -4075,6 +4087,14 @@
 			expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])" + escaped + "(?=\\b|\\.)", "g"), "$1local." + name);
 		});
 		return expr;
+	}
+
+	function flowScriptExpressionFromToken(token, locals) {
+		token = String(token || "").trim();
+		if (isFlowScriptQuoted(token)) {
+			token = unquoteFlowScriptString(token);
+		}
+		return flowScriptRewriteExpression(token, locals);
 	}
 
 	function flowScriptPathFromToken(token, locals) {
@@ -4188,7 +4208,7 @@
 		Object.keys(tokens).forEach(function (key) {
 			var kind = flowScriptPropKind(blocks, block, key);
 			if (kind === "expression") {
-				args[key] = flowScriptRewriteExpression(tokens[key], locals);
+				args[key] = flowScriptExpressionFromToken(tokens[key], locals);
 			} else if (kind === "path") {
 				args[key] = flowScriptPathFromToken(tokens[key], locals);
 			} else if (kind === "template" || kind === "value") {
