@@ -4251,7 +4251,85 @@
 		};
 	}
 
-	function buildNaturalListMapNodes(varName, args, locals, lineNumber) {
+	function buildNaturalListMapBlockCallNodes(blocks, imports, varName, itemToken, callToken, locals, lineNumber) {
+		var mapperCall = parseNaturalFlowScriptCall(callToken);
+		if (!mapperCall) {
+			return null;
+		}
+		var mapperBlock = resolveFlowScriptName(mapperCall.name, imports);
+		var mapperArgs = splitFlowScriptTopLevel(mapperCall.args, ",");
+		var mapperNode = {};
+		if (mapperArgs.length === 1 && isFlowScriptObjectLiteral(mapperArgs[0])) {
+			mapperNode = normalizeNaturalFlowScriptProps(blocks, mapperBlock, parseFlowScriptObjectLiteral(mapperArgs[0], lineNumber), locals, lineNumber);
+		} else if (mapperArgs.length > 0) {
+			return null;
+		}
+		var cap = capitalizedIdentifier(varName);
+		var itemName = safeIdentifier(varName + capitalizedIdentifier(blockLocalName(mapperBlock) || "item"));
+		mapperNode.id = mapperNode.id || safeIdentifier("map" + cap + capitalizedIdentifier(blockLocalName(mapperBlock) || "item"));
+		mapperNode.block = mapperBlock;
+		mapperNode.out = mapperNode.out || "local." + itemName;
+		mapperNode.__flowScriptLine = lineNumber;
+		return [
+			{
+				id: "init" + cap,
+				block: "set",
+				path: "local." + varName,
+				value: [],
+				__flowScriptLine: lineNumber
+			},
+			{
+				id: "each" + cap,
+				block: "forEach",
+				items: flowScriptRewriteExpression(itemToken, locals),
+				__flowScriptLine: lineNumber,
+				nodes: [
+					mapperNode,
+					{
+						id: "push" + cap,
+						block: "json.push",
+						path: "local." + varName,
+						value: "{{ local." + itemName + " }}",
+						__flowScriptLine: lineNumber
+					}
+				]
+			}
+		];
+	}
+
+	function buildNaturalListMapObjectArgNodes(blocks, imports, varName, arg, locals, lineNumber) {
+		if (!isFlowScriptObjectLiteral(arg)) {
+			return null;
+		}
+		var fields = naturalFlowScriptObjectFields(arg);
+		var itemToken = "";
+		var selectToken = "";
+		fields.forEach(function (field) {
+			if (field.key === "items") {
+				itemToken = field.token;
+			} else if (field.key === "select") {
+				selectToken = field.token;
+			}
+		});
+		if (!itemToken || !selectToken) {
+			return null;
+		}
+		return buildNaturalListMapBlockCallNodes(blocks, imports, varName, itemToken, selectToken, locals, lineNumber);
+	}
+
+	function buildNaturalListMapNodes(blocks, imports, varName, args, locals, lineNumber) {
+		var blockCallNodes = null;
+		if (args.length >= 2) {
+			blockCallNodes = buildNaturalListMapBlockCallNodes(blocks, imports, varName, args[0], args[1], locals, lineNumber);
+			if (blockCallNodes) {
+				return blockCallNodes;
+			}
+		} else if (args.length === 1) {
+			blockCallNodes = buildNaturalListMapObjectArgNodes(blocks, imports, varName, args[0], locals, lineNumber);
+			if (blockCallNodes) {
+				return blockCallNodes;
+			}
+		}
 		if (args.length < 2 || !isFlowScriptObjectLiteral(args[1])) {
 			return null;
 		}
@@ -4297,7 +4375,7 @@
 		var block = resolveFlowScriptName(call.name, imports);
 		var args = splitFlowScriptTopLevel(call.args, ",");
 		if (block === "list.map") {
-			var mapNodes = buildNaturalListMapNodes(varName, args, locals, lineNumber);
+			var mapNodes = buildNaturalListMapNodes(blocks, imports, varName, args, locals, lineNumber);
 			if (mapNodes) {
 				return mapNodes;
 			}
