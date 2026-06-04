@@ -218,6 +218,23 @@ validation/read/write hooks and web editor fragments belong there. Block
 property descriptors reference this vocabulary with `kind`, and the catalog can
 still keep usage counts as secondary information.
 
+## FlowScript spike
+
+The `spike-flowscript` branch adds an experimental code-like authoring view for
+LLMs. It does not replace Flow YAML yet. The engine renders existing Flow YAML
+as FlowScript, accepts a revision-checked patch or full replacement, parses it
+back into a Flow definition, validates block names/properties, and writes the
+normal sidecar only when diagnostics are clean.
+
+Core blocks:
+
+- `flow.source.get`
+- `flow.source.validate`
+- `flow.source.patch`
+
+This is meant to compare `Flow MCP blocks` versus `FlowScript via MCP` on the
+same benchmark, not to freeze a final DSL.
+
 Type editors are standard web components loaded from `libs/flow/types/editors`.
 For a property `kind: "path"`, the host looks for `flow-path-editor`; for
 `kind: "requestable"`, it looks for `flow-requestable-editor`, and so on. The

@@ -36,6 +36,47 @@ libs/flows/<FlowName>.flow.yaml
 
 Do not optimize for editing escaped `flowSource` content inside Convertigo YAML. Treat the Java bean property as an in-memory bridge for Studio/editor services; the source file is the human/LLM-friendly representation.
 
+## FlowScript Spike
+
+The `spike-flowscript` branch experiments with a code-like MCP authoring layer
+on top of the existing YAML Flow model. Keep the YAML runtime canonical during
+the spike; FlowScript is a transactional source view that must parse, validate
+and compile back to the same Flow definition.
+
+Current engine APIs:
+
+```text
+flowSourceGet(requestJson)      -> FlowScript code + revision
+flowSourceValidate(requestJson) -> parsed definition + YAML + diagnostics
+flowSourcePatch(requestJson)    -> revision-checked patch/replacement + write
+```
+
+Current block wrappers:
+
+```text
+flow.source.get
+flow.source.validate
+flow.source.patch
+```
+
+The first syntax is intentionally small:
+
+```javascript
+flow MyFlow({ input, config }) => result {
+  requestable.call({ id: "getFeed", requestable: "RSSConnector.GetFeed", out: "local.feed" })
+  list.sort({ id: "sort", items: "local.feed.rss.channel.item", by: "current.title", out: "local.sorted" })
+  forEach({ id: "each", items: "local.sorted" }) {
+    json.object({ id: "item", out: "local.item" }) {
+      json.field({ id: "title", key: "title", value: "{{ current.title }}" })
+    }
+    json.push({ id: "push", path: "result.news", value: "{{ local.item }}" })
+  }
+}
+```
+
+Do not broaden this into full JavaScript during the spike. Add syntax only when
+it demonstrably reduces LLM retries on the benchmark.
+
 ## RhinoJS Profile
 
 Write RhinoJS compatible with Convertigo's Rhino ES6 mode.

@@ -3541,6 +3541,385 @@
 		return toYamlSource(normalized);
 	}
 
+	function flowScriptString(value) {
+		if (value === undefined) {
+			return "null";
+		}
+		return JSON.stringify(normalizeTree(value));
+	}
+
+	function flowScriptInlineValue(value) {
+		value = normalizeTree(value);
+		if (value && typeof value === "object") {
+			return JSON.stringify(value);
+		}
+		return flowScriptString(value);
+	}
+
+	function flowScriptArgKeys(node, slotNames) {
+		var skip = {
+			block: true, props: true, nodes: true, then: true, "else": true, fields: true,
+			__fragment: true, __graphBlock: true, __flowScriptLine: true
+		};
+		(slotNames || []).forEach(function (slot) {
+			skip[slot] = true;
+		});
+		return Object.keys(node || {}).filter(function (key) {
+			return !skip[key] && node[key] !== undefined && typeof node[key] !== "function";
+		});
+	}
+
+	function flowScriptSlotNames(blocks, node) {
+		var names = childSlotNamesForMutation(blocks, node);
+		["nodes", "then", "else", "fields"].forEach(function (name) {
+			if (Object.prototype.toString.call(node && node[name]) === "[object Array]" && names.indexOf(name) === -1) {
+				names.push(name);
+			}
+		});
+		return names;
+	}
+
+	function defaultFlowScriptSlot(blocks, node) {
+		var slots = flowScriptSlotNames(blocks, node);
+		if (slots.indexOf("nodes") !== -1) {
+			return "nodes";
+		}
+		if (slots.indexOf("then") !== -1) {
+			return "then";
+		}
+		if (slots.indexOf("fields") !== -1) {
+			return "fields";
+		}
+		return slots.length ? slots[0] : "";
+	}
+
+	function flowScriptCallLine(blocks, node, indent) {
+		var slotNames = flowScriptSlotNames(blocks, node);
+		var args = {};
+		flowScriptArgKeys(node, slotNames).forEach(function (key) {
+			args[key] = node[key];
+		});
+		var parts = Object.keys(args).map(function (key) {
+			return key + ": " + flowScriptInlineValue(args[key]);
+		});
+		var block = String(blockName(node) || node.block || "unknown.block");
+		return indent + block + "({ " + parts.join(", ") + " })";
+	}
+
+	function renderFlowScriptNodes(blocks, nodes, depth, lines) {
+		var indent = new Array(depth + 1).join("  ");
+		(nodes || []).forEach(function (node) {
+			var defaultSlot = defaultFlowScriptSlot(blocks, node);
+			var renderedChildren = defaultSlot && Object.prototype.toString.call(node[defaultSlot]) === "[object Array]" && node[defaultSlot].length > 0;
+			var line = flowScriptCallLine(blocks, node, indent);
+			if (renderedChildren) {
+				lines.push(line + " {");
+				renderFlowScriptNodes(blocks, node[defaultSlot], depth + 1, lines);
+				lines.push(indent + "}");
+			} else {
+				lines.push(line);
+			}
+			if (blockName(node) === "if" && Object.prototype.toString.call(node["else"]) === "[object Array]" && node["else"].length > 0) {
+				lines[lines.length - 1] = lines[lines.length - 1] + " else {";
+				renderFlowScriptNodes(blocks, node["else"], depth + 1, lines);
+				lines.push(indent + "}");
+			}
+		});
+	}
+
+	function renderFlowScript(blocks, name, flowSource, request) {
+		request = request || {};
+		var definition = parseSource(flowSource);
+		var lines = [];
+		lines.push("// c8o: FlowScript spike. Function calls are Flow blocks; named arguments are block properties.");
+		lines.push("// c8o: Patch with the returned revision. The engine validates and compiles this code back to Flow YAML.");
+		if (request.includeContext === true) {
+			var analysis = analyzeFlowDefinition(blocks, definition, request);
+			var paths = [];
+			(analysis.paths || []).slice(0, 30).forEach(function (path) {
+				paths.push(typeof path === "string" ? path : path.path);
+			});
+			if (paths.length) {
+				lines.push("// c8o: Known paths: " + paths.join(", "));
+			}
+		}
+		lines.push("");
+		lines.push("flow " + safeIdentifier(name || "Flow") + "({ input, config }) => result {");
+		renderFlowScriptNodes(blocks, definition.nodes || [], 1, lines);
+		lines.push("}");
+		lines.push("");
+		return lines.join("\n");
+	}
+
+	function safeIdentifier(value) {
+		var text = String(value || "Flow").replace(/[^A-Za-z0-9_$]/g, "_");
+		if (!text.match(/^[A-Za-z_$]/)) {
+			text = "_" + text;
+		}
+		return text || "Flow";
+	}
+
+	function parseFlowScriptArgs(text, lineNumber) {
+		text = String(text || "").trim();
+		if (text === "") {
+			return {};
+		}
+		try {
+			return normalizeTree(parseYamlSource(text, "{}"));
+		} catch (e) {
+			var error = new Error("Invalid FlowScript argument object at line " + lineNumber + ": " + e.message);
+			error.code = "FLOWSCRIPT_INVALID_ARGUMENTS";
+			error.details = {
+				line: lineNumber,
+				expected: "Use an object literal such as { id: \"step\", path: \"result.value\", value: \"{{ local.value }}\" }."
+			};
+			throw error;
+		}
+	}
+
+	function stripFlowScriptComment(line) {
+		var inString = false;
+		var quote = "";
+		for (var i = 0; i < line.length - 1; i++) {
+			var ch = line.charAt(i);
+			if (inString) {
+				if (ch === "\\" && i + 1 < line.length) {
+					i++;
+				} else if (ch === quote) {
+					inString = false;
+				}
+			} else if (ch === "\"" || ch === "'") {
+				inString = true;
+				quote = ch;
+			} else if (ch === "/" && line.charAt(i + 1) === "/") {
+				return line.substring(0, i);
+			}
+		}
+		return line;
+	}
+
+	function addFlowScriptNode(target, node) {
+		if (!target.root[target.slot]) {
+			target.root[target.slot] = [];
+		}
+		target.root[target.slot].push(node);
+	}
+
+	function resolveFlowScriptName(name, imports) {
+		name = String(name || "");
+		if (imports[name]) {
+			return imports[name];
+		}
+		return name;
+	}
+
+	function parseFlowScript(code) {
+		var root = { version: 1, nodes: [] };
+		var imports = {};
+		var stack = [{ root: root, slot: "nodes" }];
+		var lines = String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+		for (var i = 0; i < lines.length; i++) {
+			var lineNumber = i + 1;
+			var raw = lines[i];
+			var line = stripFlowScriptComment(raw).trim();
+			if (line === "") {
+				continue;
+			}
+			if (line.match(/^import\s+/)) {
+				var importMatch = line.match(/^import\s+([A-Za-z_][\w]*(?:\.[A-Za-z_*][\w*]*)*)(?:\s+as\s+([A-Za-z_][\w]*))?\s*;?$/);
+				if (!importMatch) {
+					raise("FLOWSCRIPT_INVALID_IMPORT", "Invalid FlowScript import at line " + lineNumber,
+						null, "Use import requestable.call or import requestable.call as call.");
+				}
+				if (importMatch[1].indexOf("*") === -1) {
+					var parts = importMatch[1].split(".");
+					imports[importMatch[2] || parts[parts.length - 1]] = importMatch[1];
+				}
+				continue;
+			}
+			if (line.match(/^flow\s+/)) {
+				continue;
+			}
+			if (line === "}" || line === "};") {
+				if (stack.length > 1) {
+					stack.pop();
+				}
+				continue;
+			}
+			if (line === "} else {" || line === "} else{") {
+				if (stack.length <= 1) {
+					raise("FLOWSCRIPT_INVALID_ELSE", "Unexpected else at line " + lineNumber);
+				}
+				var previous = stack.pop();
+				stack.push({ root: previous.root, slot: "else" });
+				continue;
+			}
+			var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\((.*)\)\s*(\{)?\s*;?$/);
+			if (!match) {
+				raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,
+					null, "Use block.name({ prop: value }) and optional { child calls } blocks.");
+			}
+			var block = resolveFlowScriptName(match[1], imports);
+			var node = parseFlowScriptArgs(match[2] || "{}", lineNumber);
+			node.block = block;
+			node.__flowScriptLine = lineNumber;
+			addFlowScriptNode(stack[stack.length - 1], node);
+			if (match[3]) {
+				var slot = block === "if" ? "then" : block === "json.object" ? "fields" : "nodes";
+				stack.push({ root: node, slot: slot });
+			}
+		}
+		return canonicalFlowDefinition(root);
+	}
+
+	function stripFlowScriptMetadata(value) {
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return value.map(stripFlowScriptMetadata);
+		}
+		if (value && typeof value === "object") {
+			var out = {};
+			Object.keys(value).forEach(function (key) {
+				if (key.indexOf("__flowScript") !== 0) {
+					out[key] = stripFlowScriptMetadata(value[key]);
+				}
+			});
+			return out;
+		}
+		return value;
+	}
+
+	function validateFlowScriptDefinition(blocks, definition) {
+		var diagnostics = [];
+		function expectedProps(block) {
+			return Object.keys(blockCatalog(block).props || {}).sort();
+		}
+		function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				var name = blockName(node);
+				var block = blocks[name];
+				var line = node.__flowScriptLine || 0;
+				if (!block) {
+					diagnostics.push({
+						severity: "error",
+						code: "UNKNOWN_BLOCK",
+						line: line,
+						message: "Unknown Flow block: " + name,
+						hint: "Search the palette with flow-catalog or create a project block before using " + name + "."
+					});
+				} else {
+					var props = blockCatalog(block).props || {};
+					var slotMap = {};
+					flowScriptSlotNames(blocks, node).forEach(function (slot) {
+						slotMap[slot] = true;
+					});
+					flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
+						if (key !== "id" && key !== "comment" && !props[key]) {
+							diagnostics.push({
+								severity: "error",
+								code: "UNKNOWN_BLOCK_PROPERTY",
+								line: line,
+								block: name,
+								property: key,
+								message: "Unknown property " + key + " for Flow block " + name + ".",
+								expected: expectedProps(block),
+								hint: "Use " + name + "({ " + expectedProps(block).map(function (prop) { return prop + ": ..."; }).join(", ") + " })."
+							});
+						}
+					});
+				}
+				["nodes", "then", "else", "fields"].forEach(function (slot) {
+					if (Object.prototype.toString.call(node[slot]) === "[object Array]") {
+						walk(node[slot]);
+					}
+				});
+			});
+		}
+		walk(definition.nodes || []);
+		return diagnostics;
+	}
+
+	function flowScriptValidateRequest(blocks, request) {
+		request = request || {};
+		var code = String(request.code || request.flowScript || "");
+		if (code.trim() === "") {
+			var source = sourceForFlowRequest(request);
+			code = renderFlowScript(blocks, request.name || request.flowName || "Flow", source, request);
+		}
+		var definition = parseFlowScript(code);
+		var diagnostics = validateFlowScriptDefinition(blocks, definition);
+		var clean = stripFlowScriptMetadata(definition);
+		var source = sourceFromDefinition(clean);
+		var ok = diagnostics.filter(function (diagnostic) {
+			return diagnostic.severity === "error";
+		}).length === 0;
+		return {
+			ok: ok,
+			revision: sha256Hex(code),
+			code: code,
+			definition: clean,
+			source: source,
+			diagnostics: diagnostics,
+			analysis: ok ? analyzeFlowSource(blocks, source, request) : null
+		};
+	}
+
+	function flowScriptGetRequest(blocks, request) {
+		request = request || {};
+		var flow = getProjectFlow(request.name || request.flowName);
+		var code = renderFlowScript(blocks, request.name || request.flowName || flow.name, flow.source, request);
+		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: code }));
+		return {
+			ok: true,
+			name: flow.name,
+			file: flow.file,
+			revision: sha256Hex(code),
+			code: code,
+			sourceHash: sha256Hex(flow.source),
+			diagnostics: validation.diagnostics,
+			next: "Patch with flow-source-patch using revision=" + sha256Hex(code) + "."
+		};
+	}
+
+	function flowScriptPatchRequest(blocks, request) {
+		request = request || {};
+		var name = request.name || request.flowName;
+		if (!name) {
+			raise("MISSING_FLOW_NAME", "flow-source-patch requires name.");
+		}
+		var current = flowScriptGetRequest(blocks, request);
+		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
+		if (expectedRevision && String(expectedRevision) !== current.revision) {
+			raise("FLOWSCRIPT_REVISION_MISMATCH", "FlowScript changed since it was read: " + name,
+				null, "Call flow-source-get again and regenerate the patch from the new revision.");
+		}
+		var newCode = request.code !== undefined && request.code !== null
+			? String(request.code)
+			: applyUnifiedPatchText(current.code, request.patch || request.unifiedDiff || request.diff || "").content;
+		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: newCode }));
+		if (!validation.ok) {
+			var error = new Error("FlowScript validation failed.");
+			error.code = "FLOWSCRIPT_VALIDATION_FAILED";
+			error.details = validation.diagnostics;
+			error.hint = "Fix the reported line diagnostics and retry with the same latest revision.";
+			throw error;
+		}
+		var saved = request.dryRun === true
+			? { ok: true, dryRun: true, source: validation.source, definition: validation.definition }
+			: setProjectFlow(blocks, name, validation.source, request);
+		return {
+			ok: true,
+			name: String(name),
+			dryRun: request.dryRun === true,
+			oldRevision: current.revision,
+			newRevision: sha256Hex(newCode),
+			code: newCode,
+			source: validation.source,
+			definition: validation.definition,
+			diagnostics: validation.diagnostics,
+			saved: saved
+		};
+	}
+
 	function sourceForWriteRequest(args, fallback) {
 		args = args || {};
 		if (args.definition !== undefined && args.definition !== null) {
@@ -4444,6 +4823,24 @@
 					includeFlow: args.includeFlow === true || args.includeLocal === true,
 					includeTrace: args.includeTrace === true
 				}, loadBlocks());
+			});
+		};
+		ctx.flowSourceGet = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowScriptGetRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowSourceValidate = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowScriptValidateRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowSourcePatch = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowScriptPatchRequest(loadBlocks(), args);
 			});
 		};
 		ctx.returnValue = function (value) {
@@ -7829,6 +8226,39 @@
 				return response(applyMutationRequest(request, loadBlocks()));
 			} catch (e) {
 				return response(failure("applyMutation", e));
+			}
+		},
+
+		flowSourceGet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowScriptGetRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowSourceGet", e));
+			}
+		},
+
+		flowSourceValidate: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowScriptValidateRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowSourceValidate", e));
+			}
+		},
+
+		flowSourcePatch: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowScriptPatchRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowSourcePatch", e));
 			}
 		},
 

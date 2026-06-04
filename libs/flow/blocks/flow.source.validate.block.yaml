@@ -1,0 +1,40 @@
+version: 1
+private: true
+icon: "mdi:file-check-outline"
+tags:
+- flow
+- source
+- flowscript
+- validate
+description: "Parses and validates FlowScript without writing the Flow."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Optional project Flow name used when code is omitted."
+  code:
+    label: "code"
+    kind: "text"
+    type: "string"
+    description: "FlowScript code to validate."
+  flowScript:
+    label: "flowScript"
+    kind: "text"
+    type: "string"
+    description: "Alias for code."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving validation result."
+hooks:
+  file: "flow.source.validate.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "flow.source.validate.js"
