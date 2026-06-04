@@ -3,7 +3,7 @@ name: "value"
 label: "Value"
 icon: "mdi:variable-box"
 type: "unknown"
-description: "Literal value or {{ expression }} preserving native JavaScript type. Scope paths inside expressions are null-safe; prefer {{ local.path ?? null }}."
+description: "Literal value or {{ expression }} preserving native JavaScript type. Scope paths inside expressions are null-safe and support indexes like local.items[0]."
 editor:
   label: "Value editor"
   kind: "webcomponent"

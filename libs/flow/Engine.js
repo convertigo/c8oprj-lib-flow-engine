@@ -763,7 +763,7 @@
 		var i = 0;
 		function unsupportedHint(ch) {
 			if (ch === "[") {
-				return "Flow expressions do not support JavaScript array indexing or array literals. Use literal properties for static arrays, or forEach/list.map/list.filter/list.sort with current.* for array items.";
+				return "Flow expressions support scope indexing like local.items[0] or object[\"key\"], but not JavaScript array literals. Use literal properties for static arrays.";
 			}
 			if (ch === "{") {
 				return "Flow expressions do not support JavaScript object literals. Build objects with json.object/json.field or parse literal JSON with json.parse.";
@@ -778,6 +778,52 @@
 		}
 		function isIdentPart(ch) {
 			return isIdentStart(ch) || isDigit(ch);
+		}
+		function readBracketPathPart() {
+			if (text.charAt(i) !== "[") {
+				return null;
+			}
+			var start = i;
+			i++;
+			while (i < text.length && /\s/.test(text.charAt(i))) {
+				i++;
+			}
+			var part = "";
+			var ch = text.charAt(i);
+			if (isDigit(ch)) {
+				var numberStart = i++;
+				while (i < text.length && isDigit(text.charAt(i))) {
+					i++;
+				}
+				part = text.substring(numberStart, i);
+			} else if (ch === "\"" || ch === "'") {
+				var quote = ch;
+				i++;
+				while (i < text.length) {
+					ch = text.charAt(i++);
+					if (ch === quote) {
+						break;
+					}
+					if (ch === "\\" && i < text.length) {
+						var escaped = text.charAt(i++);
+						part += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
+					} else {
+						part += ch;
+					}
+				}
+			} else {
+				i = start;
+				return null;
+			}
+			while (i < text.length && /\s/.test(text.charAt(i))) {
+				i++;
+			}
+			if (text.charAt(i) !== "]") {
+				i = start;
+				return null;
+			}
+			i++;
+			return part;
 		}
 		while (i < text.length) {
 			var ch = text.charAt(i);
@@ -817,7 +863,18 @@
 				while (i < text.length && (isIdentPart(text.charAt(i)) || text.charAt(i) === ".")) {
 					i++;
 				}
-				tokens.push({ type: "id", value: text.substring(identStart, i) });
+				var ident = text.substring(identStart, i);
+				while (i < text.length) {
+					var bracketPart = readBracketPathPart();
+					if (bracketPart === null) {
+						break;
+					}
+					ident += "." + bracketPart;
+					while (i < text.length && (isIdentPart(text.charAt(i)) || text.charAt(i) === ".")) {
+						ident += text.charAt(i++);
+					}
+				}
+				tokens.push({ type: "id", value: ident });
 				continue;
 			}
 			var three = text.substring(i, i + 3);
