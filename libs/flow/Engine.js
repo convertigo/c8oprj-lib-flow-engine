@@ -554,6 +554,117 @@
 		return out;
 	}
 
+	function schemaSimpleType(schema) {
+		schema = normalizeTree(schema);
+		if (!schema || typeof schema !== "object") {
+			return schema === null ? "null" : typeof schema;
+		}
+		if (schema.type) {
+			return String(schema.type);
+		}
+		if (schema.properties) {
+			return "object";
+		}
+		return "unknown";
+	}
+
+	function schemaArrayPaths(schema, prefix) {
+		schema = normalizeTree(schema);
+		prefix = String(prefix || "");
+		var out = [];
+		if (!schema || typeof schema !== "object") {
+			return out;
+		}
+		if (schema.type === "array") {
+			if (prefix) {
+				addUnique(out, prefix);
+			}
+			if (schema.items) {
+				schemaArrayPaths(schema.items, prefix).forEach(function (path) {
+					addUnique(out, path);
+				});
+			}
+			return out;
+		}
+		if (isLeafSchema(schema)) {
+			return out;
+		}
+		var source = schema.properties || schema;
+		Object.keys(source || {}).filter(function (key) {
+			return !isSchemaMetaKey(key);
+		}).forEach(function (key) {
+			schemaArrayPaths(source[key], joinPath(prefix, key)).forEach(function (path) {
+				addUnique(out, path);
+			});
+		});
+		return out;
+	}
+
+	function schemaLeafEntries(schema, prefix) {
+		schema = normalizeTree(schema);
+		prefix = String(prefix || "");
+		if (!schema || typeof schema !== "object") {
+			return prefix ? [{ path: prefix, type: schemaSimpleType(schema) }] : [];
+		}
+		if (schema.type === "array") {
+			return schema.items ? schemaLeafEntries(schema.items, prefix) : [];
+		}
+		if (isLeafSchema(schema)) {
+			return prefix ? [{ path: prefix, type: schemaSimpleType(schema) }] : [];
+		}
+		var source = schema.properties || schema;
+		var out = [];
+		Object.keys(source || {}).filter(function (key) {
+			return !isSchemaMetaKey(key);
+		}).forEach(function (key) {
+			schemaLeafEntries(source[key], joinPath(prefix, key)).forEach(function (entry) {
+				out.push(entry);
+			});
+		});
+		return out;
+	}
+
+	function flowScriptPath(base, path) {
+		var out = String(base || "");
+		String(path || "").split(".").filter(function (part) {
+			return part !== "";
+		}).forEach(function (part) {
+			out += /^[A-Za-z_$][\w$]*$/.test(part) ? "." + part : "[" + JSON.stringify(part) + "]";
+		});
+		return out;
+	}
+
+	function requestableFlowScriptHints(target, arrays, leaves, currentProject) {
+		var publicTarget = requestableTargetPublic(target, currentProject);
+		var requestable = publicTarget.localRequestable || publicTarget.requestable || publicTarget.qname || "";
+		var hints = {
+			call: "const data = requestable.call(" + JSON.stringify(requestable) + ");"
+		};
+		var arrayPath = (arrays || []).filter(function (path) {
+			return String(path).indexOf(".attr") === -1;
+		})[0] || (arrays || [])[0] || "";
+		if (!arrayPath) {
+			hints.returnObject = "return data;";
+			return hints;
+		}
+		hints.array = "const items = " + flowScriptPath("data", arrayPath) + ";";
+		var leaf = (leaves || []).filter(function (entry) {
+			return String(entry.path).indexOf(arrayPath + ".") === 0 && /(^|\.)title$/.test(String(entry.path));
+		})[0] || (leaves || []).filter(function (entry) {
+			return String(entry.path).indexOf(arrayPath + ".") === 0 && ["name", "label"].some(function (suffix) {
+				return new RegExp("(^|\\.)" + suffix + "$").test(String(entry.path));
+			});
+		})[0] || (leaves || []).filter(function (entry) {
+			return String(entry.path).indexOf(arrayPath + ".") === 0 && entry.type === "string";
+		})[0];
+		if (leaf) {
+			var relative = String(leaf.path).substring(arrayPath.length + 1);
+			hints.sort = "const sorted = list.sort(items, { by: " + flowScriptPath("current", relative) + ", direction: \"asc\" });";
+		}
+		hints.returnObject = "return { items, count: items.length };";
+		return hints;
+	}
+
 	function schemaAtPath(schema, path) {
 		if (!schema) {
 			return null;
@@ -3742,8 +3853,26 @@
 	}
 
 	function flowScriptStatementComplete(text) {
+		text = String(text || "").trim();
+		if (text === "") {
+			return true;
+		}
+		if (text.match(/^flow\s+/) || text === "}" || text === "};" || text.match(/^}\s*else\s*\{\s*;?$/)) {
+			return true;
+		}
 		var balance = flowScriptBalance(text);
-		return balance.paren <= 0 && balance.brace <= 0 && balance.bracket <= 0 && String(text).trim().match(/;\s*$/);
+		if (balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
+				text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(.*\)\s*\{\s*;?$/)) {
+			return true;
+		}
+		if (balance.paren <= 0 && balance.brace <= 0 && balance.bracket <= 0) {
+			return !!(text.match(/;\s*$/) ||
+				text.match(/^import\s+/) ||
+				text.match(/^return\b/) ||
+				text.match(/^(const|let|var)\s+/) ||
+				text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(/));
+		}
+		return false;
 	}
 
 	function flowScriptStatements(code) {
@@ -3754,6 +3883,10 @@
 			if (line === "") {
 				return;
 			}
+			if (!pending && (line.match(/^flow\s+/) || line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/))) {
+				out.push({ line: index + 1, text: line });
+				return;
+			}
 			if (pending) {
 				pending.text += " " + line;
 				if (flowScriptStatementComplete(pending.text)) {
@@ -3762,15 +3895,11 @@
 				}
 				return;
 			}
-			if (line.match(/^(const|let|var)\s+/) || line.match(/^return\b/)) {
-				pending = { line: index + 1, text: line };
-				if (flowScriptStatementComplete(pending.text)) {
-					out.push(pending);
-					pending = null;
-				}
-				return;
+			pending = { line: index + 1, text: line };
+			if (flowScriptStatementComplete(pending.text)) {
+				out.push(pending);
+				pending = null;
 			}
-			out.push({ line: index + 1, text: line });
 		});
 		if (pending) {
 			out.push(pending);
@@ -4099,6 +4228,20 @@
 		return [node];
 	}
 
+	function buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, rhs, lineNumber) {
+		rhs = stripFlowScriptSemicolon(rhs);
+		if (parseNaturalFlowScriptCall(rhs)) {
+			return buildNaturalFlowScriptCall(blocks, imports, locals, varName, rhs, lineNumber);
+		}
+		return [{
+			id: safeIdentifier(varName),
+			block: "set",
+			path: "local." + safeIdentifier(varName),
+			value: flowScriptValueFromToken(rhs, locals, lineNumber),
+			__flowScriptLine: lineNumber
+		}];
+	}
+
 	function buildNaturalFlowScriptReturn(expr, locals, lineNumber) {
 		expr = stripFlowScriptSemicolon(String(expr || "").replace(/^return\b/, ""));
 		if (isFlowScriptObjectLiteral(expr)) {
@@ -4158,7 +4301,7 @@
 			var declaration = line.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
 			if (declaration) {
 				var varName = safeIdentifier(declaration[1]);
-				var nodes = buildNaturalFlowScriptCall(blocks, imports, locals, varName, declaration[2], lineNumber);
+				var nodes = buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, declaration[2], lineNumber);
 				nodes.forEach(function (node) {
 					addFlowScriptNode(stack[stack.length - 1], node);
 				});
@@ -4362,6 +4505,21 @@
 			raise("MISSING_FLOW_QNAME", "flow-code requires qname or name.");
 		}
 		return String(name);
+	}
+
+	function flowCodeNameFromCode(code) {
+		var match = String(code || "").match(/\bflow\s+([A-Za-z_$][\w$]*)\s*\(/);
+		return match ? String(match[1]) : "";
+	}
+
+	function flowCodeNameOptional(request, code, fallback) {
+		request = request || {};
+		var name = request.name || request.flowName || "";
+		if (!name && request.qname) {
+			var parts = String(request.qname).split(".");
+			name = parts[parts.length - 1];
+		}
+		return String(name || flowCodeNameFromCode(code) || fallback || "FlowScript");
 	}
 
 	function flowCodeQName(request, name) {
@@ -4579,6 +4737,79 @@
 		};
 	}
 
+	function flowCodeCompileRequest(blocks, request, fallbackName) {
+		request = request || {};
+		var code = request.code !== undefined && request.code !== null ? String(request.code)
+			: request.flowScript !== undefined && request.flowScript !== null ? String(request.flowScript)
+				: "";
+		var name = flowCodeNameOptional(request, code, fallbackName);
+		if (code.trim() === "") {
+			var current = flowCodeGetRequest(blocks, Object.assign({}, request, { name: name }));
+			code = current.code;
+			name = current.name || name;
+		}
+		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { name: name, code: code }));
+		var warnings = flowCodeDiagnostics(validation.diagnostics, "warning");
+		if (!validation.ok) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				revision: null,
+				error: flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+					"Fix the reported diagnostics and retry.", flowCodeDiagnostics(validation.diagnostics)),
+				warnings: warnings
+			};
+		}
+		return {
+			ok: true,
+			qname: flowCodeQName(request, name),
+			name: name,
+			code: code,
+			revision: flowCodeRevisionForSource(blocks, name, validation.source, request),
+			warnings: warnings,
+			validation: validation
+		};
+	}
+
+	function flowCodeRunRequest(blocks, request) {
+		request = request || {};
+		var compiled = flowCodeCompileRequest(blocks, request, "FlowScriptRun");
+		if (!compiled.ok) {
+			return compiled;
+		}
+		var execution = runFlowRequest(Object.assign({}, request, {
+			name: compiled.name,
+			flowName: compiled.name,
+			qname: compiled.qname,
+			flowSource: compiled.validation.source,
+			definition: null
+		}), blocks);
+		execution.qname = compiled.qname;
+		execution.name = compiled.name;
+		execution.revision = compiled.revision;
+		if (compiled.warnings && compiled.warnings.length) {
+			execution.warnings = compiled.warnings;
+		}
+		return execution;
+	}
+
+	function flowCodeAnalyzeRequest(blocks, request) {
+		request = request || {};
+		var compiled = flowCodeCompileRequest(blocks, request, "FlowScriptAnalyze");
+		if (!compiled.ok) {
+			return compiled;
+		}
+		var analysis = analyzeFlowSource(blocks, compiled.validation.source, request);
+		analysis.qname = compiled.qname;
+		analysis.name = compiled.name;
+		analysis.revision = compiled.revision;
+		if (compiled.warnings && compiled.warnings.length) {
+			analysis.warnings = compiled.warnings;
+		}
+		return analysis;
+	}
+
 	function sourceForWriteRequest(args, fallback) {
 		args = args || {};
 		if (args.definition !== undefined && args.definition !== null) {
@@ -4698,6 +4929,264 @@
 		} catch (e) {
 			return null;
 		}
+	}
+
+	function requestableTargetQName(target) {
+		target = target || {};
+		return target.project + "." + (target.connector ? target.connector + "." : "") + target.requestable;
+	}
+
+	function requestableTargetPublic(target, currentProject) {
+		var qname = requestableTargetQName(target);
+		var local = target.project === currentProject
+			? (target.connector ? target.connector + "." + target.requestable : "." + target.requestable)
+			: qname;
+		var out = {
+			kind: target.kind,
+			project: target.project,
+			name: target.requestable,
+			qname: qname,
+			requestable: qname,
+			localRequestable: local
+		};
+		if (target.connector) {
+			out.connector = target.connector;
+		}
+		return out;
+	}
+
+	function requestableTargetCandidates(request, targetText) {
+		request = request || {};
+		var project = currentProjectName(request);
+		var text = String(targetText || "").trim();
+		if (text.charAt(0) === ".") {
+			text = project + text;
+		}
+		var parts = text.split(".").filter(function (part) {
+			return part !== "";
+		});
+		var candidates = [];
+		if (parts.length >= 3) {
+			candidates.push({
+				kind: "transaction",
+				project: parts.slice(0, parts.length - 2).join("."),
+				connector: parts[parts.length - 2],
+				requestable: parts[parts.length - 1],
+				transaction: parts[parts.length - 1]
+			});
+		} else if (parts.length === 2) {
+			candidates.push({
+				kind: "sequence",
+				project: parts[0],
+				requestable: parts[1],
+				sequence: parts[1]
+			});
+			if (project) {
+				candidates.push({
+					kind: "transaction",
+					project: project,
+					connector: parts[0],
+					requestable: parts[1],
+					transaction: parts[1]
+				});
+			}
+		} else if (parts.length === 1 && project) {
+			candidates.push({
+				kind: "sequence",
+				project: project,
+				requestable: parts[0],
+				sequence: parts[0]
+			});
+		}
+		return candidates;
+	}
+
+	function requestableKindForDbo(dbo, candidate) {
+		var className = String(dbo.getClass().getName());
+		if (className.indexOf(".transactions.") !== -1 || className.indexOf(".beans.core.Transaction") !== -1) {
+			candidate.kind = "transaction";
+			candidate.connector = candidate.connector || String(dbo.getConnector().getName());
+			candidate.transaction = candidate.requestable;
+			return candidate;
+		}
+		if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
+			candidate.kind = "flow";
+			delete candidate.connector;
+			candidate.sequence = candidate.requestable;
+			return candidate;
+		}
+		if (className === "com.twinsoft.convertigo.beans.core.Sequence" || className.indexOf(".beans.sequences.") !== -1) {
+			candidate.kind = "sequence";
+			delete candidate.connector;
+			candidate.sequence = candidate.requestable;
+			return candidate;
+		}
+		return null;
+	}
+
+	function resolveRequestableTarget(request, targetText) {
+		var candidates = requestableTargetCandidates(request, targetText);
+		for (var i = 0; i < candidates.length; i++) {
+			try {
+				var dbo = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager
+					.getDatabaseObjectByQName(requestableTargetQName(candidates[i]));
+				if (!dbo) {
+					continue;
+				}
+				var resolved = requestableKindForDbo(dbo, candidates[i]);
+				if (resolved) {
+					return resolved;
+				}
+			} catch (e) {
+			}
+		}
+		return candidates[0] || null;
+	}
+
+	function requestableMatches(entry, query) {
+		query = String(query || "").trim().toLowerCase();
+		if (!query) {
+			return true;
+		}
+		var haystack = [
+			entry.kind,
+			entry.project,
+			entry.connector || "",
+			entry.name,
+			entry.qname,
+			entry.localRequestable || ""
+		].join(" ").toLowerCase();
+		return query.split(/\s+/).filter(function (token) {
+			return token !== "";
+		}).every(function (token) {
+			return haystack.indexOf(token) !== -1;
+		});
+	}
+
+	function requestableListRequest(request) {
+		request = request || {};
+		var projectName = currentProjectName(request);
+		if (!projectName) {
+			return {
+				ok: false,
+				error: flowCodeError("MISSING_PROJECT", "requestable.list requires project or context.project.",
+					"Pass the current project name.")
+			};
+		}
+		var limit = Math.max(1, Math.min(500, Number(request.limit || 100)));
+		var query = String(request.query || request.q || "").trim();
+		var dbom = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager;
+		var project = dbom.getOriginalProjectByName(projectName, false);
+		var requestables = [];
+		var sequenceIterator = project.getSequencesList().iterator();
+		while (sequenceIterator.hasNext()) {
+			var sequence = sequenceIterator.next();
+			var sequenceClass = String(sequence.getClass().getName());
+			requestables.push(requestableTargetPublic({
+				kind: sequenceClass === "com.twinsoft.convertigo.beans.flow.Flow" ? "flow" : "sequence",
+				project: projectName,
+				requestable: String(sequence.getName())
+			}, projectName));
+		}
+		var connectorIterator = project.getConnectorsList().iterator();
+		while (connectorIterator.hasNext()) {
+			var connector = connectorIterator.next();
+			var transactionIterator = connector.getTransactionsList().iterator();
+			while (transactionIterator.hasNext()) {
+				var transaction = transactionIterator.next();
+				requestables.push(requestableTargetPublic({
+					kind: "transaction",
+					project: projectName,
+					connector: String(connector.getName()),
+					requestable: String(transaction.getName()),
+					transaction: String(transaction.getName())
+				}, projectName));
+			}
+		}
+		requestables = requestables.filter(function (entry) {
+			return requestableMatches(entry, query);
+		}).slice(0, limit);
+		return {
+			ok: true,
+			project: projectName,
+			count: requestables.length,
+			requestables: requestables
+		};
+	}
+
+	function requestableSchemaRequest(request) {
+		request = request || {};
+		var text = request.requestable || request.target || request.qname || request.name || "";
+		if (!text) {
+			return {
+				ok: false,
+				error: flowCodeError("MISSING_REQUESTABLE", "requestable.schema requires requestable.",
+					"Pass for example RSSConnector.GetFeed, .MyFlow or Project.Connector.Transaction.")
+			};
+		}
+		var target = resolveRequestableTarget(request, text);
+		if (!target || !target.project || !target.requestable) {
+			return {
+				ok: false,
+				error: flowCodeError("UNKNOWN_REQUESTABLE", "Unknown requestable: " + text,
+					"Call requestable.list first and reuse one returned qname or localRequestable.")
+			};
+		}
+		var schema = requestableOutputSchema(target);
+		var learned = false;
+		var sample;
+		if (!schema && request.learn === true) {
+			sample = requestableSampleOutput(target, request.input || {});
+			schema = unwrapDocumentSchema(inferSchema(sample));
+			learned = true;
+		}
+		if (!schema) {
+			return {
+				ok: false,
+				target: requestableTargetPublic(target, currentProjectName(request)),
+				error: flowCodeError("REQUESTABLE_SCHEMA_UNAVAILABLE", "No schema available for requestable: " + text,
+					"Run or learn the requestable schema in Studio, or retry with learn:true when executing the requestable is safe.")
+			};
+		}
+		schema = objectSchema(schema);
+		var paths = schemaPaths(schema, "");
+		var arrayPaths = schemaArrayPaths(schema, "");
+		var leafPaths = schemaLeafEntries(schema, "");
+		var out = {
+			ok: true,
+			target: requestableTargetPublic(target, currentProjectName(request)),
+			learned: learned,
+			schema: schema,
+			paths: paths,
+			arrayPaths: arrayPaths,
+			leafPaths: leafPaths,
+			flowScript: requestableFlowScriptHints(target, arrayPaths, leafPaths, currentProjectName(request))
+		};
+		if (request.includeSample === true) {
+			out.sample = sample;
+		}
+		return out;
+	}
+
+	function requestableSampleOutput(target, input) {
+		if (typeof context === "undefined" || context === null) {
+			raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "requestable.schema learn:true needs a live Convertigo context.");
+		}
+		var request = new Packages.java.util.HashMap();
+		request.put("__project", target.project);
+		if (target.kind === "transaction") {
+			request.put("__connector", target.connector);
+			request.put("__transaction", target.transaction || target.requestable);
+		} else {
+			request.put("__sequence", target.sequence || target.requestable);
+		}
+		Object.keys(input || {}).forEach(function (key) {
+			var value = input[key];
+			request.put(String(key), value === undefined || value === null ? "" : typeof value === "string" ? value : JSON.stringify(value));
+		});
+		var doc = new Packages.com.twinsoft.convertigo.engine.requesters.InternalRequester(request, context.httpServletRequest).processRequest();
+		var raw = JSON.parse(String(Packages.com.twinsoft.convertigo.engine.util.XMLUtils.XmlToJson(doc.getDocumentElement(), true)));
+		return raw && raw.document !== undefined ? raw.document : raw;
 	}
 
 	function blockName(node) {
@@ -5524,6 +6013,30 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				return flowCodeRgRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodeRun = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeRunRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodeAnalyze = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeAnalyzeRequest(loadBlocks(), args);
+			});
+		};
+		ctx.requestableList = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return requestableListRequest(args);
+			});
+		};
+		ctx.requestableSchema = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return requestableSchemaRequest(args);
 			});
 		};
 		ctx.returnValue = function (value) {
@@ -8986,6 +9499,50 @@
 				}));
 			} catch (e) {
 				return response(failure("flowCodeRg", e));
+			}
+		},
+
+		flowCodeRun: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeRunRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeRun", e));
+			}
+		},
+
+		flowCodeAnalyze: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeAnalyzeRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeAnalyze", e));
+			}
+		},
+
+		requestableList: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return requestableListRequest(request);
+				}));
+			} catch (e) {
+				return response(failure("requestableList", e));
+			}
+		},
+
+		requestableSchema: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return requestableSchemaRequest(request);
+				}));
+			} catch (e) {
+				return response(failure("requestableSchema", e));
 			}
 		},
 
