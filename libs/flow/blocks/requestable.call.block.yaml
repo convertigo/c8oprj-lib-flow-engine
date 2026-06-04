@@ -1,5 +1,13 @@
 version: 1
 icon: "mdi:link-variant"
+tags:
+- requestable
+- call
+- sequence
+- transaction
+- flow
+- connector
+- sdk
 description: "Calls a Convertigo sequence, Flow or transaction through the regular requestable path."
 props:
   requestable:

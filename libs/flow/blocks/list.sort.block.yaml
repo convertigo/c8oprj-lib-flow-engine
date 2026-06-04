@@ -1,5 +1,11 @@
 version: 1
 icon: "mdi:sort"
+tags:
+- list
+- array
+- sort
+- order
+- current
 description: "Sorts an array copy by a current.* expression."
 props:
   items:

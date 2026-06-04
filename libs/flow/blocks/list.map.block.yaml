@@ -1,5 +1,12 @@
 version: 1
 icon: "mdi:vector-polyline"
+tags:
+- list
+- array
+- map
+- iterate
+- transform
+- current
 description: "Maps an array to a new array while exposing each item as current."
 props:
   items:

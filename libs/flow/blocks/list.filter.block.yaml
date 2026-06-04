@@ -1,5 +1,11 @@
 version: 1
 icon: "mdi:filter-outline"
+tags:
+- list
+- array
+- filter
+- where
+- current
 description: "Filters an array using a pure expression evaluated with current.*."
 props:
   items:

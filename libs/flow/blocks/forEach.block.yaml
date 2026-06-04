@@ -2,6 +2,11 @@ version: 1
 icon: "mdi:repeat"
 tags:
 - control
+- loop
+- each
+- iterate
+- array
+- current
 description: "Runs child nodes once per item and exposes the item as current."
 props:
   items:

@@ -1,5 +1,11 @@
 version: 1
 icon: "mdi:playlist-plus"
+tags:
+- json
+- array
+- push
+- append
+- add
 description: "Pushes a value into an array stored in a scope path."
 longDescription: "Use path for the target array and value for the pushed content. A value containing only {{ expression }} keeps the native expression type."
 props:

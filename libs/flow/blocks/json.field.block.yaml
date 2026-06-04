@@ -2,6 +2,10 @@ version: 1
 icon: "mdi:form-textbox"
 tags:
 - json
+- object
+- field
+- key
+- response
 description: "Adds one field to the nearest parent JSON object."
 props:
   key:
