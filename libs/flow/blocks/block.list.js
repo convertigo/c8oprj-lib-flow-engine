@@ -6,6 +6,12 @@
 				args[key] = props[key];
 			}
 		});
+		if (!args.detail && !args.mode) {
+			args.detail = "signature";
+		}
+		if (!args.limit) {
+			args.limit = 20;
+		}
 		return args;
 	}
 

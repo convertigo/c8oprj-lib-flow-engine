@@ -5188,11 +5188,6 @@
 		});
 		var out = {
 			blockId: descriptor.blockId,
-			name: descriptor.name,
-			localName: descriptor.localName,
-			provider: descriptor.provider,
-			origin: descriptor.origin,
-			namespace: descriptor.namespace,
 			description: descriptor.description || ""
 		};
 		if (Object.keys(properties).length > 0) {
@@ -5212,6 +5207,30 @@
 		}
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(compactSlotDescriptor);
+		}
+		return out;
+	}
+
+	function signatureBlockDescriptor(descriptor) {
+		var properties = {};
+		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
+			properties[name] = summaryPropertyDescriptor(descriptor.props[name]);
+		});
+		var out = {
+			block: descriptor.blockId,
+			sig: blockSignature(descriptor),
+			desc: descriptor.description || ""
+		};
+		if (Object.keys(properties).length > 0) {
+			out.props = properties;
+		}
+		if (descriptor.slots) {
+			out.slots = descriptor.slots.map(function (slot) {
+				return slot.name;
+			});
+		}
+		if (descriptor["private"] === true) {
+			out["private"] = true;
 		}
 		return out;
 	}
@@ -5244,20 +5263,29 @@
 		return parts.join(":") || "value";
 	}
 
-	function summaryBlockDescriptor(descriptor) {
+	function blockSignature(descriptor) {
 		var inputs = [];
 		var outputs = [];
 		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
 			var property = descriptor.props[name] || {};
+			var signature = name;
+			var type = summaryPropertyDescriptor(property);
+			if (type && type !== "value") {
+				signature += ":" + type;
+			}
 			if (property.mode === "write" || name === "out") {
-				outputs.push(name);
+				outputs.push(signature);
 			} else {
-				inputs.push(name);
+				inputs.push(signature);
 			}
 		});
+		return (inputs.length ? inputs.join(", ") : "-") + (outputs.length ? " -> " + outputs.join(", ") : "");
+	}
+
+	function summaryBlockDescriptor(descriptor) {
 		var out = {
 			block: descriptor.blockId,
-			sig: (inputs.length ? inputs.join(", ") : "-") + (outputs.length ? " -> " + outputs.join(", ") : ""),
+			sig: blockSignature(descriptor),
 			desc: descriptor.description || ""
 		};
 		if (descriptor.slots) {
@@ -5428,39 +5456,38 @@
 			blocks: page.blocks,
 			libraryCount: listFlowLibraries().length,
 			typeCount: Object.keys(types).length,
-			next: "This is the short palette. Use query/namespace/provider to stay narrow, detail='compact' for typed properties, detail='full' only for source-level details."
+			next: "This is the short palette. Use query/namespace/provider to stay narrow, detail='signature' for typed signatures, flow-block-get for one block, detail='full' only for source-level details."
+		}, options);
+	}
+
+	function signatureCatalogDefinition(blocks, options) {
+		var page = catalogPage(blocks, options, signatureBlockDescriptor);
+		return addCatalogDocs({
+			detail: "signature",
+			count: page.blocks.length,
+			total: page.total,
+			nextCursor: page.nextCursor,
+			blocks: page.blocks,
+			next: "Use flow-block-get for one candidate block. Use flow-search first when an executable sample may show the whole pattern."
 		}, options);
 	}
 
 	function compactCatalogDefinition(blocks, options) {
+		var fullPage = catalogPage(blocks, options, function (descriptor) { return descriptor; });
 		var page = catalogPage(blocks, options, compactBlockDescriptor);
 		var descriptors = page.blocks;
 		var includeTypes = options.includeTypes === true || String(options.includeTypes || "") === "true";
 		var includeLibraries = options.includeLibraries === true || String(options.includeLibraries || "") === "true";
-		var groupsByProvider = {};
-		descriptors.forEach(function (block) {
-			var provider = block.provider || block.origin || "unknown";
-			if (!groupsByProvider[provider]) {
-				groupsByProvider[provider] = [];
-			}
-			groupsByProvider[provider].push(block.blockId || block.name);
-		});
 		return addCatalogDocs({
 			detail: "compact",
 			count: descriptors.length,
 			total: page.total,
 			nextCursor: page.nextCursor,
 			blocks: descriptors,
-			groups: Object.keys(groupsByProvider).sort().map(function (provider) {
-				return {
-					provider: provider,
-					blocks: groupsByProvider[provider]
-				};
-			}),
 			libraryCount: listFlowLibraries().length,
 			typeCount: Object.keys(loadTypes()).length,
 			libraries: includeLibraries ? listFlowLibraries() : undefined,
-			types: includeTypes ? catalogTypes(descriptors, loadTypes()).map(compactTypeDescriptor) : undefined,
+			types: includeTypes ? catalogTypes(fullPage.blocks, loadTypes()).map(compactTypeDescriptor) : undefined,
 			next: "Use flow-search for examples and flow-block-get for one block. Add includeTypes=true/includeLibraries=true only when those details are needed."
 		}, options);
 	}
@@ -5470,6 +5497,9 @@
 		var detail = String(options.detail || options.mode || "full");
 		if (detail === "summary") {
 			return summaryCatalogDefinition(blocks, options);
+		}
+		if (detail === "signature") {
+			return signatureCatalogDefinition(blocks, options);
 		}
 		if (detail === "compact") {
 			return compactCatalogDefinition(blocks, options);
@@ -6667,7 +6697,7 @@
 	function searchKinds(request) {
 		var kinds = request.kinds;
 		if (!kinds) {
-			return { flow: true, node: true, block: true, type: true, schema: true };
+			return { sample: true, flow: true, node: true, block: true, type: true, schema: true };
 		}
 		if (typeof kinds === "string") {
 			kinds = String(kinds).split(",");
@@ -6677,6 +6707,32 @@
 			out[String(kind).trim()] = true;
 		});
 		return out;
+	}
+
+	function isSampleFlowName(flowName) {
+		return String(flowName || "").indexOf("sample_") === 0;
+	}
+
+	function collectFlowBlockUses(definition, blocks) {
+		var uses = [];
+		function add(name) {
+			name = String(name || "");
+			if (name && uses.indexOf(name) === -1) {
+				uses.push(name);
+			}
+		}
+		function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				var name = blockName(node);
+				add(name);
+				activeSlots(node, blockCatalog(blocks && blocks[name])).forEach(function (slot) {
+					walk(slot.nodes || []);
+				});
+			});
+		}
+		walk(definition && definition.nodes || []);
+		uses.sort();
+		return uses;
 	}
 
 	function searchNeedle(request) {
@@ -6936,9 +6992,28 @@
 			});
 		flows.forEach(function (flow) {
 			var flowQName = flowQNameForSearch(request, flow.name);
-			if (kinds.flow && searchMatches([flow.name, flowQName, flow.source].join(" "), needle)) {
+			var definition = expandFlowDefinition(blocks, parseSource(flow.source));
+			var sample = isSampleFlowName(flow.name);
+			var flowText = [flow.name, flowQName, flow.source, sample ? "sample example tutorial usage pattern" : ""].join(" ");
+			if (sample && kinds.sample && searchMatches(flowText, needle)) {
+				var uses = collectFlowBlockUses(definition, blocks);
+				matches.push({
+					kind: "sample",
+					score: 90,
+					project: currentProjectName(request),
+					flow: flow.name,
+					flowQName: flowQName,
+					file: flow.file || "",
+					uses: uses,
+					summary: "[sample] " + flowQName + (uses.length ? " uses " + uses.join(", ") : ""),
+					snippet: searchSnippet(flow.source, needle),
+					next: "flow-tree name=" + flow.name + ", flow-test name=" + flow.name + ", then copy the definition into a new Flow"
+				});
+			}
+			if (kinds.flow && !sample && searchMatches(flowText, needle)) {
 				matches.push({
 					kind: "flow",
+					score: 50,
 					project: currentProjectName(request),
 					flow: flow.name,
 					flowQName: flowQName,
@@ -6947,13 +7022,20 @@
 					snippet: searchSnippet(flow.source, needle),
 					next: "flow-tree name=" + flow.name
 				});
-				}
-				if (kinds.node) {
-					searchFlowNodes(request, blocks, flow.name, expandFlowDefinition(blocks, parseSource(flow.source)), matches);
-				}
-			});
+			}
+			if (kinds.node) {
+				searchFlowNodes(request, blocks, flow.name, definition, matches);
+			}
+		});
 		searchCatalogEntries(request, blocks, matches);
 		searchSchemaFiles(request, matches);
+		matches.sort(function (a, b) {
+			var scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+			if (scoreDiff !== 0) {
+				return scoreDiff;
+			}
+			return String(a.summary || a.name || "").localeCompare(String(b.summary || b.name || ""));
+		});
 
 		var offset = intOption(request.cursor, 0, 0);
 		var limit = intOption(request.limit, 50, 1, 500);

@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -42,7 +42,8 @@ props:
     label: "detail"
     kind: "text"
     type: "string"
-    description: "Palette detail: summary, compact or full."
+    default: "signature"
+    description: "Palette detail: summary, signature, compact or full. Use signature for discovery."
   mode:
     label: "mode"
     kind: "text"

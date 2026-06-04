@@ -4,4 +4,6 @@
   version: 0.0.1
   ↓QualifCoreData [flow.Flow]: 🗏 sequences/QualifCoreData.yaml
   ↓QualifWeatherInline [flow.Flow]: 🗏 sequences/QualifWeatherInline.yaml
+  ↓sample_json_object_output [flow.Flow]: 🗏 sequences/sample_json_object_output.yaml
+  ↓sample_list_filter_sort_map [flow.Flow]: 🗏 sequences/sample_list_filter_sort_map.yaml
   ↓FlowEngine [flow.FlowEngine]: 🗏 flowEngine.yaml

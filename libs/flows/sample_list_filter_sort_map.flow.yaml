@@ -1,0 +1,31 @@
+version: 1
+nodes:
+- id: "sourceCities"
+  block: "set"
+  path: "local.cities"
+  value:
+  - city: "Lyon"
+    temperature: 31
+  - city: "Paris"
+    temperature: 38
+  - city: "Marseille"
+    temperature: 36
+- id: "keepHotCities"
+  block: "list.filter"
+  items: "local.cities"
+  where: "current.temperature >= 35"
+  out: "local.hotCities"
+- id: "sortByCity"
+  block: "list.sort"
+  items: "local.hotCities"
+  by: "current.city"
+  out: "local.sortedHotCities"
+- id: "names"
+  block: "list.map"
+  items: "local.sortedHotCities"
+  select: "current.city"
+  out: "result.cities"
+- id: "count"
+  block: "set"
+  path: "result.count"
+  value: "{{ length(result.cities) }}"
