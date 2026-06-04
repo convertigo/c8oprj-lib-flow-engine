@@ -1616,6 +1616,28 @@
 		return schema && Object.keys(schema).length > 0 ? schema : null;
 	}
 
+	function declaredPropertyOutputSchema(catalog, property) {
+		if (!catalog || !property) {
+			return null;
+		}
+		var outputs = catalog.outputs || catalog.output || {};
+		if (!outputs || typeof outputs !== "object") {
+			return null;
+		}
+		var schema = outputs[property] || (property === "out" ? outputs : null);
+		return schema && typeof schema === "object" ? normalizeTree(schema) : null;
+	}
+
+	function schemaSummary(schema) {
+		schema = normalizeTree(schema);
+		return {
+			type: schemaSimpleType(schema),
+			paths: schemaPaths(schema, "").slice(0, 20),
+			arrayPaths: schemaArrayPaths(schema, "").slice(0, 20),
+			leafPaths: schemaLeafEntries(schema, "").slice(0, 20)
+		};
+	}
+
 	function learnResultSchema(request, definition, value) {
 		if (declaredOutputSchema(definition)) {
 			return { learned: false, declared: true };
@@ -2799,6 +2821,7 @@
 			implementation: implementation.runtime,
 			runtime: implementation.runtime,
 			props: props,
+			outputs: normalizeTree(definition.outputs || definition.output || {}),
 			description: definition.description || "Composite Flow block implemented with child nodes.",
 			longDescription: definition.longDescription || definition.documentation || ""
 		};
@@ -5650,12 +5673,26 @@
 			ctx.runNodes(definition.nodes || []);
 			var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
 			assertNoRuntimeHandle(result, "result");
-			learnResultSchema(request, definition, result);
+			var resultSchema = learnResultSchema(request, definition, result);
+			if (resultSchema && resultSchema.learned === true) {
+				ctx.schemaUpdates.push({
+					scope: "result",
+					node: "return",
+					block: "return",
+					property: "out",
+					file: resultSchema.file,
+					schema: schemaSummary(resultSchema.schema),
+					message: "Learned final result schema. Future output-schema calls can use it."
+				});
+			}
 			closeRuntimeHandles(ctx);
 			var out = {
 				ok: true,
 				result: snapshot(result)
 			};
+			if (ctx.schemaUpdates.length > 0) {
+				out.schemaUpdates = snapshot(ctx.schemaUpdates);
+			}
 			if (request.includeFlow === true || request.includeLocal === true) {
 				out.local = snapshot(ctx.scopes.local);
 			}
@@ -5688,6 +5725,7 @@
 			stopped: false,
 			handles: {},
 			handleSeq: 0,
+			schemaUpdates: [],
 			scopes: {
 				request: requestScope,
 				input: normalizeTree(request.input || {}),
@@ -5804,7 +5842,19 @@
 			return readOutputSchema(request, definition, node, property || "out", outPath || "");
 		};
 		ctx.learnOutputSchema = function (node, property, outPath, value) {
-			return learnOutputSchema(request, definition, node, property || "out", outPath || "", value);
+			var learned = learnOutputSchema(request, definition, node, property || "out", outPath || "", value);
+			if (learned && learned.learned === true) {
+				ctx.schemaUpdates.push({
+					scope: outPath || "",
+					node: nodePath(node),
+					block: blockName(node),
+					property: property || "out",
+					file: learned.file,
+					schema: schemaSummary(learned.schema),
+					message: "Learned output schema for " + (outPath || "out") + ". Use this path in later FlowScript expressions."
+				});
+			}
+			return learned;
 		};
 		ctx.schemaReset = function (args) {
 			args = args || {};
@@ -6338,11 +6388,17 @@
 			if (writeProps.indexOf(key) !== -1 || kind === "path" && mode === "write") {
 				if (typeof value === "string") {
 					addUnique(writes, value);
-					ctx.addWrite(value);
-					outputs.push({
+					ctx.addOutputPath(key, value);
+					var output = {
 						property: key,
 						path: value
-					});
+					};
+					var outputSchema = declaredPropertyOutputSchema(catalog, key);
+					if (outputSchema) {
+						ctx.addSchema(value, outputSchema);
+						output.schema = schemaSummary(outputSchema);
+					}
+					outputs.push(output);
 				}
 				return;
 			}
@@ -6911,17 +6967,40 @@
 		return out;
 	}
 
+	function compactOutputDescriptors(descriptor) {
+		var outputs = descriptor.outputs || descriptor.output || {};
+		var out = {};
+		if (!outputs || typeof outputs !== "object") {
+			return out;
+		}
+		if (outputs.type || outputs.properties || outputs.items) {
+			out.out = schemaSummary(outputs);
+			return out;
+		}
+		Object.keys(outputs).sort().forEach(function (name) {
+			var schema = outputs[name];
+			if (schema && typeof schema === "object") {
+				out[name] = schemaSummary(schema);
+			}
+		});
+		return out;
+	}
+
 	function compactBlockDescriptor(descriptor) {
 		var properties = {};
 		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
 			properties[name] = compactPropertyDescriptor(descriptor.props[name]);
 		});
+		var outputs = compactOutputDescriptors(descriptor);
 		var out = {
 			blockId: descriptor.blockId,
 			description: descriptor.description || ""
 		};
 		if (Object.keys(properties).length > 0) {
 			out.properties = properties;
+		}
+		if (Object.keys(outputs).length > 0) {
+			out.outputs = outputs;
 		}
 		if (descriptor.tags && descriptor.tags.length) {
 			out.tags = descriptor.tags;
@@ -6946,6 +7025,7 @@
 		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
 			properties[name] = summaryPropertyDescriptor(descriptor.props[name]);
 		});
+		var outputs = compactOutputDescriptors(descriptor);
 		var out = {
 			block: descriptor.blockId,
 			sig: blockSignature(descriptor),
@@ -6953,6 +7033,9 @@
 		};
 		if (Object.keys(properties).length > 0) {
 			out.props = properties;
+		}
+		if (Object.keys(outputs).length > 0) {
+			out.outputs = outputs;
 		}
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(function (slot) {

@@ -29,6 +29,18 @@ props:
     mode: "write"
     default: "local.response"
     description: "Scope path receiving status, contentType, body and text."
+outputs:
+  out:
+    type: "object"
+    properties:
+      status:
+        type: "integer"
+      contentType:
+        type: "string"
+      body:
+        type: "unknown"
+      text:
+        type: "string"
 hooks:
   file: "http.request.hooks.js"
 implementation:
