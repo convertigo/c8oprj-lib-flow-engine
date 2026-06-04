@@ -16,7 +16,7 @@ props:
     label: "code"
     kind: "text"
     type: "string"
-    description: "FlowScript implementation code. Use input.* for block properties and return value for the block result."
+    description: "FlowScript implementation code. Use input.* for block properties and return value for the block result. An optional block name({ input }) { ... } envelope is accepted."
   descriptor:
     label: "descriptor"
     kind: "literal"

@@ -16,6 +16,25 @@
 		return parts[parts.length - 1] || "block";
 	}
 
+	function blockEnvelopeName(code) {
+		var match = String(code || "").trim().match(/^block\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(/);
+		return match ? match[1] : "";
+	}
+
+	function unwrapBlockEnvelope(code) {
+		var text = String(code || "").trim();
+		var header = text.match(/^block\s+[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\([^)]*\)\s*\{/);
+		if (!header) {
+			return text;
+		}
+		var open = header[0].length - 1;
+		var close = text.lastIndexOf("}");
+		if (open < 0 || close <= open) {
+			return text;
+		}
+		return text.substring(open + 1, close).trim();
+	}
+
 	function descriptorFrom(name, props) {
 		if (props.descriptorSource !== undefined && props.descriptorSource !== null) {
 			return {
@@ -96,14 +115,15 @@
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			var name = String(prop(props, "name") || "");
 			var code = prop(props, "code");
+			var name = String(prop(props, "name") || blockEnvelopeName(code) || "");
 			if (!name) {
 				return { ok: false, error: error("MISSING_BLOCK_NAME", "block.code.set requires name.") };
 			}
 			if (!nonEmpty(code)) {
 				return { ok: false, name: name, error: error("MISSING_BLOCK_CODE", "block.code.set requires FlowScript code.") };
 			}
+			code = unwrapBlockEnvelope(code);
 			var validation = ctx.flowSourceValidate({
 				projectDir: props.projectDir,
 				name: name,

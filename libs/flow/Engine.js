@@ -3824,7 +3824,7 @@
 				} else if (ch === quote) {
 					inString = false;
 				}
-			} else if (ch === "\"" || ch === "'") {
+			} else if (ch === "\"" || ch === "'" || ch === "`") {
 				inString = true;
 				quote = ch;
 			} else if (ch === "/" && line.charAt(i + 1) === "/") {
@@ -3855,7 +3855,7 @@
 				}
 				continue;
 			}
-			if (ch === "\"" || ch === "'") {
+			if (ch === "\"" || ch === "'" || ch === "`") {
 				inString = true;
 				quote = ch;
 			} else if (ch === "(") {
@@ -3953,7 +3953,7 @@
 				}
 				continue;
 			}
-			if (ch === "\"" || ch === "'") {
+			if (ch === "\"" || ch === "'" || ch === "`") {
 				inString = true;
 				quote = ch;
 			} else if (ch === "(") {
@@ -3984,6 +3984,11 @@
 		text = String(text || "").trim();
 		return text.length >= 2 && (text.charAt(0) === "\"" && text.charAt(text.length - 1) === "\"" ||
 			text.charAt(0) === "'" && text.charAt(text.length - 1) === "'");
+	}
+
+	function isFlowScriptTemplateLiteral(text) {
+		text = String(text || "").trim();
+		return text.length >= 2 && text.charAt(0) === "`" && text.charAt(text.length - 1) === "`";
 	}
 
 	function unquoteFlowScriptString(text) {
@@ -4068,6 +4073,9 @@
 
 	function flowScriptLiteralTokenValue(token, lineNumber) {
 		token = String(token || "").trim();
+		if (isFlowScriptTemplateLiteral(token)) {
+			return undefined;
+		}
 		if (isFlowScriptQuoted(token)) {
 			return unquoteFlowScriptString(token);
 		}
@@ -4089,7 +4097,70 @@
 		return undefined;
 	}
 
+	function flowScriptTemplateLiteralToTemplate(token, locals, lineNumber) {
+		var body = String(token || "").trim();
+		if (!isFlowScriptTemplateLiteral(body)) {
+			return undefined;
+		}
+		body = body.substring(1, body.length - 1);
+		var out = "";
+		for (var i = 0; i < body.length; i++) {
+			var ch = body.charAt(i);
+			if (ch === "\\" && i + 1 < body.length) {
+				var escaped = body.charAt(++i);
+				out += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
+				continue;
+			}
+			if (ch === "$" && body.charAt(i + 1) === "{") {
+				i += 2;
+				var start = i;
+				var brace = 1;
+				var quote = "";
+				while (i < body.length && brace > 0) {
+					ch = body.charAt(i);
+					if (quote) {
+						if (ch === "\\" && i + 1 < body.length) {
+							i += 2;
+							continue;
+						}
+						if (ch === quote) {
+							quote = "";
+						}
+						i++;
+						continue;
+					}
+					if (ch === "\"" || ch === "'" || ch === "`") {
+						quote = ch;
+						i++;
+						continue;
+					}
+					if (ch === "{") {
+						brace++;
+					} else if (ch === "}") {
+						brace--;
+						if (brace === 0) {
+							break;
+						}
+					}
+					i++;
+				}
+				if (brace !== 0) {
+					raise("FLOWSCRIPT_INVALID_TEMPLATE_LITERAL", "Unclosed template literal expression at line " + lineNumber + ": " + token);
+				}
+				var expression = body.substring(start, i).trim();
+				out += "{{ " + flowScriptRewriteExpression(expression, locals) + " }}";
+				continue;
+			}
+			out += ch;
+		}
+		return out;
+	}
+
 	function flowScriptValueFromToken(token, locals, lineNumber) {
+		var template = flowScriptTemplateLiteralToTemplate(token, locals, lineNumber);
+		if (template !== undefined) {
+			return template;
+		}
 		var literal = flowScriptLiteralTokenValue(token, lineNumber);
 		if (literal !== undefined) {
 			return literal;
