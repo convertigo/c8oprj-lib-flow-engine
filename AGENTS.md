@@ -49,7 +49,15 @@ Current engine APIs:
 flowSourceGet(requestJson)      -> FlowScript code + revision
 flowSourceValidate(requestJson) -> parsed definition + YAML + diagnostics
 flowSourcePatch(requestJson)    -> revision-checked patch/replacement + write
+
+flowCodeGet(requestJson)        -> compact {code, revision}
+flowCodeSet(requestJson)        -> compact revision-checked validate/write
+flowCodePatch(requestJson)      -> compact revision-checked patch/write
+flowCodeRg(requestJson)         -> compact code extracts
 ```
+
+Prefer `flowCode*` for agent-facing authoring. Keep `flowSource*` for compiler
+debugging and model/YAML inspection.
 
 Current block wrappers:
 

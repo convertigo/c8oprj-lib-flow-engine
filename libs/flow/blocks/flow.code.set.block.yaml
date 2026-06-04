@@ -1,0 +1,50 @@
+version: 1
+private: true
+icon: "mdi:file-check-outline"
+tags:
+- flow
+- code
+- flowscript
+description: "Validates and writes FlowScript code with optional revision checking."
+props:
+  qname:
+    label: "qname"
+    kind: "text"
+    type: "string"
+    description: "Flow qname, for example Project.FlowName."
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Project-local Flow name."
+  revision:
+    label: "revision"
+    kind: "text"
+    type: "string"
+    description: "Optional revision returned by flow.code.get."
+  code:
+    label: "code"
+    kind: "text"
+    type: "string"
+    description: "Full FlowScript code."
+  dry:
+    label: "dry"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Validate without writing."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving compact write result."
+hooks:
+  file: "flow.code.set.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "flow.code.set.js"

@@ -1,0 +1,34 @@
+version: 1
+private: true
+icon: "mdi:file-code-outline"
+tags:
+- flow
+- code
+- flowscript
+description: "Returns compact FlowScript code and revision for one Flow."
+props:
+  qname:
+    label: "qname"
+    kind: "text"
+    type: "string"
+    description: "Flow qname, for example Project.FlowName."
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Project-local Flow name."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving {code, revision}."
+hooks:
+  file: "flow.code.get.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "flow.code.get.js"

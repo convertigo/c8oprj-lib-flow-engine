@@ -3631,8 +3631,10 @@
 		request = request || {};
 		var definition = parseSource(flowSource);
 		var lines = [];
-		lines.push("// c8o: FlowScript spike. Function calls are Flow blocks; named arguments are block properties.");
-		lines.push("// c8o: Patch with the returned revision. The engine validates and compiles this code back to Flow YAML.");
+		if (request.includeHeader !== false) {
+			lines.push("// c8o: FlowScript spike. Function calls are Flow blocks; named arguments are block properties.");
+			lines.push("// c8o: Patch with the returned revision. The engine validates and compiles this code back to Flow YAML.");
+		}
 		if (request.includeContext === true) {
 			var analysis = analyzeFlowDefinition(blocks, definition, request);
 			var paths = [];
@@ -4346,6 +4348,234 @@
 			definition: validation.definition,
 			diagnostics: validation.diagnostics,
 			saved: saved
+		};
+	}
+
+	function flowCodeName(request) {
+		request = request || {};
+		var name = request.name || request.flowName || "";
+		if (!name && request.qname) {
+			var parts = String(request.qname).split(".");
+			name = parts[parts.length - 1];
+		}
+		if (!name) {
+			raise("MISSING_FLOW_QNAME", "flow-code requires qname or name.");
+		}
+		return String(name);
+	}
+
+	function flowCodeQName(request, name) {
+		request = request || {};
+		if (request.qname) {
+			return String(request.qname);
+		}
+		var project = currentProjectName(request);
+		return project ? project + "." + name : String(name);
+	}
+
+	function flowCodeDryRun(request) {
+		return request && (request.dry === true || request.dryRun === true);
+	}
+
+	function flowCodeDiagnostics(diagnostics, severity) {
+		return (diagnostics || []).filter(function (diagnostic) {
+			return !severity || diagnostic.severity === severity;
+		}).map(function (diagnostic) {
+			var out = {};
+			["severity", "line", "message", "block", "property", "expected", "hint"].forEach(function (key) {
+				if (diagnostic[key] !== undefined && diagnostic[key] !== null && diagnostic[key] !== "") {
+					out[key] = diagnostic[key];
+				}
+			});
+			return out;
+		});
+	}
+
+	function flowCodeError(code, message, hint, details) {
+		var out = {
+			code: String(code || "FLOW_CODE_ERROR"),
+			message: String(message || "")
+		};
+		if (hint) {
+			out.hint = String(hint);
+		}
+		if (details !== undefined && details !== null) {
+			out.details = details;
+		}
+		return out;
+	}
+
+	function flowCodeRevisionForSource(blocks, name, source, request) {
+		var code = renderFlowScript(blocks, name, source, Object.assign({}, request || {}, { includeHeader: false }));
+		return sha256Hex(code);
+	}
+
+	function flowCodeGetRequest(blocks, request) {
+		request = request || {};
+		var name = flowCodeName(request);
+		var current = flowScriptGetRequest(blocks, Object.assign({}, request, { name: name, includeHeader: false }));
+		return {
+			ok: true,
+			qname: flowCodeQName(request, name),
+			name: name,
+			revision: current.revision,
+			code: current.code
+		};
+	}
+
+	function flowCodeSetRequest(blocks, request) {
+		request = request || {};
+		var name = flowCodeName(request);
+		var code = request.code !== undefined && request.code !== null ? String(request.code) : "";
+		if (code.trim() === "") {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				error: flowCodeError("MISSING_CODE", "flow-code-set requires code."),
+				warnings: []
+			};
+		}
+		var current = null;
+		try {
+			current = flowCodeGetRequest(blocks, Object.assign({}, request, { name: name }));
+		} catch (e) {
+			if (String(e.code || "") !== "UNKNOWN_FLOW") {
+				throw e;
+			}
+		}
+		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
+		if (expectedRevision && current && String(expectedRevision) !== current.revision) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				revision: current.revision,
+				error: flowCodeError("FLOW_CODE_REVISION_MISMATCH",
+					"FlowScript changed since it was read: " + name,
+					"Call flow-code-get again and regenerate the patch from the new revision."),
+				warnings: []
+			};
+		}
+		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { name: name, code: code }));
+		var warnings = flowCodeDiagnostics(validation.diagnostics, "warning");
+		if (!validation.ok) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				revision: current ? current.revision : null,
+				error: flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+					"Fix the reported diagnostics and retry.", flowCodeDiagnostics(validation.diagnostics)),
+				warnings: warnings
+			};
+		}
+		if (!flowCodeDryRun(request)) {
+			setProjectFlow(blocks, name, validation.source, request);
+		}
+		var revision = flowCodeRevisionForSource(blocks, name, validation.source, request);
+		return {
+			ok: true,
+			qname: flowCodeQName(request, name),
+			name: name,
+			dry: flowCodeDryRun(request),
+			revision: revision,
+			oldRevision: current ? current.revision : null,
+			warnings: warnings
+		};
+	}
+
+	function flowCodePatchRequest(blocks, request) {
+		request = request || {};
+		var name = flowCodeName(request);
+		var current = flowCodeGetRequest(blocks, Object.assign({}, request, { name: name }));
+		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
+		if (expectedRevision && String(expectedRevision) !== current.revision) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				revision: current.revision,
+				error: flowCodeError("FLOW_CODE_REVISION_MISMATCH",
+					"FlowScript changed since it was read: " + name,
+					"Call flow-code-get again and regenerate the patch from the new revision."),
+				warnings: []
+			};
+		}
+		var patch = request.codepatch || request.patch || request.unifiedDiff || request.diff || "";
+		var code = request.code !== undefined && request.code !== null
+			? String(request.code)
+			: applyUnifiedPatchText(current.code, patch).content;
+		return flowCodeSetRequest(blocks, Object.assign({}, request, {
+			name: name,
+			qname: flowCodeQName(request, name),
+			code: code,
+			revision: current.revision
+		}));
+	}
+
+	function flowCodeRgExtract(code, matcher, context, limit) {
+		var lines = String(code || "").split(/\r?\n/);
+		var extracts = [];
+		for (var i = 0; i < lines.length && extracts.length < limit; i++) {
+			matcher.lastIndex = 0;
+			if (matcher.test(lines[i])) {
+				var start = Math.max(0, i - context);
+				var end = Math.min(lines.length - 1, i + context);
+				extracts.push({
+					line: i + 1,
+					startLine: start + 1,
+					endLine: end + 1,
+					code: lines.slice(start, end + 1).join("\n")
+				});
+			}
+		}
+		return extracts;
+	}
+
+	function flowCodeRgMatcher(request) {
+		var pattern = String(request && request.pattern || "");
+		if (!pattern) {
+			raise("MISSING_PATTERN", "flow-code-rg requires pattern.");
+		}
+		if (request.regex === true) {
+			return new RegExp(pattern, request.caseSensitive === true ? "g" : "gi");
+		}
+		var escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		return new RegExp(escaped, request.caseSensitive === true ? "g" : "gi");
+	}
+
+	function flowCodeRgRequest(blocks, request) {
+		request = request || {};
+		var matcher = flowCodeRgMatcher(request);
+		var context = Math.max(0, Math.min(20, Number(request.context || request.contextLines || 2)));
+		var limit = Math.max(1, Math.min(100, Number(request.limit || 20)));
+		var targets = [];
+		if (request.qname || request.name || request.flowName) {
+			targets.push(flowCodeGetRequest(blocks, request));
+		} else {
+			listProjectFlows().flows.forEach(function (flow) {
+				targets.push(flowCodeGetRequest(blocks, Object.assign({}, request, { name: flow.name, qname: null })));
+			});
+		}
+		var extracts = [];
+		targets.forEach(function (target) {
+			if (extracts.length >= limit) {
+				return;
+			}
+			flowCodeRgExtract(target.code, matcher, context, limit - extracts.length).forEach(function (extract) {
+				extracts.push(Object.assign({
+					qname: target.qname,
+					name: target.name,
+					revision: target.revision
+				}, extract));
+			});
+		});
+		return {
+			ok: true,
+			qname: request.qname ? String(request.qname) : null,
+			revision: targets.length === 1 ? targets[0].revision : null,
+			extracts: extracts
 		};
 	}
 
@@ -5270,6 +5500,30 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				return flowScriptPatchRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodeGet = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeGetRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodeSet = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeSetRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodePatch = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodePatchRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodeRg = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeRgRequest(loadBlocks(), args);
 			});
 		};
 		ctx.returnValue = function (value) {
@@ -8688,6 +8942,50 @@
 				}));
 			} catch (e) {
 				return response(failure("flowSourcePatch", e));
+			}
+		},
+
+		flowCodeGet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeGetRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeGet", e));
+			}
+		},
+
+		flowCodeSet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeSetRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeSet", e));
+			}
+		},
+
+		flowCodePatch: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodePatchRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodePatch", e));
+			}
+		},
+
+		flowCodeRg: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeRgRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeRg", e));
 			}
 		},
 

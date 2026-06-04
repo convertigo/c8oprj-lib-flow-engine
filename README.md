@@ -221,10 +221,10 @@ still keep usage counts as secondary information.
 ## FlowScript spike
 
 The `spike-flowscript` branch adds an experimental code-like authoring view for
-LLMs. It does not replace Flow YAML yet. The engine renders existing Flow YAML
-as FlowScript, accepts a revision-checked patch or full replacement, parses it
-back into a Flow definition, validates block names/properties, and writes the
-normal sidecar only when diagnostics are clean.
+LLMs. It does not replace Flow YAML yet. The engine can render existing Flow
+YAML as FlowScript, accepts revision-checked code patches or full replacements,
+parses them back into a Flow definition, validates block names/properties, and
+writes the normal sidecar only when diagnostics are clean.
 
 For new Flows, prefer the natural code-like form:
 
@@ -258,7 +258,14 @@ edits:
 list.sort({ id: "sort", items: "local.feed.rss.channel.item", by: "current.title", out: "local.sorted" })
 ```
 
-Core blocks:
+Agent-facing core blocks:
+
+- `flow.code.get`
+- `flow.code.set`
+- `flow.code.patch`
+- `flow.code.rg`
+
+Compiler/debug core blocks:
 
 - `flow.source.get`
 - `flow.source.validate`
