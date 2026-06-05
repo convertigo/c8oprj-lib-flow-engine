@@ -10,7 +10,7 @@ props:
     description: "Object expression used as source."
   path:
     label: "path"
-    kind: "path"
+    kind: "selector"
     type: "string"
     mode: "read"
     sourceProperty: "source"

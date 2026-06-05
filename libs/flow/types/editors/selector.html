@@ -1,0 +1,341 @@
+<template id="flow-selector-editor-template">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.layout { display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(280px, 1fr); gap: 10px; min-height: 360px; }
+		.panel { border: 1px solid #343b42; border-radius: 4px; background: #171a1d; overflow: auto; max-height: 420px; padding: 8px; }
+		.footer { margin-top: 8px; display: grid; grid-template-columns: 82px 1fr; gap: 6px 8px; align-items: center; }
+		label { color: #c8d2d9; font-weight: 700; }
+		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		input[readonly] { background: #171a1d; color: #b8dff4; }
+		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
+		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+		button:hover { border-color: #2786a8; color: white; }
+		button.selected { border-color: #48d8ff; background: #0b7592; color: white; box-shadow: inset 3px 0 0 #8eeaff; font-weight: 700; }
+		.type { color: #85c8ff; }
+		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
+	</style>
+	<div class="layout">
+		<div>
+			<div class="panel" data-sources></div>
+			<div class="hint">Pick the source object first.</div>
+		</div>
+		<div>
+			<div class="panel" data-fields></div>
+			<div class="footer">
+				<label>Source</label><input data-source readonly>
+				<label>Data</label><input data-path readonly>
+			</div>
+		</div>
+	</div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-selector-editor")) {
+			return;
+		}
+
+		function esc(value) {
+			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+				return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+			});
+		}
+
+		function groups(context) {
+			var scopes = context && context.scopes || {};
+			return Object.keys(scopes).map(function (scope) {
+				var bucket = scopes[scope];
+				return {
+					scope: scope,
+					paths: Array.isArray(bucket) ? bucket : bucket && bucket.paths || []
+				};
+			});
+		}
+
+		function pathOf(entry) {
+			return typeof entry === "string" ? entry : entry && entry.path || "";
+		}
+
+		function typeOf(entry) {
+			return typeof entry === "string" ? "" : entry && entry.type || "";
+		}
+
+		function objectPathParts(path) {
+			var parts = [];
+			var text = String(path || "");
+			var part = "";
+			var i = 0;
+			function pushPart() {
+				if (part !== "") {
+					parts.push(part);
+					part = "";
+				}
+			}
+			while (i < text.length) {
+				var ch = text.charAt(i);
+				if (ch === ".") {
+					pushPart();
+					i++;
+					continue;
+				}
+				if (ch === "[") {
+					pushPart();
+					i++;
+					while (i < text.length && /\s/.test(text.charAt(i))) i++;
+					var bracket = "";
+					ch = text.charAt(i);
+					if (ch === "\"" || ch === "'") {
+						var quote = ch;
+						i++;
+						while (i < text.length) {
+							ch = text.charAt(i++);
+							if (ch === quote) break;
+							if (ch === "\\" && i < text.length) bracket += text.charAt(i++);
+							else bracket += ch;
+						}
+					} else {
+						while (i < text.length && text.charAt(i) !== "]") {
+							bracket += text.charAt(i++);
+						}
+						bracket = bracket.trim();
+					}
+					while (i < text.length && text.charAt(i) !== "]") i++;
+					if (text.charAt(i) === "]") i++;
+					if (bracket !== "") parts.push(bracket);
+					continue;
+				}
+				part += ch;
+				i++;
+			}
+			pushPart();
+			return parts;
+		}
+
+		function dotPath(path) {
+			return objectPathParts(path).join(".");
+		}
+
+		function bracketPath(parts, arrayPaths) {
+			var out = "";
+			var current = "";
+			parts.forEach(function (part) {
+				if (/^\d+$/.test(part)) {
+					out += "[" + part + "]";
+					current += "." + part;
+					return;
+				}
+				if (!out) {
+					out = part;
+					current = part;
+					return;
+				}
+				var parentIsArray = arrayPaths && arrayPaths[current] === true;
+				out += parentIsArray ? "[0]." + part : "." + part;
+				current += parentIsArray ? ".0." + part : "." + part;
+			});
+			return out;
+		}
+
+		function startsWithParts(parts, prefix) {
+			if (!prefix.length || parts.length < prefix.length) {
+				return false;
+			}
+			for (var i = 0; i < prefix.length; i++) {
+				if (parts[i] !== prefix[i]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		function arrayPathMap(context) {
+			var out = {};
+			groups(context).forEach(function (group) {
+				(group.paths || []).forEach(function (entry) {
+					if (String(typeOf(entry)).toLowerCase() === "array") {
+						out[dotPath(pathOf(entry))] = true;
+					}
+				});
+			});
+			return out;
+		}
+
+		function propValue(state, key) {
+			var object = state && state.definition || {};
+			var props = object && object.props || {};
+			var value = object[key];
+			if (value === undefined || value === null || value === "") {
+				value = props[key];
+			}
+			value = String(value || "").trim();
+			var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+			return exact ? exact[1].trim() : value;
+		}
+
+		function sourceKey(state) {
+			var def = state && state.propertyDefinition || {};
+			return def.sourceProperty || def.relativeTo || "source";
+		}
+
+		function sourceCandidates(context) {
+			var out = [];
+			groups(context).forEach(function (group) {
+				(group.paths || []).forEach(function (entry) {
+					var path = pathOf(entry);
+					var type = String(typeOf(entry)).toLowerCase();
+					if (!path || ["object", "array", "unknown"].indexOf(type) === -1) {
+						return;
+					}
+					if (!out.some(function (row) { return row.path === path; })) {
+						out.push({ scope: group.scope, path: path, type: type || "unknown" });
+					}
+				});
+			});
+			return out;
+		}
+
+		function renderSources(context, selectedSource) {
+			var rows = sourceCandidates(context);
+			var html = "";
+			var currentGroup = "";
+			rows.forEach(function (row) {
+				if (row.scope !== currentGroup) {
+					currentGroup = row.scope;
+					html += "<div class=\"group\">" + esc(currentGroup) + "</div>";
+				}
+				var selected = dotPath(row.path) === dotPath(selectedSource);
+				html += "<button class=\"" + (selected ? "selected" : "") + "\" data-source-path=\"" + esc(row.path) + "\">" + esc(row.path)
+					+ " <span class=\"type\">" + esc(row.type) + "</span></button>";
+			});
+			return html || "<div class=\"empty\">No object source known yet.</div>";
+		}
+
+		function renderFields(context, selectedSource, selectedPath) {
+			var baseParts = objectPathParts(selectedSource);
+			var arrays = arrayPathMap(context);
+			var relativeArrays = {};
+			Object.keys(arrays).forEach(function (key) {
+				var parts = objectPathParts(key);
+				if (startsWithParts(parts, baseParts)) {
+					relativeArrays[parts.slice(baseParts.length).join(".")] = true;
+				}
+			});
+			var rows = [];
+			groups(context).forEach(function (group) {
+				(group.paths || []).forEach(function (entry) {
+					var fullPath = pathOf(entry);
+					var fullParts = objectPathParts(fullPath);
+					if (!selectedSource || !startsWithParts(fullParts, baseParts) || fullParts.length === baseParts.length) {
+						return;
+					}
+					var relative = bracketPath(fullParts.slice(baseParts.length), relativeArrays);
+					if (!rows.some(function (row) { return row.path === relative; })) {
+						rows.push({ path: relative, type: typeOf(entry) || "unknown" });
+					}
+				});
+			});
+			var html = "";
+			rows.forEach(function (row) {
+				var selected = dotPath(row.path) === dotPath(selectedPath);
+				html += "<button class=\"" + (selected ? "selected" : "") + "\" data-relative-path=\"" + esc(row.path) + "\">" + esc(row.path)
+					+ " <span class=\"type\">" + esc(row.type) + "</span></button>";
+			});
+			return html || "<div class=\"empty\">Pick a source object to list its fields.</div>";
+		}
+
+		customElements.define("flow-selector-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._state = {};
+				this._source = "";
+				this._value = "";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-selector-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("click", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._state = state || {};
+				if ((!this._state.context || !this._state.context.scopes) && this.flowHost && this.flowHost.request) {
+					var response = this.flowHost.request("context", {});
+					if (response && response.ok && response.context) {
+						this._state.context = response.context;
+					}
+				}
+				this._source = propValue(this._state, sourceKey(this._state));
+				this._value = this._state.value == null ? "" : String(this._state.value);
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return this._value || "";
+			}
+
+			handleEvent(event) {
+				var source = event.target && event.target.closest && event.target.closest("button[data-source-path]");
+				if (source) {
+					this._source = source.getAttribute("data-source-path") || "";
+					this._value = "";
+					this.render();
+					this.emit();
+					return;
+				}
+				var field = event.target && event.target.closest && event.target.closest("button[data-relative-path]");
+				if (field) {
+					this._value = field.getAttribute("data-relative-path") || "";
+					this.render();
+					this.emit();
+				}
+			}
+
+			emit() {
+				var values = {};
+				values[sourceKey(this._state)] = this._source;
+				values[this._state.property || "path"] = this.value;
+				this.dispatchEvent(new CustomEvent("flow-value", {
+					bubbles: true,
+					detail: { value: this.value }
+				}));
+				this.dispatchEvent(new CustomEvent("flow-values", {
+					bubbles: true,
+					detail: { value: this.value, values: values }
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var context = this._state.context || {};
+				var sources = this.shadowRoot.querySelector("[data-sources]");
+				var fields = this.shadowRoot.querySelector("[data-fields]");
+				if (sources) {
+					sources.innerHTML = renderSources(context, this._source);
+				}
+				if (fields) {
+					fields.innerHTML = renderFields(context, this._source, this.value);
+				}
+				var sourceInput = this.shadowRoot.querySelector("[data-source]");
+				var pathInput = this.shadowRoot.querySelector("[data-path]");
+				if (sourceInput) {
+					sourceInput.value = this._source;
+				}
+				if (pathInput) {
+					pathInput.value = this.value;
+				}
+				var selected = this.shadowRoot.querySelector("[data-fields] button.selected");
+				if (selected) {
+					setTimeout(function () {
+						selected.scrollIntoView({ block: "center", inline: "nearest" });
+					}, 0);
+				}
+			}
+		});
+	}());
+</script>
