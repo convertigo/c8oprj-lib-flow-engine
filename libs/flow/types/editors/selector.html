@@ -1,12 +1,11 @@
 <template id="flow-selector-editor-template">
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
-		.layout { display: grid; grid-template-columns: minmax(240px, 0.8fr) minmax(280px, 1fr); gap: 10px; min-height: 360px; }
+		.layout { display: grid; grid-template-columns: minmax(250px, 0.9fr) minmax(300px, 1fr); gap: 10px; min-height: 360px; }
 		.panel { border: 1px solid #343b42; border-radius: 4px; background: #171a1d; overflow: auto; max-height: 420px; padding: 8px; }
-		.footer { margin-top: 8px; display: grid; grid-template-columns: 82px 1fr; gap: 6px 8px; align-items: center; }
+		.editor { margin-top: 8px; display: grid; grid-template-columns: 82px 1fr; gap: 6px 8px; align-items: center; }
 		label { color: #c8d2d9; font-weight: 700; }
 		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
-		input[readonly] { background: #171a1d; color: #b8dff4; }
 		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
 		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 		button:hover { border-color: #2786a8; color: white; }
@@ -17,13 +16,13 @@
 	<div class="layout">
 		<div>
 			<div class="panel" data-sources></div>
-			<div class="hint">Pick the source object first.</div>
+			<div class="hint">Pick an object or array source, or type it below.</div>
 		</div>
 		<div>
 			<div class="panel" data-fields></div>
-			<div class="footer">
-				<label>Source</label><input data-source readonly>
-				<label>Data</label><input data-path readonly>
+			<div class="editor">
+				<label>Source</label><input data-source spellcheck="false" placeholder="local.object">
+				<label>Data</label><input data-path spellcheck="false" placeholder="field.or.items[0].field">
 			</div>
 		</div>
 	</div>
@@ -176,25 +175,28 @@
 			return def.sourceProperty || def.relativeTo || "source";
 		}
 
-		function sourceCandidates(context) {
+		function sourceCandidates(context, selectedSource) {
 			var out = [];
 			groups(context).forEach(function (group) {
 				(group.paths || []).forEach(function (entry) {
 					var path = pathOf(entry);
 					var type = String(typeOf(entry)).toLowerCase();
-					if (!path || ["object", "array", "unknown"].indexOf(type) === -1) {
+					if (!path || ["object", "array"].indexOf(type) === -1) {
 						return;
 					}
 					if (!out.some(function (row) { return row.path === path; })) {
-						out.push({ scope: group.scope, path: path, type: type || "unknown" });
+						out.push({ scope: group.scope, path: path, type: type });
 					}
 				});
 			});
+			if (selectedSource && !out.some(function (row) { return dotPath(row.path) === dotPath(selectedSource); })) {
+				out.unshift({ scope: "custom", path: selectedSource, type: "unknown" });
+			}
 			return out;
 		}
 
 		function renderSources(context, selectedSource) {
-			var rows = sourceCandidates(context);
+			var rows = sourceCandidates(context, selectedSource);
 			var html = "";
 			var currentGroup = "";
 			rows.forEach(function (row) {
@@ -206,19 +208,23 @@
 				html += "<button class=\"" + (selected ? "selected" : "") + "\" data-source-path=\"" + esc(row.path) + "\">" + esc(row.path)
 					+ " <span class=\"type\">" + esc(row.type) + "</span></button>";
 			});
-			return html || "<div class=\"empty\">No object source known yet.</div>";
+			return html || "<div class=\"empty\">No object or array source known yet. Type a source manually.</div>";
+		}
+
+		function relativeArrayMap(arrays, baseParts) {
+			return Object.keys(arrays).reduce(function (out, key) {
+				var parts = objectPathParts(key);
+				if (startsWithParts(parts, baseParts)) {
+					out[parts.slice(baseParts.length).join(".")] = true;
+				}
+				return out;
+			}, {});
 		}
 
 		function renderFields(context, selectedSource, selectedPath) {
 			var baseParts = objectPathParts(selectedSource);
 			var arrays = arrayPathMap(context);
-			var relativeArrays = {};
-			Object.keys(arrays).forEach(function (key) {
-				var parts = objectPathParts(key);
-				if (startsWithParts(parts, baseParts)) {
-					relativeArrays[parts.slice(baseParts.length).join(".")] = true;
-				}
-			});
+			var relativeArrays = relativeArrayMap(arrays, baseParts);
 			var rows = [];
 			groups(context).forEach(function (group) {
 				(group.paths || []).forEach(function (entry) {
@@ -228,7 +234,7 @@
 						return;
 					}
 					var relative = bracketPath(fullParts.slice(baseParts.length), relativeArrays);
-					if (!rows.some(function (row) { return row.path === relative; })) {
+					if (!rows.some(function (row) { return dotPath(row.path) === dotPath(relative); })) {
 						rows.push({ path: relative, type: typeOf(entry) || "unknown" });
 					}
 				});
@@ -239,7 +245,7 @@
 				html += "<button class=\"" + (selected ? "selected" : "") + "\" data-relative-path=\"" + esc(row.path) + "\">" + esc(row.path)
 					+ " <span class=\"type\">" + esc(row.type) + "</span></button>";
 			});
-			return html || "<div class=\"empty\">Pick a source object to list its fields.</div>";
+			return html || "<div class=\"empty\">No known child field. Type a relative path manually.</div>";
 		}
 
 		customElements.define("flow-selector-editor", class extends HTMLElement {
@@ -254,6 +260,7 @@
 				if (!this.shadowRoot) {
 					this.attachShadow({ mode: "open" })
 						.append(document.getElementById("flow-selector-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
 					this.shadowRoot.addEventListener("click", this);
 				}
 				this.render();
@@ -278,6 +285,19 @@
 			}
 
 			handleEvent(event) {
+				if (event.type === "input") {
+					if (event.target && event.target.matches("[data-source]")) {
+						this._source = event.target.value;
+						this.render();
+						this.emit();
+					}
+					if (event.target && event.target.matches("[data-path]")) {
+						this._value = event.target.value;
+						this.render();
+						this.emit();
+					}
+					return;
+				}
 				var source = event.target && event.target.closest && event.target.closest("button[data-source-path]");
 				if (source) {
 					this._source = source.getAttribute("data-source-path") || "";
@@ -323,13 +343,13 @@
 				}
 				var sourceInput = this.shadowRoot.querySelector("[data-source]");
 				var pathInput = this.shadowRoot.querySelector("[data-path]");
-				if (sourceInput) {
+				if (sourceInput && sourceInput.value !== this._source) {
 					sourceInput.value = this._source;
 				}
-				if (pathInput) {
+				if (pathInput && pathInput.value !== this.value) {
 					pathInput.value = this.value;
 				}
-				var selected = this.shadowRoot.querySelector("[data-fields] button.selected");
+				var selected = this.shadowRoot.querySelector("button.selected");
 				if (selected) {
 					setTimeout(function () {
 						selected.scrollIntoView({ block: "center", inline: "nearest" });

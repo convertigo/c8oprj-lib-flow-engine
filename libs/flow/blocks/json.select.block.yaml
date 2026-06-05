@@ -3,19 +3,19 @@ icon: "mdi:select-search"
 description: "Reads a nested value from a JSON object."
 props:
   source:
-    label: "source"
+    label: "source object"
     kind: "expression"
     type: "object"
     default: "local.source"
-    description: "Object expression used as source."
+    description: "Object or array expression used as the selector root."
   path:
-    label: "path"
+    label: "data path"
     kind: "selector"
     type: "string"
     mode: "read"
     sourceProperty: "source"
     default: ""
-    description: "Object path to read inside source. Supports indexes like rss.channel.item[0].title."
+    description: "Relative path to read inside the source object. Supports indexes like rss.channel.item[0].title."
   out:
     label: "out"
     kind: "path"
