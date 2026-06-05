@@ -6,7 +6,10 @@
 		textarea { min-height: 180px; resize: vertical; }
 		.modebar { display: flex; gap: 6px; margin-bottom: 8px; }
 		.modebar button.active { background: #0d9ac2; border-color: #2bb8df; color: white; }
-		.simple { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 6px; margin-bottom: 8px; }
+		.simple { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
+		.simple label { display: block; margin: 0; }
+		.simpleLabel { display: block; margin-bottom: 3px; color: #9da7af; font-weight: 600; }
+		.simple input[readonly] { background: #171a1d; color: #b8dff4; }
 		.hidden { display: none !important; }
 		.picker { overflow: auto; max-height: 420px; border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
 		details.scopeGroup { margin: 6px 0; }
@@ -24,12 +27,21 @@
 				<button data-mode="custom">Custom</button>
 			</div>
 			<div class="simple" part="simple">
-				<input data-simple="prefix" placeholder="prefix">
-				<input data-simple="pick" placeholder="pick a path">
-				<input data-simple="suffix" placeholder="suffix">
+				<label>
+					<span class="simpleLabel">Prefix</span>
+					<input data-simple="prefix" placeholder="expression prefix">
+				</label>
+				<label>
+					<span class="simpleLabel">Pick</span>
+					<input data-simple="pick" placeholder="select a scope path" readonly>
+				</label>
+				<label>
+					<span class="simpleLabel">Suffix</span>
+					<input data-simple="suffix" placeholder="expression suffix">
+				</label>
 			</div>
 			<textarea part="input" spellcheck="false"></textarea>
-			<div class="hint">Use only {{ expression }} to keep the native value type.</div>
+			<div class="hint">Prefix, pick and suffix are concatenated inside {{ expression }} to keep the native value type.</div>
 		</div>
 		<div class="picker" part="picker"></div>
 	</div>
@@ -112,17 +124,15 @@
 
 		function parts(value) {
 			value = String(value || "");
-			var start = value.indexOf("{{");
-			var end = start < 0 ? -1 : value.indexOf("}}", start + 2);
-			if (start >= 0 && end >= 0) {
-				return { prefix: value.slice(0, start), path: value.slice(start + 2, end).trim(), suffix: value.slice(end + 2) };
+			var match = value.match(/^\s*\{\{([\s\S]*)\}\}\s*$/);
+			if (match) {
+				return { prefix: "", path: match[1].trim(), suffix: "" };
 			}
-			return { prefix: value, path: "", suffix: "" };
+			return { prefix: "", path: "", suffix: "" };
 		}
 
 		function canUseSimple(value) {
-			var p = parts(value);
-			return p.path !== "" && p.prefix.indexOf("}}") < 0 && p.suffix.indexOf("{{") < 0;
+			return String(value || "").trim() === "" || parts(value).path !== "";
 		}
 
 		customElements.define("flow-value-editor", class extends HTMLElement {
@@ -193,7 +203,8 @@
 				var pick = this.shadowRoot.querySelector("[data-simple=pick]");
 				var suffix = this.shadowRoot.querySelector("[data-simple=suffix]");
 				var path = pick && pick.value.trim();
-				this._value = (prefix ? prefix.value : "") + (path ? "{{ " + path + " }}" : "") + (suffix ? suffix.value : "");
+				var expression = ((prefix ? prefix.value : "") + (path || "") + (suffix ? suffix.value : "")).trim();
+				this._value = expression ? "{{ " + expression + " }}" : "";
 				this.emit();
 			}
 
