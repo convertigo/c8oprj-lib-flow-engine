@@ -59,6 +59,12 @@
 		};
 		if (props.outputs !== undefined && props.outputs !== null) {
 			descriptor.outputs = props.outputs;
+		} else {
+			descriptor.outputs = {
+				out: {
+					type: "unknown"
+				}
+			};
 		}
 		if (props.tags !== undefined && props.tags !== null) {
 			descriptor.tags = props.tags;
