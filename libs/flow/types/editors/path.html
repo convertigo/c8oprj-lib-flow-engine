@@ -7,7 +7,7 @@
 		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
 		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 		button:hover { border-color: #2786a8; color: white; }
-		button.selected { border-color: #2bb8df; background: #0d5268; color: white; }
+		button.selected { border-color: #48d8ff; background: #0b7592; color: white; box-shadow: inset 3px 0 0 #8eeaff; font-weight: 700; }
 		.type { color: #85c8ff; }
 		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
 	</style>
@@ -129,7 +129,12 @@
 		function sourceBase(state) {
 			var def = state && state.propertyDefinition || {};
 			var sourceKey = def.sourceProperty || def.relativeTo || "";
-			var value = sourceKey && state && state.definition ? state.definition[sourceKey] : "";
+			var object = state && state.definition || {};
+			var props = object && object.props || {};
+			var value = sourceKey ? object[sourceKey] : "";
+			if ((value === undefined || value === null || value === "") && sourceKey) {
+				value = props[sourceKey];
+			}
 			value = String(value || "").trim();
 			var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
 			return exact ? exact[1].trim() : value;
@@ -188,9 +193,9 @@
 			};
 		}
 
-		function renderPicker(state) {
+		function renderPicker(state, selectedValue) {
 			var context = state && state.context || {};
-			var selected = dotPath(state && state.value || "");
+			var selected = dotPath(selectedValue !== undefined ? selectedValue : state && state.value || "");
 			var arrays = arrayPathMap(context);
 			var html = "";
 			groups(context).forEach(function (group) {
@@ -265,6 +270,7 @@
 						return;
 					}
 					this.value = button.getAttribute("data-path") || "";
+					this.render();
 					this.emit();
 				}
 			}
@@ -286,7 +292,7 @@
 				}
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
-					picker.innerHTML = renderPicker(this._state);
+					picker.innerHTML = renderPicker(this._state, this.value);
 					var selected = picker.querySelector("button.selected");
 					if (selected) {
 						setTimeout(function () {

@@ -745,6 +745,9 @@
 			}
 			if (current.type === "array" && current.items) {
 				current = current.items;
+				if (/^\d+$/.test(String(parts[i]))) {
+					continue;
+				}
 			}
 			var source = current.properties || current;
 			current = source[parts[i]];
@@ -5244,6 +5247,161 @@
 		return "";
 	}
 
+	function stripXmlPrefix(value) {
+		var text = String(value || "");
+		var index = text.indexOf(":");
+		return index === -1 ? text : text.substring(index + 1);
+	}
+
+	function xsdScalarType(type) {
+		type = stripXmlPrefix(type);
+		if (type === "boolean") {
+			return { type: "boolean" };
+		}
+		if (["byte", "short", "int", "integer", "long", "nonNegativeInteger", "positiveInteger"].indexOf(type) !== -1) {
+			return { type: "integer" };
+		}
+		if (["decimal", "double", "float"].indexOf(type) !== -1) {
+			return { type: "number" };
+		}
+		if (["string", "anyURI", "date", "dateTime", "time"].indexOf(type) !== -1) {
+			return { type: "string" };
+		}
+		return null;
+	}
+
+	function childElementsByLocalName(node, localName) {
+		var out = [];
+		var children = node ? node.getChildNodes() : null;
+		for (var i = 0; children && i < children.getLength(); i++) {
+			var child = children.item(i);
+			if (child.getNodeType && child.getNodeType() === 1 && String(child.getLocalName ? child.getLocalName() : stripXmlPrefix(child.getNodeName())) === localName) {
+				out.push(child);
+			}
+		}
+		return out;
+	}
+
+	function descendantElementsByLocalName(node, localName) {
+		var out = [];
+		var children = node ? node.getChildNodes() : null;
+		for (var i = 0; children && i < children.getLength(); i++) {
+			var child = children.item(i);
+			if (!child.getNodeType || child.getNodeType() !== 1) {
+				continue;
+			}
+			if (String(child.getLocalName ? child.getLocalName() : stripXmlPrefix(child.getNodeName())) === localName) {
+				out.push(child);
+			}
+			descendantElementsByLocalName(child, localName).forEach(function (match) {
+				out.push(match);
+			});
+		}
+		return out;
+	}
+
+	function attr(node, name) {
+		return node && node.hasAttribute && node.hasAttribute(name) ? String(node.getAttribute(name)) : "";
+	}
+
+	function xsdAttributesSchema(complexType) {
+		var attributes = descendantElementsByLocalName(complexType, "attribute");
+		var properties = {};
+		attributes.forEach(function (attribute) {
+			var name = attr(attribute, "name");
+			if (!name) {
+				return;
+			}
+			properties[name] = xsdScalarType(attr(attribute, "type")) || { type: "string" };
+		});
+		return Object.keys(properties).length ? { type: "object", properties: properties } : null;
+	}
+
+	function xsdElementSchema(element, complexTypes, stack) {
+		var type = attr(element, "type");
+		var schema = xsdScalarType(type);
+		if (!schema && type) {
+			schema = xsdComplexTypeSchema(complexTypes[stripXmlPrefix(type)], complexTypes, stack);
+		}
+		if (!schema) {
+			var inlineComplex = childElementsByLocalName(element, "complexType")[0];
+			schema = inlineComplex ? xsdComplexTypeSchema(inlineComplex, complexTypes, stack) : { type: "unknown" };
+		}
+		var maxOccurs = attr(element, "maxOccurs");
+		if (maxOccurs === "unbounded" || Number(maxOccurs || 1) > 1) {
+			schema = { type: "array", items: schema };
+		}
+		return schema;
+	}
+
+	function xsdComplexTypeSchema(complexType, complexTypes, stack) {
+		if (!complexType) {
+			return null;
+		}
+		var name = attr(complexType, "name");
+		stack = stack || {};
+		if (name && stack[name]) {
+			return { type: "object" };
+		}
+		if (name) {
+			stack[name] = true;
+		}
+		var properties = {};
+		var sequence = childElementsByLocalName(complexType, "sequence")[0];
+		if (sequence) {
+			childElementsByLocalName(sequence, "element").forEach(function (element) {
+				var elementName = attr(element, "name");
+				if (!elementName) {
+					return;
+				}
+				properties[elementName] = mergeSchema(properties[elementName], xsdElementSchema(element, complexTypes, stack));
+			});
+		}
+		var simpleContent = childElementsByLocalName(complexType, "simpleContent")[0];
+		if (simpleContent) {
+			var extension = childElementsByLocalName(simpleContent, "extension")[0];
+			properties.text = xsdScalarType(attr(extension, "base")) || { type: "string" };
+		}
+		var attrs = xsdAttributesSchema(complexType);
+		if (attrs) {
+			properties.attr = attrs;
+		}
+		if (name) {
+			delete stack[name];
+		}
+		return Object.keys(properties).length ? { type: "object", properties: properties } : { type: "unknown" };
+	}
+
+	function learnedXsdOutputSchema(target) {
+		var root = projectDir();
+		if (!root || !target || !target.project || !target.connector || !target.requestable) {
+			return null;
+		}
+		if (String(new File(root).getName()) !== String(target.project)) {
+			return null;
+		}
+		var file = new File(root, "xsd/internal/" + target.connector + "/" + target.requestable + ".xsd");
+		if (!file.isFile()) {
+			return null;
+		}
+		try {
+			var factory = Packages.javax.xml.parsers.DocumentBuilderFactory.newInstance();
+			factory.setNamespaceAware(true);
+			var document = factory.newDocumentBuilder().parse(file);
+			var complexTypes = {};
+			descendantElementsByLocalName(document.getDocumentElement(), "complexType").forEach(function (complexType) {
+				var name = attr(complexType, "name");
+				if (name) {
+					complexTypes[name] = complexType;
+				}
+			});
+			var responseDataName = target.connector + "__" + target.requestable + "ResponseData";
+			return xsdComplexTypeSchema(complexTypes[responseDataName], complexTypes, {});
+		} catch (e) {
+			return null;
+		}
+	}
+
 	function requestableOutputSchema(target) {
 		target = target || {};
 		var projectName = String(target.project || "").trim();
@@ -5267,7 +5425,7 @@
 			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
 			var xso = Packages.com.twinsoft.convertigo.engine.enums.SchemaMeta.getXmlSchemaObject(schema, dbo);
 			if (!xso) {
-				return null;
+				return learnedXsdOutputSchema(target);
 			}
 			var document = Packages.com.twinsoft.convertigo.engine.util.XmlSchemaUtils.getDomInstance(xso);
 			var jsonString = Packages.com.twinsoft.convertigo.engine.util.XMLUtils.XmlToJson(document.getDocumentElement(), true, true);
@@ -5279,7 +5437,7 @@
 			}
 			return unwrapDocumentSchema(inferSchema(output));
 		} catch (e) {
-			return null;
+			return learnedXsdOutputSchema(target);
 		}
 	}
 
