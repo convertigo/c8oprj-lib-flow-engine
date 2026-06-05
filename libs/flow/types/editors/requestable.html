@@ -10,6 +10,7 @@
 		.children { margin-left: 12px; padding-left: 8px; border-left: 1px solid #343b42; }
 		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 		button:hover { border-color: #2786a8; color: white; }
+		button.selected { border-color: #48d8ff; background: #0b7592; color: white; box-shadow: inset 3px 0 0 #8eeaff; font-weight: 700; }
 		.empty { color: #9da7af; padding: 8px; }
 		.hint { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
 	</style>
@@ -42,7 +43,13 @@
 			return qname;
 		}
 
-		function renderTree(items, currentProject) {
+		function sameRequestable(left, right, currentProject) {
+			left = relativeQName(left, currentProject);
+			right = relativeQName(right, currentProject);
+			return String(left || "") === String(right || "");
+		}
+
+		function renderTree(items, currentProject, selectedValue) {
 			var html = "";
 			(items || []).forEach(function (item) {
 				if (!item) {
@@ -50,13 +57,16 @@
 				}
 				if (item.kind === "project" || item.kind === "connector") {
 					var nextCurrentProject = item.kind === "project" && item.current ? String(item.name || item.qname || "") : currentProject;
-					html += "<details open><summary>" + esc(item.name || item.qname || "")
+					var children = renderTree(item.children, nextCurrentProject, selectedValue);
+					var open = children.indexOf("selected") !== -1 || item.current;
+					html += "<details" + (open ? " open" : "") + "><summary>" + esc(item.name || item.qname || "")
 						+ " <span class=\"type\">" + esc(item.kind || "") + (item.current ? ", current" : "") + "</span></summary>"
-						+ "<div class=\"children\">" + renderTree(item.children, nextCurrentProject) + "</div></details>";
+						+ "<div class=\"children\">" + children + "</div></details>";
 					return;
 				}
 				var value = relativeQName(item.qname, currentProject);
-				html += "<button data-qname=\"" + esc(value) + "\" title=\"" + esc(item.qname) + "\">" + esc(item.name || item.qname)
+				var selected = sameRequestable(value, selectedValue, currentProject);
+				html += "<button class=\"" + (selected ? "selected" : "") + "\" data-qname=\"" + esc(value) + "\" title=\"" + esc(item.qname) + "\">" + esc(item.name || item.qname)
 					+ " <span class=\"type\">" + esc(item.kind || "") + "</span></button>";
 			});
 			return html || "<div class=\"empty\">No requestable available.</div>";
@@ -115,6 +125,7 @@
 						return;
 					}
 					this.value = button.getAttribute("data-qname") || "";
+					this.render();
 					this.emit();
 				}
 			}
@@ -137,7 +148,13 @@
 				var tree = this.shadowRoot.querySelector(".tree");
 				if (tree) {
 					var projects = this._state.requestables && this._state.requestables.projects || [];
-					tree.innerHTML = renderTree(projects);
+					tree.innerHTML = renderTree(projects, "", this.value);
+					var selected = tree.querySelector("button.selected");
+					if (selected) {
+						setTimeout(function () {
+							selected.scrollIntoView({ block: "center", inline: "nearest" });
+						}, 0);
+					}
 				}
 			}
 		});
