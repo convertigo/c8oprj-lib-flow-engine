@@ -13,7 +13,7 @@ props:
     label: "requestable"
     kind: "requestable"
     type: "requestable"
-    description: "Target requestable, for example RSSConnector.GetFeed, .MyFlow or Project.Connector.Transaction."
+    description: "Target requestable, for example .RSSConnector.GetFeed, .MyFlow or Project.Connector.Transaction."
   project:
     label: "project"
     kind: "text"

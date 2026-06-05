@@ -60,15 +60,6 @@
 				requestable: parts[1],
 				sequence: parts[1]
 			});
-			if (project) {
-				candidates.push({
-					kind: "transaction",
-					project: project,
-					connector: parts[0],
-					requestable: parts[1],
-					transaction: parts[1]
-				});
-			}
 		} else if (parts.length === 1 && project) {
 			candidates.push({
 				kind: "sequence",
@@ -88,10 +79,16 @@
 				if (!dbo) {
 					continue;
 				}
+				if (String(dbo.getProject().getName()) !== String(candidate.project)) {
+					continue;
+				}
 				var className = String(dbo.getClass().getName());
 				if (className.indexOf(".transactions.") !== -1 || className.indexOf(".beans.core.Transaction") !== -1) {
 					candidate.kind = "transaction";
 					candidate.connector = candidate.connector || String(dbo.getConnector().getName());
+					if (String(dbo.getConnector().getName()) !== String(candidate.connector)) {
+						continue;
+					}
 					candidate.transaction = candidate.requestable;
 					return candidate;
 				}
@@ -111,7 +108,14 @@
 
 	function resolveTarget(ctx, target) {
 		var candidates = targetCandidates(ctx, target);
-		return resolveExisting(candidates) || candidates[0] || null;
+		var resolved = resolveExisting(candidates);
+		if (resolved) {
+			return resolved;
+		}
+		var candidate = candidates[0];
+		var qname = candidate ? qnameFor(candidate) : String(target || "");
+		ctx.raise("UNKNOWN_REQUESTABLE", "Unknown Convertigo requestable: " + qname,
+			null, "Use .Sequence, .Flow or .Connector.Transaction for the current project; use Project.Sequence or Project.Connector.Transaction for another project.");
 	}
 
 	function requestFromTarget(target) {

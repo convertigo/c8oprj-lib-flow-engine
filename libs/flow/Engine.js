@@ -216,7 +216,7 @@
 		if (path === undefined || path === null || path === "") {
 			return root;
 		}
-		var parts = String(path).split(".");
+		var parts = objectPathParts(path);
 		var current = root;
 		for (var i = 0; i < parts.length; i++) {
 			if (current === null || current === undefined) {
@@ -225,6 +225,70 @@
 			current = current[parts[i]];
 		}
 		return current;
+	}
+
+	function objectPathParts(path) {
+		var parts = [];
+		var text = String(path || "");
+		var part = "";
+		var i = 0;
+		function pushPart() {
+			if (part !== "") {
+				parts.push(part);
+				part = "";
+			}
+		}
+		while (i < text.length) {
+			var ch = text.charAt(i);
+			if (ch === ".") {
+				pushPart();
+				i++;
+				continue;
+			}
+			if (ch === "[") {
+				pushPart();
+				i++;
+				while (i < text.length && /\s/.test(text.charAt(i))) {
+					i++;
+				}
+				var bracket = "";
+				ch = text.charAt(i);
+				if (ch === "\"" || ch === "'") {
+					var quote = ch;
+					i++;
+					while (i < text.length) {
+						ch = text.charAt(i++);
+						if (ch === quote) {
+							break;
+						}
+						if (ch === "\\" && i < text.length) {
+							bracket += text.charAt(i++);
+						} else {
+							bracket += ch;
+						}
+					}
+				} else {
+					while (i < text.length && text.charAt(i) !== "]") {
+						bracket += text.charAt(i++);
+					}
+					bracket = String(bracket).trim();
+				}
+				while (i < text.length && text.charAt(i) !== "]") {
+					i++;
+				}
+				if (text.charAt(i) === "]") {
+					i++;
+				}
+				if (bracket !== "") {
+					parts.push(bracket);
+				}
+				continue;
+			}
+			part += ch;
+			i++;
+		}
+		pushPart();
+		return parts;
 	}
 
 	function readScopePath(scopes, path) {
@@ -674,7 +738,7 @@
 		if (text === "") {
 			return current;
 		}
-		var parts = text.split(".");
+		var parts = objectPathParts(text);
 		for (var i = 0; i < parts.length; i++) {
 			if (!current) {
 				return null;
@@ -4390,7 +4454,7 @@
 		var call = parseNaturalFlowScriptCall(rhs);
 		if (!call) {
 			raise("FLOWSCRIPT_UNSUPPORTED_ASSIGNMENT", "Unsupported FlowScript assignment at line " + lineNumber + ": " + rhs,
-				null, "Assign a Flow block call, for example const feed = requestable.call(\"Connector.Transaction\");");
+				null, "Assign a Flow block call, for example const feed = requestable.call(\".Connector.Transaction\");");
 		}
 		var block = resolveFlowScriptName(call.name, imports);
 		var args = splitFlowScriptTopLevel(call.args, ",");
@@ -5227,7 +5291,7 @@
 	function requestableTargetPublic(target, currentProject) {
 		var qname = requestableTargetQName(target);
 		var local = target.project === currentProject
-			? (target.connector ? target.connector + "." + target.requestable : "." + target.requestable)
+			? "." + (target.connector ? target.connector + "." : "") + target.requestable
 			: qname;
 		var out = {
 			kind: target.kind,
@@ -5269,15 +5333,6 @@
 				requestable: parts[1],
 				sequence: parts[1]
 			});
-			if (project) {
-				candidates.push({
-					kind: "transaction",
-					project: project,
-					connector: parts[0],
-					requestable: parts[1],
-					transaction: parts[1]
-				});
-			}
 		} else if (parts.length === 1 && project) {
 			candidates.push({
 				kind: "sequence",
@@ -5321,6 +5376,18 @@
 				if (!dbo) {
 					continue;
 				}
+				if (String(dbo.getProject().getName()) !== String(candidates[i].project)) {
+					continue;
+				}
+				try {
+					if (candidates[i].connector && String(dbo.getConnector().getName()) !== String(candidates[i].connector)) {
+						continue;
+					}
+				} catch (e) {
+					if (candidates[i].connector) {
+						continue;
+					}
+				}
 				var resolved = requestableKindForDbo(dbo, candidates[i]);
 				if (resolved) {
 					return resolved;
@@ -5328,7 +5395,7 @@
 			} catch (e) {
 			}
 		}
-		return candidates[0] || null;
+		return null;
 	}
 
 	function requestableMatches(entry, query) {
@@ -5409,7 +5476,7 @@
 			return {
 				ok: false,
 				error: flowCodeError("MISSING_REQUESTABLE", "requestable.schema requires requestable.",
-					"Pass for example RSSConnector.GetFeed, .MyFlow or Project.Connector.Transaction.")
+					"Pass for example .RSSConnector.GetFeed, .MyFlow or Project.Connector.Transaction.")
 			};
 		}
 		var target = resolveRequestableTarget(request, text);
@@ -5417,7 +5484,7 @@
 			return {
 				ok: false,
 				error: flowCodeError("UNKNOWN_REQUESTABLE", "Unknown requestable: " + text,
-					"Call requestable.list first and reuse one returned qname or localRequestable.")
+					"Call requestable.list first and reuse one returned qname or localRequestable. Current-project requestables start with a dot.")
 			};
 		}
 		var schema = requestableOutputSchema(target);
@@ -9540,12 +9607,17 @@
 		var out = "";
 		var types = loadTypes();
 		Object.keys(types).sort().forEach(function (name) {
-			var descriptor = typeDescriptor(types[name]);
-			var editor = descriptor && descriptor.editor;
+			var type = types[name];
+			var descriptor = typeDescriptor(type);
+			var editor = type && type.editor;
 			if (!editor || !editor.file) {
 				return;
 			}
+			var baseDir = type && type.__flowFile ? new File(String(type.__flowFile)).getParentFile() : engineDir();
 			var file = new File(String(editor.file));
+			if (!file.isAbsolute()) {
+				file = new File(baseDir, String(editor.file));
+			}
 			if (!file.isFile()) {
 				return;
 			}

@@ -306,6 +306,12 @@
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
 					picker.innerHTML = renderPicker(this._state.context, this._state.propertyDefinition, p.path);
+					var selected = picker.querySelector(".path.selected");
+					if (selected) {
+						setTimeout(function () {
+							selected.scrollIntoView({ block: "center", inline: "nearest" });
+						}, 0);
+					}
 				}
 			}
 		});

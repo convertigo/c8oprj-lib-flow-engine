@@ -15,7 +15,7 @@ props:
     kind: "requestable"
     type: "requestable"
     default: ""
-    description: "Target requestable: project.sequence, project.flow, project.connector.transaction, .sequence or .connector.transaction."
+    description: "Target requestable: project.sequence, project.flow, project.connector.transaction, .sequence or .connector.transaction. Current-project calls start with a dot."
   input:
     label: "input"
     kind: "template"

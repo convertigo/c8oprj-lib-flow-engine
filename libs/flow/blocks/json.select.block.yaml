@@ -10,10 +10,12 @@ props:
     description: "Object expression used as source."
   path:
     label: "path"
-    kind: "text"
+    kind: "path"
     type: "string"
+    mode: "read"
+    sourceProperty: "source"
     default: ""
-    description: "Dot path to read inside the source object."
+    description: "Object path to read inside source. Supports indexes like rss.channel.item[0].title."
   out:
     label: "out"
     kind: "path"

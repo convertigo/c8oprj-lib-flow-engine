@@ -7,6 +7,7 @@
 		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
 		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 		button:hover { border-color: #2786a8; color: white; }
+		button.selected { border-color: #2bb8df; background: #0d5268; color: white; }
 		.type { color: #85c8ff; }
 		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
 	</style>
@@ -41,15 +42,171 @@
 			});
 		}
 
-		function renderPicker(context) {
+		function pathOf(entry) {
+			return typeof entry === "string" ? entry : entry && entry.path || "";
+		}
+
+		function typeOf(entry) {
+			return typeof entry === "string" ? "" : entry && entry.type || "";
+		}
+
+		function objectPathParts(path) {
+			var parts = [];
+			var text = String(path || "");
+			var part = "";
+			var i = 0;
+			function pushPart() {
+				if (part !== "") {
+					parts.push(part);
+					part = "";
+				}
+			}
+			while (i < text.length) {
+				var ch = text.charAt(i);
+				if (ch === ".") {
+					pushPart();
+					i++;
+					continue;
+				}
+				if (ch === "[") {
+					pushPart();
+					i++;
+					while (i < text.length && /\s/.test(text.charAt(i))) i++;
+					var bracket = "";
+					ch = text.charAt(i);
+					if (ch === "\"" || ch === "'") {
+						var quote = ch;
+						i++;
+						while (i < text.length) {
+							ch = text.charAt(i++);
+							if (ch === quote) break;
+							if (ch === "\\" && i < text.length) bracket += text.charAt(i++);
+							else bracket += ch;
+						}
+					} else {
+						while (i < text.length && text.charAt(i) !== "]") {
+							bracket += text.charAt(i++);
+						}
+						bracket = bracket.trim();
+					}
+					while (i < text.length && text.charAt(i) !== "]") i++;
+					if (text.charAt(i) === "]") i++;
+					if (bracket !== "") parts.push(bracket);
+					continue;
+				}
+				part += ch;
+				i++;
+			}
+			pushPart();
+			return parts;
+		}
+
+		function dotPath(path) {
+			return objectPathParts(path).join(".");
+		}
+
+		function bracketPath(parts, arrayPaths) {
+			var out = "";
+			var current = "";
+			parts.forEach(function (part) {
+				if (/^\d+$/.test(part)) {
+					out += "[" + part + "]";
+					current += "." + part;
+					return;
+				}
+				if (!out) {
+					out = part;
+					current = part;
+					return;
+				}
+				var parentIsArray = arrayPaths && arrayPaths[current] === true;
+				out += parentIsArray ? "[0]." + part : "." + part;
+				current += parentIsArray ? ".0." + part : "." + part;
+			});
+			return out;
+		}
+
+		function sourceBase(state) {
+			var def = state && state.propertyDefinition || {};
+			var sourceKey = def.sourceProperty || def.relativeTo || "";
+			var value = sourceKey && state && state.definition ? state.definition[sourceKey] : "";
+			value = String(value || "").trim();
+			var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+			return exact ? exact[1].trim() : value;
+		}
+
+		function startsWithParts(parts, prefix) {
+			if (!prefix.length || parts.length < prefix.length) {
+				return false;
+			}
+			for (var i = 0; i < prefix.length; i++) {
+				if (parts[i] !== prefix[i]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		function arrayPathMap(context) {
+			var out = {};
+			groups(context).forEach(function (group) {
+				(group.paths || []).forEach(function (entry) {
+					if (String(typeOf(entry)).toLowerCase() === "array") {
+						out[dotPath(pathOf(entry))] = true;
+					}
+				});
+			});
+			return out;
+		}
+
+		function pickerEntry(entry, state, arrays) {
+			var fullPath = pathOf(entry);
+			var fullParts = objectPathParts(fullPath);
+			var base = sourceBase(state);
+			var baseParts = objectPathParts(base);
+			var valueParts = fullParts;
+			var value = fullPath;
+			var arraysForDisplay = arrays;
+			if (base && startsWithParts(fullParts, baseParts)) {
+				valueParts = fullParts.slice(baseParts.length);
+				value = bracketPath(valueParts, Object.keys(arrays).reduce(function (out, key) {
+					var parts = objectPathParts(key);
+					if (startsWithParts(parts, baseParts)) {
+						out[parts.slice(baseParts.length).join(".")] = true;
+					}
+					return out;
+				}, {}));
+			} else if (base) {
+				value = "";
+			} else if (!base) {
+				value = bracketPath(valueParts, arraysForDisplay);
+			}
+			return {
+				fullPath: fullPath,
+				value: value,
+				type: typeOf(entry)
+			};
+		}
+
+		function renderPicker(state) {
+			var context = state && state.context || {};
+			var selected = dotPath(state && state.value || "");
+			var arrays = arrayPathMap(context);
 			var html = "";
 			groups(context).forEach(function (group) {
+				var rows = (group.paths || []).map(function (entry) {
+					return pickerEntry(entry, state, arrays);
+				}).filter(function (row) {
+					return row.value !== "";
+				});
+				if (rows.length === 0) {
+					return;
+				}
 				html += "<div class=\"group\">" + esc(group.scope) + "</div>";
-				(group.paths || []).forEach(function (entry) {
-					var path = typeof entry === "string" ? entry : entry.path;
-					var type = typeof entry === "string" ? "" : entry.type || "";
-					html += "<button data-path=\"" + esc(path) + "\">" + esc(path)
-						+ (type ? " <span class=\"type\">" + esc(type) + "</span>" : "") + "</button>";
+				rows.forEach(function (row) {
+					var isSelected = dotPath(row.value) === selected;
+					html += "<button class=\"" + (isSelected ? "selected" : "") + "\" data-path=\"" + esc(row.value) + "\">" + esc(row.value)
+						+ (row.type ? " <span class=\"type\">" + esc(row.type) + "</span>" : "") + "</button>";
 				});
 			});
 			return html || "<div class=\"empty\">No known path yet.</div>";
@@ -80,7 +237,7 @@
 						this._state.context = response.context;
 					}
 				}
-				this.value = this._state.value == null ? "" : String(this._state.value);
+				this.value = this._state.value == null ? "" : bracketPath(objectPathParts(this._state.value), {});
 				this.render();
 			}
 
@@ -129,7 +286,13 @@
 				}
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
-					picker.innerHTML = renderPicker(this._state.context);
+					picker.innerHTML = renderPicker(this._state);
+					var selected = picker.querySelector("button.selected");
+					if (selected) {
+						setTimeout(function () {
+							selected.scrollIntoView({ block: "center", inline: "nearest" });
+						}, 0);
+					}
 				}
 			}
 		});
