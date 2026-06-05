@@ -17,6 +17,7 @@
 		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
 		.path { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border-color: #39424a; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		.path:hover { border-color: #2786a8; color: white; }
+		.path.selected { border-color: #2bb8df; background: #0d5268; color: white; }
 		.type { color: #85c8ff; }
 		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
 	</style>
@@ -100,7 +101,34 @@
 			return true;
 		}
 
-		function renderPicker(context, propertyDefinition) {
+		function knownPaths(context, propertyDefinition) {
+			var paths = [];
+			groups(context).forEach(function (group) {
+				(group.paths || []).forEach(function (entry) {
+					if (!acceptsPath(propertyDefinition, entry)) {
+						return;
+					}
+					var path = typeof entry === "string" ? entry : entry.path;
+					if (path) {
+						paths.push(String(path));
+					}
+				});
+			});
+			return paths;
+		}
+
+		function bestPathInExpression(expression, context, propertyDefinition) {
+			expression = String(expression || "");
+			var best = "";
+			knownPaths(context, propertyDefinition).forEach(function (path) {
+				if (path.length > best.length && expression.indexOf(path) >= 0) {
+					best = path;
+				}
+			});
+			return best;
+		}
+
+		function renderPicker(context, propertyDefinition, selectedPath) {
 			var html = "";
 			groups(context).forEach(function (group) {
 				var rows = (group.paths || []).filter(function (entry) {
@@ -109,12 +137,16 @@
 				if (rows.length === 0) {
 					return;
 				}
-				html += "<details class=\"scopeGroup\"><summary>" + esc(group.scope)
+				var isOpen = rows.some(function (entry) {
+					return String(typeof entry === "string" ? entry : entry.path) === String(selectedPath || "");
+				});
+				html += "<details class=\"scopeGroup\"" + (isOpen ? " open" : "") + "><summary>" + esc(group.scope)
 					+ " <span class=\"type\">" + rows.length + "</span></summary>";
 				rows.forEach(function (entry) {
 					var path = typeof entry === "string" ? entry : entry.path;
 					var type = typeof entry === "string" ? "" : entry.type || "";
-					html += "<button class=\"path\" data-path=\"" + esc(path) + "\">" + esc(path)
+					var selected = String(path) === String(selectedPath || "");
+					html += "<button class=\"path" + (selected ? " selected" : "") + "\" data-path=\"" + esc(path) + "\">" + esc(path)
 						+ (type ? " <span class=\"type\">" + esc(type) + "</span>" : "") + "</button>";
 				});
 				html += "</details>";
@@ -122,17 +154,27 @@
 			return html || "<div class=\"empty\">No known path yet.</div>";
 		}
 
-		function parts(value) {
+		function parts(value, context, propertyDefinition) {
 			value = String(value || "");
 			var match = value.match(/^\s*\{\{([\s\S]*)\}\}\s*$/);
 			if (match) {
-				return { prefix: "", path: match[1].trim(), suffix: "" };
+				var expression = match[1].trim();
+				var path = bestPathInExpression(expression, context, propertyDefinition);
+				if (path) {
+					var index = expression.indexOf(path);
+					return {
+						prefix: expression.slice(0, index),
+						path: path,
+						suffix: expression.slice(index + path.length)
+					};
+				}
+				return { prefix: "", path: expression, suffix: "" };
 			}
 			return { prefix: "", path: "", suffix: "" };
 		}
 
-		function canUseSimple(value) {
-			return String(value || "").trim() === "" || parts(value).path !== "";
+		function canUseSimple(value, context, propertyDefinition) {
+			return String(value || "").trim() === "" || parts(value, context, propertyDefinition).path !== "";
 		}
 
 		customElements.define("flow-value-editor", class extends HTMLElement {
@@ -162,7 +204,7 @@
 					}
 				}
 				this._value = this._state.value == null ? "" : String(this._state.value);
-				this._mode = canUseSimple(this._value) ? "simple" : "custom";
+				this._mode = canUseSimple(this._value, this._state.context, this._state.propertyDefinition) ? "simple" : "custom";
 				this.render();
 				this.emit();
 			}
@@ -240,7 +282,7 @@
 				if (!this.shadowRoot) {
 					return;
 				}
-				var p = parts(this._value);
+				var p = parts(this._value, this._state.context, this._state.propertyDefinition);
 				var simple = this.shadowRoot.querySelector(".simple");
 				var textarea = this.shadowRoot.querySelector("textarea");
 				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) {
@@ -263,7 +305,7 @@
 				if (suffix && suffix.value !== p.suffix) suffix.value = p.suffix;
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
-					picker.innerHTML = renderPicker(this._state.context, this._state.propertyDefinition);
+					picker.innerHTML = renderPicker(this._state.context, this._state.propertyDefinition, p.path);
 				}
 			}
 		});
