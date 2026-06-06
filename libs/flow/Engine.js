@@ -6003,16 +6003,20 @@
 		return extracts;
 	}
 
-	function flowCodeRgMatcher(request) {
+	function codeRgMatcher(request, toolName) {
 		var pattern = String(request && request.pattern || "");
 		if (!pattern) {
-			raise("MISSING_PATTERN", "flow-code-rg requires pattern.");
+			raise("MISSING_PATTERN", String(toolName || "code-rg") + " requires pattern.");
 		}
 		if (request.regex === true) {
 			return new RegExp(pattern, request.caseSensitive === true ? "g" : "gi");
 		}
 		var escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 		return new RegExp(escaped, request.caseSensitive === true ? "g" : "gi");
+	}
+
+	function flowCodeRgMatcher(request) {
+		return codeRgMatcher(request, "flow-code-rg");
 	}
 
 	function flowCodeRgRequest(blocks, request) {
@@ -6045,6 +6049,64 @@
 			ok: true,
 			qname: request.qname ? String(request.qname) : null,
 			revision: targets.length === 1 ? targets[0].revision : null,
+			extracts: extracts
+		};
+	}
+
+	function blockCodeRgTargets(blocks, request) {
+		request = request || {};
+		var targetName = String(request.name || request.block || "").trim();
+		if (targetName) {
+			var target = getBlockSource(blocks, targetName, Object.assign({}, request, { detail: "full" }));
+			return target.format === "flowscript" && target.code ? [target] : [];
+		}
+		var origin = String(request.origin || "").trim();
+		var provider = String(request.provider || "").trim();
+		var namespace = String(request.namespace || "").trim();
+		return Object.keys(blocks || {}).sort().map(function (name) {
+			var block = blocks[name];
+			if (String(block && block.__flowFormat || "") !== "flowscript-block") {
+				return null;
+			}
+			if (origin && String(block.__flowOrigin || "") !== origin) {
+				return null;
+			}
+			if (provider && String(block.__flowProvider || "") !== provider) {
+				return null;
+			}
+			if (namespace && String(name).indexOf(namespace + ".") !== 0) {
+				return null;
+			}
+			return getBlockSource(blocks, name, Object.assign({}, request, { detail: "full" }));
+		}).filter(function (target) {
+			return target && target.format === "flowscript" && target.code;
+		});
+	}
+
+	function blockCodeRgRequest(blocks, request) {
+		request = request || {};
+		var matcher = codeRgMatcher(request, "flow-block-code-rg");
+		var context = Math.max(0, Math.min(20, Number(request.context || request.contextLines || 2)));
+		var limit = Math.max(1, Math.min(100, Number(request.limit || 20)));
+		var targets = blockCodeRgTargets(blocks, request);
+		var extracts = [];
+		targets.forEach(function (target) {
+			if (extracts.length >= limit) {
+				return;
+			}
+			flowCodeRgExtract(target.code, matcher, context, limit - extracts.length).forEach(function (extract) {
+				extracts.push(Object.assign({
+					name: target.name,
+					origin: target.origin,
+					revision: target.codeRevision
+				}, extract));
+			});
+		});
+		return {
+			ok: true,
+			name: request.name ? String(request.name) : null,
+			revision: targets.length === 1 ? targets[0].codeRevision : null,
+			totalTargets: targets.length,
 			extracts: extracts
 		};
 	}
@@ -7429,6 +7491,12 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				return blockCodePatchRequest(loadBlocks(), args);
+			});
+		};
+		ctx.blockCodeRg = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return blockCodeRgRequest(loadBlocks(), args);
 			});
 		};
 		ctx.typeList = function (args) {
@@ -11121,6 +11189,17 @@
 				}));
 			} catch (e) {
 				return response(failure("flowCodeRg", e));
+			}
+		},
+
+		blockCodeRg: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return blockCodeRgRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("blockCodeRg", e));
 			}
 		},
 

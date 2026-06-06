@@ -505,6 +505,8 @@ remains the raw path for Rhino/native or legacy YAML-backed blocks.
   project-local FlowScript block stored as `<name>.block.js`.
 - `blockCodeGet({ name })` reads the canonical FlowScript block code with its
   revision for patch workflows.
+- `blockCodeRg({ pattern, name?, namespace? })` searches FlowScript block code
+  and returns small extracts with block revisions.
 - `blockCodePatch({ name, revision, codepatch|code })` applies a
   revision-checked patch or replacement to a project-local FlowScript block.
 - `blockCreate({ name, descriptorSource|descriptor|definition, implementationSource })`

@@ -1,0 +1,74 @@
+version: 1
+private: true
+icon: "mdi:puzzle-search-outline"
+tags:
+- block
+- code
+- flowscript
+- search
+description: "Searches project FlowScript block code and returns small matching extracts."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Optional block name. Omit to search visible FlowScript blocks."
+  pattern:
+    label: "pattern"
+    kind: "text"
+    type: "string"
+    description: "Text or regex pattern."
+  regex:
+    label: "regex"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Treat pattern as a regular expression."
+  caseSensitive:
+    label: "caseSensitive"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Use case-sensitive matching."
+  context:
+    label: "context"
+    kind: "literal"
+    type: "integer"
+    default: 2
+    description: "Context lines around each match."
+  limit:
+    label: "limit"
+    kind: "literal"
+    type: "integer"
+    default: 20
+    description: "Maximum number of extracts."
+  namespace:
+    label: "namespace"
+    kind: "text"
+    type: "string"
+    description: "Optional block namespace filter."
+  origin:
+    label: "origin"
+    kind: "text"
+    type: "string"
+    description: "Optional origin filter, for example project."
+  provider:
+    label: "provider"
+    kind: "text"
+    type: "string"
+    description: "Optional provider filter."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving search extracts."
+hooks:
+  file: "block.code.rg.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "block.code.rg.js"

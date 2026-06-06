@@ -437,13 +437,13 @@ Mutation helpers should prefer semantic node targeting when they have a
 Use `beforeNodeId`, `afterNodeId`, or `parentNodeId + slot` for inserts. Keep
 JSON Pointer paths as the exact low-level fallback.
 
-Block authoring must stay project-local. Read any visible block with
-`blockGet` or `blockCodeGet`, create FlowScript blocks with `blockCodeSet`,
-patch existing FlowScript block code with `blockCodePatch`, duplicate
-core/shared blocks with `blockDuplicate`, and edit only project-local copies.
-`blockCodeSet` writes `<name>.block.js` and removes obsolete YAML fallbacks for
-that block. `blockCreate` remains the lower-level API for YAML/Rhino/native
-compatibility cases.
+Block authoring must stay project-local. Search FlowScript blocks with
+`blockCodeRg`, read any visible block with `blockGet` or `blockCodeGet`, create
+FlowScript blocks with `blockCodeSet`, patch existing FlowScript block code with
+`blockCodePatch`, duplicate core/shared blocks with `blockDuplicate`, and edit
+only project-local copies. `blockCodeSet` writes `<name>.block.js` and removes
+obsolete YAML fallbacks for that block. `blockCreate` remains the lower-level API
+for YAML/Rhino/native compatibility cases.
 
 Static `requestable.call` nodes should enrich picker context too. Flow targets
 read the Flow output contract; legacy sequence and transaction targets use the
