@@ -196,22 +196,39 @@ iterator blocks like `file.forEachLine` consuming the handle and exposing
 Blocks are loaded from the core engine first, then from the current project:
 
 ```text
+lib_flow_engine/libs/flow/blocks/*.block.js
 lib_flow_engine/libs/flow/blocks/*.block.yaml
 lib_flow_engine/libs/flow/blocks/*.js
+<current-project>/libs/flow/blocks/*.block.js
 <current-project>/libs/flow/blocks/*.block.yaml
 <current-project>/libs/flow/blocks/*.js
 ```
 
-Prefer `*.block.yaml` for new blocks. It is the canonical descriptor format for
-both graph-backed and native-backed blocks:
+Prefer `*.block.js` for new project-local FlowScript blocks on this spike. It is
+the canonical code-first block format:
 
-```yaml
-implementation:
-  runtime: flow
-nodes: []
+```javascript
+const _meta = {
+  description: "Decorates a message.",
+  properties: {
+    message: { kind: "template", type: "string" }
+  },
+  outputs: {
+    out: { type: "string" }
+  }
+}
+
+function decorate({ input, config, result }) {
+  const text = `*** ${input.message} ***`
+  return text
+}
 ```
 
-or:
+The block id comes from the file path: `libs/flow/blocks/demo/decorate.block.js`
+is `demo.decorate`. When both `.block.js` and `.block.yaml` exist for the same
+block, `.block.js` is canonical.
+
+Use `*.block.yaml` only for legacy/native-backed blocks, for example:
 
 ```yaml
 implementation:
@@ -219,10 +236,10 @@ implementation:
   file: my.block.js
 ```
 
-The engine discovers blocks only through `*.block.yaml`. A peer JS file is only
-the implementation named by `implementation.file`; it is never a separate block
-definition. Use this shape so metadata, properties, docs and future runtimes
-stay uniform.
+For Rhino/native escape hatches, the peer JS file is only the implementation
+named by `implementation.file`; it is not a block definition. Metadata,
+properties and docs must still be visible through the block contract exposed by
+the engine.
 
 Do not silently override core blocks from a project. Use a project-specific
 name, for example `weather.hotCities`, when adding custom vocabulary.
@@ -421,12 +438,11 @@ Use `beforeNodeId`, `afterNodeId`, or `parentNodeId + slot` for inserts. Keep
 JSON Pointer paths as the exact low-level fallback.
 
 Block authoring must stay project-local. Read any visible block with
-`blockGet`, create new blocks with `blockCreate`, duplicate core/shared blocks
-with `blockDuplicate`, and edit only project-local copies with `blockEdit`.
-These APIs now treat a block as one logical unit. `blockCreate` writes
-`<name>.block.yaml` by default and keeps Rhino code in a peer JS implementation
-file when needed. `blockGet` returns `descriptorSource` and
-`implementationSource` for Rhino-backed blocks.
+`blockGet` or `blockCodeGet`, create FlowScript blocks with `blockCodeSet`,
+duplicate core/shared blocks with `blockDuplicate`, and edit only project-local
+copies. `blockCodeSet` writes `<name>.block.js` and removes obsolete YAML
+fallbacks for that block. `blockCreate` remains the lower-level API for
+YAML/Rhino/native compatibility cases.
 
 Static `requestable.call` nodes should enrich picker context too. Flow targets
 read the Flow output contract; legacy sequence and transaction targets use the

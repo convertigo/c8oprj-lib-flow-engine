@@ -34,6 +34,23 @@
 						"Use block.get for Rhino source blocks.")
 				};
 			}
+			if (block.format === "flowscript" && block.code) {
+				var direct = {
+					ok: true,
+					name: name,
+					origin: block.origin,
+					format: "flowscript",
+					canonical: true,
+					revision: block.codeRevision || "",
+					code: block.code,
+					descriptor: block.descriptor
+				};
+				if (bool(props.includeSources)) {
+					direct.codeFile = block.codeFile;
+					direct.implementationSource = block.implementationSource;
+				}
+				return direct;
+			}
 			var validation = ctx.flowSourceValidate({
 				projectDir: props.projectDir,
 				name: name,

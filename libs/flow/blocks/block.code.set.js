@@ -139,50 +139,29 @@
 				return { ok: false, name: name, error: error("MISSING_BLOCK_CODE", "block.code.set requires FlowScript code.") };
 			}
 			code = unwrapBlockEnvelope(code);
-			var validation = ctx.flowSourceValidate({
-				projectDir: props.projectDir,
-				name: name,
-				code: String(code),
-				includeHeader: false
-			});
-			var warnings = diagnostics(validation, "warning");
-			if (!validation.ok) {
-				return {
-					ok: false,
-					name: name,
-					error: error("FLOWSCRIPT_VALIDATION_FAILED", "Block FlowScript validation failed.",
-						"Fix diagnostics and retry block.code.set.", diagnostics(validation)),
-					warnings: warnings
-				};
-			}
 			var request = descriptorFrom(name, props);
-			request.implementationSource = validation.source;
+			request.code = String(code);
+			request.projectDir = props.projectDir;
+			request.dry = bool(props.dry) || bool(props.dryRun);
+			request.overwrite = bool(props.overwrite);
 			if (props.hooksSource !== undefined && props.hooksSource !== null) {
 				request.hooksSource = String(props.hooksSource);
 			}
-			request.overwrite = bool(props.overwrite);
-			if (bool(props.dry) || bool(props.dryRun)) {
+			try {
+				var result = ctx.blockCodeSet(name, request);
+				if (result.dry === true) {
+					result.warnings = (result.warnings || []).concat([dryBlockWarning(name)]);
+				}
+				return result;
+			} catch (e) {
 				return {
-					ok: true,
+					ok: false,
 					name: name,
-					dry: true,
-					revision: validation.revision,
-					warnings: warnings.concat([dryBlockWarning(name)]),
-					descriptor: request.descriptor || null,
-					implementationSource: validation.source
+					error: error(e.code || "BLOCK_CODE_SET_FAILED", e.message || String(e),
+						e.hint || "Fix diagnostics and retry block.code.set.", e.details),
+					warnings: []
 				};
 			}
-			var result = projectEditableBlock(ctx, name, props)
-				? ctx.blockEdit(name, request, props)
-				: ctx.blockCreate(name, request, bool(props.overwrite), props);
-			return {
-				ok: true,
-				name: name,
-				dry: false,
-				revision: validation.revision,
-				warnings: warnings,
-				block: result
-			};
 		}
 	};
 }())

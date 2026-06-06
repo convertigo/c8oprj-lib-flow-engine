@@ -1532,6 +1532,16 @@
 		return (parts.length ? parts.join("/") + "/" : "") + leaf + ".block.yaml";
 	}
 
+	function blockCodeDescriptorFileName(name) {
+		var parts = blockIdParts(name);
+		if (parts.length === 0) {
+			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
+				null, "Use letters, digits, dot, underscore or dash.");
+		}
+		var leaf = parts.pop();
+		return (parts.length ? parts.join("/") + "/" : "") + leaf + ".block.js";
+	}
+
 	function blockFlowFileName(name) {
 		var blockName = blockLocalName(name);
 		if (!blockName.match(/^[A-Za-z0-9_-]+$/)) {
@@ -1834,6 +1844,9 @@
 
 	function resourceKind(path) {
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
+			if (String(path).endsWith(".block.js")) {
+				return "graphBlockCode";
+			}
 			if (String(path).endsWith(".block.yaml")) {
 				return "graphBlock";
 			}
@@ -1972,7 +1985,7 @@
 		if (text.indexOf(prefix) === 0) {
 			text = text.substring(prefix.length);
 		}
-		[".block.yaml", ".flow.yaml", ".hooks.js", ".js"].forEach(function (suffix) {
+		[".block.yaml", ".block.js", ".flow.yaml", ".hooks.js", ".js"].forEach(function (suffix) {
 			if (text.endsWith(suffix)) {
 				text = text.substring(0, text.length - suffix.length);
 			}
@@ -2458,6 +2471,8 @@
 			validateBlockHooksSource(blockIdFromResourcePath(path), content);
 		} else if (kind === "graphBlock") {
 			validateGraphBlockSource(blockIdFromResourcePath(path), content);
+		} else if (kind === "graphBlockCode") {
+			compileFlowScriptBlockCode(loadBlocks(), blockIdFromResourcePath(path), content);
 		} else if (kind === "fragment") {
 			parseYamlSource(content, "version: 1\nnodes: []\n");
 		} else if (kind === "library") {
@@ -2522,10 +2537,13 @@
 
 	function blockIdFromDescriptorFile(file, blocksDir) {
 		var relative = resourceRelativePath(blocksDir, file);
-		if (!relative || !String(relative).endsWith(".block.yaml")) {
+		if (!relative || (!String(relative).endsWith(".block.yaml") && !String(relative).endsWith(".block.js"))) {
 			return "";
 		}
-		relative = String(relative).substring(0, String(relative).length - ".block.yaml".length);
+		relative = String(relative);
+		relative = relative.endsWith(".block.yaml")
+			? relative.substring(0, relative.length - ".block.yaml".length)
+			: relative.substring(0, relative.length - ".block.js".length);
 		return relative.replace(/\//g, ".");
 	}
 
@@ -2543,8 +2561,20 @@
 				loadBlockDir(blocks, file, origin, provider);
 				return;
 			}
-			if (file.isFile() && String(file.getName()).endsWith(".block.yaml")) {
-				var base = origin === "core" ? new File(engineDir(), "blocks") : projectBlocksDir();
+			if (!file.isFile()) {
+				return;
+			}
+			var base = origin === "core" ? new File(engineDir(), "blocks") : projectBlocksDir();
+			if (String(file.getName()).endsWith(".block.js")) {
+				loadFlowScriptBlockFile(blocks, file, origin, provider, base);
+				return;
+			}
+			if (String(file.getName()).endsWith(".block.yaml")) {
+				var peer = new File(String(file.getAbsolutePath()).substring(0,
+					String(file.getAbsolutePath()).length - ".block.yaml".length) + ".block.js");
+				if (peer.isFile()) {
+					return;
+				}
 				loadGraphBlockFile(blocks, file, origin, provider, base);
 			}
 		});
@@ -2610,6 +2640,15 @@
 				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
 		}
 		return new File(dir, blockDescriptorFileName(name));
+	}
+
+	function projectBlockCodeFile(name) {
+		var dir = projectBlocksDir();
+		if (!dir) {
+			raise("PROJECT_BLOCKS_UNAVAILABLE", "Project blocks are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		return new File(dir, blockCodeDescriptorFileName(name));
 	}
 
 	function flowLibraryFile(name) {
@@ -2987,7 +3026,7 @@
 			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must move nodes to implementation.file.",
 				null, "Keep *.block.yaml as the contract and put executable nodes in a separate *.flow.yaml file.");
 		}
-		if (implementation.runtime === "flow" && !implementation.file) {
+		if (implementation.runtime === "flow" && !implementation.file && !definition.__graphDefinition) {
 			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must define implementation.file.");
 		}
 		if (implementation.runtime === "rhino" && !implementation.file) {
@@ -3149,7 +3188,10 @@
 		var runtime = implementation.runtime;
 		var blockId = String(definition.__flowBlockId || definition.blockId || definition.name || "");
 		var rhino = runtime === "rhino" ? loadRhinoBlockImplementation(definition, file) : null;
-		var flow = runtime === "flow" ? loadFlowBlockImplementation(definition, file) : null;
+		var flow = runtime === "flow" ? (definition.__graphDefinition ? {
+			definition: definition.__graphDefinition,
+			file: file
+		} : loadFlowBlockImplementation(definition, file)) : null;
 		var hooks = loadBlockHooks(definition, file);
 		var block = {
 			name: blockId,
@@ -3191,10 +3233,14 @@
 		block.__flowOrigin = origin;
 		block.__flowProvider = provider || origin || "unknown";
 		block.__flowFile = String(file.getAbsolutePath());
+		block.__flowFormat = definition.__flowCode ? "flowscript-block" : "yaml-block";
+		if (definition.__flowCode) {
+			block.__flowCode = String(definition.__flowCode);
+		}
 		if (rhino) {
 			block.__flowImplementationFile = String(rhino.file.getAbsolutePath());
 		} else if (flow) {
-			block.__flowImplementationFile = String(flow.file.getAbsolutePath());
+			block.__flowImplementationFile = definition.__flowCode ? "" : String(flow.file.getAbsolutePath());
 		}
 		if (hooks.__flowFile) {
 			block.__flowHooksFile = String(hooks.__flowFile);
@@ -3211,6 +3257,233 @@
 		}
 		var definition = validateGraphBlockSource(name, source);
 		var block = graphBlockFromDefinition(definition, file, origin, provider);
+		if (blocks[block.name]) {
+			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
+				null, "Rename the project block or remove the duplicate.");
+		}
+		blocks[block.name] = block;
+		return block;
+	}
+
+	function balancedObjectEnd(text, open) {
+		var quote = "";
+		var brace = 0;
+		for (var i = open; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === "\\" && i + 1 < text.length) {
+					i++;
+					continue;
+				}
+				if (ch === quote) {
+					quote = "";
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'" || ch === "`") {
+				quote = ch;
+				continue;
+			}
+			if (ch === "{") {
+				brace++;
+			} else if (ch === "}") {
+				brace--;
+				if (brace === 0) {
+					return i;
+				}
+			}
+		}
+		return -1;
+	}
+
+	function extractFlowScriptBlockMeta(code) {
+		var text = String(code || "");
+		var match = text.match(/\b(?:const|let|var)\s+_meta\s*=/);
+		if (!match) {
+			return { meta: {}, code: text };
+		}
+		var start = text.indexOf("{", match.index);
+		if (start < 0) {
+			raise("INVALID_BLOCK_CODE", "FlowScript block _meta must be an object literal.");
+		}
+		var end = balancedObjectEnd(text, start);
+		if (end < 0) {
+			raise("INVALID_BLOCK_CODE", "Unclosed FlowScript block _meta object literal.");
+		}
+		var metaText = text.substring(start, end + 1);
+		var rest = text.substring(0, match.index) + text.substring(end + 1).replace(/^\s*;\s*/, "");
+		return {
+			meta: parseFlowScriptObjectLiteral(metaText, 1).value,
+			code: rest
+		};
+	}
+
+	function unwrapFlowScriptBlockEnvelope(code) {
+		var text = String(code || "").trim();
+		var header = text.match(/^block\s+[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\([^)]*\)\s*\{/);
+		if (!header) {
+			return text;
+		}
+		var open = header[0].length - 1;
+		var close = text.lastIndexOf("}");
+		if (close <= open) {
+			return text;
+		}
+		return text.substring(open + 1, close).trim();
+	}
+
+	function flowScriptBlockFunctionName(name) {
+		return safeIdentifier(blockLocalName(name) || name || "block");
+	}
+
+	function ensureFlowScriptBlockFunction(name, code) {
+		var body = unwrapFlowScriptBlockEnvelope(code);
+		if (String(body).trim().match(/^(?:flow|function)\s+/)) {
+			return normalizeFlowScriptCode(body);
+		}
+		var indent = String(body || "").replace(/\s+$/g, "").split(/\r?\n/).map(function (line) {
+			return line ? "  " + line : "";
+		}).join("\n");
+		return normalizeFlowScriptCode("function " + flowScriptBlockFunctionName(name) + "({ input, config, result }) {\n" +
+			indent + "\n}\n");
+	}
+
+	function flowScriptBlockDescriptorFromMeta(name, meta, graphDefinition, code) {
+		meta = normalizeTree(meta || {});
+		if (meta.name && String(meta.name) !== String(name) && String(meta.name) !== blockLocalName(name)) {
+			raise("BLOCK_NAME_MISMATCH", "FlowScript block _meta declares \"" + meta.name + "\" instead of \"" + name + "\".");
+		}
+		var descriptor = {
+			version: Number(meta.version || 1),
+			name: blockLocalName(name) || name,
+			icon: meta.icon || "mdi:puzzle-outline",
+			description: meta.description || "Project FlowScript block.",
+			props: meta.properties || meta.props || {},
+			outputs: meta.outputs || meta.output || { out: { type: "unknown" } },
+			implementation: { runtime: "flow" },
+			__flowBlockId: String(name),
+			__graphDefinition: graphDefinition,
+			__flowCode: String(code || "")
+		};
+		["private", "tags", "label", "display", "longDescription", "documentation", "slots", "uses"].forEach(function (key) {
+			if (meta[key] !== undefined) {
+				descriptor[key] = meta[key];
+			}
+		});
+		return validateGraphBlockDefinition(name, descriptor);
+	}
+
+	function flowScriptBlockMetaFromRequest(name, request) {
+		request = request || {};
+		var descriptor = {};
+		if (request.descriptorSource !== undefined && request.descriptorSource !== null) {
+			descriptor = parseYamlSource(String(request.descriptorSource), "version: 1\n");
+		} else if (request.descriptor !== undefined && request.descriptor !== null) {
+			descriptor = normalizeTree(request.descriptor);
+		} else if (request.definition !== undefined && request.definition !== null) {
+			descriptor = normalizeTree(request.definition);
+		}
+		var meta = {};
+		["version", "description", "icon", "private", "tags", "label", "display", "longDescription", "documentation", "slots", "uses"].forEach(function (key) {
+			if (descriptor[key] !== undefined) {
+				meta[key] = descriptor[key];
+			}
+			if (request[key] !== undefined && request[key] !== null && request[key] !== "") {
+				meta[key] = request[key];
+			}
+		});
+		if (descriptor.props !== undefined) {
+			meta.properties = descriptor.props;
+		}
+		if (descriptor.properties !== undefined) {
+			meta.properties = descriptor.properties;
+		}
+		if (request.props !== undefined && request.props !== null) {
+			meta.properties = request.props;
+		}
+		if (request.properties !== undefined && request.properties !== null) {
+			meta.properties = request.properties;
+		}
+		if (descriptor.output !== undefined) {
+			meta.outputs = descriptor.output;
+		}
+		if (descriptor.outputs !== undefined) {
+			meta.outputs = descriptor.outputs;
+		}
+		if (request.output !== undefined && request.output !== null) {
+			meta.outputs = request.output;
+		}
+		if (request.outputs !== undefined && request.outputs !== null) {
+			meta.outputs = request.outputs;
+		}
+		return normalizeTree(meta);
+	}
+
+	function compileFlowScriptBlockCode(blocks, name, code, request) {
+		var extracted = extractFlowScriptBlockMeta(code);
+		var functionCode = ensureFlowScriptBlockFunction(name, extracted.code);
+		var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extracted.meta || {}));
+		var provisional = flowScriptBlockDescriptorFromMeta(name, meta, { version: 1, nodes: [] }, functionCode);
+		var validationBlocks = Object.assign({}, blocks || {});
+		validationBlocks[name] = {
+			name: String(name),
+			catalog: function () {
+				return graphBlockCatalog(provisional);
+			}
+		};
+		var validation = flowScriptValidateRequest(validationBlocks, {
+			name: blockLocalName(name) || name,
+			code: functionCode,
+			includeHeader: false
+		});
+		if (!validation.ok) {
+			var error = new Error("FlowScript block validation failed: " + name);
+			error.code = "FLOWSCRIPT_BLOCK_VALIDATION_FAILED";
+			error.details = validation.diagnostics;
+			error.hint = "Fix the FlowScript block diagnostics and retry.";
+			throw error;
+		}
+		var canonicalCode = flowScriptBlockCodeSource(name, functionCode, meta);
+		var descriptor = flowScriptBlockDescriptorFromMeta(name, meta, validation.definition, canonicalCode);
+		return {
+			name: String(name),
+			code: canonicalCode,
+			functionCode: functionCode,
+			revision: sha256Hex(canonicalCode),
+			descriptor: descriptor,
+			source: validation.source,
+			definition: validation.definition,
+			diagnostics: validation.diagnostics
+		};
+	}
+
+	function flowScriptBlockCodeSource(name, functionCode, meta) {
+		meta = normalizeTree(meta || {});
+		if (!meta.description) {
+			meta.description = "Project FlowScript block.";
+		}
+		if (!meta.icon) {
+			meta.icon = "mdi:puzzle-outline";
+		}
+		if (!meta.properties && !meta.props) {
+			meta.properties = {};
+		}
+		if (!meta.outputs && !meta.output) {
+			meta.outputs = { out: { type: "unknown" } };
+		}
+		delete meta.name;
+		return "const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + normalizeFlowScriptCode(functionCode);
+	}
+
+	function loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir) {
+		var code = String(FileUtils.readFileToString(file, "UTF-8"));
+		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
+		if (!name) {
+			name = String(file.getName());
+			name = name.substring(0, name.length - ".block.js".length);
+		}
+		var compiled = compileFlowScriptBlockCode(blocks, name, code);
+		var block = graphBlockFromDefinition(compiled.descriptor, file, origin, provider);
 		if (blocks[block.name]) {
 			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
 				null, "Rename the project block or remove the duplicate.");
@@ -3368,6 +3641,98 @@
 		return created;
 	}
 
+	function deleteIfFile(file) {
+		try {
+			return file && file.isFile() && file["delete"]();
+		} catch (_ignoreDelete) {
+			return false;
+		}
+	}
+
+	function cleanupProjectBlockYamlFallback(name, descriptor) {
+		var removed = [];
+		var descriptorFile = projectBlockDescriptorFile(name);
+		if (deleteIfFile(descriptorFile)) {
+			removed.push(String(descriptorFile.getAbsolutePath()));
+		}
+		var implementation = blockImplementation(descriptor || {});
+		var implementationFile = implementationTargetFile(descriptorFile, Object.assign({
+			name: blockLocalName(name) || name,
+			implementation: implementation.file ? implementation : { runtime: "flow", file: blockFlowFileName(name) }
+		}, descriptor || {}));
+		if (deleteIfFile(implementationFile)) {
+			removed.push(String(implementationFile.getAbsolutePath()));
+		}
+		var hooksFile = hooksTargetFile(descriptorFile, descriptor || {});
+		if (deleteIfFile(hooksFile)) {
+			removed.push(String(hooksFile.getAbsolutePath()));
+		}
+		return removed;
+	}
+
+	function setProjectBlockCode(blocks, name, request) {
+		request = request || {};
+		name = String(name || request.name || "").trim();
+		if (!name) {
+			raise("MISSING_BLOCK_NAME", "block.code.set requires name.");
+		}
+		var code = request.code !== undefined && request.code !== null ? String(request.code) : "";
+		if (code.trim() === "") {
+			raise("MISSING_BLOCK_CODE", "block.code.set requires FlowScript code.");
+		}
+		var compiled = compileFlowScriptBlockCode(blocks, name, code, request);
+		if (request.dry === true || request.dryRun === true || String(request.dry || "") === "true" || String(request.dryRun || "") === "true") {
+			return {
+				ok: true,
+				name: name,
+				dry: true,
+				format: "flowscript",
+				canonical: true,
+				revision: compiled.revision,
+				descriptor: publicBlockDescriptor(compiled.descriptor),
+				code: compiled.code,
+				implementationSource: compiled.source,
+				warnings: (compiled.diagnostics || []).filter(function (diagnostic) {
+					return diagnostic.severity === "warning";
+				})
+			};
+		}
+		var current = blocks[name];
+		if (current && current.__flowOrigin !== "project") {
+			raise("DUPLICATE_BLOCK", "Cannot override non-project Flow block: " + name,
+				null, "Choose a project-specific name instead.");
+		}
+		var codeFile = projectBlockCodeFile(name);
+		if (codeFile.isFile() && request.overwrite !== true && String(request.overwrite || "") !== "true" &&
+				(!current || current.__flowFormat !== "flowscript-block")) {
+			raise("BLOCK_ALREADY_EXISTS", "Project FlowScript block already exists: " + name,
+				null, "Pass overwrite=true to replace it explicitly.");
+		}
+		codeFile.getParentFile().mkdirs();
+		FileUtils.writeStringToFile(codeFile, compiled.code, "UTF-8");
+		var removed = cleanupProjectBlockYamlFallback(name, compiled.descriptor);
+		if (blocks[name]) {
+			delete blocks[name];
+		}
+		var loaded = publicBlockDescriptor(blockDescriptor(loadFlowScriptBlockFile(blocks, codeFile, "project",
+			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
+		return {
+			ok: true,
+			name: name,
+			dry: false,
+			format: "flowscript",
+			canonical: true,
+			file: String(codeFile.getAbsolutePath()),
+			codeFile: String(codeFile.getAbsolutePath()),
+			revision: compiled.revision,
+			removedFallbacks: removed,
+			warnings: (compiled.diagnostics || []).filter(function (diagnostic) {
+				return diagnostic.severity === "warning";
+			}),
+			block: loaded
+		};
+	}
+
 	function editProjectBlock(blocks, name, request) {
 		if (typeof request !== "object" || request === null) {
 			raise("INVALID_BLOCK_REQUEST", "Block edit expects a canonical descriptor request object.",
@@ -3475,6 +3840,9 @@
 			out.properties = out.props;
 			delete out.props;
 		}
+		delete out.__flowBlockId;
+		delete out.__graphDefinition;
+		delete out.__flowCode;
 		return out;
 	}
 
@@ -3496,11 +3864,12 @@
 			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name);
 		}
 		var file = new File(String(block.__flowFile || ""));
-		if (!String(block.__flowFile || "").endsWith(".block.yaml")) {
+		var flowScriptBlock = String(block.__flowFormat || "") === "flowscript-block";
+		if (!flowScriptBlock && !String(block.__flowFile || "").endsWith(".block.yaml")) {
 			raise("INVALID_BLOCK_STORAGE", "Flow block is not backed by a canonical descriptor: " + name);
 		}
-		var descriptorSource = String(FileUtils.readFileToString(file, "UTF-8"));
-		var descriptor = validateGraphBlockSource(block.name, descriptorSource);
+		var descriptorSource = flowScriptBlock ? "" : String(FileUtils.readFileToString(file, "UTF-8"));
+		var descriptor = flowScriptBlock ? normalizeTree(block.__blockDefinition || {}) : validateGraphBlockSource(block.name, descriptorSource);
 		var catalog = blockDescriptor(block);
 		var implementation = blockImplementation(descriptor);
 		var detail = String(args.detail || args.mode || "compact").toLowerCase();
@@ -3513,10 +3882,11 @@
 			if (args.includeMeta === true || String(args.includeMeta || "") === "true") {
 				compact.origin = block.__flowOrigin || "unknown";
 				compact.provider = block.__flowProvider || block.__flowOrigin || "unknown";
-				compact.format = "canonical";
+				compact.format = flowScriptBlock ? "flowscript" : "canonical";
 				compact.implementationRuntime = implementation.runtime;
 				compact.descriptorChars = descriptorSource.length;
-				compact.implementationChars = sourceLength(block.__flowImplementationFile);
+				compact.codeChars = flowScriptBlock ? String(block.__flowCode || "").length : 0;
+				compact.implementationChars = flowScriptBlock ? 0 : sourceLength(block.__flowImplementationFile);
 				compact.hooksChars = sourceLength(block.__flowHooksFile);
 			}
 			if (detail === "summary") {
@@ -3533,14 +3903,19 @@
 			detail: "full",
 			name: block.name,
 			origin: block.__flowOrigin || "unknown",
-			format: "canonical",
+			format: flowScriptBlock ? "flowscript" : "canonical",
 			file: String(block.__flowFile || ""),
-			descriptorFile: String(block.__flowFile || ""),
+			codeFile: flowScriptBlock ? String(block.__flowFile || "") : "",
+			codeRevision: flowScriptBlock ? sha256Hex(String(block.__flowCode || "")) : "",
+			descriptorFile: flowScriptBlock ? "" : String(block.__flowFile || ""),
+			code: flowScriptBlock ? String(block.__flowCode || "") : "",
 			descriptorSource: descriptorSource,
 			descriptor: publicBlockDescriptor(descriptor),
 			implementationRuntime: implementation.runtime
 		};
-		if (block.__flowImplementationFile) {
+		if (flowScriptBlock) {
+			out.implementationSource = sourceFromDefinition(block.__graphDefinition || { version: 1, nodes: [] });
+		} else if (block.__flowImplementationFile) {
 			out.implementationFile = String(block.__flowImplementationFile);
 			out.implementationSource = String(FileUtils.readFileToString(new File(String(block.__flowImplementationFile)), "UTF-8"));
 		}
@@ -4501,8 +4876,17 @@
 			var key = unquoteFlowScriptString(pair.shift().trim());
 			tokens[key] = pair.join(":").trim();
 		});
+		var value;
+		try {
+			value = parseFlowScriptArgs(text, lineNumber);
+		} catch (_expressionObject) {
+			value = {};
+			Object.keys(tokens).forEach(function (key) {
+				value[key] = tokens[key];
+			});
+		}
 		return {
-			value: parseFlowScriptArgs(text, lineNumber),
+			value: value,
 			tokens: tokens
 		};
 	}
@@ -6984,6 +7368,12 @@
 				var targetBlocks = loadBlocks();
 				var request = typeof source === "object" && source !== null ? source : args;
 				return editProjectBlock(targetBlocks, name, request);
+			});
+		};
+		ctx.blockCodeSet = function (name, args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return setProjectBlockCode(loadBlocks(), name, args);
 			});
 		};
 		ctx.typeList = function (args) {
