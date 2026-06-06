@@ -3660,6 +3660,25 @@
 		return new File(dir, flowCodeFileName(name));
 	}
 
+	function flowNameFromFile(file) {
+		var filename = String(file && file.getName ? file.getName() : file || "");
+		if (filename.endsWith(".flow.js")) {
+			return filename.substring(0, filename.length - ".flow.js".length);
+		}
+		if (filename.endsWith(".flow.yaml")) {
+			return filename.substring(0, filename.length - ".flow.yaml".length);
+		}
+		return "";
+	}
+
+	function projectFlowStorage(name) {
+		return {
+			name: String(name || ""),
+			codeFile: projectFlowCodeFile(name),
+			yamlFile: projectFlowFile(name)
+		};
+	}
+
 	function projectFragmentFile(name) {
 		var dir = projectFragmentsDir();
 		if (!dir) {
@@ -3714,21 +3733,36 @@
 		files.sort(function (a, b) {
 			return String(a.getName()).localeCompare(String(b.getName()));
 		});
+		var byName = {};
+		files.filter(function (file) {
+			return file.isFile() && (String(file.getName()).endsWith(".flow.js") || String(file.getName()).endsWith(".flow.yaml"));
+		}).forEach(function (file) {
+			var name = flowNameFromFile(file);
+			if (!name) {
+				return;
+			}
+			var codeFile = String(file.getName()).endsWith(".flow.js") ? file : new File(file.getParentFile(), flowCodeFileName(name));
+			var yamlFile = String(file.getName()).endsWith(".flow.yaml") ? file : new File(file.getParentFile(), flowFileName(name));
+			var previous = byName[name];
+			if (previous && previous.format === "flowscript" && !String(file.getName()).endsWith(".flow.js")) {
+				return;
+			}
+			var canonical = codeFile.isFile() ? codeFile : yamlFile;
+			byName[name] = {
+				name: name,
+				format: codeFile.isFile() ? "flowscript" : "yaml",
+				file: String(canonical.getAbsolutePath()),
+				sourceFile: yamlFile.isFile() ? String(yamlFile.getAbsolutePath()) : "",
+				codeFile: codeFile.isFile() ? String(codeFile.getAbsolutePath()) : "",
+				size: Number(canonical.length()),
+				sourceSize: yamlFile.isFile() ? Number(yamlFile.length()) : 0,
+				codeSize: codeFile.isFile() ? Number(codeFile.length()) : 0,
+				lastModified: Number(canonical.lastModified())
+			};
+		});
 		return {
-			flows: files.filter(function (file) {
-				return file.isFile() && String(file.getName()).endsWith(".flow.yaml");
-			}).map(function (file) {
-				var filename = String(file.getName());
-				var name = filename.substring(0, filename.length - ".flow.yaml".length);
-				var codeFile = new File(file.getParentFile(), flowCodeFileName(name));
-				return {
-					name: name,
-					file: String(file.getAbsolutePath()),
-					codeFile: codeFile.isFile() ? String(codeFile.getAbsolutePath()) : "",
-					size: Number(file.length()),
-					codeSize: codeFile.isFile() ? Number(codeFile.length()) : 0,
-					lastModified: Number(file.lastModified())
-				};
+			flows: Object.keys(byName).sort().map(function (name) {
+				return byName[name];
 			})
 		};
 	}
@@ -3747,22 +3781,40 @@
 		files.sort(function (a, b) {
 			return String(a.getName()).localeCompare(String(b.getName()));
 		});
-		return files.filter(function (file) {
-			if (!file.isFile() || !String(file.getName()).endsWith(".flow.yaml")) {
-				return false;
+		var byName = {};
+		files.filter(function (file) {
+			return file.isFile() && (String(file.getName()).endsWith(".flow.js") || String(file.getName()).endsWith(".flow.yaml"));
+		}).forEach(function (file) {
+			var name = flowNameFromFile(file);
+			if (!name || (samplesOnly === true && !isSampleFlowName(name))) {
+				return;
 			}
-			var filename = String(file.getName());
-			var name = filename.substring(0, filename.length - ".flow.yaml".length);
-			return samplesOnly !== true || isSampleFlowName(name);
-		}).map(function (file) {
-			var filename = String(file.getName());
-			var name = filename.substring(0, filename.length - ".flow.yaml".length);
+			var previous = byName[name];
+			if (previous && previous.format === "flowscript" && !String(file.getName()).endsWith(".flow.js")) {
+				return;
+			}
+			byName[name] = {
+				name: name,
+				file: file,
+				format: String(file.getName()).endsWith(".flow.js") ? "flowscript" : "yaml"
+			};
+		});
+		return Object.keys(byName).sort().map(function (name) {
+			var entry = byName[name];
+			var file = entry.file;
+			var raw = String(FileUtils.readFileToString(file, "UTF-8"));
+			var source = raw;
+			if (entry.format === "flowscript") {
+				source = sourceFromFlowScript(loadBlocks(), name, raw).source;
+			}
 			return {
 				name: name,
 				project: projectName || (root ? String(root.getName()) : ""),
 				origin: origin || "project",
+				format: entry.format,
 				file: String(file.getAbsolutePath()),
-				source: String(FileUtils.readFileToString(file, "UTF-8")),
+				source: source,
+				code: entry.format === "flowscript" ? raw : "",
 				size: Number(file.length()),
 				lastModified: Number(file.lastModified())
 			};
@@ -3773,11 +3825,14 @@
 		var flows = [];
 		var currentRoot = projectDir();
 		var currentProject = currentProjectName(request) || (currentRoot ? String(new File(currentRoot).getName()) : "");
+		var blocks = loadBlocks();
 		listProjectFlows().flows.forEach(function (flow) {
+			var current = getProjectFlow(flow.name, blocks);
 			flows.push(Object.assign({}, flow, {
 				project: currentProject,
 				origin: "project",
-				source: String(FileUtils.readFileToString(new File(flow.file), "UTF-8"))
+				source: current.source,
+				code: current.code || ""
 			}));
 		});
 		if (request.includeLibrarySamples === false) {
@@ -3827,15 +3882,56 @@
 		};
 	}
 
+	function sourceFromFlowScript(blocks, name, code) {
+		var definition = parseFlowScript(blocks, code);
+		var diagnostics = validateFlowScriptDefinition(blocks, definition);
+		var errors = diagnostics.filter(function (diagnostic) {
+			return diagnostic.severity === "error";
+		});
+		if (errors.length) {
+			var error = new Error("Canonical FlowScript is invalid for Flow " + name + ".");
+			error.code = "FLOWSCRIPT_CANONICAL_INVALID";
+			error.details = diagnostics;
+			error.hint = "Fix the .flow.js file or regenerate it from a valid Flow model.";
+			throw error;
+		}
+		var clean = stripFlowScriptMetadata(definition);
+		return {
+			source: sourceFromDefinition(clean),
+			definition: clean,
+			diagnostics: diagnostics
+		};
+	}
+
 	function getProjectFlow(name) {
-		var file = projectFlowFile(name);
-		if (!file.isFile()) {
+		var blocks = arguments.length > 1 ? arguments[1] : null;
+		var storage = projectFlowStorage(name);
+		if (storage.codeFile.isFile()) {
+			var code = String(FileUtils.readFileToString(storage.codeFile, "UTF-8"));
+			var compiled = sourceFromFlowScript(blocks || loadBlocks(), name, code);
+			return {
+				name: String(name),
+				format: "flowscript",
+				file: String(storage.codeFile.getAbsolutePath()),
+				sourceFile: storage.yamlFile.isFile() ? String(storage.yamlFile.getAbsolutePath()) : "",
+				codeFile: String(storage.codeFile.getAbsolutePath()),
+				code: code,
+				revision: sha256Hex(code),
+				source: compiled.source,
+				definition: compiled.definition,
+				diagnostics: compiled.diagnostics
+			};
+		}
+		if (!storage.yamlFile.isFile()) {
 			raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name);
 		}
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var source = String(FileUtils.readFileToString(storage.yamlFile, "UTF-8"));
 		return {
 			name: String(name),
-			file: String(file.getAbsolutePath()),
+			format: "yaml",
+			file: String(storage.yamlFile.getAbsolutePath()),
+			sourceFile: String(storage.yamlFile.getAbsolutePath()),
+			codeFile: storage.codeFile.isFile() ? String(storage.codeFile.getAbsolutePath()) : "",
 			source: source,
 			definition: parseSource(source)
 		};
@@ -3963,7 +4059,7 @@
 				if (localName) {
 					var rendered = renderFlowScriptValue(blocks, node, "value", node.value, locals);
 					locals[localName] = true;
-					return indent + "var " + localName + " = " + rendered;
+					return indent + "const " + localName + " = " + rendered;
 				}
 			}
 			return indent + assignmentPath + " = " + renderFlowScriptValue(blocks, node, "value", node.value, locals);
@@ -3982,7 +4078,7 @@
 		var call = block + "({ " + parts.join(", ") + " })";
 		if (outLocal) {
 			locals[outLocal] = true;
-			return indent + "var " + outLocal + " = " + call;
+			return indent + "const " + outLocal + " = " + call;
 		}
 		return indent + call;
 	}
@@ -4071,6 +4167,19 @@
 			return null;
 		}
 		return writeFlowCodeMirrorFile(blocks, name, source, projectFlowCodeFile(name), args);
+	}
+
+	function writeProjectFlowCodeCanonical(blocks, name, source, args) {
+		args = args || {};
+		var file = projectFlowCodeFile(name);
+		file.getParentFile().mkdirs();
+		var code = flowScriptMirrorCode(blocks, name, source, args);
+		FileUtils.writeStringToFile(file, code, "UTF-8");
+		return {
+			file: String(file.getAbsolutePath()),
+			code: code,
+			revision: sha256Hex(code)
+		};
 	}
 
 	function writeFlowCodeMirrorFile(blocks, name, source, file, args) {
@@ -4792,7 +4901,12 @@
 		if (!node.id) {
 			node.id = safeIdentifier(varName);
 		}
-		if (!node.out) {
+		if (block === "set") {
+			if (!node.path) {
+				node.path = "local." + safeIdentifier(varName);
+			}
+			delete node.out;
+		} else if (!node.out) {
 			node.out = "local." + safeIdentifier(varName);
 		}
 		node.__flowScriptLine = lineNumber;
@@ -4878,7 +4992,49 @@
 		if (imports[name]) {
 			return imports[name];
 		}
+		var dot = name.indexOf(".");
+		if (dot > 0) {
+			var namespace = name.substring(0, dot);
+			var rest = name.substring(dot + 1);
+			if (imports[namespace + ".*"]) {
+				return imports[namespace + ".*"] + "." + rest;
+			}
+		}
 		return name;
+	}
+
+	function parseFlowScriptImport(line, lineNumber, imports) {
+		var named = line.match(/^import\s+\{\s*([^}]+)\s*\}\s+from\s+["']([^"']+)["']\s*;?$/);
+		if (named) {
+			var moduleName = String(named[2] || "").trim();
+			splitFlowScriptTopLevel(named[1], ",").forEach(function (part) {
+				var match = String(part || "").trim().match(/^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/);
+				if (!match) {
+					raise("FLOWSCRIPT_INVALID_IMPORT", "Invalid FlowScript import at line " + lineNumber + ": " + part,
+						null, "Use import { call } from \"requestable\" or import { get as httpGet } from \"http\".");
+				}
+				imports[match[2] || match[1]] = moduleName + "." + match[1];
+			});
+			return;
+		}
+		var namespace = line.match(/^import\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["']\s*;?$/);
+		if (namespace) {
+			imports[namespace[1] + ".*"] = String(namespace[2] || "").trim();
+			return;
+		}
+		var legacy = line.match(/^import\s+([A-Za-z_][\w]*(?:\.[A-Za-z_*][\w*]*)*)(?:\s+as\s+([A-Za-z_][\w]*))?\s*;?$/);
+		if (legacy) {
+			if (legacy[1].indexOf("*") === -1) {
+				var parts = legacy[1].split(".");
+				imports[legacy[2] || parts[parts.length - 1]] = legacy[1];
+			} else {
+				var prefix = legacy[1].replace(/\.\*$/, "");
+				imports[legacy[2] ? legacy[2] + ".*" : prefix + ".*"] = prefix;
+			}
+			return;
+		}
+		raise("FLOWSCRIPT_INVALID_IMPORT", "Invalid FlowScript import at line " + lineNumber,
+			null, "Use import { call } from \"requestable\", import * as requestable from \"requestable\", or import requestable.call.");
 	}
 
 	function parseFlowScript(blocks, code) {
@@ -4894,15 +5050,7 @@
 				continue;
 			}
 			if (line.match(/^import\s+/)) {
-				var importMatch = line.match(/^import\s+([A-Za-z_][\w]*(?:\.[A-Za-z_*][\w*]*)*)(?:\s+as\s+([A-Za-z_][\w]*))?\s*;?$/);
-				if (!importMatch) {
-					raise("FLOWSCRIPT_INVALID_IMPORT", "Invalid FlowScript import at line " + lineNumber,
-						null, "Use import requestable.call or import requestable.call as call.");
-				}
-				if (importMatch[1].indexOf("*") === -1) {
-					var parts = importMatch[1].split(".");
-					imports[importMatch[2] || parts[parts.length - 1]] = importMatch[1];
-				}
+				parseFlowScriptImport(line, lineNumber, imports);
 				continue;
 			}
 			if (line.match(/^(flow|function)\s+/)) {
@@ -5144,13 +5292,21 @@
 
 	function flowScriptGetRequest(blocks, request) {
 		request = request || {};
-		var flow = getProjectFlow(request.name || request.flowName);
-		var codeInfo = flowScriptCodeFromMirror(blocks, request.name || request.flowName || flow.name, flow.source, request);
+		var flow = getProjectFlow(request.name || request.flowName, blocks);
+		var codeInfo = flow.format === "flowscript" ? {
+			code: flow.code,
+			file: flow.codeFile || flow.file,
+			fromMirror: false,
+			stale: false,
+			canonical: true
+		} : flowScriptCodeFromMirror(blocks, request.name || request.flowName || flow.name, flow.source, request);
 		var code = codeInfo.code;
 		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: code }));
 		return {
 			ok: true,
 			name: flow.name,
+			format: flow.format || "yaml",
+			canonical: codeInfo.canonical === true,
 			file: flow.file,
 			codeFile: codeInfo.file,
 			codeFromMirror: codeInfo.fromMirror,
@@ -5286,6 +5442,8 @@
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
+			format: current.format,
+			canonical: current.canonical === true,
 			file: current.file,
 			codeFile: current.codeFile,
 			codeFromMirror: current.codeFromMirror,
@@ -5354,6 +5512,8 @@
 			qname: flowCodeQName(request, name),
 			name: name,
 			dry: flowCodeDryRun(request),
+			format: "flowscript",
+			canonical: true,
 			file: saved ? saved.file : (current ? current.file : ""),
 			codeFile: saved ? saved.codeFile : (current ? current.codeFile : ""),
 			revision: revision,
@@ -5547,16 +5707,22 @@
 		source = sourceForWriteRequest(args, source);
 		source = sourceFromDefinition(parseSource(source));
 		var analysis = analyzeFlowSource(blocks, source);
-		var file = projectFlowFile(name);
-		file.getParentFile().mkdirs();
-		FileUtils.writeStringToFile(file, String(source), "UTF-8");
-		var codeMirror = writeProjectFlowCodeMirror(blocks, name, source, args);
+		var storage = projectFlowStorage(name);
+		var codeFile = writeProjectFlowCodeCanonical(blocks, name, source, args);
+		var yamlFile = null;
+		if (args && (args.writeYaml === true || args.writeYamlMirror === true || args.saveYaml === true)) {
+			storage.yamlFile.getParentFile().mkdirs();
+			FileUtils.writeStringToFile(storage.yamlFile, String(source), "UTF-8");
+			yamlFile = storage.yamlFile;
+		}
 		return {
 			ok: true,
 			name: String(name),
-			file: String(file.getAbsolutePath()),
-			codeFile: codeMirror ? codeMirror.file : "",
-			codeRevision: codeMirror ? codeMirror.revision : "",
+			format: "flowscript",
+			file: codeFile.file,
+			sourceFile: yamlFile ? String(yamlFile.getAbsolutePath()) : (storage.yamlFile.isFile() ? String(storage.yamlFile.getAbsolutePath()) : ""),
+			codeFile: codeFile.file,
+			codeRevision: codeFile.revision,
 			source: String(source),
 			definition: parseSource(source),
 			analysis: analysis
@@ -5571,7 +5737,7 @@
 		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
 			return String(args.flowSource);
 		}
-		return getProjectFlow(args.name).source;
+		return getProjectFlow(args.name, loadBlocks()).source;
 	}
 
 	function outputSchemaForFlowSource(flowSource) {
@@ -5591,7 +5757,7 @@
 	}
 
 	function flowOutputSchema(name) {
-		var flow = getProjectFlow(name);
+		var flow = getProjectFlow(name, loadBlocks());
 		var definition = parseSource(flow.source);
 		return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: name }, definition) || {});
 	}
@@ -6866,7 +7032,7 @@
 		ctx.flowGet = function (name, args) {
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
-				return getProjectFlow(name);
+				return getProjectFlow(name, loadBlocks());
 			});
 		};
 		ctx.flowSet = function (name, source, args) {

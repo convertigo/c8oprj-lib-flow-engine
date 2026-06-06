@@ -26,13 +26,13 @@ The Java side passes `flowSource` as an opaque string. This project owns parsing
 For the POC, `Engine.js` is evaluated without the Rhino compiled-script cache so
 runtime engine changes can be picked up after the Java bootstrap is restarted.
 
-For source control, a Convertigo `Flow` should not serialize its full source as an escaped bean property. The Java POC writes the editable definition as valid YAML in the owning project:
+For source control, a Convertigo `Flow` should not serialize its full source as an escaped bean property. On the `spike-flowscript` branch, FlowScript is the preferred canonical sidecar in the owning project:
 
 ```text
-libs/flows/<FlowName>.flow.yaml
+libs/flows/<FlowName>.flow.js
 ```
 
-The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
+The loader still accepts legacy `libs/flows/<FlowName>.flow.yaml` as a temporary fallback while the spike is being migrated. When both files exist, `.flow.js` wins. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
 
 The runtime core is intentionally small. Concrete behavior is implemented by
 block descriptors in:
@@ -229,21 +229,29 @@ still keep usage counts as secondary information.
 ## FlowScript spike
 
 The `spike-flowscript` branch adds an experimental code-like authoring view for
-LLMs. It does not replace Flow YAML yet. The engine can render existing Flow
-YAML as FlowScript, accepts revision-checked code patches or full replacements,
-parses them back into a Flow definition, validates block names/properties, and
-writes the normal sidecar only when diagnostics are clean.
+LLMs. For project Flows, `.flow.js` is now the canonical sidecar on this branch:
+the engine lists and loads it first, compiles it into the internal Flow
+definition, validates block names/properties, and executes that model. Legacy
+`.flow.yaml` remains a fallback only when the `.flow.js` file is absent.
+
+Use `tools/migrate-flow-js-canonical.sh` during the spike to report existing
+pairs and, once a `.flow.js` sibling exists, remove the obsolete YAML fallback:
+
+```bash
+tools/migrate-flow-js-canonical.sh /path/to/Project/libs/flows
+tools/migrate-flow-js-canonical.sh --remove-yaml /path/to/Project/libs/flows
+```
 
 For new Flows, prefer the natural code-like form:
 
 ```javascript
 function GetFeedSorted({ input, config, result }) {
-  var feed = requestable.call("RSSConnector.GetFeed");
-  var sortedItems = list.sort(feed.rss.channel.item, {
+  const feed = requestable.call(".RSSConnector.GetFeed");
+  const sortedItems = list.sort(feed.rss.channel.item, {
     by: current.title,
     direction: "asc"
   });
-  var news = list.map(sortedItems, {
+  const news = list.map(sortedItems, {
     title: current.title,
     description: current.description,
     imageUrl: current.enclosure.attr.url
@@ -254,7 +262,7 @@ function GetFeedSorted({ input, config, result }) {
 }
 ```
 
-This is syntax sugar, not free-form JavaScript. `var name = block(...)`
+This is syntax sugar, not free-form JavaScript. `const name = block(...)`
 becomes `out: local.name`, paths like `feed.rss.channel.item` become
 `local.feed.rss.channel.item`, object-style `list.map` expands to
 `forEach/json.object/json.push`, and `result.key = value` writes the response

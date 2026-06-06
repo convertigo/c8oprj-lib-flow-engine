@@ -28,20 +28,25 @@ types(requestJson)         -> property type descriptors
 
 ## Flow Source Files
 
-The preferred project representation is a valid YAML sidecar:
+On the `spike-flowscript` branch, the preferred project representation is a
+FlowScript sidecar:
 
 ```text
-libs/flows/<FlowName>.flow.yaml
+libs/flows/<FlowName>.flow.js
 ```
 
-Do not optimize for editing escaped `flowSource` content inside Convertigo YAML. Treat the Java bean property as an in-memory bridge for Studio/editor services; the source file is the human/LLM-friendly representation.
+Legacy `libs/flows/<FlowName>.flow.yaml` is only a fallback while migrating the
+spike. If both files exist, `.flow.js` is canonical. Do not optimize for editing
+escaped `flowSource` content inside Convertigo YAML. Treat the Java bean
+property as an in-memory bridge for Studio/editor services; the source file is
+the human/LLM-friendly representation.
 
 ## FlowScript Spike
 
-The `spike-flowscript` branch experiments with a code-like MCP authoring layer
-on top of the existing YAML Flow model. Keep the YAML runtime canonical during
-the spike; FlowScript is a transactional source view that must parse, validate
-and compile back to the same Flow definition.
+The `spike-flowscript` branch experiments with a code-like MCP authoring layer.
+Project Flows now load `.flow.js` first, compile it to the internal Flow
+definition, validate it, and execute that model. YAML is still accepted as a
+temporary fallback only when no `.flow.js` exists.
 
 Current engine APIs:
 
@@ -71,12 +76,12 @@ FlowScript accepts a natural code-like sugar for the common LLM path:
 
 ```javascript
 function MyFlow({ input, config, result }) {
-  var feed = requestable.call("RSSConnector.GetFeed");
-  var sorted = list.sort(feed.rss.channel.item, {
+  const feed = requestable.call(".RSSConnector.GetFeed");
+  const sorted = list.sort(feed.rss.channel.item, {
     by: current.title,
     direction: "asc"
   });
-  var news = list.map(sorted, {
+  const news = list.map(sorted, {
     title: current.title,
     description: current.description,
     imageUrl: current.enclosure.attr.url
@@ -87,7 +92,7 @@ function MyFlow({ input, config, result }) {
 }
 ```
 
-The compiler lowers this to regular Flow nodes. `var name = block(...)`
+The compiler lowers this to regular Flow nodes. `const name = block(...)`
 writes to `local.name`, unqualified local variables are rewritten to `local.*`,
 `list.map(items, { field: current.value })` becomes an explicit
 `forEach/json.object/json.push` graph, and `result.key = value` writes the
@@ -97,7 +102,7 @@ The canonical syntax remains available:
 
 ```javascript
 function MyFlow({ input, config, result }) {
-  requestable.call({ id: "getFeed", requestable: "RSSConnector.GetFeed", out: "local.feed" })
+  requestable.call({ id: "getFeed", requestable: ".RSSConnector.GetFeed", out: "local.feed" })
   list.sort({ id: "sort", items: "local.feed.rss.channel.item", by: "current.title", out: "local.sorted" })
   forEach({ id: "each", items: "local.sorted" }) {
     json.object({ id: "item", out: "local.item" }) {
