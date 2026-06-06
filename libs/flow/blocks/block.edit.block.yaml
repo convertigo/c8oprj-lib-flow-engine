@@ -1,7 +1,7 @@
 version: 1
 private: true
 icon: "mdi:puzzle-edit-outline"
-description: "Edits one project-local Flow block descriptor and/or implementation."
+description: "Edits one project-local Flow block descriptor and/or implementation. Rhino code should stay a small primitive; HTTP and Convertigo requestable calls belong in visible FlowScript nodes."
 props:
   name:
     label: "name"
@@ -12,7 +12,7 @@ props:
     label: "implementationSource"
     kind: "text"
     type: "string"
-    description: "Replacement implementation source. Use Flow YAML for runtime=flow or Rhino ES6 source for runtime=rhino."
+    description: "Replacement implementation source. Use Flow YAML for runtime=flow or small focused Rhino ES6 source for runtime=rhino. Rhino must not perform HTTP or requestable calls directly."
   descriptorSource:
     label: "descriptorSource"
     kind: "text"

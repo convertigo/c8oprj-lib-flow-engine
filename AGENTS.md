@@ -70,34 +70,33 @@ flow.source.patch
 FlowScript accepts a natural code-like sugar for the common LLM path:
 
 ```javascript
-flow MyFlow({ input, config }) {
-  const feed = requestable.call("RSSConnector.GetFeed");
-  const sorted = list.sort(feed.rss.channel.item, {
+function MyFlow({ input, config, result }) {
+  var feed = requestable.call("RSSConnector.GetFeed");
+  var sorted = list.sort(feed.rss.channel.item, {
     by: current.title,
     direction: "asc"
   });
-  const news = list.map(sorted, {
+  var news = list.map(sorted, {
     title: current.title,
     description: current.description,
     imageUrl: current.enclosure.attr.url
   });
-  return {
-    news,
-    count: news.length
-  };
+  result.news = news;
+  result.count = news.length;
+  return result;
 }
 ```
 
-The compiler lowers this to regular Flow nodes. `const name = block(...)`
+The compiler lowers this to regular Flow nodes. `var name = block(...)`
 writes to `local.name`, unqualified local variables are rewritten to `local.*`,
 `list.map(items, { field: current.value })` becomes an explicit
-`forEach/json.object/json.push` graph, and `return { key: value }` writes
-`result.key`.
+`forEach/json.object/json.push` graph, and `result.key = value` writes the
+response scope.
 
 The canonical syntax remains available:
 
 ```javascript
-flow MyFlow({ input, config }) => result {
+function MyFlow({ input, config, result }) {
   requestable.call({ id: "getFeed", requestable: "RSSConnector.GetFeed", out: "local.feed" })
   list.sort({ id: "sort", items: "local.feed.rss.channel.item", by: "current.title", out: "local.sorted" })
   forEach({ id: "each", items: "local.sorted" }) {
@@ -452,7 +451,9 @@ flow-test
 ```
 
 Prefer editing Flow sidecars over adding custom blocks. Prefer project-local
-custom blocks over changing the shared core library.
+custom blocks over changing the shared core library. Do not hide a complete
+backend feature in one Rhino block: compose IO, list/JSON transforms and result
+mapping with FlowScript, and keep Rhino for the one missing primitive.
 
 ## Validation
 

@@ -201,6 +201,12 @@ block, often `private: true`, with a tiny catalog descriptor and optional
 advanced migration cases because it hides intent, weakens schemas and encourages
 SequenceJS-style low-code bypasses.
 
+Custom Rhino blocks should also stay primitive-sized. They must not hide a whole
+backend feature such as HTTP fetch, parsing, normalization, sorting and response
+mapping in one JavaScript file. Use FlowScript for orchestration and standard
+blocks such as `http.get`, `requestable.call`, `list.*` and `json.*`; keep Rhino
+for the one missing bridge or algorithm.
+
 Custom block metadata should live in `*.block.yaml`. Rhino ES6 JavaScript is
 only the implementation runtime when a block needs JVM/Java integration or
 algorithmic code. It may use Java classes through `Packages`, for example for
@@ -210,7 +216,9 @@ IIFE returning `run`, and optionally `displayName` / `analyze`; `ctx.props(node)
 `ctx.template(value)`, `ctx.expr(value)`, `ctx.read(path)`,
 `ctx.write(path,value)` and `ctx.callBlock(name, props)` are the small runtime
 API. Metadata, properties and docs must stay in the peer `*.block.yaml`
-descriptor; Rhino implementations defining `catalog()` are rejected.
+descriptor; dynamic display/analysis code belongs in `hooks.file`; Rhino
+implementations defining `catalog()`, `displayName()` or `analyze()` are
+rejected.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,
@@ -229,29 +237,28 @@ writes the normal sidecar only when diagnostics are clean.
 For new Flows, prefer the natural code-like form:
 
 ```javascript
-flow GetFeedSorted({ input, config }) {
-  const feed = requestable.call("RSSConnector.GetFeed");
-  const sortedItems = list.sort(feed.rss.channel.item, {
+function GetFeedSorted({ input, config, result }) {
+  var feed = requestable.call("RSSConnector.GetFeed");
+  var sortedItems = list.sort(feed.rss.channel.item, {
     by: current.title,
     direction: "asc"
   });
-  const news = list.map(sortedItems, {
+  var news = list.map(sortedItems, {
     title: current.title,
     description: current.description,
     imageUrl: current.enclosure.attr.url
   });
-  return {
-    news,
-    count: news.length
-  };
+  result.news = news;
+  result.count = news.length;
+  return result;
 }
 ```
 
-This is syntax sugar, not free-form JavaScript. `const name = block(...)`
+This is syntax sugar, not free-form JavaScript. `var name = block(...)`
 becomes `out: local.name`, paths like `feed.rss.channel.item` become
 `local.feed.rss.channel.item`, object-style `list.map` expands to
-`forEach/json.object/json.push`, and `return { key: value }` writes
-`result.key`. The lower-level canonical call form remains valid for precise
+`forEach/json.object/json.push`, and `result.key = value` writes the response
+scope. The lower-level canonical call form remains valid for precise
 edits:
 
 ```javascript

@@ -1,7 +1,7 @@
 version: 1
 private: true
 icon: "mdi:puzzle-plus-outline"
-description: "Creates one project-local canonical Flow block."
+description: "Creates one project-local block. Rhino HTTP/requestable code is rejected; prefer FlowScript and use Rhino only for one missing Java/algorithm primitive."
 props:
   name:
     label: "name"
@@ -12,7 +12,7 @@ props:
     label: "implementationSource"
     kind: "text"
     type: "string"
-    description: "Implementation source. Use Flow YAML for runtime=flow or Rhino ES6 source for runtime=rhino."
+    description: "Implementation source. Use Flow YAML for runtime=flow or small focused Rhino ES6 source for runtime=rhino. Rhino must not perform HTTP or requestable calls directly."
   descriptorSource:
     label: "descriptorSource"
     kind: "text"

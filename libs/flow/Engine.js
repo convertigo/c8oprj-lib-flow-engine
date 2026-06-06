@@ -1568,6 +1568,26 @@
 		return flowName + ".flow.yaml";
 	}
 
+	function flowCodeFileName(name) {
+		var flowName = String(name || "").trim();
+		if (!flowName.match(/^[A-Za-z0-9_.-]+$/)) {
+			raise("INVALID_FLOW_NAME", "Invalid Flow name: " + name,
+				null, "Use letters, digits, dot, underscore or dash.");
+		}
+		return flowName + ".flow.js";
+	}
+
+	function flowCodeFileFromYamlFile(file, name) {
+		var path = String(file && file.getAbsolutePath ? file.getAbsolutePath() : file || "");
+		if (path.endsWith(".flow.yaml")) {
+			return new File(path.substring(0, path.length - ".flow.yaml".length) + ".flow.js");
+		}
+		if (file && file.getParentFile) {
+			return new File(file.getParentFile(), flowCodeFileName(name));
+		}
+		return new File(flowCodeFileName(name));
+	}
+
 	function fragmentFileName(name) {
 		var fragmentName = String(name || "").trim();
 		if (!fragmentName.match(/^[A-Za-z0-9_.-]+$/)) {
@@ -2677,6 +2697,47 @@
 		return block;
 	}
 
+	function rhinoImplementationWarnings(name, source) {
+		var text = String(source || "");
+		var warnings = [];
+		function add(severity, code, message, hint) {
+			warnings.push({
+				severity: severity || "warning",
+				code: code,
+				block: String(name || ""),
+				message: message,
+				hint: hint
+			});
+		}
+		if (/(?:java\.net\.URL|openConnection\s*\(|openStream\s*\(|URLConnection|HttpClient|setRequestProperty\s*\()/m.test(text)) {
+			add("error", "RHINO_REIMPLEMENTS_HTTP",
+				"Rhino implementation appears to perform HTTP directly.",
+				"Use http.get/http.request in FlowScript and pass response.body or response.text to a small parser block.");
+		}
+		if (/(?:callSequence|callTransaction|executeSequence|executeTransaction)/m.test(text)) {
+			add("error", "RHINO_REIMPLEMENTS_REQUESTABLE",
+				"Rhino implementation appears to call Convertigo requestables directly.",
+				"Use requestable.call in FlowScript so the requestable call stays visible in the graph.");
+		}
+		if (text.length > 3000 && /(?:for\s*\(|while\s*\(|\.sort\s*\(|\.map\s*\(|JSON\.parse|JSON\.stringify)/m.test(text)) {
+			add("warning", "RHINO_BLOCK_MAY_BE_MONOLITHIC",
+				"Large Rhino implementation contains algorithmic control flow or JSON/list processing.",
+				"Keep only the missing low-level primitive in Rhino; compose fetch, loops, list transforms and response mapping with Flow blocks.");
+		}
+		return warnings;
+	}
+
+	function enforceRhinoImplementationPolicy(name, source) {
+		var warnings = rhinoImplementationWarnings(name, source);
+		for (var i = 0; i < warnings.length; i++) {
+			var warning = warnings[i];
+			if (warning.severity === "error") {
+				raise(warning.code, warning.message, null, warning.hint);
+			}
+		}
+		return warnings;
+	}
+
 	function validateBlockHooksSource(name, source) {
 		var hooks = eval(String(source || ""));
 		if (!hooks || typeof hooks !== "object") {
@@ -3024,12 +3085,25 @@
 
 	function runGraphBlock(ctx, node, block) {
 		var catalog = blockCatalog(block);
+		var graphName = String(block && block.name || blockName(node) || "");
+		ctx.graphBlockStack = ctx.graphBlockStack || [];
+		var maxDepth = Number(ctx.maxGraphBlockDepth || 128);
+		if (ctx.graphBlockStack.length >= maxDepth) {
+			var stack = ctx.graphBlockStack.concat([graphName]);
+			raise("FLOW_GRAPH_BLOCK_DEPTH_LIMIT",
+				"Composite Flow block call depth exceeded " + maxDepth + " calls: " + graphBlockStackLabel(stack),
+				node,
+				"Make the recursion converge, lower the input size, or raise maxGraphBlockDepth for this run.");
+		}
 		var previousInput = ctx.scopes.input;
 		var previousProps = ctx.scopes.props;
 		var previousLocal = ctx.scopes.local;
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
+		if (graphName) {
+			ctx.graphBlockStack.push(graphName);
+		}
 		ctx.scopes.props = resolveGraphBlockProps(ctx, node, catalog);
 		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
@@ -3048,6 +3122,9 @@
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
+			if (graphName) {
+				ctx.graphBlockStack.pop();
+			}
 		}
 	}
 
@@ -3258,10 +3335,12 @@
 			raise("MISSING_BLOCK_HOOKS", "Block \"" + name + "\" declares hooks.file but no hooksSource was provided.",
 				null, "Pass hooksSource or remove hooks.file from the descriptor.");
 		}
+		var warnings = [];
 		if (implementation.runtime === "flow") {
 			validateBlockFlowImplementationSource(name, implementationSource);
 		} else {
 			validateBlockImplementationSource(name, implementationSource);
+			warnings = enforceRhinoImplementationPolicy(name, implementationSource);
 		}
 		if (hooksFile && hooksSource !== undefined && hooksSource !== null) {
 			validateBlockHooksSource(name, hooksSource);
@@ -3270,6 +3349,10 @@
 		FileUtils.writeStringToFile(descriptorFile, toYamlSource(graphBlockDefinitionForWrite(definition)), "UTF-8");
 		if (implementationFile) {
 			FileUtils.writeStringToFile(implementationFile, String(implementationSource), "UTF-8");
+			if (implementation.runtime === "flow") {
+				writeFlowCodeMirrorFile(blocks, name, String(implementationSource),
+					flowCodeFileFromYamlFile(implementationFile, name), request);
+			}
 		}
 		if (hooksFile && hooksSource !== undefined && hooksSource !== null) {
 			FileUtils.writeStringToFile(hooksFile, String(hooksSource), "UTF-8");
@@ -3277,8 +3360,12 @@
 		if (blocks[name]) {
 			delete blocks[name];
 		}
-		return publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
+		var created = publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
 			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
+		if (warnings.length) {
+			created.warnings = warnings;
+		}
+		return created;
 	}
 
 	function editProjectBlock(blocks, name, request) {
@@ -3305,14 +3392,20 @@
 		var implementationFile = implementationTargetFile(descriptorFile, definition);
 		var hooksFile = hooksTargetFile(descriptorFile, definition);
 		var hasHooks = request.hooksSource !== undefined;
+		var warnings = [];
 		if (hasImplementation && implementationFile) {
 			var implementation = blockImplementation(definition);
 			if (implementation.runtime === "flow") {
 				validateBlockFlowImplementationSource(name, request.implementationSource);
 			} else {
 				validateBlockImplementationSource(name, request.implementationSource);
+				warnings = enforceRhinoImplementationPolicy(name, request.implementationSource);
 			}
 			FileUtils.writeStringToFile(implementationFile, String(request.implementationSource), "UTF-8");
+			if (implementation.runtime === "flow") {
+				writeFlowCodeMirrorFile(blocks, name, String(request.implementationSource),
+					flowCodeFileFromYamlFile(implementationFile, name), request);
+			}
 		}
 		if (hasHooks) {
 			if (!hooksFile) {
@@ -3326,8 +3419,12 @@
 			FileUtils.writeStringToFile(descriptorFile, toYamlSource(graphBlockDefinitionForWrite(definition)), "UTF-8");
 		}
 		delete blocks[name];
-		return publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
+		var edited = publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
 			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
+		if (warnings.length) {
+			edited.warnings = warnings;
+		}
+		return edited;
 	}
 
 	function duplicateProjectBlock(blocks, fromName, toName, overwrite) {
@@ -3554,6 +3651,15 @@
 		return new File(dir, flowFileName(name));
 	}
 
+	function projectFlowCodeFile(name) {
+		var dir = projectFlowsDir();
+		if (!dir) {
+			raise("PROJECT_FLOWS_UNAVAILABLE", "Project flows are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		return new File(dir, flowCodeFileName(name));
+	}
+
 	function projectFragmentFile(name) {
 		var dir = projectFragmentsDir();
 		if (!dir) {
@@ -3613,10 +3719,14 @@
 				return file.isFile() && String(file.getName()).endsWith(".flow.yaml");
 			}).map(function (file) {
 				var filename = String(file.getName());
+				var name = filename.substring(0, filename.length - ".flow.yaml".length);
+				var codeFile = new File(file.getParentFile(), flowCodeFileName(name));
 				return {
-					name: filename.substring(0, filename.length - ".flow.yaml".length),
+					name: name,
 					file: String(file.getAbsolutePath()),
+					codeFile: codeFile.isFile() ? String(codeFile.getAbsolutePath()) : "",
 					size: Number(file.length()),
+					codeSize: codeFile.isFile() ? Number(codeFile.length()) : 0,
 					lastModified: Number(file.lastModified())
 				};
 			})
@@ -3757,6 +3867,54 @@
 		return flowScriptString(value);
 	}
 
+	function flowScriptLocalName(path) {
+		var match = String(path || "").match(/^local\.([A-Za-z_$][\w$]*)$/);
+		return match ? match[1] : "";
+	}
+
+	function flowScriptScopeAssignmentPath(path) {
+		var text = String(path || "");
+		return text.match(/^(local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/) ? text : "";
+	}
+
+	function renderFlowScriptExpression(expr, locals) {
+		expr = String(expr || "").trim();
+		var exact = expr.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+		if (exact) {
+			expr = exact[1].trim();
+		}
+		Object.keys(locals || {}).sort(function (a, b) {
+			return b.length - a.length;
+		}).forEach(function (name) {
+			var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])local\\." + escaped + "(?=\\b|\\.)", "g"), "$1" + name);
+		});
+		return expr;
+	}
+
+	function renderFlowScriptTemplate(text, locals) {
+		return String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expr) {
+			return "{{ " + renderFlowScriptExpression(expr, locals) + " }}";
+		});
+	}
+
+	function renderFlowScriptValue(blocks, node, key, value, locals) {
+		var kind = flowScriptPropKind(blocks, blockName(node), key);
+		if (kind === "expression") {
+			return renderFlowScriptExpression(value, locals);
+		}
+		if (kind === "template" || kind === "value") {
+			if (typeof value === "string") {
+				var exact = value.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+				if (exact) {
+					return renderFlowScriptExpression(exact[1], locals);
+				}
+				return JSON.stringify(renderFlowScriptTemplate(value, locals));
+			}
+		}
+		return flowScriptInlineValue(value);
+	}
+
 	function flowScriptArgKeys(node, slotNames) {
 		var skip = {
 			block: true, props: true, nodes: true, then: true, "else": true, fields: true,
@@ -3794,35 +3952,58 @@
 		return slots.length ? slots[0] : "";
 	}
 
-	function flowScriptCallLine(blocks, node, indent) {
+	function flowScriptCallLine(blocks, node, indent, locals) {
+		locals = locals || {};
+		var block = String(blockName(node) || node.block || "unknown.block");
+		var outLocal = flowScriptLocalName(node && node.out);
+		if (block === "set" && flowScriptScopeAssignmentPath(node && node.path)) {
+			var assignmentPath = String(node.path);
+			if (assignmentPath.indexOf("local.") === 0) {
+				var localName = flowScriptLocalName(assignmentPath);
+				if (localName) {
+					var rendered = renderFlowScriptValue(blocks, node, "value", node.value, locals);
+					locals[localName] = true;
+					return indent + "var " + localName + " = " + rendered;
+				}
+			}
+			return indent + assignmentPath + " = " + renderFlowScriptValue(blocks, node, "value", node.value, locals);
+		}
 		var slotNames = flowScriptSlotNames(blocks, node);
 		var args = {};
 		flowScriptArgKeys(node, slotNames).forEach(function (key) {
+			if (key === "out" && outLocal) {
+				return;
+			}
 			args[key] = node[key];
 		});
 		var parts = Object.keys(args).map(function (key) {
-			return key + ": " + flowScriptInlineValue(args[key]);
+			return key + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals);
 		});
-		var block = String(blockName(node) || node.block || "unknown.block");
-		return indent + block + "({ " + parts.join(", ") + " })";
+		var call = block + "({ " + parts.join(", ") + " })";
+		if (outLocal) {
+			locals[outLocal] = true;
+			return indent + "var " + outLocal + " = " + call;
+		}
+		return indent + call;
 	}
 
-	function renderFlowScriptNodes(blocks, nodes, depth, lines) {
+	function renderFlowScriptNodes(blocks, nodes, depth, lines, locals) {
+		locals = locals || {};
 		var indent = new Array(depth + 1).join("  ");
 		(nodes || []).forEach(function (node) {
 			var defaultSlot = defaultFlowScriptSlot(blocks, node);
 			var renderedChildren = defaultSlot && Object.prototype.toString.call(node[defaultSlot]) === "[object Array]" && node[defaultSlot].length > 0;
-			var line = flowScriptCallLine(blocks, node, indent);
+			var line = flowScriptCallLine(blocks, node, indent, locals);
 			if (renderedChildren) {
 				lines.push(line + " {");
-				renderFlowScriptNodes(blocks, node[defaultSlot], depth + 1, lines);
+				renderFlowScriptNodes(blocks, node[defaultSlot], depth + 1, lines, Object.assign({}, locals));
 				lines.push(indent + "}");
 			} else {
 				lines.push(line);
 			}
 			if (blockName(node) === "if" && Object.prototype.toString.call(node["else"]) === "[object Array]" && node["else"].length > 0) {
 				lines[lines.length - 1] = lines[lines.length - 1] + " else {";
-				renderFlowScriptNodes(blocks, node["else"], depth + 1, lines);
+				renderFlowScriptNodes(blocks, node["else"], depth + 1, lines, Object.assign({}, locals));
 				lines.push(indent + "}");
 			}
 		});
@@ -3846,12 +4027,119 @@
 				lines.push("// c8o: Known paths: " + paths.join(", "));
 			}
 		}
-		lines.push("");
-		lines.push("flow " + safeIdentifier(name || "Flow") + "({ input, config }) => result {");
-		renderFlowScriptNodes(blocks, definition.nodes || [], 1, lines);
+		if (lines.length) {
+			lines.push("");
+		}
+		lines.push("function " + safeIdentifier(name || "Flow") + "({ input, config, result }) {");
+		renderFlowScriptNodes(blocks, definition.nodes || [], 1, lines, {});
+		lines.push("  return result");
 		lines.push("}");
 		lines.push("");
 		return lines.join("\n");
+	}
+
+	function normalizeFlowScriptCode(code) {
+		code = String(code || "").replace(/\s+$/g, "");
+		return code + "\n";
+	}
+
+	function stripFlowScriptMirrorHeader(code) {
+		var lines = String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+		if (!lines.length || lines[0].indexOf("// c8o-flow: generated FlowScript mirror") !== 0) {
+			return String(code || "");
+		}
+		while (lines.length && String(lines[0]).indexOf("// c8o-flow:") === 0) {
+			lines.shift();
+		}
+		if (lines.length && String(lines[0]).trim() === "") {
+			lines.shift();
+		}
+		return lines.join("\n");
+	}
+
+	function flowScriptMirrorCode(blocks, name, source, args) {
+		args = args || {};
+		var code = args.code !== undefined && args.code !== null
+			? String(args.code)
+			: renderFlowScript(blocks, name, source, { includeHeader: false });
+		return normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
+	}
+
+	function writeProjectFlowCodeMirror(blocks, name, source, args) {
+		args = args || {};
+		if (args.flowCodeMirror === false || args.mirrorCode === false || args.saveCode === false) {
+			return null;
+		}
+		return writeFlowCodeMirrorFile(blocks, name, source, projectFlowCodeFile(name), args);
+	}
+
+	function writeFlowCodeMirrorFile(blocks, name, source, file, args) {
+		args = args || {};
+		if (args.flowCodeMirror === false || args.mirrorCode === false || args.saveCode === false) {
+			return null;
+		}
+		file.getParentFile().mkdirs();
+		var code = flowScriptMirrorCode(blocks, name, source, args);
+		FileUtils.writeStringToFile(file, code, "UTF-8");
+		return {
+			file: String(file.getAbsolutePath()),
+			code: code,
+			revision: sha256Hex(code)
+		};
+	}
+
+	function writeFlowCodeMirrorRequest(request, blocks) {
+		request = request || {};
+		var source = sourceForWriteRequest(request, request.source || request.flowSource);
+		source = sourceFromDefinition(parseSource(source));
+		var name = String(request.name || request.flowName || "Flow");
+		var sourceFile = request.sourceFile ? new File(String(request.sourceFile)) : null;
+		var codeFile = request.codeFile ? new File(String(request.codeFile))
+			: (sourceFile ? flowCodeFileFromYamlFile(sourceFile, name) : projectFlowCodeFile(name));
+		var mirror = writeFlowCodeMirrorFile(blocks, name, source, codeFile, request);
+		return {
+			ok: true,
+			name: name,
+			sourceFile: sourceFile ? String(sourceFile.getAbsolutePath()) : "",
+			codeFile: mirror ? mirror.file : "",
+			codeRevision: mirror ? mirror.revision : ""
+		};
+	}
+
+	function flowScriptCodeFromMirror(blocks, name, source, request) {
+		request = request || {};
+		var file = projectFlowCodeFile(name);
+		if (request.useMirror !== false && file.isFile()) {
+			var code = String(FileUtils.readFileToString(file, "UTF-8"));
+			try {
+				var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
+					name: name,
+					code: code
+				}));
+				if (validation.ok && sha256Hex(validation.source) === sha256Hex(sourceFromDefinition(parseSource(source)))) {
+					return {
+						code: code,
+						file: String(file.getAbsolutePath()),
+						fromMirror: true,
+						stale: false
+					};
+				}
+			} catch (e) {
+				// A broken mirror must not hide the canonical Flow YAML.
+			}
+			return {
+				code: renderFlowScript(blocks, name, source, request),
+				file: String(file.getAbsolutePath()),
+				fromMirror: false,
+				stale: true
+			};
+		}
+		return {
+			code: renderFlowScript(blocks, name, source, request),
+			file: file.isFile() ? String(file.getAbsolutePath()) : "",
+			fromMirror: false,
+			stale: false
+		};
 	}
 
 	function safeIdentifier(value) {
@@ -3947,7 +4235,7 @@
 		if (text === "") {
 			return true;
 		}
-		if (text.match(/^flow\s+/) || text === "}" || text === "};" || text.match(/^}\s*else\s*\{\s*;?$/)) {
+		if (text.match(/^(flow|function)\s+/) || text === "}" || text === "};" || text.match(/^}\s*else\s*\{\s*;?$/)) {
 			return true;
 		}
 		var balance = flowScriptBalance(text);
@@ -3960,6 +4248,7 @@
 				text.match(/^import\s+/) ||
 				text.match(/^return\b/) ||
 				text.match(/^(const|let|var)\s+/) ||
+				text.match(/^(local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*\s*=/) ||
 				text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(/));
 		}
 		return false;
@@ -3973,7 +4262,7 @@
 			if (line === "") {
 				return;
 			}
-			if (!pending && (line.match(/^flow\s+/) || line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/))) {
+			if (!pending && (line.match(/^(flow|function)\s+/) || line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/))) {
 				out.push({ line: index + 1, text: line });
 				return;
 			}
@@ -4257,6 +4546,12 @@
 		return out;
 	}
 
+	function flowScriptRewriteTemplateText(text, locals) {
+		return String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expr) {
+			return "{{ " + flowScriptRewriteExpression(expr, locals) + " }}";
+		});
+	}
+
 	function flowScriptValueFromToken(token, locals, lineNumber) {
 		var template = flowScriptTemplateLiteralToTemplate(token, locals, lineNumber);
 		if (template !== undefined) {
@@ -4264,6 +4559,9 @@
 		}
 		var literal = flowScriptLiteralTokenValue(token, lineNumber);
 		if (literal !== undefined) {
+			if (typeof literal === "string" && literal.indexOf("{{") !== -1) {
+				return flowScriptRewriteTemplateText(literal, locals);
+			}
 			return literal;
 		}
 		return "{{ " + flowScriptRewriteExpression(token, locals) + " }}";
@@ -4515,8 +4813,47 @@
 		}];
 	}
 
+	function buildNaturalScopeAssignment(blocks, imports, locals, scopePath, rhs, lineNumber) {
+		rhs = stripFlowScriptSemicolon(rhs);
+		var call = parseNaturalFlowScriptCall(rhs);
+		if (call) {
+			var block = resolveFlowScriptName(call.name, imports);
+			var args = splitFlowScriptTopLevel(call.args, ",");
+			var node = {};
+			if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
+				node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
+			} else if (args.length > 0 && isFlowScriptObjectLiteral(args[args.length - 1])) {
+				node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[args.length - 1], lineNumber), locals, lineNumber);
+			}
+			node.block = block;
+			node.__flowScriptLine = lineNumber;
+			if (block === "set") {
+				node.path = scopePath;
+				if (node.id === undefined || node.id === null || String(node.id).trim() === "") {
+					node.id = safeIdentifier(scopePath.replace(/^(local|result)\./, ""));
+				}
+			} else {
+				node.out = scopePath;
+				if (node.id === undefined || node.id === null || String(node.id).trim() === "") {
+					node.id = safeIdentifier(scopePath.replace(/^(local|result)\./, ""));
+				}
+			}
+			return [node];
+		}
+		return [{
+			id: safeIdentifier(scopePath.replace(/^(local|result)\./, "")),
+			block: "set",
+			path: scopePath,
+			value: flowScriptValueFromToken(rhs, locals, lineNumber),
+			__flowScriptLine: lineNumber
+		}];
+	}
+
 	function buildNaturalFlowScriptReturn(expr, locals, lineNumber) {
 		expr = stripFlowScriptSemicolon(String(expr || "").replace(/^return\b/, ""));
+		if (expr === "result") {
+			return [];
+		}
 		if (isFlowScriptObjectLiteral(expr)) {
 			return naturalFlowScriptObjectFields(expr).map(function (field) {
 				return {
@@ -4568,7 +4905,7 @@
 				}
 				continue;
 			}
-			if (line.match(/^flow\s+/)) {
+			if (line.match(/^(flow|function)\s+/)) {
 				continue;
 			}
 			var declaration = line.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
@@ -4579,6 +4916,19 @@
 					addFlowScriptNode(stack[stack.length - 1], node);
 				});
 				locals[varName] = true;
+				continue;
+			}
+			var scopeAssignment = line.match(/^((?:local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*)\s*=\s*(.+)$/);
+			if (scopeAssignment) {
+				buildNaturalScopeAssignment(blocks, imports, locals, scopeAssignment[1], scopeAssignment[2], lineNumber).forEach(function (node) {
+					addFlowScriptNode(stack[stack.length - 1], node);
+				});
+				if (scopeAssignment[1].indexOf("local.") === 0) {
+					var assignedLocal = scopeAssignment[1].substring("local.".length).split(/[.\[]/)[0];
+					if (assignedLocal) {
+						locals[assignedLocal] = true;
+					}
+				}
 				continue;
 			}
 			if (line.match(/^return\b/)) {
@@ -4795,12 +5145,16 @@
 	function flowScriptGetRequest(blocks, request) {
 		request = request || {};
 		var flow = getProjectFlow(request.name || request.flowName);
-		var code = renderFlowScript(blocks, request.name || request.flowName || flow.name, flow.source, request);
+		var codeInfo = flowScriptCodeFromMirror(blocks, request.name || request.flowName || flow.name, flow.source, request);
+		var code = codeInfo.code;
 		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: code }));
 		return {
 			ok: true,
 			name: flow.name,
 			file: flow.file,
+			codeFile: codeInfo.file,
+			codeFromMirror: codeInfo.fromMirror,
+			codeMirrorStale: codeInfo.stale,
 			revision: sha256Hex(code),
 			code: code,
 			sourceHash: sha256Hex(flow.source),
@@ -4834,13 +5188,14 @@
 		}
 		var saved = request.dryRun === true
 			? { ok: true, dryRun: true, source: validation.source, definition: validation.definition }
-			: setProjectFlow(blocks, name, validation.source, request);
+			: setProjectFlow(blocks, name, validation.source, Object.assign({}, request, { code: newCode }));
 		return {
 			ok: true,
 			name: String(name),
 			dryRun: request.dryRun === true,
 			oldRevision: current.revision,
-			newRevision: sha256Hex(newCode),
+			newRevision: saved && saved.codeRevision ? saved.codeRevision : sha256Hex(newCode),
+			codeFile: saved && saved.codeFile ? saved.codeFile : current.codeFile,
 			code: newCode,
 			source: validation.source,
 			definition: validation.definition,
@@ -4863,7 +5218,7 @@
 	}
 
 	function flowCodeNameFromCode(code) {
-		var match = String(code || "").match(/\bflow\s+([A-Za-z_$][\w$]*)\s*\(/);
+		var match = String(code || "").match(/\b(?:flow|function)\s+([A-Za-z_$][\w$]*)\s*\(/);
 		return match ? String(match[1]) : "";
 	}
 
@@ -4931,6 +5286,10 @@
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
+			file: current.file,
+			codeFile: current.codeFile,
+			codeFromMirror: current.codeFromMirror,
+			codeMirrorStale: current.codeMirrorStale,
 			revision: current.revision,
 			code: current.code
 		};
@@ -4983,15 +5342,20 @@
 				warnings: warnings
 			};
 		}
+		var saved = null;
 		if (!flowCodeDryRun(request)) {
-			setProjectFlow(blocks, name, validation.source, request);
+			saved = setProjectFlow(blocks, name, validation.source, request);
 		}
-		var revision = flowCodeRevisionForSource(blocks, name, validation.source, request);
+		var revision = saved && saved.codeRevision
+			? saved.codeRevision
+			: flowCodeRevisionForSource(blocks, name, validation.source, request);
 		return {
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
 			dry: flowCodeDryRun(request),
+			file: saved ? saved.file : (current ? current.file : ""),
+			codeFile: saved ? saved.codeFile : (current ? current.codeFile : ""),
 			revision: revision,
 			oldRevision: current ? current.revision : null,
 			warnings: warnings
@@ -5186,10 +5550,13 @@
 		var file = projectFlowFile(name);
 		file.getParentFile().mkdirs();
 		FileUtils.writeStringToFile(file, String(source), "UTF-8");
+		var codeMirror = writeProjectFlowCodeMirror(blocks, name, source, args);
 		return {
 			ok: true,
 			name: String(name),
 			file: String(file.getAbsolutePath()),
+			codeFile: codeMirror ? codeMirror.file : "",
+			codeRevision: codeMirror ? codeMirror.revision : "",
 			source: String(source),
 			definition: parseSource(source),
 			analysis: analysis
@@ -5710,6 +6077,14 @@
 		return block && typeof block.catalog === "function" ? block.catalog() : {};
 	}
 
+	function graphBlockStackLabel(stack) {
+		return (stack || []).map(function (name) {
+			return String(name || "");
+		}).filter(function (name) {
+			return name !== "";
+		}).join(" -> ");
+	}
+
 	function fragmentNameForNode(node) {
 		var props = nodeProps(node);
 		return String(props.fragment || props.name || props.ref || "").trim();
@@ -6212,11 +6587,13 @@
 			engine: projectEngine || {},
 			blocks: blocks,
 			returned: undefined,
-			stopped: false,
-			handles: {},
-			handleSeq: 0,
-			schemaUpdates: [],
-			scopes: {
+				stopped: false,
+				handles: {},
+				handleSeq: 0,
+				schemaUpdates: [],
+				graphBlockStack: [],
+				maxGraphBlockDepth: intOption(request.maxGraphBlockDepth, 128, 1, 1000),
+				scopes: {
 				request: requestScope,
 				input: normalizeTree(request.input || {}),
 				config: effectiveConfig(request, definition, projectEngine || {}),
@@ -6610,13 +6987,15 @@
 			reads: [],
 			writes: [],
 			providers: {},
-			schemas: {},
-			returnSchemas: [],
-			currentSources: [],
-			currentNodeInfo: null,
-			nodes: [],
-			errors: []
-		};
+				schemas: {},
+				returnSchemas: [],
+				currentSources: [],
+				graphBlockStack: [],
+				maxGraphBlockAnalysisDepth: intOption(request.maxGraphBlockAnalysisDepth, 32, 1, 200),
+				currentNodeInfo: null,
+				nodes: [],
+				errors: []
+			};
 		ctx.props = nodeProps;
 		ctx.addPath = function (path) {
 			addUnique(ctx.paths, path);
@@ -6724,14 +7103,43 @@
 				ctx.currentSources.pop();
 			}
 		};
-		ctx.withGraphBlock = function (node, block, callback) {
-			var catalog = blockCatalog(block);
-			var props = nodeProps(node);
-			ctx.addPath("input");
-			ctx.addPath("local");
-			Object.keys(catalog.props || {}).forEach(function (key) {
-				var descriptor = catalog.props[key] || {};
-				var value = props[key] === undefined ? descriptor["default"] : props[key];
+			ctx.withGraphBlock = function (node, block, callback) {
+				var catalog = blockCatalog(block);
+				var props = nodeProps(node);
+				var graphName = String(block && block.name || blockName(node) || "");
+				ctx.graphBlockStack = ctx.graphBlockStack || [];
+				var stack = ctx.graphBlockStack;
+				if (graphName && stack.indexOf(graphName) !== -1) {
+					var recursiveStack = stack.concat([graphName]);
+					ctx.errors.push({
+						severity: "warning",
+						code: "RECURSIVE_GRAPH_BLOCK_ANALYSIS_SKIPPED",
+						block: graphName,
+						path: nodePath(node),
+						stack: recursiveStack,
+						message: "Skipped recursive analysis for composite Flow block " + graphName + ".",
+						hint: "Declared outputs are still used; runtime recursion is allowed but tree/schema introspection stops at this reference."
+					});
+					return undefined;
+				}
+				var maxDepth = Number(ctx.maxGraphBlockAnalysisDepth || 32);
+				if (stack.length >= maxDepth) {
+					ctx.errors.push({
+						severity: "warning",
+						code: "GRAPH_BLOCK_ANALYSIS_DEPTH_LIMIT",
+						block: graphName,
+						path: nodePath(node),
+						stack: stack.concat([graphName]),
+						message: "Skipped composite Flow block analysis after " + maxDepth + " nested block calls.",
+						hint: "Increase maxGraphBlockAnalysisDepth only for debugging; production introspection should stay bounded."
+					});
+					return undefined;
+				}
+				ctx.addPath("input");
+				ctx.addPath("local");
+				Object.keys(catalog.props || {}).forEach(function (key) {
+					var descriptor = catalog.props[key] || {};
+					var value = props[key] === undefined ? descriptor["default"] : props[key];
 				var schema = null;
 				if (descriptor.kind === "expression" && typeof value === "string") {
 					schema = ctx.schemaForPath(value);
@@ -6743,12 +7151,21 @@
 				}
 				if (schema) {
 					ctx.addSchema("input." + key, schema);
-				} else {
-					ctx.addPath("input." + key);
+					} else {
+						ctx.addPath("input." + key);
+					}
+				});
+				if (graphName) {
+					stack.push(graphName);
 				}
-			});
-			return callback();
-		};
+				try {
+					return callback();
+				} finally {
+					if (graphName) {
+						stack.pop();
+					}
+				}
+			};
 		ctx.visitNodes = function (nodes) {
 			analyzeNodes(ctx, nodes);
 		};
@@ -6879,7 +7296,8 @@
 				catalog.props[key] || {} : {};
 			var kind = descriptor.kind || "";
 			var mode = descriptor.mode || "";
-			if (writeProps.indexOf(key) !== -1 || kind === "path" && mode === "write") {
+			if (writeProps.indexOf(key) !== -1 || kind === "path" && mode === "write"
+					|| key === "out" && declaredPropertyOutputSchema(catalog, key)) {
 				if (typeof value === "string") {
 					addUnique(writes, value);
 					ctx.addOutputPath(key, value);
@@ -9951,6 +10369,17 @@
 				return response(outputSchemaRequest(request, loadBlocks()));
 			} catch (e) {
 				return response(failure("outputSchema", e));
+			}
+		},
+
+		writeCodeMirror: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return writeFlowCodeMirrorRequest(request, loadBlocks());
+				}));
+			} catch (e) {
+				return response(failure("writeCodeMirror", e));
 			}
 		},
 
