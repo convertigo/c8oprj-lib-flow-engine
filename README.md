@@ -17,7 +17,7 @@ context(requestJson)       -> contextJson
 catalog(requestJson)       -> catalogJson
 search(requestJson)        -> rg-like Flow search results
 describeTree(requestJson)  -> virtual tree JSON
-applyMutation(requestJson) -> mutated YAML source + tree
+applyMutation(requestJson) -> mutated Flow model + tree
 outputSchema(requestJson)  -> JSON schema
 types(requestJson)         -> property type descriptors
 ```
@@ -32,7 +32,7 @@ For source control, a Convertigo `Flow` should not serialize its full source as 
 libs/flows/<FlowName>.flow.js
 ```
 
-The loader still accepts legacy `libs/flows/<FlowName>.flow.yaml` as a temporary fallback while the spike is being migrated. When both files exist, `.flow.js` wins. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
+The loader still accepts legacy `libs/flows/<FlowName>.flow.yaml` as a temporary fallback while the spike is being migrated. When both files exist, `.flow.js` wins. This is a controlled big-bang, not a dual-format product promise: the migration script removes obsolete YAML once the FlowScript sibling has been generated and validated. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
 
 The runtime core is intentionally small. Concrete behavior is implemented by
 block descriptors in:
@@ -219,18 +219,17 @@ mapping in one JavaScript file. Use FlowScript for orchestration and standard
 blocks such as `http.get`, `requestable.call`, `list.*` and `json.*`; keep Rhino
 for the one missing bridge or algorithm.
 
-Custom block metadata should live in `*.block.yaml`. Rhino ES6 JavaScript is
-only the implementation runtime when a block needs JVM/Java integration or
-algorithmic code. It may use Java classes through `Packages`, for example for
-integration adapters, but it must not assume Node.js APIs such as `require`,
-npm modules or browser globals. A descriptor-backed Rhino implementation is an
-IIFE returning `run`, and optionally `displayName` / `analyze`; `ctx.props(node)`,
-`ctx.template(value)`, `ctx.expr(value)`, `ctx.read(path)`,
-`ctx.write(path,value)` and `ctx.callBlock(name, props)` are the small runtime
-API. Metadata, properties and docs must stay in the peer `*.block.yaml`
-descriptor; dynamic display/analysis code belongs in `hooks.file`; Rhino
-implementations defining `catalog()`, `displayName()` or `analyze()` are
-rejected.
+New project-local blocks should use the FlowScript `*.block.js` source format:
+static metadata lives in `_meta`, and behavior lives in one function. Rhino ES6
+JavaScript is only the implementation runtime when a block needs JVM/Java
+integration or algorithmic code. It may use Java classes through `Packages`, for
+example for integration adapters, but it must not assume Node.js APIs such as
+`require`, npm modules or browser globals. A descriptor-backed Rhino
+implementation remains available as a fallback for native/legacy blocks: the
+descriptor is `*.block.yaml`, the implementation is an IIFE returning `run`, and
+optional dynamic display/analysis code belongs in `hooks.file`. Rhino
+implementations defining `catalog()`, `displayName()` or `analyze()` directly
+are rejected.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,
@@ -482,11 +481,10 @@ Use `beforeNodeId`, `afterNodeId`, or `parentNodeId + slot` for insertions when
 the target is clear; an agent should not depend on array indexes. JSON Pointer
 paths remain the escape hatch for exact structural edits.
 
-For broader edits, callers can also avoid YAML rewriting: `flow-get` returns the
-parsed Flow `definition`, and `flow-set`, `flow-run`, `flow-test`, `flow-tree`,
-`flow-apply` and `flow-output-schema` accept that same definition object. This
-keeps the MCP surface small while preserving the legacy “read a tree, patch it,
-write the same shape” authoring pattern.
+For broader model-debug edits, `flow-get` returns the parsed Flow `definition`,
+and `flow-set`, `flow-run`, `flow-test`, `flow-tree`, `flow-apply` and
+`flow-output-schema` accept that same definition object. Normal authoring should
+prefer `flow-code-*`, because FlowScript is the canonical source on this spike.
 
 ## Block Authoring API
 
@@ -503,15 +501,17 @@ remains the raw path for Rhino/native or legacy YAML-backed blocks.
   and, when relevant, `implementationSource`.
 - `blockCodeSet({ name, code, properties, outputs })` creates or replaces a
   project-local FlowScript block stored as `<name>.block.js`.
-- `blockCodeGet({ name })` reads the canonical FlowScript block code with its
-  revision for patch workflows.
+- `blockCodeGet({ name })` reads canonical FlowScript block code with its
+  revision for patch workflows. For descriptor-backed Flow blocks, it can return
+  a non-canonical FlowScript mirror to prepare a migration through
+  `blockCodeSet`.
 - `blockCodeRg({ pattern, name?, namespace? })` searches FlowScript block code
   and returns small extracts with block revisions.
 - `blockCodePatch({ name, revision, codepatch|code })` applies a
   revision-checked patch or replacement to a project-local FlowScript block.
 - `blockCreate({ name, descriptorSource|descriptor|definition, implementationSource })`
-  creates a project-local YAML-backed block. Use it mainly for Rhino ES6 source
-  or low-level compatibility tests.
+  creates a project-local descriptor-backed block. Use it only for Rhino/native
+  escape hatches or low-level compatibility tests.
 - `blockDuplicate({ fromName, toName })` copies a visible block into the
   project using the canonical format.
 - `blockEdit({ name, descriptorSource|descriptor|definition, implementationSource })`

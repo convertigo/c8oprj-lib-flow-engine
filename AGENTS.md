@@ -19,7 +19,7 @@ context(requestJson)       -> contextJson
 catalog(requestJson)       -> catalogJson
 search(requestJson)        -> rg-like Flow search results
 describeTree(requestJson)  -> virtual tree JSON
-applyMutation(requestJson) -> mutated YAML source + tree
+applyMutation(requestJson) -> mutated Flow model + tree
 outputSchema(requestJson)  -> JSON schema
 types(requestJson)         -> property type descriptors
 ```
@@ -147,9 +147,10 @@ Avoid:
 
 Keep `libs/flow/Engine.js` small. It should:
 
-- parse the request and Flow source;
-- load native blocks from `libs/flow/blocks/*.js` and composite graph blocks
-  from `libs/flow/blocks/*.block.yaml`;
+- parse the request and FlowScript/legacy Flow source;
+- load FlowScript blocks from `libs/flow/blocks/**/*.block.js`, then fallback
+  descriptor-backed blocks from `libs/flow/blocks/**/*.block.yaml` and their
+  runtime files;
 - prepare scopes;
 - execute nodes in order;
 - delegate each node to its block;
@@ -183,8 +184,8 @@ Runtime handles are allowed for live objects that cannot be serialized, such as
 DBO instances, file writers, OpenDocument objects, XLS workbooks and JDBC
 transactions. Treat them as typed values like `handle<dbo>` or
 `handle<jdbc.transaction>`. Handles may live in `local`, `current` and
-`request`, but never in `result`, persisted YAML, learned schemas or MCP/SDK
-responses. Traces and pickers must show only a serializable summary.
+`request`, but never in `result`, persisted Flow sources, learned schemas or
+MCP/SDK responses. Traces and pickers must show only a serializable summary.
 
 Prefer scoped `with*` blocks for handles that require cleanup, like Java
 try-with-resources. A block such as `file.withWriter` should open the handle,
@@ -295,9 +296,11 @@ Flow-level overrides in the Flow sidecar when a specific Flow must deviate from
 the project default.
 
 Rhino implementation files are IIFEs returning runtime implementation only. They
-must not define `catalog()`, `name`, `private`, `displayName()` or `analyze()`;
-static metadata, properties and docs belong in `*.block.yaml`. Optional dynamic
-hooks belong in a peer file declared with `hooks.file`.
+must not define `catalog()`, `name`, `private`, `displayName()` or `analyze()`.
+For new blocks, prefer FlowScript `*.block.js` where `_meta` carries static
+metadata and the function carries behavior. For descriptor-backed Rhino/native
+blocks, static metadata, properties and docs belong in `*.block.yaml`; optional
+dynamic hooks belong in a peer file declared with `hooks.file`.
 
 ```javascript
 (function () {
@@ -443,7 +446,7 @@ FlowScript blocks with `blockCodeSet`, patch existing FlowScript block code with
 `blockCodePatch`, duplicate core/shared blocks with `blockDuplicate`, and edit
 only project-local copies. `blockCodeSet` writes `<name>.block.js` and removes
 obsolete YAML fallbacks for that block. `blockCreate` remains the lower-level API
-for YAML/Rhino/native compatibility cases.
+only for descriptor-backed Rhino/native compatibility cases.
 
 Static `requestable.call` nodes should enrich picker context too. Flow targets
 read the Flow output contract; legacy sequence and transaction targets use the
@@ -462,14 +465,16 @@ When acting as a Flow authoring agent through `lib_flow_mcp`, use this order:
 
 ```text
 tools/list
-flow-catalog
-flow-list / flow-get
+flow-code-rg / flow-search
+flow-code-get for an existing Flow
+flow-code-set dry:true for a new or edited FlowScript draft
 flow-context when choosing paths or expressions
 flow-schema-reset before rerunning an HTTP learn scenario when the output changed
-flow-block-list
-flow-block-create only when the catalog is insufficient
-flow-set
-flow-test
+flow-catalog only when search/examples/diagnostics are insufficient
+flow-block-code-rg / flow-block-code-get for custom FlowScript blocks
+flow-block-code-set dry:true then dry:false only when reusable vocabulary is needed
+flow-block-code-patch for existing project-local FlowScript blocks
+flow-code-run / flow-test
 ```
 
 Prefer editing Flow sidecars over adding custom blocks. Prefer project-local

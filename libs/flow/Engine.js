@@ -4426,6 +4426,12 @@
 	function flowScriptCallLine(blocks, node, indent, locals) {
 		locals = locals || {};
 		var block = String(blockName(node) || node.block || "unknown.block");
+		if (block === "if") {
+			return indent + "if (" + renderFlowScriptExpression(node && node.condition || "true", locals) + ")";
+		}
+		if (block === "return") {
+			return indent + "return " + renderFlowScriptValue(blocks, node, "value", node && node.value, locals);
+		}
 		var outLocal = flowScriptLocalName(node && node.out);
 		if (block === "set" && flowScriptScopeAssignmentPath(node && node.path)) {
 			var assignmentPath = String(node.path);
@@ -4503,7 +4509,9 @@
 		}
 		lines.push("function " + safeIdentifier(name || "Flow") + "({ input, config, result }) {");
 		renderFlowScriptNodes(blocks, definition.nodes || [], 1, lines, {});
-		lines.push("  return result");
+		if (request.includeImplicitReturn !== false) {
+			lines.push("  return result");
+		}
 		lines.push("}");
 		lines.push("");
 		return lines.join("\n");
@@ -5483,6 +5491,20 @@
 				stack.push({ root: previous.root, slot: "else" });
 				continue;
 			}
+			var ifMatch = line.match(/^if\s*\((.*)\)\s*(\{)?\s*;?$/);
+			if (ifMatch) {
+				var ifNode = {
+					id: "if" + lineNumber,
+					block: "if",
+					condition: flowScriptExpressionFromToken(ifMatch[1], locals, lineNumber),
+					__flowScriptLine: lineNumber
+				};
+				addFlowScriptNode(stack[stack.length - 1], ifNode);
+				if (ifMatch[2]) {
+					stack.push({ root: ifNode, slot: "then" });
+				}
+				continue;
+			}
 			var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\((.*)\)\s*(\{)?\s*;?$/);
 			if (!match) {
 				raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,
@@ -5982,6 +6004,76 @@
 		return Object.assign({}, write, {
 			oldRevision: current.codeRevision
 		});
+	}
+
+	function blockCodeGetRequest(blocks, request) {
+		request = request || {};
+		var name = String(request.name || request.block || "").trim();
+		if (!name) {
+			return {
+				ok: false,
+				name: name,
+				error: flowCodeError("MISSING_BLOCK_NAME", "flow-block-code-get requires name."),
+				warnings: []
+			};
+		}
+		var block = getBlockSource(blocks, name, Object.assign({}, request, {
+			detail: "full",
+			includeMeta: true
+		}));
+		if (block.implementationRuntime !== "flow") {
+			return {
+				ok: false,
+				name: name,
+				error: flowCodeError("BLOCK_NOT_FLOWSCRIPT", "Block " + name + " is implemented with " + block.implementationRuntime + ".",
+					"Use flow-block-get for Rhino/native source blocks, or create a FlowScript wrapper block."),
+				warnings: []
+			};
+		}
+		if (block.format === "flowscript" && block.code) {
+			var direct = {
+				ok: true,
+				name: name,
+				origin: block.origin,
+				format: "flowscript",
+				canonical: true,
+				revision: block.codeRevision || "",
+				code: block.code,
+				descriptor: block.descriptor,
+				warnings: []
+			};
+			if (request.includeSources === true || String(request.includeSources || "") === "true") {
+				direct.codeFile = block.codeFile;
+				direct.implementationSource = block.implementationSource;
+			}
+			return direct;
+		}
+		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
+			name: name,
+			flowSource: block.implementationSource,
+			includeHeader: false,
+			includeImplicitReturn: false
+		}));
+		var out = {
+			ok: validation.ok !== false,
+			name: name,
+			origin: block.origin,
+			format: "flowscript-mirror",
+			canonical: false,
+			revision: validation.revision,
+			code: validation.code,
+			descriptor: block.descriptor,
+			diagnostics: validation.diagnostics || [],
+			warnings: (validation.diagnostics || []).filter(function (diagnostic) {
+				return diagnostic.severity === "warning";
+			}),
+			next: "Call flow-block-code-set with this code to migrate the project-local block to canonical .block.js."
+		};
+		if (request.includeSources === true || String(request.includeSources || "") === "true") {
+			out.descriptorSource = block.descriptorSource;
+			out.implementationSource = block.implementationSource;
+		}
+		return out;
 	}
 
 	function flowCodeRgExtract(code, matcher, context, limit) {
@@ -7481,16 +7573,22 @@
 				return editProjectBlock(targetBlocks, name, request);
 			});
 		};
-		ctx.blockCodeSet = function (name, args) {
-			args = args || {};
-			return withProjectDir(args.projectDir, function () {
-				return setProjectBlockCode(loadBlocks(), name, args);
-			});
-		};
-		ctx.blockCodePatch = function (args) {
-			args = args || {};
-			return withProjectDir(args.projectDir, function () {
-				return blockCodePatchRequest(loadBlocks(), args);
+			ctx.blockCodeSet = function (name, args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return setProjectBlockCode(loadBlocks(), name, args);
+				});
+			};
+			ctx.blockCodeGet = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return blockCodeGetRequest(loadBlocks(), args);
+				});
+			};
+			ctx.blockCodePatch = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return blockCodePatchRequest(loadBlocks(), args);
 			});
 		};
 		ctx.blockCodeRg = function (args) {
@@ -11189,6 +11287,39 @@
 				}));
 			} catch (e) {
 				return response(failure("flowCodeRg", e));
+			}
+		},
+
+		blockCodeGet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return blockCodeGetRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("blockCodeGet", e));
+			}
+		},
+
+		blockCodeSet: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return setProjectBlockCode(loadBlocks(), request.name || request.block, request);
+				}));
+			} catch (e) {
+				return response(failure("blockCodeSet", e));
+			}
+		},
+
+		blockCodePatch: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return blockCodePatchRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("blockCodePatch", e));
 			}
 		},
 

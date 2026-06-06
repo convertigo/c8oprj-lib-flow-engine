@@ -5,7 +5,7 @@ tags:
 - block
 - code
 - flowscript
-description: "Reads one project Flow block implemented as FlowScript code."
+description: "Reads a FlowScript block, or returns a FlowScript mirror for a descriptor-backed Flow block."
 props:
   name:
     label: "name"
