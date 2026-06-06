@@ -5935,6 +5935,55 @@
 		}));
 	}
 
+	function blockCodePatchRequest(blocks, request) {
+		request = request || {};
+		var name = String(request.name || request.block || "").trim();
+		if (!name) {
+			return {
+				ok: false,
+				name: name,
+				error: flowCodeError("MISSING_BLOCK_NAME", "flow-block-code-patch requires name."),
+				warnings: []
+			};
+		}
+		var current = getBlockSource(blocks, name, Object.assign({}, request, { detail: "full" }));
+		if (current.format !== "flowscript" || !current.code) {
+			return {
+				ok: false,
+				name: name,
+				revision: current.codeRevision || "",
+				error: flowCodeError("BLOCK_NOT_FLOWSCRIPT",
+					"Block " + name + " is not stored as FlowScript.",
+					"Use flow-block-code-get only for .block.js blocks, or duplicate/migrate the block first."),
+				warnings: []
+			};
+		}
+		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
+		if (expectedRevision && String(expectedRevision) !== current.codeRevision) {
+			return {
+				ok: false,
+				name: name,
+				revision: current.codeRevision,
+				error: flowCodeError("BLOCK_CODE_REVISION_MISMATCH",
+					"FlowScript block changed since it was read: " + name,
+					"Call flow-block-code-get again and regenerate the patch from the new revision."),
+				warnings: []
+			};
+		}
+		var patch = request.codepatch || request.patch || request.unifiedDiff || request.diff || "";
+		var code = request.code !== undefined && request.code !== null
+			? String(request.code)
+			: applyUnifiedPatchText(current.code, patch).content;
+		var write = setProjectBlockCode(blocks, name, Object.assign({}, request, {
+			name: name,
+			code: code,
+			revision: current.codeRevision
+		}));
+		return Object.assign({}, write, {
+			oldRevision: current.codeRevision
+		});
+	}
+
 	function flowCodeRgExtract(code, matcher, context, limit) {
 		var lines = String(code || "").split(/\r?\n/);
 		var extracts = [];
@@ -7374,6 +7423,12 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				return setProjectBlockCode(loadBlocks(), name, args);
+			});
+		};
+		ctx.blockCodePatch = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return blockCodePatchRequest(loadBlocks(), args);
 			});
 		};
 		ctx.typeList = function (args) {

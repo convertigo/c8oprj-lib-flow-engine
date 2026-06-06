@@ -1,0 +1,51 @@
+version: 1
+private: true
+icon: "mdi:puzzle-edit-outline"
+tags:
+- block
+- code
+- flowscript
+- patch
+description: "Applies a revision-checked FlowScript block patch or replacement."
+props:
+  name:
+    label: "name"
+    kind: "text"
+    type: "string"
+    description: "Project-local block name, for example text.initials."
+  revision:
+    label: "revision"
+    kind: "text"
+    type: "string"
+    description: "Revision returned by block.code.get."
+  code:
+    label: "code"
+    kind: "text"
+    type: "string"
+    description: "Full replacement FlowScript block code."
+  codepatch:
+    label: "codepatch"
+    kind: "text"
+    type: "string"
+    description: "Unified diff applied to the current FlowScript block code."
+  dry:
+    label: "dry"
+    kind: "literal"
+    type: "boolean"
+    default: false
+    description: "Validate without writing."
+  projectDir:
+    label: "projectDir"
+    kind: "text"
+    type: "string"
+    description: "Optional project directory override."
+  out:
+    label: "out"
+    kind: "path"
+    mode: "write"
+    description: "Scope path receiving compact patch result."
+hooks:
+  file: "block.code.patch.hooks.js"
+implementation:
+  runtime: "rhino"
+  file: "block.code.patch.js"
