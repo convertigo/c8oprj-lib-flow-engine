@@ -2580,12 +2580,47 @@
 		});
 	}
 
+	function reserveBlockDir(blocks, blocksDir, origin, provider) {
+		var files = blocksDir.listFiles();
+		if (!files) {
+			return;
+		}
+		files = Arrays.asList(files).toArray();
+		files.sort(function (a, b) {
+			return String(a.getName()).localeCompare(String(b.getName()));
+		});
+		files.forEach(function (file) {
+			if (file.isDirectory()) {
+				reserveBlockDir(blocks, file, origin, provider);
+				return;
+			}
+			if (!file.isFile()) {
+				return;
+			}
+			var base = origin === "core" ? new File(engineDir(), "blocks") : projectBlocksDir();
+			if (String(file.getName()).endsWith(".block.js")) {
+				reserveFlowScriptBlockFile(blocks, file, origin, provider, base);
+				return;
+			}
+			if (String(file.getName()).endsWith(".block.yaml")) {
+				var peer = new File(String(file.getAbsolutePath()).substring(0,
+					String(file.getAbsolutePath()).length - ".block.yaml".length) + ".block.js");
+				if (!peer.isFile()) {
+					reserveGraphBlockFile(blocks, file, origin, provider, base);
+				}
+			}
+		});
+	}
+
 	function loadBlocks() {
 		var blocks = {};
 		var coreBlocksDir = new File(engineDir(), "blocks");
+		reserveBlockDir(blocks, coreBlocksDir, "core", flowProviderName(engineDir(), "lib_flow_engine"));
 		loadBlockDir(blocks, coreBlocksDir, "core", flowProviderName(engineDir(), "lib_flow_engine"));
 		var localBlocksDir = projectBlocksDir();
 		if (localBlocksDir && canonicalPath(localBlocksDir) !== canonicalPath(coreBlocksDir)) {
+			reserveBlockDir(blocks, localBlocksDir, "project",
+				flowProviderName(new File(projectDir(), "libs/flow"), "project"));
 			loadBlockDir(blocks, localBlocksDir, "project",
 				flowProviderName(new File(projectDir(), "libs/flow"), "project"));
 		}
@@ -3257,7 +3292,7 @@
 		}
 		var definition = validateGraphBlockSource(name, source);
 		var block = graphBlockFromDefinition(definition, file, origin, provider);
-		if (blocks[block.name]) {
+		if (blocks[block.name] && blocks[block.name].__flowScriptPlaceholder !== true) {
 			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
 				null, "Rename the project block or remove the duplicate.");
 		}
@@ -3484,12 +3519,62 @@
 		}
 		var compiled = compileFlowScriptBlockCode(blocks, name, code);
 		var block = graphBlockFromDefinition(compiled.descriptor, file, origin, provider);
-		if (blocks[block.name]) {
+		if (blocks[block.name] && blocks[block.name].__flowScriptPlaceholder !== true) {
 			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
 				null, "Rename the project block or remove the duplicate.");
 		}
 		blocks[block.name] = block;
 		return block;
+	}
+
+	function reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir) {
+		var code = String(FileUtils.readFileToString(file, "UTF-8"));
+		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
+		if (!name) {
+			name = String(file.getName());
+			name = name.substring(0, name.length - ".block.js".length);
+		}
+		if (blocks[name] && blocks[name].__flowScriptPlaceholder !== true) {
+			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + name,
+				null, "Rename the project block or remove the duplicate.");
+		}
+		var extracted = extractFlowScriptBlockMeta(code);
+		var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, {}), normalizeTree(extracted.meta || {}));
+		var descriptor = flowScriptBlockDescriptorFromMeta(name, meta, { version: 1, nodes: [] }, code);
+		var catalog = graphBlockCatalog(descriptor);
+		blocks[name] = {
+			name: String(name),
+			"private": descriptor["private"] === true,
+			__flowScriptPlaceholder: true,
+			__blockDefinition: descriptor,
+			catalog: function () {
+				return normalizeTree(catalog);
+			}
+		};
+	}
+
+	function reserveGraphBlockFile(blocks, file, origin, provider, blocksDir) {
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
+		if (!name) {
+			name = String(file.getName());
+			name = name.substring(0, name.length - ".block.yaml".length);
+		}
+		if (blocks[name] && blocks[name].__flowScriptPlaceholder !== true) {
+			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + name,
+				null, "Rename the project block or remove the duplicate.");
+		}
+		var descriptor = validateGraphBlockSource(name, source);
+		var catalog = graphBlockCatalog(descriptor);
+		blocks[name] = {
+			name: String(name),
+			"private": descriptor["private"] === true,
+			__flowScriptPlaceholder: true,
+			__blockDefinition: descriptor,
+			catalog: function () {
+				return normalizeTree(catalog);
+			}
+		};
 	}
 
 	function escapeRegExp(text) {
@@ -4349,6 +4434,9 @@
 	}
 
 	function renderFlowScriptExpression(expr, locals) {
+		if (expr !== undefined && expr !== null && typeof expr !== "string") {
+			return flowScriptInlineValue(expr);
+		}
 		expr = String(expr || "").trim();
 		var exact = expr.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
 		if (exact) {
@@ -5074,7 +5162,11 @@
 		Object.keys(tokens).forEach(function (key) {
 			var kind = flowScriptPropKind(blocks, block, key);
 			if (kind === "expression") {
-				args[key] = flowScriptExpressionFromToken(tokens[key], locals);
+				if (isFlowScriptArrayLiteral(tokens[key]) || isFlowScriptObjectLiteral(tokens[key])) {
+					args[key] = flowScriptLiteralTokenValue(tokens[key], lineNumber);
+				} else {
+					args[key] = flowScriptExpressionFromToken(tokens[key], locals);
+				}
 			} else if (kind === "path") {
 				args[key] = flowScriptPathFromToken(tokens[key], locals);
 			} else if (kind === "template" || kind === "value") {
@@ -5116,6 +5208,53 @@
 						return null;
 					}
 					return { name: match[1], args: text.substring(open + 1, i) };
+				}
+			}
+		}
+		return null;
+	}
+
+	function parseNaturalFlowScriptCallWithBody(text) {
+		text = stripFlowScriptSemicolon(text);
+		var match = text.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(/);
+		if (!match) {
+			return null;
+		}
+		var open = text.indexOf("(", match[0].length - 1);
+		var paren = 0;
+		var inString = false;
+		var quote = "";
+		for (var i = open; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (inString) {
+				if (ch === "\\" && i + 1 < text.length) {
+					i++;
+				} else if (ch === quote) {
+					inString = false;
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'" || ch === "`") {
+				inString = true;
+				quote = ch;
+			} else if (ch === "(") {
+				paren++;
+			} else if (ch === ")") {
+				paren--;
+				if (paren === 0) {
+					var rest = text.substring(i + 1).trim();
+					if (!rest || rest.charAt(0) !== "{") {
+						return null;
+					}
+					var bodyEnd = balancedObjectEnd(rest, 0);
+					if (bodyEnd < 0 || rest.substring(bodyEnd + 1).trim() !== "") {
+						return null;
+					}
+					return {
+						name: match[1],
+						args: text.substring(open + 1, i),
+						body: rest.substring(1, bodyEnd)
+					};
 				}
 			}
 		}
@@ -5339,6 +5478,19 @@
 
 	function buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, rhs, lineNumber) {
 		rhs = stripFlowScriptSemicolon(rhs);
+		var callWithBody = parseNaturalFlowScriptCallWithBody(rhs);
+		if (callWithBody) {
+			var nodesWithBody = buildNaturalFlowScriptCall(blocks, imports, locals, varName,
+				callWithBody.name + "(" + callWithBody.args + ")", lineNumber);
+			if (nodesWithBody.length !== 1) {
+				raise("FLOWSCRIPT_UNSUPPORTED_ASSIGNMENT", "Unsupported FlowScript block assignment with body at line " + lineNumber + ": " + rhs,
+					null, "Assign one block call with one child body.");
+			}
+			var nodeWithBody = nodesWithBody[0];
+			var slot = nodeWithBody.block === "if" ? "then" : nodeWithBody.block === "json.object" ? "fields" : "nodes";
+			nodeWithBody[slot] = parseFlowScriptBodyNodes(blocks, imports, locals, callWithBody.body);
+			return [nodeWithBody];
+		}
 		if (parseNaturalFlowScriptCall(rhs)) {
 			return buildNaturalFlowScriptCall(blocks, imports, locals, varName, rhs, lineNumber);
 		}
@@ -5461,12 +5613,14 @@
 			null, "Use import { call } from \"requestable\", import * as requestable from \"requestable\", or import requestable.call.");
 	}
 
-	function parseFlowScript(blocks, code) {
+	function parseFlowScriptBodyNodes(blocks, imports, locals, body) {
 		var root = { version: 1, nodes: [] };
-		var imports = {};
-		var locals = {};
+		parseFlowScriptStatementsInto(blocks, imports || {}, Object.assign({}, locals || {}), root, flowScriptStatements(body));
+		return root.nodes;
+	}
+
+	function parseFlowScriptStatementsInto(blocks, imports, locals, root, statements) {
 		var stack = [{ root: root, slot: "nodes" }];
-		var statements = flowScriptStatements(code);
 		for (var i = 0; i < statements.length; i++) {
 			var lineNumber = statements[i].line;
 			var line = statements[i].text;
@@ -5555,6 +5709,11 @@
 				stack.push({ root: node, slot: slot });
 			}
 		}
+	}
+
+	function parseFlowScript(blocks, code) {
+		var root = { version: 1, nodes: [] };
+		parseFlowScriptStatementsInto(blocks, {}, {}, root, flowScriptStatements(code));
 		return canonicalFlowDefinition(root);
 	}
 
