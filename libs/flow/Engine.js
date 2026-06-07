@@ -597,8 +597,9 @@
 			return prefix ? [prefix] : [];
 		}
 		var source = schema.properties || schema;
+		var filterMeta = !schema.properties;
 		var keys = Object.keys(source || {}).filter(function (key) {
-			return !isSchemaMetaKey(key);
+			return !filterMeta || !isSchemaMetaKey(key);
 		});
 		if (keys.length === 0) {
 			return prefix ? [prefix] : [];
@@ -654,8 +655,9 @@
 			return out;
 		}
 		var source = schema.properties || schema;
+		var filterMeta = !schema.properties;
 		Object.keys(source || {}).filter(function (key) {
-			return !isSchemaMetaKey(key);
+			return !filterMeta || !isSchemaMetaKey(key);
 		}).forEach(function (key) {
 			schemaArrayPaths(source[key], joinPath(prefix, key)).forEach(function (path) {
 				addUnique(out, path);
@@ -677,9 +679,10 @@
 			return prefix ? [{ path: prefix, type: schemaSimpleType(schema) }] : [];
 		}
 		var source = schema.properties || schema;
+		var filterMeta = !schema.properties;
 		var out = [];
 		Object.keys(source || {}).filter(function (key) {
-			return !isSchemaMetaKey(key);
+			return !filterMeta || !isSchemaMetaKey(key);
 		}).forEach(function (key) {
 			schemaLeafEntries(source[key], joinPath(prefix, key)).forEach(function (entry) {
 				out.push(entry);
