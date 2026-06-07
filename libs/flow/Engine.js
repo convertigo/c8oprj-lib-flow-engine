@@ -1756,7 +1756,7 @@
 
 	function resetSchemaRequest(request) {
 		request = request || {};
-		var definition = parseSource(request.flowSource || "");
+		var definition = parseSource(sourceForMaybeFlowScript(loadBlocks(), request, request.flowSource || ""));
 		var flowName = flowNameFor(request, definition);
 		var dir = projectSchemasDir();
 		if (!dir) {
@@ -6583,8 +6583,21 @@
 		return "";
 	}
 
+	function isFlowScriptSource(source) {
+		var text = String(source || "").trim();
+		return !!text.match(/^(?:\/\/[^\n]*\n\s*)*(?:import\s+|const\s+_meta\s*=|flow\s+[A-Za-z_$][\w$]*\s*\(|function\s+[A-Za-z_$][\w$]*\s*\()/);
+	}
+
+	function sourceForMaybeFlowScript(blocks, args, source) {
+		source = String(source || "");
+		if (!isFlowScriptSource(source)) {
+			return source;
+		}
+		return sourceFromFlowScript(blocks || loadBlocks(), args && (args.name || args.flowName) || "Flow", source).source;
+	}
+
 	function setProjectFlow(blocks, name, source, args) {
-		source = sourceForWriteRequest(args, source);
+		source = sourceForMaybeFlowScript(blocks, args, sourceForWriteRequest(args, source));
 		source = sourceFromDefinition(parseSource(source));
 		var analysis = analyzeFlowSource(blocks, source);
 		var storage = projectFlowStorage(name);
@@ -6602,6 +6615,7 @@
 			file: codeFile.file,
 			sourceFile: yamlFile ? String(yamlFile.getAbsolutePath()) : (storage.yamlFile.isFile() ? String(storage.yamlFile.getAbsolutePath()) : ""),
 			codeFile: codeFile.file,
+			code: codeFile.code,
 			codeRevision: codeFile.revision,
 			source: String(source),
 			definition: parseSource(source),
@@ -6615,13 +6629,13 @@
 			return sourceFromDefinition(args.definition);
 		}
 		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
-			return String(args.flowSource);
+			return sourceForMaybeFlowScript(loadBlocks(), args, args.flowSource);
 		}
 		return getProjectFlow(args.name, loadBlocks()).source;
 	}
 
 	function outputSchemaForFlowSource(flowSource) {
-		var definition = parseSource(flowSource);
+		var definition = parseSource(sourceForMaybeFlowScript(loadBlocks(), {}, flowSource));
 		return definition.output || definition.outputs || {};
 	}
 
@@ -6831,7 +6845,8 @@
 			}
 			var className = String(dbo.getClass().getName());
 			if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
-				var definition = parseSource(String(dbo.getFlowSource()));
+				var flowSource = sourceForMaybeFlowScript(loadBlocks(), { name: String(dbo.getName()), flowName: String(dbo.getName()) }, String(dbo.getFlowSource()));
+				var definition = parseSource(flowSource);
 				return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: String(dbo.getName()) }, definition) || {});
 			}
 			var project = dbo.getProject();
@@ -7577,7 +7592,7 @@
 	}
 
 	function runFlowRequest(request, blocks) {
-		var definition = expandFlowDefinition(blocks, parseSource(request.flowSource));
+		var definition = expandFlowDefinition(blocks, parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource)));
 		var projectEngine = loadProjectEngineDefinition();
 		var ctx = createRunContext(request, definition, blocks, projectEngine);
 		try {
@@ -8461,7 +8476,7 @@
 	}
 
 	function analyzeFlowSource(blocks, flowSource, request) {
-		var definition = parseSource(flowSource);
+		var definition = parseSource(sourceForMaybeFlowScript(blocks, request || {}, flowSource));
 		return analyzeFlowDefinition(blocks, definition, request);
 	}
 
@@ -8811,7 +8826,7 @@
 		request = request || {};
 		var definition = request.definition !== undefined && request.definition !== null
 			? canonicalFlowDefinition(normalizeTree(request.definition))
-			: parseSource(request.flowSource);
+			: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource));
 		definition = expandFlowDefinition(blocks, definition);
 		var include = normalizeInclude(request.include);
 		var detail = String(request.detail || "normal");
@@ -10443,7 +10458,7 @@
 			if (target === "flow") {
 				var definition = request.definition !== undefined && request.definition !== null
 					? canonicalFlowDefinition(normalizeTree(request.definition))
-					: parseSource(request.flowSource);
+					: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource));
 				definition = expandFlowDefinition(blocks, definition);
 				var analysisRequest = Object.assign({}, request, {
 					allowRequestableSchema: false
@@ -11204,7 +11219,7 @@
 			? parseYamlSource(request.engineSource, "version: 1\n")
 			: request.definition !== undefined && request.definition !== null
 				? canonicalFlowDefinition(normalizeTree(request.definition))
-				: parseSource(request.flowSource);
+				: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource));
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		if (mutations.length === 0) {
 			raise("MISSING_MUTATION", "Flow mutation request requires mutation or mutations.");
@@ -11238,7 +11253,7 @@
 		request = request || {};
 		var definition = request.definition !== undefined && request.definition !== null
 			? canonicalFlowDefinition(normalizeTree(request.definition))
-			: parseSource(request.flowSource || "");
+			: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource || ""));
 		var declaredSchema = declaredOutputSchema(definition);
 		var staticSchema = declaredSchema ? null : resultSchemaFromAnalysis(analyzeFlowDefinition(blocks, definition, request));
 		var learnedSchema = readResultSchema(request, definition);
