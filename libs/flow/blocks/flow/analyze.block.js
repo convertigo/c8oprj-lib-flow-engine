@@ -1,0 +1,55 @@
+const _meta = {
+  "version": 1,
+  "private": true,
+  "icon": "mdi:chart-timeline-variant",
+  "description": "Analyzes a Flow source or definition without running it: node order, reads, writes, sources and inferred scope paths.",
+  "properties": {
+    "flowSource": {
+      "label": "flowSource",
+      "kind": "text",
+      "type": "string",
+      "description": "Flow YAML source to analyze."
+    },
+    "definition": {
+      "label": "definition",
+      "kind": "literal",
+      "type": "object",
+      "description": "Flow definition object to analyze."
+    },
+    "projectDir": {
+      "label": "projectDir",
+      "kind": "text",
+      "type": "string",
+      "description": "Optional project directory override."
+    },
+    "out": {
+      "label": "out",
+      "kind": "path",
+      "mode": "write",
+      "description": "Scope path receiving reads, writes and nodes."
+    }
+  },
+  "runtime": "rhino",
+  "hooks": {
+    "file": "analyze.hooks.js"
+  }
+}
+
+(function () {
+	function argsFrom(props) {
+		var args = {};
+		Object.keys(props || {}).forEach(function (key) {
+			if (key !== "out") {
+				args[key] = props[key];
+			}
+		});
+		return args;
+	}
+
+	return {
+		run: function (ctx, node) {
+			var props = ctx.props(node);
+			return ctx.analyzeFlowSource(props.flowSource || "", argsFrom(props));
+		}
+	};
+}())

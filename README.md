@@ -39,8 +39,6 @@ block descriptors in:
 
 ```text
 libs/flow/blocks/*.block.js
-libs/flow/blocks/*.block.yaml
-libs/flow/blocks/*.js
 ```
 
 Control flow is also implemented as blocks, for example `if` and `forEach`.
@@ -48,9 +46,9 @@ The `flow.call` block calls another Flow sidecar inside the Flow engine. This is
 the preferred low-overhead composition path when a project wants subflows
 without going through Convertigo requestable/XML execution.
 
-On `spike-flowscript`, project-local FlowScript blocks use `*.block.js` as the
-preferred canonical source. The file contains a small `_meta` object for the
-visible contract and one JavaScript-like function for the implementation:
+On `spike-flowscript`, blocks use `*.block.js` as the canonical source. The
+file contains a small `_meta` object for the visible contract and one
+implementation body:
 
 ```javascript
 const _meta = {
@@ -73,25 +71,12 @@ function decorate({ input, config, result }) {
 The block id is derived from the path, for example
 `libs/flow/blocks/demo/decorate.block.js` becomes `demo.decorate`.
 
-Legacy `*.block.yaml` descriptors are still accepted as fallback and for
-Rhino-backed blocks while the spike is migrating. When a `.block.js` sibling
-exists, it wins and the YAML descriptor is ignored.
-
-A Rhino-backed block keeps the same YAML descriptor and points to a peer
-implementation file:
-
-```yaml
-version: 1
-name: demo.native
-implementation:
-  runtime: rhino
-  file: demo.native.js
-```
-
-For Rhino/native escape hatches, the YAML descriptor remains the contract and a
-peer `<blockName>.js` remains an implementation file, not a block definition.
-Future implementation kinds (`java`, `kotlin`, etc.) should keep the same
-logical contract shape exposed in the tree and MCP APIs.
+Rhino-backed blocks use the same `*.block.js` file: `_meta.runtime` declares
+`"rhino"` and the body is an IIFE returning `run`. Legacy `*.block.yaml`
+descriptors are still accepted as read-only migration fallback. When a
+`.block.js` sibling exists, it wins and the YAML descriptor is ignored. Future
+implementation kinds (`java`, `kotlin`, etc.) should keep the same logical
+contract shape exposed in the tree and MCP APIs.
 
 Flow-backed blocks are regular catalog blocks. At runtime the engine exposes
 evaluated instance properties through `input` and a private mutable `local`
@@ -116,10 +101,8 @@ At runtime, the engine loads blocks and optional shared helper libraries from
 two places:
 
 ```text
-lib_flow_engine/libs/flow/blocks/*.block.yaml # core block descriptors
-lib_flow_engine/libs/flow/blocks/*.js      # legacy/native core blocks or descriptor implementations
-<current-project>/libs/flow/blocks/*.block.yaml # project-local block descriptors
-<current-project>/libs/flow/blocks/*.js   # legacy/native project blocks or descriptor implementations
+lib_flow_engine/libs/flow/blocks/**/*.block.js # core block definitions
+<current-project>/libs/flow/blocks/**/*.block.js # project-local block definitions
 <current-project>/libs/flow/fragments/*.fragment.yaml # project-local fragments
 lib_flow_engine/libs/flow/lib/*.js         # core helper libraries
 <current-project>/libs/flow/lib/*.js      # project-local helper libraries
@@ -224,12 +207,12 @@ static metadata lives in `_meta`, and behavior lives in one function. Rhino ES6
 JavaScript is only the implementation runtime when a block needs JVM/Java
 integration or algorithmic code. It may use Java classes through `Packages`, for
 example for integration adapters, but it must not assume Node.js APIs such as
-`require`, npm modules or browser globals. A descriptor-backed Rhino
-implementation remains available as a fallback for native/legacy blocks: the
-descriptor is `*.block.yaml`, the implementation is an IIFE returning `run`, and
-optional dynamic display/analysis code belongs in `hooks.file`. Rhino
-implementations defining `catalog()`, `displayName()` or `analyze()` directly
-are rejected.
+`require`, npm modules or browser globals. A Rhino block is still one
+`*.block.js`: `_meta` carries the contract, the implementation is an IIFE
+returning `run`, and optional dynamic display/analysis code belongs in
+`hooks.file`. Legacy descriptor-backed Rhino remains readable only as a
+migration fallback. Rhino implementations defining `catalog()`, `displayName()`
+or `analyze()` directly are rejected.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,
@@ -504,29 +487,28 @@ and editing are project-local. For FlowScript blocks, prefer
 `blockCodeSet({ name, code, properties, outputs })`; it writes
 `<name>.block.js` and removes obsolete YAML fallbacks for that block.
 `blockCreate({ name, descriptorSource|descriptor, implementationSource })`
-remains the raw path for Rhino/native or legacy YAML-backed blocks.
+remains a compatibility facade and writes canonical `*.block.js` for new
+project-local blocks.
 
 - `blockGet({ name })` reads any visible block as one logical unit. Canonical
   FlowScript blocks return `code`, `codeRevision`, `descriptor` and
-  `implementationRuntime`. YAML/Rhino-backed blocks return `descriptorSource`
-  and, when relevant, `implementationSource`.
+  `implementationRuntime`. Legacy YAML-backed blocks may still return
+  `descriptorSource` during migration.
 - `blockCodeSet({ name, code, properties, outputs })` creates or replaces a
   project-local FlowScript block stored as `<name>.block.js`.
-- `blockCodeGet({ name })` reads canonical FlowScript block code with its
-  revision for patch workflows. For descriptor-backed Flow blocks, it can return
-  a non-canonical FlowScript mirror to prepare a migration through
-  `blockCodeSet`.
+- `blockCodeGet({ name })` reads canonical block code with its revision for
+  patch workflows.
 - `blockCodeRg({ pattern, name?, namespace? })` searches FlowScript block code
   and returns small extracts with block revisions.
 - `blockCodePatch({ name, revision, codepatch|code })` applies a
   revision-checked patch or replacement to a project-local FlowScript block.
 - `blockCreate({ name, descriptorSource|descriptor|definition, implementationSource })`
-  creates a project-local descriptor-backed block. Use it only for Rhino/native
-  escape hatches or low-level compatibility tests.
+  creates or migrates a project-local block through the canonical format. Prefer
+  `blockCodeSet` for new work.
 - `blockDuplicate({ fromName, toName })` copies a visible block into the
   project using the canonical format.
 - `blockEdit({ name, descriptorSource|descriptor|definition, implementationSource })`
-  edits the descriptor and/or the implementation of a project-local block.
+  edits a project-local block and rewrites the canonical source.
 
 Core/shared blocks are intentionally not editable in place.
 
@@ -548,7 +530,6 @@ The writable surface is intentionally narrow:
 ```text
 libs/flow/blocks/**/*.js
 libs/flow/blocks/**/*.block.js
-libs/flow/blocks/**/*.block.yaml
 libs/flow/blocks/**/*.flow.yaml
 libs/flow/fragments/**/*.fragment.yaml
 libs/flow/lib/**/*.js

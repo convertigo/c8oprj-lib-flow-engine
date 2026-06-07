@@ -3586,7 +3586,9 @@
 		var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extracted.meta || {}));
 		meta.runtime = "rhino";
 		var block = validateBlockImplementationSource(name, source);
-		var warnings = enforceRhinoImplementationPolicy(name, source);
+		var warnings = request && request.allowPrimitiveRhino === true
+			? rhinoImplementationWarnings(name, source)
+			: enforceRhinoImplementationPolicy(name, source);
 		var canonicalCode = rhinoBlockCodeSource(name, source, meta);
 		var descriptor = flowScriptBlockDescriptorFromMeta(name, meta, source, canonicalCode);
 		return {
@@ -3620,7 +3622,9 @@
 			name = String(file.getName());
 			name = name.substring(0, name.length - ".block.js".length);
 		}
-		var compiled = compileProjectBlockCode(blocks, name, code);
+		var compiled = compileProjectBlockCode(blocks, name, code, {
+			allowPrimitiveRhino: origin !== "project"
+		});
 		var block = graphBlockFromDefinition(compiled.descriptor, file, origin, provider);
 		if (blocks[block.name] && blocks[block.name].__flowScriptPlaceholder !== true) {
 			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,

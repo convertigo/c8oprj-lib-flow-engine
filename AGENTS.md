@@ -148,9 +148,8 @@ Avoid:
 Keep `libs/flow/Engine.js` small. It should:
 
 - parse the request and FlowScript/legacy Flow source;
-- load FlowScript blocks from `libs/flow/blocks/**/*.block.js`, then fallback
-  descriptor-backed blocks from `libs/flow/blocks/**/*.block.yaml` and their
-  runtime files;
+- load canonical blocks from `libs/flow/blocks/**/*.block.js`, with legacy
+  descriptor-backed blocks only as a migration fallback;
 - prepare scopes;
 - execute nodes in order;
 - delegate each node to its block;
@@ -197,16 +196,12 @@ iterator blocks like `file.forEachLine` consuming the handle and exposing
 Blocks are loaded from the core engine first, then from the current project:
 
 ```text
-lib_flow_engine/libs/flow/blocks/*.block.js
-lib_flow_engine/libs/flow/blocks/*.block.yaml
-lib_flow_engine/libs/flow/blocks/*.js
-<current-project>/libs/flow/blocks/*.block.js
-<current-project>/libs/flow/blocks/*.block.yaml
-<current-project>/libs/flow/blocks/*.js
+lib_flow_engine/libs/flow/blocks/**/*.block.js
+<current-project>/libs/flow/blocks/**/*.block.js
 ```
 
-Prefer `*.block.js` for new project-local FlowScript blocks on this spike. It is
-the canonical code-first block format:
+Use `*.block.js` for block definitions on this spike. It is the canonical
+code-first block format:
 
 ```javascript
 const _meta = {
@@ -229,15 +224,9 @@ The block id comes from the file path: `libs/flow/blocks/demo/decorate.block.js`
 is `demo.decorate`. When both `.block.js` and `.block.yaml` exist for the same
 block, `.block.js` is canonical.
 
-Use `*.block.yaml` only for legacy/native-backed blocks, for example:
-
-```yaml
-implementation:
-  runtime: rhino
-  file: my.block.js
-```
-
-For Rhino/native escape hatches, the peer JS file is only the implementation
+Legacy `*.block.yaml` is only a migration fallback. For Rhino/native escape
+hatches, use the same `*.block.js` shape with `_meta.runtime = "rhino"` and an
+IIFE returning `run`.
 named by `implementation.file`; it is not a block definition. Metadata,
 properties and docs must still be visible through the block contract exposed by
 the engine.
@@ -298,9 +287,9 @@ the project default.
 Rhino implementation files are IIFEs returning runtime implementation only. They
 must not define `catalog()`, `name`, `private`, `displayName()` or `analyze()`.
 For new blocks, prefer FlowScript `*.block.js` where `_meta` carries static
-metadata and the function carries behavior. For descriptor-backed Rhino/native
-blocks, static metadata, properties and docs belong in `*.block.yaml`; optional
-dynamic hooks belong in a peer file declared with `hooks.file`.
+metadata and the function carries behavior. For Rhino/native blocks, keep the
+same canonical file: `_meta` carries static metadata, properties and docs;
+optional dynamic hooks belong in a peer file declared with `hooks.file`.
 
 ```javascript
 (function () {
@@ -445,8 +434,8 @@ Block authoring must stay project-local. Search FlowScript blocks with
 FlowScript blocks with `blockCodeSet`, patch existing FlowScript block code with
 `blockCodePatch`, duplicate core/shared blocks with `blockDuplicate`, and edit
 only project-local copies. `blockCodeSet` writes `<name>.block.js` and removes
-obsolete YAML fallbacks for that block. `blockCreate` remains the lower-level API
-only for descriptor-backed Rhino/native compatibility cases.
+obsolete YAML fallbacks for that block. `blockCreate` remains a compatibility
+facade and should still write the canonical source for new project-local blocks.
 
 Static `requestable.call` nodes should enrich picker context too. Flow targets
 read the Flow output contract; legacy sequence and transaction targets use the
