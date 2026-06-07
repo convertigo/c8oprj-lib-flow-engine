@@ -1997,6 +1997,18 @@
 		return projectBlocksDir() ? new File(projectBlocksDir(), blockDescriptorFileName(blockIdFromResourcePath(path))) : null;
 	}
 
+	function projectBlockCodeFileForResource(path) {
+		return projectBlocksDir() ? new File(projectBlocksDir(), blockCodeDescriptorFileName(blockIdFromResourcePath(path))) : null;
+	}
+
+	function projectBlockContractFileForResource(path) {
+		var codeFile = projectBlockCodeFileForResource(path);
+		if (codeFile && codeFile.isFile()) {
+			return codeFile;
+		}
+		return projectBlockDescriptorFileForResource(path);
+	}
+
 	function projectResourceFile(path, mustExist) {
 		var base = projectDir();
 		if (!base) {
@@ -2006,7 +2018,7 @@
 		var normalized = normalizeResourcePath(path);
 		if (!isAllowedResourcePath(normalized)) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.{js,flow.yaml,block.yaml}, libs/flow/fragments/**/*.fragment.yaml, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}. Legacy block YAML paths are still accepted as fallback.");
 		}
 		var file = new File(base, normalized);
 		var basePath = canonicalPath(base);
@@ -2463,16 +2475,16 @@
 			}
 			validateBlockFlowImplementationSource(blockIdFromResourcePath(path), content);
 		} else if (kind === "blockHooks") {
-			var hooksDescriptorFile = projectBlockDescriptorFileForResource(path);
-			if (!hooksDescriptorFile || !hooksDescriptorFile.isFile()) {
-				raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.yaml descriptor: " + path,
-					null, "Create or patch libs/flow/blocks/" + blockDescriptorFileName(blockIdFromResourcePath(path)) + " first.");
+			var hooksContractFile = projectBlockContractFileForResource(path);
+			if (!hooksContractFile || !hooksContractFile.isFile()) {
+				raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.js source or legacy *.block.yaml descriptor: " + path,
+					null, "Create or patch libs/flow/blocks/" + blockCodeDescriptorFileName(blockIdFromResourcePath(path)) + " first.");
 			}
 			validateBlockHooksSource(blockIdFromResourcePath(path), content);
 		} else if (kind === "graphBlock") {
 			validateGraphBlockSource(blockIdFromResourcePath(path), content);
 		} else if (kind === "graphBlockCode") {
-			compileFlowScriptBlockCode(loadBlocks(), blockIdFromResourcePath(path), content);
+			compileProjectBlockCode(loadBlocks(), blockIdFromResourcePath(path), content);
 		} else if (kind === "fragment") {
 			parseYamlSource(content, "version: 1\nnodes: []\n");
 		} else if (kind === "library") {
@@ -2760,12 +2772,12 @@
 		var block = eval(String(source || ""));
 		if (!block || typeof block.run !== "function") {
 			raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid block implementation: " + name,
-				null, "A descriptor-backed Rhino implementation must evaluate to an object with run(ctx, node).");
+				null, "A Rhino .block.js implementation must evaluate to an object with run(ctx, node).");
 		}
 		["catalog", "name", "private", "displayName", "analyze"].forEach(function (key) {
 			if (block[key] !== undefined) {
 				raise("INVALID_BLOCK_IMPLEMENTATION", "Rhino implementation must not define " + key + ": " + name,
-					null, "Move static metadata to *.block.yaml and dynamic display/analyze code to hooks.file.");
+					null, "Move static metadata to _meta in *.block.js and dynamic display/analyze code to hooks.file.");
 			}
 		});
 		return block;
@@ -2936,12 +2948,25 @@
 
 	function loadRhinoBlockImplementation(definition, file) {
 		var implementation = blockImplementation(definition);
+		if (definition.__rhinoCode !== undefined && definition.__rhinoCode !== null) {
+			var inlineScript = validateBlockImplementationSource(definition.__flowBlockId || definition.name, definition.__rhinoCode);
+			var inlineEntry = String(implementation.entry || "run");
+			if (typeof inlineScript[inlineEntry] !== "function") {
+				raise("INVALID_BLOCK_IMPLEMENTATION", "Inline block implementation has no " + inlineEntry + "(ctx, node): " + file.getAbsolutePath());
+			}
+			return {
+				file: file,
+				script: inlineScript,
+				entry: inlineEntry,
+				inline: true
+			};
+		}
 		var scriptFile = blockImplementationFile(definition, file, implementation);
 		var script = loadBlockScript(scriptFile, "block implementation");
 		["catalog", "name", "private", "displayName", "analyze"].forEach(function (key) {
 			if (script[key] !== undefined) {
 				raise("INVALID_BLOCK_IMPLEMENTATION", "Block runtime implementation must not define " + key + ": " + scriptFile.getAbsolutePath(),
-					null, "Move static metadata to *.block.yaml and dynamic display/analyze code to hooks.file.");
+					null, "Move static metadata to _meta in *.block.js and dynamic display/analyze code to hooks.file.");
 			}
 		});
 		var entry = String(implementation.entry || "run");
@@ -3059,12 +3084,12 @@
 		var implementation = blockImplementation(definition);
 		if (implementation.runtime === "flow" && definition.nodes !== undefined) {
 			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must move nodes to implementation.file.",
-				null, "Keep *.block.yaml as the contract and put executable nodes in a separate *.flow.yaml file.");
+				null, "Use canonical *.block.js with _meta plus a FlowScript function for editable Flow block source.");
 		}
 		if (implementation.runtime === "flow" && !implementation.file && !definition.__graphDefinition) {
 			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must define implementation.file.");
 		}
-		if (implementation.runtime === "rhino" && !implementation.file) {
+		if (implementation.runtime === "rhino" && !implementation.file && definition.__rhinoCode === undefined) {
 			raise("INVALID_GRAPH_BLOCK", "Rhino block \"" + name + "\" must define implementation.file.");
 		}
 		normalizeGraphBlockProps(definition);
@@ -3082,6 +3107,9 @@
 		delete out.localName;
 		delete out.provider;
 		delete out.namespace;
+		delete out.__rhinoCode;
+		delete out.__flowCode;
+		delete out.__graphDefinition;
 		delete out["package"];
 		if (out.kind !== undefined) {
 			if (out.tags === undefined || out.tags === null) {
@@ -3273,7 +3301,12 @@
 			block.__flowCode = String(definition.__flowCode);
 		}
 		if (rhino) {
-			block.__flowImplementationFile = String(rhino.file.getAbsolutePath());
+			if (rhino.inline) {
+				block.__rhinoCode = String(definition.__rhinoCode || "");
+				block.__flowImplementationFile = "";
+			} else {
+				block.__flowImplementationFile = String(rhino.file.getAbsolutePath());
+			}
 		} else if (flow) {
 			block.__flowImplementationFile = definition.__flowCode ? "" : String(flow.file.getAbsolutePath());
 		}
@@ -3371,6 +3404,12 @@
 		return safeIdentifier(blockLocalName(name) || name || "block");
 	}
 
+	function blockCodeRuntimeFromMeta(meta) {
+		meta = normalizeTree(meta || {});
+		var implementation = normalizeTree(meta.implementation || {});
+		return String(meta.runtime || meta.implementationRuntime || implementation.runtime || implementation.kind || "flow").trim() || "flow";
+	}
+
 	function ensureFlowScriptBlockFunction(name, code) {
 		var body = unwrapFlowScriptBlockEnvelope(code);
 		if (String(body).trim().match(/^(?:flow|function)\s+/)) {
@@ -3388,6 +3427,10 @@
 		if (meta.name && String(meta.name) !== String(name) && String(meta.name) !== blockLocalName(name)) {
 			raise("BLOCK_NAME_MISMATCH", "FlowScript block _meta declares \"" + meta.name + "\" instead of \"" + name + "\".");
 		}
+		var runtime = blockCodeRuntimeFromMeta(meta);
+		var implementation = normalizeTree(meta.implementation || {});
+		implementation.runtime = runtime;
+		delete implementation.file;
 		var descriptor = {
 			version: Number(meta.version || 1),
 			name: blockLocalName(name) || name,
@@ -3395,11 +3438,19 @@
 			description: meta.description || "Project FlowScript block.",
 			props: meta.properties || meta.props || {},
 			outputs: meta.outputs || meta.output || { out: { type: "unknown" } },
-			implementation: { runtime: "flow" },
-			__flowBlockId: String(name),
-			__graphDefinition: graphDefinition,
-			__flowCode: String(code || "")
+			implementation: implementation,
+			__flowBlockId: String(name)
 		};
+		if (runtime === "flow") {
+			descriptor.__graphDefinition = graphDefinition;
+			descriptor.__flowCode = String(code || "");
+		} else if (runtime === "rhino") {
+			descriptor.__rhinoCode = String(graphDefinition || "");
+			descriptor.__flowCode = String(code || "");
+		} else {
+			raise("INVALID_BLOCK_RUNTIME", "Unsupported .block.js runtime: " + runtime,
+				null, "Use runtime: \"flow\" or runtime: \"rhino\" in _meta.");
+		}
 		["private", "tags", "label", "display", "longDescription", "documentation", "slots", "uses"].forEach(function (key) {
 			if (meta[key] !== undefined) {
 				descriptor[key] = meta[key];
@@ -3510,6 +3561,58 @@
 		return "const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + normalizeFlowScriptCode(functionCode);
 	}
 
+	function rhinoBlockCodeSource(name, source, meta) {
+		meta = normalizeTree(meta || {});
+		meta.runtime = "rhino";
+		if (!meta.description) {
+			meta.description = "Project Rhino block.";
+		}
+		if (!meta.icon) {
+			meta.icon = "mdi:language-javascript";
+		}
+		if (!meta.properties && !meta.props) {
+			meta.properties = {};
+		}
+		if (!meta.outputs && !meta.output) {
+			meta.outputs = { out: { type: "unknown" } };
+		}
+		delete meta.name;
+		return "const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + String(source || "").trim() + "\n";
+	}
+
+	function compileRhinoBlockCode(name, code, request) {
+		var extracted = extractFlowScriptBlockMeta(code);
+		var source = String(extracted.code || "").trim();
+		var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extracted.meta || {}));
+		meta.runtime = "rhino";
+		var block = validateBlockImplementationSource(name, source);
+		var warnings = enforceRhinoImplementationPolicy(name, source);
+		var canonicalCode = rhinoBlockCodeSource(name, source, meta);
+		var descriptor = flowScriptBlockDescriptorFromMeta(name, meta, source, canonicalCode);
+		return {
+			name: String(name),
+			code: canonicalCode,
+			functionCode: source,
+			revision: sha256Hex(canonicalCode),
+			descriptor: descriptor,
+			source: source,
+			definition: null,
+			diagnostics: [],
+			warnings: warnings,
+			block: block,
+			runtime: "rhino"
+		};
+	}
+
+	function compileProjectBlockCode(blocks, name, code, request) {
+		var extracted = extractFlowScriptBlockMeta(code);
+		var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extracted.meta || {}));
+		if (blockCodeRuntimeFromMeta(meta) === "rhino") {
+			return compileRhinoBlockCode(name, code, request);
+		}
+		return compileFlowScriptBlockCode(blocks, name, code, request);
+	}
+
 	function loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir) {
 		var code = String(FileUtils.readFileToString(file, "UTF-8"));
 		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
@@ -3517,7 +3620,7 @@
 			name = String(file.getName());
 			name = name.substring(0, name.length - ".block.js".length);
 		}
-		var compiled = compileFlowScriptBlockCode(blocks, name, code);
+		var compiled = compileProjectBlockCode(blocks, name, code);
 		var block = graphBlockFromDefinition(compiled.descriptor, file, origin, provider);
 		if (blocks[block.name] && blocks[block.name].__flowScriptPlaceholder !== true) {
 			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
@@ -3540,7 +3643,10 @@
 		}
 		var extracted = extractFlowScriptBlockMeta(code);
 		var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, {}), normalizeTree(extracted.meta || {}));
-		var descriptor = flowScriptBlockDescriptorFromMeta(name, meta, { version: 1, nodes: [] }, code);
+		var runtime = blockCodeRuntimeFromMeta(meta);
+		var descriptor = runtime === "rhino"
+			? flowScriptBlockDescriptorFromMeta(name, meta, "", code)
+			: flowScriptBlockDescriptorFromMeta(name, meta, { version: 1, nodes: [] }, code);
 		var catalog = graphBlockCatalog(descriptor);
 		blocks[name] = {
 			name: String(name),
@@ -3587,6 +3693,36 @@
 		return source.replace(pattern, "$1$2" + String(toName) + "$2");
 	}
 
+	function renameFlowScriptFunctionSource(source, fromName, toName) {
+		var fromFunction = blockFunctionName(fromName);
+		var toFunction = blockFunctionName(toName);
+		var pattern = new RegExp("(^\\s*(?:flow|function)\\s+)" + escapeRegExp(fromFunction) + "\\b", "m");
+		return String(source || "").replace(pattern, "$1" + toFunction);
+	}
+
+	function duplicateBlockCodeSource(source, fromName, toName, hasHooks) {
+		var extracted = extractFlowScriptBlockMeta(source);
+		var meta = normalizeTree(extracted.meta || {});
+		if (meta.name !== undefined) {
+			delete meta.name;
+		}
+		if (hasHooks) {
+			var hooks = meta.hooks;
+			if (typeof hooks === "string") {
+				hooks = { file: hooks };
+			}
+			hooks = normalizeTree(hooks || {});
+			hooks.file = blockHooksFileName(toName);
+			meta.hooks = hooks;
+		} else {
+			delete meta.hooks;
+		}
+		if (blockCodeRuntimeFromMeta(meta) === "rhino") {
+			return rhinoBlockCodeSource(toName, renameBlockImplementationSource(extracted.code, fromName, toName), meta);
+		}
+		return flowScriptBlockCodeSource(toName, renameFlowScriptFunctionSource(extracted.code, fromName, toName), meta);
+	}
+
 	function canonicalBlockDefinition(name, request) {
 		request = request || {};
 		var implementationSource = request.implementationSource;
@@ -3601,11 +3737,11 @@
 		} else if (request.definition !== undefined && request.definition !== null) {
 			definition = normalizeTree(request.definition);
 		} else {
-			if (implementationSource !== undefined && implementationSource !== null && String(implementationSource).trim() !== "") {
-				raise("BLOCK_DESCRIPTOR_REQUIRED", "Block \"" + name + "\" needs descriptorSource or descriptor with implementationSource.",
-					null, "Define the contract in *.block.yaml and keep JS for implementation only.");
-			}
-			definition = { version: 1, name: String(name), implementation: { runtime: "flow", file: blockFlowFileName(name) } };
+			definition = {
+				version: 1,
+				name: String(name),
+				implementation: { runtime: String(request.runtime || "flow") }
+			};
 		}
 		definition.name = String(name);
 		if (definition.version === undefined) {
@@ -3620,6 +3756,29 @@
 		}
 		definition.implementation = implementation;
 		return validateGraphBlockDefinition(name, definition);
+	}
+
+	function blockCodeMetaFromDefinition(definition) {
+		var meta = graphBlockDefinitionForWrite(definition || {});
+		var implementation = blockImplementation(meta);
+		meta.runtime = String(implementation.runtime || "flow");
+		meta.properties = meta.properties || meta.props || {};
+		delete meta.props;
+		delete meta.implementation;
+		delete meta.name;
+		return meta;
+	}
+
+	function canonicalBlockCodeFromDefinitionSource(blocks, name, definition, implementationSource, request) {
+		var implementation = blockImplementation(definition);
+		var meta = blockCodeMetaFromDefinition(definition);
+		if (implementation.runtime === "flow") {
+			var flowDefinition = validateBlockFlowImplementationSource(name, implementationSource);
+			return flowScriptBlockCodeSource(name, sourceFromDefinition(flowDefinition), meta);
+		}
+		validateBlockImplementationSource(name, implementationSource);
+		enforceRhinoImplementationPolicy(name, implementationSource);
+		return rhinoBlockCodeSource(name, implementationSource, meta);
 	}
 
 	function implementationTargetFile(descriptorFile, definition) {
@@ -3655,23 +3814,23 @@
 	function createProjectBlock(blocks, name, request, overwrite) {
 		if (typeof request !== "object" || request === null) {
 			raise("INVALID_BLOCK_REQUEST", "Block creation expects a canonical descriptor request object.",
-				null, "Pass descriptorSource or descriptor, and implementationSource for Rhino blocks.");
+				null, "Pass code to flow-block-code-set, or descriptor/implementationSource for compatibility.");
 		}
 		overwrite = overwrite === true || request.overwrite === true;
 		var descriptorFile = projectBlockDescriptorFile(name);
+		var codeFile = projectBlockCodeFile(name);
 		var block = blocks[String(name || "")];
 		if (block && block.__flowOrigin !== "project") {
 			raise("DUPLICATE_BLOCK", "Cannot override non-project Flow block: " + name,
 				null, "Choose a project-specific name instead.");
 		}
-		if (descriptorFile.isFile() && overwrite !== true) {
+		if ((codeFile.isFile() || descriptorFile.isFile()) && overwrite !== true) {
 			raise("BLOCK_ALREADY_EXISTS", "Project block already exists: " + name,
 				null, "Pass overwrite=true to replace it explicitly.");
 		}
 		var definition = canonicalBlockDefinition(name, request);
 		var implementation = blockImplementation(definition);
-		var implementationFile = implementationTargetFile(descriptorFile, definition);
-		var hooksFile = hooksTargetFile(descriptorFile, definition);
+		var hooksFile = hooksTargetFile(codeFile, definition);
 		var implementationSource = request.implementationSource;
 		var hooksSource = request.hooksSource;
 		if (implementation.runtime === "flow" && (implementationSource === undefined || implementationSource === null)) {
@@ -3679,11 +3838,7 @@
 		}
 		if (implementationSource === undefined || implementationSource === null || String(implementationSource).trim() === "") {
 			raise("MISSING_BLOCK_IMPLEMENTATION", "Block \"" + name + "\" needs implementationSource.",
-				null, "Pass Flow YAML for runtime=flow or Rhino ES6 source for runtime=rhino.");
-		}
-		if (implementationFile && implementationFile.isFile() && overwrite !== true) {
-			raise("BLOCK_ALREADY_EXISTS", "Block implementation already exists: " + implementationFile.getAbsolutePath(),
-				null, "Pass overwrite=true to replace it explicitly.");
+				null, "Pass Flow YAML for runtime=flow, Rhino ES6 source for runtime=rhino, or use flow-block-code-set with .block.js code.");
 		}
 		if (hooksFile && hooksSource !== undefined && hooksSource !== null && hooksFile.isFile() && overwrite !== true) {
 			raise("BLOCK_ALREADY_EXISTS", "Block hooks already exists: " + hooksFile.getAbsolutePath(),
@@ -3693,37 +3848,16 @@
 			raise("MISSING_BLOCK_HOOKS", "Block \"" + name + "\" declares hooks.file but no hooksSource was provided.",
 				null, "Pass hooksSource or remove hooks.file from the descriptor.");
 		}
-		var warnings = [];
-		if (implementation.runtime === "flow") {
-			validateBlockFlowImplementationSource(name, implementationSource);
-		} else {
-			validateBlockImplementationSource(name, implementationSource);
-			warnings = enforceRhinoImplementationPolicy(name, implementationSource);
-		}
+		var code = canonicalBlockCodeFromDefinitionSource(blocks, name, definition, String(implementationSource), request);
 		if (hooksFile && hooksSource !== undefined && hooksSource !== null) {
 			validateBlockHooksSource(name, hooksSource);
-		}
-		descriptorFile.getParentFile().mkdirs();
-		FileUtils.writeStringToFile(descriptorFile, toYamlSource(graphBlockDefinitionForWrite(definition)), "UTF-8");
-		if (implementationFile) {
-			FileUtils.writeStringToFile(implementationFile, String(implementationSource), "UTF-8");
-			if (implementation.runtime === "flow") {
-				writeFlowCodeMirrorFile(blocks, name, String(implementationSource),
-					flowCodeFileFromYamlFile(implementationFile, name), request);
-			}
-		}
-		if (hooksFile && hooksSource !== undefined && hooksSource !== null) {
+			hooksFile.getParentFile().mkdirs();
 			FileUtils.writeStringToFile(hooksFile, String(hooksSource), "UTF-8");
 		}
-		if (blocks[name]) {
-			delete blocks[name];
-		}
-		var created = publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
-			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
-		if (warnings.length) {
-			created.warnings = warnings;
-		}
-		return created;
+		return setProjectBlockCode(blocks, name, Object.assign({}, request, {
+			code: code,
+			overwrite: overwrite
+		})).block;
 	}
 
 	function deleteIfFile(file) {
@@ -3748,10 +3882,6 @@
 		if (deleteIfFile(implementationFile)) {
 			removed.push(String(implementationFile.getAbsolutePath()));
 		}
-		var hooksFile = hooksTargetFile(descriptorFile, descriptor || {});
-		if (deleteIfFile(hooksFile)) {
-			removed.push(String(hooksFile.getAbsolutePath()));
-		}
 		return removed;
 	}
 
@@ -3763,23 +3893,23 @@
 		}
 		var code = request.code !== undefined && request.code !== null ? String(request.code) : "";
 		if (code.trim() === "") {
-			raise("MISSING_BLOCK_CODE", "block.code.set requires FlowScript code.");
+			raise("MISSING_BLOCK_CODE", "block.code.set requires .block.js code.");
 		}
-		var compiled = compileFlowScriptBlockCode(blocks, name, code, request);
+		var compiled = compileProjectBlockCode(blocks, name, code, request);
 		if (request.dry === true || request.dryRun === true || String(request.dry || "") === "true" || String(request.dryRun || "") === "true") {
 			return {
 				ok: true,
 				name: name,
 				dry: true,
-				format: "flowscript",
+				format: compiled.runtime === "rhino" ? "blockjs" : "flowscript",
 				canonical: true,
 				revision: compiled.revision,
 				descriptor: publicBlockDescriptor(compiled.descriptor),
 				code: compiled.code,
 				implementationSource: compiled.source,
-				warnings: (compiled.diagnostics || []).filter(function (diagnostic) {
+				warnings: (compiled.warnings || (compiled.diagnostics || []).filter(function (diagnostic) {
 					return diagnostic.severity === "warning";
-				})
+				}))
 			};
 		}
 		var current = blocks[name];
@@ -3805,15 +3935,15 @@
 			ok: true,
 			name: name,
 			dry: false,
-			format: "flowscript",
+			format: compiled.runtime === "rhino" ? "blockjs" : "flowscript",
 			canonical: true,
 			file: String(codeFile.getAbsolutePath()),
 			codeFile: String(codeFile.getAbsolutePath()),
 			revision: compiled.revision,
 			removedFallbacks: removed,
-			warnings: (compiled.diagnostics || []).filter(function (diagnostic) {
+			warnings: (compiled.warnings || (compiled.diagnostics || []).filter(function (diagnostic) {
 				return diagnostic.severity === "warning";
-			}),
+			})),
 			block: loaded
 		};
 	}
@@ -3821,60 +3951,26 @@
 	function editProjectBlock(blocks, name, request) {
 		if (typeof request !== "object" || request === null) {
 			raise("INVALID_BLOCK_REQUEST", "Block edit expects a canonical descriptor request object.",
-				null, "Pass descriptorSource or descriptor, and/or implementationSource for Rhino blocks.");
+				null, "Pass code to flow-block-code-set, or descriptor/implementationSource for compatibility.");
 		}
 		var block = blocks[String(name || "")];
-		var descriptorFile = projectBlockDescriptorFile(name);
 		if (!block || block.__flowOrigin !== "project") {
 			raise("BLOCK_NOT_EDITABLE", "Only project-local Flow blocks can be edited: " + name,
 				null, "Duplicate core/shared blocks first, then edit the project-local copy.");
 		}
-		if (!descriptorFile.isFile()) {
-			raise("BLOCK_NOT_EDITABLE", "Project block descriptor is missing: " + name,
-				null, "A block must be stored as *.block.yaml plus optional implementation file.");
+		if (request.code !== undefined && request.code !== null) {
+			return setProjectBlockCode(blocks, name, request).block;
 		}
+		var sourceInfo = getBlockSource(blocks, name, { detail: "full", includeSources: true });
 		var hasDescriptor = request.descriptorSource !== undefined || request.descriptor !== undefined || request.definition !== undefined;
 		var hasImplementation = request.implementationSource !== undefined;
-		var descriptorSource = hasDescriptor
-			? (request.descriptorSource !== undefined ? request.descriptorSource : toYamlSource(request.descriptor || request.definition || {}))
-			: String(FileUtils.readFileToString(descriptorFile, "UTF-8"));
-		var definition = validateGraphBlockSource(name, descriptorSource);
-		var implementationFile = implementationTargetFile(descriptorFile, definition);
-		var hooksFile = hooksTargetFile(descriptorFile, definition);
-		var hasHooks = request.hooksSource !== undefined;
-		var warnings = [];
-		if (hasImplementation && implementationFile) {
-			var implementation = blockImplementation(definition);
-			if (implementation.runtime === "flow") {
-				validateBlockFlowImplementationSource(name, request.implementationSource);
-			} else {
-				validateBlockImplementationSource(name, request.implementationSource);
-				warnings = enforceRhinoImplementationPolicy(name, request.implementationSource);
-			}
-			FileUtils.writeStringToFile(implementationFile, String(request.implementationSource), "UTF-8");
-			if (implementation.runtime === "flow") {
-				writeFlowCodeMirrorFile(blocks, name, String(request.implementationSource),
-					flowCodeFileFromYamlFile(implementationFile, name), request);
-			}
-		}
-		if (hasHooks) {
-			if (!hooksFile) {
-				raise("MISSING_BLOCK_HOOKS", "Block \"" + name + "\" has hooksSource but no hooks.file in descriptor.",
-					null, "Add hooks.file to the block descriptor or omit hooksSource.");
-			}
-			validateBlockHooksSource(name, request.hooksSource);
-			FileUtils.writeStringToFile(hooksFile, String(request.hooksSource), "UTF-8");
-		}
-		if (hasDescriptor) {
-			FileUtils.writeStringToFile(descriptorFile, toYamlSource(graphBlockDefinitionForWrite(definition)), "UTF-8");
-		}
-		delete blocks[name];
-		var edited = publicBlockDescriptor(blockDescriptor(loadGraphBlockFile(blocks, descriptorFile, "project",
-			flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
-		if (warnings.length) {
-			edited.warnings = warnings;
-		}
-		return edited;
+		return createProjectBlock(blocks, name, {
+			descriptorSource: request.descriptorSource,
+			descriptor: hasDescriptor && request.descriptorSource === undefined ? request.descriptor || request.definition : sourceInfo.descriptor,
+			implementationSource: hasImplementation ? request.implementationSource : sourceInfo.implementationSource,
+			hooksSource: request.hooksSource,
+			overwrite: true
+		}, true);
 	}
 
 	function duplicateProjectBlock(blocks, fromName, toName, overwrite) {
@@ -3886,34 +3982,28 @@
 		if (fromName === toName) {
 			raise("INVALID_BLOCK_NAME", "Block duplication target must differ from source: " + toName);
 		}
-		var sourceInfo = getBlockSource(blocks, fromName);
+		var sourceInfo = getBlockSource(blocks, fromName, { detail: "full", includeSources: true });
+		var hooksSource = sourceInfo.hooksSource;
+		if (sourceInfo.code) {
+			var duplicatedCode = duplicateBlockCodeSource(sourceInfo.code, fromName, toName, hooksSource !== undefined && hooksSource !== null);
+			if (hooksSource !== undefined && hooksSource !== null) {
+				var hooksFile = hooksTargetFile(projectBlockCodeFile(toName), {
+					name: blockLocalName(toName) || toName,
+					hooks: { file: blockHooksFileName(toName) }
+				});
+				hooksFile.getParentFile().mkdirs();
+				FileUtils.writeStringToFile(hooksFile, String(hooksSource), "UTF-8");
+			}
+			return setProjectBlockCode(blocks, toName, {
+				code: duplicatedCode,
+				overwrite: overwrite === true
+			}).block;
+		}
 		var definition = normalizeTree(sourceInfo.descriptor || {});
 		definition.name = toName;
-		var implementation = blockImplementation(definition);
-		var implementationSource = sourceInfo.implementationSource;
-		var hooksSource = sourceInfo.hooksSource;
-		if (implementation.runtime === "flow") {
-			implementation.file = blockFlowFileName(toName);
-			definition.implementation = implementation;
-		} else {
-			implementation.file = blockFileName(toName);
-			definition.implementation = implementation;
-			implementationSource = renameBlockImplementationSource(implementationSource || "", fromName, toName);
-		}
-		if (hooksSource !== undefined && hooksSource !== null) {
-			var hooks = definition.hooks;
-			if (typeof hooks === "string") {
-				hooks = { file: hooks };
-			}
-			hooks = normalizeTree(hooks || {});
-			hooks.file = blockHooksFileName(toName);
-			definition.hooks = hooks;
-		} else {
-			delete definition.hooks;
-		}
 		return createProjectBlock(blocks, toName, {
 			descriptor: definition,
-			implementationSource: implementationSource,
+			implementationSource: sourceInfo.implementationSource,
 			hooksSource: hooksSource,
 			overwrite: overwrite === true
 		}, overwrite);
@@ -3928,6 +4018,7 @@
 		delete out.__flowBlockId;
 		delete out.__graphDefinition;
 		delete out.__flowCode;
+		delete out.__rhinoCode;
 		return out;
 	}
 
@@ -3967,11 +4058,13 @@
 			if (args.includeMeta === true || String(args.includeMeta || "") === "true") {
 				compact.origin = block.__flowOrigin || "unknown";
 				compact.provider = block.__flowProvider || block.__flowOrigin || "unknown";
-				compact.format = flowScriptBlock ? "flowscript" : "canonical";
+				compact.format = flowScriptBlock ? (implementation.runtime === "rhino" ? "blockjs" : "flowscript") : "canonical";
 				compact.implementationRuntime = implementation.runtime;
 				compact.descriptorChars = descriptorSource.length;
 				compact.codeChars = flowScriptBlock ? String(block.__flowCode || "").length : 0;
-				compact.implementationChars = flowScriptBlock ? 0 : sourceLength(block.__flowImplementationFile);
+				compact.implementationChars = flowScriptBlock
+					? String(block.__rhinoCode || "").length
+					: sourceLength(block.__flowImplementationFile);
 				compact.hooksChars = sourceLength(block.__flowHooksFile);
 			}
 			if (detail === "summary") {
@@ -3988,7 +4081,7 @@
 			detail: "full",
 			name: block.name,
 			origin: block.__flowOrigin || "unknown",
-			format: flowScriptBlock ? "flowscript" : "canonical",
+			format: flowScriptBlock ? (implementation.runtime === "rhino" ? "blockjs" : "flowscript") : "canonical",
 			file: String(block.__flowFile || ""),
 			codeFile: flowScriptBlock ? String(block.__flowFile || "") : "",
 			codeRevision: flowScriptBlock ? sha256Hex(String(block.__flowCode || "")) : "",
@@ -3999,7 +4092,9 @@
 			implementationRuntime: implementation.runtime
 		};
 		if (flowScriptBlock) {
-			out.implementationSource = sourceFromDefinition(block.__graphDefinition || { version: 1, nodes: [] });
+			out.implementationSource = implementation.runtime === "rhino"
+				? String(block.__rhinoCode || "")
+				: sourceFromDefinition(block.__graphDefinition || { version: 1, nodes: [] });
 		} else if (block.__flowImplementationFile) {
 			out.implementationFile = String(block.__flowImplementationFile);
 			out.implementationSource = String(FileUtils.readFileToString(new File(String(block.__flowImplementationFile)), "UTF-8"));
@@ -6160,13 +6255,13 @@
 			};
 		}
 		var current = getBlockSource(blocks, name, Object.assign({}, request, { detail: "full" }));
-		if (current.format !== "flowscript" || !current.code) {
+		if ((current.format !== "flowscript" && current.format !== "blockjs") || !current.code) {
 			return {
 				ok: false,
 				name: name,
 				revision: current.codeRevision || "",
-				error: flowCodeError("BLOCK_NOT_FLOWSCRIPT",
-					"Block " + name + " is not stored as FlowScript.",
+				error: flowCodeError("BLOCK_NOT_CANONICAL_CODE",
+					"Block " + name + " is not stored as canonical .block.js.",
 					"Use flow-block-code-get only for .block.js blocks, or duplicate/migrate the block first."),
 				warnings: []
 			};
@@ -6212,21 +6307,13 @@
 			detail: "full",
 			includeMeta: true
 		}));
-		if (block.implementationRuntime !== "flow") {
-			return {
-				ok: false,
-				name: name,
-				error: flowCodeError("BLOCK_NOT_FLOWSCRIPT", "Block " + name + " is implemented with " + block.implementationRuntime + ".",
-					"Use flow-block-get for Rhino/native source blocks, or create a FlowScript wrapper block."),
-				warnings: []
-			};
-		}
-		if (block.format === "flowscript" && block.code) {
+		if ((block.format === "flowscript" || block.format === "blockjs") && block.code) {
 			var direct = {
 				ok: true,
 				name: name,
 				origin: block.origin,
-				format: "flowscript",
+				format: block.format,
+				implementationRuntime: block.implementationRuntime,
 				canonical: true,
 				revision: block.codeRevision || "",
 				code: block.code,
@@ -6238,6 +6325,15 @@
 				direct.implementationSource = block.implementationSource;
 			}
 			return direct;
+		}
+		if (block.implementationRuntime !== "flow") {
+			return {
+				ok: false,
+				name: name,
+				error: flowCodeError("BLOCK_NOT_FLOWSCRIPT", "Block " + name + " is implemented with " + block.implementationRuntime + ".",
+					"Use flow-block-get for legacy descriptor-backed Rhino blocks, or migrate the block to canonical .block.js."),
+				warnings: []
+			};
 		}
 		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
 			name: name,
@@ -6343,7 +6439,7 @@
 		var targetName = String(request.name || request.block || "").trim();
 		if (targetName) {
 			var target = getBlockSource(blocks, targetName, Object.assign({}, request, { detail: "full" }));
-			return target.format === "flowscript" && target.code ? [target] : [];
+			return (target.format === "flowscript" || target.format === "blockjs") && target.code ? [target] : [];
 		}
 		var origin = String(request.origin || "").trim();
 		var provider = String(request.provider || "").trim();
@@ -6364,7 +6460,7 @@
 			}
 			return getBlockSource(blocks, name, Object.assign({}, request, { detail: "full" }));
 		}).filter(function (target) {
-			return target && target.format === "flowscript" && target.code;
+			return target && (target.format === "flowscript" || target.format === "blockjs") && target.code;
 		});
 	}
 
