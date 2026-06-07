@@ -6054,20 +6054,22 @@
 			includeHeader: false,
 			includeImplicitReturn: false
 		}));
+		var meta = flowScriptBlockMetaFromRequest(name, { descriptor: block.descriptor });
+		var code = flowScriptBlockCodeSource(name, validation.code, meta);
 		var out = {
 			ok: validation.ok !== false,
 			name: name,
 			origin: block.origin,
 			format: "flowscript-mirror",
 			canonical: false,
-			revision: validation.revision,
-			code: validation.code,
+			revision: sha256Hex(code),
+			code: code,
 			descriptor: block.descriptor,
 			diagnostics: validation.diagnostics || [],
 			warnings: (validation.diagnostics || []).filter(function (diagnostic) {
 				return diagnostic.severity === "warning";
 			}),
-			next: "Call flow-block-code-set with this code to migrate the project-local block to canonical .block.js."
+			next: "Call flow-block-code-set with this full _meta + function code to migrate the project-local block to canonical .block.js."
 		};
 		if (request.includeSources === true || String(request.includeSources || "") === "true") {
 			out.descriptorSource = block.descriptorSource;
