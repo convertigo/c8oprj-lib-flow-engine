@@ -40,6 +40,20 @@ const _meta = {
       "default": false,
       "description": "Validate without writing."
     },
+    "saveProject": {
+      "label": "saveProject",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Export the full Convertigo project after writing. Keep false for fast MCP edits."
+    },
+    "refresh": {
+      "label": "refresh",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Refresh the Studio Project Explorer after writing. Keep false for fast MCP edits."
+    },
     "projectDir": {
       "label": "projectDir",
       "kind": "text",
