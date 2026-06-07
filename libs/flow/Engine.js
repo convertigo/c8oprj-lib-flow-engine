@@ -4946,7 +4946,7 @@
 				return;
 			}
 			if (pending) {
-				pending.text += " " + line;
+				pending.text += "\n" + line;
 				if (flowScriptStatementComplete(pending.text)) {
 					out.push(pending);
 					pending = null;
@@ -5270,6 +5270,8 @@
 				args[key] = flowScriptPathFromToken(tokens[key], locals);
 			} else if (kind === "template" || kind === "value") {
 				args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
+			} else if (kind === "text" || kind === "schema" || kind === "secret") {
+				args[key] = unquoteFlowScriptString(tokens[key]);
 			}
 		});
 		return args;
@@ -5733,7 +5735,7 @@
 			if (line.match(/^(flow|function)\s+/)) {
 				continue;
 			}
-			var declaration = line.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)$/);
+			var declaration = line.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([\s\S]+)$/);
 			if (declaration) {
 				var varName = safeIdentifier(declaration[1]);
 				var nodes = buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, declaration[2], lineNumber);
@@ -5743,7 +5745,7 @@
 				locals[varName] = true;
 				continue;
 			}
-			var scopeAssignment = line.match(/^((?:local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*)\s*=\s*(.+)$/);
+			var scopeAssignment = line.match(/^((?:local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*)\s*=\s*([\s\S]+)$/);
 			if (scopeAssignment) {
 				buildNaturalScopeAssignment(blocks, imports, locals, scopeAssignment[1], scopeAssignment[2], lineNumber).forEach(function (node) {
 					addFlowScriptNode(stack[stack.length - 1], node);
@@ -5790,7 +5792,7 @@
 				}
 				continue;
 			}
-			var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\((.*)\)\s*(\{)?\s*;?$/);
+			var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(([\s\S]*)\)\s*(\{)?\s*;?$/);
 			if (!match) {
 				raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,
 					null, "Use block.name({ prop: value }) and optional { child calls } blocks.");
