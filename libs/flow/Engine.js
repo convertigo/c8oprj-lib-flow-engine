@@ -7027,11 +7027,15 @@
 				var definition = parseSource(flowSource);
 				return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: String(dbo.getName()) }, definition) || {});
 			}
+			var learnedSchema = learnedXsdOutputSchema(target);
+			if (learnedSchema) {
+				return learnedSchema;
+			}
 			var project = dbo.getProject();
 			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
 			var xso = Packages.com.twinsoft.convertigo.engine.enums.SchemaMeta.getXmlSchemaObject(schema, dbo);
 			if (!xso) {
-				return learnedXsdOutputSchema(target);
+				return null;
 			}
 			var document = Packages.com.twinsoft.convertigo.engine.util.XmlSchemaUtils.getDomInstance(xso);
 			var jsonString = Packages.com.twinsoft.convertigo.engine.util.XMLUtils.XmlToJson(document.getDocumentElement(), true, true);
