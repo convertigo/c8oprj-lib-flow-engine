@@ -5832,6 +5832,159 @@
 		return value;
 	}
 
+	function intentTokens(value) {
+		return String(value || "")
+			.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+			.toLowerCase()
+			.split(/[^a-z0-9]+/)
+			.filter(function (token) {
+				return token.length > 1;
+			});
+	}
+
+	function expandIntentTokens(tokens) {
+		var aliases = {
+			add: ["append", "push", "insert"],
+			append: ["add", "push"],
+			array: ["list", "items"],
+			call: ["requestable", "sequence", "transaction", "invoke"],
+			email: ["mail", "notify", "notification", "send"],
+			fetch: ["get", "http", "request"],
+			field: ["by", "path", "key"],
+			find: ["search", "select", "query"],
+			get: ["fetch", "read"],
+			hash: ["sha", "sha256", "digest"],
+			http: ["url", "request", "fetch"],
+			json: ["object", "parse", "stringify"],
+			key: ["by", "field"],
+			mail: ["email", "notify", "send"],
+			map: ["transform", "select"],
+			notify: ["email", "mail", "send"],
+			order: ["sort"],
+			parse: ["json", "read"],
+			pick: ["select", "path"],
+			query: ["search", "select"],
+			read: ["get", "load"],
+			request: ["http", "call", "requestable"],
+			requestable: ["call", "sequence", "transaction"],
+			search: ["find", "query"],
+			select: ["pick", "path", "map"],
+			sequence: ["requestable", "call"],
+			send: ["email", "mail", "notify"],
+			sort: ["order"],
+			transaction: ["requestable", "call"],
+			uri: ["url", "endpoint"],
+			url: ["http", "request"],
+			write: ["set", "save"]
+		};
+		var out = [];
+		(tokens || []).forEach(function (token) {
+			addUnique(out, token);
+			(aliases[token] || []).forEach(function (alias) {
+				addUnique(out, alias);
+			});
+		});
+		return out;
+	}
+
+	function intentScoreText(text, tokens) {
+		text = String(text || "").toLowerCase();
+		var score = 0;
+		(tokens || []).forEach(function (token) {
+			if (!token) {
+				return;
+			}
+			if (text === token) {
+				score += 18;
+			} else if (text.indexOf(token) !== -1) {
+				score += 6;
+			}
+		});
+		return score;
+	}
+
+	function flowScriptBlockCandidateScore(descriptor, wanted) {
+		var wantedText = String(wanted || "").toLowerCase();
+		var wantedTokens = expandIntentTokens(intentTokens(wanted));
+		var blockId = String(descriptor.blockId || descriptor.name || "").toLowerCase();
+		var localName = String(descriptor.localName || descriptor.name || "").toLowerCase();
+		var namespace = String(descriptor.namespace || "").toLowerCase();
+		var tags = (descriptor.tags || []).join(" ").toLowerCase();
+		var props = Object.keys(descriptor.props || {}).join(" ").toLowerCase();
+		var desc = String(descriptor.description || "").toLowerCase();
+		var score = 0;
+		if (blockId === wantedText || localName === wantedText) {
+			score += 120;
+		} else if (blockId.replace(/\./g, "") === wantedText.replace(/\./g, "")) {
+			score += 85;
+		} else if (blockId.indexOf(wantedText) !== -1 ||
+				(blockId.length >= 4 && wantedText.indexOf(blockId) !== -1)) {
+			score += 45;
+		}
+		score += intentScoreText(localName, wantedTokens) * 2;
+		score += intentScoreText(blockId, wantedTokens);
+		score += intentScoreText(namespace, wantedTokens);
+		score += intentScoreText(tags, wantedTokens);
+		score += Math.floor(intentScoreText(props, wantedTokens) / 2);
+		score += Math.floor(intentScoreText(desc, wantedTokens) / 3);
+		if (wantedTokens.indexOf("fetch") !== -1 && (namespace === "http" || localName === "get" || localName === "request")) {
+			score += 40;
+		}
+		if ((wantedTokens.indexOf("email") !== -1 || wantedTokens.indexOf("mail") !== -1 || wantedTokens.indexOf("notify") !== -1) &&
+				(namespace === "email" || blockId.indexOf("email.") === 0)) {
+			score += 40;
+		}
+		if ((wantedTokens.indexOf("sort") !== -1 || wantedTokens.indexOf("order") !== -1) && blockId === "list.sort") {
+			score += 40;
+		}
+		return score;
+	}
+
+	function flowScriptBlockCandidates(blocks, wanted, limit) {
+		limit = limit || 5;
+		return Object.keys(blocks || {}).map(function (name) {
+			var descriptor = blockDescriptor(blocks[name]);
+			var score = flowScriptBlockCandidateScore(descriptor, wanted);
+			return {
+				block: descriptor.blockId,
+				score: score,
+				confidence: Math.min(1, Math.round((score / 80) * 100) / 100),
+				signature: blockSignature(descriptor),
+				description: descriptor.description || ""
+			};
+		}).filter(function (candidate) {
+			return candidate.score > 0;
+		}).sort(function (a, b) {
+			return b.score - a.score || String(a.block).localeCompare(String(b.block));
+		}).slice(0, limit);
+	}
+
+	function flowScriptPropertyCandidates(props, wanted, limit) {
+		limit = limit || 5;
+		var wantedTokens = expandIntentTokens(intentTokens(wanted));
+		return Object.keys(props || {}).map(function (name) {
+			var descriptor = props[name] || {};
+			var text = [
+				name,
+				descriptor.kind || "",
+				descriptor.type || "",
+				descriptor.mode || "",
+				descriptor.description || ""
+			].join(" ").toLowerCase();
+			var score = String(name).toLowerCase() === String(wanted || "").toLowerCase() ? 100 : intentScoreText(text, wantedTokens);
+			return {
+				property: name,
+				score: score,
+				signature: summaryPropertyDescriptor(descriptor),
+				description: descriptor.description || ""
+			};
+		}).filter(function (candidate) {
+			return candidate.score > 0;
+		}).sort(function (a, b) {
+			return b.score - a.score || String(a.property).localeCompare(String(b.property));
+		}).slice(0, limit);
+	}
+
 	function validateFlowScriptDefinition(blocks, definition) {
 		var diagnostics = [];
 		function expectedProps(block) {
@@ -5843,12 +5996,24 @@
 				var block = blocks[name];
 				var line = node.__flowScriptLine || 0;
 				if (!block) {
+					var candidates = flowScriptBlockCandidates(blocks, name, 5);
 					diagnostics.push({
 						severity: "error",
 						code: "UNKNOWN_BLOCK",
 						line: line,
 						message: "Unknown Flow block: " + name,
-						hint: "Search the palette with flow-catalog or create a project block before using " + name + "."
+						candidates: candidates,
+						next: candidates.length && candidates[0].score >= 35
+							? "Try " + candidates[0].block + " first, or call flow-block-get for its exact contract."
+							: "No strong palette match. If this is a real domain concept, create a project block with flow-block-code-set, then use it from FlowScript.",
+						create: {
+							tool: "flow-block-code-set",
+							name: name,
+							dry: true
+						},
+						hint: candidates.length
+							? "Use one candidate block, inspect it with flow-block-get, or create " + name + " as a project block if none matches."
+							: "Create a project block with flow-block-code-set before using " + name + "."
 					});
 				} else {
 					var props = blockCatalog(block).props || {};
@@ -5858,6 +6023,7 @@
 					});
 					flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
 						if (key !== "id" && key !== "comment" && key !== "out" && !props[key]) {
+							var propertyCandidates = flowScriptPropertyCandidates(props, key, 5);
 							diagnostics.push({
 								severity: "error",
 								code: "UNKNOWN_BLOCK_PROPERTY",
@@ -5866,6 +6032,10 @@
 								property: key,
 								message: "Unknown property " + key + " for Flow block " + name + ".",
 								expected: expectedProps(block),
+								candidates: propertyCandidates,
+								next: propertyCandidates.length
+									? "Use property " + propertyCandidates[0].property + " if it matches the intent, otherwise inspect the block contract with flow-block-get."
+									: "Use only expected properties, or create/patch a project block if this property is part of a new contract.",
 								hint: "Use " + name + "({ " + expectedProps(block).map(function (prop) { return prop + ": ..."; }).join(", ") + " })."
 							});
 						}
@@ -6102,7 +6272,7 @@
 			return !severity || diagnostic.severity === severity;
 		}).map(function (diagnostic) {
 			var out = {};
-			["severity", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "hint"].forEach(function (key) {
+			["severity", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "next", "create", "hint"].forEach(function (key) {
 				if (diagnostic[key] !== undefined && diagnostic[key] !== null && diagnostic[key] !== "") {
 					out[key] = diagnostic[key];
 				}
