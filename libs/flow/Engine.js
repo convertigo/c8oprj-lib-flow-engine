@@ -5086,8 +5086,40 @@
 
 	function parseNaturalFlowScriptCall(text) {
 		text = stripFlowScriptSemicolon(text);
-		var match = text.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\((.*)\)$/);
-		return match ? { name: match[1], args: match[2] || "" } : null;
+		var match = text.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(/);
+		if (!match) {
+			return null;
+		}
+		var open = text.indexOf("(", match[0].length - 1);
+		var paren = 0;
+		var inString = false;
+		var quote = "";
+		for (var i = open; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (inString) {
+				if (ch === "\\" && i + 1 < text.length) {
+					i++;
+				} else if (ch === quote) {
+					inString = false;
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'" || ch === "`") {
+				inString = true;
+				quote = ch;
+			} else if (ch === "(") {
+				paren++;
+			} else if (ch === ")") {
+				paren--;
+				if (paren === 0) {
+					if (text.substring(i + 1).trim() !== "") {
+						return null;
+					}
+					return { name: match[1], args: text.substring(open + 1, i) };
+				}
+			}
+		}
+		return null;
 	}
 
 	function capitalizedIdentifier(value) {

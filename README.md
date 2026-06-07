@@ -253,6 +253,17 @@ tools/migrate-flow-js-canonical.sh /path/to/Project/libs/flows
 tools/migrate-flow-js-canonical.sh --remove-yaml /path/to/Project/libs/flows
 ```
 
+Use `tools/migrate-block-js-canonical.py` to validate or migrate project-local
+Flow-backed blocks through the live Flow MCP endpoint. It returns a complete
+`_meta + function` FlowScript block source, validates it, and writes only when
+`--write` is passed:
+
+```bash
+tools/migrate-block-js-canonical.py --project lib_flow_mcp
+tools/migrate-block-js-canonical.py --project lib_flow_mcp --name mcp.handle
+tools/migrate-block-js-canonical.py --project lib_flow_mcp --write
+```
+
 For new Flows, prefer the natural code-like form:
 
 ```javascript
