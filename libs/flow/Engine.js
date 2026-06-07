@@ -5942,7 +5942,7 @@
 
 	function flowScriptBlockCandidates(blocks, wanted, limit) {
 		limit = limit || 5;
-		return Object.keys(blocks || {}).map(function (name) {
+		var candidates = Object.keys(blocks || {}).map(function (name) {
 			var descriptor = blockDescriptor(blocks[name]);
 			var score = flowScriptBlockCandidateScore(descriptor, wanted);
 			return {
@@ -5956,6 +5956,14 @@
 			return candidate.score > 0;
 		}).sort(function (a, b) {
 			return b.score - a.score || String(a.block).localeCompare(String(b.block));
+		});
+		if (!candidates.length) {
+			return [];
+		}
+		var best = candidates[0].score;
+		var strongThreshold = Math.max(35, Math.floor(best * 0.8));
+		return candidates.filter(function (candidate, index) {
+			return index === 0 || candidate.score >= strongThreshold;
 		}).slice(0, limit);
 	}
 
@@ -6801,7 +6809,7 @@
 		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
 			return sourceForMaybeFlowScript(loadBlocks(), args, args.flowSource);
 		}
-		return getProjectFlow(args.name, loadBlocks()).source;
+		return getProjectFlow(args.name || args.flowName, loadBlocks()).source;
 	}
 
 	function outputSchemaForFlowSource(flowSource) {
