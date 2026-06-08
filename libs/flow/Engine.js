@@ -1631,7 +1631,9 @@
 			hit: typeof __flowBridgeRuntimeCacheHit !== "undefined" && __flowBridgeRuntimeCacheHit === true,
 			key: typeof __flowBridgeRuntimeCacheKey !== "undefined" ? String(__flowBridgeRuntimeCacheKey) : "",
 			generation: typeof __flowBridgeRuntimeCacheGeneration !== "undefined" ? Number(__flowBridgeRuntimeCacheGeneration) : 0,
-			size: typeof __flowBridgeRuntimeCacheSize !== "undefined" ? Number(__flowBridgeRuntimeCacheSize) : 0
+			size: typeof __flowBridgeRuntimeCacheSize !== "undefined" ? Number(__flowBridgeRuntimeCacheSize) : 0,
+			classSource: typeof __flowBridgeClassSource !== "undefined" ? String(__flowBridgeClassSource) : "",
+			classResource: typeof __flowBridgeClassResource !== "undefined" ? String(__flowBridgeClassResource) : ""
 		};
 	}
 
