@@ -1,14 +1,13 @@
 const _meta = {
   "version": 1,
   "private": true,
-  "icon": "mdi:file-edit-outline",
+  "icon": "mdi:source-commit",
   "tags": [
     "flow",
     "code",
-    "flowscript",
-    "patch"
+    "flowscript"
   ],
-  "description": "Applies a revision-checked FlowScript patch or replacement.",
+  "description": "Promotes a checked FlowScript draft to the official Flow model.",
   "properties": {
     "qname": {
       "label": "qname",
@@ -26,47 +25,34 @@ const _meta = {
       "label": "revision",
       "kind": "text",
       "type": "string",
-      "description": "Revision returned by flow.code.get."
+      "description": "Expected draft revision returned by flow.code.check."
     },
     "code": {
       "label": "code",
       "kind": "text",
       "type": "string",
-      "description": "Full replacement FlowScript code."
-    },
-    "codepatch": {
-      "label": "codepatch",
-      "kind": "text",
-      "type": "string",
-      "description": "Unified diff applied to the current FlowScript code."
-    },
-    "dry": {
-      "label": "dry",
-      "kind": "literal",
-      "type": "boolean",
-      "default": false,
-      "description": "Validate without writing."
-    },
-    "draft": {
-      "label": "draft",
-      "kind": "literal",
-      "type": "boolean",
-      "default": false,
-      "description": "Patch the draft source in libs/flow/drafts. Does not update the official Flow."
+      "description": "Optional full FlowScript code. If omitted, the draft is promoted."
     },
     "saveProject": {
       "label": "saveProject",
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Export the full Convertigo project after writing. Keep false for fast MCP edits."
+      "description": "Export the full Convertigo project after promotion. Keep false for fast MCP edits."
     },
     "refresh": {
       "label": "refresh",
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Refresh the Studio Project Explorer after writing. Keep false for fast MCP edits."
+      "description": "Refresh the Studio Project Explorer after promotion."
+    },
+    "clearDraft": {
+      "label": "clearDraft",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Delete the draft file after successful promotion."
     },
     "projectDir": {
       "label": "projectDir",
@@ -78,12 +64,12 @@ const _meta = {
       "label": "out",
       "kind": "path",
       "mode": "write",
-      "description": "Scope path receiving compact patch result."
+      "description": "Scope path receiving promotion result."
     }
   },
   "runtime": "rhino",
   "hooks": {
-    "file": "patch.hooks.js"
+    "file": "promote.hooks.js"
   }
 }
 
@@ -100,7 +86,7 @@ const _meta = {
 
 	return {
 		run: function (ctx, node) {
-			return ctx.flowCodePatch(argsFrom(ctx.props(node)));
+			return ctx.flowCodePromote(argsFrom(ctx.props(node)));
 		}
 	};
 }())

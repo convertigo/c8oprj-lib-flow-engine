@@ -40,6 +40,13 @@ const _meta = {
       "default": false,
       "description": "Validate without writing."
     },
+    "draft": {
+      "label": "draft",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Write a draft source to libs/flow/drafts even when invalid. Does not update the official Flow."
+    },
     "saveProject": {
       "label": "saveProject",
       "kind": "literal",

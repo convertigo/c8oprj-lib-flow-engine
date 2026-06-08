@@ -60,6 +60,11 @@
 		return dir ? new File(dir, "libs/flows") : null;
 	}
 
+	function projectFlowDraftsDir() {
+		var dir = projectDir();
+		return dir ? new File(dir, "libs/flow/drafts") : null;
+	}
+
 	function projectFragmentsDir() {
 		var dir = projectDir();
 		return dir ? new File(dir, "libs/flow/fragments") : null;
@@ -1759,7 +1764,8 @@
 
 	function resetSchemaRequest(request) {
 		request = request || {};
-		var definition = parseSource(sourceForMaybeFlowScript(loadBlocks(), request, request.flowSource || ""));
+		var blocks = loadBlocks();
+		var definition = parseSource(sourceForFlowRequest(request, blocks));
 		var flowName = flowNameFor(request, definition);
 		var dir = projectSchemasDir();
 		if (!dir) {
@@ -3407,6 +3413,10 @@
 		return safeIdentifier(blockLocalName(name) || name || "block");
 	}
 
+	function normalizeFlowScriptFunctionSyntax(code) {
+		return String(code || "").replace(/(^|\n)(\s*)(?:export\s+(?:default\s+)?)?(?:(?:public|private)\s+)?(?:async\s+)?(flow|function)\s+/g, "$1$2$3 ");
+	}
+
 	function blockCodeRuntimeFromMeta(meta) {
 		meta = normalizeTree(meta || {});
 		var implementation = normalizeTree(meta.implementation || {});
@@ -3414,7 +3424,7 @@
 	}
 
 	function ensureFlowScriptBlockFunction(name, code) {
-		var body = unwrapFlowScriptBlockEnvelope(code);
+		var body = normalizeFlowScriptFunctionSyntax(unwrapFlowScriptBlockEnvelope(code));
 		if (String(body).trim().match(/^(?:flow|function)\s+/)) {
 			return normalizeFlowScriptCode(body);
 		}
@@ -4222,6 +4232,15 @@
 		return new File(dir, flowCodeFileName(name));
 	}
 
+	function projectFlowDraftCodeFile(name) {
+		var dir = projectFlowDraftsDir();
+		if (!dir) {
+			raise("PROJECT_FLOW_DRAFTS_UNAVAILABLE", "Project Flow drafts are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		return new File(dir, flowCodeFileName(name));
+	}
+
 	function flowNameFromFile(file) {
 		var filename = String(file && file.getName ? file.getName() : file || "");
 		if (filename.endsWith(".flow.js")) {
@@ -4445,6 +4464,7 @@
 	}
 
 	function sourceFromFlowScript(blocks, name, code) {
+		code = normalizeFlowScriptFunctionSyntax(code);
 		var definition = parseFlowScript(blocks, code);
 		var diagnostics = validateFlowScriptDefinition(blocks, definition);
 		var errors = diagnostics.filter(function (diagnostic) {
@@ -4708,7 +4728,7 @@
 	}
 
 	function normalizeFlowScriptCode(code) {
-		code = String(code || "").replace(/\s+$/g, "");
+		code = normalizeFlowScriptFunctionSyntax(code).replace(/\s+$/g, "");
 		return code + "\n";
 	}
 
@@ -4925,15 +4945,75 @@
 				text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(.*\)\s*\{\s*;?$/)) {
 			return true;
 		}
+		if (balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
+				text.match(/^if\s*\(.*\)\s*\{\s*;?$/)) {
+			return true;
+		}
 		if (balance.paren <= 0 && balance.brace <= 0 && balance.bracket <= 0) {
 			return !!(text.match(/;\s*$/) ||
 				text.match(/^import\s+/) ||
-				text.match(/^return\b/) ||
+				text.match(/^return(?:\s|;|$)/) ||
 				text.match(/^(const|let|var)\s+/) ||
 				text.match(/^(local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*\s*=/) ||
 				text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(/));
 		}
 		return false;
+	}
+
+	function flowScriptBalanceProblem(balance) {
+		balance = balance || {};
+		var missing = [];
+		var extra = [];
+		if (balance.paren > 0) {
+			missing.push(")");
+		} else if (balance.paren < 0) {
+			extra.push(")");
+		}
+		if (balance.brace > 0) {
+			missing.push("}");
+		} else if (balance.brace < 0) {
+			extra.push("}");
+		}
+		if (balance.bracket > 0) {
+			missing.push("]");
+		} else if (balance.bracket < 0) {
+			extra.push("]");
+		}
+		var parts = [];
+		if (missing.length) {
+			parts.push("missing " + missing.join(", "));
+		}
+		if (extra.length) {
+			parts.push("extra " + extra.join(", "));
+		}
+		return parts.join("; ");
+	}
+
+	function flowScriptMissingClosers(balance) {
+		balance = balance || {};
+		var missing = [];
+		if (balance.paren > 0) {
+			missing.push(")");
+		}
+		if (balance.brace > 0) {
+			missing.push("}");
+		}
+		if (balance.bracket > 0) {
+			missing.push("]");
+		}
+		return missing.join(", ");
+	}
+
+	function flowScriptMissingGroupClosers(balance) {
+		balance = balance || {};
+		var missing = [];
+		if (balance.paren > 0) {
+			missing.push(")");
+		}
+		if (balance.bracket > 0) {
+			missing.push("]");
+		}
+		return missing.join(", ");
 	}
 
 	function flowScriptStatements(code) {
@@ -4949,6 +5029,13 @@
 				return;
 			}
 			if (pending) {
+				var beforeClose = flowScriptBalance(pending.text);
+				if ((line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/)) &&
+						pending.text.match(/^if\s*\(/) && (beforeClose.paren > 0 || beforeClose.bracket > 0)) {
+					raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + pending.line
+						+ ": missing " + flowScriptMissingGroupClosers(beforeClose) + " before line " + (index + 1),
+						null, "Close the current statement before writing the next one.");
+				}
 				pending.text += "\n" + line;
 				if (flowScriptStatementComplete(pending.text)) {
 					out.push(pending);
@@ -4963,6 +5050,11 @@
 			}
 		});
 		if (pending) {
+			var problem = flowScriptBalanceProblem(flowScriptBalance(pending.text));
+			if (problem) {
+				raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + pending.line + ": " + problem,
+					null, "Close the current statement before writing the next one.");
+			}
 			out.push(pending);
 		}
 		return out;
@@ -5149,7 +5241,20 @@
 		if (isFlowScriptQuoted(token)) {
 			token = unquoteFlowScriptString(token);
 		}
-		return flowScriptRewriteExpression(token, locals);
+		token = flowScriptRewriteExpression(token, locals);
+		if (isScopePath(token)) {
+			return token;
+		}
+		if (token.indexOf("$.") === 0) {
+			return "local." + token.substring(2);
+		}
+		if (token.charAt(0) === "/" && token.indexOf("//") !== 0) {
+			return "local." + token.substring(1).replace(/\//g, ".");
+		}
+		if (token.match(/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/)) {
+			return "local." + token;
+		}
+		return token;
 	}
 
 	function flowScriptLiteralTokenValue(token, lineNumber) {
@@ -5176,6 +5281,28 @@
 			return Number(token);
 		}
 		return undefined;
+	}
+
+	function flowScriptValueObjectFromToken(token, locals, lineNumber) {
+		if (!isFlowScriptObjectLiteral(token)) {
+			return undefined;
+		}
+		var out = {};
+		naturalFlowScriptObjectFields(token).forEach(function (field) {
+			out[field.key] = flowScriptValueFromToken(field.token, locals, lineNumber);
+		});
+		return out;
+	}
+
+	function flowScriptValueArrayFromToken(token, locals, lineNumber) {
+		if (!isFlowScriptArrayLiteral(token)) {
+			return undefined;
+		}
+		var body = String(token || "").trim();
+		body = body.substring(1, body.length - 1);
+		return splitFlowScriptTopLevel(body, ",").map(function (item) {
+			return flowScriptValueFromToken(item, locals, lineNumber);
+		});
 	}
 
 	function flowScriptTemplateLiteralToTemplate(token, locals, lineNumber) {
@@ -5247,6 +5374,14 @@
 		var template = flowScriptTemplateLiteralToTemplate(token, locals, lineNumber);
 		if (template !== undefined) {
 			return template;
+		}
+		var object = flowScriptValueObjectFromToken(token, locals, lineNumber);
+		if (object !== undefined) {
+			return object;
+		}
+		var array = flowScriptValueArrayFromToken(token, locals, lineNumber);
+		if (array !== undefined) {
+			return array;
 		}
 		var literal = flowScriptLiteralTokenValue(token, lineNumber);
 		if (literal !== undefined) {
@@ -5558,6 +5693,15 @@
 			node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 			if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
 				Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+			} else if (args.length > 1) {
+				node.where = flowScriptExpressionFromToken(args[1], locals);
+			}
+		} else if (block === "http.get") {
+			if (args.length > 0 && !isFlowScriptObjectLiteral(args[0])) {
+				node.url = flowScriptValueFromToken(args[0], locals, lineNumber);
+			}
+			if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
+				Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
 			}
 		} else {
 			if (args.length > 0 && isFlowScriptObjectLiteral(args[args.length - 1])) {
@@ -5669,6 +5813,9 @@
 
 	function resolveFlowScriptName(name, imports) {
 		name = String(name || "");
+		if (name === "return.value") {
+			return "return";
+		}
 		if (imports[name]) {
 			return imports[name];
 		}
@@ -5723,6 +5870,25 @@
 		return root.nodes;
 	}
 
+	function trackFlowScriptLocalWrite(locals, path) {
+		path = String(path || "");
+		if (path.indexOf("local.") !== 0) {
+			return;
+		}
+		var name = path.substring("local.".length).split(/[.\[]/)[0];
+		if (name) {
+			locals[name] = true;
+		}
+	}
+
+	function trackFlowScriptNodeWrites(locals, node) {
+		if (!node || typeof node !== "object") {
+			return;
+		}
+		trackFlowScriptLocalWrite(locals, node.out);
+		trackFlowScriptLocalWrite(locals, node.path);
+	}
+
 	function parseFlowScriptStatementsInto(blocks, imports, locals, root, statements) {
 		var stack = [{ root: root, slot: "nodes" }];
 		for (var i = 0; i < statements.length; i++) {
@@ -5761,7 +5927,7 @@
 				}
 				continue;
 			}
-			if (line.match(/^return\b/)) {
+			if (line.match(/^return(?:\s|;|$)/)) {
 				buildNaturalFlowScriptReturn(line, locals, lineNumber).forEach(function (node) {
 					addFlowScriptNode(stack[stack.length - 1], node);
 				});
@@ -5798,7 +5964,7 @@
 			var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(([\s\S]*)\)\s*(\{)?\s*;?$/);
 			if (!match) {
 				raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,
-					null, "Use block.name({ prop: value }) and optional { child calls } blocks.");
+					null, "Use compact FlowScript: function MyFlow({ input, config, result }) { var feed = requestable.call(\".Connector.Transaction\"); var sorted = list.sort(feed.items, { by: current.title }); result.items = sorted; return result }.");
 			}
 			var block = resolveFlowScriptName(match[1], imports);
 			var callArgs = match[2] || "{}";
@@ -5808,6 +5974,7 @@
 			node.block = block;
 			node.__flowScriptLine = lineNumber;
 			addFlowScriptNode(stack[stack.length - 1], node);
+			trackFlowScriptNodeWrites(locals, node);
 			if (match[3]) {
 				var slot = block === "if" ? "then" : block === "json.object" ? "fields" : "nodes";
 				stack.push({ root: node, slot: slot });
@@ -5816,6 +5983,7 @@
 	}
 
 	function parseFlowScript(blocks, code) {
+		code = normalizeFlowScriptFunctionSyntax(code);
 		var root = { version: 1, nodes: [] };
 		parseFlowScriptStatementsInto(blocks, {}, {}, root, flowScriptStatements(code));
 		return canonicalFlowDefinition(root);
@@ -6253,7 +6421,7 @@
 	}
 
 	function flowCodeNameFromCode(code) {
-		var match = String(code || "").match(/\b(?:flow|function)\s+([A-Za-z_$][\w$]*)\s*\(/);
+		var match = normalizeFlowScriptFunctionSyntax(code).match(/\b(?:flow|function)\s+([A-Za-z_$][\w$]*)\s*\(/);
 		return match ? String(match[1]) : "";
 	}
 
@@ -6269,10 +6437,14 @@
 
 	function flowCodeQName(request, name) {
 		request = request || {};
-		if (request.qname) {
-			return String(request.qname);
-		}
 		var project = currentProjectName(request);
+		if (request.qname) {
+			var qname = String(request.qname);
+			if (qname.indexOf(".") !== -1) {
+				return qname.charAt(0) === "." && project ? project + qname : qname;
+			}
+			return project ? project + "." + qname : qname;
+		}
 		return project ? project + "." + name : String(name);
 	}
 
@@ -6280,18 +6452,98 @@
 		return request && (request.dry === true || request.dryRun === true);
 	}
 
+	function flowCodeDraftMode(request) {
+		request = request || {};
+		return request.draft === true
+			|| String(request.draft || "").toLowerCase() === "true"
+			|| String(request.mode || "").toLowerCase() === "draft"
+			|| String(request.stage || "").toLowerCase() === "draft";
+	}
+
+	function flowCodeOfficialMode(request) {
+		request = request || {};
+		return request.official === true
+			|| request.draft === false
+			|| String(request.official || "").toLowerCase() === "true"
+			|| String(request.mode || "").toLowerCase() === "official"
+			|| String(request.stage || "").toLowerCase() === "official";
+	}
+
+	function flowCodeMaxDiagnostics(request) {
+		request = request || {};
+		var value = request.maxDiagnostics !== undefined && request.maxDiagnostics !== null && request.maxDiagnostics !== ""
+			? request.maxDiagnostics
+			: request.diagnosticLimit !== undefined && request.diagnosticLimit !== null && request.diagnosticLimit !== ""
+				? request.diagnosticLimit
+				: request.diagnosticsLimit;
+		var max = value === undefined || value === null || value === "" ? 8 : parseInt(String(value), 10);
+		if (isNaN(max)) {
+			max = 8;
+		}
+		return Math.max(1, Math.min(25, max));
+	}
+
 	function flowCodeDiagnostics(diagnostics, severity) {
 		return (diagnostics || []).filter(function (diagnostic) {
 			return !severity || diagnostic.severity === severity;
 		}).map(function (diagnostic) {
 			var out = {};
-			["severity", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "next", "create", "hint"].forEach(function (key) {
+			["severity", "phase", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "next", "create", "hint"].forEach(function (key) {
 				if (diagnostic[key] !== undefined && diagnostic[key] !== null && diagnostic[key] !== "") {
 					out[key] = diagnostic[key];
 				}
 			});
 			return out;
 		});
+	}
+
+	function flowCodeDiagnosticReport(diagnostics, request, severity) {
+		var all = flowCodeDiagnostics(diagnostics, severity);
+		var limit = flowCodeMaxDiagnostics(request);
+		var shown = all.slice(0, limit);
+		return {
+			diagnosticCount: all.length,
+			diagnosticsShown: shown.length,
+			hasMore: all.length > shown.length,
+			diagnostics: shown
+		};
+	}
+
+	function flowCodeAddDiagnosticReport(out, diagnostics, request, severity) {
+		var report = flowCodeDiagnosticReport(diagnostics, request, severity);
+		out.diagnosticCount = report.diagnosticCount;
+		out.diagnosticsShown = report.diagnosticsShown;
+		out.hasMore = report.hasMore;
+		out.diagnostics = report.diagnostics;
+		return out;
+	}
+
+	function flowCodeParseDiagnostics(error) {
+		var message = String(error && error.message || error || "FlowScript parse failed.");
+		var line = 0;
+		var match = message.match(/(?:line|at line)\s+(\d+)/i);
+		if (match) {
+			line = parseInt(match[1], 10) || 0;
+		}
+		return [{
+			severity: "error",
+			phase: "parse",
+			code: String(error && error.code || "FLOWSCRIPT_PARSE_FAILED"),
+			line: line,
+			message: message,
+			hint: error && error.hint ? String(error.hint) : "Fix the FlowScript syntax and retry."
+		}];
+	}
+
+	function flowCodeExceptionDetails(error, request) {
+		var details = error && error.details;
+		if (Object.prototype.toString.call(details) === "[object Array]") {
+			return flowCodeDiagnosticReport(details, request);
+		}
+		if (details !== undefined && details !== null) {
+			return details;
+		}
+		return flowCodeDiagnosticReport(flowCodeParseDiagnostics(error), request);
 	}
 
 	function flowCodeError(code, message, hint, details) {
@@ -6313,9 +6565,75 @@
 		return sha256Hex(code);
 	}
 
+	function flowCodeValidate(blocks, request, name, code) {
+		try {
+			var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
+				name: name,
+				code: code
+			}));
+			return {
+				validation: validation,
+				warnings: flowCodeDiagnostics(validation.diagnostics, "warning"),
+				error: null
+			};
+		} catch (e) {
+			return {
+				validation: null,
+				warnings: [],
+				error: flowCodeError(String(e.code || "FLOWSCRIPT_PARSE_FAILED"),
+					String(e.message || e || "FlowScript validation failed."),
+					e.hint || "Fix the FlowScript syntax and retry.",
+					flowCodeExceptionDetails(e, request))
+			};
+		}
+	}
+
+	function flowCodeDraftRead(name) {
+		var file = projectFlowDraftCodeFile(name);
+		if (!file.isFile()) {
+			return null;
+		}
+		var code = String(FileUtils.readFileToString(file, "UTF-8"));
+		return {
+			ok: true,
+			name: String(name),
+			format: "flowscript",
+			canonical: false,
+			draft: true,
+			file: String(file.getAbsolutePath()),
+			codeFile: String(file.getAbsolutePath()),
+			revision: sha256Hex(code),
+			code: code
+		};
+	}
+
+	function flowCodeCurrentForEdit(blocks, request, name, preferDraft) {
+		var draft = preferDraft ? flowCodeDraftRead(name) : null;
+		if (draft) {
+			draft.qname = flowCodeQName(request, name);
+			return draft;
+		}
+		var current = flowCodeGetRequest(blocks, Object.assign({}, request, {
+			name: name,
+			draft: false,
+			mode: "",
+			stage: ""
+		}));
+		current.draft = false;
+		return current;
+	}
+
 	function flowCodeGetRequest(blocks, request) {
 		request = request || {};
 		var name = flowCodeName(request);
+		if (!flowCodeOfficialMode(request)) {
+			var draft = flowCodeDraftRead(name);
+			if (draft) {
+				draft.qname = flowCodeQName(request, name);
+				draft.next = "Working copy loaded. Check with flow-code-check, run with flow-code-run, then save with flow-code-promote.";
+				return draft;
+			}
+		}
 		var current = flowScriptGetRequest(blocks, Object.assign({}, request, { name: name, includeHeader: false }));
 		return {
 			ok: true,
@@ -6332,6 +6650,127 @@
 		};
 	}
 
+	function flowCodeOfficialRead(blocks, request, name) {
+		try {
+			return flowCodeGetRequest(blocks, Object.assign({}, request, {
+				name: name,
+				draft: false,
+				mode: "",
+				stage: ""
+			}));
+		} catch (e) {
+			if (String(e.code || "") !== "UNKNOWN_FLOW") {
+				throw e;
+			}
+			return null;
+		}
+	}
+
+	function flowCodeStatusRequest(blocks, request) {
+		request = request || {};
+		var name = flowCodeName(request);
+		var draft = flowCodeDraftRead(name);
+		var official = flowCodeOfficialRead(blocks, request, name);
+		var dirty = draft !== null && (!official || draft.revision !== official.revision);
+		return {
+			ok: true,
+			qname: flowCodeQName(request, name),
+			name: name,
+			exists: official !== null,
+			dirty: dirty,
+			workingCopy: draft !== null,
+			revision: draft ? draft.revision : official ? official.revision : "",
+			workingRevision: draft ? draft.revision : "",
+			officialRevision: official ? official.revision : "",
+			codeFile: draft ? draft.codeFile : official ? official.codeFile : "",
+			workingCodeFile: draft ? draft.codeFile : "",
+			officialCodeFile: official ? official.codeFile : "",
+			next: dirty
+				? "Working copy differs from the official Flow. Run/check it, promote it to save, or discard it."
+				: "No unsaved FlowScript working copy."
+		};
+	}
+
+	function flowCodeDiscardRequest(blocks, request) {
+		request = request || {};
+		var name = flowCodeName(request);
+		var draftFile = projectFlowDraftCodeFile(name);
+		var discarded = false;
+		if (draftFile.isFile()) {
+			discarded = draftFile["delete"]();
+		}
+		var official = flowCodeOfficialRead(blocks, request, name);
+		return {
+			ok: true,
+			qname: flowCodeQName(request, name),
+			name: name,
+			exists: official !== null,
+			dirty: false,
+			workingCopy: false,
+			discarded: discarded,
+			revision: official ? official.revision : "",
+			officialRevision: official ? official.revision : "",
+			codeFile: official ? official.codeFile : "",
+			officialCodeFile: official ? official.codeFile : "",
+			next: discarded
+				? "Working copy discarded. The official Flow is now the active source."
+				: "No FlowScript working copy existed."
+		};
+	}
+
+	function flowCodeDraftSetRequest(blocks, request, name, code) {
+		var file = projectFlowDraftCodeFile(name);
+		var current = null;
+		try {
+			current = flowCodeCurrentForEdit(blocks, request, name, true);
+		} catch (e) {
+			if (String(e.code || "") !== "UNKNOWN_FLOW") {
+				throw e;
+			}
+		}
+		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
+		if (expectedRevision && current && String(expectedRevision) !== current.revision) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				draft: true,
+				revision: current.revision,
+				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
+					"FlowScript draft changed since it was read: " + name,
+					"Call flow-code-get again and regenerate the patch from the new working copy revision."),
+				warnings: []
+			};
+		}
+		var normalized = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
+		file.getParentFile().mkdirs();
+		FileUtils.writeStringToFile(file, normalized, "UTF-8");
+		var revision = sha256Hex(normalized);
+		var checked = flowCodeValidate(blocks, request, name, normalized);
+		var out = {
+			ok: checked.error === null && checked.validation && checked.validation.ok === true,
+			qname: flowCodeQName(request, name),
+			name: name,
+			draft: true,
+			written: true,
+			format: "flowscript",
+			canonical: false,
+			file: String(file.getAbsolutePath()),
+			codeFile: String(file.getAbsolutePath()),
+			revision: revision,
+			oldRevision: current ? current.revision : null,
+			warnings: checked.warnings
+		};
+		if (out.ok) {
+			flowCodeAddDiagnosticReport(out, checked.validation.diagnostics || [], request);
+			out.next = "Working copy check passed. Run with flow-code-run without sending code, then save with flow-code-promote.";
+		} else {
+			out.error = checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+				"Patch the working copy and retry flow-code-check.", flowCodeDiagnosticReport(checked.validation.diagnostics, request));
+		}
+		return out;
+	}
+
 	function flowCodeSetRequest(blocks, request) {
 		request = request || {};
 		var name = flowCodeName(request);
@@ -6344,6 +6783,9 @@
 				error: flowCodeError("MISSING_CODE", "flow-code-set requires code."),
 				warnings: []
 			};
+		}
+		if (!flowCodeOfficialMode(request)) {
+			return flowCodeDraftSetRequest(blocks, request, name, code);
 		}
 		var current = null;
 		try {
@@ -6375,7 +6817,7 @@
 				name: name,
 				revision: current ? current.revision : null,
 				error: flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
-					"Fix the reported diagnostics and retry.", flowCodeDiagnostics(validation.diagnostics)),
+					"Fix the reported diagnostics and retry.", flowCodeDiagnosticReport(validation.diagnostics, request)),
 				warnings: warnings
 			};
 		}
@@ -6404,13 +6846,26 @@
 	function flowCodePatchRequest(blocks, request) {
 		request = request || {};
 		var name = flowCodeName(request);
-		var current = flowCodeGetRequest(blocks, Object.assign({}, request, { name: name }));
+		var current = null;
+		try {
+			current = flowCodeCurrentForEdit(blocks, request, name, !flowCodeOfficialMode(request));
+		} catch (e) {
+			if (String(e.code || "") !== "UNKNOWN_FLOW" ||
+					request.code === undefined || request.code === null || String(request.code).trim() === "") {
+				throw e;
+			}
+			return flowCodeSetRequest(blocks, Object.assign({}, request, {
+				name: name,
+				qname: flowCodeQName(request, name)
+			}));
+		}
 		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
 		if (expectedRevision && String(expectedRevision) !== current.revision) {
 			return {
 				ok: false,
 				qname: flowCodeQName(request, name),
 				name: name,
+				draft: current.draft === true,
 				revision: current.revision,
 				error: flowCodeError("FLOW_CODE_REVISION_MISMATCH",
 					"FlowScript changed since it was read: " + name,
@@ -6422,6 +6877,13 @@
 		var code = request.code !== undefined && request.code !== null
 			? String(request.code)
 			: applyUnifiedPatchText(current.code, patch).content;
+		if (!flowCodeOfficialMode(request)) {
+			return flowCodeDraftSetRequest(blocks, Object.assign({}, request, {
+				name: name,
+				qname: flowCodeQName(request, name),
+				revision: current.revision
+			}), name, code);
+		}
 		return flowCodeSetRequest(blocks, Object.assign({}, request, {
 			name: name,
 			qname: flowCodeQName(request, name),
@@ -6685,22 +7147,25 @@
 			: request.flowScript !== undefined && request.flowScript !== null ? String(request.flowScript)
 				: "";
 		var name = flowCodeNameOptional(request, code, fallbackName);
+		var current = null;
 		if (code.trim() === "") {
-			var current = flowCodeGetRequest(blocks, Object.assign({}, request, { name: name }));
+			current = flowCodeCurrentForEdit(blocks, request, name, !flowCodeOfficialMode(request));
 			code = current.code;
 			name = current.name || name;
 		}
-		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { name: name, code: code }));
-		var warnings = flowCodeDiagnostics(validation.diagnostics, "warning");
-		if (!validation.ok) {
+		var checked = flowCodeValidate(blocks, request, name, code);
+		var revision = current ? current.revision : sha256Hex(normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code)));
+		if (checked.error || !checked.validation || !checked.validation.ok) {
 			return {
 				ok: false,
 				qname: flowCodeQName(request, name),
 				name: name,
-				revision: null,
-				error: flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
-					"Fix the reported diagnostics and retry.", flowCodeDiagnostics(validation.diagnostics)),
-				warnings: warnings
+				draft: current && current.draft === true,
+				revision: revision,
+				codeFile: current ? current.codeFile : "",
+				error: checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+					"Fix the reported diagnostics and retry.", flowCodeDiagnosticReport(checked.validation.diagnostics, request)),
+				warnings: checked.warnings
 			};
 		}
 		return {
@@ -6708,10 +7173,33 @@
 			qname: flowCodeQName(request, name),
 			name: name,
 			code: code,
-			revision: flowCodeRevisionForSource(blocks, name, validation.source, request),
-			warnings: warnings,
-			validation: validation
+			draft: current && current.draft === true,
+			codeFile: current ? current.codeFile : "",
+			revision: revision,
+			modelRevision: flowCodeRevisionForSource(blocks, name, checked.validation.source, request),
+			warnings: checked.warnings,
+			validation: checked.validation
 		};
+	}
+
+	function flowCodeCheckRequest(blocks, request) {
+		request = request || {};
+		var compiled = flowCodeCompileRequest(blocks, request, "FlowScriptCheck");
+		if (!compiled.ok) {
+			return compiled;
+		}
+		return flowCodeAddDiagnosticReport({
+			ok: true,
+			qname: compiled.qname,
+			name: compiled.name,
+			draft: compiled.draft === true,
+			revision: compiled.revision,
+			codeFile: compiled.codeFile || "",
+			warnings: compiled.warnings || [],
+			next: compiled.draft === true
+				? "Check passed. Run with flow-code-run without sending code, then save with flow-code-promote."
+				: "Check passed."
+		}, compiled.validation.diagnostics || [], request);
 	}
 
 	function flowCodeRunRequest(blocks, request) {
@@ -6730,6 +7218,7 @@
 		execution.qname = compiled.qname;
 		execution.name = compiled.name;
 		execution.revision = compiled.revision;
+		execution.draft = compiled.draft === true;
 		if (compiled.warnings && compiled.warnings.length) {
 			execution.warnings = compiled.warnings;
 		}
@@ -6746,10 +7235,90 @@
 		analysis.qname = compiled.qname;
 		analysis.name = compiled.name;
 		analysis.revision = compiled.revision;
+		analysis.draft = compiled.draft === true;
 		if (compiled.warnings && compiled.warnings.length) {
 			analysis.warnings = compiled.warnings;
 		}
 		return analysis;
+	}
+
+	function flowCodePromoteRequest(blocks, request) {
+		request = Object.assign({}, request || {}, { draft: true });
+		var name = flowCodeName(request);
+		var current = request.code !== undefined && request.code !== null
+			? {
+				name: name,
+				code: normalizeFlowScriptCode(stripFlowScriptMirrorHeader(String(request.code))),
+				revision: sha256Hex(normalizeFlowScriptCode(stripFlowScriptMirrorHeader(String(request.code)))),
+				codeFile: ""
+			}
+			: flowCodeDraftRead(name);
+		if (!current) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				draft: true,
+				error: flowCodeError("FLOW_CODE_DRAFT_MISSING",
+					"No FlowScript draft exists for " + name + ".",
+					"Create a working copy with flow-code-set before promoting."),
+				warnings: []
+			};
+		}
+		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
+		if (expectedRevision && String(expectedRevision) !== current.revision) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				draft: true,
+				revision: current.revision,
+				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
+					"FlowScript draft changed since it was checked: " + name,
+					"Run flow-code-check again and promote with the latest working copy revision."),
+				warnings: []
+			};
+		}
+		var checked = flowCodeValidate(blocks, request, name, current.code);
+		if (checked.error || !checked.validation || !checked.validation.ok) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				draft: true,
+				revision: current.revision,
+				error: checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+					"Patch the working copy and retry flow-code-check.", flowCodeDiagnosticReport(checked.validation.diagnostics, request)),
+				warnings: checked.warnings
+			};
+		}
+		var saved = setProjectFlow(blocks, name, checked.validation.source, Object.assign({}, request, {
+			code: current.code,
+			draft: false,
+			mode: "",
+			stage: ""
+		}));
+		var draftFile = projectFlowDraftCodeFile(name);
+		var draftCleared = false;
+		if (draftFile.isFile()) {
+			draftCleared = draftFile["delete"]();
+		}
+		return {
+			ok: true,
+			qname: flowCodeQName(request, name),
+			name: name,
+			draft: false,
+			promoted: true,
+			format: "flowscript",
+			canonical: true,
+			revision: saved && saved.codeRevision ? saved.codeRevision : flowCodeRevisionForSource(blocks, name, checked.validation.source, request),
+			draftRevision: current.revision,
+			draftCleared: draftCleared,
+			file: saved ? saved.file : "",
+			codeFile: saved ? saved.codeFile : "",
+			warnings: checked.warnings,
+			saved: saved
+		};
 	}
 
 	function sourceForWriteRequest(args, fallback) {
@@ -6767,7 +7336,7 @@
 	}
 
 	function isFlowScriptSource(source) {
-		var text = String(source || "").trim();
+		var text = normalizeFlowScriptFunctionSyntax(source).trim();
 		return !!text.match(/^(?:\/\/[^\n]*\n\s*)*(?:import\s+|const\s+_meta\s*=|flow\s+[A-Za-z_$][\w$]*\s*\(|function\s+[A-Za-z_$][\w$]*\s*\()/);
 	}
 
@@ -6777,6 +7346,22 @@
 			return source;
 		}
 		return sourceFromFlowScript(blocks || loadBlocks(), args && (args.name || args.flowName) || "Flow", source).source;
+	}
+
+	function projectFlowSourceIfAvailable(blocks, args) {
+		args = args || {};
+		var name = String(args.name || args.flowName || "").trim();
+		if (!name || !projectDir()) {
+			return null;
+		}
+		try {
+			return getProjectFlow(name, blocks || loadBlocks()).source;
+		} catch (e) {
+			if (String(e.code || "") === "UNKNOWN_FLOW") {
+				return null;
+			}
+			throw e;
+		}
 	}
 
 	function setProjectFlow(blocks, name, source, args) {
@@ -6806,15 +7391,20 @@
 		};
 	}
 
-	function sourceForFlowRequest(args) {
+	function sourceForFlowRequest(args, blocks) {
 		args = args || {};
+		blocks = blocks || loadBlocks();
 		if (args.definition !== undefined && args.definition !== null) {
 			return sourceFromDefinition(args.definition);
 		}
-		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
-			return sourceForMaybeFlowScript(loadBlocks(), args, args.flowSource);
+		var projectSource = projectFlowSourceIfAvailable(blocks, args);
+		if (projectSource !== null) {
+			return projectSource;
 		}
-		return getProjectFlow(args.name || args.flowName, loadBlocks()).source;
+		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
+			return sourceForMaybeFlowScript(blocks, args, args.flowSource);
+		}
+		return getProjectFlow(args.name || args.flowName, blocks).source;
 	}
 
 	function outputSchemaForFlowSource(flowSource) {
@@ -7028,9 +7618,16 @@
 			}
 			var className = String(dbo.getClass().getName());
 			if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
-				var flowSource = sourceForMaybeFlowScript(loadBlocks(), { name: String(dbo.getName()), flowName: String(dbo.getName()) }, String(dbo.getFlowSource()));
-				var definition = parseSource(flowSource);
-				return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: String(dbo.getName()) }, definition) || {});
+				return withProjectDir(String(dbo.getProject().getDirPath()), function () {
+					var blocks = loadBlocks();
+					var request = {
+						name: String(dbo.getName()),
+						flowName: String(dbo.getName()),
+						flowSource: String(dbo.getFlowSource())
+					};
+					var definition = parseSource(sourceForFlowRequest(request, blocks));
+					return objectSchema(declaredOutputSchema(definition) || readResultSchema(request, definition) || {});
+				});
 			}
 			var learnedSchema = learnedXsdOutputSchema(target);
 			if (learnedSchema) {
@@ -7779,7 +8376,7 @@
 	}
 
 	function runFlowRequest(request, blocks) {
-		var definition = expandFlowDefinition(blocks, parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource)));
+		var definition = expandFlowDefinition(blocks, parseSource(sourceForFlowRequest(request, blocks)));
 		var projectEngine = loadProjectEngineDefinition();
 		var ctx = createRunContext(request, definition, blocks, projectEngine);
 		try {
@@ -8186,6 +8783,18 @@
 				return flowCodeGetRequest(loadBlocks(), args);
 			});
 		};
+		ctx.flowCodeStatus = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeStatusRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodeDiscard = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeDiscardRequest(loadBlocks(), args);
+			});
+		};
 		ctx.flowCodeSet = function (args) {
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
@@ -8196,6 +8805,12 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				return flowCodePatchRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodeCheck = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodeCheckRequest(loadBlocks(), args);
 			});
 		};
 		ctx.flowCodeRg = function (args) {
@@ -8214,6 +8829,12 @@
 			args = args || {};
 			return withProjectDir(args.projectDir, function () {
 				return flowCodeAnalyzeRequest(loadBlocks(), args);
+			});
+		};
+		ctx.flowCodePromote = function (args) {
+			args = args || {};
+			return withProjectDir(args.projectDir, function () {
+				return flowCodePromoteRequest(loadBlocks(), args);
 			});
 		};
 		ctx.requestableList = function (args) {
@@ -8663,7 +9284,10 @@
 	}
 
 	function analyzeFlowSource(blocks, flowSource, request) {
-		var definition = parseSource(sourceForMaybeFlowScript(blocks, request || {}, flowSource));
+		var args = Object.assign({}, request || {}, {
+			flowSource: flowSource
+		});
+		var definition = parseSource(sourceForFlowRequest(args, blocks));
 		return analyzeFlowDefinition(blocks, definition, request);
 	}
 
@@ -9013,7 +9637,7 @@
 		request = request || {};
 		var definition = request.definition !== undefined && request.definition !== null
 			? canonicalFlowDefinition(normalizeTree(request.definition))
-			: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource));
+			: parseSource(sourceForFlowRequest(request, blocks));
 		definition = expandFlowDefinition(blocks, definition);
 		var include = normalizeInclude(request.include);
 		var detail = String(request.detail || "normal");
@@ -10642,11 +11266,11 @@
 		request = request || {};
 		var target = String(request.target || "flow");
 		var children = [];
-			if (target === "flow") {
-				var definition = request.definition !== undefined && request.definition !== null
-					? canonicalFlowDefinition(normalizeTree(request.definition))
-					: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource));
-				definition = expandFlowDefinition(blocks, definition);
+				if (target === "flow") {
+					var definition = request.definition !== undefined && request.definition !== null
+						? canonicalFlowDefinition(normalizeTree(request.definition))
+						: parseSource(sourceForFlowRequest(request, blocks));
+					definition = expandFlowDefinition(blocks, definition);
 				var analysisRequest = Object.assign({}, request, {
 					allowRequestableSchema: false
 				});
@@ -11406,7 +12030,7 @@
 			? parseYamlSource(request.engineSource, "version: 1\n")
 			: request.definition !== undefined && request.definition !== null
 				? canonicalFlowDefinition(normalizeTree(request.definition))
-				: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource));
+				: parseSource(sourceForFlowRequest(request, blocks));
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		if (mutations.length === 0) {
 			raise("MISSING_MUTATION", "Flow mutation request requires mutation or mutations.");
@@ -11440,7 +12064,7 @@
 		request = request || {};
 		var definition = request.definition !== undefined && request.definition !== null
 			? canonicalFlowDefinition(normalizeTree(request.definition))
-			: parseSource(sourceForMaybeFlowScript(blocks, request, request.flowSource || ""));
+			: parseSource(sourceForFlowRequest(request, blocks));
 		var declaredSchema = declaredOutputSchema(definition);
 		var staticSchema = declaredSchema ? null : resultSchemaFromAnalysis(analyzeFlowDefinition(blocks, definition, request));
 		var learnedSchema = readResultSchema(request, definition);
@@ -11752,6 +12376,28 @@
 			}
 		},
 
+		flowCodeStatus: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeStatusRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeStatus", e));
+			}
+		},
+
+		flowCodeDiscard: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeDiscardRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeDiscard", e));
+			}
+		},
+
 		flowCodeSet: function (requestJson) {
 			try {
 				var request = parseRequest(requestJson);
@@ -11771,6 +12417,17 @@
 				}));
 			} catch (e) {
 				return response(failure("flowCodePatch", e));
+			}
+		},
+
+		flowCodeCheck: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodeCheckRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodeCheck", e));
 			}
 		},
 
@@ -11848,6 +12505,17 @@
 				}));
 			} catch (e) {
 				return response(failure("flowCodeAnalyze", e));
+			}
+		},
+
+		flowCodePromote: function (requestJson) {
+			try {
+				var request = parseRequest(requestJson);
+				return response(withProjectDir(request.projectDir, function () {
+					return flowCodePromoteRequest(loadBlocks(), request);
+				}));
+			} catch (e) {
+				return response(failure("flowCodePromote", e));
 			}
 		},
 

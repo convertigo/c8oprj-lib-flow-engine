@@ -1,13 +1,13 @@
 const _meta = {
   "version": 1,
   "private": true,
-  "icon": "mdi:file-code-outline",
+  "icon": "mdi:file-undo-outline",
   "tags": [
     "flow",
     "code",
     "flowscript"
   ],
-  "description": "Returns compact FlowScript code and revision for one Flow.",
+  "description": "Discards the FlowScript working copy for one Flow.",
   "properties": {
     "qname": {
       "label": "qname",
@@ -27,24 +27,14 @@ const _meta = {
       "type": "string",
       "description": "Optional project directory override."
     },
-    "draft": {
-      "label": "draft",
-      "kind": "literal",
-      "type": "boolean",
-      "default": false,
-      "description": "Read the draft FlowScript source from libs/flow/drafts when present."
-    },
     "out": {
       "label": "out",
       "kind": "path",
       "mode": "write",
-      "description": "Scope path receiving {code, revision}."
+      "description": "Scope path receiving discard details."
     }
   },
-  "runtime": "rhino",
-  "hooks": {
-    "file": "get.hooks.js"
-  }
+  "runtime": "rhino"
 }
 
 (function () {
@@ -60,7 +50,7 @@ const _meta = {
 
 	return {
 		run: function (ctx, node) {
-			return ctx.flowCodeGet(argsFrom(ctx.props(node)));
+			return ctx.flowCodeDiscard(argsFrom(ctx.props(node)));
 		}
 	};
 }())

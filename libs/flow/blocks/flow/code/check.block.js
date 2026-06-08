@@ -1,13 +1,13 @@
 const _meta = {
   "version": 1,
   "private": true,
-  "icon": "mdi:file-code-outline",
+  "icon": "mdi:check-decagram-outline",
   "tags": [
     "flow",
     "code",
     "flowscript"
   ],
-  "description": "Returns compact FlowScript code and revision for one Flow.",
+  "description": "Checks the current FlowScript working copy without running it.",
   "properties": {
     "qname": {
       "label": "qname",
@@ -21,29 +21,35 @@ const _meta = {
       "type": "string",
       "description": "Project-local Flow name."
     },
-    "projectDir": {
-      "label": "projectDir",
+    "code": {
+      "label": "code",
       "kind": "text",
       "type": "string",
-      "description": "Optional project directory override."
+      "description": "Optional full FlowScript code for internal use. MCP agents should write with flow-code-set or flow-code-patch first."
     },
     "draft": {
       "label": "draft",
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Read the draft FlowScript source from libs/flow/drafts when present."
+      "description": "Check the draft source from libs/flow/drafts when code is omitted."
+    },
+    "projectDir": {
+      "label": "projectDir",
+      "kind": "text",
+      "type": "string",
+      "description": "Optional project directory override."
     },
     "out": {
       "label": "out",
       "kind": "path",
       "mode": "write",
-      "description": "Scope path receiving {code, revision}."
+      "description": "Scope path receiving check diagnostics."
     }
   },
   "runtime": "rhino",
   "hooks": {
-    "file": "get.hooks.js"
+    "file": "check.hooks.js"
   }
 }
 
@@ -60,7 +66,7 @@ const _meta = {
 
 	return {
 		run: function (ctx, node) {
-			return ctx.flowCodeGet(argsFrom(ctx.props(node)));
+			return ctx.flowCodeCheck(argsFrom(ctx.props(node)));
 		}
 	};
 }())

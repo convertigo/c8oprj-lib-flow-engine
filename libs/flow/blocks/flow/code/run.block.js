@@ -7,7 +7,7 @@ const _meta = {
     "code",
     "flowscript"
   ],
-  "description": "Runs FlowScript code in memory without writing the Flow.",
+  "description": "Runs the current FlowScript working copy or official Flow.",
   "properties": {
     "qname": {
       "label": "qname",
@@ -25,7 +25,14 @@ const _meta = {
       "label": "code",
       "kind": "text",
       "type": "string",
-      "description": "Full FlowScript code. If omitted, the existing Flow is read."
+      "description": "Optional full FlowScript code for internal use. MCP agents should write with flow-code-set or flow-code-patch first."
+    },
+    "draft": {
+      "label": "draft",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Run the draft source from libs/flow/drafts when code is omitted."
     },
     "input": {
       "label": "input",
