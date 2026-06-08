@@ -12393,24 +12393,33 @@
 			"propertyEditor",
 			"engine", canonicalPath(engineDir()),
 			"template", fileFingerprint(propertyEditorTemplateFile()),
+			"style", fileFingerprint(propertyEditorResourceFile("property-editor.css")),
+			"script", fileFingerprint(propertyEditorResourceFile("property-editor.js")),
 			"types", typesCacheKey()
 		].join("\n");
 	}
 
-	function propertyEditorTemplateFile() {
-		return new File(engineDir(), "resources/property-editor.html");
+	function propertyEditorResourceFile(name) {
+		return new File(engineDir(), "resources/" + name);
 	}
 
-	function propertyEditorTemplateSource() {
-		var file = propertyEditorTemplateFile();
+	function propertyEditorTemplateFile() {
+		return propertyEditorResourceFile("property-editor.html");
+	}
+
+	function propertyEditorResourceSource(name) {
+		var file = propertyEditorResourceFile(name);
 		if (!file.isFile()) {
-			raise("MISSING_PROPERTY_EDITOR_TEMPLATE", "Flow property editor template not found: " + file.getAbsolutePath());
+			raise("MISSING_PROPERTY_EDITOR_RESOURCE", "Flow property editor resource not found: " + file.getAbsolutePath());
 		}
 		return String(FileUtils.readFileToString(file, "UTF-8"));
 	}
 
 	function buildPropertyEditorHtml() {
-		return propertyEditorTemplateSource().replace("<!-- FLOW_TYPE_EDITOR_FRAGMENTS -->", typeEditorFragmentsHtml());
+		return propertyEditorResourceSource("property-editor.html")
+			.replace("<!-- FLOW_PROPERTY_EDITOR_STYLE -->", propertyEditorResourceSource("property-editor.css"))
+			.replace("<!-- FLOW_TYPE_EDITOR_FRAGMENTS -->", typeEditorFragmentsHtml())
+			.replace("<!-- FLOW_PROPERTY_EDITOR_SCRIPT -->", propertyEditorResourceSource("property-editor.js"));
 	}
 
 	function propertyEditorHtml() {
