@@ -21,7 +21,8 @@
 		caches: {
 			blocks: createRuntimeCacheState(),
 			types: createRuntimeCacheState(),
-			libraries: createRuntimeMapCacheState()
+			libraries: createRuntimeMapCacheState(),
+			propertyEditor: createRuntimeCacheState()
 		}
 	};
 
@@ -1596,6 +1597,7 @@
 		clearRuntimeCache(runtimeState.caches.blocks);
 		clearRuntimeCache(runtimeState.caches.types);
 		clearRuntimeMapCache(runtimeState.caches.libraries);
+		clearRuntimeCache(runtimeState.caches.propertyEditor);
 		return cacheInfoRequest();
 	}
 
@@ -1634,7 +1636,8 @@
 			caches: {
 				blocks: cacheSummary("blocks", runtimeState.caches.blocks),
 				types: cacheSummary("types", runtimeState.caches.types),
-				libraries: cacheSummary("libraries", runtimeState.caches.libraries)
+				libraries: cacheSummary("libraries", runtimeState.caches.libraries),
+				propertyEditor: cacheSummary("propertyEditor", runtimeState.caches.propertyEditor)
 			}
 		};
 	}
@@ -12373,7 +12376,15 @@
 		return out;
 	}
 
-	function propertyEditorHtml() {
+	function propertyEditorCacheKey() {
+		return [
+			"propertyEditor",
+			"engine", canonicalPath(engineDir()),
+			"types", typesCacheKey()
+		].join("\n");
+	}
+
+	function buildPropertyEditorHtml() {
 		return "<!doctype html><html><head><meta charset=\"utf-8\">"
 			+ "<style>"
 			+ ":root{color-scheme:dark light;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px}"
@@ -12449,6 +12460,16 @@
 			+ "window.receiveFromJava=function(message){if(!state||!message||state.virtualPath!==message.virtualPath){pickerValue='';pickerTarget='';pickerOriginal='';pickerLastTarget='';}state=message||{};if(state.applied){pickerTarget=state.applied.property||pickerTarget;pickerValue=state.applied.value==null?'':String(state.applied.value);pickerOriginal=pickerValue;pickerLastTarget=pickerTarget;}draft=state.value==null?'':String(state.value);render();};"
 			+ "}());"
 			+ "</script></body></html>";
+	}
+
+	function propertyEditorHtml() {
+		var cache = runtimeState.caches.propertyEditor;
+		var key = propertyEditorCacheKey();
+		var cached = readRuntimeCache(cache, key);
+		if (cached) {
+			return cached;
+		}
+		return writeRuntimeCache(cache, key, buildPropertyEditorHtml(), "Flow property editor HTML");
 	}
 
 	return {
