@@ -16,10 +16,12 @@
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
 	var runtimeState = {
+		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
 		caches: {
 			blocks: createRuntimeCacheState(),
-			types: createRuntimeCacheState()
+			types: createRuntimeCacheState(),
+			libraries: createRuntimeMapCacheState()
 		}
 	};
 
@@ -1528,6 +1530,17 @@
 		};
 	}
 
+	function createRuntimeMapCacheState() {
+		return {
+			entries: {},
+			hits: 0,
+			misses: 0,
+			clears: 0,
+			updatedAt: "",
+			label: ""
+		};
+	}
+
 	function readRuntimeCache(cache, key) {
 		if (cache.value && cache.key === key) {
 			cache.hits++;
@@ -1545,6 +1558,27 @@
 		return value;
 	}
 
+	function readRuntimeMapCache(cache, key, fingerprint) {
+		var entry = cache.entries[key];
+		if (entry && entry.fingerprint === fingerprint) {
+			cache.hits++;
+			return entry.value;
+		}
+		cache.misses++;
+		return null;
+	}
+
+	function writeRuntimeMapCache(cache, key, fingerprint, value, label) {
+		cache.entries[key] = {
+			fingerprint: fingerprint,
+			value: value,
+			updatedAt: new Date().toISOString()
+		};
+		cache.label = label || "";
+		cache.updatedAt = cache.entries[key].updatedAt;
+		return value;
+	}
+
 	function clearRuntimeCache(cache) {
 		cache.key = "";
 		cache.value = null;
@@ -1552,21 +1586,37 @@
 		cache.updatedAt = new Date().toISOString();
 	}
 
+	function clearRuntimeMapCache(cache) {
+		cache.entries = {};
+		cache.clears++;
+		cache.updatedAt = new Date().toISOString();
+	}
+
 	function clearRuntimeCaches() {
 		clearRuntimeCache(runtimeState.caches.blocks);
 		clearRuntimeCache(runtimeState.caches.types);
+		clearRuntimeMapCache(runtimeState.caches.libraries);
 		return cacheInfoRequest();
 	}
 
 	function cacheSummary(name, cache) {
+		var entries = cache.entries ? Object.keys(cache.entries).sort() : [];
 		return {
 			name: name,
-			warm: !!cache.value,
+			warm: cache.entries ? entries.length > 0 : !!cache.value,
 			hits: cache.hits,
 			misses: cache.misses,
 			clears: cache.clears,
 			updatedAt: cache.updatedAt,
-			label: cache.label
+			label: cache.label,
+			entryCount: entries.length || undefined,
+			entries: entries.length ? entries.slice(0, 20).map(function (key) {
+				var entry = cache.entries[key] || {};
+				return {
+					key: key,
+					updatedAt: entry.updatedAt || ""
+				};
+			}) : undefined
 		};
 	}
 
@@ -1575,15 +1625,28 @@
 		var activeProjectPath = activeProjectDir ? canonicalPath(activeProjectDir) : "";
 		return {
 			ok: true,
+			runtimeId: runtimeState.id,
 			startedAt: runtimeState.startedAt,
+			threadName: String(Packages.java.lang.Thread.currentThread().getName()),
 			activeProjectDir: activeProjectPath,
 			rawProjectDir: activeProjectDir ? String(activeProjectDir) : "",
 			engineDir: canonicalPath(engineDir()),
 			caches: {
 				blocks: cacheSummary("blocks", runtimeState.caches.blocks),
-				types: cacheSummary("types", runtimeState.caches.types)
+				types: cacheSummary("types", runtimeState.caches.types),
+				libraries: cacheSummary("libraries", runtimeState.caches.libraries)
 			}
 		};
+	}
+
+	function fileFingerprint(file) {
+		if (!file) {
+			return "null";
+		}
+		if (!file.exists()) {
+			return "missing:" + canonicalPath(file);
+		}
+		return canonicalPath(file) + "#" + file.lastModified() + ":" + file.length();
 	}
 
 	function directoryFingerprint(dir) {
@@ -2936,6 +2999,13 @@
 
 	function loadFlowLibrary(name) {
 		var file = flowLibraryFile(name);
+		var cache = runtimeState.caches.libraries;
+		var key = canonicalPath(file);
+		var fingerprint = fileFingerprint(file);
+		var cached = readRuntimeMapCache(cache, key, fingerprint);
+		if (cached) {
+			return cached;
+		}
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
 		var library = eval(source);
 		if (!library || typeof library !== "object") {
@@ -2943,7 +3013,7 @@
 				null, "A Flow library must evaluate to an object.");
 		}
 		library.__flowFile = String(file.getAbsolutePath());
-		return library;
+		return writeRuntimeMapCache(cache, key, fingerprint, library, "Flow JavaScript libraries");
 	}
 
 	function validateBlockImplementationSource(name, source) {

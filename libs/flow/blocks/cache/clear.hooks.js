@@ -14,9 +14,11 @@
 				ctx.addPath(out, {
 					type: "object",
 					properties: {
+						runtimeId: { type: "string" },
 						startedAt: { type: "string" },
+						threadName: { type: "string" },
 						engineDir: { type: "string" },
-						projectDir: { type: "string" },
+						activeProjectDir: { type: "string" },
 						caches: { type: "object" }
 					}
 				});

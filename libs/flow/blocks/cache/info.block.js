@@ -21,13 +21,19 @@ const _meta = {
     "out": {
       "type": "object",
       "properties": {
+        "runtimeId": {
+          "type": "string"
+        },
         "startedAt": {
+          "type": "string"
+        },
+        "threadName": {
           "type": "string"
         },
         "engineDir": {
           "type": "string"
         },
-        "projectDir": {
+        "activeProjectDir": {
           "type": "string"
         },
         "caches": {
