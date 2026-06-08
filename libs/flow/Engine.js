@@ -15,13 +15,12 @@
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
-	var blocksCache = {
-		key: "",
-		value: null
-	};
-	var typesCache = {
-		key: "",
-		value: null
+	var runtimeState = {
+		startedAt: new Date().toISOString(),
+		caches: {
+			blocks: createRuntimeCacheState(),
+			types: createRuntimeCacheState()
+		}
 	};
 
 	function engineDir() {
@@ -1517,6 +1516,76 @@
 		}
 	}
 
+	function createRuntimeCacheState() {
+		return {
+			key: "",
+			value: null,
+			hits: 0,
+			misses: 0,
+			clears: 0,
+			updatedAt: "",
+			label: ""
+		};
+	}
+
+	function readRuntimeCache(cache, key) {
+		if (cache.value && cache.key === key) {
+			cache.hits++;
+			return cache.value;
+		}
+		cache.misses++;
+		return null;
+	}
+
+	function writeRuntimeCache(cache, key, value, label) {
+		cache.key = key;
+		cache.value = value;
+		cache.label = label || "";
+		cache.updatedAt = new Date().toISOString();
+		return value;
+	}
+
+	function clearRuntimeCache(cache) {
+		cache.key = "";
+		cache.value = null;
+		cache.clears++;
+		cache.updatedAt = new Date().toISOString();
+	}
+
+	function clearRuntimeCaches() {
+		clearRuntimeCache(runtimeState.caches.blocks);
+		clearRuntimeCache(runtimeState.caches.types);
+		return cacheInfoRequest();
+	}
+
+	function cacheSummary(name, cache) {
+		return {
+			name: name,
+			warm: !!cache.value,
+			hits: cache.hits,
+			misses: cache.misses,
+			clears: cache.clears,
+			updatedAt: cache.updatedAt,
+			label: cache.label
+		};
+	}
+
+	function cacheInfoRequest() {
+		var activeProjectDir = projectDir();
+		var activeProjectPath = activeProjectDir ? canonicalPath(activeProjectDir) : "";
+		return {
+			ok: true,
+			startedAt: runtimeState.startedAt,
+			activeProjectDir: activeProjectPath,
+			rawProjectDir: activeProjectDir ? String(activeProjectDir) : "",
+			engineDir: canonicalPath(engineDir()),
+			caches: {
+				blocks: cacheSummary("blocks", runtimeState.caches.blocks),
+				types: cacheSummary("types", runtimeState.caches.types)
+			}
+		};
+	}
+
 	function directoryFingerprint(dir) {
 		if (!dir) {
 			return "null";
@@ -2716,15 +2785,13 @@
 	}
 
 	function loadBlocks() {
+		var cache = runtimeState.caches.blocks;
 		var key = blocksCacheKey();
-		if (blocksCache.value && blocksCache.key === key) {
-			return blocksCache.value;
+		var cached = readRuntimeCache(cache, key);
+		if (cached) {
+			return cached;
 		}
-		blocksCache = {
-			key: key,
-			value: loadBlocksUncached()
-		};
-		return blocksCache.value;
+		return writeRuntimeCache(cache, key, loadBlocksUncached(), "blocks for " + (projectDir() ? canonicalPath(projectDir()) : "no project"));
 	}
 
 	function loadTypeDescriptorFile(types, file, origin) {
@@ -2782,15 +2849,13 @@
 	}
 
 	function loadTypes() {
+		var cache = runtimeState.caches.types;
 		var key = typesCacheKey();
-		if (typesCache.value && typesCache.key === key) {
-			return typesCache.value;
+		var cached = readRuntimeCache(cache, key);
+		if (cached) {
+			return cached;
 		}
-		typesCache = {
-			key: key,
-			value: loadTypesUncached()
-		};
-		return typesCache.value;
+		return writeRuntimeCache(cache, key, loadTypesUncached(), "types for " + (projectDir() ? canonicalPath(projectDir()) : "no project"));
 	}
 
 	function projectBlockDescriptorFile(name) {
@@ -8634,19 +8699,25 @@
 		ctx.callBlock = function (name, props, options) {
 			return callBlock(ctx, name, props, options);
 		};
-		ctx.catalog = function () {
-			return catalogDefinition(blocks);
-		};
-		ctx.lib = function (name) {
-			name = safeFilePart(name);
-			if (!libraries[name]) {
-				libraries[name] = loadFlowLibrary(name);
-			}
-			return libraries[name];
-		};
-		ctx.withProjectDir = function (dir, callback) {
-			return withProjectDir(dir, callback);
-		};
+			ctx.catalog = function () {
+				return catalogDefinition(blocks);
+			};
+			ctx.lib = function (name) {
+				name = safeFilePart(name);
+				if (!libraries[name]) {
+					libraries[name] = loadFlowLibrary(name);
+				}
+				return libraries[name];
+			};
+			ctx.cacheInfo = function () {
+				return cacheInfoRequest();
+			};
+			ctx.cacheClear = function () {
+				return clearRuntimeCaches();
+			};
+			ctx.withProjectDir = function (dir, callback) {
+				return withProjectDir(dir, callback);
+			};
 		ctx.analyzeFlowSource = function (flowSource, options) {
 			options = options || {};
 			return withProjectDir(options.projectDir, function () {
@@ -12426,6 +12497,22 @@
 				return response(iconCatalogRequest(request));
 			} catch (e) {
 				return response(failure("icons", e));
+			}
+		},
+
+		cacheInfo: function () {
+			try {
+				return response(cacheInfoRequest());
+			} catch (e) {
+				return response(failure("cacheInfo", e));
+			}
+		},
+
+		cacheClear: function () {
+			try {
+				return response(clearRuntimeCaches());
+			} catch (e) {
+				return response(failure("cacheClear", e));
 			}
 		},
 
