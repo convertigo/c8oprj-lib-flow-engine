@@ -15,6 +15,14 @@
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
+	var blocksCache = {
+		key: "",
+		value: null
+	};
+	var typesCache = {
+		key: "",
+		value: null
+	};
 
 	function engineDir() {
 		if (typeof __flowEngineDir !== "undefined" && String(__flowEngineDir).trim() !== "") {
@@ -1509,6 +1517,52 @@
 		}
 	}
 
+	function directoryFingerprint(dir) {
+		if (!dir) {
+			return "null";
+		}
+		if (!dir.exists()) {
+			return "missing:" + canonicalPath(dir);
+		}
+		var root = canonicalPath(dir);
+		var parts = [root];
+
+		function walk(file, prefix) {
+			var name = String(file.getName());
+			var path = prefix ? prefix + "/" + name : name;
+			if (file.isDirectory()) {
+				parts.push("d:" + path + ":" + file.lastModified());
+				var children = file.listFiles();
+				if (!children) {
+					return;
+				}
+				children = Arrays.asList(children).toArray();
+				children.sort(function (a, b) {
+					return String(a.getName()).localeCompare(String(b.getName()));
+				});
+				children.forEach(function (child) {
+					walk(child, path);
+				});
+				return;
+			}
+			if (file.isFile()) {
+				parts.push("f:" + path + ":" + file.lastModified() + ":" + file.length());
+			}
+		}
+
+		var files = dir.listFiles();
+		if (files) {
+			files = Arrays.asList(files).toArray();
+			files.sort(function (a, b) {
+				return String(a.getName()).localeCompare(String(b.getName()));
+			});
+			files.forEach(function (file) {
+				walk(file, "");
+			});
+		}
+		return parts.join("|");
+	}
+
 	function resourcePath(baseDir, path) {
 		path = String(path || "").trim();
 		if (path === "") {
@@ -2633,7 +2687,20 @@
 		});
 	}
 
-	function loadBlocks() {
+	function blocksCacheKey() {
+		var coreBlocksDir = new File(engineDir(), "blocks");
+		var key = [
+			"engine", canonicalPath(engineDir()),
+			"core", directoryFingerprint(coreBlocksDir)
+		];
+		var localBlocksDir = projectBlocksDir();
+		if (localBlocksDir && canonicalPath(localBlocksDir) !== canonicalPath(coreBlocksDir)) {
+			key.push("project", canonicalPath(projectDir()), directoryFingerprint(localBlocksDir));
+		}
+		return key.join("\n");
+	}
+
+	function loadBlocksUncached() {
 		var blocks = {};
 		var coreBlocksDir = new File(engineDir(), "blocks");
 		reserveBlockDir(blocks, coreBlocksDir, "core", flowProviderName(engineDir(), "lib_flow_engine"));
@@ -2646,6 +2713,18 @@
 				flowProviderName(new File(projectDir(), "libs/flow"), "project"));
 		}
 		return blocks;
+	}
+
+	function loadBlocks() {
+		var key = blocksCacheKey();
+		if (blocksCache.value && blocksCache.key === key) {
+			return blocksCache.value;
+		}
+		blocksCache = {
+			key: key,
+			value: loadBlocksUncached()
+		};
+		return blocksCache.value;
 	}
 
 	function loadTypeDescriptorFile(types, file, origin) {
@@ -2678,7 +2757,20 @@
 		});
 	}
 
-	function loadTypes() {
+	function typesCacheKey() {
+		var coreTypesDir = new File(engineDir(), "types");
+		var key = [
+			"engine", canonicalPath(engineDir()),
+			"core", directoryFingerprint(coreTypesDir)
+		];
+		var localTypesDir = projectTypesDir();
+		if (localTypesDir && canonicalPath(localTypesDir) !== canonicalPath(coreTypesDir)) {
+			key.push("project", canonicalPath(projectDir()), directoryFingerprint(localTypesDir));
+		}
+		return key.join("\n");
+	}
+
+	function loadTypesUncached() {
 		var types = {};
 		var coreTypesDir = new File(engineDir(), "types");
 		loadTypeDir(types, coreTypesDir, "core");
@@ -2687,6 +2779,18 @@
 			loadTypeDir(types, localTypesDir, "project");
 		}
 		return types;
+	}
+
+	function loadTypes() {
+		var key = typesCacheKey();
+		if (typesCache.value && typesCache.key === key) {
+			return typesCache.value;
+		}
+		typesCache = {
+			key: key,
+			value: loadTypesUncached()
+		};
+		return typesCache.value;
 	}
 
 	function projectBlockDescriptorFile(name) {
