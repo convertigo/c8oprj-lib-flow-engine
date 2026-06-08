@@ -22,6 +22,7 @@
 			blocks: createRuntimeCacheState(),
 			types: createRuntimeCacheState(),
 			libraries: createRuntimeMapCacheState(),
+			engineModules: createRuntimeMapCacheState(),
 			propertyEditor: createRuntimeCacheState()
 		}
 	};
@@ -1597,6 +1598,7 @@
 		clearRuntimeCache(runtimeState.caches.blocks);
 		clearRuntimeCache(runtimeState.caches.types);
 		clearRuntimeMapCache(runtimeState.caches.libraries);
+		clearRuntimeMapCache(runtimeState.caches.engineModules);
 		clearRuntimeCache(runtimeState.caches.propertyEditor);
 		return cacheInfoRequest();
 	}
@@ -1649,6 +1651,7 @@
 				blocks: cacheSummary("blocks", runtimeState.caches.blocks),
 				types: cacheSummary("types", runtimeState.caches.types),
 				libraries: cacheSummary("libraries", runtimeState.caches.libraries),
+				engineModules: cacheSummary("engineModules", runtimeState.caches.engineModules),
 				propertyEditor: cacheSummary("propertyEditor", runtimeState.caches.propertyEditor)
 			}
 		};
@@ -1708,6 +1711,32 @@
 			});
 		}
 		return parts.join("|");
+	}
+
+	function engineResourceFile(name) {
+		return new File(engineDir(), "resources/" + name);
+	}
+
+	function loadEngineModule(name) {
+		var file = engineResourceFile(name);
+		if (!file.isFile()) {
+			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
+		}
+		var cache = runtimeState.caches.engineModules;
+		var key = canonicalPath(file);
+		var fingerprint = fileFingerprint(file);
+		var cached = readRuntimeMapCache(cache, key, fingerprint);
+		if (cached) {
+			return cached;
+		}
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var module = eval(source);
+		if (!module || typeof module !== "object") {
+			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
+				null, "A Flow engine module must evaluate to an object.");
+		}
+		module.__flowFile = String(file.getAbsolutePath());
+		return writeRuntimeMapCache(cache, key, fingerprint, module, "Flow engine modules");
 	}
 
 	function resourcePath(baseDir, path) {
@@ -12364,72 +12393,31 @@
 		};
 	}
 
-	function typeEditorFragmentsHtml() {
-		var out = "";
-		var types = loadTypes();
-		Object.keys(types).sort().forEach(function (name) {
-			var type = types[name];
-			var descriptor = typeDescriptor(type);
-			var editor = type && type.editor;
-			if (!editor || !editor.file) {
-				return;
-			}
-			var baseDir = type && type.__flowFile ? new File(String(type.__flowFile)).getParentFile() : engineDir();
-			var file = new File(String(editor.file));
-			if (!file.isAbsolute()) {
-				file = new File(baseDir, String(editor.file));
-			}
-			if (!file.isFile()) {
-				return;
-			}
-			out += "\n<!-- Flow type editor: " + descriptor.name + " -->\n";
-			out += String(FileUtils.readFileToString(file, "UTF-8")) + "\n";
-		});
-		return out;
-	}
-
-	function propertyEditorCacheKey() {
-		return [
-			"propertyEditor",
-			"engine", canonicalPath(engineDir()),
-			"template", fileFingerprint(propertyEditorTemplateFile()),
-			"style", fileFingerprint(propertyEditorResourceFile("property-editor.css")),
-			"script", fileFingerprint(propertyEditorResourceFile("property-editor.js")),
-			"types", typesCacheKey()
-		].join("\n");
-	}
-
-	function propertyEditorResourceFile(name) {
-		return new File(engineDir(), "resources/" + name);
-	}
-
-	function propertyEditorTemplateFile() {
-		return propertyEditorResourceFile("property-editor.html");
-	}
-
-	function propertyEditorResourceSource(name) {
-		var file = propertyEditorResourceFile(name);
-		if (!file.isFile()) {
-			raise("MISSING_PROPERTY_EDITOR_RESOURCE", "Flow property editor resource not found: " + file.getAbsolutePath());
-		}
-		return String(FileUtils.readFileToString(file, "UTF-8"));
-	}
-
-	function buildPropertyEditorHtml() {
-		return propertyEditorResourceSource("property-editor.html")
-			.replace("<!-- FLOW_PROPERTY_EDITOR_STYLE -->", propertyEditorResourceSource("property-editor.css"))
-			.replace("<!-- FLOW_TYPE_EDITOR_FRAGMENTS -->", typeEditorFragmentsHtml())
-			.replace("<!-- FLOW_PROPERTY_EDITOR_SCRIPT -->", propertyEditorResourceSource("property-editor.js"));
+	function propertyEditorBuilderEnv() {
+		return {
+			File: File,
+			FileUtils: FileUtils,
+			engineDir: engineDir,
+			engineResourceFile: engineResourceFile,
+			canonicalPath: canonicalPath,
+			fileFingerprint: fileFingerprint,
+			typesCacheKey: typesCacheKey,
+			loadTypes: loadTypes,
+			typeDescriptor: typeDescriptor,
+			raise: raise
+		};
 	}
 
 	function propertyEditorHtml() {
+		var builder = loadEngineModule("property-editor-builder.js");
+		var env = propertyEditorBuilderEnv();
 		var cache = runtimeState.caches.propertyEditor;
-		var key = propertyEditorCacheKey();
+		var key = builder.cacheKey(env);
 		var cached = readRuntimeCache(cache, key);
 		if (cached) {
 			return cached;
 		}
-		return writeRuntimeCache(cache, key, buildPropertyEditorHtml(), "Flow property editor HTML");
+		return writeRuntimeCache(cache, key, builder.html(env), "Flow property editor HTML");
 	}
 
 	return {
