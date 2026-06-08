@@ -2039,203 +2039,43 @@
 	}
 
 	function normalizeResourcePath(path) {
-		var text = String(path || "").trim().replace(/\\/g, "/");
-		if (text === "") {
-			raise("MISSING_RESOURCE_PATH", "A Flow resource path is required.");
-		}
-		if (text.charAt(0) === "/" || text.match(/^[A-Za-z]:\//)) {
-			raise("INVALID_RESOURCE_PATH", "Flow resource paths must be project-relative: " + text);
-		}
-		var parts = [];
-		text.split("/").forEach(function (part) {
-			if (!part || part === ".") {
-				return;
-			}
-			if (part === "..") {
-				raise("INVALID_RESOURCE_PATH", "Flow resource paths cannot contain '..': " + text);
-			}
-			parts.push(part);
-		});
-		return parts.join("/");
+		return loadEngineModule("resource-utils.js").normalizePath(path, { raise: raise });
 	}
 
 	function resourceExtension(path) {
-		var dot = String(path || "").lastIndexOf(".");
-		return dot < 0 ? "" : String(path).substring(dot + 1).toLowerCase();
+		return loadEngineModule("resource-utils.js").extension(path);
 	}
 
 	function isAllowedResourcePath(path) {
-		var ext = resourceExtension(path);
-		if (String(path).indexOf("libs/flow/blocks/") === 0) {
-			return ext === "js" || String(path).endsWith(".block.yaml") || String(path).endsWith(".flow.yaml");
-		}
-		if (String(path).indexOf("libs/flow/fragments/") === 0) {
-			return String(path).endsWith(".fragment.yaml");
-		}
-		if (String(path).indexOf("libs/flow/lib/") === 0) {
-			return ext === "js";
-		}
-		if (String(path).indexOf("libs/flow/resources/") === 0) {
-			return ["md", "txt", "json", "yaml", "yml"].indexOf(ext) !== -1;
-		}
-		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
-			return ["html", "css", "js"].indexOf(ext) !== -1;
-		}
-		if (String(path).indexOf("libs/flow/types/") === 0) {
-			return ext === "js" || String(path).endsWith(".type.yaml");
-		}
-		return false;
+		return loadEngineModule("resource-utils.js").isAllowedPath(path);
 	}
 
 	function resourceKind(path) {
-		if (String(path).indexOf("libs/flow/blocks/") === 0) {
-			if (String(path).endsWith(".block.js")) {
-				return "graphBlockCode";
-			}
-			if (String(path).endsWith(".block.yaml")) {
-				return "graphBlock";
-			}
-			if (String(path).endsWith(".flow.yaml")) {
-				return "blockFlow";
-			}
-			if (String(path).endsWith(".hooks.js")) {
-				return "blockHooks";
-			}
-			return "block";
-		}
-		if (String(path).indexOf("libs/flow/fragments/") === 0) {
-			return "fragment";
-		}
-		if (String(path).indexOf("libs/flow/lib/") === 0) {
-			return "library";
-		}
-		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
-			return "typeEditor";
-		}
-		if (String(path).indexOf("libs/flow/types/") === 0) {
-			return String(path).endsWith(".type.yaml") ? "typeDescriptor" : "typeResource";
-		}
-		return "resource";
+		return loadEngineModule("resource-utils.js").kind(path);
 	}
 
 	function resourceName(path) {
-		var filename = String(path || "");
-		var slash = filename.lastIndexOf("/");
-		if (slash >= 0) {
-			filename = filename.substring(slash + 1);
-		}
-		if (filename.endsWith(".fragment.yaml")) {
-			return filename.substring(0, filename.length - ".fragment.yaml".length);
-		}
-		if (filename.endsWith(".block.yaml")) {
-			return filename.substring(0, filename.length - ".block.yaml".length);
-		}
-		if (filename.endsWith(".flow.yaml")) {
-			return filename.substring(0, filename.length - ".flow.yaml".length);
-		}
-		if (filename.endsWith(".hooks.js")) {
-			return filename.substring(0, filename.length - ".hooks.js".length);
-		}
-		if (filename.endsWith(".type.yaml")) {
-			return filename.substring(0, filename.length - ".type.yaml".length);
-		}
-		if (filename.endsWith(".js")) {
-			return filename.substring(0, filename.length - 3);
-		}
-		return filename;
+		return loadEngineModule("resource-utils.js").name(path);
 	}
 
 	function resourceMimeType(path) {
-		var ext = resourceExtension(path);
-		if (ext === "md") {
-			return "text/markdown";
-		}
-		if (ext === "txt") {
-			return "text/plain";
-		}
-		if (ext === "json") {
-			return "application/json";
-		}
-		if (ext === "yaml" || ext === "yml") {
-			return "text/yaml";
-		}
-		if (ext === "html") {
-			return "text/html";
-		}
-		if (ext === "css") {
-			return "text/css";
-		}
-		if (ext === "js") {
-			return "text/javascript";
-		}
-		return "application/octet-stream";
+		return loadEngineModule("resource-utils.js").mimeType(path);
 	}
 
 	function resourceUri(path) {
-		var prefix = "libs/flow/resources/";
-		var text = String(path || "");
-		if (text.indexOf(prefix) !== 0) {
-			return "";
-		}
-		text = text.substring(prefix.length);
-		var dot = text.lastIndexOf(".");
-		if (dot > 0) {
-			text = text.substring(0, dot);
-		}
-		return "flow://" + text;
-	}
-
-	function markdownBody(content) {
-		var text = String(content || "");
-		var lines = text.split(/\r?\n/);
-		if (lines.length && String(lines[0]).trim() === "---") {
-			for (var i = 1; i < lines.length; i++) {
-				if (String(lines[i]).trim() === "---") {
-					return lines.slice(i + 1).join("\n");
-				}
-			}
-		}
-		return text;
+		return loadEngineModule("resource-utils.js").uri(path);
 	}
 
 	function firstMarkdownHeading(content, fallback) {
-		var lines = markdownBody(content).split(/\r?\n/);
-		for (var i = 0; i < lines.length; i++) {
-			var match = lines[i].match(/^#\s+(.+?)\s*$/);
-			if (match) {
-				return match[1];
-			}
-		}
-		return fallback;
+		return loadEngineModule("resource-utils.js").firstMarkdownHeading(content, fallback);
 	}
 
 	function firstMarkdownParagraph(content) {
-		var lines = markdownBody(content).split(/\r?\n/);
-		for (var i = 0; i < lines.length; i++) {
-			var line = String(lines[i] || "").trim();
-			if (line === "" || line.charAt(0) === "#") {
-				continue;
-			}
-			if (line.charAt(0) === "-" || /^[0-9]+\.\s/.test(line)) {
-				continue;
-			}
-			return line;
-		}
-		return "";
+		return loadEngineModule("resource-utils.js").firstMarkdownParagraph(content);
 	}
 
 	function blockIdFromResourcePath(path) {
-		var text = String(path || "").replace(/\\/g, "/");
-		var prefix = "libs/flow/blocks/";
-		if (text.indexOf(prefix) === 0) {
-			text = text.substring(prefix.length);
-		}
-		[".block.yaml", ".block.js", ".flow.yaml", ".hooks.js", ".js"].forEach(function (suffix) {
-			if (text.endsWith(suffix)) {
-				text = text.substring(0, text.length - suffix.length);
-			}
-		});
-		return text.replace(/\//g, ".");
+		return loadEngineModule("resource-utils.js").blockIdFromPath(path);
 	}
 
 	function projectBlockDescriptorFileForResource(path) {
@@ -2393,64 +2233,11 @@
 	}
 
 	function globPatterns(value, fallback) {
-		if (value === undefined || value === null || value === "") {
-			value = fallback;
-		}
-		if (Object.prototype.toString.call(value) === "[object Array]") {
-			return value.map(function (item) {
-				return String(item || "").trim().replace(/\\/g, "/");
-			}).filter(function (item) {
-				return item !== "";
-			});
-		}
-		return String(value || "").split(/[\n,]/).map(function (item) {
-			return item.trim().replace(/\\/g, "/");
-		}).filter(function (item) {
-			return item !== "";
-		});
-	}
-
-	function globToRegExp(pattern) {
-		var text = String(pattern || "").replace(/\\/g, "/");
-		var out = "^";
-		for (var i = 0; i < text.length; i++) {
-			var ch = text.charAt(i);
-			if (ch === "*") {
-				if (text.charAt(i + 1) === "*") {
-					i++;
-					if (text.charAt(i + 1) === "/") {
-						i++;
-						out += "(?:.*/)?";
-					} else {
-						out += ".*";
-					}
-				} else {
-					out += "[^/]*";
-				}
-				continue;
-			}
-			if (ch === "?") {
-				out += "[^/]";
-				continue;
-			}
-			if ("\\.^$+{}()|[]".indexOf(ch) !== -1) {
-				out += "\\";
-			}
-			out += ch;
-		}
-		return new RegExp(out + "$");
+		return loadEngineModule("resource-utils.js").globPatterns(value, fallback);
 	}
 
 	function globMatches(path, patterns) {
-		if (!patterns || patterns.length === 0) {
-			return true;
-		}
-		for (var i = 0; i < patterns.length; i++) {
-			if (globToRegExp(patterns[i]).test(path)) {
-				return true;
-			}
-		}
-		return false;
+		return loadEngineModule("resource-utils.js").globMatches(path, patterns);
 	}
 
 	function resourceListRequest(request) {
