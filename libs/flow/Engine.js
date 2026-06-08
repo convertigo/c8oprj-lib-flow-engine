@@ -484,227 +484,39 @@
 	}
 
 	function schemaValueType(value) {
-		if (value === null || value === undefined) {
-			return "null";
-		}
-		if (Object.prototype.toString.call(value) === "[object Array]") {
-			return "array";
-		}
-		if (typeof value === "object") {
-			return "object";
-		}
-		if (typeof value === "number") {
-			return Math.floor(value) === value ? "integer" : "number";
-		}
-		if (typeof value === "boolean") {
-			return "boolean";
-		}
-		return "string";
+		return schemaUtils().valueType(value);
 	}
 
 	function mergeSchema(left, right) {
-		if (!left) {
-			return right;
-		}
-		if (!right) {
-			return left;
-		}
-		if (left.type === "unknown") {
-			return right;
-		}
-		if (right.type === "unknown") {
-			return left;
-		}
-		if (left.type !== right.type) {
-			return { type: "unknown" };
-		}
-		if (left.type === "object") {
-			var properties = {};
-			Object.keys(left.properties || {}).forEach(function (key) {
-				properties[key] = left.properties[key];
-			});
-			Object.keys(right.properties || {}).forEach(function (key) {
-				properties[key] = mergeSchema(properties[key], right.properties[key]);
-			});
-			return { type: "object", properties: properties };
-		}
-		if (left.type === "array") {
-			return { type: "array", items: mergeSchema(left.items, right.items) || { type: "unknown" } };
-		}
-		return left;
+		return schemaUtils().merge(left, right);
 	}
 
 	function inferSchema(value, depth) {
-		if (isRuntimeHandle(value)) {
-			return { type: "handle<" + runtimeHandleType(value) + ">", handle: true };
-		}
-		value = normalizeTree(value);
-		depth = depth || 0;
-		if (depth > 8) {
-			return { type: "unknown" };
-		}
-		var type = schemaValueType(value);
-		if (type === "array") {
-			var itemSchema = null;
-			for (var i = 0; i < value.length && i < 12; i++) {
-				itemSchema = mergeSchema(itemSchema, inferSchema(value[i], depth + 1));
-			}
-			return { type: "array", items: itemSchema || { type: "unknown" } };
-		}
-		if (type === "object") {
-			var properties = {};
-			Object.keys(value || {}).slice(0, 120).forEach(function (key) {
-				properties[key] = inferSchema(value[key], depth + 1);
-			});
-			return { type: "object", properties: properties };
-		}
-		return { type: type };
+		return schemaUtils().infer(value, depth || 0, schemaUtilsEnv());
 	}
 
 	function isSchemaMetaKey(key) {
-		return {
-			type: true,
-			description: true,
-			longDescription: true,
-			required: true,
-			"default": true,
-			nullable: true,
-			enum: true,
-			format: true,
-			example: true,
-			examples: true,
-			items: true,
-			properties: true
-		}[key] === true;
+		return schemaUtils().isMetaKey(key);
 	}
 
 	function isLeafSchema(value) {
-		if (value === null || value === undefined) {
-			return true;
-		}
-		if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-			return true;
-		}
-		if (Object.prototype.toString.call(value) === "[object Array]") {
-			return true;
-		}
-		if (typeof value === "object" && value.type && value.type !== "object" && !value.properties) {
-			if (value.type === "array" && value.items) {
-				return false;
-			}
-			return true;
-		}
-		return false;
+		return schemaUtils().isLeaf(value);
 	}
 
 	function schemaPaths(schema, prefix) {
-		schema = normalizeTree(schema);
-		prefix = String(prefix || "");
-		if (schema && typeof schema === "object" && schema.type === "array") {
-			var arrayOut = prefix ? [prefix] : [];
-			if (schema.items) {
-				schemaPaths(schema.items, prefix).forEach(function (path) {
-					addUnique(arrayOut, path);
-				});
-			}
-			return arrayOut;
-		}
-		if (isLeafSchema(schema)) {
-			return prefix ? [prefix] : [];
-		}
-		var source = schema.properties || schema;
-		var filterMeta = !schema.properties;
-		var keys = Object.keys(source || {}).filter(function (key) {
-			return !filterMeta || !isSchemaMetaKey(key);
-		});
-		if (keys.length === 0) {
-			return prefix ? [prefix] : [];
-		}
-		var out = prefix ? [prefix] : [];
-		keys.forEach(function (key) {
-			var childPrefix = joinPath(prefix, key);
-			var child = source[key];
-			if (isLeafSchema(child)) {
-				addUnique(out, childPrefix);
-			} else {
-				schemaPaths(child, childPrefix).forEach(function (path) {
-					addUnique(out, path);
-				});
-			}
-		});
-		return out;
+		return schemaUtils().paths(schema, prefix, schemaUtilsEnv());
 	}
 
 	function schemaSimpleType(schema) {
-		schema = normalizeTree(schema);
-		if (!schema || typeof schema !== "object") {
-			return schema === null ? "null" : typeof schema;
-		}
-		if (schema.type) {
-			return String(schema.type);
-		}
-		if (schema.properties) {
-			return "object";
-		}
-		return "unknown";
+		return schemaUtils().simpleType(schema, schemaUtilsEnv());
 	}
 
 	function schemaArrayPaths(schema, prefix) {
-		schema = normalizeTree(schema);
-		prefix = String(prefix || "");
-		var out = [];
-		if (!schema || typeof schema !== "object") {
-			return out;
-		}
-		if (schema.type === "array") {
-			if (prefix) {
-				addUnique(out, prefix);
-			}
-			if (schema.items) {
-				schemaArrayPaths(schema.items, prefix).forEach(function (path) {
-					addUnique(out, path);
-				});
-			}
-			return out;
-		}
-		if (isLeafSchema(schema)) {
-			return out;
-		}
-		var source = schema.properties || schema;
-		var filterMeta = !schema.properties;
-		Object.keys(source || {}).filter(function (key) {
-			return !filterMeta || !isSchemaMetaKey(key);
-		}).forEach(function (key) {
-			schemaArrayPaths(source[key], joinPath(prefix, key)).forEach(function (path) {
-				addUnique(out, path);
-			});
-		});
-		return out;
+		return schemaUtils().arrayPaths(schema, prefix, schemaUtilsEnv());
 	}
 
 	function schemaLeafEntries(schema, prefix) {
-		schema = normalizeTree(schema);
-		prefix = String(prefix || "");
-		if (!schema || typeof schema !== "object") {
-			return prefix ? [{ path: prefix, type: schemaSimpleType(schema) }] : [];
-		}
-		if (schema.type === "array") {
-			return schema.items ? schemaLeafEntries(schema.items, prefix) : [];
-		}
-		if (isLeafSchema(schema)) {
-			return prefix ? [{ path: prefix, type: schemaSimpleType(schema) }] : [];
-		}
-		var source = schema.properties || schema;
-		var filterMeta = !schema.properties;
-		var out = [];
-		Object.keys(source || {}).filter(function (key) {
-			return !filterMeta || !isSchemaMetaKey(key);
-		}).forEach(function (key) {
-			schemaLeafEntries(source[key], joinPath(prefix, key)).forEach(function (entry) {
-				out.push(entry);
-			});
-		});
-		return out;
+		return schemaUtils().leafEntries(schema, prefix, schemaUtilsEnv());
 	}
 
 	function flowScriptPath(base, path) {
@@ -749,99 +561,27 @@
 	}
 
 	function schemaAtPath(schema, path) {
-		if (!schema) {
-			return null;
-		}
-		var current = schema;
-		var text = String(path || "");
-		if (text === "") {
-			return current;
-		}
-		var parts = objectPathParts(text);
-		for (var i = 0; i < parts.length; i++) {
-			if (!current) {
-				return null;
-			}
-			if (current.type === "array" && current.items) {
-				current = current.items;
-				if (/^\d+$/.test(String(parts[i]))) {
-					continue;
-				}
-			}
-			var source = current.properties || current;
-			current = source[parts[i]];
-		}
-		return current || null;
+		return schemaUtils().atPath(schema, path, schemaUtilsEnv());
 	}
 
 	function unwrapDocumentSchema(schema) {
-		schema = normalizeTree(schema);
-		if (!schema) {
-			return schema;
-		}
-		if (schema.type === "object" && schema.properties && schema.properties.document) {
-			return schema.properties.document;
-		}
-		if (!schema.type && schema.document !== undefined && Object.keys(schema).length === 1) {
-			return schema.document;
-		}
-		return schema;
+		return schemaUtils().unwrapDocument(schema, schemaUtilsEnv());
 	}
 
 	function hasSchemaContent(schema) {
-		if (!schema) {
-			return false;
-		}
-		if (schema.type && schema.type !== "object") {
-			return true;
-		}
-		return Object.keys(schema.properties || {}).length > 0;
+		return schemaUtils().hasContent(schema);
 	}
 
 	function schemaScore(schema) {
-		schema = normalizeTree(schema);
-		if (!schema) {
-			return 0;
-		}
-		if (schema.type === "unknown" || schema.type === "null") {
-			return 0;
-		}
-		if (schema.type === "array") {
-			return schemaScore(schema.items);
-		}
-		if (schema.type === "object" || schema.properties) {
-			var score = 0;
-			Object.keys(schema.properties || {}).forEach(function (key) {
-				score += schemaScore(schema.properties[key]);
-			});
-			return score;
-		}
-		return schema.type ? 1 : 0;
+		return schemaUtils().score(schema, schemaUtilsEnv());
 	}
 
 	function assignSchemaAtPath(root, path, schema) {
-		if (!path || !schema) {
-			return;
-		}
-		var parts = String(path).split(".");
-		var current = root;
-		for (var i = 0; i < parts.length - 1; i++) {
-			var part = parts[i];
-			current.type = "object";
-			current.properties = current.properties || {};
-			if (!current.properties[part]) {
-				current.properties[part] = { type: "object", properties: {} };
-			}
-			current = current.properties[part];
-		}
-		current.type = "object";
-		current.properties = current.properties || {};
-		var leaf = parts[parts.length - 1];
-		current.properties[leaf] = mergeSchema(current.properties[leaf], schema) || schema;
+		return schemaUtils().assignAtPath(root, path, schema);
 	}
 
 	function itemSchema(schema) {
-		return schema && schema.type === "array" && schema.items ? schema.items : schema;
+		return schemaUtils().item(schema);
 	}
 
 	function writeScopePath(scopes, path, value) {
@@ -1743,6 +1483,19 @@
 		}
 		module.__flowFile = String(file.getAbsolutePath());
 		return writeRuntimeMapCache(cache, key, fingerprint, module, "Flow engine modules");
+	}
+
+	function schemaUtils() {
+		return loadEngineModule("schema-utils.js");
+	}
+
+	function schemaUtilsEnv() {
+		return {
+			normalizeTree: normalizeTree,
+			objectPathParts: objectPathParts,
+			isRuntimeHandle: isRuntimeHandle,
+			runtimeHandleType: runtimeHandleType
+		};
 	}
 
 	function resourcePath(baseDir, path) {
@@ -7391,14 +7144,7 @@
 	}
 
 	function objectSchema(schema) {
-		schema = normalizeTree(schema || {});
-		if (schema.type) {
-			return schema;
-		}
-		return {
-			type: "object",
-			properties: schema
-		};
+		return schemaUtils().object(schema, schemaUtilsEnv());
 	}
 
 	function flowOutputSchema(name) {
