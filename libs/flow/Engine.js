@@ -4579,6 +4579,26 @@
 		});
 	}
 
+	function flowScriptTemplateLiteralPart(text) {
+		return String(text || "")
+			.replace(/\\/g, "\\\\")
+			.replace(/`/g, "\\`")
+			.replace(/\$\{/g, "\\${");
+	}
+
+	function renderFlowScriptTemplateLiteral(text, locals) {
+		var out = "`";
+		var index = 0;
+		String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (match, expr, offset) {
+			out += flowScriptTemplateLiteralPart(String(text).substring(index, offset));
+			out += "${" + renderFlowScriptExpression(expr, locals) + "}";
+			index = offset + match.length;
+			return match;
+		});
+		out += flowScriptTemplateLiteralPart(String(text || "").substring(index));
+		return out + "`";
+	}
+
 	function renderFlowScriptValue(blocks, node, key, value, locals) {
 		var kind = flowScriptPropKind(blocks, blockName(node), key);
 		if (kind === "expression") {
@@ -4590,7 +4610,10 @@
 				if (exact) {
 					return renderFlowScriptExpression(exact[1], locals);
 				}
-				return JSON.stringify(renderFlowScriptTemplate(value, locals));
+				if (value.indexOf("{{") !== -1) {
+					return renderFlowScriptTemplateLiteral(value, locals);
+				}
+				return JSON.stringify(value);
 			}
 		}
 		return flowScriptInlineValue(value);
@@ -4650,7 +4673,7 @@
 				if (localName) {
 					var rendered = renderFlowScriptValue(blocks, node, "value", node.value, locals);
 					locals[localName] = true;
-					return indent + "const " + localName + " = " + rendered;
+					return indent + "var " + localName + " = " + rendered;
 				}
 			}
 			return indent + assignmentPath + " = " + renderFlowScriptValue(blocks, node, "value", node.value, locals);
@@ -4669,9 +4692,15 @@
 		var call = block + "({ " + parts.join(", ") + " })";
 		if (outLocal) {
 			locals[outLocal] = true;
-			return indent + "const " + outLocal + " = " + call;
+			return indent + "var " + outLocal + " = " + call;
 		}
 		return indent + call;
+	}
+
+	function flowScriptHasTopLevelReturn(nodes) {
+		return (nodes || []).some(function (node) {
+			return blockName(node) === "return";
+		});
 	}
 
 	function renderFlowScriptNodes(blocks, nodes, depth, lines, locals) {
@@ -4719,7 +4748,7 @@
 		}
 		lines.push("function " + safeIdentifier(name || "Flow") + "({ input, config, result }) {");
 		renderFlowScriptNodes(blocks, definition.nodes || [], 1, lines, {});
-		if (request.includeImplicitReturn !== false) {
+		if (request.includeImplicitReturn !== false && !flowScriptHasTopLevelReturn(definition.nodes || [])) {
 			lines.push("  return result");
 		}
 		lines.push("}");
