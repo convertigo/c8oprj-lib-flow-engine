@@ -1622,6 +1622,17 @@
 		};
 	}
 
+	function bridgeRuntimeCacheInfo() {
+		var enabled = typeof __flowBridgeRuntimeCacheEnabled !== "undefined" && __flowBridgeRuntimeCacheEnabled === true;
+		return {
+			enabled: enabled,
+			hit: typeof __flowBridgeRuntimeCacheHit !== "undefined" && __flowBridgeRuntimeCacheHit === true,
+			key: typeof __flowBridgeRuntimeCacheKey !== "undefined" ? String(__flowBridgeRuntimeCacheKey) : "",
+			generation: typeof __flowBridgeRuntimeCacheGeneration !== "undefined" ? Number(__flowBridgeRuntimeCacheGeneration) : 0,
+			size: typeof __flowBridgeRuntimeCacheSize !== "undefined" ? Number(__flowBridgeRuntimeCacheSize) : 0
+		};
+	}
+
 	function cacheInfoRequest() {
 		var activeProjectDir = projectDir();
 		var activeProjectPath = activeProjectDir ? canonicalPath(activeProjectDir) : "";
@@ -1633,6 +1644,7 @@
 			activeProjectDir: activeProjectPath,
 			rawProjectDir: activeProjectDir ? String(activeProjectDir) : "",
 			engineDir: canonicalPath(engineDir()),
+			bridgeRuntimeCache: bridgeRuntimeCacheInfo(),
 			caches: {
 				blocks: cacheSummary("blocks", runtimeState.caches.blocks),
 				types: cacheSummary("types", runtimeState.caches.types),
