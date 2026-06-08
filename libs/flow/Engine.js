@@ -1717,8 +1717,12 @@
 		return new File(engineDir(), "resources/" + name);
 	}
 
+	function engineModuleFile(name) {
+		return new File(engineDir(), "modules/" + name);
+	}
+
 	function loadEngineModule(name) {
-		var file = engineResourceFile(name);
+		var file = engineModuleFile(name);
 		if (!file.isFile()) {
 			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
 		}
@@ -12399,6 +12403,7 @@
 			FileUtils: FileUtils,
 			engineDir: engineDir,
 			engineResourceFile: engineResourceFile,
+			engineModuleFile: engineModuleFile,
 			canonicalPath: canonicalPath,
 			fileFingerprint: fileFingerprint,
 			typesCacheKey: typesCacheKey,

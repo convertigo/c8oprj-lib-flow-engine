@@ -43,7 +43,7 @@
 				"template", env.fileFingerprint(resourceFile(env, "property-editor.html")),
 				"style", env.fileFingerprint(resourceFile(env, "property-editor.css")),
 				"script", env.fileFingerprint(resourceFile(env, "property-editor.js")),
-				"builder", env.fileFingerprint(resourceFile(env, "property-editor-builder.js")),
+				"builder", env.fileFingerprint(env.engineModuleFile("property-editor-builder.js")),
 				"types", env.typesCacheKey()
 			].join("\n");
 		},
