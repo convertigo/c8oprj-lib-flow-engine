@@ -32,7 +32,7 @@ For source control, a Convertigo `Flow` should not serialize its full source as 
 libs/flows/<FlowName>.flow.js
 ```
 
-The loader still accepts legacy `libs/flows/<FlowName>.flow.yaml` as a temporary fallback while the spike is being migrated. When both files exist, `.flow.js` wins. This is a controlled big-bang, not a dual-format product promise: the migration script removes obsolete YAML once the FlowScript sibling has been generated and validated. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
+The loader only accepts this `.flow.js` sidecar. Legacy `libs/flows/<FlowName>.flow.yaml` sidecars were used during the spike migration and must not be treated as a runtime fallback. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
 
 The runtime core is intentionally small. Concrete behavior is implemented by
 block descriptors in:
@@ -226,10 +226,11 @@ The `spike-flowscript` branch adds an experimental code-like authoring view for
 LLMs. For project Flows, `.flow.js` is now the canonical sidecar on this branch:
 the engine lists and loads it first, compiles it into the internal Flow
 definition, validates block names/properties, and executes that model. Legacy
-`.flow.yaml` remains a fallback only when the `.flow.js` file is absent.
+`.flow.yaml` Flow sidecars are obsolete and must be migrated or removed instead
+of being loaded at runtime.
 
 Use `tools/migrate-flow-js-canonical.sh` during the spike to report existing
-pairs and, once a `.flow.js` sibling exists, remove the obsolete YAML fallback:
+pairs and, once a `.flow.js` sibling exists, remove obsolete YAML sidecars:
 
 ```bash
 tools/migrate-flow-js-canonical.sh /path/to/Project/libs/flows
