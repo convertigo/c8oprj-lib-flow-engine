@@ -16,6 +16,7 @@
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
 	var cacheUtilsModule = null;
+	var fingerprintUtilsModule = null;
 	var flowNodeUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
@@ -490,6 +491,31 @@
 		return module;
 	}
 
+	function fingerprintUtils() {
+		if (fingerprintUtilsModule) {
+			return fingerprintUtilsModule;
+		}
+		var file = engineModuleFile("fingerprint-utils.js");
+		if (!file.isFile()) {
+			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
+		}
+		var module = eval(String(FileUtils.readFileToString(file, "UTF-8")));
+		if (!module || typeof module !== "object") {
+			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
+				null, "A Flow engine module must evaluate to an object.");
+		}
+		module.__flowFile = String(file.getAbsolutePath());
+		fingerprintUtilsModule = module;
+		return module;
+	}
+
+	function fingerprintEnv() {
+		return {
+			Arrays: Arrays,
+			canonicalPath: canonicalPath
+		};
+	}
+
 	function readRuntimeCache(cache, key) {
 		return cacheUtils().readValue(cache, key);
 	}
@@ -508,6 +534,7 @@
 
 	function resetRuntimeModuleCaches() {
 		cacheUtilsModule = null;
+		fingerprintUtilsModule = null;
 		flowNodeUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
@@ -539,59 +566,11 @@
 	}
 
 	function fileFingerprint(file) {
-		if (!file) {
-			return "null";
-		}
-		if (!file.exists()) {
-			return "missing:" + canonicalPath(file);
-		}
-		return canonicalPath(file) + "#" + file.lastModified() + ":" + file.length();
+		return fingerprintUtils().fileFingerprint(file, fingerprintEnv());
 	}
 
 	function directoryFingerprint(dir) {
-		if (!dir) {
-			return "null";
-		}
-		if (!dir.exists()) {
-			return "missing:" + canonicalPath(dir);
-		}
-		var root = canonicalPath(dir);
-		var parts = [root];
-
-		function walk(file, prefix) {
-			var name = String(file.getName());
-			var path = prefix ? prefix + "/" + name : name;
-			if (file.isDirectory()) {
-				parts.push("d:" + path + ":" + file.lastModified());
-				var children = file.listFiles();
-				if (!children) {
-					return;
-				}
-				children = Arrays.asList(children).toArray();
-				children.sort(function (a, b) {
-					return String(a.getName()).localeCompare(String(b.getName()));
-				});
-				children.forEach(function (child) {
-					walk(child, path);
-				});
-				return;
-			}
-			if (file.isFile()) {
-				parts.push("f:" + path + ":" + file.lastModified() + ":" + file.length());
-			}
-		}
-
-		var files = dir.listFiles();
-		if (files) {
-			files = Arrays.asList(files).toArray();
-			files.sort(function (a, b) {
-				return String(a.getName()).localeCompare(String(b.getName()));
-			});
-			files.forEach(function (file) {
-				walk(file, "");
-			});
-		}
-		return parts.join("|");
+		return fingerprintUtils().directoryFingerprint(dir, fingerprintEnv());
 	}
 
 	function engineResourceFile(name) {
