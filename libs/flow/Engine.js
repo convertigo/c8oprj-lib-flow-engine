@@ -729,6 +729,10 @@
 		return namingUtils().safeFilePart(value);
 	}
 
+	function safeIdentifier(value) {
+		return namingUtils().safeIdentifier(value);
+	}
+
 	function blockIdParts(name) {
 		return namingUtils().blockIdParts(name);
 	}
@@ -1809,14 +1813,6 @@
 
 	function flowScriptCodeFromMirror(blocks, name, source, request) {
 		return flowScriptRendererService().flowScriptCodeFromMirror(blocks, name, source, request, flowScriptRendererEnv());
-	}
-
-	function safeIdentifier(value) {
-		var text = String(value || "Flow").replace(/[^A-Za-z0-9_$]/g, "_");
-		if (!text.match(/^[A-Za-z_$]/)) {
-			text = "_" + text;
-		}
-		return text || "Flow";
 	}
 
 	function flowScriptParserService() {

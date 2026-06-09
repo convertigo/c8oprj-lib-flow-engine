@@ -15,6 +15,14 @@
 		return String(value || "").trim().replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
 	}
 
+	function safeIdentifier(value) {
+		var text = String(value || "Flow").replace(/[^A-Za-z0-9_$]/g, "_");
+		if (!text.match(/^[A-Za-z_$]/)) {
+			text = "_" + text;
+		}
+		return text || "Flow";
+	}
+
 	function blockIdParts(name) {
 		var text = String(name || "").trim();
 		if (!text.match(/^[A-Za-z0-9_.-]+$/)) {
@@ -144,6 +152,7 @@
 	return {
 		resourcePath: resourcePath,
 		safeFilePart: safeFilePart,
+		safeIdentifier: safeIdentifier,
 		blockIdParts: blockIdParts,
 		blockLocalName: blockLocalName,
 		blockNamespace: blockNamespace,
