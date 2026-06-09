@@ -1355,29 +1355,35 @@
 		return projectBlockDescriptorFileForResource(path);
 	}
 
-	function projectResourceFile(path, mustExist) {
-		var base = projectDir();
-		if (!base) {
-			raise("PROJECT_RESOURCES_UNAVAILABLE", "Project Flow resources are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		var normalized = normalizeResourcePath(path);
-		if (!isAllowedResourcePath(normalized)) {
-			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}. Legacy block YAML paths are still accepted as fallback.");
-		}
-		var file = new File(base, normalized);
-		var basePath = canonicalPath(base);
-		var filePath = canonicalPath(file);
-		if (filePath !== basePath && filePath.indexOf(basePath + File.separator) !== 0) {
-			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path escapes the project: " + normalized);
-		}
-		if (mustExist && !file.isFile()) {
-			raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + normalized);
-		}
+	function resourceService() {
+		return loadEngineModule("resource-service.js");
+	}
+
+	function resourceServiceEnv() {
 		return {
-			path: normalized,
-			file: file
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			raise: raise,
+			projectDir: projectDir,
+			canonicalPath: canonicalPath,
+			normalizeResourcePath: normalizeResourcePath,
+			isAllowedResourcePath: isAllowedResourcePath,
+			resourceKind: resourceKind,
+			resourceName: resourceName,
+			resourceMimeType: resourceMimeType,
+			resourceUri: resourceUri,
+			firstMarkdownHeading: firstMarkdownHeading,
+			firstMarkdownParagraph: firstMarkdownParagraph,
+			globPatterns: globPatterns,
+			globMatches: globMatches,
+			intOption: intOption,
+			searchNeedle: searchNeedle,
+			searchMatches: searchMatches,
+			searchSnippet: searchSnippet,
+			sha256Hex: sha256Hex,
+			applyUnifiedPatchText: applyUnifiedPatchText,
+			validateResourceContent: validateResourceContent
 		};
 	}
 
@@ -1390,107 +1396,24 @@
 		return filePath.substring(basePath.length + 1).replace(/\\/g, "/");
 	}
 
-	function collectResourceFiles(dir, base, out) {
-		var listed = dir && dir.listFiles();
-		if (!listed) {
-			return;
-		}
-		var files = Arrays.asList(listed).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		files.forEach(function (file) {
-			if (file.isDirectory()) {
-				collectResourceFiles(file, base, out);
-				return;
-			}
-			if (!file.isFile()) {
-				return;
-			}
-			var path = resourceRelativePath(base, file);
-			if (path && isAllowedResourcePath(path)) {
-				out.push({
-					path: path,
-					file: file
-				});
-			}
-		});
+	function projectResourceFile(path, mustExist) {
+		return resourceService().projectResourceFile(path, mustExist, resourceServiceEnv());
 	}
 
 	function projectResourceEntries() {
-		var base = projectDir();
-		if (!base || !base.isDirectory()) {
-			return [];
-		}
-		var out = [];
-		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/resources", "libs/flow/types"].forEach(function (path) {
-			collectResourceFiles(new File(base, path), base, out);
-		});
-		return out;
+		return resourceService().projectResourceEntries(resourceServiceEnv());
 	}
 
 	function projectResourceEntryForUri(uri) {
-		var wanted = String(uri || "").trim();
-		if (wanted === "") {
-			raise("MISSING_RESOURCE_URI", "A Flow resource uri is required.");
-		}
-		var entries = projectResourceEntries();
-		for (var i = 0; i < entries.length; i++) {
-			if (resourceUri(entries[i].path) === wanted) {
-				return entries[i];
-			}
-		}
-		raise("UNKNOWN_RESOURCE", "Unknown Flow resource uri: " + wanted,
-			null, wanted.indexOf("flow://guide/") === 0 || wanted.indexOf("flow://skills/") === 0
-				? "Use MCP resources/read for Flow MCP guides and skills; use flow-resource-get for project-local source resources."
-				: "Use flow-resource-search or flow-resource-list first, then flow-resource-get with the returned path or uri.");
+		return resourceService().projectResourceEntryForUri(uri, resourceServiceEnv());
 	}
 
 	function resourceSummary(entry, content) {
-		content = content === undefined ? String(FileUtils.readFileToString(entry.file, "UTF-8")) : String(content);
-		var summary = {
-			path: entry.path,
-			kind: resourceKind(entry.path),
-			name: resourceName(entry.path),
-			mimeType: resourceMimeType(entry.path),
-			file: String(entry.file.getAbsolutePath()),
-			size: Number(entry.file.length()),
-			lastModified: Number(entry.file.lastModified()),
-			hash: sha256Hex(content)
-		};
-		var uri = resourceUri(entry.path);
-		if (uri) {
-			summary.uri = uri;
-			summary.name = firstMarkdownHeading(content, summary.name);
-			summary.description = firstMarkdownParagraph(content);
-		}
-		return summary;
+		return resourceService().resourceSummary(entry, content, resourceServiceEnv());
 	}
 
 	function resourceListSummary(entry, includeHash) {
-		var summary = {
-			path: entry.path,
-			kind: resourceKind(entry.path),
-			name: resourceName(entry.path),
-			mimeType: resourceMimeType(entry.path),
-			size: Number(entry.file.length()),
-			lastModified: Number(entry.file.lastModified())
-		};
-		var uri = resourceUri(entry.path);
-		if (uri) {
-			summary.uri = uri;
-		}
-		if (includeHash === true || uri) {
-			var content = String(FileUtils.readFileToString(entry.file, "UTF-8"));
-			if (includeHash === true) {
-				summary.hash = sha256Hex(content);
-			}
-			if (uri) {
-				summary.name = firstMarkdownHeading(content, summary.name);
-				summary.description = firstMarkdownParagraph(content);
-			}
-		}
-		return summary;
+		return resourceService().resourceListSummary(entry, includeHash, resourceServiceEnv());
 	}
 
 	function globPatterns(value, fallback) {
@@ -1502,122 +1425,15 @@
 	}
 
 	function resourceListRequest(request) {
-		request = request || {};
-		var rootDir = String(request.rootDir || request.root || "").trim().replace(/\\/g, "/");
-		var patterns = globPatterns(request.pattern || request.glob, rootDir ? "**/*" : "libs/flow/resources/**/*");
-		if (rootDir) {
-			rootDir = normalizeResourcePath(rootDir);
-			patterns = patterns.map(function (pattern) {
-				if (pattern.indexOf("libs/flow/") === 0) {
-					return pattern;
-				}
-				return rootDir.replace(/\/+$/, "") + "/" + pattern.replace(/^\/+/, "");
-			});
-		}
-		var kind = String(request.kind || "").trim();
-		var query = String(request.query || request.q || "").trim().toLowerCase();
-		var resources = [];
-		projectResourceEntries().forEach(function (entry) {
-			if (!globMatches(entry.path, patterns)) {
-				return;
-			}
-			if (kind && resourceKind(entry.path) !== kind) {
-				return;
-			}
-			var summary = resourceListSummary(entry, request.includeHash === true);
-			if (query) {
-				var haystack = [summary.path, summary.uri, summary.name, summary.description, summary.kind].join(" ").toLowerCase();
-				if (haystack.indexOf(query) === -1) {
-					return;
-				}
-			}
-			resources.push(summary);
-		});
-		resources.sort(function (a, b) {
-			return String(a.path).localeCompare(String(b.path));
-		});
-		var offset = request.cursor !== undefined && request.cursor !== null && String(request.cursor) !== ""
-			? intOption(request.cursor, 0, 0)
-			: intOption(request.skip || request.offset, 0, 0);
-		var limit = intOption(request.limit, 100, 1, 500);
-		var page = resources.slice(offset, offset + limit);
-		var out = {
-			ok: true,
-			pattern: patterns,
-			count: page.length,
-			total: resources.length,
-			resources: page,
-			nextCursor: offset + limit < resources.length ? String(offset + limit) : null
-		};
-		if (request.doc !== false) {
-			out.doc = "List project-local Flow resources using glob patterns such as libs/flow/resources/**/*.md.";
-		}
-		if (request.hints !== false) {
-			out.hints = [
-				"If you understood, call with hints=false.",
-				"Use resource.get with uri or path to read one listed resource.",
-				"Use pattern to stay narrow; repeated calls can also pass doc=false."
-			];
-		}
-		return out;
+		return resourceService().list(request, resourceServiceEnv());
 	}
 
 	function resourceSearchRequest(request) {
-		request = request || {};
-		var needle = searchNeedle(request);
-		var maxFileBytes = intOption(request.maxFileBytes, 500000, 1000, 5000000);
-		var matches = [];
-		projectResourceEntries().forEach(function (entry) {
-			if (entry.file.length() > maxFileBytes) {
-				return;
-			}
-			var content = String(FileUtils.readFileToString(entry.file, "UTF-8"));
-			var text = [entry.path, resourceKind(entry.path), resourceName(entry.path), content].join(" ");
-			if (!searchMatches(text, needle)) {
-				return;
-			}
-			matches.push(Object.assign(resourceSummary(entry, content), {
-				snippet: searchSnippet(content || entry.path, needle),
-				next: "flow-resource-get path=" + entry.path
-			}));
-		});
-		var offset = intOption(request.cursor, 0, 0);
-		var limit = intOption(request.limit, 50, 1, 500);
-		var page = matches.slice(offset, offset + limit);
-		var out = {
-			ok: true,
-			query: String(request.query || request.q || ""),
-			count: page.length,
-			total: matches.length,
-			resources: page,
-			nextCursor: offset + limit < matches.length ? String(offset + limit) : null
-		};
-		if (request.doc !== false) {
-			out.doc = "Search project-local Flow text resources. Patch only these whitelisted files through flow-resource-patch.";
-		}
-		if (request.hints !== false) {
-			out.hints = [
-				"If you understood, call with hints=false.",
-				"Use this for block/fragment/type/editor/library sources. Use flow-search for Flow graph nodes.",
-				"Call flow-resource-get before patching; pass its hash as baseHash.",
-				"Pass doc=false on repeated calls when the short tool contract is already known."
-			];
-		}
-		return out;
+		return resourceService().search(request, resourceServiceEnv());
 	}
 
 	function resourceGetRequest(request) {
-		request = request || {};
-		var entry = request.path !== undefined && request.path !== null && String(request.path).trim() !== ""
-			? projectResourceFile(request.path, true)
-			: projectResourceEntryForUri(request.uri);
-		var maxBytes = intOption(request.maxBytes, 1000000, 1000, 5000000);
-		if (entry.file.length() > maxBytes && request.allowLarge !== true) {
-			raise("RESOURCE_TOO_LARGE", "Flow resource is too large to return: " + entry.path,
-				null, "Pass a higher maxBytes or allowLarge=true if this file is intentionally large.");
-		}
-		var content = String(FileUtils.readFileToString(entry.file, "UTF-8"));
-		return Object.assign({ ok: true, content: content }, resourceSummary(entry, content));
+		return resourceService().get(request, resourceServiceEnv());
 	}
 
 	function applyUnifiedPatchText(content, patch) {
@@ -1669,32 +1485,7 @@
 	}
 
 	function resourcePatchRequest(request) {
-		request = request || {};
-		var entry = projectResourceFile(request.path, true);
-		var oldContent = String(FileUtils.readFileToString(entry.file, "UTF-8"));
-		var oldHash = sha256Hex(oldContent);
-		if (request.baseHash && String(request.baseHash) !== oldHash) {
-			raise("RESOURCE_BASE_HASH_MISMATCH", "Flow resource changed since it was read: " + entry.path,
-				null, "Read the resource again and patch from the new hash.");
-		}
-		var applied = applyUnifiedPatchText(oldContent, request.patch || request.unifiedDiff || request.diff || "");
-		var validation = request.validate === false
-			? { ok: true, skipped: true }
-			: validateResourceContent(entry.path, applied.content);
-		var newHash = sha256Hex(applied.content);
-		if (request.dryRun !== true) {
-			FileUtils.writeStringToFile(entry.file, applied.content, "UTF-8");
-		}
-		return Object.assign({
-			ok: true,
-			path: entry.path,
-			dryRun: request.dryRun === true,
-			hunks: applied.hunks,
-			oldHash: oldHash,
-			newHash: newHash,
-			changed: oldHash !== newHash,
-			validation: validation
-		}, request.includeContent === true ? { content: applied.content } : {});
+		return resourceService().patch(request, resourceServiceEnv());
 	}
 
 	function flowProviderName(flowDir, fallback) {
