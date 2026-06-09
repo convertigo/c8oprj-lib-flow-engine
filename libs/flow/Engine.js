@@ -1885,11 +1885,17 @@
 	function typeDescriptorEnv() {
 		return {
 			File: File,
+			FileUtils: FileUtils,
 			projectTypesDir: projectTypesDir,
 			typeDescriptorFileName: typeDescriptorFileName,
 			normalizeTree: normalizeTree,
 			parseYamlSource: parseYamlSource,
 			toYamlSource: toYamlSource,
+			loadTypeDescriptorFile: loadTypeDescriptorFile,
+			typeDescriptor: typeDescriptor,
+			catalogTypes: catalogTypes,
+			blockDescriptor: blockDescriptor,
+			loadTypes: loadTypes,
 			raise: raise
 		};
 	}
@@ -1911,48 +1917,15 @@
 	}
 
 	function createProjectType(types, name, request, overwrite) {
-		var descriptorSource = typeDescriptorSourceForWriteRequest(name, request);
-		validateTypeDescriptorSource(name, descriptorSource);
-		var file = projectTypeDescriptorFile(name);
-		if (types[name] && types[name].__flowOrigin !== "project") {
-			raise("DUPLICATE_TYPE", "Cannot override non-project Flow property type: " + name,
-				null, "Choose a project-specific name instead.");
-		}
-		if (file.isFile() && overwrite !== true) {
-			raise("TYPE_ALREADY_EXISTS", "Project property type already exists: " + name,
-				null, "Pass overwrite=true to replace it explicitly.");
-		}
-		file.getParentFile().mkdirs();
-		FileUtils.writeStringToFile(file, descriptorSource, "UTF-8");
-		if (types[name]) {
-			delete types[name];
-		}
-		var type = loadTypeDescriptorFile(types, file, "project");
-		return typeDescriptor(type);
+		return typeDescriptorService().createProjectType(types, name, request, overwrite, typeDescriptorEnv());
 	}
 
 	function getTypeSource(types, name) {
-		var type = types[String(name || "")];
-		if (!type) {
-			raise("UNKNOWN_TYPE", "Unknown Flow property type: " + name);
-		}
-		var descriptorSource = String(FileUtils.readFileToString(new File(String(type.__flowFile)), "UTF-8"));
-		return {
-			name: type.name,
-			origin: type.__flowOrigin || "unknown",
-			file: String(type.__flowFile || ""),
-			descriptorFile: String(type.__flowFile || ""),
-			descriptor: typeDescriptor(type),
-			descriptorSource: descriptorSource
-		};
+		return typeDescriptorService().getTypeSource(types, name, typeDescriptorEnv());
 	}
 
 	function typeList(blocks) {
-		return {
-			types: catalogTypes(Object.keys(blocks).sort().map(function (name) {
-				return blockDescriptor(blocks[name]);
-			}), loadTypes())
-		};
+		return typeDescriptorService().typeList(blocks, typeDescriptorEnv());
 	}
 
 	function flowStorageService() {
