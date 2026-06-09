@@ -1383,76 +1383,37 @@
 		return blockCodeCompilerService().compileProjectBlockCode(blocks, name, code, request, blockCodeCompilerEnv());
 	}
 
+	function blockFileLoaderService() {
+		return loadEngineModule("block-file-loader-service.js");
+	}
+
+	function blockFileLoaderEnv() {
+		return {
+			FileUtils: FileUtils,
+			normalizeTree: normalizeTree,
+			raise: raise,
+			blockIdFromDescriptorFile: blockIdFromDescriptorFile,
+			compileProjectBlockCode: compileProjectBlockCode,
+			graphBlockFromDefinition: graphBlockFromDefinition,
+			extractFlowScriptBlockMeta: extractFlowScriptBlockMeta,
+			flowScriptBlockMetaFromRequest: flowScriptBlockMetaFromRequest,
+			blockCodeRuntimeFromMeta: blockCodeRuntimeFromMeta,
+			flowScriptBlockDescriptorFromMeta: flowScriptBlockDescriptorFromMeta,
+			graphBlockCatalog: graphBlockCatalog,
+			validateGraphBlockSource: validateGraphBlockSource
+		};
+	}
+
 	function loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir) {
-		var code = String(FileUtils.readFileToString(file, "UTF-8"));
-		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
-		if (!name) {
-			name = String(file.getName());
-			name = name.substring(0, name.length - ".block.js".length);
-		}
-		var compiled = compileProjectBlockCode(blocks, name, code, {
-			allowPrimitiveRhino: origin !== "project"
-		});
-		var block = graphBlockFromDefinition(compiled.descriptor, file, origin, provider);
-		if (blocks[block.name] && blocks[block.name].__flowScriptPlaceholder !== true) {
-			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
-				null, "Rename the project block or remove the duplicate.");
-		}
-		blocks[block.name] = block;
-		return block;
+		return blockFileLoaderService().loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
 	}
 
 	function reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir) {
-		var code = String(FileUtils.readFileToString(file, "UTF-8"));
-		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
-		if (!name) {
-			name = String(file.getName());
-			name = name.substring(0, name.length - ".block.js".length);
-		}
-		if (blocks[name] && blocks[name].__flowScriptPlaceholder !== true) {
-			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + name,
-				null, "Rename the project block or remove the duplicate.");
-		}
-		var extracted = extractFlowScriptBlockMeta(code);
-		var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, {}), normalizeTree(extracted.meta || {}));
-		var runtime = blockCodeRuntimeFromMeta(meta);
-		var descriptor = runtime === "rhino"
-			? flowScriptBlockDescriptorFromMeta(name, meta, "", code)
-			: flowScriptBlockDescriptorFromMeta(name, meta, { version: 1, nodes: [] }, code);
-		var catalog = graphBlockCatalog(descriptor);
-		blocks[name] = {
-			name: String(name),
-			"private": descriptor["private"] === true,
-			__flowScriptPlaceholder: true,
-			__blockDefinition: descriptor,
-			catalog: function () {
-				return normalizeTree(catalog);
-			}
-		};
+		return blockFileLoaderService().reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
 	}
 
 	function reserveGraphBlockFile(blocks, file, origin, provider, blocksDir) {
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
-		if (!name) {
-			name = String(file.getName());
-			name = name.substring(0, name.length - ".block.yaml".length);
-		}
-		if (blocks[name] && blocks[name].__flowScriptPlaceholder !== true) {
-			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + name,
-				null, "Rename the project block or remove the duplicate.");
-		}
-		var descriptor = validateGraphBlockSource(name, source);
-		var catalog = graphBlockCatalog(descriptor);
-		blocks[name] = {
-			name: String(name),
-			"private": descriptor["private"] === true,
-			__flowScriptPlaceholder: true,
-			__blockDefinition: descriptor,
-			catalog: function () {
-				return normalizeTree(catalog);
-			}
-		};
+		return blockFileLoaderService().reserveGraphBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
 	}
 
 	function escapeRegExp(text) {
