@@ -1758,6 +1758,22 @@
 		return graphBlockDescriptorService().definitionForWrite(definition, graphBlockDescriptorEnv());
 	}
 
+	function blockCodeSourceService() {
+		return loadEngineModule("block-code-source-service.js");
+	}
+
+	function blockCodeSourceEnv() {
+		return {
+			normalizeTree: normalizeTree,
+			parseFlowScriptObjectLiteral: parseFlowScriptObjectLiteral,
+			normalizeFlowScriptCode: normalizeFlowScriptCode,
+			safeIdentifier: safeIdentifier,
+			blockLocalName: blockLocalName,
+			blockHooksFileName: blockHooksFileName,
+			raise: raise
+		};
+	}
+
 	function graphBlockDisplayName(definition, node) {
 		var props = nodeProps(node);
 		var display = definition.displayName || definition.display || "";
@@ -1969,96 +1985,31 @@
 	}
 
 	function balancedObjectEnd(text, open) {
-		var quote = "";
-		var brace = 0;
-		for (var i = open; i < text.length; i++) {
-			var ch = text.charAt(i);
-			if (quote) {
-				if (ch === "\\" && i + 1 < text.length) {
-					i++;
-					continue;
-				}
-				if (ch === quote) {
-					quote = "";
-				}
-				continue;
-			}
-			if (ch === "\"" || ch === "'" || ch === "`") {
-				quote = ch;
-				continue;
-			}
-			if (ch === "{") {
-				brace++;
-			} else if (ch === "}") {
-				brace--;
-				if (brace === 0) {
-					return i;
-				}
-			}
-		}
-		return -1;
+		return blockCodeSourceService().balancedObjectEnd(text, open);
 	}
 
 	function extractFlowScriptBlockMeta(code) {
-		var text = String(code || "");
-		var match = text.match(/\b(?:const|let|var)\s+_meta\s*=/);
-		if (!match) {
-			return { meta: {}, code: text };
-		}
-		var start = text.indexOf("{", match.index);
-		if (start < 0) {
-			raise("INVALID_BLOCK_CODE", "FlowScript block _meta must be an object literal.");
-		}
-		var end = balancedObjectEnd(text, start);
-		if (end < 0) {
-			raise("INVALID_BLOCK_CODE", "Unclosed FlowScript block _meta object literal.");
-		}
-		var metaText = text.substring(start, end + 1);
-		var rest = text.substring(0, match.index) + text.substring(end + 1).replace(/^\s*;\s*/, "");
-		return {
-			meta: parseFlowScriptObjectLiteral(metaText, 1).value,
-			code: rest
-		};
+		return blockCodeSourceService().extractMeta(code, blockCodeSourceEnv());
 	}
 
 	function unwrapFlowScriptBlockEnvelope(code) {
-		var text = String(code || "").trim();
-		var header = text.match(/^block\s+[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\([^)]*\)\s*\{/);
-		if (!header) {
-			return text;
-		}
-		var open = header[0].length - 1;
-		var close = text.lastIndexOf("}");
-		if (close <= open) {
-			return text;
-		}
-		return text.substring(open + 1, close).trim();
+		return blockCodeSourceService().unwrapFlowScriptBlockEnvelope(code);
 	}
 
 	function flowScriptBlockFunctionName(name) {
-		return safeIdentifier(blockLocalName(name) || name || "block");
+		return blockCodeSourceService().flowScriptBlockFunctionName(name, blockCodeSourceEnv());
 	}
 
 	function normalizeFlowScriptFunctionSyntax(code) {
-		return String(code || "").replace(/(^|\n)(\s*)(?:export\s+(?:default\s+)?)?(?:(?:public|private)\s+)?(?:async\s+)?(flow|function)\s+/g, "$1$2$3 ");
+		return blockCodeSourceService().normalizeFlowScriptFunctionSyntax(code);
 	}
 
 	function blockCodeRuntimeFromMeta(meta) {
-		meta = normalizeTree(meta || {});
-		var implementation = normalizeTree(meta.implementation || {});
-		return String(meta.runtime || meta.implementationRuntime || implementation.runtime || implementation.kind || "flow").trim() || "flow";
+		return blockCodeSourceService().blockCodeRuntimeFromMeta(meta, blockCodeSourceEnv());
 	}
 
 	function ensureFlowScriptBlockFunction(name, code) {
-		var body = normalizeFlowScriptFunctionSyntax(unwrapFlowScriptBlockEnvelope(code));
-		if (String(body).trim().match(/^(?:flow|function)\s+/)) {
-			return normalizeFlowScriptCode(body);
-		}
-		var indent = String(body || "").replace(/\s+$/g, "").split(/\r?\n/).map(function (line) {
-			return line ? "  " + line : "";
-		}).join("\n");
-		return normalizeFlowScriptCode("function " + flowScriptBlockFunctionName(name) + "({ input, config, result }) {\n" +
-			indent + "\n}\n");
+		return blockCodeSourceService().ensureFlowScriptBlockFunction(name, code, blockCodeSourceEnv());
 	}
 
 	function flowScriptBlockDescriptorFromMeta(name, meta, graphDefinition, code) {
@@ -2183,40 +2134,11 @@
 	}
 
 	function flowScriptBlockCodeSource(name, functionCode, meta) {
-		meta = normalizeTree(meta || {});
-		if (!meta.description) {
-			meta.description = "Project FlowScript block.";
-		}
-		if (!meta.icon) {
-			meta.icon = "mdi:puzzle-outline";
-		}
-		if (!meta.properties && !meta.props) {
-			meta.properties = {};
-		}
-		if (!meta.outputs && !meta.output) {
-			meta.outputs = { out: { type: "unknown" } };
-		}
-		delete meta.name;
-		return "const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + normalizeFlowScriptCode(functionCode);
+		return blockCodeSourceService().flowScriptBlockCodeSource(name, functionCode, meta, blockCodeSourceEnv());
 	}
 
 	function rhinoBlockCodeSource(name, source, meta) {
-		meta = normalizeTree(meta || {});
-		meta.runtime = "rhino";
-		if (!meta.description) {
-			meta.description = "Project Rhino block.";
-		}
-		if (!meta.icon) {
-			meta.icon = "mdi:language-javascript";
-		}
-		if (!meta.properties && !meta.props) {
-			meta.properties = {};
-		}
-		if (!meta.outputs && !meta.output) {
-			meta.outputs = { out: { type: "unknown" } };
-		}
-		delete meta.name;
-		return "const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + String(source || "").trim() + "\n";
+		return blockCodeSourceService().rhinoBlockCodeSource(name, source, meta, blockCodeSourceEnv());
 	}
 
 	function compileRhinoBlockCode(name, code, request) {
@@ -2327,43 +2249,19 @@
 	}
 
 	function escapeRegExp(text) {
-		return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		return blockCodeSourceService().escapeRegExp(text);
 	}
 
 	function renameBlockImplementationSource(source, fromName, toName) {
-		source = String(source || "");
-		var pattern = new RegExp("(\\bname\\s*:\\s*)([\"'])" + escapeRegExp(fromName) + "\\2", "g");
-		return source.replace(pattern, "$1$2" + String(toName) + "$2");
+		return blockCodeSourceService().renameBlockImplementationSource(source, fromName, toName);
 	}
 
 	function renameFlowScriptFunctionSource(source, fromName, toName) {
-		var fromFunction = blockFunctionName(fromName);
-		var toFunction = blockFunctionName(toName);
-		var pattern = new RegExp("(^\\s*(?:flow|function)\\s+)" + escapeRegExp(fromFunction) + "\\b", "m");
-		return String(source || "").replace(pattern, "$1" + toFunction);
+		return blockCodeSourceService().renameFlowScriptFunctionSource(source, fromName, toName, blockCodeSourceEnv());
 	}
 
 	function duplicateBlockCodeSource(source, fromName, toName, hasHooks) {
-		var extracted = extractFlowScriptBlockMeta(source);
-		var meta = normalizeTree(extracted.meta || {});
-		if (meta.name !== undefined) {
-			delete meta.name;
-		}
-		if (hasHooks) {
-			var hooks = meta.hooks;
-			if (typeof hooks === "string") {
-				hooks = { file: hooks };
-			}
-			hooks = normalizeTree(hooks || {});
-			hooks.file = blockHooksFileName(toName);
-			meta.hooks = hooks;
-		} else {
-			delete meta.hooks;
-		}
-		if (blockCodeRuntimeFromMeta(meta) === "rhino") {
-			return rhinoBlockCodeSource(toName, renameBlockImplementationSource(extracted.code, fromName, toName), meta);
-		}
-		return flowScriptBlockCodeSource(toName, renameFlowScriptFunctionSource(extracted.code, fromName, toName), meta);
+		return blockCodeSourceService().duplicateBlockCodeSource(source, fromName, toName, hasHooks, blockCodeSourceEnv());
 	}
 
 	function canonicalBlockDefinition(name, request) {
