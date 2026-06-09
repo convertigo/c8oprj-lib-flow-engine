@@ -993,146 +993,80 @@
 		};
 	}
 
+	function namingUtils() {
+		return loadEngineModule("naming-utils.js");
+	}
+
+	function namingEnv() {
+		return {
+			File: File,
+			canonicalPath: canonicalPath,
+			raise: raise
+		};
+	}
+
 	function resourcePath(baseDir, path) {
-		path = String(path || "").trim();
-		if (path === "") {
-			return "";
-		}
-		var file = new File(path);
-		if (!file.isAbsolute()) {
-			file = new File(baseDir, path);
-		}
-		return canonicalPath(file);
+		return namingUtils().resourcePath(baseDir, path, namingEnv());
 	}
 
 	function blockFileName(name) {
-		var blockName = blockLocalName(name);
-		if (!blockName.match(/^[A-Za-z0-9_-]+$/)) {
-			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return blockName + ".js";
+		return namingUtils().blockFileName(name, namingEnv());
 	}
 
 	function blockDescriptorFileName(name) {
-		var parts = blockIdParts(name);
-		if (parts.length === 0) {
-			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		var leaf = parts.pop();
-		return (parts.length ? parts.join("/") + "/" : "") + leaf + ".block.yaml";
+		return namingUtils().blockDescriptorFileName(name, namingEnv());
 	}
 
 	function blockCodeDescriptorFileName(name) {
-		var parts = blockIdParts(name);
-		if (parts.length === 0) {
-			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		var leaf = parts.pop();
-		return (parts.length ? parts.join("/") + "/" : "") + leaf + ".block.js";
+		return namingUtils().blockCodeDescriptorFileName(name, namingEnv());
 	}
 
 	function blockFlowFileName(name) {
-		var blockName = blockLocalName(name);
-		if (!blockName.match(/^[A-Za-z0-9_-]+$/)) {
-			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return blockName + ".flow.yaml";
+		return namingUtils().blockFlowFileName(name, namingEnv());
 	}
 
 	function blockHooksFileName(name) {
-		var blockName = blockLocalName(name);
-		if (!blockName.match(/^[A-Za-z0-9_-]+$/)) {
-			raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return blockName + ".hooks.js";
+		return namingUtils().blockHooksFileName(name, namingEnv());
 	}
 
 	function typeDescriptorFileName(name) {
-		var typeName = String(name || "").trim();
-		if (!typeName.match(/^[A-Za-z0-9_.-]+$/)) {
-			raise("INVALID_TYPE_NAME", "Invalid Flow property type name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return typeName + ".type.yaml";
+		return namingUtils().typeDescriptorFileName(name, namingEnv());
 	}
 
 	function flowFileName(name) {
-		var flowName = String(name || "").trim();
-		if (!flowName.match(/^[A-Za-z0-9_.-]+$/)) {
-			raise("INVALID_FLOW_NAME", "Invalid Flow name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return flowName + ".flow.yaml";
+		return namingUtils().flowFileName(name, namingEnv());
 	}
 
 	function flowCodeFileName(name) {
-		var flowName = String(name || "").trim();
-		if (!flowName.match(/^[A-Za-z0-9_.-]+$/)) {
-			raise("INVALID_FLOW_NAME", "Invalid Flow name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return flowName + ".flow.js";
+		return namingUtils().flowCodeFileName(name, namingEnv());
 	}
 
 	function flowCodeFileFromYamlFile(file, name) {
-		var path = String(file && file.getAbsolutePath ? file.getAbsolutePath() : file || "");
-		if (path.endsWith(".flow.yaml")) {
-			return new File(path.substring(0, path.length - ".flow.yaml".length) + ".flow.js");
-		}
-		if (file && file.getParentFile) {
-			return new File(file.getParentFile(), flowCodeFileName(name));
-		}
-		return new File(flowCodeFileName(name));
+		return namingUtils().flowCodeFileFromYamlFile(file, name, namingEnv());
 	}
 
 	function fragmentFileName(name) {
-		var fragmentName = String(name || "").trim();
-		if (!fragmentName.match(/^[A-Za-z0-9_.-]+$/)) {
-			raise("INVALID_FRAGMENT_NAME", "Invalid Flow fragment name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return fragmentName + ".fragment.yaml";
+		return namingUtils().fragmentFileName(name, namingEnv());
 	}
 
 	function safeFilePart(value) {
-		return String(value || "").trim().replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
+		return namingUtils().safeFilePart(value);
 	}
 
 	function blockIdParts(name) {
-		var text = String(name || "").trim();
-		if (!text.match(/^[A-Za-z0-9_.-]+$/)) {
-			return [];
-		}
-		return text.split(".").filter(function (part) {
-			return part && part.match(/^[A-Za-z0-9_-]+$/);
-		});
+		return namingUtils().blockIdParts(name);
 	}
 
 	function blockLocalName(name) {
-		var parts = blockIdParts(name);
-		return parts.length ? parts[parts.length - 1] : "";
+		return namingUtils().blockLocalName(name);
 	}
 
 	function blockNamespace(name) {
-		var parts = blockIdParts(name);
-		parts.pop();
-		return parts.join(".");
+		return namingUtils().blockNamespace(name);
 	}
 
 	function flowNameFor(request, definition) {
-		request = request || {};
-		definition = definition || {};
-		var name = String(request.flowName || request.name || definition.name || "").trim();
-		if (!name && request.flowQName) {
-			var parts = String(request.flowQName).split(".");
-			name = parts[parts.length - 1];
-		}
-		return safeFilePart(name);
+		return namingUtils().flowNameFor(request, definition);
 	}
 
 	function schemaStoreService() {
