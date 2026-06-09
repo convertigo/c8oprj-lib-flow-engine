@@ -2774,347 +2774,125 @@
 		return toYamlSource(normalized);
 	}
 
+	function flowScriptRendererService() {
+		return loadEngineModule("flow-script-renderer-service.js");
+	}
+
+	function flowScriptRendererEnv() {
+		return {
+			File: File,
+			FileUtils: FileUtils,
+			normalizeTree: normalizeTree,
+			flowScriptPropKind: flowScriptPropKind,
+			blockName: blockName,
+			childSlotNamesForMutation: childSlotNamesForMutation,
+			parseSource: parseSource,
+			analyzeFlowDefinition: analyzeFlowDefinition,
+			safeIdentifier: safeIdentifier,
+			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
+			projectFlowCodeFile: projectFlowCodeFile,
+			flowCodeFileFromYamlFile: flowCodeFileFromYamlFile,
+			sourceForWriteRequest: sourceForWriteRequest,
+			sha256Hex: sha256Hex,
+			sourceFromDefinition: sourceFromDefinition,
+			flowScriptValidateRequest: flowScriptValidateRequest
+		};
+	}
+
 	function flowScriptString(value) {
-		if (value === undefined) {
-			return "null";
-		}
-		return JSON.stringify(normalizeTree(value));
+		return flowScriptRendererService().flowScriptString(value, flowScriptRendererEnv());
 	}
 
 	function flowScriptInlineValue(value) {
-		value = normalizeTree(value);
-		if (value && typeof value === "object") {
-			return JSON.stringify(value);
-		}
-		return flowScriptString(value);
+		return flowScriptRendererService().flowScriptInlineValue(value, flowScriptRendererEnv());
 	}
 
 	function flowScriptLocalName(path) {
-		var match = String(path || "").match(/^local\.([A-Za-z_$][\w$]*)$/);
-		return match ? match[1] : "";
+		return flowScriptRendererService().flowScriptLocalName(path);
 	}
 
 	function flowScriptScopeAssignmentPath(path) {
-		var text = String(path || "");
-		return text.match(/^(local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/) ? text : "";
+		return flowScriptRendererService().flowScriptScopeAssignmentPath(path);
 	}
 
 	function renderFlowScriptExpression(expr, locals) {
-		if (expr !== undefined && expr !== null && typeof expr !== "string") {
-			return flowScriptInlineValue(expr);
-		}
-		expr = String(expr || "").trim();
-		var exact = expr.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
-		if (exact) {
-			expr = exact[1].trim();
-		}
-		Object.keys(locals || {}).sort(function (a, b) {
-			return b.length - a.length;
-		}).forEach(function (name) {
-			var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])local\\." + escaped + "(?=\\b|\\.)", "g"), "$1" + name);
-		});
-		return expr;
+		return flowScriptRendererService().renderFlowScriptExpression(expr, locals, flowScriptRendererEnv());
 	}
 
 	function renderFlowScriptTemplate(text, locals) {
-		return String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expr) {
-			return "{{ " + renderFlowScriptExpression(expr, locals) + " }}";
-		});
+		return flowScriptRendererService().renderFlowScriptTemplate(text, locals, flowScriptRendererEnv());
 	}
 
 	function flowScriptTemplateLiteralPart(text) {
-		return String(text || "")
-			.replace(/\\/g, "\\\\")
-			.replace(/`/g, "\\`")
-			.replace(/\$\{/g, "\\${");
+		return flowScriptRendererService().flowScriptTemplateLiteralPart(text);
 	}
 
 	function renderFlowScriptTemplateLiteral(text, locals) {
-		var out = "`";
-		var index = 0;
-		String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (match, expr, offset) {
-			out += flowScriptTemplateLiteralPart(String(text).substring(index, offset));
-			out += "${" + renderFlowScriptExpression(expr, locals) + "}";
-			index = offset + match.length;
-			return match;
-		});
-		out += flowScriptTemplateLiteralPart(String(text || "").substring(index));
-		return out + "`";
+		return flowScriptRendererService().renderFlowScriptTemplateLiteral(text, locals, flowScriptRendererEnv());
 	}
 
 	function renderFlowScriptValue(blocks, node, key, value, locals) {
-		var kind = flowScriptPropKind(blocks, blockName(node), key);
-		if (kind === "expression") {
-			return renderFlowScriptExpression(value, locals);
-		}
-		if (kind === "template" || kind === "value") {
-			if (typeof value === "string") {
-				var exact = value.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
-				if (exact) {
-					return renderFlowScriptExpression(exact[1], locals);
-				}
-				if (value.indexOf("{{") !== -1) {
-					return renderFlowScriptTemplateLiteral(value, locals);
-				}
-				return JSON.stringify(value);
-			}
-		}
-		return flowScriptInlineValue(value);
+		return flowScriptRendererService().renderFlowScriptValue(blocks, node, key, value, locals, flowScriptRendererEnv());
 	}
 
 	function flowScriptArgKeys(node, slotNames) {
-		var skip = {
-			block: true, props: true, nodes: true, then: true, "else": true, fields: true,
-			__fragment: true, __graphBlock: true, __flowScriptLine: true
-		};
-		(slotNames || []).forEach(function (slot) {
-			skip[slot] = true;
-		});
-		return Object.keys(node || {}).filter(function (key) {
-			return !skip[key] && node[key] !== undefined && typeof node[key] !== "function";
-		});
+		return flowScriptRendererService().flowScriptArgKeys(node, slotNames);
 	}
 
 	function flowScriptSlotNames(blocks, node) {
-		var names = childSlotNamesForMutation(blocks, node);
-		["nodes", "then", "else", "fields"].forEach(function (name) {
-			if (Object.prototype.toString.call(node && node[name]) === "[object Array]" && names.indexOf(name) === -1) {
-				names.push(name);
-			}
-		});
-		return names;
+		return flowScriptRendererService().flowScriptSlotNames(blocks, node, flowScriptRendererEnv());
 	}
 
 	function defaultFlowScriptSlot(blocks, node) {
-		var slots = flowScriptSlotNames(blocks, node);
-		if (slots.indexOf("nodes") !== -1) {
-			return "nodes";
-		}
-		if (slots.indexOf("then") !== -1) {
-			return "then";
-		}
-		if (slots.indexOf("fields") !== -1) {
-			return "fields";
-		}
-		return slots.length ? slots[0] : "";
+		return flowScriptRendererService().defaultFlowScriptSlot(blocks, node, flowScriptRendererEnv());
 	}
 
 	function flowScriptCallLine(blocks, node, indent, locals) {
-		locals = locals || {};
-		var block = String(blockName(node) || node.block || "unknown.block");
-		if (block === "if") {
-			return indent + "if (" + renderFlowScriptExpression(node && node.condition || "true", locals) + ")";
-		}
-		if (block === "return") {
-			return indent + "return " + renderFlowScriptValue(blocks, node, "value", node && node.value, locals);
-		}
-		var outLocal = flowScriptLocalName(node && node.out);
-		if (block === "set" && flowScriptScopeAssignmentPath(node && node.path)) {
-			var assignmentPath = String(node.path);
-			if (assignmentPath.indexOf("local.") === 0) {
-				var localName = flowScriptLocalName(assignmentPath);
-				if (localName) {
-					var rendered = renderFlowScriptValue(blocks, node, "value", node.value, locals);
-					locals[localName] = true;
-					return indent + "var " + localName + " = " + rendered;
-				}
-			}
-			return indent + assignmentPath + " = " + renderFlowScriptValue(blocks, node, "value", node.value, locals);
-		}
-		var slotNames = flowScriptSlotNames(blocks, node);
-		var args = {};
-		flowScriptArgKeys(node, slotNames).forEach(function (key) {
-			if (key === "out" && outLocal) {
-				return;
-			}
-			args[key] = node[key];
-		});
-		var parts = Object.keys(args).map(function (key) {
-			return key + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals);
-		});
-		var call = block + "({ " + parts.join(", ") + " })";
-		if (outLocal) {
-			locals[outLocal] = true;
-			return indent + "var " + outLocal + " = " + call;
-		}
-		return indent + call;
+		return flowScriptRendererService().flowScriptCallLine(blocks, node, indent, locals, flowScriptRendererEnv());
 	}
 
 	function flowScriptHasTopLevelReturn(nodes) {
-		return (nodes || []).some(function (node) {
-			return blockName(node) === "return";
-		});
+		return flowScriptRendererService().flowScriptHasTopLevelReturn(nodes, flowScriptRendererEnv());
 	}
 
 	function renderFlowScriptNodes(blocks, nodes, depth, lines, locals) {
-		locals = locals || {};
-		var indent = new Array(depth + 1).join("  ");
-		(nodes || []).forEach(function (node) {
-			var defaultSlot = defaultFlowScriptSlot(blocks, node);
-			var renderedChildren = defaultSlot && Object.prototype.toString.call(node[defaultSlot]) === "[object Array]" && node[defaultSlot].length > 0;
-			var line = flowScriptCallLine(blocks, node, indent, locals);
-			if (renderedChildren) {
-				lines.push(line + " {");
-				renderFlowScriptNodes(blocks, node[defaultSlot], depth + 1, lines, Object.assign({}, locals));
-				lines.push(indent + "}");
-			} else {
-				lines.push(line);
-			}
-			if (blockName(node) === "if" && Object.prototype.toString.call(node["else"]) === "[object Array]" && node["else"].length > 0) {
-				lines[lines.length - 1] = lines[lines.length - 1] + " else {";
-				renderFlowScriptNodes(blocks, node["else"], depth + 1, lines, Object.assign({}, locals));
-				lines.push(indent + "}");
-			}
-		});
+		return flowScriptRendererService().renderFlowScriptNodes(blocks, nodes, depth, lines, locals, flowScriptRendererEnv());
 	}
 
 	function renderFlowScript(blocks, name, flowSource, request) {
-		request = request || {};
-		var definition = parseSource(flowSource);
-		var lines = [];
-		if (request.includeHeader !== false) {
-			lines.push("// c8o: FlowScript spike. Function calls are Flow blocks; named arguments are block properties.");
-			lines.push("// c8o: Patch with the returned revision. The engine validates and compiles this code back to Flow YAML.");
-		}
-		if (request.includeContext === true) {
-			var analysis = analyzeFlowDefinition(blocks, definition, request);
-			var paths = [];
-			(analysis.paths || []).slice(0, 30).forEach(function (path) {
-				paths.push(typeof path === "string" ? path : path.path);
-			});
-			if (paths.length) {
-				lines.push("// c8o: Known paths: " + paths.join(", "));
-			}
-		}
-		if (lines.length) {
-			lines.push("");
-		}
-		lines.push("function " + safeIdentifier(name || "Flow") + "({ input, config, result }) {");
-		renderFlowScriptNodes(blocks, definition.nodes || [], 1, lines, {});
-		if (request.includeImplicitReturn !== false && !flowScriptHasTopLevelReturn(definition.nodes || [])) {
-			lines.push("  return result");
-		}
-		lines.push("}");
-		lines.push("");
-		return lines.join("\n");
+		return flowScriptRendererService().renderFlowScript(blocks, name, flowSource, request, flowScriptRendererEnv());
 	}
 
 	function normalizeFlowScriptCode(code) {
-		code = normalizeFlowScriptFunctionSyntax(code).replace(/\s+$/g, "");
-		return code + "\n";
+		return flowScriptRendererService().normalizeFlowScriptCode(code, flowScriptRendererEnv());
 	}
 
 	function stripFlowScriptMirrorHeader(code) {
-		var lines = String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-		if (!lines.length || lines[0].indexOf("// c8o-flow: generated FlowScript mirror") !== 0) {
-			return String(code || "");
-		}
-		while (lines.length && String(lines[0]).indexOf("// c8o-flow:") === 0) {
-			lines.shift();
-		}
-		if (lines.length && String(lines[0]).trim() === "") {
-			lines.shift();
-		}
-		return lines.join("\n");
+		return flowScriptRendererService().stripFlowScriptMirrorHeader(code);
 	}
 
 	function flowScriptMirrorCode(blocks, name, source, args) {
-		args = args || {};
-		var code = args.code !== undefined && args.code !== null
-			? String(args.code)
-			: renderFlowScript(blocks, name, source, { includeHeader: false });
-		return normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
+		return flowScriptRendererService().flowScriptMirrorCode(blocks, name, source, args, flowScriptRendererEnv());
 	}
 
 	function writeProjectFlowCodeMirror(blocks, name, source, args) {
-		args = args || {};
-		if (args.flowCodeMirror === false || args.mirrorCode === false || args.saveCode === false) {
-			return null;
-		}
-		return writeFlowCodeMirrorFile(blocks, name, source, projectFlowCodeFile(name), args);
+		return flowScriptRendererService().writeProjectFlowCodeMirror(blocks, name, source, args, flowScriptRendererEnv());
 	}
 
 	function writeProjectFlowCodeCanonical(blocks, name, source, args) {
-		args = args || {};
-		var file = projectFlowCodeFile(name);
-		file.getParentFile().mkdirs();
-		var code = flowScriptMirrorCode(blocks, name, source, args);
-		FileUtils.writeStringToFile(file, code, "UTF-8");
-		return {
-			file: String(file.getAbsolutePath()),
-			code: code,
-			revision: sha256Hex(code)
-		};
+		return flowScriptRendererService().writeProjectFlowCodeCanonical(blocks, name, source, args, flowScriptRendererEnv());
 	}
 
 	function writeFlowCodeMirrorFile(blocks, name, source, file, args) {
-		args = args || {};
-		if (args.flowCodeMirror === false || args.mirrorCode === false || args.saveCode === false) {
-			return null;
-		}
-		file.getParentFile().mkdirs();
-		var code = flowScriptMirrorCode(blocks, name, source, args);
-		FileUtils.writeStringToFile(file, code, "UTF-8");
-		return {
-			file: String(file.getAbsolutePath()),
-			code: code,
-			revision: sha256Hex(code)
-		};
+		return flowScriptRendererService().writeFlowCodeMirrorFile(blocks, name, source, file, args, flowScriptRendererEnv());
 	}
 
 	function writeFlowCodeMirrorRequest(request, blocks) {
-		request = request || {};
-		var source = sourceForWriteRequest(request, request.source || request.flowSource);
-		source = sourceFromDefinition(parseSource(source));
-		var name = String(request.name || request.flowName || "Flow");
-		var sourceFile = request.sourceFile ? new File(String(request.sourceFile)) : null;
-		var codeFile = request.codeFile ? new File(String(request.codeFile))
-			: (sourceFile ? flowCodeFileFromYamlFile(sourceFile, name) : projectFlowCodeFile(name));
-		var mirror = writeFlowCodeMirrorFile(blocks, name, source, codeFile, request);
-		return {
-			ok: true,
-			name: name,
-			sourceFile: sourceFile ? String(sourceFile.getAbsolutePath()) : "",
-			codeFile: mirror ? mirror.file : "",
-			codeRevision: mirror ? mirror.revision : ""
-		};
+		return flowScriptRendererService().writeFlowCodeMirrorRequest(request, blocks, flowScriptRendererEnv());
 	}
 
 	function flowScriptCodeFromMirror(blocks, name, source, request) {
-		request = request || {};
-		var file = projectFlowCodeFile(name);
-		if (request.useMirror !== false && file.isFile()) {
-			var code = String(FileUtils.readFileToString(file, "UTF-8"));
-			try {
-				var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
-					name: name,
-					code: code
-				}));
-				if (validation.ok && sha256Hex(validation.source) === sha256Hex(sourceFromDefinition(parseSource(source)))) {
-					return {
-						code: code,
-						file: String(file.getAbsolutePath()),
-						fromMirror: true,
-						stale: false
-					};
-				}
-			} catch (e) {
-				// A broken mirror must not hide the canonical Flow YAML.
-			}
-			return {
-				code: renderFlowScript(blocks, name, source, request),
-				file: String(file.getAbsolutePath()),
-				fromMirror: false,
-				stale: true
-			};
-		}
-		return {
-			code: renderFlowScript(blocks, name, source, request),
-			file: file.isFile() ? String(file.getAbsolutePath()) : "",
-			fromMirror: false,
-			stale: false
-		};
+		return flowScriptRendererService().flowScriptCodeFromMirror(blocks, name, source, request, flowScriptRendererEnv());
 	}
 
 	function safeIdentifier(value) {
