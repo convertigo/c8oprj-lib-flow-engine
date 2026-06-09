@@ -67,14 +67,14 @@ assertTrue(catalog.blocks.some(function (block) {
 		block.provider === "lib_flow_engine" && block.origin === "core";
 }), "catalog did not expose package/namespace metadata");
 var coreSetBlock = JSON.parse(engine.blockGet(JSON.stringify({
-	name: "set"
+	name: "set",
+	detail: "full"
 })));
-assertTrue(coreSetBlock.format === "canonical" &&
-	String(coreSetBlock.descriptorFile).indexOf("set.block.yaml") !== -1 &&
-	String(coreSetBlock.implementationFile).indexOf("set.js") !== -1 &&
-	coreSetBlock.descriptorSource.indexOf("Writes a value to a scope path.") !== -1 &&
+assertTrue(coreSetBlock.format === "blockjs" &&
+	String(coreSetBlock.codeFile).indexOf("set.block.js") !== -1 &&
+	coreSetBlock.code.indexOf("Writes a value to a scope path.") !== -1 &&
 	coreSetBlock.implementationSource.indexOf("catalog: function") === -1,
-	"core set block is not exposed as canonical descriptor plus implementation");
+	"core set block is not exposed as canonical Flow block code");
 var expressionType = catalog.types.filter(function (type) {
 	return type.name === "expression";
 })[0];
@@ -128,37 +128,36 @@ var createdResourceBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	implementationSource: resourceBlockImplementationSource
 })));
 assertTrue(createdResourceBlock.blockId === "resource.echo", "blockCreate did not prepare a resource block");
-assertTrue(new java.io.File(projectDirFile, "libs/flow/blocks/resource/echo.block.yaml").isFile() &&
-	new java.io.File(projectDirFile, "libs/flow/blocks/resource/echo.js").isFile(),
-	"blockCreate did not write the canonical descriptor plus implementation files");
+assertTrue(new java.io.File(projectDirFile, "libs/flow/blocks/resource/echo.block.js").isFile(),
+	"blockCreate did not write the canonical block code file");
 var createdResourceBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
-	name: "resource.echo"
+	name: "resource.echo",
+	detail: "full"
 })));
-assertTrue(createdResourceBlockGet.format === "canonical" &&
-	createdResourceBlockGet.descriptorSource.indexOf("Resource smoke block.") !== -1 &&
+assertTrue(createdResourceBlockGet.format === "blockjs" &&
+	createdResourceBlockGet.code.indexOf("Resource smoke block.") !== -1 &&
 	createdResourceBlockGet.implementationSource.indexOf("return \"ok\"") !== -1,
-	"blockGet did not expose canonical descriptor and implementation sources");
+	"blockGet did not expose canonical block code sources");
 var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	query: "Resource smoke",
 	doc: false,
 	hints: false
 })));
 assertTrue(resourceSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/blocks/resource/echo.block.yaml";
+	return resource.path === "libs/flow/blocks/resource/echo.block.js";
 }), "resourceSearch did not find the project block source");
 var resourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/blocks/resource/echo.js"
+	path: "libs/flow/blocks/resource/echo.block.js"
 })));
 assertTrue(resourceGet.hash && resourceGet.content.indexOf("return \"ok\";") !== -1,
 	"resourceGet did not return content and hash");
 var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
-	path: "libs/flow/blocks/resource/echo.js",
+	path: "libs/flow/blocks/resource/echo.block.js",
 	baseHash: resourceGet.hash,
 	patch: [
-		"--- a/libs/flow/blocks/resource/echo.js",
-		"+++ b/libs/flow/blocks/resource/echo.js",
-		"@@ -2,6 +2,6 @@",
-		" \treturn {",
+		"--- a/libs/flow/blocks/resource/echo.block.js",
+		"+++ b/libs/flow/blocks/resource/echo.block.js",
+		"@@ -13,7 +13,7 @@",
 		" \t\trun: function () {",
 		"-\t\t\treturn \"ok\";",
 		"+\t\t\treturn \"patched ok\";",
@@ -170,7 +169,7 @@ var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
 assertTrue(resourcePatch.ok === true && resourcePatch.changed === true && resourcePatch.validation.ok === true,
 	"resourcePatch did not patch and validate the project block source");
 var patchedResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/blocks/resource/echo.js"
+	path: "libs/flow/blocks/resource/echo.block.js"
 })));
 assertTrue(patchedResourceGet.content.indexOf("patched ok") !== -1,
 	"resourcePatch did not persist the patched source");
@@ -203,7 +202,7 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: readResource",
 		"    block: resource.get",
-		"    path: libs/flow/blocks/resource/echo.js",
+		"    path: libs/flow/blocks/resource/echo.block.js",
 		"    out: result.resource",
 		""
 	].join("\n"),
@@ -226,7 +225,7 @@ var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 assertTrue(resourceSearchRun.result.search.resources.some(function (resource) {
-	return resource.path === "libs/flow/blocks/resource/echo.js";
+	return resource.path === "libs/flow/blocks/resource/echo.block.js";
 }), "resource.search block did not find project Flow resources");
 var docsDir = new java.io.File(projectDirFile, "libs/flow/resources/guide");
 docsDir.mkdirs();
@@ -304,8 +303,9 @@ canonicalCatalog.blocks.forEach(function (block) {
 		canonicalBlock = block;
 	}
 });
+var canonicalProps = canonicalBlock ? canonicalBlock.props || canonicalBlock.properties || {} : {};
 assertTrue(canonicalBlock && canonicalBlock.implementation === "rhino" &&
-	canonicalBlock.props.value.kind === "value",
+	canonicalProps.value && canonicalProps.value.kind === "value",
 	"catalog did not expose canonical YAML metadata for a Rhino block");
 var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
@@ -321,41 +321,44 @@ var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(canonicalRun.result.message === "Hello canonical",
 	"canonical YAML Rhino block did not execute through its implementation file");
-var flowBackedDescriptorSource = [
-	"version: 1",
-	"name: smoke.flowBacked",
-	"description: Canonical YAML descriptor backed by Flow nodes.",
-	"props:",
-	"  value:",
-	"    kind: value",
-	"    type: unknown",
-	"implementation:",
-	"  runtime: flow",
-	"  file: flowBacked.flow.yaml",
+var flowBackedCodeSource = [
+	"const _meta = {",
+	"\t\"description\": \"FlowScript block backed by Flow nodes.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {",
+	"\t\t\"value\": {",
+	"\t\t\t\"kind\": \"value\",",
+	"\t\t\t\"type\": \"unknown\"",
+	"\t\t}",
+	"\t},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": {",
+	"\t\t\t\"type\": \"unknown\"",
+	"\t\t}",
+	"\t}",
+	"}",
+	"",
+	"function flowBacked({ input, config, result }) {",
+	"\treturn input.value",
+	"}",
 	""
 ].join("\n");
-var flowBackedImplementationSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: done",
-	"    block: return",
-	"    value: \"{{ input.value }}\"",
-	""
-].join("\n");
-var createdFlowBackedBlock = JSON.parse(engine.blockCreate(JSON.stringify({
+var createdFlowBackedBlock = JSON.parse(engine.blockCodeSet(JSON.stringify({
 	name: "smoke.flowBacked",
-	descriptorSource: flowBackedDescriptorSource,
-	implementationSource: flowBackedImplementationSource
+	code: flowBackedCodeSource
 })));
-assertTrue(createdFlowBackedBlock.blockId === "smoke.flowBacked" &&
-	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.block.yaml").isFile() &&
-	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.flow.yaml").isFile(),
-	"blockCreate did not write descriptor plus Flow implementation files");
+assertTrue(createdFlowBackedBlock.ok === true &&
+	createdFlowBackedBlock.block && createdFlowBackedBlock.block.blockId === "smoke.flowBacked" &&
+	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.block.js").isFile(),
+	"blockCreate did not write the canonical FlowScript block code file");
 var flowBackedBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
-	name: "smoke.flowBacked"
+	name: "smoke.flowBacked",
+	detail: "full"
 })));
 assertTrue(flowBackedBlockGet.implementationRuntime === "flow" &&
-	flowBackedBlockGet.implementationSource.indexOf("block: return") !== -1,
+	flowBackedBlockGet.format === "flowscript" &&
+	flowBackedBlockGet.code.indexOf("function flowBacked") !== -1 &&
+	flowBackedBlockGet.implementationSource.indexOf("block: \"return\"") !== -1,
 	"blockGet did not expose Flow implementation source");
 var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
@@ -554,6 +557,7 @@ assertTrue(resourceLibSearch.resources.some(function (resource) {
 	return resource.path === "libs/flow/fragments/DecorateMessage.fragment.yaml";
 }), "resourceSearch did not include project Flow fragments");
 var propertyEditor = JSON.parse(engine.propertyEditor("{}"));
+var propertyEditorCompactHtml = propertyEditor.html.replace(/\s+/g, "");
 assertTrue(propertyEditor.ok === true && propertyEditor.html.indexOf("receiveFromJava") !== -1,
 	"propertyEditor did not expose the web editor host");
 assertTrue(propertyEditor.html.indexOf("flow-requestable-editor") !== -1 &&
@@ -566,15 +570,15 @@ assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-literal-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-text-editor") !== -1,
 	"propertyEditor did not embed core standalone editors");
-assertTrue(propertyEditor.html.indexOf("hostRequest(name,payload)") !== -1 &&
-	propertyEditor.html.indexOf("typeEditorTag(kind)") !== -1,
+assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
+	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
 	"propertyEditor did not expose generic type editor host API");
 assertTrue(propertyEditor.html.indexOf("data-picker-property-button") !== -1 &&
 	propertyEditor.html.indexOf("data-picker-editor") !== -1 &&
 	propertyEditor.html.indexOf("data-apply-picked") !== -1 &&
 	propertyEditor.html.indexOf("data-cancel-picked") !== -1,
 	"propertyEditor did not expose picker target property apply actions");
-assertTrue(propertyEditor.html.indexOf("target&&hasTypeEditor(pickerKind(target))") !== -1 &&
+assertTrue(propertyEditorCompactHtml.indexOf("target&&hasTypeEditor(pickerKind(target))") !== -1 &&
 	propertyEditor.html.indexOf("pickerUpdatingEditor") !== -1,
 	"propertyEditor did not route picker properties through standalone type editors");
 assertTrue(propertyEditor.html.indexOf("details.scopeGroup") !== -1 &&
