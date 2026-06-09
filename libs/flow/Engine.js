@@ -1364,183 +1364,79 @@
 		return flowLibraryService().projectRootFromFlowDir(flowDir, flowLibraryServiceEnv());
 	}
 
+	function catalogLoaderService() {
+		return loadEngineModule("catalog-loader-service.js");
+	}
+
+	function catalogLoaderEnv() {
+		return {
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			engineDir: engineDir,
+			projectDir: projectDir,
+			projectBlocksDir: projectBlocksDir,
+			projectTypesDir: projectTypesDir,
+			resourceRelativePath: resourceRelativePath,
+			resourceName: resourceName,
+			canonicalPath: canonicalPath,
+			directoryFingerprint: directoryFingerprint,
+			readRuntimeCache: readRuntimeCache,
+			writeRuntimeCache: writeRuntimeCache,
+			flowProviderName: flowProviderName,
+			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
+			loadGraphBlockFile: loadGraphBlockFile,
+			reserveFlowScriptBlockFile: reserveFlowScriptBlockFile,
+			reserveGraphBlockFile: reserveGraphBlockFile,
+			validateTypeDescriptorSource: validateTypeDescriptorSource,
+			raise: raise,
+			blockCache: runtimeState.caches.blocks,
+			typeCache: runtimeState.caches.types
+		};
+	}
+
 	function blockIdFromDescriptorFile(file, blocksDir) {
-		var relative = resourceRelativePath(blocksDir, file);
-		if (!relative || (!String(relative).endsWith(".block.yaml") && !String(relative).endsWith(".block.js"))) {
-			return "";
-		}
-		relative = String(relative);
-		relative = relative.endsWith(".block.yaml")
-			? relative.substring(0, relative.length - ".block.yaml".length)
-			: relative.substring(0, relative.length - ".block.js".length);
-		return relative.replace(/\//g, ".");
+		return catalogLoaderService().blockIdFromDescriptorFile(file, blocksDir, catalogLoaderEnv());
 	}
 
 	function loadBlockDir(blocks, blocksDir, origin, provider) {
-		var files = blocksDir.listFiles();
-		if (!files) {
-			return;
-		}
-		files = Arrays.asList(files).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		files.forEach(function (file) {
-			if (file.isDirectory()) {
-				loadBlockDir(blocks, file, origin, provider);
-				return;
-			}
-			if (!file.isFile()) {
-				return;
-			}
-			var base = origin === "core" ? new File(engineDir(), "blocks") : projectBlocksDir();
-			if (String(file.getName()).endsWith(".block.js")) {
-				loadFlowScriptBlockFile(blocks, file, origin, provider, base);
-				return;
-			}
-			if (String(file.getName()).endsWith(".block.yaml")) {
-				var peer = new File(String(file.getAbsolutePath()).substring(0,
-					String(file.getAbsolutePath()).length - ".block.yaml".length) + ".block.js");
-				if (peer.isFile()) {
-					return;
-				}
-				loadGraphBlockFile(blocks, file, origin, provider, base);
-			}
-		});
+		return catalogLoaderService().loadBlockDir(blocks, blocksDir, origin, provider, catalogLoaderEnv());
 	}
 
 	function reserveBlockDir(blocks, blocksDir, origin, provider) {
-		var files = blocksDir.listFiles();
-		if (!files) {
-			return;
-		}
-		files = Arrays.asList(files).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		files.forEach(function (file) {
-			if (file.isDirectory()) {
-				reserveBlockDir(blocks, file, origin, provider);
-				return;
-			}
-			if (!file.isFile()) {
-				return;
-			}
-			var base = origin === "core" ? new File(engineDir(), "blocks") : projectBlocksDir();
-			if (String(file.getName()).endsWith(".block.js")) {
-				reserveFlowScriptBlockFile(blocks, file, origin, provider, base);
-				return;
-			}
-			if (String(file.getName()).endsWith(".block.yaml")) {
-				var peer = new File(String(file.getAbsolutePath()).substring(0,
-					String(file.getAbsolutePath()).length - ".block.yaml".length) + ".block.js");
-				if (!peer.isFile()) {
-					reserveGraphBlockFile(blocks, file, origin, provider, base);
-				}
-			}
-		});
+		return catalogLoaderService().reserveBlockDir(blocks, blocksDir, origin, provider, catalogLoaderEnv());
 	}
 
 	function blocksCacheKey() {
-		var coreBlocksDir = new File(engineDir(), "blocks");
-		var key = [
-			"engine", canonicalPath(engineDir()),
-			"core", directoryFingerprint(coreBlocksDir)
-		];
-		var localBlocksDir = projectBlocksDir();
-		if (localBlocksDir && canonicalPath(localBlocksDir) !== canonicalPath(coreBlocksDir)) {
-			key.push("project", canonicalPath(projectDir()), directoryFingerprint(localBlocksDir));
-		}
-		return key.join("\n");
+		return catalogLoaderService().blocksCacheKey(catalogLoaderEnv());
 	}
 
 	function loadBlocksUncached() {
-		var blocks = {};
-		var coreBlocksDir = new File(engineDir(), "blocks");
-		reserveBlockDir(blocks, coreBlocksDir, "core", flowProviderName(engineDir(), "lib_flow_engine"));
-		loadBlockDir(blocks, coreBlocksDir, "core", flowProviderName(engineDir(), "lib_flow_engine"));
-		var localBlocksDir = projectBlocksDir();
-		if (localBlocksDir && canonicalPath(localBlocksDir) !== canonicalPath(coreBlocksDir)) {
-			reserveBlockDir(blocks, localBlocksDir, "project",
-				flowProviderName(new File(projectDir(), "libs/flow"), "project"));
-			loadBlockDir(blocks, localBlocksDir, "project",
-				flowProviderName(new File(projectDir(), "libs/flow"), "project"));
-		}
-		return blocks;
+		return catalogLoaderService().loadBlocksUncached(catalogLoaderEnv());
 	}
 
 	function loadBlocks() {
-		var cache = runtimeState.caches.blocks;
-		var key = blocksCacheKey();
-		var cached = readRuntimeCache(cache, key);
-		if (cached) {
-			return cached;
-		}
-		return writeRuntimeCache(cache, key, loadBlocksUncached(), "blocks for " + (projectDir() ? canonicalPath(projectDir()) : "no project"));
+		return catalogLoaderService().loadBlocks(catalogLoaderEnv());
 	}
 
 	function loadTypeDescriptorFile(types, file, origin) {
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var type = validateTypeDescriptorSource(resourceName(file.getName()), source);
-		if (types[type.name]) {
-			raise("DUPLICATE_TYPE", "Duplicate Flow property type: " + type.name,
-				null, "Rename the project type or remove the duplicate.");
-		}
-		type.__flowOrigin = origin;
-		type.__flowFile = file.getAbsolutePath();
-		types[type.name] = type;
-		return type;
+		return catalogLoaderService().loadTypeDescriptorFile(types, file, origin, catalogLoaderEnv());
 	}
 
 	function loadTypeDir(types, typesDir, origin) {
-		var files = typesDir && typesDir.listFiles();
-		if (!files) {
-			return;
-		}
-		files = Arrays.asList(files).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		files.forEach(function (file) {
-			if (!file.isFile() || !String(file.getName()).endsWith(".type.yaml")) {
-				return;
-			}
-			loadTypeDescriptorFile(types, file, origin);
-		});
+		return catalogLoaderService().loadTypeDir(types, typesDir, origin, catalogLoaderEnv());
 	}
 
 	function typesCacheKey() {
-		var coreTypesDir = new File(engineDir(), "types");
-		var key = [
-			"engine", canonicalPath(engineDir()),
-			"core", directoryFingerprint(coreTypesDir)
-		];
-		var localTypesDir = projectTypesDir();
-		if (localTypesDir && canonicalPath(localTypesDir) !== canonicalPath(coreTypesDir)) {
-			key.push("project", canonicalPath(projectDir()), directoryFingerprint(localTypesDir));
-		}
-		return key.join("\n");
+		return catalogLoaderService().typesCacheKey(catalogLoaderEnv());
 	}
 
 	function loadTypesUncached() {
-		var types = {};
-		var coreTypesDir = new File(engineDir(), "types");
-		loadTypeDir(types, coreTypesDir, "core");
-		var localTypesDir = projectTypesDir();
-		if (localTypesDir && canonicalPath(localTypesDir) !== canonicalPath(coreTypesDir)) {
-			loadTypeDir(types, localTypesDir, "project");
-		}
-		return types;
+		return catalogLoaderService().loadTypesUncached(catalogLoaderEnv());
 	}
 
 	function loadTypes() {
-		var cache = runtimeState.caches.types;
-		var key = typesCacheKey();
-		var cached = readRuntimeCache(cache, key);
-		if (cached) {
-			return cached;
-		}
-		return writeRuntimeCache(cache, key, loadTypesUncached(), "types for " + (projectDir() ? canonicalPath(projectDir()) : "no project"));
+		return catalogLoaderService().loadTypes(catalogLoaderEnv());
 	}
 
 	function projectBlockDescriptorFile(name) {
