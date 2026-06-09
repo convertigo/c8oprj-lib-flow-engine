@@ -887,7 +887,19 @@
 			searchSnippet: searchSnippet,
 			sha256Hex: sha256Hex,
 			applyUnifiedPatchText: applyUnifiedPatchText,
-			validateResourceContent: validateResourceContent
+			projectBlockDescriptorFileForResource: projectBlockDescriptorFileForResource,
+			projectBlockContractFileForResource: projectBlockContractFileForResource,
+			blockDescriptorFileName: blockDescriptorFileName,
+			blockCodeDescriptorFileName: blockCodeDescriptorFileName,
+			blockIdFromResourcePath: blockIdFromResourcePath,
+			validateBlockImplementationSource: validateBlockImplementationSource,
+			validateBlockFlowImplementationSource: validateBlockFlowImplementationSource,
+			validateBlockHooksSource: validateBlockHooksSource,
+			validateGraphBlockSource: validateGraphBlockSource,
+			compileProjectBlockCode: compileProjectBlockCode,
+			loadBlocks: loadBlocks,
+			parseYamlSource: parseYamlSource,
+			validateTypeDescriptorSource: validateTypeDescriptorSource
 		};
 	}
 
@@ -945,47 +957,7 @@
 	}
 
 	function validateResourceContent(path, content) {
-		var kind = resourceKind(path);
-		if (kind === "block") {
-			var descriptorFile = projectBlockDescriptorFileForResource(path);
-			if (!descriptorFile || !descriptorFile.isFile()) {
-				raise("BLOCK_DESCRIPTOR_REQUIRED", "Block implementation resources require a peer *.block.yaml descriptor: " + path,
-					null, "Create or patch libs/flow/blocks/" + blockDescriptorFileName(blockIdFromResourcePath(path)) + " first.");
-			}
-			validateBlockImplementationSource(blockIdFromResourcePath(path), content);
-		} else if (kind === "blockFlow") {
-			var flowDescriptorFile = projectBlockDescriptorFileForResource(path);
-			if (!flowDescriptorFile || !flowDescriptorFile.isFile()) {
-				raise("BLOCK_DESCRIPTOR_REQUIRED", "Flow block implementation resources require a peer *.block.yaml descriptor: " + path,
-					null, "Create or patch libs/flow/blocks/" + blockDescriptorFileName(blockIdFromResourcePath(path)) + " first.");
-			}
-			validateBlockFlowImplementationSource(blockIdFromResourcePath(path), content);
-		} else if (kind === "blockHooks") {
-			var hooksContractFile = projectBlockContractFileForResource(path);
-			if (!hooksContractFile || !hooksContractFile.isFile()) {
-				raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.js source or legacy *.block.yaml descriptor: " + path,
-					null, "Create or patch libs/flow/blocks/" + blockCodeDescriptorFileName(blockIdFromResourcePath(path)) + " first.");
-			}
-			validateBlockHooksSource(blockIdFromResourcePath(path), content);
-		} else if (kind === "graphBlock") {
-			validateGraphBlockSource(blockIdFromResourcePath(path), content);
-		} else if (kind === "graphBlockCode") {
-			compileProjectBlockCode(loadBlocks(), blockIdFromResourcePath(path), content);
-		} else if (kind === "fragment") {
-			parseYamlSource(content, "version: 1\nnodes: []\n");
-		} else if (kind === "library") {
-			var library = eval(String(content || ""));
-			if (!library || typeof library !== "object") {
-				raise("INVALID_LIBRARY", "Invalid Flow library resource: " + path,
-					null, "A Flow library must evaluate to an object.");
-			}
-		} else if (kind === "typeDescriptor") {
-			validateTypeDescriptorSource(resourceName(path), content);
-		}
-		return {
-			ok: true,
-			kind: kind
-		};
+		return resourceService().validateResourceContent(path, content, resourceServiceEnv());
 	}
 
 	function resourcePatchRequest(request) {

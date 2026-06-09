@@ -256,6 +256,51 @@
 		return Object.assign({ ok: true, content: content }, resourceSummary(entry, content, env));
 	}
 
+	function validateResourceContent(path, content, env) {
+		var kind = env.resourceKind(path);
+		var blockId = env.blockIdFromResourcePath(path);
+		if (kind === "block") {
+			var descriptorFile = env.projectBlockDescriptorFileForResource(path);
+			if (!descriptorFile || !descriptorFile.isFile()) {
+				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Block implementation resources require a peer *.block.yaml descriptor: " + path,
+					null, "Create or patch libs/flow/blocks/" + env.blockDescriptorFileName(blockId) + " first.");
+			}
+			env.validateBlockImplementationSource(blockId, content);
+		} else if (kind === "blockFlow") {
+			var flowDescriptorFile = env.projectBlockDescriptorFileForResource(path);
+			if (!flowDescriptorFile || !flowDescriptorFile.isFile()) {
+				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Flow block implementation resources require a peer *.block.yaml descriptor: " + path,
+					null, "Create or patch libs/flow/blocks/" + env.blockDescriptorFileName(blockId) + " first.");
+			}
+			env.validateBlockFlowImplementationSource(blockId, content);
+		} else if (kind === "blockHooks") {
+			var hooksContractFile = env.projectBlockContractFileForResource(path);
+			if (!hooksContractFile || !hooksContractFile.isFile()) {
+				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.js source or legacy *.block.yaml descriptor: " + path,
+					null, "Create or patch libs/flow/blocks/" + env.blockCodeDescriptorFileName(blockId) + " first.");
+			}
+			env.validateBlockHooksSource(blockId, content);
+		} else if (kind === "graphBlock") {
+			env.validateGraphBlockSource(blockId, content);
+		} else if (kind === "graphBlockCode") {
+			env.compileProjectBlockCode(env.loadBlocks(), blockId, content);
+		} else if (kind === "fragment") {
+			env.parseYamlSource(content, "version: 1\nnodes: []\n");
+		} else if (kind === "library") {
+			var library = eval(String(content || ""));
+			if (!library || typeof library !== "object") {
+				env.raise("INVALID_LIBRARY", "Invalid Flow library resource: " + path,
+					null, "A Flow library must evaluate to an object.");
+			}
+		} else if (kind === "typeDescriptor") {
+			env.validateTypeDescriptorSource(env.resourceName(path), content);
+		}
+		return {
+			ok: true,
+			kind: kind
+		};
+	}
+
 	function patch(request, env) {
 		request = request || {};
 		var entry = projectResourceFile(request.path, true, env);
@@ -268,7 +313,7 @@
 		var applied = env.applyUnifiedPatchText(oldContent, request.patch || request.unifiedDiff || request.diff || "");
 		var validation = request.validate === false
 			? { ok: true, skipped: true }
-			: env.validateResourceContent(entry.path, applied.content);
+			: validateResourceContent(entry.path, applied.content, env);
 		var newHash = env.sha256Hex(applied.content);
 		if (request.dryRun !== true) {
 			env.FileUtils.writeStringToFile(entry.file, applied.content, "UTF-8");
@@ -294,6 +339,7 @@
 		list: list,
 		search: search,
 		get: get,
+		validateResourceContent: validateResourceContent,
 		patch: patch
 	};
 }())
