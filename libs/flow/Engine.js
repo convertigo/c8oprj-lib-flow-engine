@@ -3439,145 +3439,121 @@
 		return writeRuntimeCache(cache, key, builder.html(env), "Flow property editor HTML");
 	}
 
+	function engineCall(operation, requestJson, callback) {
+		try {
+			var request = parseRequest(requestJson);
+			return response(callback(request));
+		} catch (e) {
+			return response(failure(operation, e));
+		}
+	}
+
+	function projectCall(operation, requestJson, callback) {
+		return engineCall(operation, requestJson, function (request) {
+			return withProjectDir(request.projectDir, function () {
+				return callback(request);
+			});
+		});
+	}
+
+	function staticCall(operation, callback) {
+		try {
+			return response(callback());
+		} catch (e) {
+			return response(failure(operation, e));
+		}
+	}
+
 	return {
 		run: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(runFlowRequest(request, loadBlocks()));
-			} catch (e) {
-				return response(failure("run", e));
-			}
+			return engineCall("run", requestJson, function (request) {
+				return runFlowRequest(request, loadBlocks());
+			});
 		},
 
 		analyze: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(analyzeFlowSource(loadBlocks(), request.flowSource, request));
-			} catch (e) {
-				return response(failure("analyze", e));
-			}
+			return engineCall("analyze", requestJson, function (request) {
+				return analyzeFlowSource(loadBlocks(), request.flowSource, request);
+			});
 		},
 
 		context: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(contextForFlowRequest(loadBlocks(), request));
-			} catch (e) {
-				return response(failure("context", e));
-			}
+			return engineCall("context", requestJson, function (request) {
+				return contextForFlowRequest(loadBlocks(), request);
+			});
 		},
 
 		search: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(searchFlowRequest(request, loadBlocks()));
-			} catch (e) {
-				return response(failure("search", e));
-			}
+			return engineCall("search", requestJson, function (request) {
+				return searchFlowRequest(request, loadBlocks());
+			});
 		},
 
 		schemaReset: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(resetSchemaRequest(request));
-			} catch (e) {
-				return response(failure("schemaReset", e));
-			}
+			return engineCall("schemaReset", requestJson, function (request) {
+				return resetSchemaRequest(request);
+			});
 		},
 
 		resourceSearch: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(resourceSearchRequest(request));
-			} catch (e) {
-				return response(failure("resourceSearch", e));
-			}
+			return engineCall("resourceSearch", requestJson, function (request) {
+				return resourceSearchRequest(request);
+			});
 		},
 
 		resourceList: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(resourceListRequest(request));
-			} catch (e) {
-				return response(failure("resourceList", e));
-			}
+			return engineCall("resourceList", requestJson, function (request) {
+				return resourceListRequest(request);
+			});
 		},
 
 		resourceGet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(resourceGetRequest(request));
-			} catch (e) {
-				return response(failure("resourceGet", e));
-			}
+			return engineCall("resourceGet", requestJson, function (request) {
+				return resourceGetRequest(request);
+			});
 		},
 
 		resourcePatch: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(resourcePatchRequest(request));
-			} catch (e) {
-				return response(failure("resourcePatch", e));
-			}
+			return engineCall("resourcePatch", requestJson, function (request) {
+				return resourcePatchRequest(request);
+			});
 		},
 
 		outputSchema: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(outputSchemaRequest(request, loadBlocks()));
-			} catch (e) {
-				return response(failure("outputSchema", e));
-			}
+			return engineCall("outputSchema", requestJson, function (request) {
+				return outputSchemaRequest(request, loadBlocks());
+			});
 		},
 
 		writeCodeMirror: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return writeFlowCodeMirrorRequest(request, loadBlocks());
-				}));
-			} catch (e) {
-				return response(failure("writeCodeMirror", e));
-			}
+			return projectCall("writeCodeMirror", requestJson, function (request) {
+				return writeFlowCodeMirrorRequest(request, loadBlocks());
+			});
 		},
 
 		propertyEditor: function () {
-			try {
-				return response({ ok: true, html: propertyEditorHtml() });
-			} catch (e) {
-				return response(failure("propertyEditor", e));
-			}
+			return staticCall("propertyEditor", function () {
+				return { ok: true, html: propertyEditorHtml() };
+			});
 		},
 
 		icons: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(iconCatalogRequest(request));
-			} catch (e) {
-				return response(failure("icons", e));
-			}
+			return engineCall("icons", requestJson, function (request) {
+				return iconCatalogRequest(request);
+			});
 		},
 
 		cacheInfo: function () {
-			try {
-				return response(cacheInfoRequest());
-			} catch (e) {
-				return response(failure("cacheInfo", e));
-			}
+			return staticCall("cacheInfo", cacheInfoRequest);
 		},
 
 		cacheClear: function () {
-			try {
-				return response(clearRuntimeCaches());
-			} catch (e) {
-				return response(failure("cacheClear", e));
-			}
+			return staticCall("cacheClear", clearRuntimeCaches);
 		},
 
 		catalog: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(Object.assign({ ok: true }, catalogDefinition(loadBlocks(), {
+			return engineCall("catalog", requestJson, function (request) {
+				return Object.assign({ ok: true }, catalogDefinition(loadBlocks(), {
 					detail: request.detail || request.mode || "full",
 					includePrivate: request.includePrivate === true,
 					query: request.query || request.q || "",
@@ -3586,299 +3562,176 @@
 					origin: request.origin || "",
 					limit: request.limit,
 					cursor: request.cursor
-				})));
-			} catch (e) {
-				return response(failure("catalog", e));
-			}
+				}));
+			});
 		},
 
 		describeTree: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(describeTreeRequest(request, loadBlocks()));
-			} catch (e) {
-				return response(failure("describeTree", e));
-			}
+			return engineCall("describeTree", requestJson, function (request) {
+				return describeTreeRequest(request, loadBlocks());
+			});
 		},
 
 		applyMutation: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(applyMutationRequest(request, loadBlocks()));
-			} catch (e) {
-				return response(failure("applyMutation", e));
-			}
+			return engineCall("applyMutation", requestJson, function (request) {
+				return applyMutationRequest(request, loadBlocks());
+			});
 		},
 
 		flowSourceGet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowScriptGetRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowSourceGet", e));
-			}
+			return projectCall("flowSourceGet", requestJson, function (request) {
+				return flowScriptGetRequest(loadBlocks(), request);
+			});
 		},
 
 		flowSourceValidate: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowScriptValidateRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowSourceValidate", e));
-			}
+			return projectCall("flowSourceValidate", requestJson, function (request) {
+				return flowScriptValidateRequest(loadBlocks(), request);
+			});
 		},
 
 		flowSourcePatch: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowScriptPatchRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowSourcePatch", e));
-			}
+			return projectCall("flowSourcePatch", requestJson, function (request) {
+				return flowScriptPatchRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeGet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeGetRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeGet", e));
-			}
+			return projectCall("flowCodeGet", requestJson, function (request) {
+				return flowCodeGetRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeStatus: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeStatusRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeStatus", e));
-			}
+			return projectCall("flowCodeStatus", requestJson, function (request) {
+				return flowCodeStatusRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeDiscard: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeDiscardRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeDiscard", e));
-			}
+			return projectCall("flowCodeDiscard", requestJson, function (request) {
+				return flowCodeDiscardRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeSet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeSetRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeSet", e));
-			}
+			return projectCall("flowCodeSet", requestJson, function (request) {
+				return flowCodeSetRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodePatch: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodePatchRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodePatch", e));
-			}
+			return projectCall("flowCodePatch", requestJson, function (request) {
+				return flowCodePatchRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeCheck: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeCheckRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeCheck", e));
-			}
+			return projectCall("flowCodeCheck", requestJson, function (request) {
+				return flowCodeCheckRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeRg: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeRgRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeRg", e));
-			}
+			return projectCall("flowCodeRg", requestJson, function (request) {
+				return flowCodeRgRequest(loadBlocks(), request);
+			});
 		},
 
 		blockCodeGet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return blockCodeGetRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("blockCodeGet", e));
-			}
+			return projectCall("blockCodeGet", requestJson, function (request) {
+				return blockCodeGetRequest(loadBlocks(), request);
+			});
 		},
 
 		blockCodeSet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return setProjectBlockCode(loadBlocks(), request.name || request.block, request);
-				}));
-			} catch (e) {
-				return response(failure("blockCodeSet", e));
-			}
+			return projectCall("blockCodeSet", requestJson, function (request) {
+				return setProjectBlockCode(loadBlocks(), request.name || request.block, request);
+			});
 		},
 
 		blockCodePatch: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return blockCodePatchRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("blockCodePatch", e));
-			}
+			return projectCall("blockCodePatch", requestJson, function (request) {
+				return blockCodePatchRequest(loadBlocks(), request);
+			});
 		},
 
 		blockCodeRg: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return blockCodeRgRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("blockCodeRg", e));
-			}
+			return projectCall("blockCodeRg", requestJson, function (request) {
+				return blockCodeRgRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeRun: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeRunRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeRun", e));
-			}
+			return projectCall("flowCodeRun", requestJson, function (request) {
+				return flowCodeRunRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodeAnalyze: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodeAnalyzeRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodeAnalyze", e));
-			}
+			return projectCall("flowCodeAnalyze", requestJson, function (request) {
+				return flowCodeAnalyzeRequest(loadBlocks(), request);
+			});
 		},
 
 		flowCodePromote: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return flowCodePromoteRequest(loadBlocks(), request);
-				}));
-			} catch (e) {
-				return response(failure("flowCodePromote", e));
-			}
+			return projectCall("flowCodePromote", requestJson, function (request) {
+				return flowCodePromoteRequest(loadBlocks(), request);
+			});
 		},
 
 		requestableList: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return requestableListRequest(request);
-				}));
-			} catch (e) {
-				return response(failure("requestableList", e));
-			}
+			return projectCall("requestableList", requestJson, function (request) {
+				return requestableListRequest(request);
+			});
 		},
 
 		requestableSchema: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(withProjectDir(request.projectDir, function () {
-					return requestableSchemaRequest(request);
-				}));
-			} catch (e) {
-				return response(failure("requestableSchema", e));
-			}
+			return projectCall("requestableSchema", requestJson, function (request) {
+				return requestableSchemaRequest(request);
+			});
 		},
 
 		types: function (requestJson) {
-			try {
-				return response(Object.assign({ ok: true }, typeList(loadBlocks())));
-			} catch (e) {
-				return response(failure("types", e));
-			}
+			return staticCall("types", function () {
+				return Object.assign({ ok: true }, typeList(loadBlocks()));
+			});
 		},
 
 		typeGet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(getTypeSource(loadTypes(), request.name));
-			} catch (e) {
-				return response(failure("typeGet", e));
-			}
+			return engineCall("typeGet", requestJson, function (request) {
+				return getTypeSource(loadTypes(), request.name);
+			});
 		},
 
 		typeCreate: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(createProjectType(loadTypes(), request.name, request, request.overwrite === true));
-			} catch (e) {
-				return response(failure("typeCreate", e));
-			}
+			return engineCall("typeCreate", requestJson, function (request) {
+				return createProjectType(loadTypes(), request.name, request, request.overwrite === true);
+			});
 		},
 
 		blockGet: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(getBlockSource(loadBlocks(), request.name, request));
-			} catch (e) {
-				return response(failure("blockGet", e));
-			}
+			return engineCall("blockGet", requestJson, function (request) {
+				return getBlockSource(loadBlocks(), request.name, request);
+			});
 		},
 
 		blockCreate: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(createProjectBlock(loadBlocks(), request.name, request, request.overwrite === true));
-			} catch (e) {
-				return response(failure("blockCreate", e));
-			}
+			return engineCall("blockCreate", requestJson, function (request) {
+				return createProjectBlock(loadBlocks(), request.name, request, request.overwrite === true);
+			});
 		},
 
 		blockDuplicate: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(duplicateProjectBlock(loadBlocks(), request.fromName || request.from, request.toName || request.name, request.overwrite === true));
-			} catch (e) {
-				return response(failure("blockDuplicate", e));
-			}
+			return engineCall("blockDuplicate", requestJson, function (request) {
+				return duplicateProjectBlock(loadBlocks(), request.fromName || request.from, request.toName || request.name, request.overwrite === true);
+			});
 		},
 
 		blockEdit: function (requestJson) {
-			try {
-				var request = parseRequest(requestJson);
-				return response(editProjectBlock(loadBlocks(), request.name, request));
-			} catch (e) {
-				return response(failure("blockEdit", e));
-			}
+			return engineCall("blockEdit", requestJson, function (request) {
+				return editProjectBlock(loadBlocks(), request.name, request);
+			});
 		}
 	};
 }())
