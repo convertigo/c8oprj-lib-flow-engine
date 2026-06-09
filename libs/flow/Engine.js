@@ -2923,51 +2923,32 @@
 		};
 	}
 
+	function flowSummaryApi() {
+		return flowSummaryService().create(flowSummaryEnv());
+	}
+
 	function summaryText(value, max) {
-		return flowSummaryService().text(value, max, flowSummaryEnv());
-	}
-
-	function summaryValue(value, max) {
-		return flowSummaryService().value(value, max, flowSummaryEnv());
-	}
-
-	function summaryProp(node, key) {
-		return flowSummaryService().prop(node, key, flowSummaryEnv());
-	}
-
-	function summaryInput(node) {
-		return flowSummaryService().input(node, flowSummaryEnv());
-	}
-
-	function summaryAssignment(node, operator) {
-		return flowSummaryService().assignment(node, operator, flowSummaryEnv());
-	}
-
-	function summaryOutput(node, action) {
-		return flowSummaryService().output(node, action, flowSummaryEnv());
+		return flowSummaryApi().text(value, max);
 	}
 
 	var flowSummary = {
-		text: function (value, max) {
-			return summaryText(value, max);
-		},
+		text: summaryText,
 		value: function (value, max) {
-			return summaryValue(value, max);
+			return flowSummaryApi().value(value, max);
 		},
 		prop: function (node, key) {
-			return summaryProp(node, key);
+			return flowSummaryApi().prop(node, key);
 		},
 		input: function (node) {
-			return summaryInput(node);
+			return flowSummaryApi().input(node);
 		},
 		assignment: function (node, operator) {
-			return summaryAssignment(node, operator);
+			return flowSummaryApi().assignment(node, operator);
 		},
 		output: function (node, action) {
-			return summaryOutput(node, action);
+			return flowSummaryApi().output(node, action);
 		}
 	};
-
 
 	function propertyEditorBuilderEnv() {
 		return {
