@@ -591,51 +591,37 @@
 		return scopeReferenceUtils().collectConfigKeys(value, keys);
 	}
 
+	function projectConfigService() {
+		return loadEngineModule("project-config-service.js");
+	}
+
+	function projectConfigEnv() {
+		return {
+			File: File,
+			FileUtils: FileUtils,
+			globalScope: globalScope,
+			projectDir: projectDir,
+			parseYamlSource: parseYamlSource,
+			jsValue: jsValue,
+			normalizeTree: normalizeTree,
+			collectConfigKeys: collectConfigKeys
+		};
+	}
+
 	function readGlobalValue(name) {
-		if (!globalScope || name === undefined || name === null || name === "") {
-			return undefined;
-		}
-		var value = globalScope[String(name)];
-		return typeof value === "undefined" ? undefined : jsValue(value);
+		return projectConfigService().readGlobalValue(name, projectConfigEnv());
 	}
 
 	function projectEngineFile() {
-		var dir = projectDir();
-		return dir ? new File(dir, "libs/flow/engine.yaml") : null;
+		return projectConfigService().projectEngineFile(projectConfigEnv());
 	}
 
 	function loadProjectEngineDefinition() {
-		var file = projectEngineFile();
-		if (!file || !file.isFile()) {
-			return {};
-		}
-		return parseYamlSource(FileUtils.readFileToString(file, "UTF-8"), "version: 1\n");
+		return projectConfigService().loadProjectEngineDefinition(projectConfigEnv());
 	}
 
 	function effectiveConfig(request, definition, projectEngine) {
-		var config = {};
-		Object.keys(projectEngine && projectEngine.config || {}).forEach(function (key) {
-			config[key] = normalizeTree(projectEngine.config[key]);
-		});
-		Object.keys(request.config || {}).forEach(function (key) {
-			config[key] = normalizeTree(request.config[key]);
-		});
-		var keys = collectConfigKeys(definition);
-		["bindings", "binding"].forEach(function (key) {
-			if (keys.indexOf(key) === -1) {
-				keys.push(key);
-			}
-		});
-		keys.forEach(function (key) {
-			if (config[key] !== undefined && config[key] !== null) {
-				return;
-			}
-			var value = readGlobalValue(key);
-			if (value !== undefined) {
-				config[key] = value;
-			}
-		});
-		return config;
+		return projectConfigService().effectiveConfig(request, definition, projectEngine, projectConfigEnv());
 	}
 
 	function snapshot(value) {
