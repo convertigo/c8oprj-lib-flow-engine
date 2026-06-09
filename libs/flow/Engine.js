@@ -506,64 +506,36 @@
 		return cacheUtils().writeMap(cache, key, fingerprint, value, label);
 	}
 
-	function clearRuntimeCache(cache) {
-		cacheUtils().clearValue(cache);
-	}
-
-	function clearRuntimeMapCache(cache) {
-		cacheUtils().clearMap(cache);
-	}
-
-	function clearRuntimeCaches() {
-		clearRuntimeCache(runtimeState.caches.blocks);
-		clearRuntimeCache(runtimeState.caches.types);
-		clearRuntimeMapCache(runtimeState.caches.libraries);
-		clearRuntimeMapCache(runtimeState.caches.engineModules);
-		clearRuntimeCache(runtimeState.caches.propertyEditor);
+	function resetRuntimeModuleCaches() {
 		cacheUtilsModule = null;
 		flowNodeUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
-		return cacheInfoRequest();
 	}
 
-	function cacheSummary(name, cache) {
-		return cacheUtils().summary(name, cache);
+	function runtimeCacheService() {
+		return loadEngineModule("runtime-cache-service.js");
 	}
 
-	function bridgeRuntimeCacheInfo() {
-		var enabled = typeof __flowBridgeRuntimeCacheEnabled !== "undefined" && __flowBridgeRuntimeCacheEnabled === true;
+	function runtimeCacheEnv() {
 		return {
-			enabled: enabled,
-			hit: typeof __flowBridgeRuntimeCacheHit !== "undefined" && __flowBridgeRuntimeCacheHit === true,
-			key: typeof __flowBridgeRuntimeCacheKey !== "undefined" ? String(__flowBridgeRuntimeCacheKey) : "",
-			generation: typeof __flowBridgeRuntimeCacheGeneration !== "undefined" ? Number(__flowBridgeRuntimeCacheGeneration) : 0,
-			size: typeof __flowBridgeRuntimeCacheSize !== "undefined" ? Number(__flowBridgeRuntimeCacheSize) : 0,
-			classSource: typeof __flowBridgeClassSource !== "undefined" ? String(__flowBridgeClassSource) : "",
-			classResource: typeof __flowBridgeClassResource !== "undefined" ? String(__flowBridgeClassResource) : ""
+			runtimeState: runtimeState,
+			cacheUtils: cacheUtils(),
+			projectDir: projectDir,
+			canonicalPath: canonicalPath,
+			engineDir: engineDir,
+			Thread: Packages.java.lang.Thread,
+			globalScope: globalScope,
+			resetModuleCaches: resetRuntimeModuleCaches
 		};
+	}
+
+	function clearRuntimeCaches() {
+		return runtimeCacheService().clear(runtimeCacheEnv());
 	}
 
 	function cacheInfoRequest() {
-		var activeProjectDir = projectDir();
-		var activeProjectPath = activeProjectDir ? canonicalPath(activeProjectDir) : "";
-		return {
-			ok: true,
-			runtimeId: runtimeState.id,
-			startedAt: runtimeState.startedAt,
-			threadName: String(Packages.java.lang.Thread.currentThread().getName()),
-			activeProjectDir: activeProjectPath,
-			rawProjectDir: activeProjectDir ? String(activeProjectDir) : "",
-			engineDir: canonicalPath(engineDir()),
-			bridgeRuntimeCache: bridgeRuntimeCacheInfo(),
-			caches: {
-				blocks: cacheSummary("blocks", runtimeState.caches.blocks),
-				types: cacheSummary("types", runtimeState.caches.types),
-				libraries: cacheSummary("libraries", runtimeState.caches.libraries),
-				engineModules: cacheSummary("engineModules", runtimeState.caches.engineModules),
-				propertyEditor: cacheSummary("propertyEditor", runtimeState.caches.propertyEditor)
-			}
-		};
+		return runtimeCacheService().info(runtimeCacheEnv());
 	}
 
 	function fileFingerprint(file) {
