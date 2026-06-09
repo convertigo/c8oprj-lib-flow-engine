@@ -2647,50 +2647,36 @@
 		return out;
 	}
 
+	function typeDescriptorService() {
+		return loadEngineModule("type-descriptor-service.js");
+	}
+
+	function typeDescriptorEnv() {
+		return {
+			File: File,
+			projectTypesDir: projectTypesDir,
+			typeDescriptorFileName: typeDescriptorFileName,
+			normalizeTree: normalizeTree,
+			parseYamlSource: parseYamlSource,
+			toYamlSource: toYamlSource,
+			raise: raise
+		};
+	}
+
 	function projectTypeDescriptorFile(name) {
-		var dir = projectTypesDir();
-		if (!dir) {
-			raise("PROJECT_TYPES_UNAVAILABLE", "Project property types are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new File(dir, typeDescriptorFileName(name));
+		return typeDescriptorService().projectTypeDescriptorFile(name, typeDescriptorEnv());
 	}
 
 	function validateTypeDescriptorDefinition(name, definition) {
-		var type = normalizeTree(definition || {});
-		if (type.version === undefined || type.version === null) {
-			type.version = 1;
-		}
-		if (!type.name) {
-			type.name = String(name || "");
-		}
-		if (!type.name) {
-			raise("INVALID_TYPE", "Invalid property type descriptor: " + name,
-				null, "A type descriptor must define a name.");
-		}
-		if (String(type.name) !== String(name)) {
-			raise("TYPE_NAME_MISMATCH", "Type descriptor declares \"" + type.name + "\" instead of \"" + name + "\".");
-		}
-		return type;
+		return typeDescriptorService().validateDefinition(name, definition, typeDescriptorEnv());
 	}
 
 	function validateTypeDescriptorSource(name, source) {
-		return validateTypeDescriptorDefinition(name, parseYamlSource(source, "version: 1\nname: " + String(name || "") + "\n"));
+		return typeDescriptorService().validateSource(name, source, typeDescriptorEnv());
 	}
 
 	function typeDescriptorSourceForWriteRequest(name, request) {
-		request = request || {};
-		var source = request.descriptorSource !== undefined ? request.descriptorSource : request.source;
-		if (source !== undefined && source !== null && String(source).trim() !== "") {
-			return String(source);
-		}
-		var definition = request.descriptor || request.definition;
-		if (definition !== undefined && definition !== null) {
-			var type = validateTypeDescriptorDefinition(name, definition);
-			return toYamlSource(type);
-		}
-		raise("MISSING_TYPE_DESCRIPTOR", "Project property type \"" + name + "\" needs descriptorSource or descriptor.",
-			null, "Define the type contract in libs/flow/types/" + typeDescriptorFileName(name) + ".");
+		return typeDescriptorService().sourceForWriteRequest(name, request, typeDescriptorEnv());
 	}
 
 	function createProjectType(types, name, request, overwrite) {
