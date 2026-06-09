@@ -2300,6 +2300,29 @@
 		return flowCodeService().flowCodePromoteRequest(blocks, request, flowCodeServiceEnv());
 	}
 
+	function blockCodeApi() {
+		return {
+			get: blockCodeGetRequest,
+			patch: blockCodePatchRequest,
+			rg: blockCodeRgRequest
+		};
+	}
+
+	function flowCodeApi() {
+		return {
+			get: flowCodeGetRequest,
+			status: flowCodeStatusRequest,
+			discard: flowCodeDiscardRequest,
+			set: flowCodeSetRequest,
+			patch: flowCodePatchRequest,
+			check: flowCodeCheckRequest,
+			rg: flowCodeRgRequest,
+			run: flowCodeRunRequest,
+			analyze: flowCodeAnalyzeRequest,
+			promote: flowCodePromoteRequest
+		};
+	}
+
 	function flowSourceService() {
 		return loadEngineModule("flow-source-service.js");
 	}
@@ -2633,9 +2656,7 @@
 			duplicateProjectBlock: duplicateProjectBlock,
 			editProjectBlock: editProjectBlock,
 			setProjectBlockCode: setProjectBlockCode,
-			blockCodeGetRequest: blockCodeGetRequest,
-			blockCodePatchRequest: blockCodePatchRequest,
-			blockCodeRgRequest: blockCodeRgRequest,
+			blockCode: blockCodeApi(),
 			typeList: typeList,
 			loadTypes: loadTypes,
 			getTypeSource: getTypeSource,
@@ -2646,16 +2667,7 @@
 			flowScriptGetRequest: flowScriptGetRequest,
 			flowScriptValidateRequest: flowScriptValidateRequest,
 			flowScriptPatchRequest: flowScriptPatchRequest,
-			flowCodeGetRequest: flowCodeGetRequest,
-			flowCodeStatusRequest: flowCodeStatusRequest,
-			flowCodeDiscardRequest: flowCodeDiscardRequest,
-			flowCodeSetRequest: flowCodeSetRequest,
-			flowCodePatchRequest: flowCodePatchRequest,
-			flowCodeCheckRequest: flowCodeCheckRequest,
-			flowCodeRgRequest: flowCodeRgRequest,
-			flowCodeRunRequest: flowCodeRunRequest,
-			flowCodeAnalyzeRequest: flowCodeAnalyzeRequest,
-			flowCodePromoteRequest: flowCodePromoteRequest,
+			flowCode: flowCodeApi(),
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
 			context: typeof context === "undefined" ? null : context

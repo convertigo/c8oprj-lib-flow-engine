@@ -61,9 +61,7 @@
 		var duplicateProjectBlock = env.duplicateProjectBlock;
 		var editProjectBlock = env.editProjectBlock;
 		var setProjectBlockCode = env.setProjectBlockCode;
-		var blockCodeGetRequest = env.blockCodeGetRequest;
-		var blockCodePatchRequest = env.blockCodePatchRequest;
-		var blockCodeRgRequest = env.blockCodeRgRequest;
+		var blockCode = env.blockCode;
 		var typeList = env.typeList;
 		var loadTypes = env.loadTypes;
 		var getTypeSource = env.getTypeSource;
@@ -74,16 +72,7 @@
 		var flowScriptGetRequest = env.flowScriptGetRequest;
 		var flowScriptValidateRequest = env.flowScriptValidateRequest;
 		var flowScriptPatchRequest = env.flowScriptPatchRequest;
-		var flowCodeGetRequest = env.flowCodeGetRequest;
-		var flowCodeStatusRequest = env.flowCodeStatusRequest;
-		var flowCodeDiscardRequest = env.flowCodeDiscardRequest;
-		var flowCodeSetRequest = env.flowCodeSetRequest;
-		var flowCodePatchRequest = env.flowCodePatchRequest;
-		var flowCodeCheckRequest = env.flowCodeCheckRequest;
-		var flowCodeRgRequest = env.flowCodeRgRequest;
-		var flowCodeRunRequest = env.flowCodeRunRequest;
-		var flowCodeAnalyzeRequest = env.flowCodeAnalyzeRequest;
-		var flowCodePromoteRequest = env.flowCodePromoteRequest;
+		var flowCode = env.flowCode;
 		var requestables = env.requestables;
 		var throwFlowError = env.throwFlowError;
 		var liveContext = env.context;
@@ -481,19 +470,19 @@
 			ctx.blockCodeGet = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return blockCodeGetRequest(loadBlocks(), args);
+					return blockCode.get(loadBlocks(), args);
 				});
 			};
-				ctx.blockCodePatch = function (args) {
-					args = args || {};
-					return withProjectDir(args.projectDir, function () {
-						return blockCodePatchRequest(loadBlocks(), args);
-					});
-				};
-				ctx.blockCodeRg = function (args) {
+			ctx.blockCodePatch = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return blockCodeRgRequest(loadBlocks(), args);
+					return blockCode.patch(loadBlocks(), args);
+				});
+			};
+			ctx.blockCodeRg = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return blockCode.rg(loadBlocks(), args);
 				});
 			};
 			ctx.typeList = function (args) {
@@ -587,61 +576,61 @@
 			ctx.flowCodeGet = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeGetRequest(loadBlocks(), args);
+					return flowCode.get(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodeStatus = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeStatusRequest(loadBlocks(), args);
+					return flowCode.status(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodeDiscard = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeDiscardRequest(loadBlocks(), args);
+					return flowCode.discard(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodeSet = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeSetRequest(loadBlocks(), args);
+					return flowCode.set(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodePatch = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodePatchRequest(loadBlocks(), args);
+					return flowCode.patch(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodeCheck = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeCheckRequest(loadBlocks(), args);
+					return flowCode.check(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodeRg = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeRgRequest(loadBlocks(), args);
+					return flowCode.rg(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodeRun = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeRunRequest(loadBlocks(), args);
+					return flowCode.run(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodeAnalyze = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodeAnalyzeRequest(loadBlocks(), args);
+					return flowCode.analyze(loadBlocks(), args);
 				});
 			};
 			ctx.flowCodePromote = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCodePromoteRequest(loadBlocks(), args);
+					return flowCode.promote(loadBlocks(), args);
 				});
 			};
 			ctx.requestableList = function (args) {
