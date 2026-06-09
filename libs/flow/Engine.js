@@ -301,41 +301,6 @@
 		return schemaUtils().leafEntries(schema, prefix, schemaUtilsEnv());
 	}
 
-	function flowScriptPath(base, path) {
-		return scopePathUtils().flowScriptPath(base, path);
-	}
-
-	function requestableFlowScriptHints(target, arrays, leaves, currentProject) {
-		var publicTarget = requestableTargetPublic(target, currentProject);
-		var requestable = publicTarget.localRequestable || publicTarget.requestable || publicTarget.qname || "";
-		var hints = {
-			call: "const data = requestable.call(" + JSON.stringify(requestable) + ");"
-		};
-		var arrayPath = (arrays || []).filter(function (path) {
-			return String(path).indexOf(".attr") === -1;
-		})[0] || (arrays || [])[0] || "";
-		if (!arrayPath) {
-			hints.returnObject = "return data;";
-			return hints;
-		}
-		hints.array = "const items = " + flowScriptPath("data", arrayPath) + ";";
-		var leaf = (leaves || []).filter(function (entry) {
-			return String(entry.path).indexOf(arrayPath + ".") === 0 && /(^|\.)title$/.test(String(entry.path));
-		})[0] || (leaves || []).filter(function (entry) {
-			return String(entry.path).indexOf(arrayPath + ".") === 0 && ["name", "label"].some(function (suffix) {
-				return new RegExp("(^|\\.)" + suffix + "$").test(String(entry.path));
-			});
-		})[0] || (leaves || []).filter(function (entry) {
-			return String(entry.path).indexOf(arrayPath + ".") === 0 && entry.type === "string";
-		})[0];
-		if (leaf) {
-			var relative = String(leaf.path).substring(arrayPath.length + 1);
-			hints.sort = "const sorted = list.sort(items, { by: " + flowScriptPath("current", relative) + ", direction: \"asc\" });";
-		}
-		hints.returnObject = "return { items, count: items.length };";
-		return hints;
-	}
-
 	function schemaAtPath(schema, path) {
 		return schemaUtils().atPath(schema, path, schemaUtilsEnv());
 	}
@@ -2538,7 +2503,7 @@
 			schemaPaths: schemaPaths,
 			schemaArrayPaths: schemaArrayPaths,
 			schemaLeafEntries: schemaLeafEntries,
-			requestableFlowScriptHints: requestableFlowScriptHints,
+			flowScriptPath: scopePathUtils().flowScriptPath,
 			currentProjectName: currentProjectName,
 			flowCodeError: flowCodeError,
 			raise: raise,

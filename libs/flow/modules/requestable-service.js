@@ -231,6 +231,37 @@
 		return out;
 	}
 
+	function flowScriptHints(target, arrays, leaves, currentProject, env) {
+		var publicTarget = targetPublic(target, currentProject);
+		var requestable = publicTarget.localRequestable || publicTarget.requestable || publicTarget.qname || "";
+		var hints = {
+			call: "const data = requestable.call(" + JSON.stringify(requestable) + ");"
+		};
+		var arrayPath = (arrays || []).filter(function (path) {
+			return String(path).indexOf(".attr") === -1;
+		})[0] || (arrays || [])[0] || "";
+		if (!arrayPath) {
+			hints.returnObject = "return data;";
+			return hints;
+		}
+		hints.array = "const items = " + env.flowScriptPath("data", arrayPath) + ";";
+		var leaf = (leaves || []).filter(function (entry) {
+			return String(entry.path).indexOf(arrayPath + ".") === 0 && /(^|\.)title$/.test(String(entry.path));
+		})[0] || (leaves || []).filter(function (entry) {
+			return String(entry.path).indexOf(arrayPath + ".") === 0 && ["name", "label"].some(function (suffix) {
+				return new RegExp("(^|\\.)" + suffix + "$").test(String(entry.path));
+			});
+		})[0] || (leaves || []).filter(function (entry) {
+			return String(entry.path).indexOf(arrayPath + ".") === 0 && entry.type === "string";
+		})[0];
+		if (leaf) {
+			var relative = String(leaf.path).substring(arrayPath.length + 1);
+			hints.sort = "const sorted = list.sort(items, { by: " + env.flowScriptPath("current", relative) + ", direction: \"asc\" });";
+		}
+		hints.returnObject = "return { items, count: items.length };";
+		return hints;
+	}
+
 	function targetCandidates(request, targetText, env) {
 		request = request || {};
 		var project = env.currentProjectName(request);
@@ -439,7 +470,7 @@
 			paths: paths,
 			arrayPaths: arrayPaths,
 			leafPaths: leafPaths,
-			flowScript: env.requestableFlowScriptHints(target, arrayPaths, leafPaths, env.currentProjectName(request))
+			flowScript: flowScriptHints(target, arrayPaths, leafPaths, env.currentProjectName(request), env)
 		};
 		if (request.includeSample === true) {
 			out.sample = sample;
