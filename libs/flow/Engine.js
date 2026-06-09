@@ -6320,471 +6320,58 @@
 		return "";
 	}
 
-	function stripXmlPrefix(value) {
-		var text = String(value || "");
-		var index = text.indexOf(":");
-		return index === -1 ? text : text.substring(index + 1);
+	function requestableService() {
+		return loadEngineModule("requestable-service.js");
 	}
 
-	function xsdScalarType(type) {
-		type = stripXmlPrefix(type);
-		if (type === "boolean") {
-			return { type: "boolean" };
-		}
-		if (["byte", "short", "int", "integer", "long", "nonNegativeInteger", "positiveInteger"].indexOf(type) !== -1) {
-			return { type: "integer" };
-		}
-		if (["decimal", "double", "float"].indexOf(type) !== -1) {
-			return { type: "number" };
-		}
-		if (["string", "anyURI", "date", "dateTime", "time"].indexOf(type) !== -1) {
-			return { type: "string" };
-		}
-		return null;
-	}
-
-	function childElementsByLocalName(node, localName) {
-		var out = [];
-		var children = node ? node.getChildNodes() : null;
-		for (var i = 0; children && i < children.getLength(); i++) {
-			var child = children.item(i);
-			if (child.getNodeType && child.getNodeType() === 1 && String(child.getLocalName ? child.getLocalName() : stripXmlPrefix(child.getNodeName())) === localName) {
-				out.push(child);
-			}
-		}
-		return out;
-	}
-
-	function descendantElementsByLocalName(node, localName) {
-		var out = [];
-		var children = node ? node.getChildNodes() : null;
-		for (var i = 0; children && i < children.getLength(); i++) {
-			var child = children.item(i);
-			if (!child.getNodeType || child.getNodeType() !== 1) {
-				continue;
-			}
-			if (String(child.getLocalName ? child.getLocalName() : stripXmlPrefix(child.getNodeName())) === localName) {
-				out.push(child);
-			}
-			descendantElementsByLocalName(child, localName).forEach(function (match) {
-				out.push(match);
-			});
-		}
-		return out;
-	}
-
-	function attr(node, name) {
-		return node && node.hasAttribute && node.hasAttribute(name) ? String(node.getAttribute(name)) : "";
-	}
-
-	function xsdAttributesSchema(complexType) {
-		var attributes = descendantElementsByLocalName(complexType, "attribute");
-		var properties = {};
-		attributes.forEach(function (attribute) {
-			var name = attr(attribute, "name");
-			if (!name) {
-				return;
-			}
-			properties[name] = xsdScalarType(attr(attribute, "type")) || { type: "string" };
-		});
-		return Object.keys(properties).length ? { type: "object", properties: properties } : null;
-	}
-
-	function xsdElementSchema(element, complexTypes, stack) {
-		var type = attr(element, "type");
-		var schema = xsdScalarType(type);
-		if (!schema && type) {
-			schema = xsdComplexTypeSchema(complexTypes[stripXmlPrefix(type)], complexTypes, stack);
-		}
-		if (!schema) {
-			var inlineComplex = childElementsByLocalName(element, "complexType")[0];
-			schema = inlineComplex ? xsdComplexTypeSchema(inlineComplex, complexTypes, stack) : { type: "unknown" };
-		}
-		var maxOccurs = attr(element, "maxOccurs");
-		if (maxOccurs === "unbounded" || Number(maxOccurs || 1) > 1) {
-			schema = { type: "array", items: schema };
-		}
-		return schema;
-	}
-
-	function xsdComplexTypeSchema(complexType, complexTypes, stack) {
-		if (!complexType) {
-			return null;
-		}
-		var name = attr(complexType, "name");
-		stack = stack || {};
-		if (name && stack[name]) {
-			return { type: "object" };
-		}
-		if (name) {
-			stack[name] = true;
-		}
-		var properties = {};
-		var sequence = childElementsByLocalName(complexType, "sequence")[0];
-		if (sequence) {
-			childElementsByLocalName(sequence, "element").forEach(function (element) {
-				var elementName = attr(element, "name");
-				if (!elementName) {
-					return;
-				}
-				properties[elementName] = mergeSchema(properties[elementName], xsdElementSchema(element, complexTypes, stack));
-			});
-		}
-		var simpleContent = childElementsByLocalName(complexType, "simpleContent")[0];
-		if (simpleContent) {
-			var extension = childElementsByLocalName(simpleContent, "extension")[0];
-			properties.text = xsdScalarType(attr(extension, "base")) || { type: "string" };
-		}
-		var attrs = xsdAttributesSchema(complexType);
-		if (attrs) {
-			properties.attr = attrs;
-		}
-		if (name) {
-			delete stack[name];
-		}
-		return Object.keys(properties).length ? { type: "object", properties: properties } : { type: "unknown" };
-	}
-
-	function learnedXsdOutputSchema(target) {
-		var root = projectDir();
-		if (!root || !target || !target.project || !target.connector || !target.requestable) {
-			return null;
-		}
-		if (String(new File(root).getName()) !== String(target.project)) {
-			return null;
-		}
-		var file = new File(root, "xsd/internal/" + target.connector + "/" + target.requestable + ".xsd");
-		if (!file.isFile()) {
-			return null;
-		}
-		try {
-			var factory = Packages.javax.xml.parsers.DocumentBuilderFactory.newInstance();
-			factory.setNamespaceAware(true);
-			var document = factory.newDocumentBuilder().parse(file);
-			var complexTypes = {};
-			descendantElementsByLocalName(document.getDocumentElement(), "complexType").forEach(function (complexType) {
-				var name = attr(complexType, "name");
-				if (name) {
-					complexTypes[name] = complexType;
-				}
-			});
-			var responseDataName = target.connector + "__" + target.requestable + "ResponseData";
-			return xsdComplexTypeSchema(complexTypes[responseDataName], complexTypes, {});
-		} catch (e) {
-			return null;
-		}
+	function requestableServiceEnv() {
+		return {
+			File: File,
+			mergeSchema: mergeSchema,
+			projectDir: projectDir,
+			withProjectDir: withProjectDir,
+			loadBlocks: loadBlocks,
+			parseSource: parseSource,
+			sourceForFlowRequest: sourceForFlowRequest,
+			declaredOutputSchema: declaredOutputSchema,
+			readResultSchema: readResultSchema,
+			objectSchema: objectSchema,
+			readObjectPath: readObjectPath,
+			unwrapDocumentSchema: unwrapDocumentSchema,
+			inferSchema: inferSchema,
+			schemaPaths: schemaPaths,
+			schemaArrayPaths: schemaArrayPaths,
+			schemaLeafEntries: schemaLeafEntries,
+			requestableFlowScriptHints: requestableFlowScriptHints,
+			currentProjectName: currentProjectName,
+			flowCodeError: flowCodeError,
+			raise: raise,
+			context: typeof context === "undefined" ? null : context
+		};
 	}
 
 	function requestableOutputSchema(target) {
-		target = target || {};
-		var projectName = String(target.project || "").trim();
-		var connectorName = String(target.connector || "").trim();
-		var requestableName = String(target.requestable || target.sequence || target.transaction || "").trim();
-		if (!projectName || !requestableName) {
-			return null;
-		}
-		try {
-			var qname = projectName + "." + (connectorName ? connectorName + "." : "") + requestableName;
-			var dbo = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager.getDatabaseObjectByQName(qname);
-			if (!dbo) {
-				return null;
-			}
-			var className = String(dbo.getClass().getName());
-			if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
-				return withProjectDir(String(dbo.getProject().getDirPath()), function () {
-					var blocks = loadBlocks();
-					var request = {
-						name: String(dbo.getName()),
-						flowName: String(dbo.getName()),
-						flowSource: String(dbo.getFlowSource())
-					};
-					var definition = parseSource(sourceForFlowRequest(request, blocks));
-					return objectSchema(declaredOutputSchema(definition) || readResultSchema(request, definition) || {});
-				});
-			}
-			var learnedSchema = learnedXsdOutputSchema(target);
-			if (learnedSchema) {
-				return learnedSchema;
-			}
-			var project = dbo.getProject();
-			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
-			var xso = Packages.com.twinsoft.convertigo.engine.enums.SchemaMeta.getXmlSchemaObject(schema, dbo);
-			if (!xso) {
-				return null;
-			}
-			var document = Packages.com.twinsoft.convertigo.engine.util.XmlSchemaUtils.getDomInstance(xso);
-			var jsonString = Packages.com.twinsoft.convertigo.engine.util.XMLUtils.XmlToJson(document.getDocumentElement(), true, true);
-			var sample = JSON.parse(String(jsonString));
-			var responseName = String(dbo.getXsdTypePrefix()) + String(dbo.getName()) + "Response";
-			var output = readObjectPath(sample, "document." + responseName + ".response");
-			if (output === undefined) {
-				output = sample;
-			}
-			return unwrapDocumentSchema(inferSchema(output));
-		} catch (e) {
-			return learnedXsdOutputSchema(target);
-		}
+		return requestableService().outputSchema(target, requestableServiceEnv());
 	}
 
 	function requestableTargetQName(target) {
-		target = target || {};
-		return target.project + "." + (target.connector ? target.connector + "." : "") + target.requestable;
+		return requestableService().targetQName(target);
 	}
 
 	function requestableTargetPublic(target, currentProject) {
-		var qname = requestableTargetQName(target);
-		var local = target.project === currentProject
-			? "." + (target.connector ? target.connector + "." : "") + target.requestable
-			: qname;
-		var out = {
-			kind: target.kind,
-			project: target.project,
-			name: target.requestable,
-			qname: qname,
-			requestable: qname,
-			localRequestable: local
-		};
-		if (target.connector) {
-			out.connector = target.connector;
-		}
-		return out;
-	}
-
-	function requestableTargetCandidates(request, targetText) {
-		request = request || {};
-		var project = currentProjectName(request);
-		var text = String(targetText || "").trim();
-		if (text.charAt(0) === ".") {
-			text = project + text;
-		}
-		var parts = text.split(".").filter(function (part) {
-			return part !== "";
-		});
-		var candidates = [];
-		if (parts.length >= 3) {
-			candidates.push({
-				kind: "transaction",
-				project: parts.slice(0, parts.length - 2).join("."),
-				connector: parts[parts.length - 2],
-				requestable: parts[parts.length - 1],
-				transaction: parts[parts.length - 1]
-			});
-		} else if (parts.length === 2) {
-			candidates.push({
-				kind: "sequence",
-				project: parts[0],
-				requestable: parts[1],
-				sequence: parts[1]
-			});
-		} else if (parts.length === 1 && project) {
-			candidates.push({
-				kind: "sequence",
-				project: project,
-				requestable: parts[0],
-				sequence: parts[0]
-			});
-		}
-		return candidates;
-	}
-
-	function requestableKindForDbo(dbo, candidate) {
-		var className = String(dbo.getClass().getName());
-		if (className.indexOf(".transactions.") !== -1 || className.indexOf(".beans.core.Transaction") !== -1) {
-			candidate.kind = "transaction";
-			candidate.connector = candidate.connector || String(dbo.getConnector().getName());
-			candidate.transaction = candidate.requestable;
-			return candidate;
-		}
-		if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
-			candidate.kind = "flow";
-			delete candidate.connector;
-			candidate.sequence = candidate.requestable;
-			return candidate;
-		}
-		if (className === "com.twinsoft.convertigo.beans.core.Sequence" || className.indexOf(".beans.sequences.") !== -1) {
-			candidate.kind = "sequence";
-			delete candidate.connector;
-			candidate.sequence = candidate.requestable;
-			return candidate;
-		}
-		return null;
-	}
-
-	function resolveRequestableTarget(request, targetText) {
-		var candidates = requestableTargetCandidates(request, targetText);
-		for (var i = 0; i < candidates.length; i++) {
-			try {
-				var dbo = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager
-					.getDatabaseObjectByQName(requestableTargetQName(candidates[i]));
-				if (!dbo) {
-					continue;
-				}
-				if (String(dbo.getProject().getName()) !== String(candidates[i].project)) {
-					continue;
-				}
-				try {
-					if (candidates[i].connector && String(dbo.getConnector().getName()) !== String(candidates[i].connector)) {
-						continue;
-					}
-				} catch (e) {
-					if (candidates[i].connector) {
-						continue;
-					}
-				}
-				var resolved = requestableKindForDbo(dbo, candidates[i]);
-				if (resolved) {
-					return resolved;
-				}
-			} catch (e) {
-			}
-		}
-		return null;
-	}
-
-	function requestableMatches(entry, query) {
-		query = String(query || "").trim().toLowerCase();
-		if (!query) {
-			return true;
-		}
-		var haystack = [
-			entry.kind,
-			entry.project,
-			entry.connector || "",
-			entry.name,
-			entry.qname,
-			entry.localRequestable || ""
-		].join(" ").toLowerCase();
-		return query.split(/\s+/).filter(function (token) {
-			return token !== "";
-		}).every(function (token) {
-			return haystack.indexOf(token) !== -1;
-		});
+		return requestableService().targetPublic(target, currentProject);
 	}
 
 	function requestableListRequest(request) {
-		request = request || {};
-		var projectName = currentProjectName(request);
-		if (!projectName) {
-			return {
-				ok: false,
-				error: flowCodeError("MISSING_PROJECT", "requestable.list requires project or context.project.",
-					"Pass the current project name.")
-			};
-		}
-		var limit = Math.max(1, Math.min(500, Number(request.limit || 100)));
-		var query = String(request.query || request.q || "").trim();
-		var dbom = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager;
-		var project = dbom.getOriginalProjectByName(projectName, false);
-		var requestables = [];
-		var sequenceIterator = project.getSequencesList().iterator();
-		while (sequenceIterator.hasNext()) {
-			var sequence = sequenceIterator.next();
-			var sequenceClass = String(sequence.getClass().getName());
-			requestables.push(requestableTargetPublic({
-				kind: sequenceClass === "com.twinsoft.convertigo.beans.flow.Flow" ? "flow" : "sequence",
-				project: projectName,
-				requestable: String(sequence.getName())
-			}, projectName));
-		}
-		var connectorIterator = project.getConnectorsList().iterator();
-		while (connectorIterator.hasNext()) {
-			var connector = connectorIterator.next();
-			var transactionIterator = connector.getTransactionsList().iterator();
-			while (transactionIterator.hasNext()) {
-				var transaction = transactionIterator.next();
-				requestables.push(requestableTargetPublic({
-					kind: "transaction",
-					project: projectName,
-					connector: String(connector.getName()),
-					requestable: String(transaction.getName()),
-					transaction: String(transaction.getName())
-				}, projectName));
-			}
-		}
-		requestables = requestables.filter(function (entry) {
-			return requestableMatches(entry, query);
-		}).slice(0, limit);
-		return {
-			ok: true,
-			project: projectName,
-			count: requestables.length,
-			requestables: requestables
-		};
+		return requestableService().list(request, requestableServiceEnv());
 	}
 
 	function requestableSchemaRequest(request) {
-		request = request || {};
-		var text = request.requestable || request.target || request.qname || request.name || "";
-		if (!text) {
-			return {
-				ok: false,
-				error: flowCodeError("MISSING_REQUESTABLE", "requestable.schema requires requestable.",
-					"Pass for example .RSSConnector.GetFeed, .MyFlow or Project.Connector.Transaction.")
-			};
-		}
-		var target = resolveRequestableTarget(request, text);
-		if (!target || !target.project || !target.requestable) {
-			return {
-				ok: false,
-				error: flowCodeError("UNKNOWN_REQUESTABLE", "Unknown requestable: " + text,
-					"Call requestable.list first and reuse one returned qname or localRequestable. Current-project requestables start with a dot.")
-			};
-		}
-		var schema = requestableOutputSchema(target);
-		var learned = false;
-		var sample;
-		if (!schema && request.learn === true) {
-			sample = requestableSampleOutput(target, request.input || {});
-			schema = unwrapDocumentSchema(inferSchema(sample));
-			learned = true;
-		}
-		if (!schema) {
-			return {
-				ok: false,
-				target: requestableTargetPublic(target, currentProjectName(request)),
-				error: flowCodeError("REQUESTABLE_SCHEMA_UNAVAILABLE", "No schema available for requestable: " + text,
-					"Run or learn the requestable schema in Studio, or retry with learn:true when executing the requestable is safe.")
-			};
-		}
-		schema = objectSchema(schema);
-		var paths = schemaPaths(schema, "");
-		var arrayPaths = schemaArrayPaths(schema, "");
-		var leafPaths = schemaLeafEntries(schema, "");
-		var out = {
-			ok: true,
-			target: requestableTargetPublic(target, currentProjectName(request)),
-			learned: learned,
-			schema: schema,
-			paths: paths,
-			arrayPaths: arrayPaths,
-			leafPaths: leafPaths,
-			flowScript: requestableFlowScriptHints(target, arrayPaths, leafPaths, currentProjectName(request))
-		};
-		if (request.includeSample === true) {
-			out.sample = sample;
-		}
-		return out;
+		return requestableService().schema(request, requestableServiceEnv());
 	}
 
 	function requestableSampleOutput(target, input) {
-		if (typeof context === "undefined" || context === null) {
-			raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "requestable.schema learn:true needs a live Convertigo context.");
-		}
-		var request = new Packages.java.util.HashMap();
-		request.put("__project", target.project);
-		if (target.kind === "transaction") {
-			request.put("__connector", target.connector);
-			request.put("__transaction", target.transaction || target.requestable);
-		} else {
-			request.put("__sequence", target.sequence || target.requestable);
-		}
-		Object.keys(input || {}).forEach(function (key) {
-			var value = input[key];
-			request.put(String(key), value === undefined || value === null ? "" : typeof value === "string" ? value : JSON.stringify(value));
-		});
-		var doc = new Packages.com.twinsoft.convertigo.engine.requesters.InternalRequester(request, context.httpServletRequest).processRequest();
-		var raw = JSON.parse(String(Packages.com.twinsoft.convertigo.engine.util.XMLUtils.XmlToJson(doc.getDocumentElement(), true)));
-		return raw && raw.document !== undefined ? raw.document : raw;
+		return requestableService().sampleOutput(target, input, requestableServiceEnv());
 	}
 
 	function blockName(node) {
