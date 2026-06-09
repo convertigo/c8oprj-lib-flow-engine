@@ -556,6 +556,8 @@
 		signatureBlockDescriptor: signatureBlockDescriptor,
 		compactTypeDescriptor: compactTypeDescriptor,
 		summaryBlockDescriptor: summaryBlockDescriptor,
+		summaryPropertyDescriptor: summaryPropertyDescriptor,
+		blockSignature: blockSignature,
 		catalogDefinition: catalogDefinition,
 		catalogTypes: catalogTypes
 	};
