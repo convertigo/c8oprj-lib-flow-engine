@@ -16,6 +16,7 @@
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
 	var cacheUtilsModule = null;
+	var flowNodeUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
 	var runtimeState = {
@@ -163,63 +164,37 @@
 	}
 
 	function nodePath(node) {
-		return node && (node.uid || node.id || node.name) ? String(node.uid || node.id || node.name) : "";
+		return flowNodeUtils().nodePath(node);
 	}
 
 	function nodeProps(node) {
-		var props = {};
-		var structural = {
-			id: true, uid: true, block: true, type: true,
-			props: true, nodes: true, "do": true, then: true, "else": true,
-			disabled: true, __fragment: true, __graphBlock: true
-		};
-		if (node.props) {
-			Object.keys(node.props).forEach(function (key) {
-				props[key] = node.props[key];
-			});
-		}
-		Object.keys(node).forEach(function (key) {
-			if (!structural[key]) {
-				props[key] = node[key];
-			}
-		});
-		return props;
+		return flowNodeUtils().nodeProps(node);
 	}
 
 	function isFlowNodeLike(value) {
-		return value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]" &&
-			(value.block !== undefined || value.id !== undefined || value.uid !== undefined || value.props !== undefined);
+		return flowNodeUtils().isFlowNodeLike(value);
 	}
 
 	function canonicalFlowNode(node) {
-		node = normalizeTree(node || {});
-		if (node.props && typeof node.props === "object" && Object.prototype.toString.call(node.props) !== "[object Array]") {
-			Object.keys(node.props).forEach(function (key) {
-				if (node[key] === undefined) {
-					node[key] = node.props[key];
-				}
-			});
-			delete node.props;
-		}
-		Object.keys(node).forEach(function (key) {
-			var value = node[key];
-			if (Object.prototype.toString.call(value) === "[object Array]") {
-				node[key] = value.map(function (item) {
-					return isFlowNodeLike(item) ? canonicalFlowNode(item) : normalizeTree(item);
-				});
-			}
-		});
-		return node;
+		return flowNodeUtils().canonicalFlowNode(node, flowNodeEnv());
 	}
 
 	function canonicalFlowDefinition(definition) {
-		var out = normalizeTree(definition || {});
-		if (Object.prototype.toString.call(out.nodes) === "[object Array]") {
-			out.nodes = out.nodes.map(function (node) {
-				return canonicalFlowNode(node);
-			});
+		return flowNodeUtils().canonicalFlowDefinition(definition, flowNodeEnv());
+	}
+
+	function flowNodeUtils() {
+		if (flowNodeUtilsModule) {
+			return flowNodeUtilsModule;
 		}
-		return out;
+		flowNodeUtilsModule = loadEngineModule("flow-node-utils.js");
+		return flowNodeUtilsModule;
+	}
+
+	function flowNodeEnv() {
+		return {
+			normalizeTree: normalizeTree
+		};
 	}
 
 	function scopePathUtils() {
@@ -581,6 +556,7 @@
 		clearRuntimeMapCache(runtimeState.caches.engineModules);
 		clearRuntimeCache(runtimeState.caches.propertyEditor);
 		cacheUtilsModule = null;
+		flowNodeUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
 		return cacheInfoRequest();
