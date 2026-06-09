@@ -2550,101 +2550,36 @@
 		}, overwrite);
 	}
 
+	function blockSourceService() {
+		return loadEngineModule("block-source-service.js");
+	}
+
+	function blockSourceEnv() {
+		return {
+			File: File,
+			FileUtils: FileUtils,
+			normalizeTree: normalizeTree,
+			validateGraphBlockSource: validateGraphBlockSource,
+			blockDescriptor: blockDescriptor,
+			blockImplementation: blockImplementation,
+			summaryBlockDescriptor: summaryBlockDescriptor,
+			compactBlockDescriptor: compactBlockDescriptor,
+			sourceFromDefinition: sourceFromDefinition,
+			sha256Hex: sha256Hex,
+			raise: raise
+		};
+	}
+
 	function publicBlockDescriptor(descriptor) {
-		var out = normalizeTree(descriptor || {});
-		if (out.props) {
-			out.properties = out.props;
-			delete out.props;
-		}
-		delete out.__flowBlockId;
-		delete out.__graphDefinition;
-		delete out.__flowCode;
-		delete out.__rhinoCode;
-		return out;
+		return blockSourceService().publicDescriptor(descriptor, blockSourceEnv());
 	}
 
 	function sourceLength(path) {
-		if (!path) {
-			return 0;
-		}
-		try {
-			return Number(new File(String(path)).length());
-		} catch (e) {
-			return 0;
-		}
+		return blockSourceService().sourceLength(path, blockSourceEnv());
 	}
 
 	function getBlockSource(blocks, name, args) {
-		args = args || {};
-		var block = blocks[String(name || "")];
-		if (!block) {
-			raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name);
-		}
-		var file = new File(String(block.__flowFile || ""));
-		var flowScriptBlock = String(block.__flowFormat || "") === "flowscript-block";
-		if (!flowScriptBlock && !String(block.__flowFile || "").endsWith(".block.yaml")) {
-			raise("INVALID_BLOCK_STORAGE", "Flow block is not backed by a canonical descriptor: " + name);
-		}
-		var descriptorSource = flowScriptBlock ? "" : String(FileUtils.readFileToString(file, "UTF-8"));
-		var descriptor = flowScriptBlock ? normalizeTree(block.__blockDefinition || {}) : validateGraphBlockSource(block.name, descriptorSource);
-		var catalog = blockDescriptor(block);
-		var implementation = blockImplementation(descriptor);
-		var detail = String(args.detail || args.mode || "compact").toLowerCase();
-		if (detail !== "full") {
-			var compact = {
-				ok: true,
-				detail: detail === "summary" ? "summary" : "compact",
-				name: block.name
-			};
-			if (args.includeMeta === true || String(args.includeMeta || "") === "true") {
-				compact.origin = block.__flowOrigin || "unknown";
-				compact.provider = block.__flowProvider || block.__flowOrigin || "unknown";
-				compact.format = flowScriptBlock ? (implementation.runtime === "rhino" ? "blockjs" : "flowscript") : "canonical";
-				compact.implementationRuntime = implementation.runtime;
-				compact.descriptorChars = descriptorSource.length;
-				compact.codeChars = flowScriptBlock ? String(block.__flowCode || "").length : 0;
-				compact.implementationChars = flowScriptBlock
-					? String(block.__rhinoCode || "").length
-					: sourceLength(block.__flowImplementationFile);
-				compact.hooksChars = sourceLength(block.__flowHooksFile);
-			}
-			if (detail === "summary") {
-				compact.block = summaryBlockDescriptor(catalog);
-				compact.next = "Use detail='compact' for typed properties or detail='full' for descriptor/implementation sources.";
-			} else {
-				compact.block = compactBlockDescriptor(catalog);
-				compact.next = "Sources omitted. Use detail='full' only when editing descriptorSource, implementationSource or hooksSource.";
-			}
-			return compact;
-		}
-		var out = {
-			ok: true,
-			detail: "full",
-			name: block.name,
-			origin: block.__flowOrigin || "unknown",
-			format: flowScriptBlock ? (implementation.runtime === "rhino" ? "blockjs" : "flowscript") : "canonical",
-			file: String(block.__flowFile || ""),
-			codeFile: flowScriptBlock ? String(block.__flowFile || "") : "",
-			codeRevision: flowScriptBlock ? sha256Hex(String(block.__flowCode || "")) : "",
-			descriptorFile: flowScriptBlock ? "" : String(block.__flowFile || ""),
-			code: flowScriptBlock ? String(block.__flowCode || "") : "",
-			descriptorSource: descriptorSource,
-			descriptor: publicBlockDescriptor(descriptor),
-			implementationRuntime: implementation.runtime
-		};
-		if (flowScriptBlock) {
-			out.implementationSource = implementation.runtime === "rhino"
-				? String(block.__rhinoCode || "")
-				: sourceFromDefinition(block.__graphDefinition || { version: 1, nodes: [] });
-		} else if (block.__flowImplementationFile) {
-			out.implementationFile = String(block.__flowImplementationFile);
-			out.implementationSource = String(FileUtils.readFileToString(new File(String(block.__flowImplementationFile)), "UTF-8"));
-		}
-		if (block.__flowHooksFile) {
-			out.hooksFile = String(block.__flowHooksFile);
-			out.hooksSource = String(FileUtils.readFileToString(new File(String(block.__flowHooksFile)), "UTF-8"));
-		}
-		return out;
+		return blockSourceService().getSource(blocks, name, args, blockSourceEnv());
 	}
 
 	function typeDescriptorService() {
