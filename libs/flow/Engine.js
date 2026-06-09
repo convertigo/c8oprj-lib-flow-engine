@@ -3010,138 +3010,65 @@
 		};
 	}
 
+	function flowStorageService() {
+		return loadEngineModule("flow-storage-service.js");
+	}
+
+	function flowStorageEnv() {
+		return {
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			engineDir: engineDir,
+			projectFlowsDir: projectFlowsDir,
+			projectFlowDraftsDir: projectFlowDraftsDir,
+			projectFragmentsDir: projectFragmentsDir,
+			flowFileName: flowFileName,
+			flowCodeFileName: flowCodeFileName,
+			fragmentFileName: fragmentFileName,
+			parseYamlSource: parseYamlSource,
+			raise: raise
+		};
+	}
+
 	function projectFlowFile(name) {
-		var dir = projectFlowsDir();
-		if (!dir) {
-			raise("PROJECT_FLOWS_UNAVAILABLE", "Project flows are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new File(dir, flowFileName(name));
+		return flowStorageService().projectFlowFile(name, flowStorageEnv());
 	}
 
 	function projectFlowCodeFile(name) {
-		var dir = projectFlowsDir();
-		if (!dir) {
-			raise("PROJECT_FLOWS_UNAVAILABLE", "Project flows are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new File(dir, flowCodeFileName(name));
+		return flowStorageService().projectFlowCodeFile(name, flowStorageEnv());
 	}
 
 	function projectFlowDraftCodeFile(name) {
-		var dir = projectFlowDraftsDir();
-		if (!dir) {
-			raise("PROJECT_FLOW_DRAFTS_UNAVAILABLE", "Project Flow drafts are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new File(dir, flowCodeFileName(name));
+		return flowStorageService().projectFlowDraftCodeFile(name, flowStorageEnv());
 	}
 
 	function flowNameFromFile(file) {
-		var filename = String(file && file.getName ? file.getName() : file || "");
-		if (filename.endsWith(".flow.js")) {
-			return filename.substring(0, filename.length - ".flow.js".length);
-		}
-		if (filename.endsWith(".flow.yaml")) {
-			return filename.substring(0, filename.length - ".flow.yaml".length);
-		}
-		return "";
+		return flowStorageService().flowNameFromFile(file);
 	}
 
 	function projectFlowStorage(name) {
-		return {
-			name: String(name || ""),
-			codeFile: projectFlowCodeFile(name),
-			yamlFile: projectFlowFile(name)
-		};
+		return flowStorageService().projectFlowStorage(name, flowStorageEnv());
 	}
 
 	function projectFragmentFile(name) {
-		var dir = projectFragmentsDir();
-		if (!dir) {
-			raise("PROJECT_FRAGMENTS_UNAVAILABLE", "Project Flow fragments are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new File(dir, fragmentFileName(name));
+		return flowStorageService().projectFragmentFile(name, flowStorageEnv());
 	}
 
 	function fragmentCandidates(name) {
-		var out = [];
-		var dir = projectFragmentsDir();
-		if (dir) {
-			out.push(new File(dir, fragmentFileName(name)));
-		}
-		out.push(new File(new File(engineDir(), "fragments"), fragmentFileName(name)));
-		return out;
+		return flowStorageService().fragmentCandidates(name, flowStorageEnv());
 	}
 
 	function fragmentFile(name) {
-		var candidates = fragmentCandidates(name);
-		for (var i = 0; i < candidates.length; i++) {
-			if (candidates[i].isFile()) {
-				return candidates[i];
-			}
-		}
-		raise("UNKNOWN_FRAGMENT", "Unknown Flow fragment: " + name,
-			null, "Create libs/flow/fragments/" + fragmentFileName(name) + " in the current project.");
+		return flowStorageService().fragmentFile(name, flowStorageEnv());
 	}
 
 	function readFragment(name) {
-		var file = fragmentFile(name);
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		return {
-			name: String(name),
-			file: String(file.getAbsolutePath()),
-			source: source,
-			definition: parseYamlSource(source, "version: 1\nnodes: []\n")
-		};
+		return flowStorageService().readFragment(name, flowStorageEnv());
 	}
 
 	function listProjectFlows() {
-		var dir = projectFlowsDir();
-		if (!dir || !dir.isDirectory()) {
-			return { flows: [] };
-		}
-		var listed = dir.listFiles();
-		if (!listed) {
-			return { flows: [] };
-		}
-		var files = Arrays.asList(listed).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		var byName = {};
-		files.filter(function (file) {
-			return file.isFile() && (String(file.getName()).endsWith(".flow.js") || String(file.getName()).endsWith(".flow.yaml"));
-		}).forEach(function (file) {
-			var name = flowNameFromFile(file);
-			if (!name) {
-				return;
-			}
-			var codeFile = String(file.getName()).endsWith(".flow.js") ? file : new File(file.getParentFile(), flowCodeFileName(name));
-			var yamlFile = String(file.getName()).endsWith(".flow.yaml") ? file : new File(file.getParentFile(), flowFileName(name));
-			var previous = byName[name];
-			if (previous && previous.format === "flowscript" && !String(file.getName()).endsWith(".flow.js")) {
-				return;
-			}
-			var canonical = codeFile.isFile() ? codeFile : yamlFile;
-			byName[name] = {
-				name: name,
-				format: codeFile.isFile() ? "flowscript" : "yaml",
-				file: String(canonical.getAbsolutePath()),
-				sourceFile: yamlFile.isFile() ? String(yamlFile.getAbsolutePath()) : "",
-				codeFile: codeFile.isFile() ? String(codeFile.getAbsolutePath()) : "",
-				size: Number(canonical.length()),
-				sourceSize: yamlFile.isFile() ? Number(yamlFile.length()) : 0,
-				codeSize: codeFile.isFile() ? Number(codeFile.length()) : 0,
-				lastModified: Number(canonical.lastModified())
-			};
-		});
-		return {
-			flows: Object.keys(byName).sort().map(function (name) {
-				return byName[name];
-			})
-		};
+		return flowStorageService().listProjectFlows(flowStorageEnv());
 	}
 
 	function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
@@ -3232,31 +3159,7 @@
 	}
 
 	function listProjectFragments() {
-		var dir = projectFragmentsDir();
-		if (!dir || !dir.isDirectory()) {
-			return { fragments: [] };
-		}
-		var listed = dir.listFiles();
-		if (!listed) {
-			return { fragments: [] };
-		}
-		var files = Arrays.asList(listed).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		return {
-			fragments: files.filter(function (file) {
-				return file.isFile() && String(file.getName()).endsWith(".fragment.yaml");
-			}).map(function (file) {
-				var filename = String(file.getName());
-				return {
-					name: filename.substring(0, filename.length - ".fragment.yaml".length),
-					file: String(file.getAbsolutePath()),
-					size: Number(file.length()),
-					lastModified: Number(file.lastModified())
-				};
-			})
-		};
+		return flowStorageService().listProjectFragments(flowStorageEnv());
 	}
 
 	function sourceFromFlowScript(blocks, name, code) {
