@@ -17,6 +17,7 @@
 	var projectDirOverride = null;
 	var cacheUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
+	var iconServiceModule = null;
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
@@ -818,6 +819,7 @@
 		clearRuntimeCache(runtimeState.caches.propertyEditor);
 		cacheUtilsModule = null;
 		runtimeHandleUtilsModule = null;
+		iconServiceModule = null;
 		return cacheInfoRequest();
 	}
 
@@ -7023,43 +7025,8 @@
 		return out;
 	}
 
-	function isIconifyIcon(icon) {
-		return String(icon || "").match(/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9_.-]+$/) !== null;
-	}
-
-	function isUrlIcon(icon) {
-		return String(icon || "").match(/^https?:\/\//i) !== null;
-	}
-
-	function flowDirForBlock(block) {
-		var blockFile = String(block && block.__flowFile || "");
-		if (blockFile) {
-			var dir = new File(blockFile).getParentFile();
-			if (dir && String(dir.getName()) === "blocks") {
-				return dir.getParentFile();
-			}
-			return dir || engineDir();
-		}
-		return engineDir();
-	}
-
-	function iconCacheDir(block, family, provider) {
-		var dir = new File(new File(flowDirForBlock(block), "icons"), family);
-		return provider ? new File(dir, provider) : dir;
-	}
-
 	function safeIconName(name) {
 		return String(name || "").replace(/[^A-Za-z0-9_.-]/g, "_");
-	}
-
-	function urlExtension(icon) {
-		var path = String(icon || "").replace(/[?#].*$/, "");
-		var dot = path.lastIndexOf(".");
-		var ext = dot === -1 ? "" : path.substring(dot + 1).toLowerCase();
-		if (["svg", "png", "jpg", "jpeg", "gif", "webp", "ico"].indexOf(ext) === -1) {
-			return "bin";
-		}
-		return ext;
 	}
 
 	function sha256Hex(text) {
@@ -7081,233 +7048,32 @@
 		}
 	}
 
-	function downloadToCache(url, file) {
-		if (file.isFile()) {
-			return true;
+	function iconService() {
+		if (!iconServiceModule) {
+			iconServiceModule = loadEngineModule("icon-service.js");
 		}
-		var failureMarker = new File(String(file.getAbsolutePath()) + ".failed");
-		if (failureMarker.isFile() && Number(new Date().getTime()) - Number(failureMarker.lastModified()) < 3600000) {
-			return false;
-		}
-		try {
-			file.getParentFile().mkdirs();
-			FileUtils.copyURLToFile(new Packages.java.net.URL(String(url)), file, 800, 2000);
-			if (failureMarker.isFile()) {
-				FileUtils.deleteQuietly(failureMarker);
-			}
-			return file.isFile();
-		} catch (e) {
-			try {
-				file.getParentFile().mkdirs();
-				FileUtils.writeStringToFile(failureMarker, String(e), "UTF-8");
-			} catch (ignored) {
-			}
-			return false;
-		}
+		return iconServiceModule;
 	}
 
-	function exposeCachedIconFiles(descriptor, base, extension) {
-		var svg = new File(String(base.getAbsolutePath()) + ".svg");
-		var png16 = new File(String(base.getAbsolutePath()) + "_16x16.png");
-		var png32 = new File(String(base.getAbsolutePath()) + "_32x32.png");
-		var original = extension ? new File(String(base.getAbsolutePath()) + "." + extension) : null;
-		if (svg.isFile()) {
-			descriptor.iconSvg = canonicalPath(svg);
-		}
-		if (png16.isFile()) {
-			descriptor.iconFile16 = canonicalPath(png16);
-			descriptor.iconFile = descriptor.iconFile || descriptor.iconFile16;
-		}
-		if (png32.isFile()) {
-			descriptor.iconFile32 = canonicalPath(png32);
-			if (!descriptor.iconFile) {
-				descriptor.iconFile = descriptor.iconFile32;
-			}
-		}
-		if (original && original.isFile()) {
-			var path = canonicalPath(original);
-			if (extension === "svg") {
-				descriptor.iconSvg = path;
-			}
-			if (!descriptor.iconFile && extension !== "bin") {
-				descriptor.iconFile = path;
-			}
-		}
-	}
-
-	function fileDataUrl(file, mimeType) {
-		try {
-			if (!file || !file.isFile() || file.length() > 65536) {
-				return "";
-			}
-			var encoded = Base64.getEncoder().encodeToString(FileUtils.readFileToByteArray(file));
-			return "data:" + mimeType + ";base64," + encoded;
-		} catch (e) {
-			return "";
-		}
-	}
-
-	function addIconifyCache(block, descriptor, icon) {
-		var parts = String(icon || "").split(":");
-		if (parts.length !== 2) {
-			return;
-		}
-		var provider = safeIconName(parts[0]);
-		var name = safeIconName(parts[1]);
-		var base = new File(iconCacheDir(block, "iconify", provider), name);
-		var svg = new File(String(base.getAbsolutePath()) + ".svg");
-		if (!svg.isFile()) {
-			downloadToCache("https://api.iconify.design/" + provider + "/" + name + ".svg?color=%2314a7cf", svg);
-		}
-		descriptor.iconify = provider + ":" + name;
-		exposeCachedIconFiles(descriptor, base, "svg");
-	}
-
-	function addUrlIconCache(block, descriptor, icon) {
-		var ext = urlExtension(icon);
-		var base = new File(iconCacheDir(block, "url", null), sha256Hex(icon));
-		var file = new File(String(base.getAbsolutePath()) + "." + ext);
-		downloadToCache(icon, file);
-		descriptor.iconUrl = icon;
-		exposeCachedIconFiles(descriptor, base, ext);
-	}
-
-	function exposeLocalIcon(descriptor, iconFile) {
-		if (!iconFile || !iconFile.isFile()) {
-			return;
-		}
-		var path = canonicalPath(iconFile);
-		var ext = urlExtension(path);
-		if (ext === "svg") {
-			descriptor.iconSvg = path;
-		}
-		descriptor.iconFile = path;
-		if (String(iconFile.getName()).indexOf("_16x16.") !== -1) {
-			descriptor.iconFile16 = path;
-		}
-		if (String(iconFile.getName()).indexOf("_32x32.") !== -1) {
-			descriptor.iconFile32 = path;
-		}
+	function iconServiceEnv() {
+		return {
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			Base64: Base64,
+			canonicalPath: canonicalPath,
+			engineDir: engineDir,
+			projectDir: projectDir,
+			sha256Hex: sha256Hex
+		};
 	}
 
 	function resolveBlockIcon(block, descriptor) {
-		var icon = descriptor && descriptor.icon !== undefined ? String(descriptor.icon || "").trim() : "";
-		if (!icon) {
-			return descriptor;
-		}
-		descriptor.icon = icon;
-		if (isIconifyIcon(icon)) {
-			descriptor.iconify = icon;
-			addIconifyCache(block, descriptor, icon);
-			return descriptor;
-		}
-		if (isUrlIcon(icon)) {
-			addUrlIconCache(block, descriptor, icon);
-			return descriptor;
-		}
-		if (icon.indexOf("/com/twinsoft/convertigo/") === 0) {
-			descriptor.iconFile = icon;
-			return descriptor;
-		}
-		var iconFile = new File(icon);
-		if (!iconFile.isAbsolute()) {
-			var blockFile = String(block && block.__flowFile || "");
-			var baseDir = blockFile ? new File(blockFile).getParentFile() : engineDir();
-			iconFile = new File(baseDir, icon);
-		}
-		exposeLocalIcon(descriptor, iconFile);
-		return descriptor;
-	}
-
-	function iconNameFromCacheFile(file) {
-		var name = String(file.getName() || "");
-		if (name.indexOf(".") === -1) {
-			return "";
-		}
-		name = name.replace(/\.(svg|png|gif|jpg|jpeg|webp|ico)$/i, "");
-		name = name.replace(/_(16|32)x(16|32)$/i, "");
-		return name;
-	}
-
-	function collectIconifyProviderIcons(providerDir, provider, origin, icons, seen) {
-		var files = providerDir && providerDir.listFiles();
-		if (!files) {
-			return;
-		}
-		files = Arrays.asList(files).toArray();
-		files.forEach(function (file) {
-			if (!file.isFile()) {
-				return;
-			}
-			var name = iconNameFromCacheFile(file);
-			if (!name || name === ".gitignore") {
-				return;
-			}
-			var id = provider + ":" + name;
-			if (seen[id]) {
-				return;
-			}
-			seen[id] = true;
-			var icon = {
-				id: id,
-				provider: provider,
-				name: name,
-				origin: origin
-			};
-			var base = new File(providerDir, name);
-			exposeCachedIconFiles(icon, base, "svg");
-			var svg = new File(String(base.getAbsolutePath()) + ".svg");
-			if (svg.isFile()) {
-				icon.iconData = fileDataUrl(svg, "image/svg+xml");
-			}
-			icons.push(icon);
-		});
-	}
-
-	function collectIconifyIcons(flowDir, origin, provider, icons, seen) {
-		var root = flowDir ? new File(new File(flowDir, "icons"), "iconify") : null;
-		if (!root || !root.isDirectory()) {
-			return;
-		}
-		if (provider) {
-			collectIconifyProviderIcons(new File(root, safeIconName(provider)), safeIconName(provider), origin, icons, seen);
-			return;
-		}
-		var providers = root.listFiles();
-		if (!providers) {
-			return;
-		}
-		providers = Arrays.asList(providers).toArray();
-		providers.forEach(function (dir) {
-			if (dir.isDirectory()) {
-				collectIconifyProviderIcons(dir, String(dir.getName()), origin, icons, seen);
-			}
-		});
+		return iconService().resolveBlockIcon(block, descriptor, iconServiceEnv());
 	}
 
 	function iconCatalogRequest(request) {
-		request = request || {};
-		var provider = String(request.provider || "mdi").trim();
-		var query = String(request.query || "").trim().toLowerCase();
-		var limit = Math.max(1, Math.min(Number(request.limit || 200), 500));
-		var icons = [];
-		var seen = {};
-		collectIconifyIcons(projectDir() ? new File(projectDir(), "libs/flow") : null, "project", provider, icons, seen);
-		collectIconifyIcons(engineDir(), "core", provider, icons, seen);
-		icons.sort(function (a, b) {
-			return String(a.id).localeCompare(String(b.id));
-		});
-		if (query) {
-			icons = icons.filter(function (icon) {
-				return String(icon.id).toLowerCase().indexOf(query) !== -1;
-			});
-		}
-		return {
-			ok: true,
-			provider: provider,
-			count: icons.length,
-			icons: icons.slice(0, limit)
-		};
+		return iconService().iconCatalogRequest(request, iconServiceEnv());
 	}
 
 	function executeNode(ctx, node) {
