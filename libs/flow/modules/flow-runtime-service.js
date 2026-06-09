@@ -53,10 +53,7 @@
 		var learnOutputSchema = env.learnOutputSchema;
 		var flowNameFor = env.flowNameFor;
 		var resetSchemaRequest = env.resetSchemaRequest;
-		var resourceSearchRequest = env.resourceSearchRequest;
-		var resourceListRequest = env.resourceListRequest;
-		var resourceGetRequest = env.resourceGetRequest;
-		var resourcePatchRequest = env.resourcePatchRequest;
+		var resources = env.resources;
 		var mergedContext = env.mergedContext;
 		var catalogDefinition = env.catalogDefinition;
 		var getBlockSource = env.getBlockSource;
@@ -87,8 +84,7 @@
 		var flowCodeRunRequest = env.flowCodeRunRequest;
 		var flowCodeAnalyzeRequest = env.flowCodeAnalyzeRequest;
 		var flowCodePromoteRequest = env.flowCodePromoteRequest;
-		var requestableListRequest = env.requestableListRequest;
-		var requestableSchemaRequest = env.requestableSchemaRequest;
+		var requestables = env.requestables;
 		var throwFlowError = env.throwFlowError;
 		var liveContext = env.context;
 
@@ -391,25 +387,25 @@
 			ctx.resourceSearch = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return resourceSearchRequest(args);
+					return resources.search(args);
 				});
 			};
 			ctx.resourceList = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return resourceListRequest(args);
+					return resources.list(args);
 				});
 			};
 			ctx.resourceGet = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return resourceGetRequest(args);
+					return resources.get(args);
 				});
 			};
 			ctx.resourcePatch = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return resourcePatchRequest(args);
+					return resources.patch(args);
 				});
 			};
 			ctx.runFlowSource = function (flowSource, config, options) {
@@ -651,13 +647,13 @@
 			ctx.requestableList = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return requestableListRequest(args);
+					return requestables.list(args);
 				});
 			};
 			ctx.requestableSchema = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return requestableSchemaRequest(args);
+					return requestables.schema(args);
 				});
 			};
 			ctx.returnValue = function (value) {

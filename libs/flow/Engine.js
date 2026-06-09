@@ -970,6 +970,15 @@
 		return resourceService().patch(request, resourceServiceEnv());
 	}
 
+	function resourceApi() {
+		return {
+			search: resourceSearchRequest,
+			list: resourceListRequest,
+			get: resourceGetRequest,
+			patch: resourcePatchRequest
+		};
+	}
+
 	function flowLibraryService() {
 		return loadEngineModule("flow-library-service.js");
 	}
@@ -2417,6 +2426,13 @@
 		return requestableService().schema(request, requestableServiceEnv());
 	}
 
+	function requestableApi() {
+		return {
+			list: requestableListRequest,
+			schema: requestableSchemaRequest
+		};
+	}
+
 	function requestableSampleOutput(target, input) {
 		return requestableService().sampleOutput(target, input, requestableServiceEnv());
 	}
@@ -2609,10 +2625,7 @@
 			learnOutputSchema: learnOutputSchema,
 			flowNameFor: flowNameFor,
 			resetSchemaRequest: resetSchemaRequest,
-			resourceSearchRequest: resourceSearchRequest,
-			resourceListRequest: resourceListRequest,
-			resourceGetRequest: resourceGetRequest,
-			resourcePatchRequest: resourcePatchRequest,
+			resources: resourceApi(),
 			mergedContext: mergedContext,
 			catalogDefinition: catalogDefinition,
 			getBlockSource: getBlockSource,
@@ -2643,8 +2656,7 @@
 			flowCodeRunRequest: flowCodeRunRequest,
 			flowCodeAnalyzeRequest: flowCodeAnalyzeRequest,
 			flowCodePromoteRequest: flowCodePromoteRequest,
-			requestableListRequest: requestableListRequest,
-			requestableSchemaRequest: requestableSchemaRequest,
+			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
 			context: typeof context === "undefined" ? null : context
 		};
