@@ -15,6 +15,7 @@
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
+	var cacheUtilsModule = null;
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
@@ -891,77 +892,53 @@
 	}
 
 	function createRuntimeCacheState() {
-		return {
-			key: "",
-			value: null,
-			hits: 0,
-			misses: 0,
-			clears: 0,
-			updatedAt: "",
-			label: ""
-		};
+		return cacheUtils().createValueState();
 	}
 
 	function createRuntimeMapCacheState() {
-		return {
-			entries: {},
-			hits: 0,
-			misses: 0,
-			clears: 0,
-			updatedAt: "",
-			label: ""
-		};
+		return cacheUtils().createMapState();
+	}
+
+	function cacheUtils() {
+		if (cacheUtilsModule) {
+			return cacheUtilsModule;
+		}
+		var file = engineModuleFile("cache-utils.js");
+		if (!file.isFile()) {
+			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
+		}
+		var module = eval(String(FileUtils.readFileToString(file, "UTF-8")));
+		if (!module || typeof module !== "object") {
+			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
+				null, "A Flow engine module must evaluate to an object.");
+		}
+		module.__flowFile = String(file.getAbsolutePath());
+		cacheUtilsModule = module;
+		return module;
 	}
 
 	function readRuntimeCache(cache, key) {
-		if (cache.value && cache.key === key) {
-			cache.hits++;
-			return cache.value;
-		}
-		cache.misses++;
-		return null;
+		return cacheUtils().readValue(cache, key);
 	}
 
 	function writeRuntimeCache(cache, key, value, label) {
-		cache.key = key;
-		cache.value = value;
-		cache.label = label || "";
-		cache.updatedAt = new Date().toISOString();
-		return value;
+		return cacheUtils().writeValue(cache, key, value, label);
 	}
 
 	function readRuntimeMapCache(cache, key, fingerprint) {
-		var entry = cache.entries[key];
-		if (entry && entry.fingerprint === fingerprint) {
-			cache.hits++;
-			return entry.value;
-		}
-		cache.misses++;
-		return null;
+		return cacheUtils().readMap(cache, key, fingerprint);
 	}
 
 	function writeRuntimeMapCache(cache, key, fingerprint, value, label) {
-		cache.entries[key] = {
-			fingerprint: fingerprint,
-			value: value,
-			updatedAt: new Date().toISOString()
-		};
-		cache.label = label || "";
-		cache.updatedAt = cache.entries[key].updatedAt;
-		return value;
+		return cacheUtils().writeMap(cache, key, fingerprint, value, label);
 	}
 
 	function clearRuntimeCache(cache) {
-		cache.key = "";
-		cache.value = null;
-		cache.clears++;
-		cache.updatedAt = new Date().toISOString();
+		cacheUtils().clearValue(cache);
 	}
 
 	function clearRuntimeMapCache(cache) {
-		cache.entries = {};
-		cache.clears++;
-		cache.updatedAt = new Date().toISOString();
+		cacheUtils().clearMap(cache);
 	}
 
 	function clearRuntimeCaches() {
@@ -974,24 +951,7 @@
 	}
 
 	function cacheSummary(name, cache) {
-		var entries = cache.entries ? Object.keys(cache.entries).sort() : [];
-		return {
-			name: name,
-			warm: cache.entries ? entries.length > 0 : !!cache.value,
-			hits: cache.hits,
-			misses: cache.misses,
-			clears: cache.clears,
-			updatedAt: cache.updatedAt,
-			label: cache.label,
-			entryCount: entries.length || undefined,
-			entries: entries.length ? entries.slice(0, 20).map(function (key) {
-				var entry = cache.entries[key] || {};
-				return {
-					key: key,
-					updatedAt: entry.updatedAt || ""
-				};
-			}) : undefined
-		};
+		return cacheUtils().summary(name, cache);
 	}
 
 	function bridgeRuntimeCacheInfo() {
