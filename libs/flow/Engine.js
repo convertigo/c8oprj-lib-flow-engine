@@ -556,127 +556,39 @@
 		return fallback;
 	}
 
-	function addConfigKey(keys, value) {
-		if (typeof value !== "string") {
-			return;
-		}
-		function addPath(path) {
-			if (path.indexOf("config.") !== 0) {
-				return;
-			}
-			var key = path.substring("config.".length).split(".")[0];
-			if (key && keys.indexOf(key) === -1) {
-				keys.push(key);
-			}
-		}
-		value.replace(/\bconfig(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+/g, function (path) {
-			addPath(path);
-			return path;
-		});
-		value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, path) {
-			String(path).replace(/\bconfig(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+/g, function (configPath) {
-				addPath(configPath);
-				return configPath;
-			});
-			return "";
-		});
+	function scopeReferenceUtils() {
+		return loadEngineModule("scope-reference-utils.js");
+	}
+
+	function scopeReferenceEnv() {
+		return {
+			isScopePath: isScopePath,
+			scopeNames: scopeNames
+		};
 	}
 
 	function addUnique(items, value) {
-		if (typeof value === "string" && value !== "" && items.indexOf(value) === -1) {
-			items.push(value);
-		}
+		return scopeReferenceUtils().addUnique(items, value);
 	}
 
 	function collectScopeRefs(value, refs) {
-		refs = refs || [];
-		if (typeof value === "string") {
-			if (isScopePath(value)) {
-				addUnique(refs, value);
-			}
-			value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, path) {
-				var ref = String(path).trim();
-				if (isScopePath(ref)) {
-					addUnique(refs, ref);
-				}
-				return "";
-			});
-		} else if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			value.forEach(function (item) {
-				collectScopeRefs(item, refs);
-			});
-		} else if (value && typeof value === "object") {
-			Object.keys(value).forEach(function (key) {
-				collectScopeRefs(value[key], refs);
-			});
-		}
-		return refs;
+		return scopeReferenceUtils().collectScopeRefs(value, refs, scopeReferenceEnv());
 	}
 
 	function collectExpressionRefs(value, refs) {
-		refs = refs || [];
-		if (typeof value === "string") {
-			var scopePattern = scopeNames.join("|");
-			var scopeRegExp = new RegExp("\\b(" + scopePattern + ")(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*", "g");
-			value.replace(scopeRegExp, function (path) {
-				if (isScopePath(path)) {
-					addUnique(refs, path);
-				}
-				return path;
-			});
-		} else if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			value.forEach(function (item) {
-				collectExpressionRefs(item, refs);
-			});
-		} else if (value && typeof value === "object") {
-			Object.keys(value).forEach(function (key) {
-				collectExpressionRefs(value[key], refs);
-			});
-		}
-		return refs;
+		return scopeReferenceUtils().collectExpressionRefs(value, refs, scopeReferenceEnv());
 	}
 
 	function collectTemplateRefs(value, refs) {
-		refs = refs || [];
-		if (typeof value === "string") {
-			value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expression) {
-				collectExpressionRefs(String(expression).trim(), refs);
-				return "";
-			});
-		} else if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			value.forEach(function (item) {
-				collectTemplateRefs(item, refs);
-			});
-		} else if (value && typeof value === "object") {
-			Object.keys(value).forEach(function (key) {
-				collectTemplateRefs(value[key], refs);
-			});
-		}
-		return refs;
+		return scopeReferenceUtils().collectTemplateRefs(value, refs, scopeReferenceEnv());
 	}
 
 	function exactTemplateExpression(value) {
-		if (typeof value !== "string") {
-			return null;
-		}
-		var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
-		return exact ? exact[1] : null;
+		return scopeReferenceUtils().exactTemplateExpression(value);
 	}
 
 	function collectConfigKeys(value, keys) {
-		keys = keys || [];
-		if (typeof value === "string") {
-			addConfigKey(keys, value);
-		} else if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			value.forEach(function (item) {
-				collectConfigKeys(item, keys);
-			});
-		} else if (value && typeof value === "object") {
-			Object.keys(value).forEach(function (key) {
-				collectConfigKeys(value[key], keys);
-			});
-		}
-		return keys;
+		return scopeReferenceUtils().collectConfigKeys(value, keys);
 	}
 
 	function readGlobalValue(name) {
