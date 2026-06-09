@@ -473,11 +473,8 @@
 		return cacheUtils().createMapState();
 	}
 
-	function cacheUtils() {
-		if (cacheUtilsModule) {
-			return cacheUtilsModule;
-		}
-		var file = engineModuleFile("cache-utils.js");
+	function loadBootstrapModule(name) {
+		var file = engineModuleFile(name);
 		if (!file.isFile()) {
 			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
 		}
@@ -487,26 +484,23 @@
 				null, "A Flow engine module must evaluate to an object.");
 		}
 		module.__flowFile = String(file.getAbsolutePath());
-		cacheUtilsModule = module;
 		return module;
+	}
+
+	function cacheUtils() {
+		if (cacheUtilsModule) {
+			return cacheUtilsModule;
+		}
+		cacheUtilsModule = loadBootstrapModule("cache-utils.js");
+		return cacheUtilsModule;
 	}
 
 	function fingerprintUtils() {
 		if (fingerprintUtilsModule) {
 			return fingerprintUtilsModule;
 		}
-		var file = engineModuleFile("fingerprint-utils.js");
-		if (!file.isFile()) {
-			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
-		}
-		var module = eval(String(FileUtils.readFileToString(file, "UTF-8")));
-		if (!module || typeof module !== "object") {
-			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
-				null, "A Flow engine module must evaluate to an object.");
-		}
-		module.__flowFile = String(file.getAbsolutePath());
-		fingerprintUtilsModule = module;
-		return module;
+		fingerprintUtilsModule = loadBootstrapModule("fingerprint-utils.js");
+		return fingerprintUtilsModule;
 	}
 
 	function fingerprintEnv() {
