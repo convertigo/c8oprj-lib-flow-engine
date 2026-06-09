@@ -1490,20 +1490,35 @@
 		return resourceService().patch(request, resourceServiceEnv());
 	}
 
+	function flowLibraryService() {
+		return loadEngineModule("flow-library-service.js");
+	}
+
+	function flowLibraryServiceEnv() {
+		return {
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			engineDir: engineDir,
+			projectDir: projectDir,
+			projectLibDir: projectLibDir,
+			engineLibDir: engineLibDir,
+			canonicalPath: canonicalPath,
+			fileFingerprint: fileFingerprint,
+			readRuntimeMapCache: readRuntimeMapCache,
+			writeRuntimeMapCache: writeRuntimeMapCache,
+			safeFilePart: safeFilePart,
+			raise: raise,
+			cache: runtimeState.caches.libraries
+		};
+	}
+
 	function flowProviderName(flowDir, fallback) {
-		try {
-			var dir = new File(flowDir);
-			var project = dir.getParentFile() ? dir.getParentFile().getParentFile() : null;
-			var name = project ? String(project.getName() || "") : "";
-			return name || fallback || "unknown";
-		} catch (e) {
-			return fallback || "unknown";
-		}
+		return flowLibraryService().providerName(flowDir, fallback, flowLibraryServiceEnv());
 	}
 
 	function flowProjectRootFromFlowDir(flowDir) {
-		var dir = new File(flowDir);
-		return dir.getParentFile() ? dir.getParentFile().getParentFile() : null;
+		return flowLibraryService().projectRootFromFlowDir(flowDir, flowLibraryServiceEnv());
 	}
 
 	function blockIdFromDescriptorFile(file, blocksDir) {
@@ -1704,80 +1719,15 @@
 	}
 
 	function flowLibraryFile(name) {
-		name = safeFilePart(name);
-		if (!name) {
-			raise("MISSING_LIBRARY_NAME", "Flow library name is required.");
-		}
-		var localDir = projectLibDir();
-		if (localDir) {
-			var localFile = new File(localDir, name + ".js");
-			if (localFile.isFile()) {
-				return localFile;
-			}
-		}
-		var engineFile = new File(engineLibDir(), name + ".js");
-		if (engineFile.isFile()) {
-			return engineFile;
-		}
-		raise("UNKNOWN_LIBRARY", "Unknown Flow library: " + name,
-			null, "Create libs/flow/lib/" + name + ".js in the project or engine.");
-	}
-
-	function collectFlowLibraries(out, dir, origin, provider) {
-		var files = dir && dir.listFiles();
-		if (!files) {
-			return;
-		}
-		files = Arrays.asList(files).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		files.forEach(function (file) {
-			if (!file.isFile() || !String(file.getName()).endsWith(".js")) {
-				return;
-			}
-			var name = String(file.getName());
-			name = name.substring(0, name.length - 3);
-			out[name] = {
-				name: name,
-				provider: provider,
-				origin: origin,
-				file: String(file.getAbsolutePath()),
-				description: "Flow JavaScript library loaded with ctx.lib(\"" + name + "\")."
-			};
-		});
+		return flowLibraryService().libraryFile(name, flowLibraryServiceEnv());
 	}
 
 	function listFlowLibraries() {
-		var libraries = {};
-		collectFlowLibraries(libraries, engineLibDir(), "core", flowProviderName(engineDir(), "lib_flow_engine"));
-		var localDir = projectLibDir();
-		if (localDir && canonicalPath(localDir) !== canonicalPath(engineLibDir())) {
-			collectFlowLibraries(libraries, localDir, "project",
-				flowProviderName(new File(projectDir(), "libs/flow"), "project"));
-		}
-		return Object.keys(libraries).sort().map(function (name) {
-			return libraries[name];
-		});
+		return flowLibraryService().list(flowLibraryServiceEnv());
 	}
 
 	function loadFlowLibrary(name) {
-		var file = flowLibraryFile(name);
-		var cache = runtimeState.caches.libraries;
-		var key = canonicalPath(file);
-		var fingerprint = fileFingerprint(file);
-		var cached = readRuntimeMapCache(cache, key, fingerprint);
-		if (cached) {
-			return cached;
-		}
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var library = eval(source);
-		if (!library || typeof library !== "object") {
-			raise("INVALID_LIBRARY", "Invalid Flow library: " + file.getAbsolutePath(),
-				null, "A Flow library must evaluate to an object.");
-		}
-		library.__flowFile = String(file.getAbsolutePath());
-		return writeRuntimeMapCache(cache, key, fingerprint, library, "Flow JavaScript libraries");
+		return flowLibraryService().load(name, flowLibraryServiceEnv());
 	}
 
 	function validateBlockImplementationSource(name, source) {
