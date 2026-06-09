@@ -279,34 +279,11 @@
 	}
 
 	function normalizeTree(value) {
-		value = jsValue(value);
-		if (isRuntimeHandle(value)) {
-			return runtimeHandleSummary(value);
-		}
-		if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			return value.map(function (item) {
-				return normalizeTree(item);
-			});
-		}
-		if (value && typeof value === "object") {
-			var out = {};
-			Object.keys(value).forEach(function (key) {
-				out[key] = normalizeTree(value[key]);
-			});
-			return out;
-		}
-		return value;
+		return runtimeHandleUtils().normalize(value, runtimeHandleEnv());
 	}
 
 	function mergedContext(base, override) {
-		var out = {};
-		Object.keys(base || {}).forEach(function (key) {
-			out[key] = base[key];
-		});
-		Object.keys(override || {}).forEach(function (key) {
-			out[key] = override[key];
-		});
-		return out;
+		return runtimeHandleUtils().mergedContext(base, override);
 	}
 
 	function joinPath(base, leaf) {
@@ -520,14 +497,7 @@
 	}
 
 	function snapshot(value) {
-		if (value === undefined || value === null) {
-			return value;
-		}
-		try {
-			return JSON.parse(JSON.stringify(sanitizeRuntimeValue(value)));
-		} catch (e) {
-			return String(value);
-		}
+		return runtimeHandleUtils().snapshot(value, runtimeHandleEnv());
 	}
 
 	function createRuntimeHandle(ctx, type, value, options) {

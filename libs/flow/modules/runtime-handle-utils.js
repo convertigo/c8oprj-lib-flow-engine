@@ -83,6 +83,48 @@
 		return value;
 	}
 
+	function normalize(value, env) {
+		value = jsValue(value, env);
+		if (isHandle(value)) {
+			return summary(value);
+		}
+		if (value && Object.prototype.toString.call(value) === "[object Array]") {
+			return value.map(function (item) {
+				return normalize(item, env);
+			});
+		}
+		if (value && typeof value === "object") {
+			var out = {};
+			Object.keys(value).forEach(function (key) {
+				out[key] = normalize(value[key], env);
+			});
+			return out;
+		}
+		return value;
+	}
+
+	function snapshot(value, env) {
+		if (value === undefined || value === null) {
+			return value;
+		}
+		try {
+			return JSON.parse(JSON.stringify(sanitize(value, env)));
+		} catch (e) {
+			return String(value);
+		}
+	}
+
+	function mergedContext(base, override) {
+		var out = {};
+		Object.keys(base || {}).forEach(function (key) {
+			out[key] = base[key];
+		});
+		Object.keys(override || {}).forEach(function (key) {
+			out[key] = override[key];
+		});
+		return out;
+	}
+
 	function contains(value, env, seen) {
 		value = jsValue(value, env);
 		if (isHandle(value)) {
@@ -182,6 +224,9 @@
 		type: type,
 		summary: summary,
 		sanitize: sanitize,
+		normalize: normalize,
+		snapshot: snapshot,
+		mergedContext: mergedContext,
 		contains: contains,
 		assertSerializable: assertSerializable,
 		create: create,
