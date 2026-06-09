@@ -3557,95 +3557,52 @@
 		return flowCodeService().flowCodePromoteRequest(blocks, request, flowCodeServiceEnv());
 	}
 
-	function sourceForWriteRequest(args, fallback) {
-		args = args || {};
-		if (args.definition !== undefined && args.definition !== null) {
-			return sourceFromDefinition(args.definition);
-		}
-		if (fallback !== undefined && fallback !== null && String(fallback).trim() !== "") {
-			return String(fallback);
-		}
-		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
-			return String(args.flowSource);
-		}
-		return "";
+	function flowSourceService() {
+		return loadEngineModule("flow-source-service.js");
 	}
 
-	function isFlowScriptSource(source) {
-		var text = normalizeFlowScriptFunctionSyntax(source).trim();
-		return !!text.match(/^(?:\/\/[^\n]*\n\s*)*(?:import\s+|const\s+_meta\s*=|flow\s+[A-Za-z_$][\w$]*\s*\(|function\s+[A-Za-z_$][\w$]*\s*\()/);
-	}
-
-	function sourceForMaybeFlowScript(blocks, args, source) {
-		source = String(source || "");
-		if (!isFlowScriptSource(source)) {
-			return source;
-		}
-		return sourceFromFlowScript(blocks || loadBlocks(), args && (args.name || args.flowName) || "Flow", source).source;
-	}
-
-	function projectFlowSourceIfAvailable(blocks, args) {
-		args = args || {};
-		var name = String(args.name || args.flowName || "").trim();
-		if (!name || !projectDir()) {
-			return null;
-		}
-		try {
-			return getProjectFlow(name, blocks || loadBlocks()).source;
-		} catch (e) {
-			if (String(e.code || "") === "UNKNOWN_FLOW") {
-				return null;
-			}
-			throw e;
-		}
-	}
-
-	function setProjectFlow(blocks, name, source, args) {
-		source = sourceForMaybeFlowScript(blocks, args, sourceForWriteRequest(args, source));
-		source = sourceFromDefinition(parseSource(source));
-		var analysis = analyzeFlowSource(blocks, source);
-		var storage = projectFlowStorage(name);
-		var codeFile = writeProjectFlowCodeCanonical(blocks, name, source, args);
-		var yamlFile = null;
-		if (args && (args.writeYaml === true || args.writeYamlMirror === true || args.saveYaml === true)) {
-			storage.yamlFile.getParentFile().mkdirs();
-			FileUtils.writeStringToFile(storage.yamlFile, String(source), "UTF-8");
-			yamlFile = storage.yamlFile;
-		}
+	function flowSourceServiceEnv() {
 		return {
-			ok: true,
-			name: String(name),
-			format: "flowscript",
-			file: codeFile.file,
-			sourceFile: yamlFile ? String(yamlFile.getAbsolutePath()) : (storage.yamlFile.isFile() ? String(storage.yamlFile.getAbsolutePath()) : ""),
-			codeFile: codeFile.file,
-			code: codeFile.code,
-			codeRevision: codeFile.revision,
-			source: String(source),
-			definition: parseSource(source),
-			analysis: analysis
+			FileUtils: FileUtils,
+			sourceFromDefinition: sourceFromDefinition,
+			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
+			sourceFromFlowScript: sourceFromFlowScript,
+			loadBlocks: loadBlocks,
+			projectDir: projectDir,
+			getProjectFlow: getProjectFlow,
+			parseSource: parseSource,
+			analyzeFlowSource: analyzeFlowSource,
+			projectFlowStorage: projectFlowStorage,
+			writeProjectFlowCodeCanonical: writeProjectFlowCodeCanonical
 		};
 	}
 
+	function sourceForWriteRequest(args, fallback) {
+		return flowSourceService().sourceForWriteRequest(args, fallback, flowSourceServiceEnv());
+	}
+
+	function isFlowScriptSource(source) {
+		return flowSourceService().isFlowScriptSource(source, flowSourceServiceEnv());
+	}
+
+	function sourceForMaybeFlowScript(blocks, args, source) {
+		return flowSourceService().sourceForMaybeFlowScript(blocks, args, source, flowSourceServiceEnv());
+	}
+
+	function projectFlowSourceIfAvailable(blocks, args) {
+		return flowSourceService().projectFlowSourceIfAvailable(blocks, args, flowSourceServiceEnv());
+	}
+
+	function setProjectFlow(blocks, name, source, args) {
+		return flowSourceService().setProjectFlow(blocks, name, source, args, flowSourceServiceEnv());
+	}
+
 	function sourceForFlowRequest(args, blocks) {
-		args = args || {};
-		blocks = blocks || loadBlocks();
-		if (args.definition !== undefined && args.definition !== null) {
-			return sourceFromDefinition(args.definition);
-		}
-		var projectSource = projectFlowSourceIfAvailable(blocks, args);
-		if (projectSource !== null) {
-			return projectSource;
-		}
-		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
-			return sourceForMaybeFlowScript(blocks, args, args.flowSource);
-		}
-		return getProjectFlow(args.name || args.flowName, blocks).source;
+		return flowSourceService().sourceForFlowRequest(args, blocks, flowSourceServiceEnv());
 	}
 
 	function outputSchemaForFlowSource(flowSource) {
-		var definition = parseSource(sourceForMaybeFlowScript(loadBlocks(), {}, flowSource));
-		return definition.output || definition.outputs || {};
+		return flowSourceService().outputSchemaForFlowSource(flowSource, flowSourceServiceEnv());
 	}
 
 	function objectSchema(schema) {
