@@ -16,6 +16,7 @@
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
 	var cacheUtilsModule = null;
+	var runtimeHandleUtilsModule = null;
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
@@ -324,121 +325,31 @@
 	}
 
 	function jsValue(value) {
-		if (value === undefined || value === null) {
-			return value;
-		}
-		try {
-			if (value instanceof NativeJavaObject) {
-				value = value.unwrap();
-			}
-			if (value && typeof value.getClass === "function") {
-				var className = String(value.getClass().getName());
-				if (className === "java.lang.String") {
-					return String(value);
-				}
-				if (className === "java.lang.Boolean") {
-					return String(value) === "true";
-				}
-				if (value instanceof JavaNumber || className.indexOf("java.lang.") === 0 && className.match(/(Byte|Short|Integer|Long|Float|Double|Number)$/)) {
-					return Number(value);
-				}
-			}
-			if (value instanceof JavaString) {
-				return String(value);
-			}
-			if (value instanceof JavaBoolean) {
-				return String(value) === "true";
-			}
-			if (value instanceof JavaNumber) {
-				return Number(value);
-			}
-		} catch (e) {
-		}
-		return value;
+		return runtimeHandleUtils().jsValue(value, runtimeHandleEnv());
 	}
 
 	function isRuntimeHandle(value) {
-		return value && value.__flowHandle === true;
+		return runtimeHandleUtils().isHandle(value);
 	}
 
 	function runtimeHandleType(value) {
-		return String(value && value.__flowHandleType || "unknown");
+		return runtimeHandleUtils().type(value);
 	}
 
 	function runtimeHandleSummary(value) {
-		if (!isRuntimeHandle(value)) {
-			return null;
-		}
-		var out = {
-			handle: runtimeHandleType(value),
-			id: String(value.__flowHandleId || "")
-		};
-		if (value.__flowHandleLabel !== undefined && value.__flowHandleLabel !== null && value.__flowHandleLabel !== "") {
-			out.label = String(value.__flowHandleLabel);
-		}
-		out.state = value.__flowHandleClosed === true ? "closed" : String(value.__flowHandleState || "open");
-		return out;
+		return runtimeHandleUtils().summary(value);
 	}
 
 	function sanitizeRuntimeValue(value, seen) {
-		value = jsValue(value);
-		if (isRuntimeHandle(value)) {
-			return runtimeHandleSummary(value);
-		}
-		if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			return value.map(function (item) {
-				return sanitizeRuntimeValue(item, seen);
-			});
-		}
-		if (value && typeof value === "object") {
-			seen = seen || [];
-			if (seen.indexOf(value) !== -1) {
-				return "[Circular]";
-			}
-			seen.push(value);
-			var out = {};
-			Object.keys(value).forEach(function (key) {
-				out[key] = sanitizeRuntimeValue(value[key], seen);
-			});
-			seen.pop();
-			return out;
-		}
-		return value;
+		return runtimeHandleUtils().sanitize(value, runtimeHandleEnv(), seen);
 	}
 
 	function containsRuntimeHandle(value, seen) {
-		value = jsValue(value);
-		if (isRuntimeHandle(value)) {
-			return true;
-		}
-		if (!value || typeof value !== "object") {
-			return false;
-		}
-		seen = seen || [];
-		if (seen.indexOf(value) !== -1) {
-			return false;
-		}
-		seen.push(value);
-		var found = false;
-		if (Object.prototype.toString.call(value) === "[object Array]") {
-			for (var i = 0; i < value.length && !found; i++) {
-				found = containsRuntimeHandle(value[i], seen);
-			}
-		} else {
-			Object.keys(value).forEach(function (key) {
-				if (!found) {
-					found = containsRuntimeHandle(value[key], seen);
-				}
-			});
-		}
-		seen.pop();
-		return found;
+		return runtimeHandleUtils().contains(value, runtimeHandleEnv(), seen);
 	}
 
 	function assertNoRuntimeHandle(value, where) {
-		if (containsRuntimeHandle(value)) {
-			raise("RUNTIME_HANDLE_IN_RESULT", "Runtime handles cannot be written to " + where + ". Convert them to serializable data first.");
-		}
+		runtimeHandleUtils().assertSerializable(value, where, runtimeHandleEnv());
 	}
 
 	function normalizeTree(value) {
@@ -826,61 +737,19 @@
 	}
 
 	function createRuntimeHandle(ctx, type, value, options) {
-		options = options || {};
-		ctx.handleSeq++;
-		var id = String(options.id || "h" + ctx.handleSeq);
-		var handle = {
-			__flowHandle: true,
-			__flowHandleId: id,
-			__flowHandleType: String(type || "unknown"),
-			__flowHandleValue: value,
-			__flowHandleLabel: options.label || "",
-			__flowHandleState: options.state || "open",
-			__flowHandleClosed: false,
-			__flowHandleClose: typeof options.close === "function" ? options.close : null
-		};
-		ctx.handles[id] = handle;
-		return handle;
+		return runtimeHandleUtils().create(ctx, type, value, options);
 	}
 
 	function closeRuntimeHandle(ctx, handle) {
-		if (!isRuntimeHandle(handle)) {
-			raise("INVALID_RUNTIME_HANDLE", "Expected a runtime handle.");
-		}
-		if (handle.__flowHandleClosed === true) {
-			return runtimeHandleSummary(handle);
-		}
-		try {
-			if (handle.__flowHandleClose) {
-				handle.__flowHandleClose(handle.__flowHandleValue, handle);
-			}
-		} finally {
-			handle.__flowHandleClosed = true;
-			handle.__flowHandleState = "closed";
-		}
-		return runtimeHandleSummary(handle);
+		return runtimeHandleUtils().close(ctx, handle, runtimeHandleEnv());
 	}
 
 	function closeRuntimeHandles(ctx) {
-		Object.keys(ctx.handles || {}).forEach(function (id) {
-			var handle = ctx.handles[id];
-			if (handle && handle.__flowHandleClosed !== true) {
-				closeRuntimeHandle(ctx, handle);
-			}
-		});
+		runtimeHandleUtils().closeAll(ctx, runtimeHandleEnv());
 	}
 
 	function runtimeHandleValue(handle, expectedType) {
-		if (!isRuntimeHandle(handle)) {
-			raise("INVALID_RUNTIME_HANDLE", "Expected runtime handle" + (expectedType ? " " + expectedType : "") + ".");
-		}
-		if (expectedType && runtimeHandleType(handle) !== String(expectedType)) {
-			raise("INVALID_RUNTIME_HANDLE_TYPE", "Expected runtime handle " + expectedType + " but got " + runtimeHandleType(handle) + ".");
-		}
-		if (handle.__flowHandleClosed === true) {
-			raise("CLOSED_RUNTIME_HANDLE", "Runtime handle is closed: " + String(handle.__flowHandleId || ""));
-		}
-		return handle.__flowHandleValue;
+		return runtimeHandleUtils().value(handle, expectedType, runtimeHandleEnv());
 	}
 
 	function canonicalPath(file) {
@@ -947,6 +816,8 @@
 		clearRuntimeMapCache(runtimeState.caches.libraries);
 		clearRuntimeMapCache(runtimeState.caches.engineModules);
 		clearRuntimeCache(runtimeState.caches.propertyEditor);
+		cacheUtilsModule = null;
+		runtimeHandleUtilsModule = null;
 		return cacheInfoRequest();
 	}
 
@@ -1100,6 +971,23 @@
 			isRuntimeHandle: isRuntimeHandle,
 			runtimeHandleSummary: runtimeHandleSummary,
 			sanitizeRuntimeValue: sanitizeRuntimeValue
+		};
+	}
+
+	function runtimeHandleUtils() {
+		if (!runtimeHandleUtilsModule) {
+			runtimeHandleUtilsModule = loadEngineModule("runtime-handle-utils.js");
+		}
+		return runtimeHandleUtilsModule;
+	}
+
+	function runtimeHandleEnv() {
+		return {
+			raise: raise,
+			NativeJavaObject: NativeJavaObject,
+			JavaString: JavaString,
+			JavaBoolean: JavaBoolean,
+			JavaNumber: JavaNumber
 		};
 	}
 
