@@ -3334,80 +3334,60 @@
 		return value === undefined || value === null ? "" : JSON.stringify(normalizeTree(value));
 	}
 
+	function flowSummaryService() {
+		return loadEngineModule("flow-summary-service.js");
+	}
 
-	var SUMMARY_LIMIT = 72;
+	function flowSummaryEnv() {
+		return {
+			normalizeTree: normalizeTree,
+			nodeProps: nodeProps
+		};
+	}
 
 	function summaryText(value, max) {
-		var text = value === undefined || value === null ? "" : String(value);
-		text = text.replace(/\s+/g, " ").trim();
-		max = Number(max || SUMMARY_LIMIT);
-		if (max > 3 && text.length > max) {
-			return text.substring(0, max - 3) + "...";
-		}
-		return text;
+		return flowSummaryService().text(value, max, flowSummaryEnv());
 	}
 
 	function summaryValue(value, max) {
-		if (value === undefined) {
-			return "";
-		}
-		if (value === null) {
-			return "null";
-		}
-		if (typeof value === "string") {
-			var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
-			if (exact) {
-				return summaryText(exact[1], max);
-			}
-			return summaryText(value, max);
-		}
-		try {
-			return summaryText(JSON.stringify(normalizeTree(value)), max);
-		} catch (e) {
-			return summaryText(value, max);
-		}
+		return flowSummaryService().value(value, max, flowSummaryEnv());
 	}
 
 	function summaryProp(node, key) {
-		return nodeProps(node)[key];
-	}
-
-	function hasSummaryProp(props, key) {
-		return props && props[key] !== undefined;
+		return flowSummaryService().prop(node, key, flowSummaryEnv());
 	}
 
 	function summaryInput(node) {
-		var props = nodeProps(node);
-		if (hasSummaryProp(props, "value")) {
-			return summaryValue(props.value);
-		}
-		return "";
+		return flowSummaryService().input(node, flowSummaryEnv());
 	}
 
 	function summaryAssignment(node, operator) {
-		var props = nodeProps(node);
-		var path = summaryText(props.path || props.out);
-		var input = summaryInput(node);
-		if (!path) {
-			return input;
-		}
-		return input ? path + " " + (operator || "=") + " " + input : path;
+		return flowSummaryService().assignment(node, operator, flowSummaryEnv());
 	}
 
 	function summaryOutput(node, action) {
-		var props = nodeProps(node);
-		var text = summaryText(action);
-		var out = summaryText(props.out);
-		return text && out ? text + " -> " + out : text || out;
+		return flowSummaryService().output(node, action, flowSummaryEnv());
 	}
 
 	var flowSummary = {
-		text: summaryText,
-		value: summaryValue,
-		prop: summaryProp,
-		input: summaryInput,
-		assignment: summaryAssignment,
-		output: summaryOutput
+		text: function (value, max) {
+			return summaryText(value, max);
+		},
+		value: function (value, max) {
+			return summaryValue(value, max);
+		},
+		prop: function (node, key) {
+			return summaryProp(node, key);
+		},
+		input: function (node) {
+			return summaryInput(node);
+		},
+		assignment: function (node, operator) {
+			return summaryAssignment(node, operator);
+		},
+		output: function (node, action) {
+			return summaryOutput(node, action);
+		}
 	};
 
 
