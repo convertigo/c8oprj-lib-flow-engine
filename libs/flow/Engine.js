@@ -2016,151 +2016,57 @@
 		return flowStorageService().listProjectFlows(flowStorageEnv());
 	}
 
-	function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
-		root = root ? new File(root) : null;
-		var dir = root ? new File(root, "libs/flows") : null;
-		if (!dir || !dir.isDirectory()) {
-			return [];
-		}
-		var listed = dir.listFiles();
-		if (!listed) {
-			return [];
-		}
-		var files = Arrays.asList(listed).toArray();
-		files.sort(function (a, b) {
-			return String(a.getName()).localeCompare(String(b.getName()));
-		});
-		var byName = {};
-		files.filter(function (file) {
-			return file.isFile() && (String(file.getName()).endsWith(".flow.js") || String(file.getName()).endsWith(".flow.yaml"));
-		}).forEach(function (file) {
-			var name = flowNameFromFile(file);
-			if (!name || (samplesOnly === true && !isSampleFlowName(name))) {
-				return;
-			}
-			var previous = byName[name];
-			if (previous && previous.format === "flowscript" && !String(file.getName()).endsWith(".flow.js")) {
-				return;
-			}
-			byName[name] = {
-				name: name,
-				file: file,
-				format: String(file.getName()).endsWith(".flow.js") ? "flowscript" : "yaml"
-			};
-		});
-		return Object.keys(byName).sort().map(function (name) {
-			var entry = byName[name];
-			var file = entry.file;
-			var raw = String(FileUtils.readFileToString(file, "UTF-8"));
-			var source = raw;
-			if (entry.format === "flowscript") {
-				source = sourceFromFlowScript(loadBlocks(), name, raw).source;
-			}
-			return {
-				name: name,
-				project: projectName || (root ? String(root.getName()) : ""),
-				origin: origin || "project",
-				format: entry.format,
-				file: String(file.getAbsolutePath()),
-				source: source,
-				code: entry.format === "flowscript" ? raw : "",
-				size: Number(file.length()),
-				lastModified: Number(file.lastModified())
-			};
-		});
-	}
-
-	function visibleSearchFlows(request) {
-		var flows = [];
-		var currentRoot = projectDir();
-		var currentProject = currentProjectName(request) || (currentRoot ? String(new File(currentRoot).getName()) : "");
-		var blocks = loadBlocks();
-		listProjectFlows().flows.forEach(function (flow) {
-			var current = getProjectFlow(flow.name, blocks);
-			flows.push(Object.assign({}, flow, {
-				project: currentProject,
-				origin: "project",
-				source: current.source,
-				code: current.code || ""
-			}));
-		});
-		if (request.includeLibrarySamples === false) {
-			return flows;
-		}
-		var seen = {};
-		flows.forEach(function (flow) {
-			seen[canonicalPath(new File(flow.file))] = true;
-		});
-		var engineRoot = flowProjectRootFromFlowDir(engineDir());
-		var engineProvider = flowProviderName(engineDir(), "lib_flow_engine");
-		listFlowsFromRoot(engineRoot, engineProvider, "core", true).forEach(function (flow) {
-			var key = canonicalPath(new File(flow.file));
-			if (!seen[key]) {
-				seen[key] = true;
-				flows.push(flow);
-			}
-		});
-		return flows;
-	}
-
 	function listProjectFragments() {
 		return flowStorageService().listProjectFragments(flowStorageEnv());
 	}
 
-	function sourceFromFlowScript(blocks, name, code) {
-		code = normalizeFlowScriptFunctionSyntax(code);
-		var definition = parseFlowScript(blocks, code);
-		var diagnostics = validateFlowScriptDefinition(blocks, definition);
-		var errors = diagnostics.filter(function (diagnostic) {
-			return diagnostic.severity === "error";
-		});
-		if (errors.length) {
-			var error = new Error("Canonical FlowScript is invalid for Flow " + name + ".");
-			error.code = "FLOWSCRIPT_CANONICAL_INVALID";
-			error.details = diagnostics;
-			error.hint = "Fix the .flow.js file or regenerate it from a valid Flow model.";
-			throw error;
-		}
-		var clean = stripFlowScriptMetadata(definition);
+	function flowRepositoryService() {
+		return loadEngineModule("flow-repository-service.js");
+	}
+
+	function flowRepositoryEnv() {
 		return {
-			source: sourceFromDefinition(clean),
-			definition: clean,
-			diagnostics: diagnostics
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
+			parseFlowScript: parseFlowScript,
+			validateFlowScriptDefinition: validateFlowScriptDefinition,
+			stripFlowScriptMetadata: stripFlowScriptMetadata,
+			sourceFromDefinition: sourceFromDefinition,
+			projectFlowStorage: projectFlowStorage,
+			parseSource: parseSource,
+			raise: raise,
+			sha256Hex: sha256Hex,
+			flowNameFromFile: flowNameFromFile,
+			isSampleFlowName: isSampleFlowName,
+			loadBlocks: loadBlocks,
+			listProjectFlows: listProjectFlows,
+			projectDir: projectDir,
+			currentProjectName: currentProjectName,
+			canonicalPath: canonicalPath,
+			flowProjectRootFromFlowDir: flowProjectRootFromFlowDir,
+			engineDir: engineDir,
+			flowProviderName: flowProviderName,
+			flowCodeFileName: flowCodeFileName
 		};
+	}
+
+	function sourceFromFlowScript(blocks, name, code) {
+		return flowRepositoryService().sourceFromFlowScript(blocks, name, code, flowRepositoryEnv());
 	}
 
 	function getProjectFlow(name) {
 		var blocks = arguments.length > 1 ? arguments[1] : null;
-		var storage = projectFlowStorage(name);
-		if (storage.codeFile.isFile()) {
-			var code = String(FileUtils.readFileToString(storage.codeFile, "UTF-8"));
-			var compiled = sourceFromFlowScript(blocks || loadBlocks(), name, code);
-			return {
-				name: String(name),
-				format: "flowscript",
-				file: String(storage.codeFile.getAbsolutePath()),
-				sourceFile: storage.yamlFile.isFile() ? String(storage.yamlFile.getAbsolutePath()) : "",
-				codeFile: String(storage.codeFile.getAbsolutePath()),
-				code: code,
-				revision: sha256Hex(code),
-				source: compiled.source,
-				definition: compiled.definition,
-				diagnostics: compiled.diagnostics
-			};
-		}
-		if (!storage.yamlFile.isFile()) {
-			raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name);
-		}
-		var source = String(FileUtils.readFileToString(storage.yamlFile, "UTF-8"));
-		return {
-			name: String(name),
-			format: "yaml",
-			file: String(storage.yamlFile.getAbsolutePath()),
-			sourceFile: String(storage.yamlFile.getAbsolutePath()),
-			codeFile: storage.codeFile.isFile() ? String(storage.codeFile.getAbsolutePath()) : "",
-			source: source,
-			definition: parseSource(source)
-		};
+		return flowRepositoryService().getProjectFlow(name, blocks, flowRepositoryEnv());
+	}
+
+	function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
+		return flowRepositoryService().listFlowsFromRoot(root, projectName, origin, samplesOnly, flowRepositoryEnv());
+	}
+
+	function visibleSearchFlows(request) {
+		return flowRepositoryService().visibleSearchFlows(request, flowRepositoryEnv());
 	}
 
 	function sourceFromDefinition(definition) {
