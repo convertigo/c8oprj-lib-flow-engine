@@ -1599,89 +1599,35 @@
 		return blockPolicyService().validateHooksSource(name, source, blockPolicyEnv());
 	}
 
+	function graphBlockDescriptorService() {
+		return loadEngineModule("graph-block-descriptor-service.js");
+	}
+
+	function graphBlockDescriptorEnv() {
+		return {
+			normalizeTree: normalizeTree,
+			safeFilePart: safeFilePart,
+			blockNamespace: blockNamespace,
+			blockLocalName: blockLocalName,
+			parseYamlSource: parseYamlSource,
+			raise: raise
+		};
+	}
+
 	function normalizeGraphBlockProps(definition) {
-		var props = definition.props || definition.properties || {};
-		if (Object.prototype.toString.call(props) === "[object Array]") {
-			var out = {};
-			props.forEach(function (prop) {
-				if (prop && prop.name) {
-					var copy = normalizeTree(prop);
-					delete copy.name;
-					out[String(prop.name)] = copy;
-				}
-			});
-			return out;
-		}
-		return normalizeTree(props || {});
+		return graphBlockDescriptorService().normalizeProps(definition, graphBlockDescriptorEnv());
 	}
 
 	function normalizeGraphBlockSlots(definition) {
-		var slots = definition.slots || definition.children;
-		if (!slots) {
-			return [];
-		}
-		if (Object.prototype.toString.call(slots) === "[object Array]") {
-			return slots.map(function (slot) {
-				if (slot && typeof slot === "object") {
-					return normalizeTree(slot);
-				}
-				return { name: String(slot), label: String(slot) };
-			}).filter(function (slot) {
-				return slot.name;
-			});
-		}
-		if (typeof slots === "object") {
-			return Object.keys(slots).map(function (name) {
-				var slot = slots[name];
-				if (slot && typeof slot === "object") {
-					slot = normalizeTree(slot);
-					if (!slot.name) {
-						slot.name = name;
-					}
-					return slot;
-				}
-				return { name: name, label: String(slot || name) };
-			});
-		}
-		return [];
+		return graphBlockDescriptorService().normalizeSlots(definition, graphBlockDescriptorEnv());
 	}
 
 	function normalizeGraphBlockUses(definition) {
-		var uses = definition.uses || definition.libraries || [];
-		if (typeof uses === "string") {
-			uses = uses.split(",");
-		}
-		if (typeof uses === "object" && Object.prototype.toString.call(uses) !== "[object Array]") {
-			uses = Object.keys(uses).map(function (key) {
-				var value = uses[key];
-				if (value && typeof value === "object" && value.name) {
-					return value.name;
-				}
-				return key;
-			});
-		}
-		var out = [];
-		(uses || []).forEach(function (use) {
-			use = safeFilePart(use);
-			if (use && out.indexOf(use) === -1) {
-				out.push(use);
-			}
-		});
-		return out;
+		return graphBlockDescriptorService().normalizeUses(definition, graphBlockDescriptorEnv());
 	}
 
 	function blockImplementation(definition) {
-		var implementation = definition.implementation || {};
-		if (typeof implementation === "string") {
-			implementation = { runtime: implementation };
-		}
-		implementation = normalizeTree(implementation || {});
-		var runtime = String(implementation.runtime || implementation.kind || "").trim();
-		if (!runtime) {
-			runtime = definition.nodes ? "flow" : "rhino";
-		}
-		implementation.runtime = runtime;
-		return implementation;
+		return graphBlockDescriptorService().implementation(definition, graphBlockDescriptorEnv());
 	}
 
 	function blockImplementationFile(definition, file, config) {
@@ -1797,96 +1743,19 @@
 	}
 
 	function graphBlockCatalog(definition) {
-		var props = normalizeGraphBlockProps(definition);
-		var slots = normalizeGraphBlockSlots(definition);
-		var uses = normalizeGraphBlockUses(definition);
-		var implementation = blockImplementation(definition);
-		var blockId = String(definition.__flowBlockId || definition.blockId || definition.name || "");
-		var namespace = blockNamespace(blockId);
-		var localName = blockLocalName(blockId);
-		var descriptor = {
-			blockId: blockId,
-			name: localName || blockId,
-			localName: localName || blockId,
-			namespace: namespace,
-			icon: definition.icon || "mdi:puzzle-outline",
-			tags: definition.tags || (definition.kind ? [String(definition.kind)] : []),
-			implementation: implementation.runtime,
-			runtime: implementation.runtime,
-			props: props,
-			outputs: normalizeTree(definition.outputs || definition.output || {}),
-			description: definition.description || "Composite Flow block implemented with child nodes.",
-			longDescription: definition.longDescription || definition.documentation || ""
-		};
-		if (implementation.file) {
-			descriptor.implementationFile = implementation.file;
-		}
-		if (slots.length > 0) {
-			descriptor.slots = slots;
-		}
-		if (uses.length > 0) {
-			descriptor.uses = uses;
-		}
-		["private", "label", "display", "hooks"].forEach(function (key) {
-			if (definition[key] !== undefined) {
-				descriptor[key] = definition[key];
-			}
-		});
-		return descriptor;
+		return graphBlockDescriptorService().catalog(definition, graphBlockDescriptorEnv());
 	}
 
 	function validateGraphBlockDefinition(name, definition) {
-		definition = normalizeTree(definition || {});
-		name = String(name || "");
-		if (!name) {
-			raise("INVALID_GRAPH_BLOCK", "Composite block name is required.");
-		}
-		if (definition.name && String(definition.name) !== name && String(definition.name) !== blockLocalName(name)) {
-			raise("BLOCK_NAME_MISMATCH", "Composite block source declares \"" + definition.name + "\" instead of \"" + name + "\".");
-		}
-		definition.__flowBlockId = name;
-		definition.name = blockLocalName(name) || name;
-		definition.namespace = blockNamespace(name);
-		var implementation = blockImplementation(definition);
-		if (implementation.runtime === "flow" && definition.nodes !== undefined) {
-			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must move nodes to implementation.file.",
-				null, "Use canonical *.block.js with _meta plus a FlowScript function for editable Flow block source.");
-		}
-		if (implementation.runtime === "flow" && !implementation.file && !definition.__graphDefinition) {
-			raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must define implementation.file.");
-		}
-		if (implementation.runtime === "rhino" && !implementation.file && definition.__rhinoCode === undefined) {
-			raise("INVALID_GRAPH_BLOCK", "Rhino block \"" + name + "\" must define implementation.file.");
-		}
-		normalizeGraphBlockProps(definition);
-		return definition;
+		return graphBlockDescriptorService().validateDefinition(name, definition, graphBlockDescriptorEnv());
 	}
 
 	function validateGraphBlockSource(name, source) {
-		return validateGraphBlockDefinition(name, parseYamlSource(source, "version: 1\nnodes: []\n"));
+		return graphBlockDescriptorService().validateSource(name, source, graphBlockDescriptorEnv());
 	}
 
 	function graphBlockDefinitionForWrite(definition) {
-		var out = normalizeTree(definition || {});
-		delete out.__flowBlockId;
-		delete out.blockId;
-		delete out.localName;
-		delete out.provider;
-		delete out.namespace;
-		delete out.__rhinoCode;
-		delete out.__flowCode;
-		delete out.__graphDefinition;
-		delete out["package"];
-		if (out.kind !== undefined) {
-			if (out.tags === undefined || out.tags === null) {
-				out.tags = [String(out.kind)];
-			}
-			delete out.kind;
-		}
-		if (out.name !== undefined && out.name !== null && String(out.name) !== "") {
-			delete out.name;
-		}
-		return out;
+		return graphBlockDescriptorService().definitionForWrite(definition, graphBlockDescriptorEnv());
 	}
 
 	function graphBlockDisplayName(definition, node) {
