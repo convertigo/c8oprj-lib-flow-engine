@@ -1135,170 +1135,79 @@
 		return safeFilePart(name);
 	}
 
+	function schemaStoreService() {
+		return loadEngineModule("schema-store-service.js");
+	}
+
+	function schemaStoreEnv() {
+		return {
+			File: File,
+			FileUtils: FileUtils,
+			safeFilePart: safeFilePart,
+			nodePath: nodePath,
+			blockName: blockName,
+			projectSchemasDir: projectSchemasDir,
+			flowNameFor: flowNameFor,
+			inferSchema: inferSchema,
+			normalizeTree: normalizeTree,
+			schemaSimpleType: schemaSimpleType,
+			schemaPaths: schemaPaths,
+			schemaArrayPaths: schemaArrayPaths,
+			schemaLeafEntries: schemaLeafEntries,
+			currentProjectName: currentProjectName,
+			loadBlocks: loadBlocks,
+			parseSource: parseSource,
+			sourceForFlowRequest: sourceForFlowRequest,
+			raise: raise
+		};
+	}
+
 	function schemaNodeKey(node, outPath) {
-		return safeFilePart(nodePath(node) || outPath || blockName(node));
+		return schemaStoreService().schemaNodeKey(node, outPath, schemaStoreEnv());
 	}
 
 	function outputSchemaFile(request, definition, node, property, outPath) {
-		var dir = projectSchemasDir();
-		var flowName = flowNameFor(request, definition);
-		var nodeKey = schemaNodeKey(node, outPath);
-		if (!dir || !flowName || !nodeKey) {
-			return null;
-		}
-		var flowDir = new File(dir, flowName);
-		return new File(flowDir, nodeKey + "." + safeFilePart(property || "out") + ".schema.json");
+		return schemaStoreService().outputSchemaFile(request, definition, node, property, outPath, schemaStoreEnv());
 	}
 
 	function resultSchemaFile(request, definition) {
-		var dir = projectSchemasDir();
-		var flowName = flowNameFor(request, definition);
-		if (!dir || !flowName) {
-			return null;
-		}
-		return new File(new File(dir, flowName), "result.out.schema.json");
+		return schemaStoreService().resultSchemaFile(request, definition, schemaStoreEnv());
 	}
 
 	function readOutputSchema(request, definition, node, property, outPath) {
-		var file = outputSchemaFile(request, definition, node, property, outPath);
-		if (!file || !file.isFile()) {
-			return null;
-		}
-		return JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+		return schemaStoreService().readOutputSchema(request, definition, node, property, outPath, schemaStoreEnv());
 	}
 
 	function readResultSchema(request, definition) {
-		var file = resultSchemaFile(request, definition);
-		if (!file || !file.isFile()) {
-			return null;
-		}
-		return JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+		return schemaStoreService().readResultSchema(request, definition, schemaStoreEnv());
 	}
 
 	function learnOutputSchema(request, definition, node, property, outPath, value) {
-		var file = outputSchemaFile(request, definition, node, property, outPath);
-		if (!file || file.isFile()) {
-			return { learned: false, file: file ? String(file.getAbsolutePath()) : "" };
-		}
-		var schema = inferSchema(value);
-		file.getParentFile().mkdirs();
-		FileUtils.writeStringToFile(file, JSON.stringify(schema, null, 2), "UTF-8");
-		return {
-			learned: true,
-			file: String(file.getAbsolutePath()),
-			schema: schema
-		};
+		return schemaStoreService().learnOutputSchema(request, definition, node, property, outPath, value, schemaStoreEnv());
 	}
 
 	function clearConvertigoSchemaCache(request) {
-		try {
-			var projectName = currentProjectName(request);
-			if (projectName) {
-				Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.clearCache(projectName);
-			}
-		} catch (e) {
-		}
+		return schemaStoreService().clearConvertigoSchemaCache(request, schemaStoreEnv());
 	}
 
 	function declaredOutputSchema(definition) {
-		var schema = definition && (definition.output || definition.outputs);
-		return schema && Object.keys(schema).length > 0 ? schema : null;
+		return schemaStoreService().declaredOutputSchema(definition, schemaStoreEnv());
 	}
 
 	function declaredPropertyOutputSchema(catalog, property) {
-		if (!catalog || !property) {
-			return null;
-		}
-		var outputs = catalog.outputs || catalog.output || {};
-		if (!outputs || typeof outputs !== "object") {
-			return null;
-		}
-		var schema = outputs[property] || (property === "out" ? outputs : null);
-		return schema && typeof schema === "object" ? normalizeTree(schema) : null;
+		return schemaStoreService().declaredPropertyOutputSchema(catalog, property, schemaStoreEnv());
 	}
 
 	function schemaSummary(schema) {
-		schema = normalizeTree(schema);
-		return {
-			type: schemaSimpleType(schema),
-			paths: schemaPaths(schema, "").slice(0, 20),
-			arrayPaths: schemaArrayPaths(schema, "").slice(0, 20),
-			leafPaths: schemaLeafEntries(schema, "").slice(0, 20)
-		};
+		return schemaStoreService().summary(schema, schemaStoreEnv());
 	}
 
 	function learnResultSchema(request, definition, value) {
-		if (declaredOutputSchema(definition)) {
-			return { learned: false, declared: true };
-		}
-		var file = resultSchemaFile(request, definition);
-		if (!file || file.isFile()) {
-			return { learned: false, file: file ? String(file.getAbsolutePath()) : "" };
-		}
-		var schema = inferSchema(value);
-		file.getParentFile().mkdirs();
-		FileUtils.writeStringToFile(file, JSON.stringify(schema, null, 2), "UTF-8");
-		clearConvertigoSchemaCache(request);
-		return {
-			learned: true,
-			file: String(file.getAbsolutePath()),
-			schema: schema
-		};
+		return schemaStoreService().learnResultSchema(request, definition, value, schemaStoreEnv());
 	}
 
 	function resetSchemaRequest(request) {
-		request = request || {};
-		var blocks = loadBlocks();
-		var flowName = flowNameFor(request, {});
-		var hasInlineSource = request.definition !== undefined && request.definition !== null ||
-			request.flowSource !== undefined && request.flowSource !== null && String(request.flowSource).trim() !== "";
-		var definition = {};
-		try {
-			definition = parseSource(sourceForFlowRequest(request, blocks));
-			if (!flowName) {
-				flowName = flowNameFor(request, definition);
-			}
-		} catch (e) {
-			if (hasInlineSource || !flowName) {
-				throw e;
-			}
-			definition = {
-				name: flowName
-			};
-		}
-		var dir = projectSchemasDir();
-		if (!dir) {
-			raise("FLOW_SCHEMA_UNAVAILABLE", "Flow schema storage is unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		if (!flowName) {
-			raise("FLOW_SCHEMA_FLOW_REQUIRED", "Flow schema reset requires a flow name.");
-		}
-		var nodeId = request.node || request.nodeId || request.id || "";
-		if (nodeId) {
-			var file = outputSchemaFile({
-				flowName: flowName
-			}, definition, {
-				id: nodeId,
-				block: request.block || ""
-			}, request.property || "out", request.out || request.path || "");
-			var deleted = file && file.isFile() ? file["delete"]() : false;
-			return {
-				ok: true,
-				deleted: deleted,
-				file: file ? String(file.getAbsolutePath()) : ""
-			};
-		}
-		var flowDir = new File(dir, flowName);
-		var existed = flowDir.isDirectory();
-		if (existed) {
-			FileUtils.deleteDirectory(flowDir);
-		}
-		return {
-			ok: true,
-			deleted: existed,
-			dir: String(flowDir.getAbsolutePath())
-		};
+		return schemaStoreService().reset(request, schemaStoreEnv());
 	}
 
 	function normalizeResourcePath(path) {
