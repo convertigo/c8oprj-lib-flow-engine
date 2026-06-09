@@ -457,6 +457,18 @@
 		return runtimeHandleUtils().value(handle, expectedType, runtimeHandleEnv());
 	}
 
+	function runtimeHandleApi() {
+		return {
+			assertSerializable: assertNoRuntimeHandle,
+			closeAll: closeRuntimeHandles,
+			isHandle: isRuntimeHandle,
+			summary: runtimeHandleSummary,
+			create: createRuntimeHandle,
+			value: runtimeHandleValue,
+			close: closeRuntimeHandle
+		};
+	}
+
 	function canonicalPath(file) {
 		try {
 			return String(file.getCanonicalPath());
@@ -2563,10 +2575,9 @@
 			sourceForFlowRequest: sourceForFlowRequest,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
-			assertNoRuntimeHandle: assertNoRuntimeHandle,
+			runtimeHandles: runtimeHandleApi(),
 			learnResultSchema: learnResultSchema,
 			schemaSummary: schemaSummary,
-			closeRuntimeHandles: closeRuntimeHandles,
 			snapshot: snapshot,
 			canonicalPath: canonicalPath,
 			engineDir: engineDir,
@@ -2582,11 +2593,6 @@
 			renderTemplate: renderTemplate,
 			renderTemplateTree: renderTemplateTree,
 			inputValue: inputValue,
-			isRuntimeHandle: isRuntimeHandle,
-			runtimeHandleSummary: runtimeHandleSummary,
-			createRuntimeHandle: createRuntimeHandle,
-			runtimeHandleValue: runtimeHandleValue,
-			closeRuntimeHandle: closeRuntimeHandle,
 			safeFilePart: safeFilePart,
 			loadFlowLibrary: loadFlowLibrary,
 			cacheInfoRequest: cacheInfoRequest,
