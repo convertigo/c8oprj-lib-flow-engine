@@ -404,6 +404,63 @@
 			}
 			return token;
 		}
+
+		function flowScriptSelectorPathFromToken(token, locals) {
+			token = String(token || "").trim();
+			if (isFlowScriptQuoted(token)) {
+				return unquoteFlowScriptString(token);
+			}
+			if (isFlowScriptTemplateLiteral(token)) {
+				return flowScriptTemplateLiteralToTemplate(token, locals, 0);
+			}
+			return flowScriptRewriteExpression(token, locals);
+		}
+
+		function flowScriptObjectPathSelector(token, locals) {
+			var expr = flowScriptRewriteExpression(token, locals);
+			if (!env.isScopePath(expr)) {
+				return null;
+			}
+			var parts = env.objectPathParts ? env.objectPathParts(expr) : String(expr).split(".");
+			if (parts.length < 2) {
+				return null;
+			}
+			var source = parts[0] + "." + parts[1];
+			var path = String(expr).substring(source.length);
+			if (path.charAt(0) === ".") {
+				path = path.substring(1);
+			}
+			return {
+				source: source,
+				path: path
+			};
+		}
+
+		function singleFlowScriptInputProp(blocks, block) {
+			var descriptor = env.blockCatalog(blocks && blocks[block]) || {};
+			var props = descriptor.props || {};
+			var keys = Object.keys(props).filter(function (key) {
+				return key !== "id" && key !== "comment" && key !== "out" && !(props[key] || {}).hidden;
+			});
+			return keys.length === 1 ? keys[0] : "";
+		}
+
+		function primaryFlowScriptInputProp(blocks, block) {
+			var single = singleFlowScriptInputProp(blocks, block);
+			if (single) {
+				return single;
+			}
+			var descriptor = env.blockCatalog(blocks && blocks[block]) || {};
+			var props = descriptor.props || {};
+			var names = ["value", "text", "message", "source", "items", "url", "input", "request", "body", "path"];
+			for (var i = 0; i < names.length; i++) {
+				var name = names[i];
+				if (props[name] && !props[name].hidden) {
+					return name;
+				}
+			}
+			return "";
+		}
 	
 		function flowScriptLiteralTokenValue(token, lineNumber) {
 			token = String(token || "").trim();
@@ -545,6 +602,10 @@
 			var args = env.normalizeTree(parsed.value || {});
 			var tokens = parsed.tokens || {};
 			Object.keys(tokens).forEach(function (key) {
+				if (key === "id" || key === "comment") {
+					args[key] = unquoteFlowScriptString(tokens[key]);
+					return;
+				}
 				var kind = flowScriptPropKind(blocks, block, key);
 				if (kind === "expression") {
 					if (isFlowScriptArrayLiteral(tokens[key]) || isFlowScriptObjectLiteral(tokens[key])) {
@@ -836,6 +897,13 @@
 				node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
 					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+				} else if (args.length > 1) {
+					node.by = flowScriptExpressionFromToken(args[1], locals);
+				}
+			} else if (block === "list.map") {
+				node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
+				if (args.length > 1) {
+					node.select = flowScriptExpressionFromToken(args[1], locals);
 				}
 			} else if (block === "list.filter") {
 				node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
@@ -843,6 +911,28 @@
 					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
 				} else if (args.length > 1) {
 					node.where = flowScriptExpressionFromToken(args[1], locals);
+				}
+			} else if (block === "json.select") {
+				var options = null;
+				if (args.length > 1 && isFlowScriptObjectLiteral(args[args.length - 1])) {
+					options = normalizeNaturalFlowScriptProps(blocks, block,
+						parseFlowScriptObjectLiteral(args.pop(), lineNumber), locals, lineNumber);
+				}
+				if (args.length === 1) {
+					var selector = flowScriptObjectPathSelector(args[0], locals);
+					if (selector) {
+						node.source = selector.source;
+						node.path = selector.path;
+					} else {
+						node.source = flowScriptExpressionFromToken(args[0], locals);
+						node.path = "";
+					}
+				} else if (args.length >= 2) {
+					node.source = flowScriptExpressionFromToken(args[0], locals);
+					node.path = flowScriptSelectorPathFromToken(args[1], locals);
+				}
+				if (options) {
+					Object.assign(node, options);
 				}
 			} else if (block === "http.get") {
 				if (args.length > 0 && !isFlowScriptObjectLiteral(args[0])) {
@@ -854,6 +944,17 @@
 			} else {
 				if (args.length > 0 && isFlowScriptObjectLiteral(args[args.length - 1])) {
 					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[args.length - 1], lineNumber), locals, lineNumber);
+					if (args.length > 1) {
+						var optionInputProp = primaryFlowScriptInputProp(blocks, block);
+						if (optionInputProp && node[optionInputProp] === undefined) {
+							node[optionInputProp] = flowScriptValueFromToken(args[0], locals, lineNumber);
+						}
+					}
+				} else if (args.length > 0) {
+					var inputProp = primaryFlowScriptInputProp(blocks, block);
+					if (inputProp) {
+						node[inputProp] = flowScriptValueFromToken(args[0], locals, lineNumber);
+					}
 				}
 			}
 			node.block = block;
@@ -1159,6 +1260,10 @@
 			flowScriptRewriteExpression: flowScriptRewriteExpression,
 			flowScriptExpressionFromToken: flowScriptExpressionFromToken,
 			flowScriptPathFromToken: flowScriptPathFromToken,
+			flowScriptSelectorPathFromToken: flowScriptSelectorPathFromToken,
+			flowScriptObjectPathSelector: flowScriptObjectPathSelector,
+			singleFlowScriptInputProp: singleFlowScriptInputProp,
+			primaryFlowScriptInputProp: primaryFlowScriptInputProp,
 			flowScriptLiteralTokenValue: flowScriptLiteralTokenValue,
 			flowScriptValueObjectFromToken: flowScriptValueObjectFromToken,
 			flowScriptValueArrayFromToken: flowScriptValueArrayFromToken,

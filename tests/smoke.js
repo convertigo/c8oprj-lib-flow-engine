@@ -84,6 +84,34 @@ var typeListApi = JSON.parse(engine.types("{}"));
 assertTrue(typeListApi.ok === true && typeListApi.types.some(function (type) {
 	return type.name === "requestable";
 }), "types API did not expose core property types");
+var naturalFlowScriptSource = [
+	"function NaturalSyntaxSmoke({ input, config, result }) {",
+	"\tconst rows = [{ title: \"b\" }, { title: \"a\" }]",
+	"\tconst first = json.select(rows[0].title)",
+	"\tconst sorted = list.sort(rows, current.title)",
+	"\tconst titles = list.map(sorted, current.title)",
+	"\tconst encoded = json.stringify(titles)",
+	"\tresult.first = first",
+	"\tresult.encoded = encoded",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var naturalValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "NaturalSyntaxSmoke",
+	code: naturalFlowScriptSource
+})));
+assertTrue(naturalValidation.ok === true &&
+	naturalValidation.definition.nodes[1].source === "local.rows" &&
+	naturalValidation.definition.nodes[1].path === "[0].title" &&
+	naturalValidation.definition.nodes[4].value === "{{ local.titles }}",
+	"natural FlowScript syntax did not compile to the expected Flow model");
+var naturalRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: naturalFlowScriptSource,
+	includeTrace: false
+})));
+assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
+	"natural FlowScript syntax did not execute correctly");
 var customTypeSource = [
 	"version: 1",
 	"name: custom.note",
@@ -244,28 +272,29 @@ var docResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 })));
 assertTrue(docResourceGet.content.indexOf("Flow documentation resource.") !== -1,
 	"resourceGet did not read project Flow documentation resources");
-var canonicalYaml = [
-	"version: 1",
-	"name: canonical.echo",
-	"icon: mdi:puzzle-outline",
-	"description: Canonical YAML descriptor backed by Rhino.",
-	"props:",
-	"  value:",
-	"    kind: value",
-	"    type: unknown",
-	"    description: Value returned by the block.",
-	"  out:",
-	"    kind: path",
-	"    mode: write",
-	"    description: Scope path receiving the value.",
-	"implementation:",
-	"  runtime: rhino",
-	"  file: canonical.echo.js",
-	"hooks:",
-	"  file: canonical.echo.hooks.js",
-	""
-].join("\n");
-var canonicalJs = [
+var canonicalBlockJs = [
+	"const _meta = {",
+	"\t\"version\": 1,",
+	"\t\"icon\": \"mdi:puzzle-outline\",",
+	"\t\"description\": \"Canonical FlowScript descriptor backed by Rhino.\",",
+	"\t\"properties\": {",
+	"\t\t\"value\": {",
+	"\t\t\t\"kind\": \"value\",",
+	"\t\t\t\"type\": \"unknown\",",
+	"\t\t\t\"description\": \"Value returned by the block.\"",
+	"\t\t},",
+	"\t\t\"out\": {",
+	"\t\t\t\"kind\": \"path\",",
+	"\t\t\t\"mode\": \"write\",",
+	"\t\t\t\"description\": \"Scope path receiving the value.\"",
+	"\t\t}",
+	"\t},",
+	"\t\"runtime\": \"rhino\",",
+	"\t\"hooks\": {",
+	"\t\t\"file\": \"echo.hooks.js\"",
+	"\t}",
+	"}",
+	"",
 	"(function () {",
 	"\treturn {",
 	"\t\trun: function (ctx, node) {",
@@ -290,12 +319,12 @@ var canonicalHooksJs = [
 	""
 ].join("\n");
 var canonicalBlocksDir = new java.io.File(projectDirFile, "libs/flow/blocks");
+var canonicalDir = new java.io.File(canonicalBlocksDir, "canonical");
+canonicalDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(canonicalBlocksDir, "canonical.echo.block.yaml"), canonicalYaml, "UTF-8");
+	new java.io.File(canonicalDir, "echo.block.js"), canonicalBlockJs, "UTF-8");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(canonicalBlocksDir, "canonical.echo.js"), canonicalJs, "UTF-8");
-Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(canonicalBlocksDir, "canonical.echo.hooks.js"), canonicalHooksJs, "UTF-8");
+	new java.io.File(canonicalDir, "echo.hooks.js"), canonicalHooksJs, "UTF-8");
 var canonicalCatalog = JSON.parse(engine.catalog(JSON.stringify({ detail: "compact" })));
 var canonicalBlock = null;
 canonicalCatalog.blocks.forEach(function (block) {
@@ -306,7 +335,7 @@ canonicalCatalog.blocks.forEach(function (block) {
 var canonicalProps = canonicalBlock ? canonicalBlock.props || canonicalBlock.properties || {} : {};
 assertTrue(canonicalBlock && canonicalBlock.implementation === "rhino" &&
 	canonicalProps.value && canonicalProps.value.kind === "value",
-	"catalog did not expose canonical YAML metadata for a Rhino block");
+	"catalog did not expose canonical FlowScript metadata for a Rhino block");
 var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
 		"version: 1",
@@ -320,7 +349,7 @@ var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 assertTrue(canonicalRun.result.message === "Hello canonical",
-	"canonical YAML Rhino block did not execute through its implementation file");
+	"canonical FlowScript Rhino block did not execute through its implementation body");
 var flowBackedCodeSource = [
 	"const _meta = {",
 	"\t\"description\": \"FlowScript block backed by Flow nodes.\",",
@@ -476,13 +505,11 @@ var createdLibBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 assertTrue(createdLibBlock.blockId === "smoke.lib", "blockCreate did not create a library-backed block");
 var flowDir = new java.io.File(projectDirFile, "libs/flows");
 flowDir.mkdirs();
-Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(flowDir, "ChildSmoke.flow.yaml"), [
-	"version: 1",
-	"nodes:",
-	"  - id: decorate",
-	"    block: smoke.lib",
-	"    value: input.name",
-	"    out: result.message",
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(flowDir, "ChildSmoke.flow.js"), [
+	"function ChildSmoke({ input, config, result }) {",
+	"\tresult.message = smoke.lib({ id: \"decorate\", value: input.name })",
+	"\treturn result",
+	"}",
 	""
 ].join("\n"), "UTF-8");
 var flowCallRun = JSON.parse(engine.run(JSON.stringify({
@@ -1194,25 +1221,15 @@ assertTrue(readLineRun.ok === true &&
 var smokeFlowsDir = new java.io.File(projectDirFile, "libs/flows");
 smokeFlowsDir.mkdirs();
 var namedGreetingFlowSource = [
-	"version: 1",
-	"input:",
-	"  name: string",
-	"output:",
-	"  message: string",
-	"  mode: string",
-	"nodes:",
-	"  - id: setMessage",
-	"    block: set",
-	"    path: result.message",
-	"    value: \"Hello {{ input.name }}{{ config.suffix }}\"",
-	"  - id: setMode",
-	"    block: set",
-	"    path: result.mode",
-	"    value: rhino-flow",
+	"function NamedGreeting({ input, config, result }) {",
+	"\tset({ id: \"setMessage\", path: \"result.message\", value: `Hello ${input.name}${config.suffix}` })",
+	"\tset({ id: \"setMode\", path: \"result.mode\", value: \"rhino-flow\" })",
+	"\treturn result",
+	"}",
 	""
 ].join("\n");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(smokeFlowsDir, "NamedGreeting.flow.yaml"),
+	new java.io.File(smokeFlowsDir, "NamedGreeting.flow.js"),
 	namedGreetingFlowSource,
 	"UTF-8"
 );
@@ -1243,18 +1260,14 @@ assertTrue(catalogSearch.matches.some(function (match) {
 	return match.kind === "type" && match.name === "requestable";
 }), "search did not return catalog block/type matches");
 var requestableCallSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: callRequestable",
-	"    block: requestable.call",
-	"    requestable: .NamedGreeting",
-	"    input:",
-	"      name: Nicolas",
-	"    out: local.response",
+	"function RequestableBridge({ input, config, result }) {",
+	"\tvar response = requestable.call({ id: \"callRequestable\", requestable: \".NamedGreeting\", input: { name: \"Nicolas\" } })",
+	"\treturn result",
+	"}",
 	""
 ].join("\n");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(smokeFlowsDir, "RequestableBridge.flow.yaml"),
+	new java.io.File(smokeFlowsDir, "RequestableBridge.flow.js"),
 	requestableCallSource,
 	"UTF-8"
 );
@@ -1280,80 +1293,47 @@ print(JSON.stringify(requestableCallAnalysis));
 assertTrue(requestableCallAnalysis.writes.indexOf("local.response") !== -1,
 	"requestable.call did not expose its output path during analysis");
 var contractDefaultImplementationSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: setCity",
-	"    block: set",
-	"    path: result.city",
-	"    value: \"{{ input.city }}\"",
-	"  - id: setTemperature",
-	"    block: set",
-	"    path: result.temperature",
-	"    value: 42",
-	"  - id: setUnit",
-	"    block: set",
-	"    path: result.unit",
-	"    value: \"{{ input.unit }}\"",
-	"  - id: setProvider",
-	"    block: set",
-	"    path: result.provider",
-	"    value: DefaultMock",
+	"function WeatherTemperatureDefaultMock({ input, config, result }) {",
+	"\tresult.city = input.city",
+	"\tresult.temperature = 42",
+	"\tresult.unit = input.unit",
+	"\tresult.provider = \"DefaultMock\"",
+	"\treturn result",
+	"}",
 	""
 ].join("\n");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(smokeFlowsDir, "WeatherTemperatureDefaultMock.flow.yaml"),
+	new java.io.File(smokeFlowsDir, "WeatherTemperatureDefaultMock.flow.js"),
 	contractDefaultImplementationSource,
 	"UTF-8"
 );
 var contractOverrideImplementationSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: setCity",
-	"    block: set",
-	"    path: result.city",
-	"    value: \"{{ request.input.city }}\"",
-	"  - id: setTemperature",
-	"    block: set",
-	"    path: result.temperature",
-	"    value: 20",
-	"  - id: setUnit",
-	"    block: set",
-	"    path: result.unit",
-	"    value: \"{{ request.input.unit }}\"",
-	"  - id: setProvider",
-	"    block: set",
-	"    path: result.provider",
-	"    value: OverrideMock",
+	"function WeatherTemperatureOverrideMock({ input, config, result }) {",
+	"\tresult.city = request.input.city",
+	"\tresult.temperature = 20",
+	"\tresult.unit = request.input.unit",
+	"\tresult.provider = \"OverrideMock\"",
+	"\treturn result",
+	"}",
 	""
 ].join("\n");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(smokeFlowsDir, "WeatherTemperatureOverrideMock.flow.yaml"),
+	new java.io.File(smokeFlowsDir, "WeatherTemperatureOverrideMock.flow.js"),
 	contractOverrideImplementationSource,
 	"UTF-8"
 );
 var contractProjectImplementationSource = [
-	"version: 1",
-	"nodes:",
-	"  - id: setCity",
-	"    block: set",
-	"    path: result.city",
-	"    value: \"{{ request.input.city }}\"",
-	"  - id: setTemperature",
-	"    block: set",
-	"    path: result.temperature",
-	"    value: 12",
-	"  - id: setUnit",
-	"    block: set",
-	"    path: result.unit",
-	"    value: \"{{ request.input.unit }}\"",
-	"  - id: setProvider",
-	"    block: set",
-	"    path: result.provider",
-	"    value: ProjectEngineMock",
+	"function WeatherTemperatureProjectMock({ input, config, result }) {",
+	"\tresult.city = request.input.city",
+	"\tresult.temperature = 12",
+	"\tresult.unit = request.input.unit",
+	"\tresult.provider = \"ProjectEngineMock\"",
+	"\treturn result",
+	"}",
 	""
 ].join("\n");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
-	new java.io.File(smokeFlowsDir, "WeatherTemperatureProjectMock.flow.yaml"),
+	new java.io.File(smokeFlowsDir, "WeatherTemperatureProjectMock.flow.js"),
 	contractProjectImplementationSource,
 	"UTF-8"
 );

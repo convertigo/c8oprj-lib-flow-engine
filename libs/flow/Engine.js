@@ -1791,6 +1791,7 @@
 			normalizeTree: normalizeTree,
 			raise: raise,
 			isScopePath: isScopePath,
+			objectPathParts: objectPathParts,
 			blockCatalog: blockCatalog,
 			safeIdentifier: safeIdentifier,
 			blockLocalName: blockLocalName,

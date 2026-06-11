@@ -35,8 +35,8 @@ FlowScript sidecar:
 libs/flows/<FlowName>.flow.js
 ```
 
-Legacy `libs/flows/<FlowName>.flow.yaml` is only a fallback while migrating the
-spike. If both files exist, `.flow.js` is canonical. Do not optimize for editing
+Legacy `libs/flows/<FlowName>.flow.yaml` sidecars were migration artifacts and
+must not be treated as a runtime fallback. Do not optimize for editing
 escaped `flowSource` content inside Convertigo YAML. Treat the Java bean
 property as an in-memory bridge for Studio/editor services; the source file is
 the human/LLM-friendly representation.
@@ -44,9 +44,8 @@ the human/LLM-friendly representation.
 ## FlowScript Spike
 
 The `spike-flowscript` branch experiments with a code-like MCP authoring layer.
-Project Flows now load `.flow.js` first, compile it to the internal Flow
-definition, validate it, and execute that model. YAML is still accepted as a
-temporary fallback only when no `.flow.js` exists.
+Project Flows load `.flow.js`, compile it to the internal Flow definition,
+validate it, and execute that model. Old `.flow.yaml` sidecars are obsolete.
 
 Current engine APIs:
 
@@ -147,9 +146,8 @@ Avoid:
 
 Keep `libs/flow/Engine.js` small. It should:
 
-- parse the request and FlowScript/legacy Flow source;
-- load canonical blocks from `libs/flow/blocks/**/*.block.js`, with legacy
-  descriptor-backed blocks only as a migration fallback;
+- parse the request and FlowScript source;
+- load canonical blocks from `libs/flow/blocks/**/*.block.js`;
 - prepare scopes;
 - execute nodes in order;
 - delegate each node to its block;
@@ -221,12 +219,10 @@ function decorate({ input, config, result }) {
 ```
 
 The block id comes from the file path: `libs/flow/blocks/demo/decorate.block.js`
-is `demo.decorate`. When both `.block.js` and `.block.yaml` exist for the same
-block, `.block.js` is canonical.
-
-Legacy `*.block.yaml` is only a migration fallback. For Rhino/native escape
-hatches, use the same `*.block.js` shape with `_meta.runtime = "rhino"` and an
-IIFE returning `run`.
+is `demo.decorate`. Legacy `*.block.yaml` descriptors were migration artifacts
+and are no longer a runtime fallback. For Rhino/native escape hatches, use the
+same `*.block.js` shape with `_meta.runtime = "rhino"` and an IIFE returning
+`run`.
 named by `implementation.file`; it is not a block definition. Metadata,
 properties and docs must still be visible through the block contract exposed by
 the engine.

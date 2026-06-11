@@ -140,6 +140,32 @@
 		return diagnostics;
 	}
 
+	function maxDiagnostics(request) {
+		request = request || {};
+		var value = request.maxDiagnostics !== undefined && request.maxDiagnostics !== null && request.maxDiagnostics !== ""
+			? request.maxDiagnostics
+			: request.diagnosticLimit !== undefined && request.diagnosticLimit !== null && request.diagnosticLimit !== ""
+				? request.diagnosticLimit
+				: request.diagnosticsLimit;
+		var max = value === undefined || value === null || value === "" ? 8 : parseInt(String(value), 10);
+		if (isNaN(max)) {
+			max = 8;
+		}
+		return Math.max(1, Math.min(25, max));
+	}
+
+	function diagnosticReport(diagnostics, request) {
+		var all = diagnostics || [];
+		var limit = maxDiagnostics(request);
+		var shown = all.slice(0, limit);
+		return {
+			diagnosticCount: all.length,
+			diagnosticsShown: shown.length,
+			hasMore: all.length > shown.length,
+			diagnostics: shown
+		};
+	}
+
 	function validateRequest(blocks, request, env) {
 		request = request || {};
 		var code = String(request.code || request.flowScript || "");
@@ -160,13 +186,17 @@
 				diagnostics.push(diagnostic);
 			});
 		}
+		var report = diagnosticReport(diagnostics, request);
 		return {
 			ok: ok,
 			revision: env.sha256Hex(code),
 			code: code,
 			definition: clean,
 			source: source,
-			diagnostics: diagnostics,
+			diagnosticCount: report.diagnosticCount,
+			diagnosticsShown: report.diagnosticsShown,
+			hasMore: report.hasMore,
+			diagnostics: report.diagnostics,
 			analysis: analysis
 		};
 	}
@@ -174,6 +204,7 @@
 	return {
 		validateDefinition: validateDefinition,
 		analysisDiagnostics: analysisDiagnostics,
+		diagnosticReport: diagnosticReport,
 		validateRequest: validateRequest
 	};
 })();

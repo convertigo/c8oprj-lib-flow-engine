@@ -73,10 +73,9 @@ The block id is derived from the path, for example
 
 Rhino-backed blocks use the same `*.block.js` file: `_meta.runtime` declares
 `"rhino"` and the body is an IIFE returning `run`. Legacy `*.block.yaml`
-descriptors are still accepted as read-only migration fallback. When a
-`.block.js` sibling exists, it wins and the YAML descriptor is ignored. Future
-implementation kinds (`java`, `kotlin`, etc.) should keep the same logical
-contract shape exposed in the tree and MCP APIs.
+descriptors were used during the spike migration and are no longer a runtime
+fallback. Future implementation kinds (`java`, `kotlin`, etc.) should keep the
+same logical contract shape exposed in the tree and MCP APIs.
 
 Flow-backed blocks are regular catalog blocks. At runtime the engine exposes
 evaluated instance properties through `input` and a private mutable `local`
@@ -210,9 +209,8 @@ example for integration adapters, but it must not assume Node.js APIs such as
 `require`, npm modules or browser globals. A Rhino block is still one
 `*.block.js`: `_meta` carries the contract, the implementation is an IIFE
 returning `run`, and optional dynamic display/analysis code belongs in
-`hooks.file`. Legacy descriptor-backed Rhino remains readable only as a
-migration fallback. Rhino implementations defining `catalog()`, `displayName()`
-or `analyze()` directly are rejected.
+`hooks.file`. Rhino implementations defining `catalog()`, `displayName()` or
+`analyze()` directly are rejected.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,
@@ -531,7 +529,6 @@ The writable surface is intentionally narrow:
 ```text
 libs/flow/blocks/**/*.js
 libs/flow/blocks/**/*.block.js
-libs/flow/blocks/**/*.flow.yaml
 libs/flow/fragments/**/*.fragment.yaml
 libs/flow/lib/**/*.js
 libs/flow/resources/**/*.{md,txt,json,yaml,yml}
