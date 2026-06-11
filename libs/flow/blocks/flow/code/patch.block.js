@@ -52,7 +52,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Patch the draft source in libs/flow/drafts. Does not update the official Flow."
+      "description": "Patch the in-memory FlowScript working copy. Does not update the saved Flow until promote/save."
     },
     "saveProject": {
       "label": "saveProject",

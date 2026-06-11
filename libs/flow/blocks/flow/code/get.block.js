@@ -32,7 +32,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Read the draft FlowScript source from libs/flow/drafts when present."
+      "description": "Read the in-memory FlowScript working copy when present."
     },
     "out": {
       "label": "out",

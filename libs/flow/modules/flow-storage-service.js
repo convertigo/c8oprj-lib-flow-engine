@@ -8,15 +8,6 @@
 		return new env.File(dir, env.flowCodeFileName(name));
 	}
 
-	function projectFlowDraftCodeFile(name, env) {
-		var dir = env.projectFlowDraftsDir();
-		if (!dir) {
-			env.raise("PROJECT_FLOW_DRAFTS_UNAVAILABLE", "Project Flow drafts are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new env.File(dir, env.flowCodeFileName(name));
-	}
-
 	function flowNameFromFile(file) {
 		var filename = String(file && file.getName ? file.getName() : file || "");
 		if (filename.endsWith(".flow.js")) {
@@ -139,7 +130,6 @@
 
 	return {
 		projectFlowCodeFile: projectFlowCodeFile,
-		projectFlowDraftCodeFile: projectFlowDraftCodeFile,
 		flowNameFromFile: flowNameFromFile,
 		projectFlowStorage: projectFlowStorage,
 		projectFragmentFile: projectFragmentFile,

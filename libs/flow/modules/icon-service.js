@@ -70,16 +70,16 @@
 		var original = extension ? new env.File(String(base.getAbsolutePath()) + "." + extension) : null;
 		if (svg.isFile()) {
 			descriptor.iconSvg = env.canonicalPath(svg);
+			rasterizeSvg(svg, png16, 16, env);
+			rasterizeSvg(svg, png32, 32, env);
+		}
+		if (png32.isFile()) {
+			descriptor.iconFile32 = env.canonicalPath(png32);
+			descriptor.iconFile = descriptor.iconFile32;
 		}
 		if (png16.isFile()) {
 			descriptor.iconFile16 = env.canonicalPath(png16);
 			descriptor.iconFile = descriptor.iconFile || descriptor.iconFile16;
-		}
-		if (png32.isFile()) {
-			descriptor.iconFile32 = env.canonicalPath(png32);
-			if (!descriptor.iconFile) {
-				descriptor.iconFile = descriptor.iconFile32;
-			}
 		}
 		if (original && original.isFile()) {
 			var path = env.canonicalPath(original);
@@ -90,6 +90,75 @@
 				descriptor.iconFile = path;
 			}
 		}
+	}
+
+	function rasterizeSvg(svg, png, size, env) {
+		if (!svg || !svg.isFile() || !png || png.isFile()) {
+			return false;
+		}
+		if (rasterizeSvgWithBatik(svg, png, size, env)) {
+			return true;
+		}
+		return rasterizeSvgWithCommand(svg, png, size, env);
+	}
+
+	function rasterizeSvgWithBatik(svg, png, size, env) {
+		try {
+			Packages.java.lang.Class.forName("org.w3c.dom.svg.SVGDocument");
+			png.getParentFile().mkdirs();
+			var transcoder = new Packages.org.apache.batik.transcoder.image.PNGTranscoder();
+			transcoder.addTranscodingHint(Packages.org.apache.batik.transcoder.image.PNGTranscoder.KEY_WIDTH, java.lang.Float.valueOf(size));
+			transcoder.addTranscodingHint(Packages.org.apache.batik.transcoder.image.PNGTranscoder.KEY_HEIGHT, java.lang.Float.valueOf(size));
+			var input = new Packages.org.apache.batik.transcoder.TranscoderInput(svg.toURI().toString());
+			var outputStream = new Packages.java.io.FileOutputStream(png);
+			try {
+				var output = new Packages.org.apache.batik.transcoder.TranscoderOutput(outputStream);
+				transcoder.transcode(input, output);
+			} finally {
+				outputStream.close();
+			}
+			return png.isFile();
+		} catch (e) {
+			try {
+				env.FileUtils.deleteQuietly(png);
+			} catch (ignored) {
+			}
+			return false;
+		}
+	}
+
+	function runRasterCommand(args, png, env) {
+		try {
+			png.getParentFile().mkdirs();
+			var pb = new Packages.java.lang.ProcessBuilder(args);
+			pb.redirectErrorStream(true);
+			var process = pb.start();
+			process.waitFor();
+			return png.isFile();
+		} catch (e) {
+			try {
+				env.FileUtils.deleteQuietly(png);
+			} catch (ignored) {
+			}
+			return false;
+		}
+	}
+
+	function rasterizeSvgWithCommand(svg, png, size, env) {
+		var source = String(svg.getAbsolutePath());
+		var target = String(png.getAbsolutePath());
+		var commands = [
+			["magick", source, "-background", "none", "-resize", size + "x" + size, target],
+			["convert", source, "-background", "none", "-resize", size + "x" + size, target],
+			["rsvg-convert", "-w", String(size), "-h", String(size), "-o", target, source],
+			["sips", "-s", "format", "png", "-z", String(size), String(size), source, "--out", target]
+		];
+		for (var i = 0; i < commands.length; i++) {
+			if (runRasterCommand(commands[i], png, env)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	function fileDataUrl(file, mimeType, env) {

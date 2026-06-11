@@ -9,4 +9,7 @@
 /libs/flow/blocks/**/icons/iconify/
 /libs/flow/blocks/**/icons/url/
 /libs/flow/blocks/**/icons/mdi/
+/libs/flow/**/icons/iconify/
+/libs/flow/**/icons/url/
+/libs/flow/**/icons/mdi/
 .DS_Store

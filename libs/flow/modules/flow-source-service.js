@@ -45,7 +45,7 @@
 			return null;
 		}
 		try {
-			return getProjectFlow(name, blocks || loadBlocks()).source;
+			return getProjectFlow(name, blocks || loadBlocks(), args).source;
 		} catch (e) {
 			if (String(e.code || "") === "UNKNOWN_FLOW") {
 				return null;
@@ -58,7 +58,12 @@
 		source = sourceForMaybeFlowScript(blocks, args, sourceForWriteRequest(args, source));
 		source = sourceFromDefinition(parseSource(source));
 		var analysis = analyzeFlowSource(blocks, source);
-		var codeFile = writeProjectFlowCodeCanonical(blocks, name, source, args);
+		var codeFile = env.writeProjectFlowWorkingCopy
+			? env.writeProjectFlowWorkingCopy(blocks, name, source, args)
+			: null;
+		if (!codeFile) {
+			codeFile = writeProjectFlowCodeCanonical(blocks, name, source, args);
+		}
 		return {
 			ok: true,
 			name: String(name),
@@ -80,14 +85,14 @@
 		if (args.definition !== undefined && args.definition !== null) {
 			return sourceFromDefinition(args.definition);
 		}
+		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
+			return sourceForMaybeFlowScript(blocks, args, args.flowSource);
+		}
 		var projectSource = projectFlowSourceIfAvailable(blocks, args);
 		if (projectSource !== null) {
 			return projectSource;
 		}
-		if (args.flowSource !== undefined && args.flowSource !== null && String(args.flowSource).trim() !== "") {
-			return sourceForMaybeFlowScript(blocks, args, args.flowSource);
-		}
-		return getProjectFlow(args.name || args.flowName, blocks).source;
+		return getProjectFlow(args.name || args.flowName, blocks, args).source;
 	}
 
 	function outputSchemaForFlowSource(flowSource) {

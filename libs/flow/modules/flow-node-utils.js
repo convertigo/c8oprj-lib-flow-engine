@@ -56,6 +56,17 @@
 				return canonicalFlowNode(node, env);
 			});
 		}
+		if (Object.prototype.toString.call(out.helpers) === "[object Array]") {
+			out.helpers = out.helpers.map(function (helper) {
+				helper = env.normalizeTree(helper || {});
+				if (Object.prototype.toString.call(helper.nodes) === "[object Array]") {
+					helper.nodes = helper.nodes.map(function (node) {
+						return canonicalFlowNode(node, env);
+					});
+				}
+				return helper;
+			});
+		}
 		return out;
 	}
 

@@ -162,6 +162,18 @@ or transaction target, follows the same requestable path as the SDK, and unwraps
 the historical XML-to-JSON `document` wrapper so Flow authors work with direct
 JSON data.
 
+For external HTTP APIs, prefer a reusable typed sub-block instead of inlining
+provider details in every executable Flow. The sub-block should expose simple
+`input.*` properties such as `city`, `latitude`, `longitude`, `apiKey` or
+`limit`, call `http.get` / `http.request`, and return a small typed object that
+pickers and agents can reuse. The executable Flow should orchestrate these
+blocks and shape `result.*`.
+
+When a FlowScript source reads `input.foo`, treat `foo` as a request input that
+must be visible to users and tests. Agent-facing tooling may report
+`inputVariables`; use that list to add request variables or test inputs instead
+of leaving hidden query parameters.
+
 When creating a reusable Flow, define a minimal static contract with top-level
 `input` and `output` sections. Static `requestable.call` analysis should expose
 the target output shape under its `out` path, so downstream nodes, pickers and
@@ -452,12 +464,12 @@ When acting as a Flow authoring agent through `lib_flow_mcp`, use this order:
 tools/list
 flow-code-rg / flow-search
 flow-code-get for an existing Flow
-flow-code-set dry:true for a new or edited FlowScript draft
+flow-code-set for a new or edited FlowScript working copy
 flow-context when choosing paths or expressions
 flow-schema-reset before rerunning an HTTP learn scenario when the output changed
 flow-catalog only when search/examples/diagnostics are insufficient
 flow-block-code-rg / flow-block-code-get for custom FlowScript blocks
-flow-block-code-set dry:true then dry:false only when reusable vocabulary is needed
+flow-block-code-set only when reusable vocabulary is needed
 flow-block-code-patch for existing project-local FlowScript blocks
 flow-code-run / flow-test
 ```

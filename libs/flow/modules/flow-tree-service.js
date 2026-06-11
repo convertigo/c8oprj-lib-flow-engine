@@ -24,11 +24,13 @@
 		var blockName = env.blockName;
 		var nodePath = env.nodePath;
 		var sourceFromDefinition = env.sourceFromDefinition;
+		var renderFlowScript = env.renderFlowScript;
 		var parseYamlSource = env.parseYamlSource;
 		var canonicalFlowDefinition = env.canonicalFlowDefinition;
 		var parseSource = env.parseSource;
 		var sourceForFlowRequest = env.sourceForFlowRequest;
 		var expandFlowDefinition = env.expandFlowDefinition;
+		var blocksWithFlowHelpers = env.blocksWithFlowHelpers;
 		var analyzeFlowDefinition = env.analyzeFlowDefinition;
 		var analysisByNodeId = env.analysisByNodeId;
 		var currentProjectName = env.currentProjectName;
@@ -381,6 +383,45 @@
 		addNodeList(folder, nodes, path, blocks, analysisById);
 	}
 
+	function addHelpers(out, helpers, path, blocks, analysisById, sourcePath) {
+		if (!helpers || Object.prototype.toString.call(helpers) !== "[object Array]" || helpers.length === 0) {
+			return;
+		}
+		var folder = virtualNode("helpers", "folder", "helpers", path, "Helpers",
+			compact({ count: helpers.length }), null, "mdi:function-variant");
+		out.push(folder);
+		helpers.forEach(function (helper, index) {
+			helper = normalizeTree(helper || {});
+			var helperPath = path + "[" + index + "]";
+			var params = helper.params || Object.keys(helper.props || {});
+			var helperInfo = sourceObjectInfo(helper, helperPropertyDefinitions(), ["name", "params"]);
+			var helperNode = virtualNode("helper_" + helper.name, "helper", helper.name, helperPath,
+				helper.name + "(" + params.join(", ") + ")", compact({
+					name: helper.name,
+					params: params,
+					props: helper.props || {}
+				}), compact(helperInfo), "mdi:function-variant");
+			folder.children.push(helperNode);
+			var implementationSource = {
+				implementation: "flow-helper",
+				implementationKind: "flow-helper",
+				sourcePath: String(sourcePath || ""),
+				sourceMutationPath: helperPath + ".nodes",
+				sourceWritable: true,
+				writable: true,
+				readOnly: false,
+				flowImplementation: true
+			};
+			var implementationNode = virtualNode("implementation", "blockImplementation", "flow",
+				helperPath + ".implementation", "Implementation",
+				compact(implementationSource), compact(sourceObjectInfo(implementationSource, sourcePropertyDefinitions(),
+					["implementationKind", "sourcePath", "sourceMutationPath", "sourceWritable"])), "mdi:source-branch");
+			helperNode.children.push(implementationNode);
+			addNodeList(implementationNode, helper.nodes || [], helperPath + ".nodes", blocks, analysisById,
+				implementationSource, helperPath + ".nodes");
+		});
+	}
+
 	function sourceDefinitionForFile(file, implementation) {
 		var text = String(file || "");
 		var definition = {
@@ -473,6 +514,15 @@
 			flowImplementation: propertyDefinition("Flow implementation", "Information", "Whether this source is a Flow implementation.", { readOnly: true, hidden: true }),
 			readOnlyReference: propertyDefinition("Read-only reference", "Information", "Whether this source is shown as a read-only reference.", { readOnly: true, hidden: true }),
 			readOnly: propertyDefinition("Read only", "Information", "Whether this virtual object is read-only.", { readOnly: true })
+		};
+	}
+
+	function helperPropertyDefinitions() {
+		return {
+			name: propertyDefinition("Name", "Base properties", "Private helper function name.", { kind: "text", type: "string" }),
+			params: propertyDefinition("Parameters", "Base properties", "Helper parameter names as a JSON array.", { kind: "literal", type: "array" }),
+			props: propertyDefinition("Properties", "Information", "Generated helper property contract.", { readOnly: true }),
+			__flowScriptLine: propertyDefinition("Line", "Information", "Original FlowScript line.", { readOnly: true, hidden: true })
 		};
 	}
 
@@ -983,16 +1033,19 @@
 					var definition = request.definition !== undefined && request.definition !== null
 						? canonicalFlowDefinition(normalizeTree(request.definition))
 						: parseSource(sourceForFlowRequest(request, blocks));
-					definition = expandFlowDefinition(blocks, definition);
+					var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, definition) : blocks;
+					definition = expandFlowDefinition(activeBlocks, definition);
 				var analysisRequest = Object.assign({}, request, {
 					allowRequestableSchema: false
 				});
 			analysisRequest.flowSource = sourceFromDefinition(definition);
-			var analysis = analyzeFlowDefinition(blocks, definition, analysisRequest);
+			var analysis = analyzeFlowDefinition(activeBlocks, definition, analysisRequest);
 			var analysisById = analysisByNodeId(analysis);
 			addContracts(children, definition.contracts, "contracts");
 			addBindings(children, definition.bindings, "bindings");
-			addNodes(children, definition.nodes || [], "nodes", blocks, analysisById);
+			addHelpers(children, definition.helpers || [], "helpers", activeBlocks, analysisById,
+				request.sourceFile || request.sourcePath || "");
+			addNodes(children, definition.nodes || [], "nodes", activeBlocks, analysisById);
 		} else if (target === "engine") {
 			var engine = parseYamlSource(request.engineSource, "version: 1\n");
 			var engineQName = String(engine.engineQName || request.engineQName || "");
@@ -1497,6 +1550,17 @@
 		return current;
 	}
 
+	function arrayAt(root, parts, create) {
+		var array = valueAt(root, parts);
+		if (array === undefined && create && parts.length > 0) {
+			var parent = containerAt(root, parts, true);
+			var key = parts[parts.length - 1];
+			parent[key] = [];
+			array = parent[key];
+		}
+		return array;
+	}
+
 	function cloneMutationValue(value) {
 		return normalizeTree(value);
 	}
@@ -1679,7 +1743,7 @@
 			return;
 		}
 		if (op === "append") {
-			var array = valueAt(root, parts);
+			var array = arrayAt(root, parts, true);
 			if (Object.prototype.toString.call(array) !== "[object Array]") {
 				raise("INVALID_MUTATION_TARGET", "Append target is not an array: " + pointerPath(parts));
 			}
@@ -1687,7 +1751,7 @@
 			return;
 		}
 		if (op === "insert") {
-			var targetArray = valueAt(root, parts);
+			var targetArray = arrayAt(root, parts, true);
 			if (Object.prototype.toString.call(targetArray) !== "[object Array]") {
 				raise("INVALID_MUTATION_TARGET", "Insert target is not an array: " + pointerPath(parts));
 			}
@@ -1754,12 +1818,16 @@
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;
 		}
-		var source = toYamlSource(definition);
+		var yamlSource = toYamlSource(definition);
+		var source = target === "flow" && renderFlowScript
+			? renderFlowScript(blocks, String(request.name || request.flowName || "Flow"), yamlSource, { includeHeader: false })
+			: yamlSource;
 		var tree = describeTreeRequest({
 			target: target,
 			flowSource: source,
 			engineSource: source,
-			engineQName: request.engineQName || definition.engineQName || ""
+			engineQName: request.engineQName || definition.engineQName || "",
+			sourceFile: request.sourceFile || request.sourcePath || ""
 		}, blocks);
 		var out = {
 			ok: true,

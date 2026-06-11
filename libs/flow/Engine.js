@@ -76,11 +76,6 @@
 		return dir ? new File(dir, "libs/flows") : null;
 	}
 
-	function projectFlowDraftsDir() {
-		var dir = projectDir();
-		return dir ? new File(dir, "libs/flow/drafts") : null;
-	}
-
 	function projectFragmentsDir() {
 		var dir = projectDir();
 		return dir ? new File(dir, "libs/flow/fragments") : null;
@@ -1240,6 +1235,53 @@
 		return graphBlockRuntimeService().graphBlockFromDefinition(definition, file, origin, provider, graphBlockRuntimeEnv());
 	}
 
+	function flowHelperBlockDefinition(helper) {
+		helper = normalizeTree(helper || {});
+		var name = safeIdentifier(helper.name || "helper");
+		return {
+			version: 1,
+			name: name,
+			__flowBlockId: name,
+			"private": false,
+			visibility: "public",
+			icon: "mdi:function-variant",
+			description: "Private FlowScript helper.",
+			tags: ["helper", "private"],
+			props: normalizeTree(helper.props || {}),
+			outputs: {
+				value: {
+					type: "unknown"
+				}
+			},
+			implementation: {
+				runtime: "flow"
+			},
+			__flowHelper: true,
+			__graphDefinition: {
+				version: 1,
+				nodes: normalizeTree(helper.nodes || [])
+			}
+		};
+	}
+
+	function blocksWithFlowHelpers(blocks, definition) {
+		definition = normalizeTree(definition || {});
+		var helpers = definition.helpers || [];
+		if (Object.prototype.toString.call(helpers) !== "[object Array]" || helpers.length === 0) {
+			return blocks;
+		}
+		var out = Object.assign({}, blocks || {});
+		helpers.forEach(function (helper) {
+			var name = safeIdentifier(helper && helper.name || "");
+			if (!name) {
+				return;
+			}
+			var helperFile = new File(engineDir(), "helpers/" + safeIconName(name) + ".flow.js");
+			out[name] = graphBlockFromDefinition(flowHelperBlockDefinition(helper), helperFile, "helper", "Current Flow");
+		});
+		return out;
+	}
+
 	function loadGraphBlockFile(blocks, file, origin, provider, blocksDir) {
 		return graphBlockRuntimeService().loadGraphBlockFile(blocks, file, origin, provider, blocksDir, graphBlockRuntimeEnv());
 	}
@@ -1546,7 +1588,6 @@
 			FileUtils: FileUtils,
 			engineDir: engineDir,
 			projectFlowsDir: projectFlowsDir,
-			projectFlowDraftsDir: projectFlowDraftsDir,
 			projectFragmentsDir: projectFragmentsDir,
 			flowFileName: flowFileName,
 			flowCodeFileName: flowCodeFileName,
@@ -1562,10 +1603,6 @@
 
 	function projectFlowCodeFile(name) {
 		return flowStorageService().projectFlowCodeFile(name, flowStorageEnv());
-	}
-
-	function projectFlowDraftCodeFile(name) {
-		return flowStorageService().projectFlowDraftCodeFile(name, flowStorageEnv());
 	}
 
 	function flowNameFromFile(file) {
@@ -1615,6 +1652,7 @@
 			stripFlowScriptMetadata: stripFlowScriptMetadata,
 			sourceFromDefinition: sourceFromDefinition,
 			projectFlowStorage: projectFlowStorage,
+			readProjectFlowWorkingCopy: readProjectFlowWorkingCopy,
 			parseSource: parseSource,
 			raise: raise,
 			sha256Hex: sha256Hex,
@@ -1638,7 +1676,92 @@
 
 	function getProjectFlow(name) {
 		var blocks = arguments.length > 1 ? arguments[1] : null;
-		return flowRepositoryService().getProjectFlow(name, blocks, flowRepositoryEnv());
+		var request = arguments.length > 2 ? arguments[2] : null;
+		return flowRepositoryService().getProjectFlow(name, blocks, request, flowRepositoryEnv());
+	}
+
+	function projectFlowBean(name) {
+		var dir = projectDir();
+		var projectName = dir ? String(dir.getName()) : "";
+		if (!projectName || !name) {
+			return null;
+		}
+		try {
+			var engine = Packages.com.twinsoft.convertigo.engine.Engine;
+			if (!engine.theApp || !engine.theApp.databaseObjectsManager) {
+				return null;
+			}
+			var project = engine.theApp.databaseObjectsManager.getOriginalProjectByName(projectName, false);
+			var sequence = project.getSequenceByName(String(name));
+			var flowClass = Packages.com.twinsoft.convertigo.beans.flow.Flow.class;
+			return flowClass.isAssignableFrom(sequence.getClass()) ? sequence : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function readProjectFlowWorkingCode(name, draftOnly) {
+		var flow = projectFlowBean(name);
+		if (!flow || (draftOnly === true && !flow.isFlowSourceDirty())) {
+			return null;
+		}
+		var file = flow.getFlowSourceFile();
+		var code = String(flow.getFlowSource());
+		return {
+			name: String(name),
+			format: "flowscript",
+			file: file ? String(file.getAbsolutePath()) : "",
+			codeFile: file ? String(file.getAbsolutePath()) : "",
+			code: code,
+			revision: sha256Hex(code),
+			dirty: Boolean(flow.isFlowSourceDirty()),
+			draft: Boolean(flow.isFlowSourceDirty())
+		};
+	}
+
+	function readProjectFlowWorkingCopy(name, blocks, draftOnly) {
+		var working = readProjectFlowWorkingCode(name, draftOnly);
+		if (!working) {
+			return null;
+		}
+		var compiled = sourceFromFlowScript(blocks || loadBlocks(), name, working.code);
+		return Object.assign({}, working, {
+			sourceFile: "",
+			source: compiled.source,
+			definition: compiled.definition,
+			diagnostics: compiled.diagnostics
+		});
+	}
+
+	function writeProjectFlowWorkingCode(name, code, args) {
+		var flow = projectFlowBean(name);
+		if (!flow) {
+			return null;
+		}
+		code = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(String(code || "")));
+		flow.setFlowSource(code);
+		if (args && (args.official === true || args.promote === true || args.save === true)) {
+			flow.saveFlowSourceFile();
+		}
+		return readProjectFlowWorkingCode(name, false);
+	}
+
+	function writeProjectFlowWorkingCopy(blocks, name, source, args) {
+		var flow = projectFlowBean(name);
+		if (!flow) {
+			return null;
+		}
+		var code = flowScriptMirrorCode(blocks || loadBlocks(), name, source, args || {});
+		return writeProjectFlowWorkingCode(name, code, args);
+	}
+
+	function discardProjectFlowWorkingCopy(name) {
+		var flow = projectFlowBean(name);
+		if (!flow || !flow.isFlowSourceDirty()) {
+			return false;
+		}
+		flow.discardFlowSource();
+		return true;
 	}
 
 	function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
@@ -1681,7 +1804,8 @@
 			sourceForWriteRequest: sourceForWriteRequest,
 			sha256Hex: sha256Hex,
 			sourceFromDefinition: sourceFromDefinition,
-			flowScriptValidateRequest: flowScriptValidateRequest
+			flowScriptValidateRequest: flowScriptValidateRequest,
+			blocksWithFlowHelpers: blocksWithFlowHelpers
 		};
 	}
 
@@ -2035,6 +2159,7 @@
 			sourceForFlowRequest: sourceForFlowRequest,
 			renderFlowScript: renderFlowScript,
 			parseFlowScript: parseFlowScript,
+			blocksWithFlowHelpers: blocksWithFlowHelpers,
 			stripFlowScriptMetadata: stripFlowScriptMetadata,
 			sourceFromDefinition: sourceFromDefinition,
 			analyzeFlowSource: analyzeFlowSource,
@@ -2052,7 +2177,7 @@
 
 	function flowScriptGetRequest(blocks, request) {
 		request = request || {};
-		var flow = getProjectFlow(request.name || request.flowName, blocks);
+		var flow = getProjectFlow(request.name || request.flowName, blocks, request);
 		var codeInfo = flow.format === "flowscript" ? {
 			code: flow.code,
 			file: flow.codeFile || flow.file,
@@ -2133,7 +2258,9 @@
 			renderFlowScript: renderFlowScript,
 			sha256Hex: sha256Hex,
 			flowScriptValidateRequest: flowScriptValidateRequest,
-			projectFlowDraftCodeFile: projectFlowDraftCodeFile,
+			readProjectFlowWorkingCode: readProjectFlowWorkingCode,
+			writeProjectFlowWorkingCode: writeProjectFlowWorkingCode,
+			discardProjectFlowWorkingCopy: discardProjectFlowWorkingCopy,
 			flowScriptGetRequest: flowScriptGetRequest,
 			normalizeFlowScriptCode: normalizeFlowScriptCode,
 			stripFlowScriptMirrorHeader: stripFlowScriptMirrorHeader,
@@ -2340,7 +2467,8 @@
 			parseSource: parseSource,
 			analyzeFlowSource: analyzeFlowSource,
 			projectFlowStorage: projectFlowStorage,
-			writeProjectFlowCodeCanonical: writeProjectFlowCodeCanonical
+			writeProjectFlowCodeCanonical: writeProjectFlowCodeCanonical,
+			writeProjectFlowWorkingCopy: writeProjectFlowWorkingCopy
 		};
 	}
 
@@ -2611,6 +2739,8 @@
 			nodePath: nodePath,
 			normalizeTree: normalizeTree,
 			expandFlowDefinition: expandFlowDefinition,
+			blocksWithFlowHelpers: blocksWithFlowHelpers,
+			renderFlowScript: renderFlowScript,
 			parseSource: parseSource,
 			sourceForFlowRequest: sourceForFlowRequest,
 			sourceForWriteRequest: sourceForWriteRequest,
@@ -2728,6 +2858,7 @@
 			declaredPropertyOutputSchema: declaredPropertyOutputSchema,
 			schemaSummary: schemaSummary,
 			expandFlowDefinition: expandFlowDefinition,
+			blocksWithFlowHelpers: blocksWithFlowHelpers,
 			parseSource: parseSource,
 			sourceForFlowRequest: sourceForFlowRequest,
 			objectSchema: objectSchema,
@@ -2802,11 +2933,13 @@
 			blockName: blockName,
 			nodePath: nodePath,
 			sourceFromDefinition: sourceFromDefinition,
+			renderFlowScript: renderFlowScript,
 			parseYamlSource: parseYamlSource,
 			canonicalFlowDefinition: canonicalFlowDefinition,
 			parseSource: parseSource,
 			sourceForFlowRequest: sourceForFlowRequest,
 			expandFlowDefinition: expandFlowDefinition,
+			blocksWithFlowHelpers: blocksWithFlowHelpers,
 			analyzeFlowDefinition: analyzeFlowDefinition,
 			analysisByNodeId: analysisByNodeId,
 			currentProjectName: currentProjectName,
@@ -3123,7 +3256,15 @@
 
 		catalog: function (requestJson) {
 			return engineCall("catalog", requestJson, function (request) {
-				return Object.assign({ ok: true }, catalogDefinition(loadBlocks(), {
+				var blocks = loadBlocks();
+				if (request.flowSource !== undefined && request.flowSource !== null && String(request.flowSource).trim() !== "") {
+					try {
+						var definition = parseSource(sourceForFlowRequest(request, blocks));
+						blocks = blocksWithFlowHelpers(blocks, definition);
+					} catch (e) {
+					}
+				}
+				return Object.assign({ ok: true }, catalogDefinition(blocks, {
 					detail: request.detail || request.mode || "full",
 					includePrivate: request.includePrivate === true,
 					includeInternal: request.includeInternal === true,

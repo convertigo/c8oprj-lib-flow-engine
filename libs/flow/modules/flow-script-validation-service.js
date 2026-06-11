@@ -4,14 +4,15 @@
 	}
 
 	function validateDefinition(blocks, definition, env) {
+		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = [];
 		function walk(nodes) {
 			(nodes || []).forEach(function (node) {
 				var name = env.blockName(node);
-				var block = blocks[name];
+				var block = activeBlocks[name];
 				var line = node.__flowScriptLine || 0;
 				if (!block) {
-					var candidates = env.flowScriptBlockCandidates(blocks, name, 5);
+					var candidates = env.flowScriptBlockCandidates(activeBlocks, name, 5);
 					diagnostics.push({
 						severity: "error",
 						code: "UNKNOWN_BLOCK",
@@ -33,7 +34,7 @@
 				} else {
 					var props = env.blockCatalog(block).props || {};
 					var slotMap = {};
-					env.flowScriptSlotNames(blocks, node).forEach(function (slot) {
+					env.flowScriptSlotNames(activeBlocks, node).forEach(function (slot) {
 						slotMap[slot] = true;
 					});
 					env.flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
@@ -63,6 +64,9 @@
 				});
 			});
 		}
+		(definition.helpers || []).forEach(function (helper) {
+			walk(helper.nodes || []);
+		});
 		walk(definition.nodes || []);
 		return diagnostics;
 	}
@@ -174,15 +178,16 @@
 			code = env.renderFlowScript(blocks, request.name || request.flowName || "Flow", source, request);
 		}
 		var definition = env.parseFlowScript(blocks, code);
+		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = validateDefinition(blocks, definition, env);
 		var clean = env.stripFlowScriptMetadata(definition);
 		var source = env.sourceFromDefinition(clean);
 		var ok = diagnostics.filter(function (diagnostic) {
 			return diagnostic.severity === "error";
 		}).length === 0;
-		var analysis = ok ? env.analyzeFlowSource(blocks, source, request) : null;
+		var analysis = ok ? env.analyzeFlowSource(activeBlocks, source, request) : null;
 		if (analysis) {
-			analysisDiagnostics(blocks, analysis, env).forEach(function (diagnostic) {
+			analysisDiagnostics(activeBlocks, analysis, env).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
 		}

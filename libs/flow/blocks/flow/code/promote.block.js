@@ -52,7 +52,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Delete the draft file after successful promotion."
+      "description": "Clear the working copy after successful promotion."
     },
     "projectDir": {
       "label": "projectDir",

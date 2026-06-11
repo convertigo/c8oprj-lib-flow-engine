@@ -32,7 +32,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Run the draft source from libs/flow/drafts when code is omitted."
+      "description": "Run the in-memory FlowScript working copy when code is omitted."
     },
     "input": {
       "label": "input",

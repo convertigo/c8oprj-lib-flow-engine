@@ -7,6 +7,7 @@
 		var nodePath = env.nodePath;
 		var normalizeTree = env.normalizeTree;
 		var expandFlowDefinition = env.expandFlowDefinition;
+		var blocksWithFlowHelpers = env.blocksWithFlowHelpers;
 		var parseSource = env.parseSource;
 		var sourceForFlowRequest = env.sourceForFlowRequest;
 		var sourceForWriteRequest = env.sourceForWriteRequest;
@@ -166,9 +167,11 @@
 		}
 
 		function runFlowRequest(request, blocks) {
-			var definition = expandFlowDefinition(blocks, parseSource(sourceForFlowRequest(request, blocks)));
+			var parsedDefinition = parseSource(sourceForFlowRequest(request, blocks));
+			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, parsedDefinition) : blocks;
+			var definition = expandFlowDefinition(activeBlocks, parsedDefinition);
 			var projectEngine = loadProjectEngineDefinition();
-			var ctx = createRunContext(request, definition, blocks, projectEngine);
+			var ctx = createRunContext(request, definition, activeBlocks, projectEngine);
 			try {
 				ctx.runNodes(definition.nodes || []);
 				var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;

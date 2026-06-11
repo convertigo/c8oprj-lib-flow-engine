@@ -9,6 +9,7 @@
 		var stripFlowScriptMetadata = env.stripFlowScriptMetadata;
 		var sourceFromDefinition = env.sourceFromDefinition;
 		var projectFlowStorage = env.projectFlowStorage;
+		var readProjectFlowWorkingCopy = env.readProjectFlowWorkingCopy;
 		var parseSource = env.parseSource;
 		var raise = env.raise;
 		var sha256Hex = env.sha256Hex;
@@ -46,7 +47,22 @@
 			};
 		}
 
-		function getProjectFlow(name, blocks) {
+		function officialMode(request) {
+			request = request || {};
+			return request.official === true
+				|| request.draft === false
+				|| String(request.official || "").toLowerCase() === "true"
+				|| String(request.mode || "").toLowerCase() === "official"
+				|| String(request.stage || "").toLowerCase() === "official";
+		}
+
+		function getProjectFlow(name, blocks, request) {
+			var working = officialMode(request) || !readProjectFlowWorkingCopy
+				? null
+				: readProjectFlowWorkingCopy(name, blocks || loadBlocks(), false);
+			if (working) {
+				return working;
+			}
 			var storage = projectFlowStorage(name);
 			if (storage.codeFile.isFile()) {
 				var code = String(FileUtils.readFileToString(storage.codeFile, "UTF-8"));
@@ -160,8 +176,12 @@
 		sourceFromFlowScript: function (blocks, name, code, env) {
 			return create(env).sourceFromFlowScript(blocks, name, code);
 		},
-		getProjectFlow: function (name, blocks, env) {
-			return create(env).getProjectFlow(name, blocks);
+		getProjectFlow: function (name, blocks, request, env) {
+			if (!env) {
+				env = request;
+				request = null;
+			}
+			return create(env).getProjectFlow(name, blocks, request);
 		},
 		listFlowsFromRoot: function (root, projectName, origin, samplesOnly, env) {
 			return create(env).listFlowsFromRoot(root, projectName, origin, samplesOnly);

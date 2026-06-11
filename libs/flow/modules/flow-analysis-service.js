@@ -28,6 +28,7 @@
 		var declaredPropertyOutputSchema = env.declaredPropertyOutputSchema;
 		var schemaSummary = env.schemaSummary;
 		var expandFlowDefinition = env.expandFlowDefinition;
+		var blocksWithFlowHelpers = env.blocksWithFlowHelpers;
 		var parseSource = env.parseSource;
 		var sourceForFlowRequest = env.sourceForFlowRequest;
 		var objectSchema = env.objectSchema;
@@ -459,8 +460,9 @@
 		}
 
 		function analyzeFlowDefinition(blocks, definition, request) {
-			definition = expandFlowDefinition(blocks, definition);
-			var ctx = createAnalysisContext(blocks, request || {}, definition);
+			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, definition) : blocks;
+			definition = expandFlowDefinition(activeBlocks, definition);
+			var ctx = createAnalysisContext(activeBlocks, request || {}, definition);
 			ctx.visitNodes(definition.nodes || []);
 			return {
 				ok: true,

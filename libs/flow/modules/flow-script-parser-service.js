@@ -371,7 +371,8 @@
 				return b.length - a.length;
 			}).forEach(function (name) {
 				var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-				expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])" + escaped + "(?=\\b|\\.)", "g"), "$1local." + name);
+				var mapped = locals[name] === true ? "local." + name : String(locals[name] || ("local." + name));
+				expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])" + escaped + "(?=\\b|\\.)", "g"), "$1" + mapped);
 			});
 			return expr;
 		}
@@ -622,6 +623,23 @@
 				}
 			});
 			return args;
+		}
+
+		function flowScriptPropertyValueFromToken(blocks, block, key, token, locals, lineNumber) {
+			var kind = flowScriptPropKind(blocks, block, key);
+			if (kind === "expression") {
+				return flowScriptExpressionFromToken(token, locals);
+			}
+			if (kind === "path") {
+				return flowScriptPathFromToken(token, locals);
+			}
+			if (kind === "template" || kind === "value") {
+				return flowScriptValueFromToken(token, locals, lineNumber);
+			}
+			if (kind === "text" || kind === "schema" || kind === "secret") {
+				return unquoteFlowScriptString(token);
+			}
+			return flowScriptValueFromToken(token, locals, lineNumber);
 		}
 	
 		function parseNaturalFlowScriptCall(text) {
@@ -947,13 +965,13 @@
 					if (args.length > 1) {
 						var optionInputProp = primaryFlowScriptInputProp(blocks, block);
 						if (optionInputProp && node[optionInputProp] === undefined) {
-							node[optionInputProp] = flowScriptValueFromToken(args[0], locals, lineNumber);
+							node[optionInputProp] = flowScriptPropertyValueFromToken(blocks, block, optionInputProp, args[0], locals, lineNumber);
 						}
 					}
 				} else if (args.length > 0) {
 					var inputProp = primaryFlowScriptInputProp(blocks, block);
 					if (inputProp) {
-						node[inputProp] = flowScriptValueFromToken(args[0], locals, lineNumber);
+						node[inputProp] = flowScriptPropertyValueFromToken(blocks, block, inputProp, args[0], locals, lineNumber);
 					}
 				}
 			}
@@ -1118,6 +1136,193 @@
 			parseFlowScriptStatementsInto(blocks, imports || {}, Object.assign({}, locals || {}), root, flowScriptStatements(body));
 			return root.nodes;
 		}
+
+		function balancedFlowScriptGroupEnd(text, open, openChar, closeChar) {
+			var quote = "";
+			var depth = 0;
+			for (var i = open; i < text.length; i++) {
+				var ch = text.charAt(i);
+				if (quote) {
+					if (ch === "\\" && i + 1 < text.length) {
+						i++;
+						continue;
+					}
+					if (ch === quote) {
+						quote = "";
+					}
+					continue;
+				}
+				if (ch === "\"" || ch === "'" || ch === "`") {
+					quote = ch;
+					continue;
+				}
+				if (ch === openChar) {
+					depth++;
+				} else if (ch === closeChar) {
+					depth--;
+					if (depth === 0) {
+						return i;
+					}
+				}
+			}
+			return -1;
+		}
+
+		function lineNumberAt(text, offset) {
+			var line = 1;
+			for (var i = 0; i < offset && i < text.length; i++) {
+				if (text.charAt(i) === "\n") {
+					line++;
+				}
+			}
+			return line;
+		}
+
+		function splitFlowScriptFunctions(code) {
+			code = String(code || "");
+			var functions = [];
+			var prelude = "";
+			var cursor = 0;
+			var pattern = /(^|\n)([ \t]*)(flow|function)\s+([A-Za-z_$][\w$]*)\s*\(/g;
+			var match;
+			while ((match = pattern.exec(code)) !== null) {
+				var start = match.index + match[1].length;
+				if (start < cursor) {
+					continue;
+				}
+				var openParen = code.indexOf("(", pattern.lastIndex - 1);
+				var closeParen = balancedFlowScriptGroupEnd(code, openParen, "(", ")");
+				if (closeParen < 0) {
+					env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript function signature at line " + lineNumberAt(code, start),
+						null, "Close the function argument list before the body.");
+				}
+				var bodyStart = closeParen + 1;
+				while (bodyStart < code.length && /\s/.test(code.charAt(bodyStart))) {
+					bodyStart++;
+				}
+				if (code.charAt(bodyStart) !== "{") {
+					pattern.lastIndex = closeParen + 1;
+					continue;
+				}
+				var bodyEnd = env.balancedObjectEnd(code, bodyStart);
+				if (bodyEnd < 0) {
+					env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript function body at line " + lineNumberAt(code, start),
+						null, "Close the function body with }.");
+				}
+				prelude += code.substring(cursor, start);
+				functions.push({
+					name: match[4],
+					args: code.substring(openParen + 1, closeParen),
+					body: code.substring(bodyStart + 1, bodyEnd),
+					line: lineNumberAt(code, start),
+					code: code.substring(start, bodyEnd + 1)
+				});
+				cursor = bodyEnd + 1;
+				pattern.lastIndex = cursor;
+			}
+			prelude += code.substring(cursor);
+			return {
+				prelude: prelude,
+				functions: functions
+			};
+		}
+
+		function mainFlowScriptFunctionIndex(functions) {
+			for (var i = functions.length - 1; i >= 0; i--) {
+				if (String(functions[i].args || "").trim().charAt(0) === "{") {
+					return i;
+				}
+			}
+			return functions.length - 1;
+		}
+
+		function flowScriptFunctionParams(fn, allowObjectSignature) {
+			var args = String(fn && fn.args || "").trim();
+			if (args === "") {
+				return [];
+			}
+			if (args.charAt(0) === "{") {
+				if (allowObjectSignature) {
+					return [];
+				}
+				env.raise("FLOWSCRIPT_UNSUPPORTED_HELPER_SIGNATURE", "Unsupported helper signature at line " + fn.line + ": " + args,
+					null, "Use simple helper parameters, for example function normalize(txt) { return lower(txt); }.");
+			}
+			return splitFlowScriptTopLevel(args, ",").map(function (part) {
+				part = String(part || "").trim();
+				var match = part.match(/^([A-Za-z_$][\w$]*)$/);
+				if (!match) {
+					env.raise("FLOWSCRIPT_UNSUPPORTED_HELPER_SIGNATURE", "Unsupported helper parameter at line " + fn.line + ": " + part,
+						null, "Use simple parameter names only. Defaults, destructuring and rest parameters are not supported yet.");
+				}
+				return match[1];
+			});
+		}
+
+		function helperPropDefinitions(params) {
+			var props = {};
+			(params || []).forEach(function (param) {
+				props[param] = {
+					kind: "expression",
+					type: "unknown",
+					description: "Helper argument " + param + "."
+				};
+			});
+			return props;
+		}
+
+		function helperParamLocals(params) {
+			var locals = {};
+			(params || []).forEach(function (param) {
+				locals[param] = "input." + param;
+			});
+			return locals;
+		}
+
+		function helperBlockDefinitions(helpers) {
+			var out = {};
+			(helpers || []).forEach(function (helper) {
+				out[helper.name] = {
+					name: helper.name,
+					catalog: function () {
+						return {
+							blockId: helper.name,
+							name: helper.name,
+							localName: helper.name,
+							namespace: "helpers",
+							"private": true,
+							visibility: "private",
+							description: "Private FlowScript helper.",
+							icon: "mdi:function-variant",
+							props: helper.props || {},
+							outputs: {
+								value: {
+									type: "unknown"
+								}
+							}
+						};
+					}
+				};
+			});
+			return out;
+		}
+
+		function parseFlowScriptImports(prelude, imports) {
+			flowScriptStatements(prelude).forEach(function (statement) {
+				var text = statement.text;
+				if (text.match(/^import\s+/)) {
+					parseFlowScriptImport(text, statement.line, imports);
+					return;
+				}
+				if (text.match(/^(?:const|let|var)\s+_(?:meta|flow|block)\s*=/)) {
+					return;
+				}
+				if (text !== "") {
+					env.raise("FLOWSCRIPT_UNSUPPORTED_TOP_LEVEL", "Unsupported FlowScript top-level statement at line " + statement.line + ": " + text,
+						null, "Only imports, metadata constants and top-level function declarations are supported.");
+				}
+			});
+		}
 	
 		function trackFlowScriptLocalWrite(locals, path) {
 			path = String(path || "");
@@ -1151,7 +1356,8 @@
 					continue;
 				}
 				if (line.match(/^(flow|function)\s+/)) {
-					continue;
+					env.raise("FLOWSCRIPT_UNSUPPORTED_NESTED_FUNCTION", "Nested FlowScript functions are not supported at line " + lineNumber + ".",
+						null, "Declare helper functions at top level, before or after the main Flow function.");
 				}
 				var declaration = line.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([\s\S]+)$/);
 				if (declaration) {
@@ -1233,6 +1439,35 @@
 	
 		function parseFlowScript(blocks, code) {
 			code = env.normalizeFlowScriptFunctionSyntax(code);
+			var split = splitFlowScriptFunctions(code);
+			if (split.functions.length > 0) {
+				var mainIndex = mainFlowScriptFunctionIndex(split.functions);
+				var main = split.functions[mainIndex];
+				var helpers = split.functions.filter(function (_, index) {
+					return index !== mainIndex;
+				}).map(function (fn) {
+					var params = flowScriptFunctionParams(fn, false);
+					return {
+						name: env.safeIdentifier(fn.name),
+						params: params,
+						props: helperPropDefinitions(params),
+						nodes: [],
+						__flowScriptLine: fn.line,
+						__flowScriptCode: fn.code,
+						__flowScriptBody: fn.body
+					};
+				});
+				var imports = {};
+				parseFlowScriptImports(split.prelude, imports);
+				var helperBlocks = Object.assign({}, blocks || {}, helperBlockDefinitions(helpers));
+				helpers.forEach(function (helper) {
+					helper.nodes = parseFlowScriptBodyNodes(helperBlocks, Object.assign({}, imports),
+						helperParamLocals(helper.params), helper.__flowScriptBody);
+				});
+				var rootFromFunctions = { version: 1, helpers: helpers, nodes: [] };
+				parseFlowScriptStatementsInto(helperBlocks, Object.assign({}, imports), {}, rootFromFunctions, flowScriptStatements(main.body));
+				return env.canonicalFlowDefinition(rootFromFunctions);
+			}
 			var root = { version: 1, nodes: [] };
 			parseFlowScriptStatementsInto(blocks, {}, {}, root, flowScriptStatements(code));
 			return env.canonicalFlowDefinition(root);
@@ -1271,6 +1506,7 @@
 			flowScriptRewriteTemplateText: flowScriptRewriteTemplateText,
 			flowScriptValueFromToken: flowScriptValueFromToken,
 			normalizeNaturalFlowScriptProps: normalizeNaturalFlowScriptProps,
+			flowScriptPropertyValueFromToken: flowScriptPropertyValueFromToken,
 			parseNaturalFlowScriptCall: parseNaturalFlowScriptCall,
 			parseNaturalFlowScriptCallWithBody: parseNaturalFlowScriptCallWithBody,
 			capitalizedIdentifier: capitalizedIdentifier,
@@ -1286,6 +1522,10 @@
 			resolveFlowScriptName: resolveFlowScriptName,
 			parseFlowScriptImport: parseFlowScriptImport,
 			parseFlowScriptBodyNodes: parseFlowScriptBodyNodes,
+			splitFlowScriptFunctions: splitFlowScriptFunctions,
+			mainFlowScriptFunctionIndex: mainFlowScriptFunctionIndex,
+			flowScriptFunctionParams: flowScriptFunctionParams,
+			helperBlockDefinitions: helperBlockDefinitions,
 			trackFlowScriptLocalWrite: trackFlowScriptLocalWrite,
 			trackFlowScriptNodeWrites: trackFlowScriptNodeWrites,
 			parseFlowScriptStatementsInto: parseFlowScriptStatementsInto,
@@ -1378,6 +1618,9 @@
 		normalizeNaturalFlowScriptProps: function (blocks, block, parsed, locals, lineNumber, env) {
 			return create(env).normalizeNaturalFlowScriptProps(blocks, block, parsed, locals, lineNumber);
 		},
+		flowScriptPropertyValueFromToken: function (blocks, block, key, token, locals, lineNumber, env) {
+			return create(env).flowScriptPropertyValueFromToken(blocks, block, key, token, locals, lineNumber);
+		},
 		parseNaturalFlowScriptCall: function (text, env) {
 			return create(env).parseNaturalFlowScriptCall(text);
 		},
@@ -1422,6 +1665,18 @@
 		},
 		parseFlowScriptBodyNodes: function (blocks, imports, locals, body, env) {
 			return create(env).parseFlowScriptBodyNodes(blocks, imports, locals, body);
+		},
+		splitFlowScriptFunctions: function (code, env) {
+			return create(env).splitFlowScriptFunctions(code);
+		},
+		mainFlowScriptFunctionIndex: function (functions, env) {
+			return create(env).mainFlowScriptFunctionIndex(functions);
+		},
+		flowScriptFunctionParams: function (fn, allowObjectSignature, env) {
+			return create(env).flowScriptFunctionParams(fn, allowObjectSignature);
+		},
+		helperBlockDefinitions: function (helpers, env) {
+			return create(env).helperBlockDefinitions(helpers);
 		},
 		trackFlowScriptLocalWrite: function (locals, path, env) {
 			return create(env).trackFlowScriptLocalWrite(locals, path);

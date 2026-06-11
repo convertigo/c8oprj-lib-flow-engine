@@ -112,6 +112,64 @@ var naturalRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
 	"natural FlowScript syntax did not execute correctly");
+var helperFlowScriptSource = [
+	"function normalize(txt) {",
+	"\treturn lower(txt)",
+	"}",
+	"",
+	"function HelperSyntaxSmoke({ input, config, result }) {",
+	"\tvar cleaned = normalize(input.name)",
+	"\tresult.cleaned = cleaned",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var helperSourceFile = new java.io.File(projectDirFile, "libs/flows/HelperSyntaxSmoke.flow.js");
+helperSourceFile.getParentFile().mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(helperSourceFile, helperFlowScriptSource, "UTF-8");
+var helperValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "HelperSyntaxSmoke",
+	code: helperFlowScriptSource
+})));
+assertTrue(helperValidation.ok === true &&
+	helperValidation.definition.helpers.length === 1 &&
+	helperValidation.definition.helpers[0].name === "normalize" &&
+	helperValidation.definition.nodes[0].block === "normalize",
+	"FlowScript helper did not compile to a private helper block");
+var helperRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: helperFlowScriptSource,
+	input: {
+		name: "NICOLAS"
+	},
+	includeTrace: false
+})));
+assertTrue(helperRun.result.cleaned === "nicolas", "FlowScript helper did not execute correctly");
+var helperTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "flow",
+	flowSource: helperValidation.source,
+	sourceFile: String(helperSourceFile.getAbsolutePath()),
+	detail: "full"
+})));
+var helperFolder = findChild(helperTree, "helpers");
+assertTrue(helperFolder !== null, "Flow tree did not expose Helpers");
+var normalizeHelper = findChild(helperFolder, "helper_normalize");
+var normalizeImplementation = findChild(normalizeHelper, "implementation");
+assertTrue(normalizeHelper !== null && normalizeImplementation !== null,
+	"Flow tree did not expose helper implementation");
+var normalizeImplementationDefinition = JSON.parse(normalizeImplementation.definition || "{}");
+assertTrue(normalizeImplementationDefinition.sourceWritable === true &&
+	normalizeImplementation.kind === "blockImplementation" &&
+	normalizeImplementationDefinition.sourcePath === String(helperSourceFile.getAbsolutePath()) &&
+	normalizeImplementationDefinition.sourceMutationPath === "helpers[0].nodes",
+	"Flow helper implementation is not editable through the tree mutation path");
+var helperCatalog = JSON.parse(engine.catalog(JSON.stringify({
+	flowSource: helperValidation.source,
+	detail: "compact",
+	query: "normalize"
+})));
+assertTrue(helperCatalog.blocks.some(function (block) {
+	return block.blockId === "normalize" && block.tags && block.tags.indexOf("helper") !== -1;
+}), "Flow catalog did not expose current Flow helpers");
 var customTypeSource = [
 	"version: 1",
 	"name: custom.note",

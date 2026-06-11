@@ -45,7 +45,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Write a draft source to libs/flow/drafts even when invalid. Does not update the official Flow."
+      "description": "Write the in-memory FlowScript working copy even when invalid. Does not update the saved Flow until promote/save."
     },
     "saveProject": {
       "label": "saveProject",

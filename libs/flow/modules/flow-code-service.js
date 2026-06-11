@@ -1,14 +1,17 @@
 (function () {
+	var memoryDrafts = {};
+
 	function create(env) {
 		env = env || {};
-		var FileUtils = env.FileUtils;
 		var raise = env.raise;
 		var normalizeFlowScriptFunctionSyntax = env.normalizeFlowScriptFunctionSyntax;
 		var currentProjectName = env.currentProjectName;
 		var renderFlowScript = env.renderFlowScript;
 		var sha256Hex = env.sha256Hex;
 		var flowScriptValidateRequest = env.flowScriptValidateRequest;
-		var projectFlowDraftCodeFile = env.projectFlowDraftCodeFile;
+		var readProjectFlowWorkingCode = env.readProjectFlowWorkingCode;
+		var writeProjectFlowWorkingCode = env.writeProjectFlowWorkingCode;
+		var discardProjectFlowWorkingCopy = env.discardProjectFlowWorkingCopy;
 		var flowScriptGetRequest = env.flowScriptGetRequest;
 		var normalizeFlowScriptCode = env.normalizeFlowScriptCode;
 		var stripFlowScriptMirrorHeader = env.stripFlowScriptMirrorHeader;
@@ -133,6 +136,49 @@
 		return out;
 	}
 
+	function flowCodeInputVariablesFrom(value) {
+		var variables = {};
+		function scanText(text) {
+			text = String(text || "");
+			var re = /\binput(?:\.([A-Za-z_$][\w$]*)|\[\s*["']([^"']+)["']\s*\])/g;
+			var match;
+			while ((match = re.exec(text)) !== null) {
+				var name = String(match[1] || match[2] || "").trim();
+				if (name) {
+					variables[name] = true;
+				}
+			}
+		}
+		function walk(any) {
+			if (any === null || any === undefined) {
+				return;
+			}
+			if (typeof any === "string") {
+				scanText(any);
+				return;
+			}
+			if (Object.prototype.toString.call(any) === "[object Array]") {
+				any.forEach(walk);
+				return;
+			}
+			if (typeof any === "object") {
+				Object.keys(any).forEach(function (key) {
+					walk(any[key]);
+				});
+			}
+		}
+		walk(value);
+		return Object.keys(variables).sort();
+	}
+
+	function flowCodeAddInputReport(out, validation) {
+		var inputVariables = flowCodeInputVariablesFrom(validation && validation.definition);
+		if (inputVariables.length) {
+			out.inputVariables = inputVariables;
+		}
+		return out;
+	}
+
 	function flowCodeParseDiagnostics(error) {
 		var message = String(error && error.message || error || "FlowScript parse failed.");
 		var line = 0;
@@ -204,21 +250,34 @@
 	}
 
 	function flowCodeDraftRead(name) {
-		var file = projectFlowDraftCodeFile(name);
-		if (!file.isFile()) {
+		var working = readProjectFlowWorkingCode ? readProjectFlowWorkingCode(name, true) : null;
+		if (working) {
+			return {
+				ok: true,
+				name: String(name),
+				format: "flowscript",
+				canonical: false,
+				draft: true,
+				file: working.file || "",
+				codeFile: working.codeFile || working.file || "",
+				revision: working.revision,
+				code: working.code
+			};
+		}
+		var draft = memoryDrafts[String(name)];
+		if (!draft) {
 			return null;
 		}
-		var code = String(FileUtils.readFileToString(file, "UTF-8"));
 		return {
 			ok: true,
 			name: String(name),
 			format: "flowscript",
 			canonical: false,
 			draft: true,
-			file: String(file.getAbsolutePath()),
-			codeFile: String(file.getAbsolutePath()),
-			revision: sha256Hex(code),
-			code: code
+			file: "",
+			codeFile: "",
+			revision: draft.revision,
+			code: draft.code
 		};
 	}
 
@@ -309,11 +368,9 @@
 	function flowCodeDiscardRequest(blocks, request) {
 		request = request || {};
 		var name = flowCodeName(request);
-		var draftFile = projectFlowDraftCodeFile(name);
-		var discarded = false;
-		if (draftFile.isFile()) {
-			discarded = draftFile["delete"]();
-		}
+		var memoryDiscarded = discardProjectFlowWorkingCopy ? discardProjectFlowWorkingCopy(name) : false;
+		var discarded = memoryDrafts[String(name)] !== undefined;
+		delete memoryDrafts[String(name)];
 		var official = flowCodeOfficialRead(blocks, request, name);
 		return {
 			ok: true,
@@ -322,19 +379,18 @@
 			exists: official !== null,
 			dirty: false,
 			workingCopy: false,
-			discarded: discarded,
+			discarded: memoryDiscarded || discarded,
 			revision: official ? official.revision : "",
 			officialRevision: official ? official.revision : "",
 			codeFile: official ? official.codeFile : "",
 			officialCodeFile: official ? official.codeFile : "",
-			next: discarded
+			next: memoryDiscarded || discarded
 				? "Working copy discarded. The official Flow is now the active source."
 				: "No FlowScript working copy existed."
 		};
 	}
 
 	function flowCodeDraftSetRequest(blocks, request, name, code) {
-		var file = projectFlowDraftCodeFile(name);
 		var current = null;
 		try {
 			current = flowCodeCurrentForEdit(blocks, request, name, true);
@@ -358,9 +414,14 @@
 			};
 		}
 		var normalized = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
-		file.getParentFile().mkdirs();
-		FileUtils.writeStringToFile(file, normalized, "UTF-8");
-		var revision = sha256Hex(normalized);
+		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
+		if (!written) {
+			memoryDrafts[String(name)] = {
+				code: normalized,
+				revision: sha256Hex(normalized)
+			};
+		}
+		var revision = written && written.revision ? written.revision : memoryDrafts[String(name)].revision;
 		var checked = flowCodeValidate(blocks, request, name, normalized);
 		var out = {
 			ok: checked.error === null && checked.validation && checked.validation.ok === true,
@@ -370,12 +431,13 @@
 			written: true,
 			format: "flowscript",
 			canonical: false,
-			file: String(file.getAbsolutePath()),
-			codeFile: String(file.getAbsolutePath()),
+			file: written && written.file ? written.file : "",
+			codeFile: written && written.codeFile ? written.codeFile : "",
 			revision: revision,
 			oldRevision: current ? current.revision : null,
 			warnings: checked.warnings
 		};
+		flowCodeAddInputReport(out, checked.validation);
 		if (out.ok) {
 			flowCodeAddDiagnosticReport(out, checked.validation.diagnostics || [], request);
 			out.next = "Working copy check passed. Run with flow-code-run without sending code, then save with flow-code-promote.";
@@ -443,7 +505,7 @@
 		var revision = saved && saved.codeRevision
 			? saved.codeRevision
 			: flowCodeRevisionForSource(blocks, name, validation.source, request);
-		return {
+		return flowCodeAddInputReport({
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
@@ -455,7 +517,7 @@
 			revision: revision,
 			oldRevision: current ? current.revision : null,
 			warnings: warnings
-		};
+		}, validation);
 	}
 
 	function flowCodePatchRequest(blocks, request) {
@@ -803,7 +865,7 @@
 		if (!compiled.ok) {
 			return compiled;
 		}
-		return flowCodeAddDiagnosticReport({
+		return flowCodeAddInputReport(flowCodeAddDiagnosticReport({
 			ok: true,
 			qname: compiled.qname,
 			name: compiled.name,
@@ -814,7 +876,7 @@
 			next: compiled.draft === true
 				? "Check passed. Run with flow-code-run without sending code, then save with flow-code-promote."
 				: "Check passed."
-		}, compiled.validation.diagnostics || [], request);
+		}, compiled.validation.diagnostics || [], request), compiled.validation);
 	}
 
 	function flowCodeRunRequest(blocks, request) {
@@ -834,6 +896,7 @@
 		execution.name = compiled.name;
 		execution.revision = compiled.revision;
 		execution.draft = compiled.draft === true;
+		flowCodeAddInputReport(execution, compiled.validation);
 		if (compiled.warnings && compiled.warnings.length) {
 			execution.warnings = compiled.warnings;
 		}
@@ -910,15 +973,14 @@
 		var saved = setProjectFlow(blocks, name, checked.validation.source, Object.assign({}, request, {
 			code: current.code,
 			draft: false,
+			official: true,
+			promote: true,
 			mode: "",
 			stage: ""
 		}));
-		var draftFile = projectFlowDraftCodeFile(name);
-		var draftCleared = false;
-		if (draftFile.isFile()) {
-			draftCleared = draftFile["delete"]();
-		}
-		return {
+		var draftCleared = current.draft === true;
+		delete memoryDrafts[String(name)];
+		return flowCodeAddInputReport({
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
@@ -933,7 +995,7 @@
 			codeFile: saved ? saved.codeFile : "",
 			warnings: checked.warnings,
 			saved: saved
-		};
+		}, checked.validation);
 	}
 
 		return {

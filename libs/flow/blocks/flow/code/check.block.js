@@ -32,7 +32,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Check the draft source from libs/flow/drafts when code is omitted."
+      "description": "Check the in-memory FlowScript working copy when code is omitted."
     },
     "projectDir": {
       "label": "projectDir",

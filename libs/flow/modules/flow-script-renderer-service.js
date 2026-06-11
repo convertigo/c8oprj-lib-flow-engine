@@ -36,8 +36,9 @@
 		Object.keys(locals || {}).sort(function (a, b) {
 			return b.length - a.length;
 		}).forEach(function (name) {
-			var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])local\\." + escaped + "(?=\\b|\\.)", "g"), "$1" + name);
+			var target = locals[name] === true ? "local." + name : String(locals[name] || ("local." + name));
+			var escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])" + escaped + "(?=\\b|\\.)", "g"), "$1" + name);
 		});
 		return expr;
 	}
@@ -194,9 +195,28 @@
 		});
 	}
 
+	function helperParamLocals(helper) {
+		var locals = {};
+		(helper.params || Object.keys(helper.props || {})).forEach(function (param) {
+			locals[param] = "input." + param;
+		});
+		return locals;
+	}
+
+	function renderFlowScriptHelpers(blocks, helpers, lines, env) {
+		(helpers || []).forEach(function (helper) {
+			var params = helper.params || Object.keys(helper.props || {});
+			lines.push("function " + env.safeIdentifier(helper.name || "helper") + "(" + params.join(", ") + ") {");
+			renderFlowScriptNodes(blocks, helper.nodes || [], 1, lines, helperParamLocals(helper), env);
+			lines.push("}");
+			lines.push("");
+		});
+	}
+
 	function renderFlowScript(blocks, name, flowSource, request, env) {
 		request = request || {};
 		var definition = env.parseSource(flowSource);
+		var renderBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var lines = [];
 		if (request.includeHeader !== false) {
 			lines.push("// c8o: FlowScript spike. Function calls are Flow blocks; named arguments are block properties.");
@@ -215,8 +235,9 @@
 		if (lines.length) {
 			lines.push("");
 		}
+		renderFlowScriptHelpers(renderBlocks, definition.helpers || [], lines, env);
 		lines.push("function " + env.safeIdentifier(name || "Flow") + "({ input, config, result }) {");
-		renderFlowScriptNodes(blocks, definition.nodes || [], 1, lines, {}, env);
+		renderFlowScriptNodes(renderBlocks, definition.nodes || [], 1, lines, {}, env);
 		if (request.includeImplicitReturn !== false && !flowScriptHasTopLevelReturn(definition.nodes || [], env)) {
 			lines.push("  return result");
 		}
