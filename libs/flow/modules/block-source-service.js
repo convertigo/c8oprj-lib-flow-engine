@@ -31,11 +31,11 @@
 		}
 		var file = new env.File(String(block.__flowFile || ""));
 		var flowScriptBlock = String(block.__flowFormat || "") === "flowscript-block";
-		if (!flowScriptBlock && !String(block.__flowFile || "").endsWith(".block.yaml")) {
-			env.raise("INVALID_BLOCK_STORAGE", "Flow block is not backed by a canonical descriptor: " + name);
+		if (!flowScriptBlock) {
+			env.raise("INVALID_BLOCK_STORAGE", "Flow block is not backed by canonical .block.js source: " + name);
 		}
-		var descriptorSource = flowScriptBlock ? "" : String(env.FileUtils.readFileToString(file, "UTF-8"));
-		var descriptor = flowScriptBlock ? env.normalizeTree(block.__blockDefinition || {}) : env.validateGraphBlockSource(block.name, descriptorSource);
+		var descriptorSource = "";
+		var descriptor = env.normalizeTree(block.__blockDefinition || {});
 		var catalog = env.blockDescriptor(block);
 		var implementation = env.blockImplementation(descriptor);
 		var detail = String(args.detail || args.mode || "compact").toLowerCase();

@@ -52,23 +52,12 @@
 		blocks[name] = placeholder(name, descriptor, env.graphBlockCatalog(descriptor), env);
 	}
 
-	function reserveGraphBlockFile(blocks, file, origin, provider, blocksDir, env) {
-		var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
-		var name = nameFromBlockFile(file, blocksDir, ".block.yaml", env);
-		ensureNotDuplicate(blocks, name, "Rename the project block or remove the duplicate.", env);
-		var descriptor = env.validateGraphBlockSource(name, source);
-		blocks[name] = placeholder(name, descriptor, env.graphBlockCatalog(descriptor), env);
-	}
-
 	return {
 		loadFlowScriptBlockFile: function (blocks, file, origin, provider, blocksDir, env) {
 			return loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, env);
 		},
 		reserveFlowScriptBlockFile: function (blocks, file, origin, provider, blocksDir, env) {
 			return reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, env);
-		},
-		reserveGraphBlockFile: function (blocks, file, origin, provider, blocksDir, env) {
-			return reserveGraphBlockFile(blocks, file, origin, provider, blocksDir, env);
 		}
 	};
 }())

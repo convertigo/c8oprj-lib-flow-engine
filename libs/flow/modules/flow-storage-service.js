@@ -1,13 +1,4 @@
 (function () {
-	function projectFlowFile(name, env) {
-		var dir = env.projectFlowsDir();
-		if (!dir) {
-			env.raise("PROJECT_FLOWS_UNAVAILABLE", "Project flows are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new env.File(dir, env.flowFileName(name));
-	}
-
 	function projectFlowCodeFile(name, env) {
 		var dir = env.projectFlowsDir();
 		if (!dir) {
@@ -31,17 +22,13 @@
 		if (filename.endsWith(".flow.js")) {
 			return filename.substring(0, filename.length - ".flow.js".length);
 		}
-		if (filename.endsWith(".flow.yaml")) {
-			return filename.substring(0, filename.length - ".flow.yaml".length);
-		}
 		return "";
 	}
 
 	function projectFlowStorage(name, env) {
 		return {
 			name: String(name || ""),
-			codeFile: projectFlowCodeFile(name, env),
-			yamlFile: projectFlowFile(name, env)
+			codeFile: projectFlowCodeFile(name, env)
 		};
 	}
 
@@ -105,29 +92,22 @@
 		}
 		var byName = {};
 		sortedFiles(dir, env).filter(function (file) {
-			return file.isFile() && (String(file.getName()).endsWith(".flow.js") || String(file.getName()).endsWith(".flow.yaml"));
+			return file.isFile() && String(file.getName()).endsWith(".flow.js");
 		}).forEach(function (file) {
 			var name = flowNameFromFile(file);
 			if (!name) {
 				return;
 			}
-			var codeFile = String(file.getName()).endsWith(".flow.js") ? file : new env.File(file.getParentFile(), env.flowCodeFileName(name));
-			var yamlFile = String(file.getName()).endsWith(".flow.yaml") ? file : new env.File(file.getParentFile(), env.flowFileName(name));
-			var previous = byName[name];
-			if (previous && previous.format === "flowscript" && !String(file.getName()).endsWith(".flow.js")) {
-				return;
-			}
-			var canonical = codeFile.isFile() ? codeFile : yamlFile;
 			byName[name] = {
 				name: name,
-				format: codeFile.isFile() ? "flowscript" : "yaml",
-				file: String(canonical.getAbsolutePath()),
-				sourceFile: yamlFile.isFile() ? String(yamlFile.getAbsolutePath()) : "",
-				codeFile: codeFile.isFile() ? String(codeFile.getAbsolutePath()) : "",
-				size: Number(canonical.length()),
-				sourceSize: yamlFile.isFile() ? Number(yamlFile.length()) : 0,
-				codeSize: codeFile.isFile() ? Number(codeFile.length()) : 0,
-				lastModified: Number(canonical.lastModified())
+				format: "flowscript",
+				file: String(file.getAbsolutePath()),
+				sourceFile: "",
+				codeFile: String(file.getAbsolutePath()),
+				size: Number(file.length()),
+				sourceSize: 0,
+				codeSize: Number(file.length()),
+				lastModified: Number(file.lastModified())
 			};
 		});
 		return {
@@ -158,7 +138,6 @@
 	}
 
 	return {
-		projectFlowFile: projectFlowFile,
 		projectFlowCodeFile: projectFlowCodeFile,
 		projectFlowDraftCodeFile: projectFlowDraftCodeFile,
 		flowNameFromFile: flowNameFromFile,

@@ -79,7 +79,7 @@
 			env.raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
 				null, "Use letters, digits, dot, underscore or dash.");
 		}
-		return namePart + ".flow.yaml";
+		return namePart + ".flow.js";
 	}
 
 	function blockHooksFileName(name, env) {
@@ -101,12 +101,7 @@
 	}
 
 	function flowFileName(name, env) {
-		var flowName = String(name || "").trim();
-		if (!flowName.match(/^[A-Za-z0-9_.-]+$/)) {
-			env.raise("INVALID_FLOW_NAME", "Invalid Flow name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		return flowName + ".flow.yaml";
+		return flowCodeFileName(name, env);
 	}
 
 	function flowCodeFileName(name, env) {
@@ -119,10 +114,6 @@
 	}
 
 	function flowCodeFileFromYamlFile(file, name, env) {
-		var path = String(file && file.getAbsolutePath ? file.getAbsolutePath() : file || "");
-		if (path.endsWith(".flow.yaml")) {
-			return new env.File(path.substring(0, path.length - ".flow.yaml".length) + ".flow.js");
-		}
 		if (file && file.getParentFile) {
 			return new env.File(file.getParentFile(), flowCodeFileName(name, env));
 		}

@@ -9,8 +9,6 @@
 		var validateBlockHooksSource = env.validateBlockHooksSource;
 		var parseYamlSource = env.parseYamlSource;
 		var graphBlockCatalog = env.graphBlockCatalog;
-		var validateGraphBlockSource = env.validateGraphBlockSource;
-		var blockIdFromDescriptorFile = env.blockIdFromDescriptorFile;
 		var blockName = env.blockName;
 		var blockCatalog = env.blockCatalog;
 		var nodeProps = env.nodeProps;
@@ -306,7 +304,7 @@
 		block.__flowOrigin = origin;
 		block.__flowProvider = provider || origin || "unknown";
 		block.__flowFile = String(file.getAbsolutePath());
-		block.__flowFormat = definition.__flowCode ? "flowscript-block" : "yaml-block";
+		block.__flowFormat = definition.__flowCode ? "flowscript-block" : "descriptor-block";
 		if (definition.__flowCode) {
 			block.__flowCode = String(definition.__flowCode);
 		}
@@ -326,21 +324,9 @@
 		return block;
 	}
 
-	function loadGraphBlockFile(blocks, file, origin, provider, blocksDir) {
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var name = blockIdFromDescriptorFile(file, blocksDir || file.getParentFile());
-		if (!name) {
-			name = String(file.getName());
-			name = name.substring(0, name.length - ".block.yaml".length);
-		}
-		var definition = validateGraphBlockSource(name, source);
-		var block = graphBlockFromDefinition(definition, file, origin, provider);
-		if (blocks[block.name] && blocks[block.name].__flowScriptPlaceholder !== true) {
-			raise("DUPLICATE_BLOCK", "Duplicate Flow block: " + block.name,
-				null, "Rename the project block or remove the duplicate.");
-		}
-		blocks[block.name] = block;
-		return block;
+	function loadGraphBlockFile() {
+		raise("UNSUPPORTED_BLOCK_STORAGE", "Legacy *.block.yaml Flow block descriptors are no longer supported.",
+			null, "Use canonical libs/flow/blocks/**/*.block.js files.");
 	}
 
 

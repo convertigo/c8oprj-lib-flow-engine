@@ -166,7 +166,7 @@ const _meta = {
 			props: props.properties || props.props || {},
 			implementation: {
 				runtime: "flow",
-				file: localName(name) + ".flow.yaml"
+				file: localName(name) + ".flow.js"
 			}
 		};
 		if (props.outputs !== undefined && props.outputs !== null) {

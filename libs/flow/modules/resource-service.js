@@ -8,7 +8,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}. Legacy block YAML paths are still accepted as fallback.");
+				null, "Allowed paths: libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);
@@ -259,29 +259,13 @@
 	function validateResourceContent(path, content, env) {
 		var kind = env.resourceKind(path);
 		var blockId = env.blockIdFromResourcePath(path);
-		if (kind === "block") {
-			var descriptorFile = env.projectBlockDescriptorFileForResource(path);
-			if (!descriptorFile || !descriptorFile.isFile()) {
-				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Block implementation resources require a peer *.block.yaml descriptor: " + path,
-					null, "Create or patch libs/flow/blocks/" + env.blockDescriptorFileName(blockId) + " first.");
-			}
-			env.validateBlockImplementationSource(blockId, content);
-		} else if (kind === "blockFlow") {
-			var flowDescriptorFile = env.projectBlockDescriptorFileForResource(path);
-			if (!flowDescriptorFile || !flowDescriptorFile.isFile()) {
-				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Flow block implementation resources require a peer *.block.yaml descriptor: " + path,
-					null, "Create or patch libs/flow/blocks/" + env.blockDescriptorFileName(blockId) + " first.");
-			}
-			env.validateBlockFlowImplementationSource(blockId, content);
-		} else if (kind === "blockHooks") {
+		if (kind === "blockHooks") {
 			var hooksContractFile = env.projectBlockContractFileForResource(path);
 			if (!hooksContractFile || !hooksContractFile.isFile()) {
-				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.js source or legacy *.block.yaml descriptor: " + path,
+				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.js source: " + path,
 					null, "Create or patch libs/flow/blocks/" + env.blockCodeDescriptorFileName(blockId) + " first.");
 			}
 			env.validateBlockHooksSource(blockId, content);
-		} else if (kind === "graphBlock") {
-			env.validateGraphBlockSource(blockId, content);
 		} else if (kind === "graphBlockCode") {
 			env.compileProjectBlockCode(env.loadBlocks(), blockId, content);
 		} else if (kind === "fragment") {

@@ -28,7 +28,7 @@
 	function isAllowedPath(path) {
 		var ext = extension(path);
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
-			return ext === "js" || String(path).endsWith(".block.yaml") || String(path).endsWith(".flow.yaml");
+			return String(path).endsWith(".block.js") || String(path).endsWith(".hooks.js");
 		}
 		if (String(path).indexOf("libs/flow/fragments/") === 0) {
 			return String(path).endsWith(".fragment.yaml");
@@ -52,12 +52,6 @@
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
 			if (String(path).endsWith(".block.js")) {
 				return "graphBlockCode";
-			}
-			if (String(path).endsWith(".block.yaml")) {
-				return "graphBlock";
-			}
-			if (String(path).endsWith(".flow.yaml")) {
-				return "blockFlow";
 			}
 			if (String(path).endsWith(".hooks.js")) {
 				return "blockHooks";
@@ -85,7 +79,7 @@
 		if (slash >= 0) {
 			filename = filename.substring(slash + 1);
 		}
-		[".fragment.yaml", ".block.yaml", ".flow.yaml", ".hooks.js", ".type.yaml", ".js"].some(function (suffix) {
+		[".fragment.yaml", ".block.js", ".hooks.js", ".type.yaml", ".js"].some(function (suffix) {
 			if (filename.endsWith(suffix)) {
 				filename = filename.substring(0, filename.length - suffix.length);
 				return true;
@@ -180,7 +174,7 @@
 		if (text.indexOf(prefix) === 0) {
 			text = text.substring(prefix.length);
 		}
-		[".block.yaml", ".block.js", ".flow.yaml", ".hooks.js", ".js"].forEach(function (suffix) {
+		[".block.js", ".hooks.js", ".js"].forEach(function (suffix) {
 			if (text.endsWith(suffix)) {
 				text = text.substring(0, text.length - suffix.length);
 			}

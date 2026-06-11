@@ -55,7 +55,7 @@
 					name: String(name),
 					format: "flowscript",
 					file: String(storage.codeFile.getAbsolutePath()),
-					sourceFile: storage.yamlFile.isFile() ? String(storage.yamlFile.getAbsolutePath()) : "",
+					sourceFile: "",
 					codeFile: String(storage.codeFile.getAbsolutePath()),
 					code: code,
 					revision: sha256Hex(code),
@@ -64,19 +64,8 @@
 					diagnostics: compiled.diagnostics
 				};
 			}
-			if (!storage.yamlFile.isFile()) {
-				raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name);
-			}
-			var source = String(FileUtils.readFileToString(storage.yamlFile, "UTF-8"));
-			return {
-				name: String(name),
-				format: "yaml",
-				file: String(storage.yamlFile.getAbsolutePath()),
-				sourceFile: String(storage.yamlFile.getAbsolutePath()),
-				codeFile: storage.codeFile.isFile() ? String(storage.codeFile.getAbsolutePath()) : "",
-				source: source,
-				definition: parseSource(source)
-			};
+			raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name,
+				null, "Flow sidecars are canonical FlowScript files: libs/flows/" + flowCodeFileName(name) + ".");
 		}
 
 		function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
@@ -95,30 +84,23 @@
 			});
 			var byName = {};
 			files.filter(function (file) {
-				return file.isFile() && (String(file.getName()).endsWith(".flow.js") || String(file.getName()).endsWith(".flow.yaml"));
+				return file.isFile() && String(file.getName()).endsWith(".flow.js");
 			}).forEach(function (file) {
 				var name = flowNameFromFile(file);
 				if (!name || (samplesOnly === true && !isSampleFlowName(name))) {
 					return;
 				}
-				var previous = byName[name];
-				if (previous && previous.format === "flowscript" && !String(file.getName()).endsWith(".flow.js")) {
-					return;
-				}
 				byName[name] = {
 					name: name,
 					file: file,
-					format: String(file.getName()).endsWith(".flow.js") ? "flowscript" : "yaml"
+					format: "flowscript"
 				};
 			});
 			return Object.keys(byName).sort().map(function (name) {
 				var entry = byName[name];
 				var file = entry.file;
 				var raw = String(FileUtils.readFileToString(file, "UTF-8"));
-				var source = raw;
-				if (entry.format === "flowscript") {
-					source = sourceFromFlowScript(loadBlocks(), name, raw).source;
-				}
+				var source = sourceFromFlowScript(loadBlocks(), name, raw).source;
 				return {
 					name: name,
 					project: projectName || (root ? String(root.getName()) : ""),

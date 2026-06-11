@@ -1557,7 +1557,7 @@
 	}
 
 	function projectFlowFile(name) {
-		return flowStorageService().projectFlowFile(name, flowStorageEnv());
+		return flowStorageService().projectFlowCodeFile(name, flowStorageEnv());
 	}
 
 	function projectFlowCodeFile(name) {

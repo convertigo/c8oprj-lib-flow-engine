@@ -1,13 +1,11 @@
 (function () {
 	function blockIdFromDescriptorFile(file, blocksDir, env) {
 		var relative = env.resourceRelativePath(blocksDir, file);
-		if (!relative || (!String(relative).endsWith(".block.yaml") && !String(relative).endsWith(".block.js"))) {
+		if (!relative || !String(relative).endsWith(".block.js")) {
 			return "";
 		}
 		relative = String(relative);
-		relative = relative.endsWith(".block.yaml")
-			? relative.substring(0, relative.length - ".block.yaml".length)
-			: relative.substring(0, relative.length - ".block.js".length);
+		relative = relative.substring(0, relative.length - ".block.js".length);
 		return relative.replace(/\//g, ".");
 	}
 
@@ -39,15 +37,6 @@
 			var base = blocksBaseDir(origin, env);
 			if (String(file.getName()).endsWith(".block.js")) {
 				env.loadFlowScriptBlockFile(blocks, file, origin, provider, base);
-				return;
-			}
-			if (String(file.getName()).endsWith(".block.yaml")) {
-				var peer = new env.File(String(file.getAbsolutePath()).substring(0,
-					String(file.getAbsolutePath()).length - ".block.yaml".length) + ".block.js");
-				if (peer.isFile()) {
-					return;
-				}
-				env.loadGraphBlockFile(blocks, file, origin, provider, base);
 			}
 		});
 	}
@@ -64,14 +53,6 @@
 			var base = blocksBaseDir(origin, env);
 			if (String(file.getName()).endsWith(".block.js")) {
 				env.reserveFlowScriptBlockFile(blocks, file, origin, provider, base);
-				return;
-			}
-			if (String(file.getName()).endsWith(".block.yaml")) {
-				var peer = new env.File(String(file.getAbsolutePath()).substring(0,
-					String(file.getAbsolutePath()).length - ".block.yaml".length) + ".block.js");
-				if (!peer.isFile()) {
-					env.reserveGraphBlockFile(blocks, file, origin, provider, base);
-				}
 			}
 		});
 	}

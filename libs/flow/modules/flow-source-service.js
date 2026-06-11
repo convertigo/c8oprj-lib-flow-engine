@@ -1,7 +1,6 @@
 (function () {
 	function create(env) {
 		env = env || {};
-		var FileUtils = env.FileUtils;
 		var sourceFromDefinition = env.sourceFromDefinition;
 		var normalizeFlowScriptFunctionSyntax = env.normalizeFlowScriptFunctionSyntax;
 		var sourceFromFlowScript = env.sourceFromFlowScript;
@@ -10,7 +9,6 @@
 		var getProjectFlow = env.getProjectFlow;
 		var parseSource = env.parseSource;
 		var analyzeFlowSource = env.analyzeFlowSource;
-		var projectFlowStorage = env.projectFlowStorage;
 		var writeProjectFlowCodeCanonical = env.writeProjectFlowCodeCanonical;
 
 	function sourceForWriteRequest(args, fallback) {
@@ -60,20 +58,13 @@
 		source = sourceForMaybeFlowScript(blocks, args, sourceForWriteRequest(args, source));
 		source = sourceFromDefinition(parseSource(source));
 		var analysis = analyzeFlowSource(blocks, source);
-		var storage = projectFlowStorage(name);
 		var codeFile = writeProjectFlowCodeCanonical(blocks, name, source, args);
-		var yamlFile = null;
-		if (args && (args.writeYaml === true || args.writeYamlMirror === true || args.saveYaml === true)) {
-			storage.yamlFile.getParentFile().mkdirs();
-			FileUtils.writeStringToFile(storage.yamlFile, String(source), "UTF-8");
-			yamlFile = storage.yamlFile;
-		}
 		return {
 			ok: true,
 			name: String(name),
 			format: "flowscript",
 			file: codeFile.file,
-			sourceFile: yamlFile ? String(yamlFile.getAbsolutePath()) : (storage.yamlFile.isFile() ? String(storage.yamlFile.getAbsolutePath()) : ""),
+			sourceFile: "",
 			codeFile: codeFile.file,
 			code: codeFile.code,
 			codeRevision: codeFile.revision,
