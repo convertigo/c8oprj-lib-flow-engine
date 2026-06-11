@@ -115,7 +115,7 @@
 		if (uses.length > 0) {
 			descriptor.uses = uses;
 		}
-		["private", "label", "display", "hooks"].forEach(function (key) {
+		["private", "visibility", "label", "display", "hooks"].forEach(function (key) {
 			if (definition[key] !== undefined) {
 				descriptor[key] = definition[key];
 			}

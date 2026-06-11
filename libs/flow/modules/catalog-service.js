@@ -23,8 +23,49 @@
 		if (descriptor["private"] === undefined && block["private"] !== undefined) {
 			descriptor["private"] = block["private"] === true;
 		}
+		descriptor.visibility = descriptorVisibility(descriptor, block);
+		if (descriptor.visibility === "private") {
+			descriptor["private"] = true;
+		}
 		env.resolveBlockIcon(block, descriptor);
 		return descriptor;
+	}
+
+	function normalizedVisibility(value) {
+		value = String(value || "").toLowerCase().trim();
+		if (value === "public" || value === "internal" || value === "private") {
+			return value;
+		}
+		return "";
+	}
+
+	function defaultVisibility(descriptor) {
+		var namespace = String(descriptor.namespace || "").split(".")[0];
+		var internalNamespaces = {
+			asset: true,
+			codex: true,
+			endpoint: true,
+			file: true,
+			path: true,
+			project: true,
+			toml: true
+		};
+		return internalNamespaces[namespace] === true ? "internal" : "public";
+	}
+
+	function descriptorVisibility(descriptor, block) {
+		if ((descriptor && descriptor["private"] === true) || (block && block["private"] === true)) {
+			return "private";
+		}
+		var visibility = normalizedVisibility(descriptor && descriptor.visibility);
+		if (visibility) {
+			return visibility;
+		}
+		visibility = normalizedVisibility(block && block.visibility);
+		if (visibility) {
+			return visibility;
+		}
+		return defaultVisibility(descriptor || {});
 	}
 
 	function typeDescriptor(type, env) {
@@ -115,6 +156,9 @@
 		if (descriptor["private"] === true) {
 			out["private"] = true;
 		}
+		if (descriptor.visibility && descriptor.visibility !== "public") {
+			out.visibility = descriptor.visibility;
+		}
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(compactSlotDescriptor);
 		}
@@ -193,6 +237,9 @@
 		if (descriptor["private"] === true) {
 			out["private"] = true;
 		}
+		if (descriptor.visibility && descriptor.visibility !== "public") {
+			out.visibility = descriptor.visibility;
+		}
 		return out;
 	}
 
@@ -210,13 +257,20 @@
 		return out;
 	}
 
-	function filterPrivateDescriptors(descriptors, options) {
+	function filterVisibleDescriptors(descriptors, options) {
 		options = options || {};
 		if (options.includePrivate === true) {
 			return descriptors;
 		}
 		return descriptors.filter(function (descriptor) {
-			return descriptor["private"] !== true;
+			var visibility = descriptor.visibility || (descriptor["private"] === true ? "private" : "public");
+			if (visibility === "private") {
+				return false;
+			}
+			if (visibility === "internal" && options.includeInternal !== true) {
+				return false;
+			}
+			return true;
 		});
 	}
 
@@ -331,7 +385,7 @@
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
 			return blockDescriptor(blocks[name], env);
 		});
-		descriptors = filterPrivateDescriptors(descriptors, options);
+		descriptors = filterVisibleDescriptors(descriptors, options);
 		descriptors = filterCatalogDescriptors(descriptors, options);
 		var page = pagedCatalogDescriptors(descriptors, options);
 		return {

@@ -523,6 +523,7 @@
 			icon: propertyDefinition("Icon", "Base properties", "Icon id, relative icon file, or URL.", { kind: "icon", type: "string" }),
 			uses: propertyDefinition("Libraries", "Base properties", "JavaScript libraries explicitly used by this block implementation.", { kind: "array", type: "array", items: { kind: "text", type: "string", trim: true, unique: true }, defaultValue: [] }),
 			display: propertyDefinition("Display template", "Information", "Legacy static display fallback. Prefer the Hooks displayName function.", { readOnly: true, hidden: true }),
+			visibility: propertyDefinition("Visibility", "Base properties", "Palette visibility: public, internal or private.", { kind: "text", type: "string", defaultValue: "public" }),
 			private: propertyDefinition("Private", "Expert", "Hide this block from projects referencing this library.", { kind: "boolean", type: "boolean", defaultValue: false }),
 			tags: propertyDefinition("Tags", "Base properties", "Searchable labels used for filtering and documentation.", { kind: "array", type: "array", items: { kind: "text", type: "string", trim: true, unique: true }, defaultValue: [] }),
 			kind: propertyDefinition("Kind", "Information", "Legacy field migrated to tags.", { readOnly: true, hidden: true }),
@@ -827,9 +828,10 @@
 				blockDefinition.localName = block.localName || block.name || blockId;
 				blockDefinition.namespace = block.namespace || "";
 				blockDefinition.provider = block.provider || "";
+				blockDefinition.visibility = block.visibility || blockDefinition.visibility || "public";
 				blockDefinition.file = block.file || blockDefinition.file || "";
 				var blockInfo = sourceObjectInfo(blockSource, blockPropertyDefinitions(),
-					["name", "provider", "namespace", "blockId", "description", "longDescription", "icon", "tags", "uses", "private", "slots", "implementation", "hooks"]);
+					["name", "provider", "namespace", "blockId", "description", "longDescription", "icon", "tags", "uses", "visibility", "private", "slots", "implementation", "hooks"]);
 				var blockNode = virtualNode("block_" + blockId, "block", blockId,
 					blockPath, block.name || blockId, compact(blockDefinition), compact(blockInfo),
 					block.icon || block.iconify || "mdi:puzzle-outline");

@@ -65,6 +65,12 @@ const _meta = {
       "type": "boolean",
       "description": "Include private blocks."
     },
+    "includeInternal": {
+      "label": "includeInternal",
+      "kind": "literal",
+      "type": "boolean",
+      "description": "Include internal helper blocks hidden from the default palette."
+    },
     "includeTypes": {
       "label": "includeTypes",
       "kind": "literal",

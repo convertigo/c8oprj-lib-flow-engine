@@ -18,6 +18,7 @@
 		return {
 			name: String(name),
 			"private": descriptor["private"] === true,
+			visibility: descriptor.visibility || "",
 			__flowScriptPlaceholder: true,
 			__blockDefinition: descriptor,
 			catalog: function () {

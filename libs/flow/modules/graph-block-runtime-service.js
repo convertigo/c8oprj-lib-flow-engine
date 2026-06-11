@@ -268,6 +268,7 @@
 		var block = {
 			name: blockId,
 			"private": definition["private"] === true,
+			visibility: definition.visibility || "",
 			__blockDefinition: definition,
 			__blockImplementationRuntime: runtime,
 			catalog: function () {

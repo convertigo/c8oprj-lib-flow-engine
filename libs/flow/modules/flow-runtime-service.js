@@ -418,6 +418,7 @@
 					return catalogDefinition(loadBlocks(), {
 						detail: args.detail || args.mode || "summary",
 						includePrivate: args.includePrivate === true,
+						includeInternal: args.includeInternal === true,
 						query: args.query || args.q || "",
 						namespace: args.namespace || "",
 						provider: args.provider || "",

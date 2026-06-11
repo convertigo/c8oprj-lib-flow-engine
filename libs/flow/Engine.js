@@ -3125,6 +3125,7 @@
 				return Object.assign({ ok: true }, catalogDefinition(loadBlocks(), {
 					detail: request.detail || request.mode || "full",
 					includePrivate: request.includePrivate === true,
+					includeInternal: request.includeInternal === true,
 					query: request.query || request.q || "",
 					namespace: request.namespace || "",
 					provider: request.provider || "",
