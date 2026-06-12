@@ -95,19 +95,22 @@
 	function unknownFunctionHint(name) {
 		name = String(name || "");
 		if (name === "slice" || name.match(/\.slice$/)) {
-			return "Array methods are not executed inside Flow expressions. In FlowScript, assign a block call instead: var top5 = list.take(items, 5) or var top5 = items.slice(0, 5).";
+			return "Array methods are not executed inside Flow expressions. In FlowScript, assign a block call instead: var top5 = list.take({ items, count: 5 }).";
 		}
 		if (name === "map" || name.match(/\.map$/)) {
-			return "Use the list.map block in FlowScript: var mapped = list.map(items, { field: current.field }).";
+			return "Use the list.map block in FlowScript: var mapped = list.map({ items, select: { field: current.field } }).";
 		}
 		if (name === "filter" || name.match(/\.filter$/)) {
-			return "Use the list.filter block in FlowScript: var filtered = list.filter(items, current.enabled).";
+			return "Use the list.filter block in FlowScript: var filtered = list.filter({ items, where: current.enabled }).";
 		}
 		if (name === "sort" || name.match(/\.sort$/)) {
-			return "Use the list.sort block in FlowScript: var sorted = list.sort(items, { by: current.title, direction: \"asc\" }).";
+			return "Use the list.sort block in FlowScript: var sorted = list.sort({ items, by: current.title, direction: \"asc\" }).";
 		}
 		if (name === "list.length") {
-			return "Use items.length in FlowScript, or list.length(items) when an expression function is clearer.";
+			return "Use items.length in FlowScript, or length(items) when an expression function is clearer.";
+		}
+		if (name === "count" || name === "Count" || name === "len" || name === "list.count") {
+			return "Use items.length or length(items) for array counts. There is no count/len/list.count Flow expression function.";
 		}
 		return "";
 	}

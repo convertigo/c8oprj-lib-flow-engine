@@ -235,7 +235,7 @@
 		var publicTarget = targetPublic(target, currentProject);
 		var requestable = publicTarget.localRequestable || publicTarget.requestable || publicTarget.qname || "";
 		var hints = {
-			call: "const data = requestable.call(" + JSON.stringify(requestable) + ");"
+			call: "const data = requestable.call({ requestable: " + JSON.stringify(requestable) + " });"
 		};
 		var arrayPath = (arrays || []).filter(function (path) {
 			return String(path).indexOf(".attr") === -1;
@@ -256,7 +256,7 @@
 		})[0];
 		if (leaf) {
 			var relative = String(leaf.path).substring(arrayPath.length + 1);
-			hints.sort = "const sorted = list.sort(items, { by: " + env.flowScriptPath("current", relative) + ", direction: \"asc\" });";
+			hints.sort = "const sorted = list.sort({ items, by: " + env.flowScriptPath("current", relative) + ", direction: \"asc\" });";
 		}
 		hints.returnObject = "return { items, count: items.length };";
 		return hints;

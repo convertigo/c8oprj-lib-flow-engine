@@ -75,15 +75,19 @@ FlowScript accepts a natural code-like sugar for the common LLM path:
 
 ```javascript
 function MyFlow({ input, config, result }) {
-  const feed = requestable.call(".RSSConnector.GetFeed");
-  const sorted = list.sort(feed.rss.channel.item, {
+  const feed = requestable.call({ requestable: ".RSSConnector.GetFeed" });
+  const sorted = list.sort({
+    items: feed.rss.channel.item,
     by: current.title,
     direction: "asc"
   });
-  const news = list.map(sorted, {
-    title: current.title,
-    description: current.description,
-    imageUrl: current.enclosure.attr.url
+  const news = list.map({
+    items: sorted,
+    select: {
+      title: current.title,
+      description: current.description,
+      imageUrl: current.enclosure.attr.url
+    }
   });
   result.news = news;
   result.count = news.length;
@@ -91,9 +95,9 @@ function MyFlow({ input, config, result }) {
 }
 ```
 
-The compiler lowers this to regular Flow nodes. `const name = block(...)`
+The compiler lowers this to regular Flow nodes. `const name = block({...})`
 writes to `local.name`, unqualified local variables are rewritten to `local.*`,
-`list.map(items, { field: current.value })` becomes an explicit
+`list.map({ items, select: { field: current.value } })` becomes an explicit
 `forEach/json.object/json.push` graph, and `result.key = value` writes the
 response scope.
 

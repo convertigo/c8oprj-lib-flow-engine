@@ -250,15 +250,19 @@ For new Flows, prefer the natural code-like form:
 
 ```javascript
 function GetFeedSorted({ input, config, result }) {
-  const feed = requestable.call(".RSSConnector.GetFeed");
-  const sortedItems = list.sort(feed.rss.channel.item, {
+  const feed = requestable.call({ requestable: ".RSSConnector.GetFeed" });
+  const sortedItems = list.sort({
+    items: feed.rss.channel.item,
     by: current.title,
     direction: "asc"
   });
-  const news = list.map(sortedItems, {
-    title: current.title,
-    description: current.description,
-    imageUrl: current.enclosure.attr.url
+  const news = list.map({
+    items: sortedItems,
+    select: {
+      title: current.title,
+      description: current.description,
+      imageUrl: current.enclosure.attr.url
+    }
   });
   result.news = news;
   result.count = news.length;
@@ -266,7 +270,7 @@ function GetFeedSorted({ input, config, result }) {
 }
 ```
 
-This is syntax sugar, not free-form JavaScript. `const name = block(...)`
+This is syntax sugar, not free-form JavaScript. `const name = block({...})`
 becomes `out: local.name`, paths like `feed.rss.channel.item` become
 `local.feed.rss.channel.item`, object-style `list.map` expands to
 `forEach/json.object/json.push`, and `result.key = value` writes the response

@@ -12,6 +12,53 @@
 			});
 		}
 
+		function flowScriptDefaultLiteral(value) {
+			if (value === undefined) {
+				return "";
+			}
+			if (typeof value === "string") {
+				return JSON.stringify(value);
+			}
+			if (value === null || typeof value === "number" || typeof value === "boolean") {
+				return String(value);
+			}
+			return JSON.stringify(value);
+		}
+
+		function flowScriptSignatureKey(key, prop) {
+			prop = prop || {};
+			if (Object.prototype.hasOwnProperty.call(prop, "default")) {
+				return key + "??" + flowScriptDefaultLiteral(prop.default);
+			}
+			if (prop.optional === true || String(prop.description || "").match(/\boptional\b/i)) {
+				return key + "?";
+			}
+			return key;
+		}
+
+		function flowScriptBlockInputKeys(blocks, block) {
+			var descriptor = env.blockCatalog(blocks && blocks[block]) || {};
+			var props = descriptor.props || {};
+			return Object.keys(props).filter(function (key) {
+				return key !== "id" && key !== "comment" && key !== "out";
+			}).map(function (key) {
+				return flowScriptSignatureKey(key, props[key]);
+			});
+		}
+
+		function flowScriptBlockSignature(blocks, block) {
+			var keys = flowScriptBlockInputKeys(blocks, block);
+			return block + "({ " + keys.join(", ") + " })";
+		}
+
+		function raiseFlowScriptBlockSignature(blocks, block, original, lineNumber) {
+			var signature = flowScriptBlockSignature(blocks, block);
+			env.raise("FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE",
+				"Invalid FlowScript block call signature at line " + lineNumber + ": " + original,
+				null,
+				"FlowScript is a Flow block DSL, not JavaScript function calling. Every Flow block accepts exactly one object parameter. Use " + signature + ". Signature keys use key for required values, key? for optional values, and key??default when a default exists.");
+		}
+
 		function parseFlowScriptArgs(text, lineNumber) {
 			text = String(text || "").trim();
 			if (text === "") {
@@ -1035,11 +1082,15 @@
 			var call = parseNaturalFlowScriptCall(rhs);
 			if (!call) {
 				env.raise("FLOWSCRIPT_UNSUPPORTED_ASSIGNMENT", "Unsupported FlowScript assignment at line " + lineNumber + ": " + rhs,
-					null, "Assign a Flow block call, for example const feed = requestable.call(\".Connector.Transaction\");");
+					null, "Assign a Flow block call with one object parameter, for example const feed = requestable.call({ requestable: \".Connector.Transaction\" });");
 			}
 			var block = resolveFlowScriptName(call.name, imports);
 			var args = splitFlowScriptTopLevel(call.args, ",");
-			if (block === "list.map") {
+			var hasCanonicalArgs = args.length === 1 && isFlowScriptObjectLiteral(args[0]);
+			if (!hasCanonicalArgs) {
+				raiseFlowScriptBlockSignature(blocks, block, call.name + "(" + args.join(", ") + ")", lineNumber);
+			}
+			if (block === "list.map" && args.length === 1) {
 				var mapNodes = buildNaturalListMapNodes(blocks, imports, varName, args, locals, lineNumber);
 				if (mapNodes) {
 					return mapNodes;
@@ -1221,9 +1272,10 @@
 			}
 			var sliceMethod = parseNaturalFlowScriptSliceMethod(rhs);
 			if (sliceMethod) {
-				var offsetToken = sliceMethod.args[0] || "0";
-				var countToken = sliceMethod.args.length > 1 ? flowScriptSliceCount(offsetToken, sliceMethod.args[1], locals) : "";
-				return [naturalFlowScriptListTakeNode(varName, sliceMethod.items, countToken, offsetToken, locals, lineNumber)];
+				env.raise("FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE",
+					"Unsupported JavaScript-style slice at line " + lineNumber + ": " + rhs,
+					null,
+					"FlowScript is a Flow block DSL. Use list.take({ items: " + sliceMethod.items + ", offset: 0, count: 5 }) instead of " + sliceMethod.items + ".slice(...). Expected signature: list.take({ items, offset??0, count??5 }).");
 			}
 			var callWithBody = parseNaturalFlowScriptCallWithBody(rhs);
 			if (callWithBody) {
@@ -1268,6 +1320,10 @@
 					}];
 				}
 				var args = splitFlowScriptTopLevel(call.args, ",");
+				var hasCanonicalArgs = args.length === 1 && isFlowScriptObjectLiteral(args[0]);
+				if (!hasCanonicalArgs) {
+					raiseFlowScriptBlockSignature(blocks, block, call.name + "(" + args.join(", ") + ")", lineNumber);
+				}
 				var node = {};
 				if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
 					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
@@ -1684,7 +1740,7 @@
 				var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(([\s\S]*)\)\s*(\{)?\s*;?$/);
 				if (!match) {
 					env.raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,
-						null, "Use compact FlowScript: function MyFlow({ input, config, result }) { var feed = requestable.call(\".Connector.Transaction\"); var sorted = list.sort(feed.items, { by: current.title }); result.items = sorted; return result }.");
+						null, "Use compact FlowScript: function MyFlow({ input, config, result }) { var feed = requestable.call({ requestable: \".Connector.Transaction\" }); var sorted = list.sort({ items: feed.items, by: current.title }); result.items = sorted; return result }.");
 				}
 				var block = resolveFlowScriptName(match[1], imports);
 				var callArgs = match[2] || "{}";
