@@ -8,7 +8,7 @@ const _meta = {
     "flowscript",
     "patch"
   ],
-  "description": "Applies a revision-checked FlowScript patch or replacement.",
+  "description": "Applies a revision-checked FlowScript patch to the working copy.",
   "properties": {
     "qname": {
       "label": "qname",

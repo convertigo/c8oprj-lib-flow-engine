@@ -7,7 +7,7 @@ const _meta = {
     "code",
     "flowscript"
   ],
-  "description": "Validates and writes FlowScript code with optional revision checking.",
+  "description": "Writes and checks the FlowScript working copy with optional revision checking.",
   "properties": {
     "qname": {
       "label": "qname",
@@ -38,14 +38,14 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Validate without writing."
+      "description": "Low-level validation only. MCP agents should usually write the working copy instead."
     },
     "draft": {
       "label": "draft",
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Write the in-memory FlowScript working copy even when invalid. Does not update the saved Flow until promote/save."
+      "description": "Low-level compatibility flag. The working copy is the default unless official mode is requested."
     },
     "saveProject": {
       "label": "saveProject",

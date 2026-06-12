@@ -25,6 +25,7 @@
 		var listProjectFlows = env.listProjectFlows;
 		var runFlowRequest = env.runFlowRequest;
 		var analyzeFlowSource = env.analyzeFlowSource;
+		var normalizeTree = env.normalizeTree || function (value) { return value; };
 
 	function flowCodeName(request) {
 		request = request || {};
@@ -172,10 +173,43 @@
 		return Object.keys(variables).sort();
 	}
 
+	function flowCodeFlowMetaFrom(definition) {
+		definition = definition || {};
+		var meta = definition.flow || definition._flow || {};
+		return meta && typeof meta === "object" ? normalizeTree(meta) : {};
+	}
+
+	function flowCodeInputDefinitionsFrom(definition) {
+		var meta = flowCodeFlowMetaFrom(definition);
+		var inputs = meta.inputs || meta.input || definition && (definition.inputs || definition.input) || {};
+		return inputs && typeof inputs === "object" ? normalizeTree(inputs) : {};
+	}
+
+	function flowCodeTestCasesFrom(definition) {
+		var meta = flowCodeFlowMetaFrom(definition);
+		var tests = meta.tests || meta.testCases || {};
+		return tests && typeof tests === "object" ? normalizeTree(tests) : {};
+	}
+
 	function flowCodeAddInputReport(out, validation) {
-		var inputVariables = flowCodeInputVariablesFrom(validation && validation.definition);
+		var definition = validation && validation.definition || {};
+		var inputDefinitions = flowCodeInputDefinitionsFrom(definition);
+		var inputVariables = flowCodeInputVariablesFrom(definition);
+		Object.keys(inputDefinitions).forEach(function (name) {
+			if (inputVariables.indexOf(name) === -1) {
+				inputVariables.push(name);
+			}
+		});
+		inputVariables.sort();
 		if (inputVariables.length) {
 			out.inputVariables = inputVariables;
+		}
+		if (Object.keys(inputDefinitions).length) {
+			out.inputDefinitions = inputDefinitions;
+		}
+		var testCases = flowCodeTestCasesFrom(definition);
+		if (Object.keys(testCases).length) {
+			out.testCases = testCases;
 		}
 		return out;
 	}
@@ -409,7 +443,7 @@
 				draft: true,
 				revision: current.revision,
 				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
-					"FlowScript draft changed since it was read: " + name,
+					"FlowScript working copy changed since it was read: " + name,
 					"Call flow-code-get again and regenerate the patch from the new working copy revision."),
 				warnings: []
 			};
@@ -960,7 +994,7 @@
 				name: name,
 				draft: true,
 				error: flowCodeError("FLOW_CODE_DRAFT_MISSING",
-					"No FlowScript draft exists for " + name + ".",
+					"No FlowScript working copy exists for " + name + ".",
 					"Create a working copy with flow-code-set before promoting."),
 				warnings: []
 			};
@@ -974,7 +1008,7 @@
 				draft: true,
 				revision: current.revision,
 				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
-					"FlowScript draft changed since it was checked: " + name,
+					"FlowScript working copy changed since it was checked: " + name,
 					"Run flow-code-check again and promote with the latest working copy revision."),
 				warnings: []
 			};

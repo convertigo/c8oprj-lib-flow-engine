@@ -14,6 +14,15 @@
 		return flowScriptString(value, env);
 	}
 
+	function flowScriptTopLevelMeta(name, value, lines, env) {
+		value = env.normalizeTree(value || {});
+		if (!value || typeof value !== "object" || Object.keys(value).length === 0) {
+			return;
+		}
+		lines.push("const _" + name + " = " + JSON.stringify(value, null, 2));
+		lines.push("");
+	}
+
 	function flowScriptLocalName(path) {
 		var match = String(path || "").match(/^local\.([A-Za-z_$][\w$]*)$/);
 		return match ? match[1] : "";
@@ -234,6 +243,9 @@
 		}
 		if (lines.length) {
 			lines.push("");
+		}
+		if (request.includeMeta !== false && request.meta !== false) {
+			flowScriptTopLevelMeta("flow", definition.flow, lines, env);
 		}
 		renderFlowScriptHelpers(renderBlocks, definition.helpers || [], lines, env);
 		lines.push("function " + env.safeIdentifier(name || "Flow") + "({ input, config, result }) {");

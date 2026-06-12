@@ -219,7 +219,7 @@ const _meta = {
 			severity: "warning",
 			code: "DRY_BLOCK_NOT_REGISTERED",
 			message: "Dry validation does not register block " + name + " in the project catalog.",
-			hint: "Call block.code.set or flow-block-code-set again with dry:false before validating a Flow that calls this block."
+			hint: "Call block.code.set or flow-block-code-set again without dry before validating a Flow that calls this block."
 		};
 	}
 

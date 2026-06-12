@@ -7,7 +7,7 @@ const _meta = {
     "code",
     "flowscript"
   ],
-  "description": "Promotes a checked FlowScript draft to the official Flow model.",
+  "description": "Promotes a checked FlowScript working copy to the official Flow model.",
   "properties": {
     "qname": {
       "label": "qname",

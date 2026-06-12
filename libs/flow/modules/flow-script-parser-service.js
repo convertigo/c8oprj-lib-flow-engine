@@ -1570,6 +1570,24 @@
 				}
 			});
 		}
+
+		function parseFlowScriptTopLevelObject(prelude, name) {
+			var out = {};
+			var re = new RegExp("^(?:const|let|var)\\s+_" + name + "\\s*=\\s*([\\s\\S]+)$");
+			flowScriptStatements(prelude).forEach(function (statement) {
+				var match = statement.text.match(re);
+				if (!match) {
+					return;
+				}
+				var token = stripFlowScriptSemicolon(match[1]);
+				if (!isFlowScriptObjectLiteral(token)) {
+					env.raise("FLOWSCRIPT_INVALID_METADATA", "Invalid _" + name + " metadata at line " + statement.line + ".",
+						null, "Use a plain object literal, for example const _flow = { inputs: { city: { type: \"string\" } } }.");
+				}
+				out = parseFlowScriptObjectLiteral(token, statement.line).value || {};
+			});
+			return out;
+		}
 	
 		function trackFlowScriptLocalWrite(locals, path) {
 			path = String(path || "");
@@ -1712,6 +1730,10 @@
 						helperParamLocals(helper.params), helper.__flowScriptBody);
 				});
 				var rootFromFunctions = { version: 1, helpers: helpers, nodes: [] };
+				var flowMeta = parseFlowScriptTopLevelObject(split.prelude, "flow");
+				if (Object.keys(flowMeta).length > 0) {
+					rootFromFunctions.flow = flowMeta;
+				}
 				parseFlowScriptStatementsInto(helperBlocks, Object.assign({}, imports), {}, rootFromFunctions, flowScriptStatements(main.body));
 				if (flowScriptDiagnostics.length) {
 					rootFromFunctions.__flowScriptDiagnostics = flowScriptDiagnostics;

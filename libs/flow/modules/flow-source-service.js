@@ -27,7 +27,7 @@
 
 	function isFlowScriptSource(source) {
 		var text = normalizeFlowScriptFunctionSyntax(source).trim();
-		return !!text.match(/^(?:\/\/[^\n]*\n\s*)*(?:import\s+|const\s+_meta\s*=|flow\s+[A-Za-z_$][\w$]*\s*\(|function\s+[A-Za-z_$][\w$]*\s*\()/);
+		return !!text.match(/^(?:\/\/[^\n]*\n\s*)*(?:import\s+|(?:const|let|var)\s+_(?:meta|flow|block)\s*=|flow\s+[A-Za-z_$][\w$]*\s*\(|function\s+[A-Za-z_$][\w$]*\s*\()/);
 	}
 
 	function sourceForMaybeFlowScript(blocks, args, source) {

@@ -2273,7 +2273,8 @@
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
 			listProjectFlows: listProjectFlows,
 			runFlowRequest: runFlowRequest,
-			analyzeFlowSource: analyzeFlowSource
+			analyzeFlowSource: analyzeFlowSource,
+			normalizeTree: normalizeTree
 		};
 	}
 
