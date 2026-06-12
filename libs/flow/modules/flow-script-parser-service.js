@@ -1,5 +1,17 @@
 (function () {
 	function create(env) {
+		var flowScriptDiagnostics = [];
+
+		function addFlowScriptCanonicalWarning(lineNumber, original, canonical) {
+			flowScriptDiagnostics.push({
+				severity: "warning",
+				code: "FLOWSCRIPT_CANONICALIZED_CALL",
+				line: lineNumber,
+				message: "FlowScript canonicalized " + original + " to " + canonical + ".",
+				hint: "FlowScript block calls use block.name({ params... }). Keep positional calls as temporary authoring shortcuts only."
+			});
+		}
+
 		function parseFlowScriptArgs(text, lineNumber) {
 			text = String(text || "").trim();
 			if (text === "") {
@@ -1037,6 +1049,8 @@
 			if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
 				node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
 			} else if (block === "requestable.call") {
+				addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+					block + "({ requestable: " + args[0] + " })");
 				node.requestable = isFlowScriptQuoted(args[0]) ? unquoteFlowScriptString(args[0]) : flowScriptRewriteExpression(args[0], locals);
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
 					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
@@ -1044,26 +1058,38 @@
 			} else if (block === "list.sort") {
 				node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						block + "({ items: " + (args[0] || "local.items") + ", ... })");
 					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
 				} else if (args.length > 1) {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						block + "({ items: " + (args[0] || "local.items") + ", by: " + args[1] + " })");
 					node.by = flowScriptExpressionFromToken(args[1], locals);
 				}
 			} else if (block === "list.map") {
 				node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 				if (args.length > 1) {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						block + "({ items: " + (args[0] || "local.items") + ", select: " + args[1] + " })");
 					node.select = flowScriptExpressionFromToken(args[1], locals);
 				}
 			} else if (block === "list.filter") {
 				node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						block + "({ items: " + (args[0] || "local.items") + ", ... })");
 					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
 				} else if (args.length > 1) {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						block + "({ items: " + (args[0] || "local.items") + ", where: " + args[1] + " })");
 					node.where = flowScriptExpressionFromToken(args[1], locals);
 				}
 			} else if (block === "list.take") {
 				if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
 					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
 				} else if (call.name === "list.slice") {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						"list.take({ items: " + (args[0] || "local.items") + ", offset: " + (args[1] || "0") + ", count: ... })");
 					node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 					node.offset = flowScriptExpressionFromToken(args[1] || "0", locals);
 					if (args.length > 2) {
@@ -1072,8 +1098,12 @@
 				} else {
 					node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 					if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
+						addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+							block + "({ items: " + (args[0] || "local.items") + ", ... })");
 						Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
 					} else if (args.length > 1) {
+						addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+							block + "({ items: " + (args[0] || "local.items") + ", count: " + args[1] + " })");
 						node.count = flowScriptExpressionFromToken(args[1], locals);
 					}
 					if (args.length > 2) {
@@ -1096,6 +1126,8 @@
 						node.path = "";
 					}
 				} else if (args.length >= 2) {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						block + "({ source: " + args[0] + ", path: " + args[1] + " })");
 					node.source = flowScriptExpressionFromToken(args[0], locals);
 					node.path = flowScriptSelectorPathFromToken(args[1], locals);
 				}
@@ -1104,6 +1136,8 @@
 				}
 			} else if (block === "http.get") {
 				if (args.length > 0 && !isFlowScriptObjectLiteral(args[0])) {
+					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+						block + "({ url: " + args[0] + " })");
 					node.url = flowScriptValueFromToken(args[0], locals, lineNumber);
 				}
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
@@ -1115,9 +1149,13 @@
 				} else {
 					if (args.length > 0 && !isFlowScriptObjectLiteral(args[0])) {
 						if (args.length > 1) {
+							addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+								block + "({ method: " + args[0] + ", url: " + args[1] + " })");
 							node.method = unquoteFlowScriptString(args[0]).toUpperCase();
 							node.url = flowScriptValueFromToken(args[1], locals, lineNumber);
 						} else {
+							addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+								block + "({ url: " + args[0] + " })");
 							node.url = flowScriptValueFromToken(args[0], locals, lineNumber);
 						}
 					}
@@ -1131,12 +1169,16 @@
 					if (args.length > 1) {
 						var optionInputProp = primaryFlowScriptInputProp(blocks, block);
 						if (optionInputProp && node[optionInputProp] === undefined) {
+							addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+								block + "({ " + optionInputProp + ": " + args[0] + ", ... })");
 							node[optionInputProp] = flowScriptPropertyValueFromToken(blocks, block, optionInputProp, args[0], locals, lineNumber);
 						}
 					}
 				} else if (args.length > 0) {
 					var inputProp = primaryFlowScriptInputProp(blocks, block);
 					if (inputProp) {
+						addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
+							block + "({ " + inputProp + ": " + args[0] + " })");
 						node[inputProp] = flowScriptPropertyValueFromToken(blocks, block, inputProp, args[0], locals, lineNumber);
 					}
 				}
@@ -1671,10 +1713,16 @@
 				});
 				var rootFromFunctions = { version: 1, helpers: helpers, nodes: [] };
 				parseFlowScriptStatementsInto(helperBlocks, Object.assign({}, imports), {}, rootFromFunctions, flowScriptStatements(main.body));
+				if (flowScriptDiagnostics.length) {
+					rootFromFunctions.__flowScriptDiagnostics = flowScriptDiagnostics;
+				}
 				return env.canonicalFlowDefinition(rootFromFunctions);
 			}
 			var root = { version: 1, nodes: [] };
 			parseFlowScriptStatementsInto(blocks, {}, {}, root, flowScriptStatements(code));
+			if (flowScriptDiagnostics.length) {
+				root.__flowScriptDiagnostics = flowScriptDiagnostics;
+			}
 			return env.canonicalFlowDefinition(root);
 		}
 	

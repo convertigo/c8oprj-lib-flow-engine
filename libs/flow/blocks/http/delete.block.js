@@ -4,10 +4,10 @@ const _meta = {
   "tags": [
     "http",
     "network",
-    "get",
+    "delete",
     "shortcut"
   ],
-  "description": "Shortcut for http.request with method GET.",
+  "description": "Shortcut for http.request with method DELETE.",
   "outputs": {
     "out": {
       "type": "object",
@@ -34,15 +34,20 @@ const _meta = {
       "default": "",
       "description": "HTTP URL template to call."
     },
+    "query": {
+      "kind": "template",
+      "type": "object",
+      "description": "Optional query parameters object."
+    },
     "headers": {
       "kind": "template",
       "type": "object",
       "description": "Optional HTTP headers object."
     },
-    "query": {
-      "kind": "template",
-      "type": "object",
-      "description": "Optional query parameters object."
+    "body": {
+      "kind": "expression",
+      "type": "unknown",
+      "description": "Optional request body expression."
     },
     "out": {
       "kind": "path",
@@ -53,7 +58,7 @@ const _meta = {
   },
   "runtime": "rhino",
   "hooks": {
-    "file": "get.hooks.js"
+    "file": "delete.hooks.js"
   }
 }
 
@@ -62,10 +67,11 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.callBlock("http.request", {
-				method: "GET",
+				method: "DELETE",
 				url: props.url,
 				query: props.query,
 				headers: props.headers,
+				body: props.body,
 				out: props.out
 			}, {
 				id: node.id || "request"

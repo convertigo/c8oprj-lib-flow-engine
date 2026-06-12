@@ -179,7 +179,7 @@
 		}
 		var definition = env.parseFlowScript(blocks, code);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
-		var diagnostics = validateDefinition(blocks, definition, env);
+		var diagnostics = [].concat(definition.__flowScriptDiagnostics || [], validateDefinition(blocks, definition, env));
 		var clean = env.stripFlowScriptMetadata(definition);
 		var source = env.sourceFromDefinition(clean);
 		var ok = diagnostics.filter(function (diagnostic) {

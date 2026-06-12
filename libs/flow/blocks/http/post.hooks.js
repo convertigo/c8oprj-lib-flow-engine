@@ -5,7 +5,7 @@
 
 	return {
 		displayName: function (node) {
-			return flowSummary.output(node, "GET " + flowSummary.text(prop(node, "url") || "url"));
+			return flowSummary.output(node, "POST " + flowSummary.text(prop(node, "url") || "url"));
 		},
 
 		analyze: function (ctx, node) {
