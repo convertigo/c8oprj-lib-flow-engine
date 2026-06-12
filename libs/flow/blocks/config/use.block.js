@@ -16,9 +16,17 @@ const _meta = {
       "description": "Runs in the caller scope while the merged config is active."
     }
   ],
-  "properties": {},
+  "properties": {
+    "overrides": {
+      "label": "Overrides",
+      "kind": "configOverrides",
+      "type": "object",
+      "default": {},
+      "description": "Config branches active only while the Then slot runs."
+    }
+  },
   "additionalProperties": {
-    "kind": "template",
+    "kind": "configOverrides",
     "type": "object",
     "description": "Config branch override. Example: http: { timeout: 30000 }."
   },
@@ -61,19 +69,48 @@ const _meta = {
 		return out;
 	}
 
+	function putBranch(out, name, value) {
+		var parts = String(name || "").split(".").filter(function (part) {
+			return part;
+		});
+		if (!parts.length) {
+			return out;
+		}
+		var cursor = out;
+		for (var i = 0; i < parts.length - 1; i++) {
+			var part = parts[i];
+			if (!isPlainObject(cursor[part])) {
+				cursor[part] = {};
+			}
+			cursor = cursor[part];
+		}
+		var leaf = parts[parts.length - 1];
+		cursor[leaf] = isPlainObject(cursor[leaf]) && isPlainObject(value) ? mergeDeep(cursor[leaf], value) : clone(value);
+		return out;
+	}
+
+	function mergeBranches(out, branches) {
+		Object.keys(branches || {}).forEach(function (key) {
+			putBranch(out, key, branches[key]);
+		});
+		return out;
+	}
+
 	function configOverrides(ctx, props) {
 		var out = {};
 		var reserved = {
 			id: true,
 			comment: true,
-			out: true
+			out: true,
+			overrides: true
 		};
 		Object.keys(props || {}).forEach(function (key) {
 			if (reserved[key]) {
 				return;
 			}
-			out[key] = ctx.template(props[key]);
+			putBranch(out, key, ctx.template(props[key]));
 		});
+		mergeBranches(out, ctx.template(props && props.overrides || {}));
 		return out;
 	}
 

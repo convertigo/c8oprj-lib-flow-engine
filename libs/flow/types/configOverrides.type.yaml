@@ -1,0 +1,12 @@
+version: 1
+name: "configOverrides"
+label: "Config overrides"
+icon: "mdi:cog-transfer-outline"
+type: "object"
+description: "Temporary config branch overrides deep-merged while a scoped child slot runs."
+editor:
+  label: "Config overrides editor"
+  kind: "webcomponent"
+  component: "flow-config-overrides-editor"
+  file: "editors/configOverrides.html"
+  icon: "mdi:application-brackets-outline"

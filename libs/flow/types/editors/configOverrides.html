@@ -1,0 +1,287 @@
+<template id="flow-config-overrides-editor-template">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+		.rows { display: grid; gap: 8px; }
+		.row { border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
+		.head { display: grid; grid-template-columns: minmax(120px, 0.5fr) auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		textarea { min-height: 96px; resize: vertical; }
+		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+		button.secondary { background: #262c31; border-color: #4b555f; color: #d8e0e5; }
+		button.danger { background: #452326; border-color: #8a3a42; }
+		.hint, .status { color: #9da7af; line-height: 1.35; margin-top: 6px; }
+		.status.error { color: #ffb4a8; }
+	</style>
+	<div class="toolbar">
+		<button data-add="true">Add branch</button>
+		<button class="secondary" data-format="true">Format</button>
+	</div>
+	<div class="rows" part="rows"></div>
+	<div class="hint">Each branch is deep-merged into config while the child slot runs. Example branch: <code>http</code>.</div>
+	<div class="status" part="status"></div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-config-overrides-editor")) {
+			return;
+		}
+
+		var reserved = {
+			id: true,
+			block: true,
+			comment: true,
+			out: true,
+			overrides: true,
+			nodes: true,
+			then: true,
+			"else": true,
+			fields: true,
+			props: true
+		};
+
+		function esc(value) {
+			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+				return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+			});
+		}
+
+		function clone(value) {
+			if (value == null || typeof value !== "object") {
+				return value;
+			}
+			if (Array.isArray(value)) {
+				return value.map(clone);
+			}
+			var out = {};
+			Object.keys(value).forEach(function (key) {
+				out[key] = clone(value[key]);
+			});
+			return out;
+		}
+
+		function parseObject(value) {
+			if (value && typeof value === "object" && !Array.isArray(value)) {
+				return clone(value);
+			}
+			var text = String(value == null ? "" : value).trim();
+			if (!text) {
+				return {};
+			}
+			try {
+				var parsed = JSON.parse(text);
+				return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+			} catch (e) {
+				return {};
+			}
+		}
+
+		function branchText(value) {
+			if (value === undefined || value === null || value === "") {
+				return "{}";
+			}
+			if (typeof value === "string") {
+				var text = value.trim();
+				if (!text) {
+					return "{}";
+				}
+				try {
+					return JSON.stringify(JSON.parse(text), null, 2);
+				} catch (e) {
+					return text;
+				}
+			}
+			return JSON.stringify(value, null, 2);
+		}
+
+		function isBranchName(name) {
+			return /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(String(name || ""));
+		}
+
+		function rowsFromState(state) {
+			var definition = state && state.definition || {};
+			var values = parseObject(state && state.value);
+			Object.keys(definition).forEach(function (key) {
+				if (!reserved[key] && values[key] === undefined) {
+					values[key] = clone(definition[key]);
+				}
+			});
+			return Object.keys(values).sort().map(function (key) {
+				return {
+					name: key,
+					text: branchText(values[key])
+				};
+			});
+		}
+
+		customElements.define("flow-config-overrides-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._state = {};
+				this._rows = [];
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" })
+						.append(document.getElementById("flow-config-overrides-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("click", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._state = state || {};
+				this._rows = rowsFromState(this._state);
+				this.render();
+				this.emit();
+			}
+
+			get value() {
+				return JSON.stringify(this.normalized());
+			}
+
+			handleEvent(event) {
+				if (event.type === "input") {
+					var target = event.target;
+					var index = target && target.getAttribute && target.getAttribute("data-index");
+					if (index !== null && index !== undefined) {
+						var row = this._rows[Number(index)];
+						if (row) {
+							if (target.getAttribute("data-field") === "name") {
+								row.name = target.value;
+							} else {
+								row.text = target.value;
+							}
+							this.validate();
+							this.emit();
+						}
+					}
+					return;
+				}
+				if (event.type === "click") {
+					if (event.target && event.target.getAttribute && event.target.getAttribute("data-add")) {
+						this._rows.push({ name: this.nextName(), text: "{}" });
+						this.render();
+						this.emit();
+						return;
+					}
+					var remove = event.target && event.target.getAttribute && event.target.getAttribute("data-remove");
+					if (remove !== null && remove !== undefined) {
+						this._rows.splice(Number(remove), 1);
+						this.render();
+						this.emit();
+						return;
+					}
+					if (event.target && event.target.getAttribute && event.target.getAttribute("data-format")) {
+						this.format();
+					}
+				}
+			}
+
+			nextName() {
+				var used = {};
+				this._rows.forEach(function (row) {
+					used[row.name] = true;
+				});
+				var base = "http";
+				if (!used[base]) {
+					return base;
+				}
+				for (var i = 2; i < 1000; i++) {
+					if (!used[base + i]) {
+						return base + i;
+					}
+				}
+				return "config";
+			}
+
+			normalized() {
+				var out = {};
+				this._rows.forEach(function (row) {
+					var name = String(row.name || "").trim();
+					if (!name || reserved[name] || !isBranchName(name)) {
+						return;
+					}
+					try {
+						out[name] = JSON.parse(String(row.text || "{}"));
+					} catch (e) {
+						out[name] = String(row.text || "");
+					}
+				});
+				return out;
+			}
+
+			format() {
+				this._rows.forEach(function (row) {
+					row.text = branchText(row.text);
+				});
+				this.render();
+				this.emit();
+			}
+
+			validate() {
+				var status = this.shadowRoot && this.shadowRoot.querySelector("[part=status]");
+				if (!status) {
+					return true;
+				}
+				var messages = [];
+				var seen = {};
+				this._rows.forEach(function (row) {
+					var name = String(row.name || "").trim();
+					if (!name) {
+						messages.push("A branch name is empty.");
+					} else if (reserved[name]) {
+						messages.push(name + " is reserved.");
+					} else if (!isBranchName(name)) {
+						messages.push(name + " is not a valid config branch path.");
+					} else if (seen[name]) {
+						messages.push(name + " is duplicated.");
+					}
+					seen[name] = true;
+					try {
+						JSON.parse(String(row.text || "{}"));
+					} catch (e) {
+						messages.push((name || "branch") + " is not valid JSON; it will be saved as text.");
+					}
+				});
+				status.textContent = messages.length ? messages.join(" ") : "Config overrides are valid.";
+				status.classList.toggle("error", messages.length > 0);
+				return messages.length === 0;
+			}
+
+			emit() {
+				var value = this.value;
+				this.dispatchEvent(new CustomEvent("flow-values", {
+					bubbles: true,
+					detail: {
+						value: value,
+						values: {
+							overrides: value
+						}
+					}
+				}));
+			}
+
+			render() {
+				if (!this.shadowRoot) {
+					return;
+				}
+				var rows = this.shadowRoot.querySelector("[part=rows]");
+				if (rows) {
+					rows.innerHTML = this._rows.map(function (row, index) {
+						return "<div class=\"row\">"
+							+ "<div class=\"head\">"
+							+ "<input data-index=\"" + index + "\" data-field=\"name\" value=\"" + esc(row.name) + "\" placeholder=\"branch, e.g. http\">"
+							+ "<button class=\"danger\" data-remove=\"" + index + "\">Remove</button>"
+							+ "</div>"
+							+ "<textarea data-index=\"" + index + "\" data-field=\"value\" spellcheck=\"false\">" + esc(row.text) + "</textarea>"
+							+ "</div>";
+					}).join("") || "<div class=\"hint\">No override branch yet.</div>";
+				}
+				this.validate();
+			}
+		});
+	}());
+</script>

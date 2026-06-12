@@ -700,6 +700,42 @@
 			return args;
 		}
 
+		function foldConfigUseOverrides(blocks, block, node) {
+			if (block !== "config.use") {
+				return node;
+			}
+			var descriptor = env.blockCatalog(blocks && blocks[block]) || {};
+			var props = descriptor.props || {};
+			var slots = {};
+			flowScriptBlockSlotNames(blocks, block).forEach(function (slot) {
+				slots[slot] = true;
+			});
+			var reserved = {
+				id: true,
+				block: true,
+				comment: true,
+				out: true,
+				overrides: true,
+				nodes: true,
+				then: true,
+				"else": true,
+				fields: true,
+				props: true
+			};
+			var overrides = env.normalizeTree(node.overrides || {});
+			Object.keys(node || {}).forEach(function (key) {
+				if (reserved[key] || slots[key] || props[key]) {
+					return;
+				}
+				overrides[key] = node[key];
+				delete node[key];
+			});
+			if (Object.keys(overrides).length) {
+				node.overrides = overrides;
+			}
+			return node;
+		}
+
 		function flowScriptPropertyValueFromToken(blocks, block, key, token, locals, lineNumber) {
 			var kind = flowScriptPropKind(blocks, block, key);
 			if (kind === "expression") {
@@ -806,7 +842,7 @@
 			Object.keys(extracted.slots || {}).forEach(function (slot) {
 				node[slot] = extracted.slots[slot];
 			});
-			return node;
+			return foldConfigUseOverrides(blocks, block, node);
 		}
 	
 		function parseNaturalFlowScriptCall(text) {

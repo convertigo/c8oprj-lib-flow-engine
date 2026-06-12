@@ -113,7 +113,7 @@
 		if (kind === "expression") {
 			return renderFlowScriptExpression(value, locals, env);
 		}
-		if (kind === "template" || kind === "value") {
+		if (kind === "template" || kind === "value" || kind === "configOverrides") {
 			if (typeof value === "string") {
 				var exact = value.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
 				if (exact) {
@@ -196,10 +196,18 @@
 			if (key === "out" && outLocal) {
 				return;
 			}
+			if (block === "config.use" && key === "overrides") {
+				return;
+			}
 			args[key] = node[key];
 		});
+		if (block === "config.use" && node && node.overrides && typeof node.overrides === "object") {
+			Object.keys(node.overrides).forEach(function (key) {
+				args[key] = node.overrides[key];
+			});
+		}
 		var parts = Object.keys(args).map(function (key) {
-			return key + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals, env);
+			return flowScriptObjectKey(key) + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals, env);
 		});
 		var call = block + "({ " + parts.join(", ") + " })";
 		if (outLocal) {
@@ -218,10 +226,18 @@
 			if (key === "out" && outLocal) {
 				return;
 			}
+			if (block === "config.use" && key === "overrides") {
+				return;
+			}
 			args[key] = node[key];
 		});
+		if (block === "config.use" && node && node.overrides && typeof node.overrides === "object") {
+			Object.keys(node.overrides).forEach(function (key) {
+				args[key] = node.overrides[key];
+			});
+		}
 		var parts = Object.keys(args).map(function (key) {
-			return key + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals, env);
+			return flowScriptObjectKey(key) + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals, env);
 		});
 		parts.push(slotName + ": function () {");
 		var prefix = outLocal ? "var " + outLocal + " = " : "";

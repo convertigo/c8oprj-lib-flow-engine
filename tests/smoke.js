@@ -80,6 +80,9 @@ var expressionType = catalog.types.filter(function (type) {
 })[0];
 assertTrue(expressionType && expressionType.editor && String(expressionType.editor.file).indexOf("expression.html") !== -1,
 	"catalog did not expose type editor resources");
+assertTrue(catalog.types.some(function (type) {
+	return type.name === "configOverrides" && type.editor && String(type.editor.file).indexOf("configOverrides.html") !== -1;
+}), "catalog did not expose configOverrides type editor resources");
 var typeListApi = JSON.parse(engine.types("{}"));
 assertTrue(typeListApi.ok === true && typeListApi.types.some(function (type) {
 	return type.name === "requestable";
@@ -140,7 +143,8 @@ var configUseValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 assertTrue(configUseValidation.ok === true &&
 	configUseValidation.definition.nodes[2].block === "config.use" &&
 	configUseValidation.definition.nodes[2].then.length === 3 &&
-	configUseValidation.definition.nodes[2].http.headers.Authorization === "{{ config.github.token }}",
+	configUseValidation.definition.nodes[2].overrides.http.headers.Authorization === "{{ config.github.token }}" &&
+	configUseValidation.definition.nodes[2].http === undefined,
 	"config.use FlowScript slot did not compile to the expected Flow model");
 var configUseRendered = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	name: "ConfigUseSmoke",
@@ -149,7 +153,8 @@ var configUseRendered = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 assertTrue(configUseRendered.ok === true &&
 	configUseRendered.code.indexOf("config.use({") !== -1 &&
 	configUseRendered.code.indexOf("then: function () {") !== -1 &&
-	configUseRendered.code.indexOf("Authorization: config.github.token") !== -1,
+	configUseRendered.code.indexOf("Authorization: config.github.token") !== -1 &&
+	configUseRendered.code.indexOf("overrides:") === -1,
 	"config.use Flow model did not render back to AST-compatible FlowScript");
 var configUseRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: configUseFlowScriptSource,
@@ -715,7 +720,8 @@ assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-value-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-expression-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-literal-editor") !== -1 &&
-	propertyEditor.html.indexOf("flow-text-editor") !== -1,
+	propertyEditor.html.indexOf("flow-text-editor") !== -1 &&
+	propertyEditor.html.indexOf("flow-config-overrides-editor") !== -1,
 	"propertyEditor did not embed core standalone editors");
 assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
 	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
