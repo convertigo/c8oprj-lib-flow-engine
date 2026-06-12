@@ -76,6 +76,9 @@
 			length: function (value) {
 				return value === undefined || value === null ? 0 : value.length || 0;
 			},
+			"list.length": function (value) {
+				return value === undefined || value === null ? 0 : value.length || 0;
+			},
 			round: function (value, digits) {
 				var factor = Math.pow(10, Number(digits || 0));
 				return Math.round(Number(value) * factor) / factor;
@@ -87,6 +90,40 @@
 				return JSON.stringify(env.sanitizeRuntimeValue(value));
 			}
 		};
+	}
+
+	function unknownFunctionHint(name) {
+		name = String(name || "");
+		if (name === "slice" || name.match(/\.slice$/)) {
+			return "Array methods are not executed inside Flow expressions. In FlowScript, assign a block call instead: var top5 = list.take(items, 5) or var top5 = items.slice(0, 5).";
+		}
+		if (name === "map" || name.match(/\.map$/)) {
+			return "Use the list.map block in FlowScript: var mapped = list.map(items, { field: current.field }).";
+		}
+		if (name === "filter" || name.match(/\.filter$/)) {
+			return "Use the list.filter block in FlowScript: var filtered = list.filter(items, current.enabled).";
+		}
+		if (name === "sort" || name.match(/\.sort$/)) {
+			return "Use the list.sort block in FlowScript: var sorted = list.sort(items, { by: current.title, direction: \"asc\" }).";
+		}
+		if (name === "list.length") {
+			return "Use items.length in FlowScript, or list.length(items) when an expression function is clearer.";
+		}
+		return "";
+	}
+
+	function unknownIdentifierHint(name) {
+		name = String(name || "");
+		if (name === "index") {
+			return "No implicit index variable is available in list.map/list.filter expressions yet. Use list.take for top-N slicing, or create an explicit flow when you need counters.";
+		}
+		if (name === "item") {
+			return "Use current for the item exposed by forEach/list.map/list.filter, for example current.title.";
+		}
+		if (name.match(/^[A-Za-z_$][\w$]*$/)) {
+			return "Use explicit Flow scopes: input.*, config.*, local.*, current.* or result.*. Inside list.sort/list.map/list.filter, use current." + name + " for an item field.";
+		}
+		return "";
 	}
 
 	function tokenize(source, env) {
@@ -365,7 +402,7 @@
 					var args = parseArgs();
 					consume(")");
 					if (!fns[name]) {
-						env.raise("INVALID_EXPRESSION", "Unknown expression function: " + name);
+						env.raise("INVALID_EXPRESSION", "Unknown expression function: " + name, null, unknownFunctionHint(name));
 					}
 					return fns[name].apply(null, args);
 				}
@@ -384,7 +421,7 @@
 				if (env.isScopePath(name)) {
 					return ctx.read(name);
 				}
-				env.raise("INVALID_EXPRESSION", "Unknown expression identifier: " + name);
+				env.raise("INVALID_EXPRESSION", "Unknown expression identifier: " + name, null, unknownIdentifierHint(name));
 			}
 			if (peek("(")) {
 				consume("(");

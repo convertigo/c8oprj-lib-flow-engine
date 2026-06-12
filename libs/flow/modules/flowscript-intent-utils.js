@@ -89,6 +89,9 @@
 	function blockCandidateScore(descriptor, wanted, env) {
 		var wantedText = String(wanted || "").toLowerCase();
 		var wantedTokens = expandIntentTokens(intentTokens(wanted), env);
+		var wantedParts = wantedText.split(".");
+		var wantedLocalName = wantedParts.length > 1 ? wantedParts[wantedParts.length - 1] : wantedText;
+		var wantedNamespace = wantedParts.length > 1 ? wantedParts.slice(0, wantedParts.length - 1).join(".") : "";
 		var blockId = String(descriptor.blockId || descriptor.name || "").toLowerCase();
 		var localName = String(descriptor.localName || descriptor.name || "").toLowerCase();
 		var namespace = String(descriptor.namespace || "").toLowerCase();
@@ -103,6 +106,16 @@
 		} else if (blockId.indexOf(wantedText) !== -1 ||
 				(blockId.length >= 4 && wantedText.indexOf(blockId) !== -1)) {
 			score += 45;
+		}
+		if (wantedNamespace) {
+			if (namespace === wantedNamespace) {
+				score += 70;
+			} else if (namespace.indexOf(wantedNamespace + ".") === 0 || wantedNamespace.indexOf(namespace + ".") === 0) {
+				score += 35;
+			}
+			if (localName === wantedLocalName) {
+				score += 55;
+			}
 		}
 		score += intentScoreText(localName, wantedTokens) * 2;
 		score += intentScoreText(blockId, wantedTokens);

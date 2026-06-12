@@ -2270,6 +2270,7 @@
 			setProjectBlockCode: setProjectBlockCode,
 			flowScriptBlockMetaFromRequest: flowScriptBlockMetaFromRequest,
 			flowScriptBlockCodeSource: flowScriptBlockCodeSource,
+			flowScriptBlockCandidates: flowScriptBlockCandidates,
 			listProjectFlows: listProjectFlows,
 			runFlowRequest: runFlowRequest,
 			analyzeFlowSource: analyzeFlowSource

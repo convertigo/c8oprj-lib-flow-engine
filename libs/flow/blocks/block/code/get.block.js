@@ -7,7 +7,7 @@ const _meta = {
     "code",
     "flowscript"
   ],
-  "description": "Reads canonical Flow block code with revision information.",
+  "description": "Reads project-local custom block code with revision info; not for standard http/list/json blocks.",
   "properties": {
     "name": {
       "label": "name",

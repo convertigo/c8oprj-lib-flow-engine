@@ -133,8 +133,24 @@
 				descriptor: descriptor,
 				source: validation.source,
 				definition: validation.definition,
-				diagnostics: validation.diagnostics
+				diagnostics: validation.diagnostics,
+				warnings: flowScriptBlockAuthoringWarnings(name, functionCode, meta)
 			};
+		}
+
+		function flowScriptBlockAuthoringWarnings(name, functionCode, meta) {
+			var warnings = [];
+			var outputs = normalizeTree(meta.outputs || meta.output || {});
+			var hasOutOutput = outputs.out !== undefined || outputs.type || outputs.properties || outputs.items;
+			if (hasOutOutput && String(functionCode || "").match(/return\s*\{\s*out\s*:/)) {
+				warnings.push({
+					severity: "warning",
+					code: "BLOCK_RETURNS_OUT_WRAPPER",
+					message: "FlowScript block " + name + " returns { out: ... }; return the block value directly instead.",
+					hint: "The caller's out property writes the returned value into scope. Use return { temperature, unit } rather than return { out: { temperature, unit } }."
+				});
+			}
+			return warnings;
 		}
 
 		function compileRhinoBlockCode(name, code, request) {

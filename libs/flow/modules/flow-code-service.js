@@ -21,6 +21,7 @@
 		var setProjectBlockCode = env.setProjectBlockCode;
 		var flowScriptBlockMetaFromRequest = env.flowScriptBlockMetaFromRequest;
 		var flowScriptBlockCodeSource = env.flowScriptBlockCodeSource;
+		var flowScriptBlockCandidates = env.flowScriptBlockCandidates || function () { return []; };
 		var listProjectFlows = env.listProjectFlows;
 		var runFlowRequest = env.runFlowRequest;
 		var analyzeFlowSource = env.analyzeFlowSource;
@@ -626,6 +627,27 @@
 				ok: false,
 				name: name,
 				error: flowCodeError("MISSING_BLOCK_NAME", "flow-block-code-get requires name."),
+				warnings: []
+			};
+		}
+		if (!blocks[String(name)]) {
+			var candidates = flowScriptBlockCandidates(blocks, name, 5);
+			var exactCandidate = candidates.filter(function (candidate) {
+				return String(candidate.block || "") === name;
+			})[0];
+			return {
+				ok: false,
+				name: name,
+				error: flowCodeError("UNKNOWN_BLOCK", "Unknown Flow block: " + name,
+					candidates.length
+						? "Use one of the candidates, or call flow-catalog once if none matches. Do not probe arbitrary block names with flow-block-code-get."
+						: "No matching block exists. For a domain-specific need, create a project block with flow-block-code-set; otherwise use flow-catalog once."),
+				candidates: candidates,
+				next: exactCandidate
+					? "Use " + exactCandidate.block + "."
+					: (candidates.length
+						? "No exact block exists. Pick a candidate only if it matches the intent, otherwise create a project block."
+						: "Use existing blocks directly, or create a project block if this is a new reusable concept."),
 				warnings: []
 			};
 		}
