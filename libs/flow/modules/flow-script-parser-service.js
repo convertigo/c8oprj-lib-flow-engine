@@ -402,6 +402,9 @@
 		function flowScriptPropKind(blocks, block, key) {
 			var descriptor = env.blockCatalog(blocks && blocks[block]) || {};
 			var prop = descriptor.props && descriptor.props[key];
+			if (!prop && (descriptor.dynamicProperties === true || descriptor.additionalProperties)) {
+				prop = descriptor.additionalProperties || {};
+			}
 			if (!prop) {
 				return "";
 			}
@@ -690,6 +693,8 @@
 					args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
 				} else if (kind === "text" || kind === "schema" || kind === "secret") {
 					args[key] = unquoteFlowScriptString(tokens[key]);
+				} else {
+					args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
 				}
 			});
 			return args;
@@ -710,6 +715,98 @@
 				return unquoteFlowScriptString(token);
 			}
 			return flowScriptValueFromToken(token, locals, lineNumber);
+		}
+
+		function flowScriptBlockSlotNames(blocks, block) {
+			var descriptor = env.blockCatalog(blocks && blocks[block]) || {};
+			var out = [];
+			(descriptor.slots || []).forEach(function (slot) {
+				if (slot && typeof slot === "object") {
+					if (slot.name) {
+						out.push(String(slot.name));
+					}
+					(slot.aliases || []).forEach(function (alias) {
+						out.push(String(alias));
+					});
+				} else if (slot) {
+					out.push(String(slot));
+				}
+			});
+			return out;
+		}
+
+		function flowScriptFunctionLiteralBody(token, lineNumber) {
+			token = String(token || "").trim();
+			var match = token.match(/^function(?:\s+[A-Za-z_$][\w$]*)?\s*\(/);
+			if (!match) {
+				return null;
+			}
+			var openParen = token.indexOf("(", match[0].length - 1);
+			var closeParen = balancedFlowScriptGroupEnd(token, openParen, "(", ")");
+			if (closeParen < 0) {
+				env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript slot function at line " + lineNumber,
+					null, "Close the function argument list before the slot body.");
+			}
+			var bodyStart = closeParen + 1;
+			while (bodyStart < token.length && /\s/.test(token.charAt(bodyStart))) {
+				bodyStart++;
+			}
+			if (token.charAt(bodyStart) !== "{") {
+				return null;
+			}
+			var bodyEnd = env.balancedObjectEnd(token, bodyStart);
+			if (bodyEnd < 0) {
+				env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript slot function body at line " + lineNumber,
+					null, "Close the slot function body with }.");
+			}
+			if (token.substring(bodyEnd + 1).trim() !== "") {
+				env.raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported text after FlowScript slot function at line " + lineNumber + ": " + token.substring(bodyEnd + 1).trim(),
+					null, "Use then: function () { ... } as the complete slot value.");
+			}
+			return token.substring(bodyStart + 1, bodyEnd);
+		}
+
+		function extractFlowScriptInlineSlots(blocks, imports, locals, block, parsed, lineNumber) {
+			var slotNames = flowScriptBlockSlotNames(blocks, block);
+			if (!slotNames.length) {
+				return { parsed: parsed, slots: {} };
+			}
+			var slotMap = {};
+			slotNames.forEach(function (slot) {
+				slotMap[slot] = true;
+			});
+			var parsedValue = env.normalizeTree(parsed.value || {});
+			var parsedTokens = Object.assign({}, parsed.tokens || {});
+			var slots = {};
+			Object.keys(parsedTokens).forEach(function (key) {
+				if (!slotMap[key]) {
+					return;
+				}
+				var body = flowScriptFunctionLiteralBody(parsedTokens[key], lineNumber);
+				if (body === null) {
+					env.raise("FLOWSCRIPT_INVALID_SLOT", "Invalid inline slot \"" + key + "\" for Flow block " + block + " at line " + lineNumber + ".",
+						null, "Use " + key + ": function () { ... } inside the block argument object.");
+				}
+				slots[key] = parseFlowScriptBodyNodes(blocks, imports || {}, Object.assign({}, locals || {}), body);
+				delete parsedValue[key];
+				delete parsedTokens[key];
+			});
+			return {
+				parsed: {
+					value: parsedValue,
+					tokens: parsedTokens
+				},
+				slots: slots
+			};
+		}
+
+		function normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parsed, lineNumber) {
+			var extracted = extractFlowScriptInlineSlots(blocks, imports, locals, block, parsed, lineNumber);
+			var node = normalizeNaturalFlowScriptProps(blocks, block, extracted.parsed, locals, lineNumber);
+			Object.keys(extracted.slots || {}).forEach(function (slot) {
+				node[slot] = extracted.slots[slot];
+			});
+			return node;
 		}
 	
 		function parseNaturalFlowScriptCall(text) {
@@ -940,7 +1037,7 @@
 			var mapperArgs = splitFlowScriptTopLevel(mapperCall.args, ",");
 			var mapperNode = {};
 			if (mapperArgs.length === 1 && isFlowScriptObjectLiteral(mapperArgs[0])) {
-				mapperNode = normalizeNaturalFlowScriptProps(blocks, mapperBlock, parseFlowScriptObjectLiteral(mapperArgs[0], lineNumber), locals, lineNumber);
+				mapperNode = normalizeNaturalFlowScriptNode(blocks, imports, locals, mapperBlock, parseFlowScriptObjectLiteral(mapperArgs[0], lineNumber), lineNumber);
 			} else if (mapperArgs.length > 0) {
 				return null;
 			}
@@ -1098,20 +1195,20 @@
 			}
 			var node = {};
 			if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
-				node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
+				node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
 			} else if (block === "requestable.call") {
 				addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 					block + "({ requestable: " + args[0] + " })");
 				node.requestable = isFlowScriptQuoted(args[0]) ? unquoteFlowScriptString(args[0]) : flowScriptRewriteExpression(args[0], locals);
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
-					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+					Object.assign(node, normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[1], lineNumber), lineNumber));
 				}
 			} else if (block === "list.sort") {
 				node.items = flowScriptRewriteExpression(args[0] || "local.items", locals);
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
 					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 						block + "({ items: " + (args[0] || "local.items") + ", ... })");
-					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+					Object.assign(node, normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[1], lineNumber), lineNumber));
 				} else if (args.length > 1) {
 					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 						block + "({ items: " + (args[0] || "local.items") + ", by: " + args[1] + " })");
@@ -1129,7 +1226,7 @@
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
 					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 						block + "({ items: " + (args[0] || "local.items") + ", ... })");
-					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+					Object.assign(node, normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[1], lineNumber), lineNumber));
 				} else if (args.length > 1) {
 					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 						block + "({ items: " + (args[0] || "local.items") + ", where: " + args[1] + " })");
@@ -1137,7 +1234,7 @@
 				}
 			} else if (block === "list.take") {
 				if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
-					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
+					node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
 				} else if (call.name === "list.slice") {
 					addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 						"list.take({ items: " + (args[0] || "local.items") + ", offset: " + (args[1] || "0") + ", count: ... })");
@@ -1151,7 +1248,7 @@
 					if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
 						addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 							block + "({ items: " + (args[0] || "local.items") + ", ... })");
-						Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+						Object.assign(node, normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[1], lineNumber), lineNumber));
 					} else if (args.length > 1) {
 						addFlowScriptCanonicalWarning(lineNumber, call.name + "(" + args.join(", ") + ")",
 							block + "({ items: " + (args[0] || "local.items") + ", count: " + args[1] + " })");
@@ -1164,8 +1261,8 @@
 			} else if (block === "json.select") {
 				var options = null;
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[args.length - 1])) {
-					options = normalizeNaturalFlowScriptProps(blocks, block,
-						parseFlowScriptObjectLiteral(args.pop(), lineNumber), locals, lineNumber);
+					options = normalizeNaturalFlowScriptNode(blocks, imports, locals, block,
+						parseFlowScriptObjectLiteral(args.pop(), lineNumber), lineNumber);
 				}
 				if (args.length === 1) {
 					var selector = flowScriptObjectPathSelector(args[0], locals);
@@ -1192,11 +1289,11 @@
 					node.url = flowScriptValueFromToken(args[0], locals, lineNumber);
 				}
 				if (args.length > 1 && isFlowScriptObjectLiteral(args[1])) {
-					Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[1], lineNumber), locals, lineNumber));
+					Object.assign(node, normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[1], lineNumber), lineNumber));
 				}
 			} else if (block === "http.request") {
 				if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
-					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
+					node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
 				} else {
 					if (args.length > 0 && !isFlowScriptObjectLiteral(args[0])) {
 						if (args.length > 1) {
@@ -1211,12 +1308,12 @@
 						}
 					}
 					if (args.length > 2 && isFlowScriptObjectLiteral(args[2])) {
-						Object.assign(node, normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[2], lineNumber), locals, lineNumber));
+						Object.assign(node, normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[2], lineNumber), lineNumber));
 					}
 				}
 			} else {
 				if (args.length > 0 && isFlowScriptObjectLiteral(args[args.length - 1])) {
-					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[args.length - 1], lineNumber), locals, lineNumber);
+					node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[args.length - 1], lineNumber), lineNumber);
 					if (args.length > 1) {
 						var optionInputProp = primaryFlowScriptInputProp(blocks, block);
 						if (optionInputProp && node[optionInputProp] === undefined) {
@@ -1326,9 +1423,9 @@
 				}
 				var node = {};
 				if (args.length === 1 && isFlowScriptObjectLiteral(args[0])) {
-					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[0], lineNumber), locals, lineNumber);
+					node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
 				} else if (args.length > 0 && isFlowScriptObjectLiteral(args[args.length - 1])) {
-					node = normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(args[args.length - 1], lineNumber), locals, lineNumber);
+					node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[args.length - 1], lineNumber), lineNumber);
 				}
 				node.block = block;
 				node.__flowScriptLine = lineNumber;
@@ -1745,7 +1842,7 @@
 				var block = resolveFlowScriptName(match[1], imports);
 				var callArgs = match[2] || "{}";
 				var node = isFlowScriptObjectLiteral(callArgs)
-					? normalizeNaturalFlowScriptProps(blocks, block, parseFlowScriptObjectLiteral(callArgs, lineNumber), locals, lineNumber)
+					? normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(callArgs, lineNumber), lineNumber)
 					: parseFlowScriptArgs(callArgs, lineNumber);
 				node.block = block;
 				node.__flowScriptLine = lineNumber;

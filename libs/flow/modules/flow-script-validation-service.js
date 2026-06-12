@@ -31,13 +31,15 @@
 							: "Create a project block with flow-block-code-set before using " + name + "."
 					});
 				} else {
-					var props = env.blockCatalog(block).props || {};
+					var catalog = env.blockCatalog(block);
+					var props = catalog.props || {};
+					var acceptsAdditionalProperties = catalog.dynamicProperties === true || !!catalog.additionalProperties;
 					var slotMap = {};
 					env.flowScriptSlotNames(activeBlocks, node).forEach(function (slot) {
 						slotMap[slot] = true;
 					});
 					env.flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
-						if (key !== "id" && key !== "comment" && key !== "out" && !props[key]) {
+						if (key !== "id" && key !== "comment" && key !== "out" && !props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
 							diagnostics.push({
 								severity: "error",

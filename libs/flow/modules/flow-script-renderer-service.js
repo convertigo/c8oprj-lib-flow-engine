@@ -14,6 +14,36 @@
 		return flowScriptString(value, env);
 	}
 
+	function flowScriptObjectKey(key) {
+		key = String(key || "");
+		return key.match(/^[A-Za-z_$][\w$]*$/) ? key : JSON.stringify(key);
+	}
+
+	function renderFlowScriptTemplateValue(value, locals, env) {
+		value = env.normalizeTree(value);
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return "[" + value.map(function (item) {
+				return renderFlowScriptTemplateValue(item, locals, env);
+			}).join(", ") + "]";
+		}
+		if (value && typeof value === "object") {
+			return "{ " + Object.keys(value).map(function (key) {
+				return flowScriptObjectKey(key) + ": " + renderFlowScriptTemplateValue(value[key], locals, env);
+			}).join(", ") + " }";
+		}
+		if (typeof value === "string") {
+			var exact = value.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+			if (exact) {
+				return renderFlowScriptExpression(exact[1], locals, env);
+			}
+			if (value.indexOf("{{") !== -1) {
+				return renderFlowScriptTemplateLiteral(value, locals, env);
+			}
+			return JSON.stringify(value);
+		}
+		return flowScriptInlineValue(value, env);
+	}
+
 	function flowScriptTopLevelMeta(name, value, lines, env) {
 		value = env.normalizeTree(value || {});
 		if (!value || typeof value !== "object" || Object.keys(value).length === 0) {
@@ -93,6 +123,9 @@
 					return renderFlowScriptTemplateLiteral(value, locals, env);
 				}
 				return JSON.stringify(value);
+			}
+			if (value && typeof value === "object") {
+				return renderFlowScriptTemplateValue(value, locals, env);
 			}
 		}
 		return flowScriptInlineValue(value, env);
@@ -176,6 +209,32 @@
 		return indent + call;
 	}
 
+	function flowScriptInlineSlotCallStart(blocks, node, slotName, indent, locals, env) {
+		var block = String(env.blockName(node) || node.block || "unknown.block");
+		var outLocal = flowScriptLocalName(node && node.out);
+		var slotNames = flowScriptSlotNames(blocks, node, env);
+		var args = {};
+		flowScriptArgKeys(node, slotNames).forEach(function (key) {
+			if (key === "out" && outLocal) {
+				return;
+			}
+			args[key] = node[key];
+		});
+		var parts = Object.keys(args).map(function (key) {
+			return key + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals, env);
+		});
+		parts.push(slotName + ": function () {");
+		var prefix = outLocal ? "var " + outLocal + " = " : "";
+		if (outLocal) {
+			locals[outLocal] = true;
+		}
+		return indent + prefix + block + "({ " + parts.join(", ") ;
+	}
+
+	function shouldRenderInlineSlotFunction(blocks, node, slotName, env) {
+		return env.blockName(node) === "config.use" && slotName === "then";
+	}
+
 	function flowScriptHasTopLevelReturn(nodes, env) {
 		return (nodes || []).some(function (node) {
 			return env.blockName(node) === "return";
@@ -190,9 +249,15 @@
 			var renderedChildren = defaultSlot && Object.prototype.toString.call(node[defaultSlot]) === "[object Array]" && node[defaultSlot].length > 0;
 			var line = flowScriptCallLine(blocks, node, indent, locals, env);
 			if (renderedChildren) {
-				lines.push(line + " {");
-				renderFlowScriptNodes(blocks, node[defaultSlot], depth + 1, lines, Object.assign({}, locals), env);
-				lines.push(indent + "}");
+				if (shouldRenderInlineSlotFunction(blocks, node, defaultSlot, env)) {
+					lines.push(flowScriptInlineSlotCallStart(blocks, node, defaultSlot, indent, locals, env));
+					renderFlowScriptNodes(blocks, node[defaultSlot], depth + 1, lines, Object.assign({}, locals), env);
+					lines.push(indent + "} })");
+				} else {
+					lines.push(line + " {");
+					renderFlowScriptNodes(blocks, node[defaultSlot], depth + 1, lines, Object.assign({}, locals), env);
+					lines.push(indent + "}");
+				}
 			} else {
 				lines.push(line);
 			}

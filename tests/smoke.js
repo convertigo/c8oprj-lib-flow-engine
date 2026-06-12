@@ -112,13 +112,75 @@ var naturalRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
 	"natural FlowScript syntax did not execute correctly");
+var configUseFlowScriptSource = [
+	"function ConfigUseSmoke({ input, config, result }) {",
+	"\tresult.beforeTimeout = config.http.timeout",
+	"\tresult.beforeAccept = config.http.headers.Accept",
+	"\tconfig.use({",
+	"\t\thttp: {",
+	"\t\t\ttimeout: 30000,",
+	"\t\t\theaders: { Authorization: config.github.token }",
+	"\t\t},",
+	"\t\tthen: function () {",
+	"\t\t\tresult.insideTimeout = config.http.timeout",
+	"\t\t\tresult.insideAccept = config.http.headers.Accept",
+	"\t\t\tresult.insideAuthorization = config.http.headers.Authorization",
+	"\t\t}",
+	"\t})",
+	"\tresult.afterTimeout = config.http.timeout",
+	"\tresult.afterAuthorization = config.http.headers.Authorization ?? \"none\"",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var configUseValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "ConfigUseSmoke",
+	code: configUseFlowScriptSource
+})));
+assertTrue(configUseValidation.ok === true &&
+	configUseValidation.definition.nodes[2].block === "config.use" &&
+	configUseValidation.definition.nodes[2].then.length === 3 &&
+	configUseValidation.definition.nodes[2].http.headers.Authorization === "{{ config.github.token }}",
+	"config.use FlowScript slot did not compile to the expected Flow model");
+var configUseRendered = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "ConfigUseSmoke",
+	flowSource: configUseValidation.source
+})));
+assertTrue(configUseRendered.ok === true &&
+	configUseRendered.code.indexOf("config.use({") !== -1 &&
+	configUseRendered.code.indexOf("then: function () {") !== -1 &&
+	configUseRendered.code.indexOf("Authorization: config.github.token") !== -1,
+	"config.use Flow model did not render back to AST-compatible FlowScript");
+var configUseRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: configUseFlowScriptSource,
+	config: {
+		http: {
+			timeout: 1000,
+			headers: {
+				Accept: "application/json"
+			}
+		},
+		github: {
+			token: "Bearer smoke"
+		}
+	},
+	includeTrace: false
+})));
+assertTrue(configUseRun.result.beforeTimeout === 1000 &&
+	configUseRun.result.beforeAccept === "application/json" &&
+	configUseRun.result.insideTimeout === 30000 &&
+	configUseRun.result.insideAccept === "application/json" &&
+	configUseRun.result.insideAuthorization === "Bearer smoke" &&
+	configUseRun.result.afterTimeout === 1000 &&
+	configUseRun.result.afterAuthorization === "none",
+	"config.use did not deep-merge and restore config correctly");
 var helperFlowScriptSource = [
 	"function normalize(txt) {",
 	"\treturn lower(txt)",
 	"}",
 	"",
 	"function HelperSyntaxSmoke({ input, config, result }) {",
-	"\tvar cleaned = normalize(input.name)",
+	"\tvar cleaned = normalize({ txt: input.name })",
 	"\tresult.cleaned = cleaned",
 	"\treturn result",
 	"}",

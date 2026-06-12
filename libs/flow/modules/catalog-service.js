@@ -162,6 +162,9 @@
 		if (descriptor.slots) {
 			out.slots = descriptor.slots.map(compactSlotDescriptor);
 		}
+		if (descriptor.additionalProperties) {
+			out.additionalProperties = compactPropertyDescriptor(descriptor.additionalProperties);
+		}
 		return out;
 	}
 
@@ -233,6 +236,9 @@
 			out.slots = descriptor.slots.map(function (slot) {
 				return slot.name;
 			});
+		}
+		if (descriptor.additionalProperties) {
+			out.additional = summaryPropertyDescriptor(descriptor.additionalProperties);
 		}
 		if (descriptor["private"] === true) {
 			out["private"] = true;
