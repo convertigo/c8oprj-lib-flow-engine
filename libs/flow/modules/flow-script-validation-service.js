@@ -24,8 +24,7 @@
 							: "No strong palette match. If this is a real domain concept, create a project block with flow-block-code-set, then use it from FlowScript.",
 						create: {
 							tool: "flow-block-code-set",
-							name: name,
-							dry: true
+							name: name
 						},
 						hint: candidates.length
 							? "Use one candidate block, inspect it with flow-block-get, or create " + name + " as a project block if none matches."
