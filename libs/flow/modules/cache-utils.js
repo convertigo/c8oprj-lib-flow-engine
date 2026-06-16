@@ -77,9 +77,9 @@
 		cache.updatedAt = now();
 	}
 
-	function summary(name, cache) {
+	function summary(name, cache, includeEntries) {
 		var entries = cache.entries ? Object.keys(cache.entries).sort() : [];
-		return {
+		var out = {
 			name: name,
 			warm: cache.entries ? entries.length > 0 : !!cache.value,
 			hits: cache.hits,
@@ -87,15 +87,18 @@
 			clears: cache.clears,
 			updatedAt: cache.updatedAt,
 			label: cache.label,
-			entryCount: entries.length || undefined,
-			entries: entries.length ? entries.slice(0, 20).map(function (key) {
+			entryCount: entries.length || undefined
+		};
+		if (includeEntries === true && entries.length) {
+			out.entries = entries.slice(0, 20).map(function (key) {
 				var entry = cache.entries[key] || {};
 				return {
 					key: key,
 					updatedAt: entry.updatedAt || ""
 				};
-			}) : undefined
-		};
+			});
+		}
+		return out;
 	}
 
 	return {
