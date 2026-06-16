@@ -392,12 +392,15 @@
 				refs.forEach(function (path) {
 					addUnique(reads, path);
 					ctx.addRead(path);
-					inputs.push({
-						property: key,
-						path: path,
-						source: ctx.sourceForPath(path)
+						inputs.push({
+							property: key,
+							path: path,
+							propertyValueType: Object.prototype.toString.call(value) === "[object Array]"
+								? "array"
+								: value && typeof value === "object" ? "object" : typeof value,
+							source: ctx.sourceForPath(path)
+						});
 					});
-				});
 			});
 			return {
 				reads: reads,

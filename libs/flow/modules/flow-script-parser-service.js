@@ -680,13 +680,13 @@
 					args[key] = unquoteFlowScriptString(tokens[key]);
 					return;
 				}
-				var kind = flowScriptPropKind(blocks, block, key);
-				if (kind === "expression") {
-					if (isFlowScriptArrayLiteral(tokens[key]) || isFlowScriptObjectLiteral(tokens[key])) {
-						args[key] = flowScriptLiteralTokenValue(tokens[key], lineNumber);
-					} else {
-						args[key] = flowScriptExpressionFromToken(tokens[key], locals);
-					}
+					var kind = flowScriptPropKind(blocks, block, key);
+					if (kind === "expression") {
+						if (isFlowScriptArrayLiteral(tokens[key]) || isFlowScriptObjectLiteral(tokens[key])) {
+							args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
+						} else {
+							args[key] = flowScriptExpressionFromToken(tokens[key], locals);
+						}
 				} else if (kind === "path") {
 					args[key] = flowScriptPathFromToken(tokens[key], locals);
 				} else if (kind === "template" || kind === "value") {
@@ -884,8 +884,12 @@
 		}
 
 		function isFlowScriptExpressionCallName(name) {
+			name = String(name || "");
+			if (name.match(/\.(trim|toLowerCase|toUpperCase|includes|startsWith|endsWith)$/)) {
+				return true;
+			}
 			return ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
-				"length", "list.length", "round", "default", "json"].indexOf(String(name || "")) !== -1;
+				"length", "list.length", "round", "default", "json"].indexOf(name) !== -1;
 		}
 
 		function parseNaturalFlowScriptCallMember(text) {

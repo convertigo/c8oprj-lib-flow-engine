@@ -114,11 +114,14 @@
 			var catalog = env.blockCatalog(blocks[node.block]);
 			(node.inputs || []).forEach(function (input) {
 				var descriptor = catalog.props && catalog.props[input.property] || {};
-				var expected = String(descriptor.type || "");
-				if (descriptor.kind !== "expression" || expected !== "array" || !input.path) {
-					return;
-				}
-				var schema = env.schemaForSchemasPath(analysis.schemas || {}, input.path);
+					var expected = String(descriptor.type || "");
+					if (descriptor.kind !== "expression" || expected !== "array" || !input.path) {
+						return;
+					}
+					if (input.propertyValueType === "array") {
+						return;
+					}
+					var schema = env.schemaForSchemasPath(analysis.schemas || {}, input.path);
 				if (!schema) {
 					return;
 				}

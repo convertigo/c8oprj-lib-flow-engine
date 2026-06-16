@@ -94,6 +94,9 @@
 
 	function unknownFunctionHint(name) {
 		name = String(name || "");
+		if (name.match(/\.(trim|toLowerCase|toUpperCase|includes|startsWith|endsWith)$/)) {
+			return "This method is only available on Flow scope paths, for example local.text.trim(). For other cases use trim(value), lower(value), upper(value), contains(value, part), startsWith(value, prefix) or endsWith(value, suffix).";
+		}
 		if (name === "slice" || name.match(/\.slice$/)) {
 			return "Array methods are not executed inside Flow expressions. In FlowScript, assign a block call instead: var top5 = list.take({ items, count: 5 }).";
 		}
@@ -273,11 +276,17 @@
 		return tokens;
 	}
 
-	function evaluate(ctx, source, env) {
-		if (source === undefined || source === null || typeof source !== "string") {
-			return literalValue(source, env);
-		}
-		var tokens = tokenize(source, env);
+		function evaluate(ctx, source, env) {
+			if (source === undefined || source === null) {
+				return literalValue(source, env);
+			}
+			if (isStructuredValue(source)) {
+				return renderTree(ctx, source, env);
+			}
+			if (typeof source !== "string") {
+				return literalValue(source, env);
+			}
+			var tokens = tokenize(source, env);
 		var position = 0;
 		var fns = expressionFunctions(env);
 		function peek(value) {
@@ -392,6 +401,37 @@
 			} while (true);
 			return args;
 		}
+		function expressionMethodCall(name, args) {
+			var index = String(name || "").lastIndexOf(".");
+			if (index === -1) {
+				return { handled: false };
+			}
+			var receiverPath = name.substring(0, index);
+			var method = name.substring(index + 1);
+			if (!env.isScopePath(receiverPath)) {
+				return { handled: false };
+			}
+			var receiver = ctx.read(receiverPath);
+			if (method === "trim") {
+				return { handled: true, value: fns.trim(receiver) };
+			}
+			if (method === "toLowerCase") {
+				return { handled: true, value: fns.lower(receiver) };
+			}
+			if (method === "toUpperCase") {
+				return { handled: true, value: fns.upper(receiver) };
+			}
+			if (method === "includes") {
+				return { handled: true, value: fns.contains(receiver, args[0]) };
+			}
+			if (method === "startsWith") {
+				return { handled: true, value: fns.startsWith(receiver, args[0]) };
+			}
+			if (method === "endsWith") {
+				return { handled: true, value: fns.endsWith(receiver, args[0]) };
+			}
+			return { handled: false };
+		}
 		function parsePrimary() {
 			var token = peek();
 			if (token.type === "number" || token.type === "string") {
@@ -405,6 +445,10 @@
 					var args = parseArgs();
 					consume(")");
 					if (!fns[name]) {
+						var methodCall = expressionMethodCall(name, args);
+						if (methodCall.handled) {
+							return methodCall.value;
+						}
 						env.raise("INVALID_EXPRESSION", "Unknown expression function: " + name, null, unknownFunctionHint(name));
 					}
 					return fns[name].apply(null, args);
