@@ -35,7 +35,7 @@ const _meta = {
 			var path = String(ctx.template(props.path || "") || "");
 			var resource = ctx.resourceGet({
 				path: path,
-				allowLarge: props.allowLarge === true
+				allowLarge: props.allowLarge !== false
 			});
 			return resource.content || "";
 		}

@@ -137,6 +137,37 @@
 		return summary;
 	}
 
+	function compactSnippet(text, needle, maxChars, env) {
+		var snippet = String(env.searchSnippet(text || "", needle) || "");
+		maxChars = env.intOption(maxChars, 180, 40, 1000);
+		if (snippet.length <= maxChars) {
+			return snippet;
+		}
+		return snippet.substring(0, maxChars - 1) + "…";
+	}
+
+	function resourceSearchSummary(entry, content, needle, request, env) {
+		var summary = {
+			path: entry.path,
+			kind: env.resourceKind(entry.path),
+			name: env.resourceName(entry.path),
+			mimeType: env.resourceMimeType(entry.path),
+			size: Number(entry.file.length()),
+			snippet: compactSnippet(content || entry.path, needle, request.snippetChars || request.maxSnippetChars, env),
+			next: "flow-resource-get path=" + entry.path
+		};
+		var uri = env.resourceUri(entry.path);
+		if (uri) {
+			summary.uri = uri;
+			summary.name = env.firstMarkdownHeading(content, summary.name);
+			summary.description = env.firstMarkdownParagraph(content);
+		}
+		if (request.includeHash === true) {
+			summary.hash = env.sha256Hex(content);
+		}
+		return summary;
+	}
+
 	function list(request, env) {
 		request = request || {};
 		var rootDir = String(request.rootDir || request.root || "").trim().replace(/\\/g, "/");
@@ -201,7 +232,7 @@
 	function search(request, env) {
 		request = request || {};
 		var needle = env.searchNeedle(request);
-		var maxFileBytes = env.intOption(request.maxFileBytes, 500000, 1000, 5000000);
+		var maxFileBytes = env.intOption(request.maxFileBytes, 120000, 1000, 5000000);
 		var matches = [];
 		projectResourceEntries(env).forEach(function (entry) {
 			if (entry.file.length() > maxFileBytes) {
@@ -212,13 +243,10 @@
 			if (!env.searchMatches(text, needle)) {
 				return;
 			}
-			matches.push(Object.assign(resourceSummary(entry, content, env), {
-				snippet: env.searchSnippet(content || entry.path, needle),
-				next: "flow-resource-get path=" + entry.path
-			}));
+			matches.push(resourceSearchSummary(entry, content, needle, request, env));
 		});
 		var offset = env.intOption(request.cursor, 0, 0);
-		var limit = env.intOption(request.limit, 50, 1, 500);
+		var limit = env.intOption(request.limit, 10, 1, 50);
 		var page = matches.slice(offset, offset + limit);
 		var out = {
 			ok: true,
@@ -247,13 +275,22 @@
 		var entry = request.path !== undefined && request.path !== null && String(request.path).trim() !== ""
 			? projectResourceFile(request.path, true, env)
 			: projectResourceEntryForUri(request.uri, env);
-		var maxBytes = env.intOption(request.maxBytes, 1000000, 1000, 5000000);
-		if (entry.file.length() > maxBytes && request.allowLarge !== true) {
-			env.raise("RESOURCE_TOO_LARGE", "Flow resource is too large to return: " + entry.path,
-				null, "Pass a higher maxBytes or allowLarge=true if this file is intentionally large.");
-		}
+		var maxBytes = env.intOption(request.maxBytes, 12000, 1000, 5000000);
 		var content = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
-		return Object.assign({ ok: true, content: content }, resourceSummary(entry, content, env));
+		var summary = resourceSummary(entry, content, env);
+		var truncated = content.length > maxBytes && request.allowLarge !== true;
+		var returned = truncated ? content.substring(0, maxBytes) : content;
+		var out = Object.assign({
+			ok: true,
+			content: returned,
+			truncated: truncated,
+			contentLength: content.length,
+			returnedLength: returned.length
+		}, summary);
+		if (truncated) {
+			out.hint = "Content was truncated. Use a narrower search/code-rg, or pass maxBytes/allowLarge=true only when the full file is required.";
+		}
+		return out;
 	}
 
 	function validateResourceContent(path, content, env) {
