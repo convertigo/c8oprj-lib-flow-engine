@@ -25,34 +25,74 @@
 		return origin === "core" ? new env.File(env.engineDir(), "blocks") : env.projectBlocksDir();
 	}
 
-	function loadBlockDir(blocks, blocksDir, origin, provider, env) {
+	function projectNameFromRoot(projectRoot) {
+		return projectRoot ? String(projectRoot.getName() || "") : "";
+	}
+
+	function referencedProjectRoots(env) {
+		var roots = [];
+		var projectRoot = env.projectDir();
+		if (!projectRoot) {
+			return roots;
+		}
+		var descriptor = new env.File(projectRoot, "c8oProject.yaml");
+		if (!descriptor.isFile()) {
+			return roots;
+		}
+		var source = String(env.FileUtils.readFileToString(descriptor, "UTF-8"));
+		var parent = projectRoot.getParentFile();
+		var currentName = projectNameFromRoot(projectRoot);
+		var engineName = env.flowProviderName(env.engineDir(), "lib_flow_engine");
+		var seen = {};
+		var matcher = /projectName:\s*([A-Za-z0-9_.-]+)/g;
+		var match;
+		while ((match = matcher.exec(source)) !== null) {
+			var name = String(match[1] || "").trim();
+			if (!name || name === currentName || name === engineName || seen[name]) {
+				continue;
+			}
+			seen[name] = true;
+			var root = new env.File(parent, name);
+			var blocksDir = new env.File(root, "libs/flow/blocks");
+			if (blocksDir.isDirectory()) {
+				roots.push(root);
+			}
+		}
+		return roots;
+	}
+
+	function referencedBlocksDir(root, env) {
+		return new env.File(root, "libs/flow/blocks");
+	}
+
+	function loadBlockDir(blocks, blocksDir, origin, provider, env, baseDir) {
+		baseDir = baseDir || blocksBaseDir(origin, env);
 		sortedFiles(blocksDir, env).forEach(function (file) {
 			if (file.isDirectory()) {
-				loadBlockDir(blocks, file, origin, provider, env);
+				loadBlockDir(blocks, file, origin, provider, env, baseDir);
 				return;
 			}
 			if (!file.isFile()) {
 				return;
 			}
-			var base = blocksBaseDir(origin, env);
 			if (String(file.getName()).endsWith(".block.js")) {
-				env.loadFlowScriptBlockFile(blocks, file, origin, provider, base);
+				env.loadFlowScriptBlockFile(blocks, file, origin, provider, baseDir);
 			}
 		});
 	}
 
-	function reserveBlockDir(blocks, blocksDir, origin, provider, env) {
+	function reserveBlockDir(blocks, blocksDir, origin, provider, env, baseDir) {
+		baseDir = baseDir || blocksBaseDir(origin, env);
 		sortedFiles(blocksDir, env).forEach(function (file) {
 			if (file.isDirectory()) {
-				reserveBlockDir(blocks, file, origin, provider, env);
+				reserveBlockDir(blocks, file, origin, provider, env, baseDir);
 				return;
 			}
 			if (!file.isFile()) {
 				return;
 			}
-			var base = blocksBaseDir(origin, env);
 			if (String(file.getName()).endsWith(".block.js")) {
-				env.reserveFlowScriptBlockFile(blocks, file, origin, provider, base);
+				env.reserveFlowScriptBlockFile(blocks, file, origin, provider, baseDir);
 			}
 		});
 	}
@@ -65,6 +105,10 @@
 		];
 		var localBlocksDir = env.projectBlocksDir();
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
+			referencedProjectRoots(env).forEach(function (root) {
+				var refBlocksDir = referencedBlocksDir(root, env);
+				key.push("reference", env.canonicalPath(root), env.directoryFingerprint(refBlocksDir));
+			});
 			key.push("project", env.canonicalPath(env.projectDir()), env.directoryFingerprint(localBlocksDir));
 		}
 		return key.join("\n");
@@ -77,6 +121,11 @@
 		loadBlockDir(blocks, coreBlocksDir, "core", env.flowProviderName(env.engineDir(), "lib_flow_engine"), env);
 		var localBlocksDir = env.projectBlocksDir();
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
+			referencedProjectRoots(env).forEach(function (root) {
+				var refBlocksDir = referencedBlocksDir(root, env);
+				reserveBlockDir(blocks, refBlocksDir, "reference", projectNameFromRoot(root), env, refBlocksDir);
+				loadBlockDir(blocks, refBlocksDir, "reference", projectNameFromRoot(root), env, refBlocksDir);
+			});
 			reserveBlockDir(blocks, localBlocksDir, "project",
 				env.flowProviderName(new env.File(env.projectDir(), "libs/flow"), "project"), env);
 			loadBlockDir(blocks, localBlocksDir, "project",
