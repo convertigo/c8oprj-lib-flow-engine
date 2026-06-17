@@ -8,7 +8,7 @@ const _meta = {
     "where",
     "current"
   ],
-  "description": "Filters an array using a pure expression evaluated with current.*.",
+  "description": "Keeps only array items matching a boolean expression evaluated with current.*.",
   "outputs": {
     "out": {
       "type": "array",
@@ -19,23 +19,24 @@ const _meta = {
   },
   "properties": {
     "items": {
-      "label": "items",
+      "label": "Input array",
       "kind": "expression",
       "type": "array",
       "default": "local.items",
-      "description": "Array expression to filter."
+      "description": "Array to filter, for example local.pods.items after k8s.pod.get."
     },
     "where": {
-      "label": "where",
+      "label": "Keep when",
       "kind": "expression",
       "type": "boolean",
       "default": "true",
-      "description": "Boolean expression evaluated for each current item."
+      "description": "Boolean expression evaluated for each item. Use current to read the item, for example current.phase == \"Running\" or current.name.includes(\"api\")."
     },
     "out": {
-      "label": "out",
+      "label": "Output",
       "kind": "path",
       "mode": "write",
+      "category": "Output",
       "default": "local.filtered",
       "description": "Scope path receiving the filtered array."
     }

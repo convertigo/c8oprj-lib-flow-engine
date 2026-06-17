@@ -9,7 +9,7 @@ const _meta = {
     "transform",
     "current"
   ],
-  "description": "Maps an array to a new array while exposing each item as current.",
+  "description": "Builds a new array by evaluating one expression for each current item.",
   "outputs": {
     "out": {
       "type": "array",
@@ -20,23 +20,24 @@ const _meta = {
   },
   "properties": {
     "items": {
-      "label": "items",
+      "label": "Input array",
       "kind": "expression",
       "type": "array",
       "default": "local.items",
-      "description": "Array expression to map."
+      "description": "Array to transform, for example local.pods.items after k8s.pod.get."
     },
     "select": {
-      "label": "select",
+      "label": "Select value",
       "kind": "expression",
       "type": "unknown",
       "default": "current",
-      "description": "Expression evaluated for each current item."
+      "description": "Expression evaluated for each item. Use current to read the item, for example current.name to extract pod names."
     },
     "out": {
-      "label": "out",
+      "label": "Output",
       "kind": "path",
       "mode": "write",
+      "category": "Output",
       "default": "local.mapped",
       "description": "Scope path receiving the mapped array."
     }
