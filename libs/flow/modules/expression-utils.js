@@ -138,10 +138,10 @@
 		var i = 0;
 		function unsupportedHint(ch) {
 			if (ch === "[") {
-				return "Flow expressions support scope indexing like local.items[0] or object[\"key\"], but not JavaScript array literals. Use literal properties for static arrays.";
+				return "Flow expressions support scope indexing like local.items[0] or object[\"key\"], but not JavaScript array literals inside expressions. Array literals are valid as FlowScript values such as var empty = [] or block properties; assign one first or use an existing array path.";
 			}
 			if (ch === "{") {
-				return "Flow expressions do not support JavaScript object literals. Build objects with json.object/json.field or parse literal JSON with json.parse.";
+				return "Flow expressions do not support JavaScript object literals inside expressions. Object literals are valid as FlowScript values such as list.map({ select: { name: current.name } }); assign one first or use blocks for object construction.";
 			}
 			return "Flow expressions support scope paths, literals, function calls, arithmetic/comparison/logical operators, ternary and ??; use blocks for object/array construction.";
 		}

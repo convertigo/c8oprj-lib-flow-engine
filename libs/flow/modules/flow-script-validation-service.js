@@ -3,6 +3,100 @@
 		return Object.keys(env.blockCatalog(block).props || {}).sort();
 	}
 
+	function flowScriptPropertyValue(node, key) {
+		if (node && node.props && Object.prototype.hasOwnProperty.call(node.props, key)) {
+			return node.props[key];
+		}
+		return node ? node[key] : undefined;
+	}
+
+	function templateExpressions(value, env) {
+		var out = [];
+		if (typeof value !== "string") {
+			return out;
+		}
+		var exact = env.exactTemplateExpression ? env.exactTemplateExpression(value) : null;
+		if (exact) {
+			return [exact];
+		}
+		String(value).replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expr) {
+			out.push(String(expr || "").trim());
+			return _;
+		});
+		return out;
+	}
+
+	function expressionDiagnostic(error, node, blockName, property, expression) {
+		return {
+			severity: "error",
+			code: error && error.code ? String(error.code) : "INVALID_EXPRESSION",
+			line: node && node.__flowScriptLine || 0,
+			block: blockName,
+			property: property,
+			expression: expression,
+			message: "Invalid FlowScript expression for " + blockName + "." + property + ": " + String(error && error.message || error || ""),
+			hint: error && error.hint ? String(error.hint) : "Use FlowScript expressions over input.*, config.*, local.*, current.* or result.*; use blocks or literal properties for structured objects/arrays."
+		};
+	}
+
+	function validateExpressionText(diagnostics, node, blockName, property, expression, env) {
+		expression = String(expression || "").trim();
+		if (!expression || !env.tokenizeExpression) {
+			return;
+		}
+		try {
+			env.tokenizeExpression(expression);
+		} catch (e) {
+			diagnostics.push(expressionDiagnostic(e, node, blockName, property, expression));
+		}
+	}
+
+	function validateTemplateExpressions(diagnostics, node, blockName, property, value, env) {
+		templateExpressions(value, env).forEach(function (expression) {
+			validateExpressionText(diagnostics, node, blockName, property, expression, env);
+		});
+	}
+
+	function validateStructuredTemplates(diagnostics, node, blockName, property, value, env) {
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			value.forEach(function (item) {
+				validateStructuredTemplates(diagnostics, node, blockName, property, item, env);
+			});
+			return;
+		}
+		if (value && typeof value === "object") {
+			Object.keys(value).forEach(function (key) {
+				validateStructuredTemplates(diagnostics, node, blockName, property + "." + key, value[key], env);
+			});
+			return;
+		}
+		validateTemplateExpressions(diagnostics, node, blockName, property, value, env);
+	}
+
+	function validateNodeExpressions(diagnostics, blocks, node, blockName, env) {
+		var catalog = env.blockCatalog(blocks[blockName]) || {};
+		var props = catalog.props || {};
+		var slotMap = {};
+		env.flowScriptSlotNames(blocks, node).forEach(function (slot) {
+			slotMap[slot] = true;
+		});
+		env.flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
+			var descriptor = props[key] || (catalog.dynamicProperties === true ? catalog.additionalProperties || {} : {});
+			var value = flowScriptPropertyValue(node, key);
+			if (descriptor.kind === "expression") {
+				if (typeof value === "string") {
+					validateExpressionText(diagnostics, node, blockName, key, value, env);
+				} else {
+					validateStructuredTemplates(diagnostics, node, blockName, key, value, env);
+				}
+				return;
+			}
+			if (descriptor.kind === "template" || descriptor.kind === "value" || descriptor.kind === undefined) {
+				validateStructuredTemplates(diagnostics, node, blockName, key, value, env);
+			}
+		});
+	}
+
 	function validateDefinition(blocks, definition, env) {
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = [];
@@ -57,6 +151,7 @@
 							});
 						}
 					});
+					validateNodeExpressions(diagnostics, activeBlocks, node, name, env);
 				}
 				["nodes", "then", "else", "fields"].forEach(function (slot) {
 					if (Object.prototype.toString.call(node[slot]) === "[object Array]") {

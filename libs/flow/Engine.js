@@ -2156,6 +2156,8 @@
 			flowScriptArgKeys: flowScriptArgKeys,
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
 			flowScriptPropertyCandidates: flowScriptPropertyCandidates,
+			tokenizeExpression: tokenizeExpression,
+			exactTemplateExpression: exactTemplateExpression,
 			sourceForFlowRequest: sourceForFlowRequest,
 			renderFlowScript: renderFlowScript,
 			parseFlowScript: parseFlowScript,
