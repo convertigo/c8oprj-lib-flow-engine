@@ -4,11 +4,11 @@
 
 		function addFlowScriptCanonicalWarning(lineNumber, original, canonical) {
 			flowScriptDiagnostics.push({
-				severity: "warning",
-				code: "FLOWSCRIPT_CANONICALIZED_CALL",
+				severity: "error",
+				code: "FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE",
 				line: lineNumber,
-				message: "FlowScript canonicalized " + original + " to " + canonical + ".",
-				hint: "FlowScript block calls use block.name({ params... }). Keep positional calls as temporary authoring shortcuts only."
+				message: "Invalid FlowScript block call signature: " + original + ".",
+				hint: "FlowScript is a Flow block DSL, not JavaScript function calling. Every Flow block accepts exactly one object parameter. Use " + canonical + "."
 			});
 		}
 
