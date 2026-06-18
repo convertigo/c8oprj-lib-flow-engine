@@ -89,6 +89,32 @@ const _meta = {
 		return out;
 	}
 
+	function templateValue(ctx, value) {
+		if (value === undefined || value === null) {
+			return value;
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return value.map(function (item) {
+				return templateValue(ctx, item);
+			});
+		}
+		if (isPlainObject(value)) {
+			var out = {};
+			Object.keys(value).forEach(function (key) {
+				out[key] = templateValue(ctx, value[key]);
+			});
+			return out;
+		}
+		if (typeof value === "string") {
+			var text = value.trim();
+			if (/^(input|local|config|current|result)(?:\.|\[)/.test(text)) {
+				var evaluated = ctx.expr(text);
+				return evaluated === undefined || evaluated === null ? "" : evaluated;
+			}
+		}
+		return ctx.template(value);
+	}
+
 	function mergeBranches(out, branches) {
 		Object.keys(branches || {}).forEach(function (key) {
 			putBranch(out, key, branches[key]);
@@ -108,9 +134,9 @@ const _meta = {
 			if (reserved[key]) {
 				return;
 			}
-			putBranch(out, key, ctx.template(props[key]));
+			putBranch(out, key, templateValue(ctx, props[key]));
 		});
-		mergeBranches(out, ctx.template(props && props.overrides || {}));
+		mergeBranches(out, templateValue(ctx, props && props.overrides || {}));
 		return out;
 	}
 
