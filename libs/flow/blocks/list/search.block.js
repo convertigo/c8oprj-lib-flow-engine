@@ -142,7 +142,15 @@ const _meta = {
     if (value === undefined || value === null) {
       return ""
     }
-    return String(ctx.template(value))
+    var rendered = String(ctx.template(value))
+    if (rendered === "undefined" || rendered === "null") {
+      return ""
+    }
+    if (/^(input|local|config|current|result)\b/.test(rendered.trim())) {
+      var evaluated = ctx.expr(rendered.trim())
+      return evaluated === undefined || evaluated === null ? "" : String(evaluated)
+    }
+    return rendered
   }
 
   function bool(ctx, value, fallback) {
