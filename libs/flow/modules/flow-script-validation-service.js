@@ -167,6 +167,92 @@
 		return diagnostics;
 	}
 
+	function scanInputVariablesInValue(value, variables) {
+		if (value === null || value === undefined) {
+			return;
+		}
+		if (typeof value === "string") {
+			var re = /\binput(?:\.([A-Za-z_$][\w$]*)|\[\s*["']([^"']+)["']\s*\])/g;
+			var match;
+			while ((match = re.exec(value)) !== null) {
+				var name = String(match[1] || match[2] || "").trim();
+				if (name) {
+					variables[name] = true;
+				}
+			}
+			return;
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			value.forEach(function (item) {
+				scanInputVariablesInValue(item, variables);
+			});
+			return;
+		}
+		if (typeof value === "object") {
+			Object.keys(value).forEach(function (key) {
+				scanInputVariablesInValue(value[key], variables);
+			});
+		}
+	}
+
+	function scanInputVariablesInNodes(nodes, variables) {
+		(nodes || []).forEach(function (node) {
+			scanInputVariablesInValue(node && node.props || node, variables);
+			["nodes", "then", "else", "fields"].forEach(function (slot) {
+				if (Object.prototype.toString.call(node && node[slot]) === "[object Array]") {
+					scanInputVariablesInNodes(node[slot], variables);
+				}
+			});
+		});
+	}
+
+	function inputVariablesFromDefinition(definition) {
+		var variables = {};
+		(definition.helpers || []).forEach(function (helper) {
+			scanInputVariablesInNodes(helper.nodes || [], variables);
+		});
+		scanInputVariablesInNodes(definition.nodes || [], variables);
+		return Object.keys(variables).sort();
+	}
+
+	function inputDefinitionsFromDefinition(definition) {
+		var meta = definition && (definition.flow || definition._flow) || {};
+		var inputs = meta.inputs || meta.input || definition && (definition.inputs || definition.input) || {};
+		return inputs && typeof inputs === "object" ? inputs : {};
+	}
+
+	function inputDeclarationSnippet(missing) {
+		return "const _flow = { inputs: { " + missing.map(function (name) {
+			return name + ": { type: \"string\", description: \"TODO\", default: \"\" }";
+		}).join(", ") + " } }";
+	}
+
+	function inputContractDiagnostics(definition, request) {
+		request = request || {};
+		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) {
+			return [];
+		}
+		var variables = inputVariablesFromDefinition(definition);
+		if (!variables.length) {
+			return [];
+		}
+		var definitions = inputDefinitionsFromDefinition(definition);
+		var missing = variables.filter(function (name) {
+			return definitions[name] === undefined;
+		});
+		if (!missing.length) {
+			return [];
+		}
+		return [{
+			severity: request.strictInputContract === true ? "error" : "warning",
+			code: "FLOWSCRIPT_INPUT_NOT_DECLARED",
+			inputVariables: variables,
+			missingInputs: missing,
+			message: "FlowScript reads " + missing.map(function (name) { return "input." + name; }).join(", ") + " without declaring them in _flow.inputs.",
+			hint: "Declare request inputs before the function so Studio, SDK callers, test cases and MCP agree on the Flow contract. Example: " + inputDeclarationSnippet(missing)
+		}];
+	}
+
 	function collectPotentialArrayPaths(schema, prefix, out, env) {
 		schema = env.normalizeTree(schema);
 		if (!schema || typeof schema !== "object") {
@@ -279,6 +365,9 @@
 		var definition = env.parseFlowScript(blocks, code);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = [].concat(definition.__flowScriptDiagnostics || [], validateDefinition(blocks, definition, env));
+		inputContractDiagnostics(definition, request).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
 		var clean = env.stripFlowScriptMetadata(definition);
 		var source = env.sourceFromDefinition(clean);
 		var ok = diagnostics.filter(function (diagnostic) {

@@ -115,6 +115,53 @@ var naturalRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
 	"natural FlowScript syntax did not execute correctly");
+var missingInputValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "MissingInputContractSmoke",
+	code: [
+		"function MissingInputContractSmoke({ input, result }) {",
+		"\tresult.value = input.value",
+		"\treturn result",
+		"}",
+		""
+	].join("\n")
+})));
+assertTrue(missingInputValidation.ok === true &&
+	missingInputValidation.diagnostics.some(function (diagnostic) {
+		return diagnostic.code === "FLOWSCRIPT_INPUT_NOT_DECLARED" &&
+			diagnostic.missingInputs.indexOf("value") !== -1;
+	}), "FlowScript input contract warning was not reported");
+var declaredInputFlowScriptSource = [
+	"const _flow = {",
+	"\tinputs: {",
+	"\t\tvalue: { type: \"string\", description: \"Input value.\", default: \"\" }",
+	"\t}",
+	"}",
+	"",
+	"function DeclaredInputContractSmoke({ input, result }) {",
+	"\tresult.value = input.value",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var declaredInputValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "DeclaredInputContractSmoke",
+	code: declaredInputFlowScriptSource
+})));
+assertTrue(declaredInputValidation.ok === true &&
+	!declaredInputValidation.diagnostics.some(function (diagnostic) {
+		return diagnostic.code === "FLOWSCRIPT_INPUT_NOT_DECLARED";
+	}), "Declared FlowScript inputs still reported a missing contract warning");
+var declaredInputSync = JSON.parse(engine.syncInputs(JSON.stringify({
+	project: "SmokeProject",
+	flowName: "DeclaredInputContractSmoke",
+	flowQName: "SmokeProject.DeclaredInputContractSmoke",
+	projectDir: String(projectDirFile.getAbsolutePath()),
+	flowSource: declaredInputFlowScriptSource
+})));
+assertTrue(declaredInputSync.ok === true &&
+	declaredInputSync.inputDefinitions.value &&
+	declaredInputSync.inputDefinitions.value.type === "string",
+	"syncInputs did not extract FlowScript _flow.inputs without a full Flow validation");
 var configUseFlowScriptSource = [
 	"function ConfigUseSmoke({ input, config, result }) {",
 	"\tresult.beforeTimeout = config.http.timeout",
@@ -505,6 +552,32 @@ assertTrue(createdFlowBackedBlock.ok === true &&
 	createdFlowBackedBlock.block && createdFlowBackedBlock.block.blockId === "smoke.flowBacked" &&
 	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.block.js").isFile(),
 	"blockCreate did not write the canonical FlowScript block code file");
+var missingBlockInputSource = [
+	"const _meta = {",
+	"\t\"description\": \"FlowScript block with an intentionally missing property declaration.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": {",
+	"\t\t\t\"type\": \"unknown\"",
+	"\t\t}",
+	"\t}",
+	"}",
+	"",
+	"function missingBlockInput({ input, config, result }) {",
+	"\treturn input.value",
+	"}",
+	""
+].join("\n");
+var missingBlockInputSet = JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.missingBlockInput",
+	code: missingBlockInputSource
+})));
+assertTrue(missingBlockInputSet.ok === true &&
+	missingBlockInputSet.warnings.some(function (warning) {
+		return warning.code === "FLOW_BLOCK_INPUT_NOT_DECLARED" &&
+			warning.missingInputs.indexOf("value") !== -1;
+	}), "FlowScript block input property warning was not reported");
 var flowBackedBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
 	name: "smoke.flowBacked",
 	detail: "full"

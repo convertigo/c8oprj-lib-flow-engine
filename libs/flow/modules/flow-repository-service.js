@@ -24,6 +24,32 @@
 		var engineDir = env.engineDir;
 		var flowProviderName = env.flowProviderName;
 		var flowCodeFileName = env.flowCodeFileName;
+		var syncProjectFlowInputs = env.syncProjectFlowInputs;
+
+		function inputDefinitionsFromDefinition(definition) {
+			definition = definition || {};
+			var meta = definition.flow || definition._flow || {};
+			var inputs = meta.inputs || meta.input || definition.inputs || definition.input || {};
+			return inputs && typeof inputs === "object" ? inputs : {};
+		}
+
+		function syncLoadedProjectFlowInputs(name, compiled, request) {
+			if (!syncProjectFlowInputs || !compiled || !compiled.definition) {
+				return null;
+			}
+			var inputDefinitions = inputDefinitionsFromDefinition(compiled.definition);
+			if (!Object.keys(inputDefinitions).length) {
+				return null;
+			}
+			try {
+				return syncProjectFlowInputs(name, inputDefinitions, request || {});
+			} catch (e) {
+				return {
+					synced: false,
+					error: String(e && e.message || e)
+				};
+			}
+		}
 
 		function sourceFromFlowScript(blocks, name, code) {
 			code = normalizeFlowScriptFunctionSyntax(code);
@@ -67,6 +93,7 @@
 			if (storage.codeFile.isFile()) {
 				var code = String(FileUtils.readFileToString(storage.codeFile, "UTF-8"));
 				var compiled = sourceFromFlowScript(blocks || loadBlocks(), name, code);
+				var inputSync = syncLoadedProjectFlowInputs(name, compiled, request);
 				return {
 					name: String(name),
 					format: "flowscript",
@@ -77,7 +104,8 @@
 					revision: sha256Hex(code),
 					source: compiled.source,
 					definition: compiled.definition,
-					diagnostics: compiled.diagnostics
+					diagnostics: compiled.diagnostics,
+					inputSync: inputSync
 				};
 			}
 			raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name,

@@ -26,6 +26,14 @@ The Java side passes `flowSource` as an opaque string. This project owns parsing
 For the POC, `Engine.js` is evaluated without the Rhino compiled-script cache so
 runtime engine changes can be picked up after the Java bootstrap is restarted.
 
+The long-term authoring path should behave like a hot worker plus a compact
+snapshot index. Studio, Admin and MCP ask the Flow engine for immutable
+Java-readable snapshots: children, properties, icons, comments, source editors,
+picker context, schemas and revisions. Java exposes those snapshots through the
+standard virtual object protocol, but does not learn Flow concepts. Runtime
+execution remains on the current Convertigo request thread and consumes an
+immutable execution plan instead of the authoring worker state.
+
 For source control, a Convertigo `Flow` should not serialize its full source as an escaped bean property. On the `spike-flowscript` branch, FlowScript is the preferred canonical sidecar in the owning project:
 
 ```text

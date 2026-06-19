@@ -15,6 +15,21 @@
 		};
 	}
 
+	function bridgeInfo(scope) {
+		scope = scope || {};
+		var raw = typeof scope.__flowBridgeInfo !== "undefined" ? String(scope.__flowBridgeInfo || "") : "";
+		if (!raw) {
+			return {};
+		}
+		try {
+			return JSON.parse(raw);
+		} catch (e) {
+			return {
+				error: String(e)
+			};
+		}
+	}
+
 	function cacheSummary(name, cache, env) {
 		return env.cacheUtils.summary(name, cache);
 	}
@@ -31,13 +46,15 @@
 			activeProjectDir: activeProjectPath,
 			rawProjectDir: activeProjectDir ? String(activeProjectDir) : "",
 			engineDir: env.canonicalPath(env.engineDir()),
+			bridge: bridgeInfo(env.globalScope),
 			bridgeRuntimeCache: bridgeRuntimeCacheInfo(env.globalScope),
 			caches: {
 				blocks: cacheSummary("blocks", caches.blocks, env),
 				types: cacheSummary("types", caches.types, env),
 				libraries: cacheSummary("libraries", caches.libraries, env),
 				engineModules: cacheSummary("engineModules", caches.engineModules, env),
-				propertyEditor: cacheSummary("propertyEditor", caches.propertyEditor, env)
+				propertyEditor: cacheSummary("propertyEditor", caches.propertyEditor, env),
+				treeSnapshots: cacheSummary("treeSnapshots", caches.treeSnapshots, env)
 			}
 		};
 	}
@@ -49,6 +66,7 @@
 		env.cacheUtils.clearMap(caches.libraries);
 		env.cacheUtils.clearMap(caches.engineModules);
 		env.cacheUtils.clearValue(caches.propertyEditor);
+		env.cacheUtils.clearMap(caches.treeSnapshots);
 		env.resetModuleCaches();
 		return info(env);
 	}

@@ -28,7 +28,8 @@
 			types: createRuntimeCacheState(),
 			libraries: createRuntimeMapCacheState(),
 			engineModules: createRuntimeMapCacheState(),
-			propertyEditor: createRuntimeCacheState()
+			propertyEditor: createRuntimeCacheState(),
+			treeSnapshots: createRuntimeMapCacheState()
 		}
 	};
 
@@ -1666,7 +1667,8 @@
 			flowProjectRootFromFlowDir: flowProjectRootFromFlowDir,
 			engineDir: engineDir,
 			flowProviderName: flowProviderName,
-			flowCodeFileName: flowCodeFileName
+			flowCodeFileName: flowCodeFileName,
+			syncProjectFlowInputs: syncProjectFlowInputs
 		};
 	}
 
@@ -1680,24 +1682,241 @@
 		return flowRepositoryService().getProjectFlow(name, blocks, request, flowRepositoryEnv());
 	}
 
-	function projectFlowBean(name) {
+	function projectFlowBeanLookup(name, request) {
 		var dir = projectDir();
-		var projectName = dir ? String(dir.getName()) : "";
+		request = request || {};
+		var projectName = currentProjectName(request);
+		if (!projectName && dir) {
+			projectName = String(dir.getName());
+		}
 		if (!projectName || !name) {
-			return null;
+			return {
+				flow: null,
+				projectName: projectName || "",
+				flowName: String(name || ""),
+				reason: !projectName ? "missing-project-name" : "missing-flow-name"
+			};
 		}
 		try {
 			var engine = Packages.com.twinsoft.convertigo.engine.Engine;
 			if (!engine.theApp || !engine.theApp.databaseObjectsManager) {
-				return null;
+				return {
+					flow: null,
+					projectName: projectName,
+					flowName: String(name),
+					reason: "database-objects-manager-unavailable"
+				};
 			}
 			var project = engine.theApp.databaseObjectsManager.getOriginalProjectByName(projectName, false);
+			if (!project) {
+				return {
+					flow: null,
+					projectName: projectName,
+					flowName: String(name),
+					reason: "project-not-found"
+				};
+			}
 			var sequence = project.getSequenceByName(String(name));
+			if (!sequence) {
+				return {
+					flow: null,
+					projectName: projectName,
+					flowName: String(name),
+					reason: "sequence-not-found"
+				};
+			}
 			var flowClass = Packages.com.twinsoft.convertigo.beans.flow.Flow.class;
-			return flowClass.isAssignableFrom(sequence.getClass()) ? sequence : null;
+			if (!flowClass.isAssignableFrom(sequence.getClass())) {
+				return {
+					flow: null,
+					projectName: projectName,
+					flowName: String(name),
+					reason: "sequence-is-not-flow"
+				};
+			}
+			return {
+				flow: sequence,
+				projectName: projectName,
+				flowName: String(name),
+				reason: ""
+			};
 		} catch (e) {
-			return null;
+			return {
+				flow: null,
+				projectName: projectName,
+				flowName: String(name),
+				reason: String(e && e.message || e)
+			};
 		}
+	}
+
+	function projectFlowBean(name, request) {
+		return projectFlowBeanLookup(name, request).flow;
+	}
+
+	function syncProjectFlowInputs(name, inputDefinitions, args) {
+		var lookup = projectFlowBeanLookup(name, args);
+		var flow = lookup.flow;
+		if (!flow || !inputDefinitions || typeof inputDefinitions !== "object") {
+			return {
+				synced: false,
+				created: [],
+				updated: [],
+				projectName: lookup.projectName || "",
+				flowName: lookup.flowName || String(name || ""),
+				reason: lookup.reason || "invalid-input-definitions"
+			};
+		}
+		var RequestableVariable = Packages.com.twinsoft.convertigo.beans.variables.RequestableVariable;
+		var RequestableMultiValuedVariable = Packages.com.twinsoft.convertigo.beans.variables.RequestableMultiValuedVariable;
+		var created = [];
+		var updated = [];
+		function sameValue(left, right) {
+			if (left === right) {
+				return true;
+			}
+			if (left === null || left === undefined || right === null || right === undefined) {
+				return left === right;
+			}
+			return String(left) === String(right);
+		}
+		function setStringIfChanged(variable, getter, setter, value) {
+			if (value === undefined || value === null) {
+				return false;
+			}
+			var next = String(value);
+			var current = variable[getter] ? variable[getter]() : "";
+			if (sameValue(current, next)) {
+				return false;
+			}
+			variable[setter](next);
+			return true;
+		}
+		function setBooleanIfChanged(variable, getter, setter, value) {
+			if (value === undefined || value === null) {
+				return false;
+			}
+			var next = Boolean(value);
+			var current = variable[getter] ? Boolean(variable[getter]()) : false;
+			if (current === next) {
+				return false;
+			}
+			variable[setter](next);
+			return true;
+		}
+		function setDefaultIfChanged(variable, value) {
+			if (value === undefined) {
+				return false;
+			}
+			var next = value === null ? null : value;
+			var current = variable.getValueOrNull ? variable.getValueOrNull() : undefined;
+			if (sameValue(current, next)) {
+				return false;
+			}
+			variable.setValueOrNull(next);
+			return true;
+		}
+		var keys = Object.keys(inputDefinitions).filter(function (key) {
+			return !!String(key || "").match(/^[A-Za-z_$][\w$]*$/) && String(key).indexOf("__") !== 0;
+		}).sort();
+		keys.forEach(function (key) {
+			var definition = normalizeTree(inputDefinitions[key] || {});
+			var type = String(definition.type || definition.kind || "string").toLowerCase();
+			var existing = flow.getVariable(key);
+			var variable = existing;
+			var changed = false;
+			if (!variable) {
+				variable = type === "array" || definition.multi === true || definition.multiValued === true
+					? new RequestableMultiValuedVariable()
+					: new RequestableVariable();
+				variable.setName(key);
+				changed = true;
+			}
+			if (definition.description !== undefined && definition.description !== null && String(definition.description) !== "") {
+				changed = setStringIfChanged(variable, "getDescription", "setDescription", definition.description) || changed;
+			} else if (!existing) {
+				variable.setDescription("Flow input " + key);
+			}
+			changed = setDefaultIfChanged(variable, definition.default) || changed;
+			changed = setBooleanIfChanged(variable, "isRequired", "setRequired", definition.required) || changed;
+			if (variable.setSchemaType) {
+				changed = setStringIfChanged(variable, "getSchemaType", "setSchemaType", flowInputSchemaType(type)) || changed;
+			}
+			if (!existing) {
+				flow.addVariable(variable);
+				created.push(key);
+			} else if (changed) {
+				updated.push(key);
+			}
+		});
+		if (created.length || updated.length) {
+			flow.changed();
+		}
+		return {
+			synced: true,
+			created: created,
+			updated: updated,
+			projectName: lookup.projectName || "",
+			flowName: lookup.flowName || String(name || "")
+		};
+	}
+
+	function flowInputSchemaType(type) {
+		switch (String(type || "").toLowerCase()) {
+		case "boolean":
+		case "bool":
+			return "xsd:boolean";
+		case "integer":
+		case "int":
+			return "xsd:integer";
+		case "number":
+		case "double":
+		case "float":
+			return "xsd:double";
+		default:
+			return "xsd:string";
+		}
+	}
+
+	function flowInputDefinitionsFromDefinition(definition) {
+		definition = definition || {};
+		var meta = definition.flow || definition._flow || {};
+		var inputs = meta.inputs || meta.input || definition.inputs || definition.input || {};
+		return inputs && typeof inputs === "object" ? normalizeTree(inputs) : {};
+	}
+
+	function flowInputDefinitionsFromFlowScriptSource(source) {
+		if (!isFlowScriptSource(source)) {
+			return {};
+		}
+		var meta = parseFlowScriptTopLevelObjectFromCode(source, "flow") || {};
+		var inputs = meta.inputs || meta.input || {};
+		return inputs && typeof inputs === "object" ? normalizeTree(inputs) : {};
+	}
+
+	function syncProjectFlowInputsRequest(request, blocks) {
+		request = request || {};
+		var name = String(request.name || request.flowName || "");
+		if (!name && request.flowQName) {
+			var parts = String(request.flowQName).split(".");
+			name = parts[parts.length - 1];
+		}
+		var inputDefinitions = flowInputDefinitionsFromFlowScriptSource(request.flowSource || "");
+		if (!Object.keys(inputDefinitions).length) {
+			var definition = parseSource(sourceForFlowRequest(request, blocks || loadBlocks()));
+			inputDefinitions = flowInputDefinitionsFromDefinition(definition);
+		}
+		var inputSync = Object.keys(inputDefinitions).length
+			? syncProjectFlowInputs(name, inputDefinitions, request)
+			: { synced: false, created: [], updated: [] };
+		return {
+			ok: true,
+			flowName: name,
+			projectName: currentProjectName(request),
+			projectDir: String(projectDir() || ""),
+			inputDefinitions: inputDefinitions,
+			inputSync: inputSync
+		};
 	}
 
 	function readProjectFlowWorkingCode(name, draftOnly) {
@@ -2113,6 +2332,10 @@
 		return flowScriptParserService().parseFlowScript(blocks, code, flowScriptParserEnv());
 	}
 
+	function parseFlowScriptTopLevelObjectFromCode(code, name) {
+		return flowScriptParserService().parseFlowScriptTopLevelObjectFromCode(code, name, flowScriptParserEnv());
+	}
+
 	function flowScriptIntentUtils() {
 		return loadEngineModule("flowscript-intent-utils.js");
 	}
@@ -2267,6 +2490,7 @@
 			normalizeFlowScriptCode: normalizeFlowScriptCode,
 			stripFlowScriptMirrorHeader: stripFlowScriptMirrorHeader,
 			setProjectFlow: setProjectFlow,
+			syncProjectFlowInputs: syncProjectFlowInputs,
 			applyUnifiedPatchText: applyUnifiedPatchText,
 			getBlockSource: getBlockSource,
 			setProjectBlockCode: setProjectBlockCode,
@@ -2987,7 +3211,85 @@
 	}
 
 	function describeTreeRequest(request, blocks) {
-		return flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+		request = request || {};
+		var cache = runtimeState.caches.treeSnapshots;
+		var key = describeTreeCacheKey(request);
+		var fingerprint = describeTreeFingerprint(request);
+		var cached = readRuntimeMapCache(cache, key, fingerprint);
+		if (cached) {
+			return normalizeTree(cached);
+		}
+		pruneDescribeTreeCacheFamily(cache, request);
+		var tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
+	}
+
+	function describeTreeCacheKey(request) {
+		return describeTreeCacheFamilyKey(request) + "\n" + sha256Hex(describeTreeSourceFingerprintInput(request));
+	}
+
+	function describeTreeCacheFamilyKey(request) {
+		var target = String(request.target || "flow");
+		var project = projectDir() ? canonicalPath(projectDir()) : "";
+		var sourceFile = String(request.sourceFile || request.sourcePath || "");
+		var options = [
+			String(request.detail || request.mode || "full"),
+			String(request.path || ""),
+			String(request.maxDepth || ""),
+			String(request.includeChildren === false ? "no-children" : "children"),
+			String(request.includeDefinition === true),
+			String(request.includeProperties === true),
+			String(request.includeSource === true),
+			String(request.includeAnalysis === true),
+			String(request.includeSchema === true || request.schema === true),
+			String(request.includePrivate === false ? "no-private" : "private")
+		].join("|");
+		return [
+			target,
+			project,
+			String(request.flowQName || ""),
+			String(request.flowName || request.name || ""),
+			sourceFile,
+			options
+		].join("\n");
+	}
+
+	function pruneDescribeTreeCacheFamily(cache, request) {
+		if (!cache || !cacheUtils().clearMapWhere) {
+			return 0;
+		}
+		var prefix = describeTreeCacheFamilyKey(request) + "\n";
+		return cacheUtils().clearMapWhere(cache, function (key) {
+			return String(key || "").indexOf(prefix) === 0;
+		});
+	}
+
+	function describeTreeFingerprint(request) {
+		var sourceFile = String(request.sourceFile || request.sourcePath || "");
+		var sourceFileFingerprint = "";
+		if (sourceFile) {
+			try {
+				sourceFileFingerprint = fileFingerprint(new File(sourceFile));
+			} catch (e) {
+				sourceFileFingerprint = "";
+			}
+		}
+		return [
+			blocksCacheKey(),
+			typesCacheKey(),
+			sourceFileFingerprint,
+			describeTreeSourceFingerprintInput(request)
+		].join("\n");
+	}
+
+	function describeTreeSourceFingerprintInput(request) {
+		if (request.target === "engine") {
+			return String(request.engineSource || "");
+		}
+		if (request.definition !== undefined && request.definition !== null) {
+			return JSON.stringify(normalizeTree(request.definition));
+		}
+		return String(request.flowSource || "");
 	}
 
 	function searchFlowRequest(request, blocks) {
@@ -3285,6 +3587,12 @@
 		describeTree: function (requestJson) {
 			return engineCall("describeTree", requestJson, function (request) {
 				return describeTreeRequest(request, loadBlocks());
+			});
+		},
+
+		syncInputs: function (requestJson) {
+			return projectCall("syncInputs", requestJson, function (request) {
+				return syncProjectFlowInputsRequest(request, null);
 			});
 		},
 

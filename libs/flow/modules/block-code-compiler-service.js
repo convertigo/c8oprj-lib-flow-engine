@@ -114,7 +114,8 @@
 			var validation = flowScriptValidateRequest(validationBlocks, {
 				name: blockLocalName(name) || name,
 				code: functionCode,
-				includeHeader: false
+				includeHeader: false,
+				blockMode: true
 			});
 			if (!validation.ok) {
 				var error = new Error("FlowScript block validation failed: " + name);
@@ -134,11 +135,11 @@
 				source: validation.source,
 				definition: validation.definition,
 				diagnostics: validation.diagnostics,
-				warnings: flowScriptBlockAuthoringWarnings(name, functionCode, meta)
+				warnings: flowScriptBlockAuthoringWarnings(name, functionCode, meta, validation.definition)
 			};
 		}
 
-		function flowScriptBlockAuthoringWarnings(name, functionCode, meta) {
+		function flowScriptBlockAuthoringWarnings(name, functionCode, meta, definition) {
 			var warnings = [];
 			var outputs = normalizeTree(meta.outputs || meta.output || {});
 			var hasOutOutput = outputs.out !== undefined || outputs.type || outputs.properties || outputs.items;
@@ -150,7 +151,72 @@
 					hint: "The caller's out property writes the returned value into scope. Use return { temperature, unit } rather than return { out: { temperature, unit } }."
 				});
 			}
+			var declaredProps = normalizeTree(meta.properties || meta.props || {});
+			var inputReads = flowScriptDefinitionInputReads(definition);
+			var missingInputs = inputReads.filter(function (name) {
+				return declaredProps[name] === undefined;
+			});
+			if (missingInputs.length) {
+				warnings.push({
+					severity: "warning",
+					code: "FLOW_BLOCK_INPUT_NOT_DECLARED",
+					block: String(name),
+					inputVariables: inputReads,
+					missingInputs: missingInputs,
+					message: "FlowScript block " + name + " reads " + missingInputs.map(function (input) { return "input." + input; }).join(", ") + " without declaring matching block properties.",
+					hint: "Declare each public input in _meta.properties so the block is editable from Studio and discoverable by MCP. Example: properties: { " + missingInputs.map(function (input) {
+						return input + ": { kind: \"template\", type: \"string\", description: \"TODO\" }";
+					}).join(", ") + " }."
+				});
+			}
 			return warnings;
+		}
+
+		function scanFlowScriptInputReads(value, inputs) {
+			if (value === null || value === undefined) {
+				return;
+			}
+			if (typeof value !== "string") {
+				if (Object.prototype.toString.call(value) === "[object Array]") {
+					value.forEach(function (item) {
+						scanFlowScriptInputReads(item, inputs);
+					});
+					return;
+				}
+				if (typeof value === "object") {
+					Object.keys(value).forEach(function (key) {
+						scanFlowScriptInputReads(value[key], inputs);
+					});
+				}
+				return;
+			}
+			var re = /\binput(?:\.([A-Za-z_$][\w$]*)|\[\s*["']([^"']+)["']\s*\])/g;
+			var match;
+			while ((match = re.exec(value)) !== null) {
+				var name = String(match[1] || match[2] || "").trim();
+				if (name) {
+					inputs[name] = true;
+				}
+			}
+		}
+
+		function flowScriptDefinitionInputReads(definition) {
+			var inputs = {};
+			function walk(nodes) {
+				(nodes || []).forEach(function (node) {
+					scanFlowScriptInputReads(node && node.props || node, inputs);
+					["nodes", "then", "else", "fields"].forEach(function (slot) {
+						if (Object.prototype.toString.call(node && node[slot]) === "[object Array]") {
+							walk(node[slot]);
+						}
+					});
+				});
+			}
+			(definition && definition.helpers || []).forEach(function (helper) {
+				walk(helper.nodes || []);
+			});
+			walk(definition && definition.nodes || []);
+			return Object.keys(inputs).sort();
 		}
 
 		function compileRhinoBlockCode(name, code, request) {

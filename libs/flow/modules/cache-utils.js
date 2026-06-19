@@ -77,6 +77,24 @@
 		cache.updatedAt = now();
 	}
 
+	function clearMapWhere(cache, predicate) {
+		var removed = 0;
+		if (!cache.entries || typeof predicate !== "function") {
+			return removed;
+		}
+		Object.keys(cache.entries).forEach(function (key) {
+			if (predicate(key, cache.entries[key])) {
+				delete cache.entries[key];
+				removed++;
+			}
+		});
+		if (removed > 0) {
+			cache.clears++;
+			cache.updatedAt = now();
+		}
+		return removed;
+	}
+
 	function summary(name, cache, includeEntries) {
 		var entries = cache.entries ? Object.keys(cache.entries).sort() : [];
 		var out = {
@@ -110,6 +128,7 @@
 		writeMap: writeMap,
 		clearValue: clearValue,
 		clearMap: clearMap,
+		clearMapWhere: clearMapWhere,
 		summary: summary
 	};
 }())

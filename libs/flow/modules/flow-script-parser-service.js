@@ -1781,6 +1781,11 @@
 			});
 			return out;
 		}
+
+		function parseFlowScriptTopLevelObjectFromCode(code, name) {
+			var split = splitFlowScriptFunctions(env.normalizeFlowScriptFunctionSyntax(code));
+			return parseFlowScriptTopLevelObject(split.prelude, name);
+		}
 	
 		function trackFlowScriptLocalWrite(locals, path) {
 			path = String(path || "");
@@ -1995,6 +2000,7 @@
 			mainFlowScriptFunctionIndex: mainFlowScriptFunctionIndex,
 			flowScriptFunctionParams: flowScriptFunctionParams,
 			helperBlockDefinitions: helperBlockDefinitions,
+			parseFlowScriptTopLevelObjectFromCode: parseFlowScriptTopLevelObjectFromCode,
 			trackFlowScriptLocalWrite: trackFlowScriptLocalWrite,
 			trackFlowScriptNodeWrites: trackFlowScriptNodeWrites,
 			parseFlowScriptStatementsInto: parseFlowScriptStatementsInto,
@@ -2149,6 +2155,9 @@
 		},
 		helperBlockDefinitions: function (helpers, env) {
 			return create(env).helperBlockDefinitions(helpers);
+		},
+		parseFlowScriptTopLevelObjectFromCode: function (code, name, env) {
+			return create(env).parseFlowScriptTopLevelObjectFromCode(code, name);
 		},
 		trackFlowScriptLocalWrite: function (locals, path, env) {
 			return create(env).trackFlowScriptLocalWrite(locals, path);

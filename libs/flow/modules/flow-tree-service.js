@@ -1826,6 +1826,9 @@
 			target: target,
 			flowSource: source,
 			engineSource: source,
+			flowQName: request.flowQName || "",
+			flowName: request.flowName || request.name || "",
+			name: request.name || request.flowName || "",
 			engineQName: request.engineQName || definition.engineQName || "",
 			sourceFile: request.sourceFile || request.sourcePath || ""
 		}, blocks);

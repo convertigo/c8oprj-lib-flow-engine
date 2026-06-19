@@ -16,6 +16,7 @@
 		var normalizeFlowScriptCode = env.normalizeFlowScriptCode;
 		var stripFlowScriptMirrorHeader = env.stripFlowScriptMirrorHeader;
 		var setProjectFlow = env.setProjectFlow;
+		var syncProjectFlowInputs = env.syncProjectFlowInputs;
 		var applyUnifiedPatchText = env.applyUnifiedPatchText;
 		var getBlockSource = env.getBlockSource;
 		var setProjectBlockCode = env.setProjectBlockCode;
@@ -212,6 +213,17 @@
 			out.testCases = testCases;
 		}
 		return out;
+	}
+
+	function flowCodeSyncInputs(name, validation, request) {
+		if (!syncProjectFlowInputs || !validation || !validation.definition) {
+			return null;
+		}
+		var inputDefinitions = flowCodeInputDefinitionsFrom(validation.definition);
+		if (!Object.keys(inputDefinitions).length) {
+			return null;
+		}
+		return syncProjectFlowInputs(name, inputDefinitions, request || {});
 	}
 
 	function flowCodeParseDiagnostics(error) {
@@ -540,6 +552,7 @@
 		var revision = saved && saved.codeRevision
 			? saved.codeRevision
 			: flowCodeRevisionForSource(blocks, name, validation.source, request);
+		var inputSync = flowCodeSyncInputs(name, validation, request);
 		return flowCodeAddInputReport({
 			ok: true,
 			qname: flowCodeQName(request, name),
@@ -551,6 +564,7 @@
 			codeFile: saved ? saved.codeFile : (current ? current.codeFile : ""),
 			revision: revision,
 			oldRevision: current ? current.revision : null,
+			inputSync: inputSync,
 			warnings: warnings
 		}, validation);
 	}
@@ -1034,6 +1048,7 @@
 			mode: "",
 			stage: ""
 		}));
+		var inputSync = flowCodeSyncInputs(name, checked.validation, request);
 		var draftCleared = current.draft === true;
 		delete memoryDrafts[String(name)];
 		return flowCodeAddInputReport({
@@ -1049,6 +1064,7 @@
 			draftCleared: draftCleared,
 			file: saved ? saved.file : "",
 			codeFile: saved ? saved.codeFile : "",
+			inputSync: inputSync,
 			warnings: checked.warnings,
 			saved: saved
 		}, checked.validation);
