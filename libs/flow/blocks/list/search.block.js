@@ -54,7 +54,10 @@ const _meta = {
     "filter",
     "text"
   ],
-  "runtime": "rhino"
+  "runtime": "rhino",
+  "hooks": {
+    "file": "search.hooks.js"
+  }
 }
 
 // Use Rhino 1.9.0 features: https://mozilla.github.io/rhino/compat/engines.html

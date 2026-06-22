@@ -1205,6 +1205,67 @@ print(JSON.stringify(compactWeatherRun));
 assertTrue(compactWeatherRun.result.hotCities.join(",") === "Marseille,Paris",
 	"Compact weather flow did not filter, sort and map hot cities");
 
+var listSchemaPropagationFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: sourcePeople",
+	"    block: set",
+	"    path: local.people",
+	"    value:",
+	"      - name: Ada",
+	"        age: 36",
+	"        city: London",
+	"      - name: Grace",
+	"        age: 40",
+	"        city: Arlington",
+	"  - id: filterAdults",
+	"    block: list.filter",
+	"    items: local.people",
+	"    where: current.age >= 18",
+	"    out: local.adults",
+	"  - id: sortAdults",
+	"    block: list.sort",
+	"    items: local.adults",
+	"    by: current.name",
+	"    out: local.sortedAdults",
+	"  - id: searchAdults",
+	"    block: list.search",
+	"    items: local.sortedAdults",
+	"    query: a",
+	"    out: local.matchingAdults",
+	"  - id: mapNames",
+	"    block: list.map",
+	"    items: local.matchingAdults",
+	"    select: current.name",
+	"    out: result.names",
+	"  - id: pluckAges",
+	"    block: list.pluck",
+	"    items: local.sortedAdults",
+	"    path: age",
+	"    out: result.ages",
+	"  - id: copySorted",
+	"    block: set",
+	"    path: result.sorted",
+	"    value: \"{{ local.sortedAdults }}\"",
+	""
+].join("\n");
+var listSchemaAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
+print(JSON.stringify(listSchemaAnalysis));
+assertTrue(listSchemaAnalysis.schemas["local.sortedAdults"].items.properties.name.type === "string" &&
+	listSchemaAnalysis.schemas["local.sortedAdults"].items.properties.age.type === "integer",
+	"list.filter/list.sort/list.search did not preserve array item schemas");
+var listSchemaOutput = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
+print(JSON.stringify(listSchemaOutput));
+assertTrue(listSchemaOutput.schema.properties.names.type === "array" &&
+	listSchemaOutput.schema.properties.names.items.type === "string",
+	"list.map did not derive array item schema from current.* selection");
+assertTrue(listSchemaOutput.schema.properties.ages.type === "array" &&
+	listSchemaOutput.schema.properties.ages.items.type === "integer",
+	"list.pluck did not derive array item schema from item path");
+assertTrue(listSchemaOutput.schema.properties.sorted.type === "array" &&
+	listSchemaOutput.schema.properties.sorted.items.properties.city.type === "string",
+	"set did not reuse the propagated list schema for result output");
+
 var standardDataFlowSource = [
 	"version: 1",
 	"nodes:",

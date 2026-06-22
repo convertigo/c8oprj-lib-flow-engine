@@ -636,6 +636,16 @@ merges `result.*` writes, and honors explicit `return` blocks when their value
 schema is known. Learned result schemas are only a fallback when static analysis
 does not know enough.
 
+Block analysis hooks should declare schema propagation when a block preserves or
+projects a typed value. Use `ctx.addSameSchema(out, source)` for same-shape
+blocks such as `list.sort(array<T>) -> array<T>`. Use
+`ctx.withCurrentSchema(ctx.itemSchemaFor(items), function () { ... })` when a
+hook evaluates an expression against each item, then write the output with
+`ctx.addArraySchema(out, ctx.schemaForExpression(select))`. The expression schema
+helper is intentionally conservative: exact scope references such as
+`current.name` keep their schema, while complex expressions stay undeclared until
+the block hook states a clearer contract.
+
 `Engine.context()` and `Engine.analyze()` read these files and expose deeper
 paths such as `local.weather.body.metropoles.city` to Studio pickers and LLM
 guidance. When a `forEach` iterates over an array with a known schema, the

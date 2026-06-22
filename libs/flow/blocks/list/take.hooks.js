@@ -17,12 +17,7 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			ctx.addPath(props.out);
-			if (ctx.schemaForPath && ctx.addSchema && props.items) {
-				var schema = ctx.schemaForPath(props.items);
-				if (schema) {
-					ctx.addSchema(props.out, schema);
-				}
-			}
+			ctx.addSameSchema(props.out, props.items || props["in"]);
 		}
 	};
 }())

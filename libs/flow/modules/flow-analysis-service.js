@@ -117,6 +117,17 @@
 			ctx.schemaForPath = function (path) {
 				return schemaForAnalysisPath(ctx, path);
 			};
+			ctx.schemaForExpression = function (value) {
+				if (typeof value !== "string") {
+					return ctx.schemaForValue(value);
+				}
+				var expression = exactTemplateExpression(value) || String(value).trim();
+				var refs = collectExpressionRefs(expression, []);
+				if (refs.length === 1 && expression === refs[0]) {
+					return schemaForAnalysisPath(ctx, refs[0]);
+				}
+				return null;
+			};
 			ctx.schemaForValue = function (value) {
 				if (value && typeof value === "object") {
 					return inferSchema(value);
@@ -149,6 +160,54 @@
 				}
 			};
 			ctx.itemSchema = itemSchema;
+			ctx.schemaForItems = function (path) {
+				if (typeof path !== "string" || path === "") {
+					return null;
+				}
+				return ctx.schemaForExpression(path);
+			};
+			ctx.itemSchemaFor = function (path) {
+				return itemSchema(ctx.schemaForItems(path));
+			};
+			ctx.addSameSchema = function (outPath, sourcePath) {
+				if (typeof outPath !== "string" || outPath === "" || typeof sourcePath !== "string" || sourcePath === "") {
+					return;
+				}
+				var schema = ctx.schemaForExpression(sourcePath);
+				if (schema) {
+					ctx.addSchema(outPath, schema);
+				}
+			};
+			ctx.addArraySchema = function (outPath, item) {
+				if (typeof outPath === "string" && outPath !== "" && item) {
+					ctx.addSchema(outPath, {
+						type: "array",
+						items: normalizeTree(item)
+					});
+				}
+			};
+			ctx.withCurrentSchema = function (schema, callback) {
+				if (!schema) {
+					return callback();
+				}
+				var hadCurrent = Object.prototype.hasOwnProperty.call(ctx.schemas, "current");
+				var previousCurrent = ctx.schemas.current;
+				ctx.currentSources.push({
+					path: "current",
+					schema: schema
+				});
+				ctx.addSchema("current", schema);
+				try {
+					return callback();
+				} finally {
+					ctx.currentSources.pop();
+					if (hadCurrent) {
+						ctx.schemas.current = previousCurrent;
+					} else {
+						delete ctx.schemas.current;
+					}
+				}
+			};
 			ctx.inferSchema = inferSchema;
 			ctx.sourceForPath = function (path) {
 				return sourceForPath(ctx, path);
