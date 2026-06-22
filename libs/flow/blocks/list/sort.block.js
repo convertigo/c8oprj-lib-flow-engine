@@ -27,6 +27,8 @@ const _meta = {
     "by": {
       "kind": "expression",
       "type": "unknown",
+      "current": "item",
+      "sourceProperty": "items",
       "default": "current",
       "description": "Expression evaluated as the sort key for each current item."
     },

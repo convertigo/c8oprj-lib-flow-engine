@@ -25,6 +25,7 @@
     }
   }
   function hostRequest(name, payload) {
+    var requestPayload = enrichRequestPayload(name, payload);
     if (window.flowEditor && window.flowEditor.request) {
       try {
         return JSON.parse(
@@ -32,7 +33,7 @@
             JSON.stringify({
               type: "request",
               name: name,
-              payload: payload || {},
+              payload: requestPayload,
             }),
           ) || "{}",
         );
@@ -42,8 +43,58 @@
     }
     return { ok: false, error: "Flow editor bridge is unavailable." };
   }
+  function enrichRequestPayload(name, payload) {
+    var out = {};
+    keys(payload).forEach(function (key) {
+      out[key] = payload[key];
+    });
+    if (name === "context" && state) {
+      var property = activeRequestProperty();
+      if ((out.property === undefined || out.property === "") && property) {
+        out.property = property;
+      }
+      if (
+        out.node === undefined &&
+        out.path === undefined &&
+        out.nodePath === undefined
+      ) {
+        var nodePath = flowNodePath(state.virtualPath);
+        if (nodePath) {
+          out.path = nodePath;
+        }
+      }
+    }
+    return out;
+  }
+  function flowNodePath(value) {
+    value = String(value || "");
+    return /^nodes(?:\[|\.)/.test(value) ? value : "";
+  }
+  function activeRequestProperty() {
+    if (state && state.property) {
+      return state.property;
+    }
+    if (state && state.mode === "picker" && pickerTarget) {
+      return pickerTarget;
+    }
+    return "";
+  }
   function keys(o) {
     return Object.keys(o || {});
+  }
+  function objectValue(value) {
+    if (!value) return {};
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value);
+      } catch (e) {
+        return {};
+      }
+    }
+    return typeof value === "object" ? value : {};
+  }
+  function stateDefinition() {
+    return objectValue(state && state.definition);
   }
   function propOrder(info, defs, node) {
     var out = [];
@@ -163,7 +214,7 @@
       var props = pickerProps(
         info,
         info.propertyDefinitions || {},
-        state.definition || {},
+        stateDefinition(),
       );
       var target = pickerProperty(props);
       var kind = pickerKind(target);
@@ -267,7 +318,7 @@
             pickerProps(
               (state && state.info) || {},
               (state && state.info && state.info.propertyDefinitions) || {},
-              (state && state.definition) || {},
+              stateDefinition(),
             ),
           ),
         ),
@@ -289,6 +340,90 @@
     next.value = pickerValue;
     return next;
   }
+  function typeEditorState(source) {
+    var next = {};
+    keys(source || {}).forEach(function (key) {
+      next[key] = source[key];
+    });
+    var nodePath = flowNodePath(next.virtualPath);
+    if (nodePath && next.property) {
+      var response = hostRequest("context", {
+        path: nodePath,
+        property: next.property,
+      });
+      if (response && response.ok && response.context) {
+        next.context = response.context;
+      }
+    }
+    next.context = itemCurrentContext(next.context, next);
+    return next;
+  }
+  function contextScopePaths(context, scope) {
+    var bucket = context && context.scopes && context.scopes[scope];
+    if (!bucket) return [];
+    return Array.isArray(bucket) ? bucket : bucket.paths || [];
+  }
+  function entryPath(entry) {
+    return typeof entry === "string" ? entry : entry && entry.path;
+  }
+  function entryWithPath(entry, path) {
+    if (typeof entry === "string") return path;
+    var out = {};
+    keys(entry || {}).forEach(function (key) {
+      out[key] = entry[key];
+    });
+    out.path = path;
+    return out;
+  }
+  function pathExists(entries, path) {
+    return entries.some(function (entry) {
+      return entryPath(entry) === path;
+    });
+  }
+  function itemCurrentContext(context, editorState) {
+    var def = (editorState && editorState.propertyDefinition) || {};
+    if (String(def.current || "") !== "item") return context;
+    var node = objectValue(editorState && editorState.definition);
+    var sourceKey = String(def.sourceProperty || def.relativeTo || "items");
+    var sourcePath = node[sourceKey];
+    if ((sourcePath === undefined || sourcePath === null || sourcePath === "") && sourceKey === "items") {
+      sourcePath = node["in"];
+    }
+    sourcePath = typeof sourcePath === "string" ? sourcePath : "";
+    if (!sourcePath || !context || !context.scopes) return context;
+    var itemPrefix = sourcePath + "[0]";
+    var currentPaths = [];
+    keys(context.scopes).forEach(function (scope) {
+      contextScopePaths(context, scope).forEach(function (entry) {
+        var path = entryPath(entry);
+        if (path === itemPrefix) {
+          currentPaths.push(entryWithPath(entry, "current"));
+        } else if (path && path.indexOf(itemPrefix + ".") === 0) {
+          currentPaths.push(entryWithPath(entry, "current" + path.substring(itemPrefix.length)));
+        }
+      });
+    });
+    if (!currentPaths.length) return context;
+    var out = {};
+    keys(context).forEach(function (key) {
+      out[key] = context[key];
+    });
+    out.scopes = {};
+    keys(context.scopes).forEach(function (scope) {
+      var bucket = context.scopes[scope];
+      out.scopes[scope] = Array.isArray(bucket)
+        ? bucket.slice()
+        : Object.assign({}, bucket);
+    });
+    var deduped = [];
+    currentPaths.forEach(function (entry) {
+      if (!pathExists(deduped, entryPath(entry))) deduped.push(entry);
+    });
+    out.scopes.current = Array.isArray(context.scopes.current)
+      ? deduped
+      : Object.assign({}, context.scopes.current || {}, { paths: deduped });
+    return out;
+  }
   function attachPickerEditor(prop) {
     if (!prop) return false;
     var editor = document.querySelector("[data-picker-editor]");
@@ -298,7 +433,7 @@
         setValue: updatePickerValue,
       };
       editor.flowHost = window.flowHost;
-      editor.setState(pickerEditorState(prop));
+      editor.setState(typeEditorState(pickerEditorState(prop)));
       editor.addEventListener("flow-value", function (e) {
         if (!pickerUpdatingEditor)
           updatePickerValue(e.detail && e.detail.value, false);
@@ -490,7 +625,7 @@
     if (editor && editor.setState) {
       window.flowHost = { request: hostRequest, setValue: setDraft };
       editor.flowHost = window.flowHost;
-      editor.setState(state);
+      editor.setState(typeEditorState(state));
       focusKey = editor.getAttribute("data-key");
       editor.addEventListener("flow-value", function (e) {
         setDraft(e.detail && e.detail.value);
@@ -506,7 +641,7 @@
     return false;
   }
   function renderProperty(app) {
-    var node = state.definition || {};
+    var node = stateDefinition();
     var title = state.summary || node.id || state.virtualPath || "Flow node";
     var custom = hasTypeEditor(currentPropertyKind());
     var html =
@@ -540,7 +675,7 @@
     }
   }
   function renderPicker(app) {
-    var node = state.definition || {};
+    var node = stateDefinition();
     var info = state.info || {};
     var defs = info.propertyDefinitions || {};
     var props = pickerProps(info, defs, node);
@@ -608,7 +743,7 @@
     if (custom) attachPickerEditor(target);
   }
   function renderObject(app) {
-    var node = state.definition || {};
+    var node = stateDefinition();
     var info = state.info || {};
     var defs = info.propertyDefinitions || {};
     var ordered = propOrder(info, defs, node);
@@ -766,7 +901,7 @@
     if (reset) {
       var el = input(reset);
       if (el) {
-        el.value = propValue((state && state.definition) || {}, reset);
+        el.value = propValue(stateDefinition(), reset);
         changeValue(el);
       }
       return;

@@ -12,7 +12,7 @@ const _meta = {
   "longDescription": "Use path to choose the destination and value for the content. A value containing only {{ expression }} keeps the native expression type.",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "Output",
       "kind": "path",
       "mode": "write",
       "default": "result.value",

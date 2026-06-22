@@ -33,6 +33,15 @@
 		var sourceForFlowRequest = env.sourceForFlowRequest;
 		var objectSchema = env.objectSchema;
 		var assignSchemaAtPath = env.assignSchemaAtPath;
+
+		function joinSchemaPath(base, leaf) {
+			base = String(base || "");
+			leaf = String(leaf || "");
+			if (base === "" || leaf === "") {
+				return base || leaf;
+			}
+			return leaf.charAt(0) === "[" ? base + leaf : joinPath(base, leaf);
+		}
 		var hasSchemaContent = env.hasSchemaContent;
 		var activeSlots = env.activeSlots;
 		var canonicalFlowDefinition = env.canonicalFlowDefinition;
@@ -49,6 +58,7 @@
 				writes: [],
 				providers: {},
 				schemas: {},
+				scopedSchemas: {},
 				returnSchemas: [],
 				currentSources: [],
 				graphBlockStack: [],
@@ -106,9 +116,14 @@
 						block: ctx.currentNodeInfo.block,
 						path: basePath
 					};
+					(ctx.currentNodeInfo.outputs || []).forEach(function (output) {
+						if (output && output.path === basePath) {
+							output.schema = schemaSummary(schema);
+						}
+					});
 				}
 				schemaPaths(schema, "").forEach(function (path) {
-					ctx.addPath(joinPath(basePath, path));
+					ctx.addPath(joinSchemaPath(basePath, path));
 				});
 			};
 			ctx.schemaForOutput = function (node, property, outPath) {
@@ -160,6 +175,9 @@
 				}
 			};
 			ctx.itemSchema = itemSchema;
+			ctx.configOverrideSchema = function (node) {
+				return configOverrideSchema(ctx, node);
+			};
 			ctx.schemaForItems = function (path) {
 				if (typeof path !== "string" || path === "") {
 					return null;
@@ -221,6 +239,32 @@
 					return callback();
 				} finally {
 					ctx.currentSources.pop();
+				}
+			};
+			ctx.withScopedSchema = function (basePath, schema, callback) {
+				if (!schema) {
+					return callback();
+				}
+				var hadSchema = Object.prototype.hasOwnProperty.call(ctx.schemas, basePath);
+				var previousSchema = ctx.schemas[basePath];
+				var hadScoped = Object.prototype.hasOwnProperty.call(ctx.scopedSchemas, basePath);
+				var previousScoped = ctx.scopedSchemas[basePath];
+				var scoped = hadSchema ? mergeSchema(previousSchema, schema) || schema : schema;
+				ctx.scopedSchemas[basePath] = scoped;
+				ctx.addSchema(basePath, scoped);
+				try {
+					return callback();
+				} finally {
+					if (hadSchema) {
+						ctx.schemas[basePath] = previousSchema;
+					} else {
+						delete ctx.schemas[basePath];
+					}
+					if (hadScoped) {
+						ctx.scopedSchemas[basePath] = previousScoped;
+					} else {
+						delete ctx.scopedSchemas[basePath];
+					}
 				}
 			};
 			ctx.withGraphBlock = function (node, block, callback) {
@@ -341,7 +385,7 @@
 			if (typeof path !== "string" || path === "") {
 				return null;
 			}
-			if (path === "current" || path.indexOf("current.") === 0) {
+			if (pathExtends(path, "current")) {
 				var current = ctx.currentSources.length === 0 ? null : ctx.currentSources[ctx.currentSources.length - 1];
 				if (current) {
 					var cloned = cloneSource(current);
@@ -357,7 +401,7 @@
 			}
 			var best = "";
 			Object.keys(ctx.providers).forEach(function (providerPath) {
-				if (path.indexOf(providerPath + ".") === 0 && providerPath.length > best.length) {
+				if (pathExtends(path, providerPath) && providerPath.length > best.length) {
 					best = providerPath;
 				}
 			});
@@ -372,10 +416,22 @@
 			return null;
 		}
 
+		function pathExtends(path, basePath) {
+			return path === basePath || path.indexOf(basePath + ".") === 0 || path.indexOf(basePath + "[") === 0;
+		}
+
+		function pathRemainder(path, basePath) {
+			if (path === basePath) {
+				return "";
+			}
+			var next = String(path).charAt(String(basePath).length);
+			return next === "." ? String(path).substring(String(basePath).length + 1) : String(path).substring(String(basePath).length);
+		}
+
 		function schemaForSchemasPath(schemas, path) {
 			var best = "";
 			Object.keys(schemas || {}).forEach(function (basePath) {
-				if (path === basePath || path.indexOf(basePath + ".") === 0) {
+				if (pathExtends(path, basePath)) {
 					if (basePath.length > best.length) {
 						best = basePath;
 					}
@@ -384,7 +440,7 @@
 			if (!best) {
 				return null;
 			}
-			return schemaAtPath(schemas[best], path === best ? "" : String(path).substring(best.length + 1));
+			return schemaAtPath(schemas[best], pathRemainder(path, best));
 		}
 
 		function schemaForAnalysisPath(ctx, path) {
@@ -621,6 +677,45 @@
 			return cloneSource(ctx.currentSources[ctx.currentSources.length - 1]);
 		}
 
+		function cloneScopedSchemas(ctx) {
+			var out = {};
+			Object.keys(ctx && ctx.scopedSchemas || {}).forEach(function (key) {
+				out[key] = normalizeTree(ctx.scopedSchemas[key]);
+			});
+			return out;
+		}
+
+		function configOverrideValueSchema(ctx, value) {
+			if (value && typeof value === "object") {
+				if (Object.prototype.toString.call(value) === "[object Array]") {
+					var item = null;
+					value.forEach(function (entry) {
+						item = mergeSchema(item, configOverrideValueSchema(ctx, entry)) || item;
+					});
+					return { type: "array", items: item || { type: "unknown" } };
+				}
+				var properties = {};
+				Object.keys(value).forEach(function (key) {
+					properties[key] = configOverrideValueSchema(ctx, value[key]) || { type: "unknown" };
+				});
+				return { type: "object", properties: properties };
+			}
+			return ctx.schemaForValue(value);
+		}
+
+		function configOverrideSchema(ctx, node) {
+			if (blockName(node) !== "config.use") {
+				return null;
+			}
+			var props = nodeProps(node);
+			var overrides = normalizeTree(props.overrides || {});
+			if (!overrides || typeof overrides !== "object" ||
+					Object.prototype.toString.call(overrides) === "[object Array]") {
+				return null;
+			}
+			return configOverrideValueSchema(ctx, overrides);
+		}
+
 		function matchesContextTarget(request, node, path) {
 			var target = String(contextTargetValue(request) || "");
 			var targetPath = String(request.path || request.nodePath || "");
@@ -643,16 +738,7 @@
 				return null;
 			}
 			if (current === "item") {
-				var props = nodeProps(node);
-				var items = props.items || props["in"];
-				var source = ctx.sourceForPath ? ctx.sourceForPath(items) : null;
-				source = source || { path: items };
-				var currentSchema = ctx.schemaForPath ? ctx.schemaForPath(items) : null;
-				currentSchema = ctx.itemSchema ? ctx.itemSchema(currentSchema) : currentSchema;
-				if (currentSchema) {
-					source.schema = currentSchema;
-				}
-				return source;
+				return currentItemSource(ctx, node, slot.sourceProperty || slot.relativeTo || "items");
 			}
 			if (current === "error") {
 				return {
@@ -670,6 +756,60 @@
 			return { path: current };
 		}
 
+		function currentItemSource(ctx, node, sourceProperty) {
+			var props = nodeProps(node);
+			var sourceKey = String(sourceProperty || "items");
+			var items = props[sourceKey];
+			if ((items === undefined || items === null || items === "") && sourceKey === "items") {
+				items = props["in"];
+			}
+			var source = ctx.sourceForPath && typeof items === "string" ? ctx.sourceForPath(items) : null;
+			source = source || { path: items };
+			var currentSchema = ctx.schemaForPath && typeof items === "string" ? ctx.schemaForPath(items) : null;
+			currentSchema = ctx.itemSchema ? ctx.itemSchema(currentSchema) : currentSchema;
+			if (currentSchema) {
+				source.schema = currentSchema;
+			}
+			return source;
+		}
+
+		function currentSourceForProperty(ctx, node, property) {
+			if (!property) {
+				return null;
+			}
+			var block = ctx.blocks[blockName(node)];
+			var descriptor = blockCatalog(block);
+			var prop = descriptor && descriptor.props && descriptor.props[property];
+			var current = String(prop && prop.current || "");
+			if (current === "item") {
+				return currentItemSource(ctx, node, prop.sourceProperty || prop.relativeTo || "items");
+			}
+			return current ? { path: current } : null;
+		}
+
+		function contextResultForTarget(ctx, node, request, path) {
+			var propertySource = currentSourceForProperty(ctx, node, request.property);
+			if (propertySource) {
+				return ctx.withCurrentSource(propertySource, function () {
+					ctx.addPath("current");
+					return {
+						found: true,
+						node: node,
+						path: path,
+						currentSource: currentContextSource(ctx),
+						scopedSchemas: cloneScopedSchemas(ctx)
+					};
+				});
+			}
+			return {
+				found: true,
+				node: node,
+				path: path,
+				currentSource: currentContextSource(ctx),
+				scopedSchemas: cloneScopedSchemas(ctx)
+			};
+		}
+
 		function contextWalkNodes(ctx, nodes, request, path) {
 			nodes = nodes || [];
 			for (var i = 0; i < nodes.length; i++) {
@@ -678,7 +818,7 @@
 				var targetHere = matchesContextTarget(request, node, nodeListPath);
 				var position = String(request.position || "before");
 				if (targetHere && position !== "after") {
-					return { found: true, node: node, path: nodeListPath, currentSource: currentContextSource(ctx) };
+					return contextResultForTarget(ctx, node, request, nodeListPath);
 				}
 				var name = blockName(node);
 				var block = ctx.blocks[name];
@@ -701,6 +841,10 @@
 								ctx.addPath("current");
 								return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
 							});
+						} else if (name === "config.use" && slot.name === "then") {
+							childResult = ctx.withScopedSchema("config", configOverrideSchema(ctx, node), function () {
+								return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
+							});
 						} else {
 							childResult = contextWalkNodes(ctx, slot.nodes || [], request, childPath);
 						}
@@ -717,7 +861,7 @@
 					return slotResult;
 				}
 				if (targetHere && position === "after") {
-					return { found: true, node: node, path: nodeListPath, currentSource: currentContextSource(ctx) };
+					return contextResultForTarget(ctx, node, request, nodeListPath);
 				}
 			}
 			return { found: false };
@@ -756,16 +900,7 @@
 			if (!path) {
 				return current.type ? String(current.type) : typeof current === "string" ? current : "object";
 			}
-			String(path).split(".").forEach(function (part) {
-				if (!current) {
-					return;
-				}
-				if (current.type === "array" && current.items) {
-					current = current.items;
-				}
-				var source = current.properties || current;
-				current = source[part];
-			});
+			current = schemaAtPath(schema, path);
 			if (!current) {
 				return "";
 			}
@@ -784,10 +919,10 @@
 			return "";
 		}
 
-		function analysisSchemaType(ctx, path) {
+		function schemaTypeFromMap(schemas, path) {
 			var best = "";
-			Object.keys(ctx.schemas || {}).forEach(function (basePath) {
-				if (path === basePath || path.indexOf(basePath + ".") === 0) {
+			Object.keys(schemas || {}).forEach(function (basePath) {
+				if (pathExtends(path, basePath)) {
 					if (basePath.length > best.length) {
 						best = basePath;
 					}
@@ -796,8 +931,12 @@
 			if (!best) {
 				return "";
 			}
-			var local = path === best ? "" : String(path).substring(best.length + 1);
-			return schemaType(ctx.schemas[best], local);
+			var local = pathRemainder(path, best);
+			return schemaType(schemas[best], local);
+		}
+
+		function analysisSchemaType(ctx, path) {
+			return schemaTypeFromMap(ctx.schemas, path);
 		}
 
 		function declaredSchemaForRoot(definition, root) {
@@ -813,22 +952,27 @@
 			return {};
 		}
 
-		function pathType(definition, ctx, path) {
+		function pathType(definition, ctx, path, scopedSchemas) {
 			var root = scopeRoot(path);
 			if (path === root) {
-				return analysisSchemaType(ctx, path) || (root === "current" ? "unknown" : "object");
+				return schemaTypeFromMap(scopedSchemas, path) || analysisSchemaType(ctx, path) ||
+					(root === "current" ? "unknown" : "object");
 			}
 			var local = String(path).substring(root.length + 1);
-			return analysisSchemaType(ctx, path) || schemaType(declaredSchemaForRoot(definition, root), local) || "unknown";
+			return schemaTypeFromMap(scopedSchemas, path) || analysisSchemaType(ctx, path) ||
+				schemaType(declaredSchemaForRoot(definition, root), local) || "unknown";
 		}
 
-		function pathConfidence(definition, ctx, path) {
+		function pathConfidence(definition, ctx, path, scopedSchemas) {
 			var root = scopeRoot(path);
 			if (path === root) {
 				return "declared";
 			}
 			if (schemaType(declaredSchemaForRoot(definition, root), String(path).substring(root.length + 1))) {
 				return "declared";
+			}
+			if (schemaTypeFromMap(scopedSchemas, path)) {
+				return "inferred";
 			}
 			if (analysisSchemaType(ctx, path)) {
 				return "learned";
@@ -839,15 +983,15 @@
 			return "unknown";
 		}
 
-		function contextPathEntry(ctx, definition, path, currentSource) {
+		function contextPathEntry(ctx, definition, path, currentSource, scopedSchemas) {
 			var source = ctx.sourceForPath(path);
 			if (!source && path === "current" && currentSource) {
 				source = cloneSource(currentSource);
 			}
 			var entry = {
 				path: path,
-				type: pathType(definition, ctx, path),
-				confidence: pathConfidence(definition, ctx, path)
+				type: pathType(definition, ctx, path, scopedSchemas),
+				confidence: pathConfidence(definition, ctx, path, scopedSchemas)
 			};
 			if (source) {
 				entry.producer = source;
@@ -888,6 +1032,7 @@
 			}
 			var scopes = {};
 			var currentSource = found.currentSource || null;
+			var scopedSchemas = found.scopedSchemas || {};
 			include.forEach(function (scope) {
 				var paths = ctx.paths.filter(function (path) {
 					return scopeRoot(path) === scope;
@@ -900,7 +1045,7 @@
 				} else {
 					scopes[scope] = {
 						paths: paths.map(function (path) {
-							return contextPathEntry(ctx, definition, path, currentSource);
+							return contextPathEntry(ctx, definition, path, currentSource, scopedSchemas);
 						})
 					};
 				}

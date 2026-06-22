@@ -136,10 +136,14 @@
 
 	function flowScriptPath(base, path) {
 		var out = String(base || "");
-		String(path || "").split(".").filter(function (part) {
+		objectPathParts(path).filter(function (part) {
 			return part !== "";
 		}).forEach(function (part) {
-			out += /^[A-Za-z_$][\w$]*$/.test(part) ? "." + part : "[" + JSON.stringify(part) + "]";
+			if (/^\d+$/.test(part)) {
+				out += "[" + part + "]";
+			} else {
+				out += /^[A-Za-z_$][\w$]*$/.test(part) ? "." + part : "[" + JSON.stringify(part) + "]";
+			}
 		});
 		return out;
 	}

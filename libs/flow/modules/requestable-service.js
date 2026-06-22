@@ -231,6 +231,39 @@
 		return out;
 	}
 
+	function pathParts(path, env) {
+		return env.objectPathParts ? env.objectPathParts(path) : String(path || "").split(".");
+	}
+
+	function startsWithParts(parts, prefix) {
+		if (!prefix.length || parts.length < prefix.length) {
+			return false;
+		}
+		for (var i = 0; i < prefix.length; i++) {
+			if (String(parts[i]) !== String(prefix[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	function relativeItemPath(path, arrayPath, env) {
+		var parts = pathParts(path, env);
+		var prefix = pathParts(arrayPath, env);
+		if (!startsWithParts(parts, prefix)) {
+			return "";
+		}
+		var index = prefix.length;
+		if (/^\d+$/.test(String(parts[index] || ""))) {
+			index++;
+		}
+		return parts.slice(index).join(".");
+	}
+
+	function leafUnderArray(entry, arrayPath, env) {
+		return relativeItemPath(entry && entry.path, arrayPath, env) !== "";
+	}
+
 	function flowScriptHints(target, arrays, leaves, currentProject, env) {
 		var publicTarget = targetPublic(target, currentProject);
 		var requestable = publicTarget.localRequestable || publicTarget.requestable || publicTarget.qname || "";
@@ -246,16 +279,16 @@
 		}
 		hints.array = "const items = " + env.flowScriptPath("data", arrayPath) + ";";
 		var leaf = (leaves || []).filter(function (entry) {
-			return String(entry.path).indexOf(arrayPath + ".") === 0 && /(^|\.)title$/.test(String(entry.path));
+			return leafUnderArray(entry, arrayPath, env) && /(^|\.)title$/.test(relativeItemPath(entry.path, arrayPath, env));
 		})[0] || (leaves || []).filter(function (entry) {
-			return String(entry.path).indexOf(arrayPath + ".") === 0 && ["name", "label"].some(function (suffix) {
-				return new RegExp("(^|\\.)" + suffix + "$").test(String(entry.path));
+			return leafUnderArray(entry, arrayPath, env) && ["name", "label"].some(function (suffix) {
+				return new RegExp("(^|\\.)" + suffix + "$").test(relativeItemPath(entry.path, arrayPath, env));
 			});
 		})[0] || (leaves || []).filter(function (entry) {
-			return String(entry.path).indexOf(arrayPath + ".") === 0 && entry.type === "string";
+			return leafUnderArray(entry, arrayPath, env) && entry.type === "string";
 		})[0];
 		if (leaf) {
-			var relative = String(leaf.path).substring(arrayPath.length + 1);
+			var relative = relativeItemPath(leaf.path, arrayPath, env);
 			hints.sort = "const sorted = list.sort({ items, by: " + env.flowScriptPath("current", relative) + ", direction: \"asc\" });";
 		}
 		hints.returnObject = "return { items, count: items.length };";

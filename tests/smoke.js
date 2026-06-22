@@ -799,6 +799,17 @@ assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
 assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
 	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
 	"propertyEditor did not expose generic type editor host API");
+assertTrue(propertyEditorCompactHtml.indexOf("enrichRequestPayload(name,payload)") !== -1 &&
+	propertyEditorCompactHtml.indexOf("activeRequestProperty()") !== -1 &&
+	propertyEditorCompactHtml.indexOf("flowNodePath(state.virtualPath)") !== -1,
+	"propertyEditor did not pass the selected property and node path to embedded editor context requests");
+assertTrue(propertyEditorCompactHtml.indexOf("typeEditorState(source)") !== -1 &&
+	propertyEditorCompactHtml.indexOf("editor.setState(typeEditorState(state))") !== -1 &&
+	propertyEditorCompactHtml.indexOf("editor.setState(typeEditorState(pickerEditorState(prop)))") !== -1,
+	"propertyEditor did not refresh embedded editor context before setting webcomponent state");
+assertTrue(propertyEditorCompactHtml.indexOf("stateDefinition()") !== -1 &&
+	propertyEditorCompactHtml.indexOf("itemCurrentContext(next.context,next)") !== -1,
+	"propertyEditor did not normalize string definitions or derive item current context for picker editors");
 assertTrue(propertyEditor.html.indexOf("data-picker-property-button") !== -1 &&
 	propertyEditor.html.indexOf("data-picker-editor") !== -1 &&
 	propertyEditor.html.indexOf("data-apply-picked") !== -1 &&
@@ -810,6 +821,14 @@ assertTrue(propertyEditorCompactHtml.indexOf("target&&hasTypeEditor(pickerKind(t
 assertTrue(propertyEditor.html.indexOf("details.scopeGroup") !== -1 &&
 	propertyEditor.html.indexOf("acceptsPath(propertyDefinition, entry)") !== -1,
 	"template/value editors did not expose collapsible filtered picker groups");
+assertTrue(propertyEditor.html.indexOf("syncSimpleExpression") !== -1 &&
+	propertyEditor.html.indexOf("pathMatches(value, context)") !== -1 &&
+	propertyEditor.html.indexOf("replaceSimpleSelection(path)") !== -1 &&
+	propertyEditor.html.indexOf("data-action=\"nullish\"") !== -1 &&
+	propertyEditorCompactHtml.indexOf("insertNullishFallback()") !== -1 &&
+	propertyEditor.html.indexOf("data-simple=\"expression\"") !== -1 &&
+	propertyEditor.html.indexOf("path.imported") !== -1,
+	"expression editor did not expose segmented Simple editing with imported path highlights");
 assertTrue(propertyEditor.html.indexOf("data-picker-format") === -1,
 	"propertyEditor still exposes the confusing path/template picker format selector");
 print(engine.analyze(JSON.stringify({ flowSource: flowSource })));
@@ -836,6 +855,50 @@ var simpleOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSou
 assertTrue(simpleOutputSchema.schema.properties.cities.type === "array" &&
 	simpleOutputSchema.schema.properties.cities.items.type === "string",
 	"Flow output schema did not infer pushed array item type from current");
+var pickerArrayFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: initPeople",
+	"    block: set",
+	"    path: local.people",
+	"    value:",
+	"      - name: Ada",
+	"        age: 36",
+	"        city: Paris",
+	"      - name: Grace",
+	"        age: 40",
+	"        city: London",
+	"  - id: filterAdults",
+	"    block: list.filter",
+	"    items: local.people",
+	"    where: current.age >= 18",
+	"    out: local.adults",
+	""
+].join("\n");
+var pickerArrayContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: pickerArrayFlowSource,
+	node: "filterAdults",
+	include: ["local"],
+	detail: "normal"
+})));
+assertTrue(pickerArrayContext.scopes.local.paths.some(function (entry) {
+	return entry.path === "local.people[0].name" && entry.type === "string";
+}), "Flow context did not expose object item fields below an array with bracket notation");
+assertTrue(!pickerArrayContext.scopes.local.paths.some(function (entry) {
+	return entry.path === "local.people.name" || entry.path === "local.people.[0].name";
+}), "Flow context exposed an impossible or malformed field path below an array");
+var pickerArrayCurrentContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: pickerArrayFlowSource,
+	path: "nodes[1]",
+	property: "where",
+	include: ["current"],
+	detail: "normal"
+})));
+assertTrue(pickerArrayCurrentContext.scopes.current.paths.some(function (entry) {
+	return entry.path === "current.age" && entry.type === "integer";
+}) && pickerArrayCurrentContext.scopes.current.paths.some(function (entry) {
+	return entry.path === "current.name" && entry.type === "string";
+}), "Flow context did not expose current item fields for an item-scoped expression property");
 var mutatedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 	target: "flow",
 	flowSource: flowSource,
@@ -1122,8 +1185,10 @@ var learnedContext = JSON.parse(engine.context(JSON.stringify({
 	detail: "compact"
 })));
 print(JSON.stringify(learnedContext));
-assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles.city") !== -1,
-	"Flow context did not expose learned HTTP JSON schema paths");
+assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles[0].city") !== -1,
+	"Flow context did not expose learned HTTP JSON item schema paths");
+assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles.city") === -1,
+	"Flow context exposed an impossible direct field below an array schema");
 assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles") !== -1,
 	"Flow context did not expose learned array schema path");
 var learnedLoopContext = JSON.parse(engine.context(JSON.stringify({
@@ -1251,9 +1316,43 @@ var listSchemaPropagationFlowSource = [
 ].join("\n");
 var listSchemaAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
 print(JSON.stringify(listSchemaAnalysis));
+function analysisNode(analysis, id) {
+	for (var i = 0; i < (analysis.nodes || []).length; i++) {
+		if (analysis.nodes[i].id === id) {
+			return analysis.nodes[i];
+		}
+	}
+	return null;
+}
+function nodeOutput(node, path) {
+	for (var i = 0; i < (node && node.outputs || []).length; i++) {
+		if (node.outputs[i].path === path) {
+			return node.outputs[i];
+		}
+	}
+	return null;
+}
+function schemaLeaf(output, path) {
+	var leaves = output && output.schema && output.schema.leafPaths || [];
+	for (var i = 0; i < leaves.length; i++) {
+		if (leaves[i].path === path) {
+			return leaves[i];
+		}
+	}
+	return null;
+}
 assertTrue(listSchemaAnalysis.schemas["local.sortedAdults"].items.properties.name.type === "string" &&
 	listSchemaAnalysis.schemas["local.sortedAdults"].items.properties.age.type === "integer",
 	"list.filter/list.sort/list.search did not preserve array item schemas");
+var filterAdultAgeOutput = schemaLeaf(nodeOutput(analysisNode(listSchemaAnalysis, "filterAdults"), "local.adults"), "[0].age");
+var mapNameOutput = schemaLeaf(nodeOutput(analysisNode(listSchemaAnalysis, "mapNames"), "result.names"), "[0]");
+var pluckAgeOutput = schemaLeaf(nodeOutput(analysisNode(listSchemaAnalysis, "pluckAges"), "result.ages"), "[0]");
+assertTrue(filterAdultAgeOutput && filterAdultAgeOutput.type === "integer",
+	"list.filter node output schema still exposes the item as unknown");
+assertTrue(mapNameOutput && mapNameOutput.type === "string",
+	"list.map node output schema still exposes the mapped item as unknown");
+assertTrue(pluckAgeOutput && pluckAgeOutput.type === "integer",
+	"list.pluck node output schema still exposes the plucked item as unknown");
 var listSchemaOutput = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
 print(JSON.stringify(listSchemaOutput));
 assertTrue(listSchemaOutput.schema.properties.names.type === "array" &&
@@ -1265,6 +1364,72 @@ assertTrue(listSchemaOutput.schema.properties.ages.type === "array" &&
 assertTrue(listSchemaOutput.schema.properties.sorted.type === "array" &&
 	listSchemaOutput.schema.properties.sorted.items.properties.city.type === "string",
 	"set did not reuse the propagated list schema for result output");
+
+var configUsePickerFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: sourcePeople",
+	"    block: set",
+	"    path: local.people",
+	"    value:",
+	"      - name: Ada",
+	"        age: 36",
+	"        city: London",
+	"      - name: Grace",
+	"        age: 40",
+	"        city: Arlington",
+	"  - id: adultConfig",
+	"    block: config.use",
+	"    overrides:",
+	"      adult:",
+	"        age: 18",
+	"    then:",
+	"      - id: filterAdults",
+	"        block: list.filter",
+	"        items: local.people",
+	"        where: current.age >= config.adult.age",
+	"        out: local.adults",
+	"      - id: copyAdults",
+	"        block: set",
+	"        path: result.adults",
+	"        value: \"{{ local.adults }}\"",
+	""
+].join("\n");
+var configUsePickerAnalysis = JSON.parse(engine.analyze(JSON.stringify({
+	flowSource: configUsePickerFlowSource
+})));
+print(JSON.stringify(configUsePickerAnalysis));
+assertTrue(configUsePickerAnalysis.writes.indexOf("local.adults") !== -1 &&
+	configUsePickerAnalysis.writes.indexOf("result.adults") !== -1,
+	"config.use analysis did not visit nodes in the then slot");
+assertTrue(configUsePickerAnalysis.schemas["result.adults"].items.properties.age.type === "integer",
+	"config.use analysis did not preserve list output schema from the then slot");
+var configUsePickerContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: configUsePickerFlowSource,
+	node: "filterAdults",
+	property: "where",
+	include: ["config", "current"],
+	detail: "normal"
+})));
+print(JSON.stringify(configUsePickerContext));
+function contextEntries(context, scope) {
+	return context.scopes && context.scopes[scope] && context.scopes[scope].paths || [];
+}
+function contextEntry(context, scope, path) {
+	var entries = contextEntries(context, scope);
+	for (var i = 0; i < entries.length; i++) {
+		if (entries[i].path === path) {
+			return entries[i];
+		}
+	}
+	return null;
+}
+var adultAgeEntry = contextEntry(configUsePickerContext, "config", "config.adult.age");
+var currentAgeEntry = contextEntry(configUsePickerContext, "current", "current.age");
+assertTrue(adultAgeEntry && adultAgeEntry.type === "integer",
+	"config.use context did not expose typed config.adult.age to expression picker");
+assertTrue(currentAgeEntry && currentAgeEntry.type === "integer",
+	"list.filter context did not expose typed current.age to expression picker");
 
 var standardDataFlowSource = [
 	"version: 1",

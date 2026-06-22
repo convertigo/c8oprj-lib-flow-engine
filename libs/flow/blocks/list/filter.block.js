@@ -29,6 +29,8 @@ const _meta = {
       "label": "Keep when",
       "kind": "expression",
       "type": "boolean",
+      "current": "item",
+      "sourceProperty": "items",
       "default": "true",
       "description": "Boolean expression evaluated for each item. Use current to read the item, for example current.phase == \"Running\" or current.name.includes(\"api\")."
     },

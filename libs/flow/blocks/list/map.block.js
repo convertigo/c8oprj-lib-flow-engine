@@ -30,6 +30,8 @@ const _meta = {
       "label": "Select value",
       "kind": "expression",
       "type": "unknown",
+      "current": "item",
+      "sourceProperty": "items",
       "default": "current",
       "description": "Expression evaluated for each item. Use current to read the item, for example current.name to extract pod names."
     },

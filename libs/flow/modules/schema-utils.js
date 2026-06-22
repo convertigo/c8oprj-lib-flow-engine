@@ -17,6 +17,11 @@
 		return base + "." + leaf;
 	}
 
+	function arrayItemPath(prefix) {
+		prefix = String(prefix || "");
+		return prefix ? prefix + "[0]" : "[0]";
+	}
+
 	function valueType(value) {
 		if (value === null || value === undefined) {
 			return "null";
@@ -137,7 +142,7 @@
 		if (schema && typeof schema === "object" && schema.type === "array") {
 			var arrayOut = prefix ? [prefix] : [];
 			if (schema.items) {
-				paths(schema.items, prefix, env).forEach(function (path) {
+				paths(schema.items, arrayItemPath(prefix), env).forEach(function (path) {
 					addUnique(arrayOut, path);
 				});
 			}
@@ -195,7 +200,7 @@
 				addUnique(out, prefix);
 			}
 			if (schema.items) {
-				arrayPaths(schema.items, prefix, env).forEach(function (path) {
+				arrayPaths(schema.items, arrayItemPath(prefix), env).forEach(function (path) {
 					addUnique(out, path);
 				});
 			}
@@ -223,7 +228,7 @@
 			return prefix ? [{ path: prefix, type: simpleType(schema, env) }] : [];
 		}
 		if (schema.type === "array") {
-			return schema.items ? leafEntries(schema.items, prefix, env) : [];
+			return schema.items ? leafEntries(schema.items, arrayItemPath(prefix), env) : [];
 		}
 		if (isLeaf(schema)) {
 			return prefix ? [{ path: prefix, type: simpleType(schema, env) }] : [];

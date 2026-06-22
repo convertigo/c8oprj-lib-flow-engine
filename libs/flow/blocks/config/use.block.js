@@ -31,6 +31,9 @@ const _meta = {
     "description": "Config branch override. Example: http: { timeout: 30000 }."
   },
   "runtime": "rhino",
+  "hooks": {
+    "file": "use.hooks.js"
+  },
   "children": [
     "then"
   ]

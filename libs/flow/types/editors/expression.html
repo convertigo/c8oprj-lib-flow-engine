@@ -2,29 +2,49 @@
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
 		.layout { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.9fr); gap: 10px; min-height: 360px; }
-		textarea { box-sizing: border-box; width: 100%; min-height: 210px; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
-		.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		textarea { min-height: 180px; resize: vertical; }
+		.modebar, .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+		.modebar button.active { background: #0d9ac2; border-color: #2bb8df; color: white; }
+		.simple { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
+		.simple label { display: block; margin: 0; }
+		.simpleLabel { display: block; margin-bottom: 3px; color: #9da7af; font-weight: 600; }
+		.hidden { display: none !important; }
 		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
 		button.secondary { background: #262c31; border-color: #4b555f; color: #d8e0e5; }
 		.picker { overflow: auto; max-height: 420px; border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
 		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
 		.path { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border-color: #39424a; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		.path:hover { border-color: #2786a8; color: white; }
+		.path.imported { border-color: #217f9c; background: #17313a; color: white; box-shadow: inset 3px 0 0 #51d5ef; font-weight: 700; }
+		.path.active { border-color: #2bb8df; background: #0d5268; color: white; box-shadow: inset 3px 0 0 #8eeaff; font-weight: 700; }
 		.type { color: #85c8ff; }
 		.status, .empty { color: #9da7af; margin-top: 6px; line-height: 1.35; }
 		.status.error { color: #ffb4a8; }
 	</style>
 	<div class="layout">
 		<div>
+			<div class="modebar">
+				<button data-mode="simple">Simple</button>
+				<button data-mode="custom">Custom</button>
+			</div>
 			<div class="toolbar">
-				<button class="secondary" data-insert=" ?? ">??</button>
+				<button class="secondary" data-action="nullish">??</button>
 				<button class="secondary" data-insert=" && ">&&</button>
 				<button class="secondary" data-insert=" || ">||</button>
 				<button class="secondary" data-insert=" >= ">&gt;=</button>
 				<button class="secondary" data-insert=" <= ">&lt;=</button>
 				<button class="secondary" data-insert=" ?  : ">?:</button>
 			</div>
-			<textarea part="input" spellcheck="false"></textarea>
+			<div class="simple" part="simple">
+				<label>
+					<span class="simpleLabel">Expression</span>
+					<input data-simple="expression">
+				</label>
+			</div>
+			<div class="custom" part="custom">
+				<textarea part="input" spellcheck="false"></textarea>
+			</div>
 			<div class="status" part="status"></div>
 		</div>
 		<div class="picker" part="picker"></div>
@@ -53,14 +73,100 @@
 			});
 		}
 
-		function renderPicker(context) {
+		function pathOf(entry) {
+			return typeof entry === "string" ? entry : entry && entry.path || "";
+		}
+
+		function knownPaths(context) {
+			var paths = [];
+			groups(context).forEach(function (group) {
+				(group.paths || []).forEach(function (entry) {
+					var path = pathOf(entry);
+					if (path) {
+						paths.push(String(path));
+					}
+				});
+			});
+			return paths;
+		}
+
+		function isPathChar(value) {
+			return /^[A-Za-z0-9_$.\[\]]$/.test(value || "");
+		}
+
+		function pathBoundary(value, start, end) {
+			var before = start <= 0 ? "" : value.charAt(start - 1);
+			var after = end >= value.length ? "" : value.charAt(end);
+			return !isPathChar(before) && !isPathChar(after);
+		}
+
+		function overlapsAny(matches, start, end) {
+			return matches.some(function (match) {
+				return start < match.end && end > match.start;
+			});
+		}
+
+		function pathMatches(value, context) {
+			value = String(value || "");
+			var matches = [];
+			knownPaths(context)
+				.sort(function (a, b) {
+					return b.length - a.length;
+				})
+				.forEach(function (path) {
+					var index = value.indexOf(path);
+					while (index >= 0) {
+						var end = index + path.length;
+						if (pathBoundary(value, index, end) && !overlapsAny(matches, index, end)) {
+							matches.push({ path: path, start: index, end: end });
+						}
+						index = value.indexOf(path, index + 1);
+					}
+				});
+			return matches.sort(function (a, b) {
+				return a.start - b.start;
+			});
+		}
+
+		function pathSet(matches) {
+			var out = {};
+			(matches || []).forEach(function (match) {
+				out[match.path] = true;
+			});
+			return out;
+		}
+
+		function pathAtSelection(value, context, selection) {
+			var start = selection && typeof selection.start === "number" ? selection.start : 0;
+			var end = selection && typeof selection.end === "number" ? selection.end : start;
+			var matches = pathMatches(value, context);
+			for (var i = 0; i < matches.length; i++) {
+				var match = matches[i];
+				if (start === end && start >= match.start && start <= match.end) {
+					return match;
+				}
+				if (start < match.end && end > match.start) {
+					return match;
+				}
+			}
+			return null;
+		}
+
+		function canUseSimpleExpression(value) {
+			value = String(value || "");
+			return value.indexOf("\n") === -1 && value.length <= 200;
+		}
+
+		function renderPicker(context, importedPaths, activePath) {
 			var html = "";
 			groups(context).forEach(function (group) {
 				html += "<div class=\"group\">" + esc(group.scope) + "</div>";
 				(group.paths || []).forEach(function (entry) {
-					var path = typeof entry === "string" ? entry : entry.path;
+					var path = pathOf(entry);
 					var type = typeof entry === "string" ? "" : entry.type || "";
-					html += "<button class=\"path\" data-path=\"" + esc(path) + "\">" + esc(path)
+					var imported = !!(importedPaths && importedPaths[path]);
+					var active = String(path) === String(activePath || "");
+					html += "<button class=\"path" + (imported ? " imported" : "") + (active ? " active" : "") + "\" data-path=\"" + esc(path) + "\">" + esc(path)
 						+ (type ? " <span class=\"type\">" + esc(type) + "</span>" : "") + "</button>";
 				});
 			});
@@ -72,6 +178,8 @@
 				super();
 				this._state = {};
 				this._value = "";
+				this._mode = "custom";
+				this._simpleSelection = { start: 0, end: 0 };
 			}
 
 			connectedCallback() {
@@ -80,6 +188,10 @@
 						.append(document.getElementById("flow-expression-editor-template").content.cloneNode(true));
 					this.shadowRoot.addEventListener("input", this);
 					this.shadowRoot.addEventListener("click", this);
+					this.shadowRoot.addEventListener("keyup", this);
+					this.shadowRoot.addEventListener("mouseup", this);
+					this.shadowRoot.addEventListener("select", this);
+					this.shadowRoot.addEventListener("focusin", this);
 				}
 				this.render();
 			}
@@ -93,6 +205,8 @@
 					}
 				}
 				this._value = this._state.value == null ? "" : String(this._state.value);
+				this._mode = canUseSimpleExpression(this._value) ? "simple" : "custom";
+				this._simpleSelection = { start: this._value.length, end: this._value.length };
 				this.render();
 				this.emit();
 			}
@@ -102,27 +216,143 @@
 			}
 
 			handleEvent(event) {
-				if (event.type === "input" && event.target && event.target.matches("textarea")) {
-					this._value = event.target.value;
-					this.validate();
-					this.emit();
+				if (event.target && event.target.matches && event.target.matches("[data-simple=expression]")) {
+					this.captureSimpleSelection();
+				}
+				if (event.type === "input") {
+					if (event.target && event.target.matches("[data-simple]")) {
+						this.syncSimpleExpression();
+					} else if (event.target && event.target.matches("textarea")) {
+						this._value = event.target.value;
+						this.validate();
+						this.emit();
+					}
 					return;
 				}
 				if (event.type === "click") {
+					var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
+					if (mode) {
+						this._mode = mode;
+						this.render();
+						return;
+					}
+					var action = event.target && event.target.getAttribute && event.target.getAttribute("data-action");
+					if (action === "nullish") {
+						this.insertNullishFallback();
+						return;
+					}
 					var insert = event.target && event.target.getAttribute && event.target.getAttribute("data-insert");
 					if (insert !== null && insert !== undefined) {
-						this.insert(insert);
+						this.insertText(insert);
 						return;
 					}
 					var button = event.target && event.target.closest && event.target.closest("button[data-path]");
 					if (button) {
-						this.insert(button.getAttribute("data-path") || "");
+						this.pick(button.getAttribute("data-path") || "");
+					}
+					return;
+				}
+				if (["keyup", "mouseup", "select", "focusin"].indexOf(event.type) >= 0) {
+					if (event.target && event.target.matches && event.target.matches("[data-simple=expression]")) {
+						this.render();
 					}
 				}
 			}
 
+			captureSimpleSelection() {
+				var input = this.shadowRoot && this.shadowRoot.querySelector("[data-simple=expression]");
+				if (!input) {
+					return this._simpleSelection || { start: 0, end: 0 };
+				}
+				this._simpleSelection = {
+					start: input.selectionStart || 0,
+					end: input.selectionEnd == null ? input.selectionStart || 0 : input.selectionEnd
+				};
+				return this._simpleSelection;
+			}
+
+			syncSimpleExpression() {
+				var input = this.shadowRoot.querySelector("[data-simple=expression]");
+				var expression = input ? input.value : "";
+				this._value = expression.trim() === "" ? "" : expression;
+				this.captureSimpleSelection();
+				this.validate();
+				this.emit();
+			}
+
+			pick(path) {
+				if (this._mode === "simple") {
+					this.replaceSimpleSelection(path);
+					return;
+				}
+				this.insert(path);
+			}
+
+			insertText(text) {
+				if (this._mode === "simple") {
+					this.replaceSimpleSelection(text, true);
+					return;
+				}
+				this.insert(text);
+			}
+
+			insertNullishFallback() {
+				if (this._mode !== "simple") {
+					this.insertText(" ?? ");
+					return;
+				}
+				var input = this.shadowRoot.querySelector("[data-simple=expression]");
+				var value = input ? input.value : this._value;
+				var selection = this.captureSimpleSelection();
+				var segment = pathAtSelection(value, this._state.context, selection);
+				var start = segment ? segment.start : selection.start;
+				var end = segment ? segment.end : selection.end;
+				if (start === end) {
+					this.replaceSimpleSelection(" ?? ", true);
+					return;
+				}
+				var target = value.slice(start, end).trim();
+				if (!target) {
+					this.replaceSimpleSelection(" ?? ", true);
+					return;
+				}
+				var replacement = "(" + target + " ?? )";
+				this._value = value.slice(0, start) + replacement + value.slice(end);
+				var caret = start + replacement.length - 1;
+				this._simpleSelection = { start: caret, end: caret };
+				this.render();
+				input = this.shadowRoot.querySelector("[data-simple=expression]");
+				if (input) {
+					input.focus();
+					input.selectionStart = input.selectionEnd = caret;
+				}
+				this.emit();
+			}
+
+			replaceSimpleSelection(path, forceInsert) {
+				var input = this.shadowRoot.querySelector("[data-simple=expression]");
+				var value = input ? input.value : this._value;
+				var selection = this.captureSimpleSelection();
+				var segment = forceInsert ? null : pathAtSelection(value, this._state.context, selection);
+				var start = segment ? segment.start : selection.start;
+				var end = segment ? segment.end : selection.end;
+				this._value = value.slice(0, start) + path + value.slice(end);
+				var caret = start + String(path).length;
+				this._simpleSelection = { start: caret, end: caret };
+				this.render();
+				input = this.shadowRoot.querySelector("[data-simple=expression]");
+				if (input) {
+					input.focus();
+					input.selectionStart = input.selectionEnd = caret;
+				}
+				this.emit();
+			}
+
 			insert(text) {
 				var textarea = this.shadowRoot.querySelector("textarea");
+				if (!textarea) {
+					return;
+				}
 				var start = textarea.selectionStart || 0;
 				var end = textarea.selectionEnd || start;
 				this._value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
@@ -164,13 +394,37 @@
 				if (!this.shadowRoot) {
 					return;
 				}
+				var matches = pathMatches(this._value, this._state.context);
+				var imported = pathSet(matches);
+				var active = pathAtSelection(this._value, this._state.context, this._simpleSelection);
+				var simple = this.shadowRoot.querySelector(".simple");
+				var custom = this.shadowRoot.querySelector(".custom");
 				var textarea = this.shadowRoot.querySelector("textarea");
+				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) {
+					button.classList.toggle("active", button.getAttribute("data-mode") === this._mode);
+				}, this);
+				if (simple) {
+					simple.classList.toggle("hidden", this._mode !== "simple");
+				}
+				if (custom) {
+					custom.classList.toggle("hidden", this._mode === "simple");
+				}
 				if (textarea && textarea.value !== this.value) {
 					textarea.value = this.value;
 				}
+				var simpleInput = this.shadowRoot.querySelector("[data-simple=expression]");
+				if (simpleInput && simpleInput.value !== this.value) {
+					simpleInput.value = this.value;
+				}
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
-					picker.innerHTML = renderPicker(this._state.context);
+					picker.innerHTML = renderPicker(this._state.context, imported, active && active.path);
+					var selected = picker.querySelector(".path.active") || picker.querySelector(".path.imported");
+					if (selected) {
+						setTimeout(function () {
+							selected.scrollIntoView({ block: "center", inline: "nearest" });
+						}, 0);
+					}
 				}
 				this.validate();
 			}

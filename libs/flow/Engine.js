@@ -2778,6 +2778,7 @@
 			schemaPaths: schemaPaths,
 			schemaArrayPaths: schemaArrayPaths,
 			schemaLeafEntries: schemaLeafEntries,
+			objectPathParts: objectPathParts,
 			flowScriptPath: scopePathUtils().flowScriptPath,
 			currentProjectName: currentProjectName,
 			flowCodeError: flowCodeError,
