@@ -243,6 +243,10 @@ helpers such as `ctx.addSameSchema`, `ctx.addArraySchema`,
 `outputs[].schema`, so `Engine.analyze`, picker context and
 `Engine.outputSchema` stay consistent. For item expressions, set property
 metadata `current: "item"` and `sourceProperty: "items"`.
+When a block has child slots and must expose an output schema to picker context
+without recursively analyzing those children, put `analyzeShallow(ctx, node)` in
+the hooks file. Use it for structural blocks such as `json.object` that can
+publish their own `out` schema from direct child metadata.
 
 The block id comes from the file path: `libs/flow/blocks/demo/decorate.block.js`
 is `demo.decorate`. Legacy `*.block.yaml` descriptors were migration artifacts

@@ -5,7 +5,7 @@
 			env.raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid block implementation: " + name,
 				null, "A Rhino .block.js implementation must evaluate to an object with run(ctx, node).");
 		}
-		["catalog", "name", "private", "displayName", "analyze"].forEach(function (key) {
+		["catalog", "name", "private", "displayName", "analyze", "analyzeShallow"].forEach(function (key) {
 			if (block[key] !== undefined) {
 				env.raise("INVALID_BLOCK_IMPLEMENTATION", "Rhino implementation must not define " + key + ": " + name,
 					null, "Move static metadata to _meta in *.block.js and dynamic display/analyze code to hooks.file.");
@@ -59,7 +59,7 @@
 		var hooks = eval(String(source || ""));
 		if (!hooks || typeof hooks !== "object") {
 			env.raise("INVALID_BLOCK_HOOKS", "Invalid block hooks: " + name,
-				null, "A hooks script must evaluate to an object, usually with displayName(node) and/or analyze(ctx, node).");
+				null, "A hooks script must evaluate to an object, usually with displayName(node), analyze(ctx, node), and/or analyzeShallow(ctx, node).");
 		}
 		return hooks;
 	}

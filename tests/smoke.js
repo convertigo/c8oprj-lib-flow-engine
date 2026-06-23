@@ -587,6 +587,53 @@ assertTrue(flowBackedBlockGet.implementationRuntime === "flow" &&
 	flowBackedBlockGet.code.indexOf("function flowBacked") !== -1 &&
 	flowBackedBlockGet.implementationSource.indexOf("block: \"return\"") !== -1,
 	"blockGet did not expose Flow implementation source");
+var declaredResponseBlockSource = [
+	"const _meta = {",
+	"\t\"description\": \"FlowScript block with a declared returned response schema.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": {",
+	"\t\t\t\"type\": \"object\",",
+	"\t\t\t\"properties\": {",
+	"\t\t\t\t\"ok\": { \"type\": \"boolean\" },",
+	"\t\t\t\t\"events\": {",
+	"\t\t\t\t\t\"type\": \"array\",",
+	"\t\t\t\t\t\"items\": {",
+	"\t\t\t\t\t\t\"type\": \"object\",",
+	"\t\t\t\t\t\t\"properties\": {",
+	"\t\t\t\t\t\t\t\"type\": { \"type\": \"string\" }",
+	"\t\t\t\t\t\t}",
+	"\t\t\t\t\t}",
+	"\t\t\t\t}",
+	"\t\t\t}",
+	"\t\t}",
+	"\t}",
+	"}",
+	"",
+	"function declaredResponse({ input, result }) {",
+	"\tvar response = json.object({ id: \"response\" }) {",
+	"\t\tjson.field({ id: \"ok\", key: \"ok\", value: input.ok })",
+	"\t\tjson.field({ id: \"events\", key: \"events\", value: input.events })",
+	"\t}",
+	"\treturn response",
+	"}",
+	""
+].join("\n");
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.declaredResponse",
+	code: declaredResponseBlockSource
+}))).ok === true, "blockCodeSet did not create declaredResponse");
+var declaredResponseContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: declaredResponseBlockSource,
+	sourceBlockName: "smoke.declaredResponse",
+	node: "returnValue",
+	include: ["local"],
+	detail: "normal"
+})));
+assertTrue(declaredResponseContext.scopes.local.paths.some(function (entry) {
+	return entry.path === "local.response.events[0].type" && entry.type === "string";
+}), "Flow block context did not apply the declared public output schema to the returned local value");
 var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
 		"version: 1",
@@ -1032,6 +1079,45 @@ assertTrue(pickerArrayCurrentContext.scopes.current.paths.some(function (entry) 
 }) && pickerArrayCurrentContext.scopes.current.paths.some(function (entry) {
 	return entry.path === "current.name" && entry.type === "string";
 }), "Flow context did not expose current item fields for an item-scoped expression property");
+var pickerJsonObjectFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: initSource",
+	"    block: set",
+	"    path: local.source",
+	"    value:",
+	"      name: Ada",
+	"      count: 3",
+	"  - id: buildResponse",
+	"    block: json.object",
+	"    out: local.response",
+	"    fields:",
+	"      - id: name",
+	"        block: json.field",
+	"        key: name",
+	"        value: \"{{ local.source.name }}\"",
+	"      - id: count",
+	"        block: json.field",
+	"        key: count",
+	"        value: \"{{ local.source.count }}\"",
+	"  - id: done",
+	"    block: return",
+	"    value: \"{{ local.response }}\"",
+	""
+].join("\n");
+var pickerJsonObjectContext = JSON.parse(engine.context(JSON.stringify({
+	flowSource: pickerJsonObjectFlowSource,
+	node: "done",
+	include: ["local"],
+	detail: "normal"
+})));
+assertTrue(pickerJsonObjectContext.scopes.local.paths.some(function (entry) {
+	return entry.path === "local.response" && entry.type === "object";
+}) && pickerJsonObjectContext.scopes.local.paths.some(function (entry) {
+	return entry.path === "local.response.name" && entry.type === "string";
+}) && pickerJsonObjectContext.scopes.local.paths.some(function (entry) {
+	return entry.path === "local.response.count" && entry.type === "integer";
+}), "Flow context did not expose json.object output schema before a return node");
 var mutatedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 	target: "flow",
 	flowSource: flowSource,

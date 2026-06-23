@@ -6,15 +6,18 @@
 	function fieldSchema(ctx, node) {
 		var fieldProps = props(node);
 		if (fieldProps.value !== undefined && ctx.schemaForValue) {
-			return ctx.schemaForValue(fieldProps.value);
+			return ctx.schemaForValue(fieldProps.value) || { type: "unknown" };
 		}
 		return null;
 	}
 
-	function objectSchema(ctx, fields) {
+	function addObjectSchema(ctx, node) {
+		if (!node || !node.out || !ctx.addSchema) {
+			return;
+		}
 		var properties = {};
 		var hasProperties = false;
-		(fields || []).forEach(function (field) {
+		(node.fields || []).forEach(function (field) {
 			if (!field || field.block !== "json.field") {
 				return;
 			}
@@ -29,10 +32,12 @@
 				hasProperties = true;
 			}
 		});
-		return hasProperties ? {
-			type: "object",
-			properties: properties
-		} : null;
+		if (hasProperties) {
+			ctx.addSchema(node.out, {
+				type: "object",
+				properties: properties
+			});
+		}
 	}
 
 	return {
@@ -43,14 +48,16 @@
 		analyze: function (ctx, node) {
 			if (node && node.out) {
 				ctx.addPath(node.out);
-				if (ctx.addSchema) {
-					var schema = objectSchema(ctx, node.fields || []);
-					if (schema) {
-						ctx.addSchema(node.out, schema);
-					}
-				}
+				addObjectSchema(ctx, node);
 			}
 			ctx.visitNodes(node.fields || []);
+		},
+
+		analyzeShallow: function (ctx, node) {
+			if (node && node.out) {
+				ctx.addPath(node.out);
+				addObjectSchema(ctx, node);
+			}
 		}
 	};
 }())

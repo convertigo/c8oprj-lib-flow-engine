@@ -221,6 +221,11 @@ example for integration adapters, but it must not assume Node.js APIs such as
 returning `run`, and optional dynamic display/analysis code belongs in
 `hooks.file`. Rhino implementations defining `catalog()`, `displayName()` or
 `analyze()` directly are rejected.
+Hooks may also expose `analyzeShallow(ctx, node)` for blocks with child slots
+that need to publish output schemas to picker context without recursively
+analyzing their children. This is useful for structural blocks such as
+`json.object`, where the object shape can be derived from direct child field
+metadata.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
 first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,

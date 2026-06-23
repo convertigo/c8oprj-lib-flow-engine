@@ -62,7 +62,7 @@
 		}
 		var scriptFile = blockImplementationFile(definition, file, implementation);
 		var script = loadBlockScript(scriptFile, "block implementation");
-		["catalog", "name", "private", "displayName", "analyze"].forEach(function (key) {
+		["catalog", "name", "private", "displayName", "analyze", "analyzeShallow"].forEach(function (key) {
 			if (script[key] !== undefined) {
 				raise("INVALID_BLOCK_IMPLEMENTATION", "Block runtime implementation must not define " + key + ": " + scriptFile.getAbsolutePath(),
 					null, "Move static metadata to _meta in *.block.js and dynamic display/analyze code to hooks.file.");
@@ -293,6 +293,12 @@
 				} else if (runtime === "flow") {
 					ctx.visitNodes(block.__graphDefinition.nodes || []);
 				}
+			},
+			analyzeShallow: function (ctx, node) {
+				if (typeof hooks.analyzeShallow === "function") {
+					return hooks.analyzeShallow(ctx, node);
+				}
+				analyzeGraphBlockDescriptor(ctx, node, catalog);
 			},
 			run: function (ctx, node) {
 				if (rhino) {

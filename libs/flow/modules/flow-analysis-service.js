@@ -49,6 +49,9 @@
 		function createAnalysisContext(blocks, request, definition) {
 			request = request || {};
 			definition = definition || {};
+			var sourceBlockName = String(request.sourceBlockName || request.blockName || "").trim();
+			var sourceBlock = sourceBlockName ? blocks[sourceBlockName] : null;
+			var sourceCatalog = sourceBlock ? blockCatalog(sourceBlock) : null;
 			var ctx = {
 				request: request,
 				definition: definition,
@@ -65,7 +68,8 @@
 				maxGraphBlockAnalysisDepth: intOption(request.maxGraphBlockAnalysisDepth, 32, 1, 200),
 				currentNodeInfo: null,
 				nodes: [],
-				errors: []
+				errors: [],
+				returnedPathSchemas: sourceCatalog ? returnPathSchemasForSourceBlock(definition, sourceCatalog) : {}
 			};
 			ctx.props = nodeProps;
 			ctx.addPath = function (path) {
@@ -108,7 +112,11 @@
 				if (typeof basePath !== "string" || basePath === "" || !schema) {
 					return;
 				}
-				ctx.schemas[basePath] = normalizeTree(schema);
+				var normalized = normalizeTree(schema);
+				if (ctx.returnedPathSchemas && ctx.returnedPathSchemas[basePath]) {
+					normalized = mergeGraphBlockSchema(normalized, ctx.returnedPathSchemas[basePath]) || normalized;
+				}
+				ctx.schemas[basePath] = normalized;
 				ctx.addPath(basePath);
 				if (ctx.currentNodeInfo) {
 					ctx.providers[basePath] = {
@@ -118,11 +126,11 @@
 					};
 					(ctx.currentNodeInfo.outputs || []).forEach(function (output) {
 						if (output && output.path === basePath) {
-							output.schema = schemaSummary(schema);
+							output.schema = schemaSummary(normalized);
 						}
 					});
 				}
-				schemaPaths(schema, "").forEach(function (path) {
+				schemaPaths(normalized, "").forEach(function (path) {
 					ctx.addPath(joinSchemaPath(basePath, path));
 				});
 			};
@@ -304,6 +312,39 @@
 				});
 				return out;
 			}
+			function directReturnedPath(value) {
+				if (typeof value !== "string") {
+					return "";
+				}
+				var expression = exactTemplateExpression(value) || String(value).trim();
+				var refs = collectExpressionRefs(expression, []);
+				return refs.length === 1 && expression === refs[0] ? refs[0] : "";
+			}
+			function returnPathSchemasForSourceBlock(definition, catalog) {
+				var schema = declaredPropertyOutputSchema(catalog, "out");
+				var out = {};
+				if (!schema) {
+					return out;
+				}
+				function visit(nodes) {
+					(nodes || []).forEach(function (node) {
+						if (!node) {
+							return;
+						}
+						if (blockName(node) === "return") {
+							var path = directReturnedPath(nodeProps(node).value);
+							if (path) {
+								out[path] = schema;
+							}
+						}
+						["nodes", "do", "then", "else", "fields"].forEach(function (slot) {
+							visit(node[slot] || []);
+						});
+					});
+				}
+				visit(definition.nodes || []);
+				return out;
+			}
 			function graphBlockResultSchema(snapshot) {
 				var schemas = {};
 				Object.keys(ctx.schemas || {}).forEach(function (path) {
@@ -476,10 +517,7 @@
 			ctx.requestableOutputSchema = request.allowRequestableSchema === false
 				? function () { return null; }
 				: requestableOutputSchema;
-			var sourceBlockName = String(request.sourceBlockName || request.blockName || "").trim();
-			var sourceBlock = sourceBlockName ? blocks[sourceBlockName] : null;
 			if (sourceBlock) {
-				var sourceCatalog = blockCatalog(sourceBlock);
 				ctx.addPath("input");
 				Object.keys(sourceCatalog.props || {}).forEach(function (key) {
 					var descriptor = sourceCatalog.props[key] || {};
@@ -787,7 +825,9 @@
 				info.inputs = effects.inputs;
 				info.outputs = effects.outputs;
 				ctx.nodes.push(info);
-				if (!hasChildSlots(catalog) && typeof block.analyze === "function") {
+				if (hasChildSlots(catalog) && typeof block.analyzeShallow === "function") {
+					block.analyzeShallow(ctx, node);
+				} else if (!hasChildSlots(catalog) && typeof block.analyze === "function") {
 					block.analyze(ctx, node);
 				}
 			} finally {
