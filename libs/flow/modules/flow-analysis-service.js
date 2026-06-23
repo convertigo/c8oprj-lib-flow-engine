@@ -267,6 +267,113 @@
 					}
 				}
 			};
+			function cloneMap(map) {
+				var out = {};
+				Object.keys(map || {}).forEach(function (key) {
+					out[key] = map[key];
+				});
+				return out;
+			}
+			function restoreMap(target, snapshot) {
+				Object.keys(target || {}).forEach(function (key) {
+					delete target[key];
+				});
+				Object.keys(snapshot || {}).forEach(function (key) {
+					target[key] = snapshot[key];
+				});
+			}
+			function restoreArray(target, snapshot) {
+				target.length = 0;
+				(snapshot || []).forEach(function (value) {
+					target.push(value);
+				});
+			}
+			function graphBlockOutputPaths(node, catalog) {
+				var props = nodeProps(node);
+				var out = [];
+				Object.keys(props || {}).forEach(function (key) {
+					var descriptor = catalog && catalog.props && catalog.props[key] || {};
+					var kind = descriptor.kind || "";
+					var mode = descriptor.mode || "";
+					if (kind === "path" && mode === "write" || key === "out" && declaredPropertyOutputSchema(catalog, key)) {
+						var value = props[key];
+						if (typeof value === "string" && value !== "") {
+							out.push(value);
+						}
+					}
+				});
+				return out;
+			}
+			function graphBlockResultSchema(snapshot) {
+				var schemas = {};
+				Object.keys(ctx.schemas || {}).forEach(function (path) {
+					if (pathExtends(path, "result")) {
+						schemas[path] = ctx.schemas[path];
+					}
+				});
+				var writes = (ctx.writes || []).filter(function (path) {
+					return pathExtends(path, "result");
+				});
+				var returnSchemas = (ctx.returnSchemas || []).slice((snapshot.returnSchemas || []).length);
+				return resultSchemaFromAnalysis({
+					schemas: schemas,
+					writes: writes,
+					returnSchemas: returnSchemas
+				});
+			}
+			function schemaTypeName(schema) {
+				if (schema && typeof schema === "object" && schema.type) {
+					return String(schema.type);
+				}
+				return typeof schema === "string" ? schema : "";
+			}
+			function mergeGraphBlockSchema(existing, inferred) {
+				if (!existing) {
+					return inferred;
+				}
+				if (!inferred) {
+					return existing;
+				}
+				existing = normalizeTree(existing);
+				inferred = normalizeTree(inferred);
+				var existingType = schemaTypeName(existing);
+				var inferredType = schemaTypeName(inferred);
+				if (existingType === "unknown") {
+					return inferred;
+				}
+				if (inferredType === "unknown") {
+					return existing;
+				}
+				if (existingType && inferredType && existingType !== inferredType) {
+					return existing;
+				}
+				if ((existingType === "object" || existing.properties) && (inferredType === "object" || inferred.properties)) {
+					var properties = {};
+					Object.keys(existing.properties || {}).forEach(function (key) {
+						properties[key] = existing.properties[key];
+					});
+					Object.keys(inferred.properties || {}).forEach(function (key) {
+						properties[key] = mergeGraphBlockSchema(properties[key], inferred.properties[key]);
+					});
+					return { type: "object", properties: properties };
+				}
+				if (existingType === "array" && inferredType === "array") {
+					return {
+						type: "array",
+						items: mergeGraphBlockSchema(existing.items, inferred.items) || { type: "unknown" }
+					};
+				}
+				return existing;
+			}
+			function applyGraphBlockResultSchema(node, catalog, schema) {
+				if (!ctx.currentNodeInfo || !schema) {
+					return;
+				}
+				graphBlockOutputPaths(node, catalog).forEach(function (outPath) {
+					var existing = ctx.schemaForPath(outPath);
+					ctx.addSchema(outPath, mergeGraphBlockSchema(existing, schema));
+				});
+			}
 			ctx.withGraphBlock = function (node, block, callback) {
 				var catalog = blockCatalog(block);
 				var props = nodeProps(node);
@@ -299,6 +406,16 @@
 					});
 					return undefined;
 				}
+				var snapshot = {
+					paths: ctx.paths.slice(0),
+					reads: ctx.reads.slice(0),
+					writes: ctx.writes.slice(0),
+					providers: cloneMap(ctx.providers),
+					schemas: cloneMap(ctx.schemas),
+					scopedSchemas: cloneMap(ctx.scopedSchemas),
+					returnSchemas: ctx.returnSchemas.slice(0),
+					currentSources: ctx.currentSources.slice(0)
+				};
 				ctx.addPath("input");
 				ctx.addPath("local");
 				Object.keys(catalog.props || {}).forEach(function (key) {
@@ -322,13 +439,26 @@
 				if (graphName) {
 					stack.push(graphName);
 				}
+				var result;
+				var outputSchema = null;
 				try {
-					return callback();
+					result = callback();
+					outputSchema = graphBlockResultSchema(snapshot);
 				} finally {
+					restoreArray(ctx.paths, snapshot.paths);
+					restoreArray(ctx.reads, snapshot.reads);
+					restoreArray(ctx.writes, snapshot.writes);
+					restoreMap(ctx.providers, snapshot.providers);
+					restoreMap(ctx.schemas, snapshot.schemas);
+					restoreMap(ctx.scopedSchemas, snapshot.scopedSchemas);
+					restoreArray(ctx.returnSchemas, snapshot.returnSchemas);
+					restoreArray(ctx.currentSources, snapshot.currentSources);
 					if (graphName) {
 						stack.pop();
 					}
 				}
+				applyGraphBlockResultSchema(node, catalog, outputSchema);
+				return result;
 			};
 			ctx.visitNodes = function (nodes) {
 				analyzeNodes(ctx, nodes);

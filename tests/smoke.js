@@ -601,6 +601,97 @@ var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(flowBackedRun.result.message === "Hello flow backed block",
 	"canonical YAML Flow block did not execute through its implementation file");
+var innerLeakCodeSource = [
+	"const _meta = {",
+	"\t\"description\": \"Inner Flow block whose result scope must stay private to the block.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {",
+	"\t\t\"value\": { \"kind\": \"value\", \"type\": \"string\" }",
+	"\t},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": {",
+	"\t\t\t\"type\": \"object\",",
+	"\t\t\t\"properties\": {",
+	"\t\t\t\t\"body\": { \"type\": \"string\" },",
+	"\t\t\t\t\"count\": { \"type\": \"boolean\" }",
+	"\t\t\t}",
+	"\t\t}",
+	"\t}",
+	"}",
+	"",
+	"function innerLeak({ input, result }) {",
+	"\tresult.body = input.value",
+	"\tresult.count = true",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var outerLeakCodeSource = [
+	"const _meta = {",
+	"\t\"description\": \"Outer Flow block exposing only its own declared result.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {",
+	"\t\t\"value\": { \"kind\": \"value\", \"type\": \"string\" }",
+	"\t},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": {",
+	"\t\t\t\"type\": \"object\",",
+	"\t\t\t\"properties\": {",
+	"\t\t\t\t\"count\": { \"type\": \"integer\" },",
+	"\t\t\t\t\"message\": { \"type\": \"string\" },",
+	"\t\t\t\t\"type\": { \"type\": \"string\" }",
+	"\t\t\t}",
+	"\t\t}",
+	"\t}",
+	"}",
+	"",
+	"function outerLeak({ input, result }) {",
+	"\tvar raw = smoke.innerLeak({ value: input.value })",
+	"\tresult.count = 1",
+	"\tresult.message = raw.body",
+	"\tresult.type = { nested: raw.body }",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.innerLeak",
+	code: innerLeakCodeSource
+}))).ok === true, "blockCodeSet did not create innerLeak");
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.outerLeak",
+	code: outerLeakCodeSource
+}))).ok === true, "blockCodeSet did not create outerLeak");
+var compositeSchema = JSON.parse(engine.outputSchema(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: outer",
+		"    block: smoke.outerLeak",
+		"    value: Hello isolated schema",
+		"    out: local.outer",
+		"  - id: count",
+		"    block: set",
+		"    path: result.count",
+		"    value: \"{{ local.outer.count }}\"",
+		"  - id: message",
+		"    block: set",
+		"    path: result.message",
+		"    value: \"{{ local.outer.message }}\"",
+		"  - id: type",
+		"    block: set",
+		"    path: result.type",
+		"    value: \"{{ local.outer.type }}\"",
+		""
+	].join("\n"),
+	detail: "full"
+})));
+var compositeProps = compositeSchema.schema && compositeSchema.schema.properties || {};
+assertTrue(compositeProps.count && compositeProps.count.type === "integer" &&
+	compositeProps.message && compositeProps.message.type === "string" &&
+	compositeProps.type && compositeProps.type.type === "string" &&
+	compositeProps.body === undefined,
+	"composite Flow block analysis leaked internal result fields into the caller output schema");
 var expressionEchoCodeSource = [
 	"const _meta = {",
 	"\t\"description\": \"Echoes an expression payload without templating nested strings.\",",
