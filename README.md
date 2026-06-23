@@ -630,8 +630,10 @@ libs/flow/schemas/<flowName>/<nodeId>.out.schema.json
 ```
 
 If a file exists, it is reused and never overwritten by runtime execution.
-To relearn, delete it through the `schemaReset()` API or the MCP
-`flow-schema-reset` tool; the next successful run will create it again.
+To relearn one producer, remove it through `Engine.nodeOutputSchema()` or the
+MCP `flow-node-output-schema` tool with `action:"remove"`; the next successful
+run can create it again. Use `schemaReset()` / `flow-schema-reset` only for
+broader cleanup.
 
 Flow output schema resolution is static-first. `Engine.outputSchema()` starts by
 analyzing the Flow graph, propagates known block output schemas through values,
@@ -643,7 +645,10 @@ Pass `detail:"full"` to compare declared/static/learned/effective sources and
 warnings. `Engine.nodeOutputSchema()` exposes the same comparison for a single
 producer node and can read learned node schemas such as HTTP response bodies.
 Target by `nodeId` when it is unique, or by the JSON Pointer path as
-`nodePointer` when duplicate node ids make the semantic id ambiguous.
+`nodePointer` when duplicate node ids make the semantic id ambiguous. It can
+also adopt a verified node schema with `action:"adopt"` and `source:"learned"`,
+`source:"static"` or a manual `schema`, then remove it later with
+`action:"remove"`.
 
 Block analysis hooks should declare schema propagation when a block preserves or
 projects a typed value. Use `ctx.addSameSchema(out, source)` for same-shape

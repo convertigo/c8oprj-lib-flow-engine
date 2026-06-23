@@ -781,6 +781,14 @@
 		return schemaStoreService().learnOutputSchema(request, definition, node, property, outPath, value, schemaStoreEnv());
 	}
 
+	function writeOutputSchema(request, definition, node, property, outPath, schema) {
+		return schemaStoreService().writeOutputSchema(request, definition, node, property, outPath, schema, schemaStoreEnv());
+	}
+
+	function deleteOutputSchema(request, definition, node, property, outPath) {
+		return schemaStoreService().deleteOutputSchema(request, definition, node, property, outPath, schemaStoreEnv());
+	}
+
 	function clearConvertigoSchemaCache(request) {
 		return schemaStoreService().clearConvertigoSchemaCache(request, schemaStoreEnv());
 	}
@@ -3175,10 +3183,12 @@
 			analysisByNodeId: analysisByNodeId,
 			currentProjectName: currentProjectName,
 			visibleSearchFlows: visibleSearchFlows,
-			projectSchemasDir: projectSchemasDir,
-			readResultSchema: readResultSchema,
-			readOutputSchema: readOutputSchema,
-			declaredOutputSchema: declaredOutputSchema,
+				projectSchemasDir: projectSchemasDir,
+				readResultSchema: readResultSchema,
+				readOutputSchema: readOutputSchema,
+				writeOutputSchema: writeOutputSchema,
+				deleteOutputSchema: deleteOutputSchema,
+				declaredOutputSchema: declaredOutputSchema,
 			declaredPropertyOutputSchema: declaredPropertyOutputSchema,
 			resultSchemaFromAnalysis: resultSchemaFromAnalysis,
 			schemaScore: schemaScore,

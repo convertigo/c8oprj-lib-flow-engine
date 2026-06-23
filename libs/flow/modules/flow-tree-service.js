@@ -35,10 +35,12 @@
 		var analysisByNodeId = env.analysisByNodeId;
 		var currentProjectName = env.currentProjectName;
 		var visibleSearchFlows = env.visibleSearchFlows;
-		var projectSchemasDir = env.projectSchemasDir;
-		var readResultSchema = env.readResultSchema;
-		var readOutputSchema = env.readOutputSchema;
-		var declaredOutputSchema = env.declaredOutputSchema;
+			var projectSchemasDir = env.projectSchemasDir;
+			var readResultSchema = env.readResultSchema;
+			var readOutputSchema = env.readOutputSchema;
+			var writeOutputSchema = env.writeOutputSchema;
+			var deleteOutputSchema = env.deleteOutputSchema;
+			var declaredOutputSchema = env.declaredOutputSchema;
 		var declaredPropertyOutputSchema = env.declaredPropertyOutputSchema;
 		var resultSchemaFromAnalysis = env.resultSchemaFromAnalysis;
 		var schemaScore = env.schemaScore;
@@ -2110,6 +2112,13 @@
 
 	function nodeOutputSchemaRequest(request, blocks) {
 		request = request || {};
+		var action = String(request.action || "read").toLowerCase();
+		if (request.adopt === true) {
+			action = "adopt";
+		}
+		if (request.remove === true || request.reset === true || request["delete"] === true) {
+			action = "remove";
+		}
 		var definition = request.definition !== undefined && request.definition !== null
 			? canonicalFlowDefinition(normalizeTree(request.definition))
 			: parseSource(sourceForFlowRequest(request, blocks));
@@ -2134,10 +2143,61 @@
 			property = output && output.property || "out";
 		}
 		var outputPath = String(request.path || request.outPath || request.scope || output && output.path || "");
+		if ((action === "adopt" || action === "remove" || action === "reset") && !outputPath) {
+			raise("NODE_OUTPUT_PATH_UNKNOWN", "The node output path could not be inferred.",
+				null, "Pass path/outPath or select a node property that writes to a scope path.");
+		}
 		var declaredSchema = declaredPropertyOutputSchema(catalog, property);
 		var staticSchema = outputPath ? schemaForAnalysisPath(analysis, outputPath) : null;
 		var learnedSchema = readOutputSchema(request, definition, node, property, outputPath);
 		var selected = selectedSchemaSource(request, declaredSchema, staticSchema, learnedSchema, { preferDeclared: false });
+		if (action === "adopt") {
+			var adoptedSchema = request.schema !== undefined && request.schema !== null
+				? normalizeTree(request.schema)
+				: selected.schema;
+			if (schemaQuality(adoptedSchema) === 0) {
+				raise("NODE_OUTPUT_SCHEMA_EMPTY", "No usable node output schema is available to adopt.",
+					null, "Run the Flow first, choose source:\"static\" or source:\"learned\", or pass schema:{...}.");
+			}
+			var written = writeOutputSchema(request, definition, node, property, outputPath, objectSchema(adoptedSchema));
+			return {
+				ok: true,
+				action: "adopt",
+				source: request.schema !== undefined && request.schema !== null ? "schema" : selected.source,
+				schema: objectSchema(adoptedSchema),
+				target: {
+					nodeId: String(effectiveNodeId),
+					nodePointer: nodePointer || pointerPath(location.parts || []),
+					block: blockName(node),
+					property: property,
+					path: outputPath
+				},
+				written: {
+					ok: written.ok !== false,
+					file: written.file
+				}
+			};
+		}
+		if (action === "remove" || action === "reset") {
+			var removed = deleteOutputSchema(request, definition, node, property, outputPath);
+			return {
+				ok: true,
+				action: action === "reset" ? "reset" : "remove",
+				deleted: removed.deleted === true,
+				target: {
+					nodeId: String(effectiveNodeId),
+					nodePointer: nodePointer || pointerPath(location.parts || []),
+					block: blockName(node),
+					property: property,
+					path: outputPath
+				},
+				file: removed.file
+			};
+		}
+		if (action !== "read" && action !== "") {
+			raise("NODE_OUTPUT_SCHEMA_ACTION", "Unsupported node output schema action: " + action,
+				null, "Use read, adopt, remove or reset.");
+		}
 		var warnings = [];
 		addOutputSchemaWarnings(warnings, selected.source, selected.schema, {
 			declared: declaredSchema,

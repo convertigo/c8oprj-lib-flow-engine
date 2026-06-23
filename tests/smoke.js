@@ -1050,6 +1050,56 @@ var nodePointerOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify(
 assertTrue(nodePointerOutputSchema.target.path === "local.second" &&
 	nodePointerOutputSchema.schema.properties.name.type === "string",
 	"nodeOutputSchema did not target an ambiguous node by pointer");
+var adoptedNodeOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
+	flowName: "NodeSchemaAdoptSmoke",
+	flowSource: staticSchemaFlowSource,
+	nodeId: "sourceItems",
+	action: "adopt",
+	schema: {
+		type: "array",
+		items: {
+			type: "object",
+			properties: {
+				city: { type: "string" },
+				temperature: { type: "number" },
+				source: { type: "string" }
+			}
+		}
+	}
+})));
+assertTrue(adoptedNodeOutputSchema.action === "adopt" &&
+	adoptedNodeOutputSchema.source === "schema" &&
+	adoptedNodeOutputSchema.written.file.indexOf("NodeSchemaAdoptSmoke") !== -1,
+	"nodeOutputSchema did not adopt a manual node schema");
+var learnedNodeOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
+	flowName: "NodeSchemaAdoptSmoke",
+	flowSource: staticSchemaFlowSource,
+	nodeId: "sourceItems",
+	source: "learned",
+	detail: "full"
+})));
+assertTrue(learnedNodeOutputSchema.source === "learned" &&
+	learnedNodeOutputSchema.schema.items.properties.source.type === "string" &&
+	learnedNodeOutputSchema.sources.learned.available === true,
+	"nodeOutputSchema did not read the adopted node schema as learned");
+var removedNodeOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
+	flowName: "NodeSchemaAdoptSmoke",
+	flowSource: staticSchemaFlowSource,
+	nodeId: "sourceItems",
+	action: "remove"
+})));
+assertTrue(removedNodeOutputSchema.action === "remove" &&
+	removedNodeOutputSchema.deleted === true,
+	"nodeOutputSchema did not remove the adopted node schema");
+var removedLearnedNodeOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
+	flowName: "NodeSchemaAdoptSmoke",
+	flowSource: staticSchemaFlowSource,
+	nodeId: "sourceItems",
+	source: "learned",
+	detail: "full"
+})));
+assertTrue(removedLearnedNodeOutputSchema.sources.learned.available === false,
+	"nodeOutputSchema still exposed a learned schema after remove");
 var declaredFlowScriptOutputSource = [
 	"const _flow = {",
 	"  outputs: {",

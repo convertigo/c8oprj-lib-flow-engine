@@ -31,6 +31,40 @@
 		return JSON.parse(String(env.FileUtils.readFileToString(file, "UTF-8")));
 	}
 
+	function requireOutputSchemaFile(request, definition, node, property, outPath, env, action) {
+		var file = outputSchemaFile(request, definition, node, property, outPath, env);
+		if (!file) {
+			env.raise("FLOW_SCHEMA_UNAVAILABLE", "Flow node output schema storage is unavailable.",
+				null, "Run through a named Flow/project context and make sure the node output path is known before calling " + action + ".");
+		}
+		return file;
+	}
+
+	function writeOutputSchema(request, definition, node, property, outPath, schema, env) {
+		var file = requireOutputSchemaFile(request, definition, node, property, outPath, env, "adopt");
+		schema = env.normalizeTree(schema || {});
+		file.getParentFile().mkdirs();
+		env.FileUtils.writeStringToFile(file, JSON.stringify(schema, null, 2), "UTF-8");
+		clearConvertigoSchemaCache(request, env);
+		return {
+			ok: true,
+			written: true,
+			file: String(file.getAbsolutePath()),
+			schema: schema
+		};
+	}
+
+	function deleteOutputSchema(request, definition, node, property, outPath, env) {
+		var file = requireOutputSchemaFile(request, definition, node, property, outPath, env, "remove");
+		var deleted = file.isFile() ? file["delete"]() : false;
+		clearConvertigoSchemaCache(request, env);
+		return {
+			ok: true,
+			deleted: deleted,
+			file: String(file.getAbsolutePath())
+		};
+	}
+
 	function readResultSchema(request, definition, env) {
 		var file = resultSchemaFile(request, definition, env);
 		if (!file || !file.isFile()) {
@@ -173,6 +207,8 @@
 		readOutputSchema: readOutputSchema,
 		readResultSchema: readResultSchema,
 		learnOutputSchema: learnOutputSchema,
+		writeOutputSchema: writeOutputSchema,
+		deleteOutputSchema: deleteOutputSchema,
 		clearConvertigoSchemaCache: clearConvertigoSchemaCache,
 		declaredOutputSchema: declaredOutputSchema,
 		declaredPropertyOutputSchema: declaredPropertyOutputSchema,

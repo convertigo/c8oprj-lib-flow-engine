@@ -438,8 +438,9 @@ there is no declared output contract such as `_flow.outputs`, `flow.outputs` or
 `output`. `http.request` and `http.get` write
 `libs/flow/schemas/<flowName>/<nodeId>.out.schema.json` only when that file is
 missing and the run succeeds. These files store structure, not data. Use
-`flow-schema-reset` or `Engine.schemaReset()` to delete learned schemas before
-running again. `forEach` maps a known array item schema to `current.*`, so use
+`flow-node-output-schema action:"remove"` for one stale producer schema, or
+`flow-schema-reset` / `Engine.schemaReset()` for broader cleanup before running
+again. `forEach` maps a known array item schema to `current.*`, so use
 `flow-context` inside loops when choosing iterator expressions.
 
 Flow output schema is static-first: `Engine.outputSchema()` analyzes the graph,
@@ -450,8 +451,10 @@ not the primary mechanism.
 Use `detail:"full"` to compare declared/static/learned/effective sources and
 warnings. Use `Engine.nodeOutputSchema()` or the MCP `flow-node-output-schema`
 tool when only one producer node, such as HTTP/exec/parser, needs schema
-inspection or learned-schema reset. Target by `nodeId` when unique; if search
-results show duplicate ids, pass the JSON Pointer path as `nodePointer`.
+inspection, adoption or learned-schema removal. Target by `nodeId` when unique;
+if search results show duplicate ids, pass the JSON Pointer path as
+`nodePointer`. Prefer `flow-node-output-schema action:"remove"` for one stale
+producer schema; keep `flow-schema-reset` for broader cleanup.
 
 Mutation helpers should prefer semantic node targeting when they have a
 `nodeId`: `{op:"replace", nodeId:"setMessage", property:"value", value:"Done"}`.
@@ -487,7 +490,8 @@ flow-code-rg / flow-search
 flow-code-get for an existing Flow
 flow-code-set for a new or edited FlowScript working copy
 flow-context when choosing paths or expressions
-flow-schema-reset before rerunning an HTTP learn scenario when the output changed
+flow-node-output-schema for one HTTP/exec/parser producer schema inspection, adoption or removal
+flow-schema-reset only for broader stale learned-schema cleanup
 flow-catalog only when search/examples/diagnostics are insufficient
 flow-block-code-rg / flow-block-code-get for custom FlowScript blocks
 flow-block-code-set only when reusable vocabulary is needed
