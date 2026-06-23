@@ -947,7 +947,11 @@
 				return definition.config || {};
 			}
 			if (root === "result") {
-				return definition.output || definition.outputs || {};
+				if (env.declaredOutputSchema) {
+					return env.declaredOutputSchema(definition) || {};
+				}
+				var meta = definition && (definition.flow || definition._flow) || {};
+				return definition.output || definition.outputs || meta.output || meta.outputs || {};
 			}
 			return {};
 		}

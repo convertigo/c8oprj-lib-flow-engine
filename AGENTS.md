@@ -234,6 +234,16 @@ function decorate({ input, config, result }) {
 }
 ```
 
+Do not leave block outputs as `unknown` when the schema is knowable. Use static
+`_meta.outputs` for stable shapes, and `hooks.file` analysis for derived shapes.
+The analyzer should publish schemas with `ctx.addSchema(outPath, schema)` or
+helpers such as `ctx.addSameSchema`, `ctx.addArraySchema`,
+`ctx.schemaForExpression`, `ctx.schemaForPath`, `ctx.itemSchema`, and
+`ctx.itemSchemaFor`. `ctx.addSchema` also refreshes the current node
+`outputs[].schema`, so `Engine.analyze`, picker context and
+`Engine.outputSchema` stay consistent. For item expressions, set property
+metadata `current: "item"` and `sourceProperty: "items"`.
+
 The block id comes from the file path: `libs/flow/blocks/demo/decorate.block.js`
 is `demo.decorate`. Legacy `*.block.yaml` descriptors were migration artifacts
 and are no longer a runtime fallback. For Rhino/native escape hatches, use the
@@ -424,7 +434,8 @@ later are not suggested.
 
 Schema learning is implicit and file-based. A named Flow writes
 `libs/flow/schemas/<flowName>/result.out.schema.json` for its final result when
-there is no declared output contract. `http.request` and `http.get` write
+there is no declared output contract such as `_flow.outputs`, `flow.outputs` or
+`output`. `http.request` and `http.get` write
 `libs/flow/schemas/<flowName>/<nodeId>.out.schema.json` only when that file is
 missing and the run succeeds. These files store structure, not data. Use
 `flow-schema-reset` or `Engine.schemaReset()` to delete learned schemas before
@@ -433,8 +444,14 @@ running again. `forEach` maps a known array item schema to `current.*`, so use
 
 Flow output schema is static-first: `Engine.outputSchema()` analyzes the graph,
 propagates known schemas through block values, merges writes under `result.*`,
-and uses explicit `return` schemas when known. Learned result files are a
-fallback, not the primary mechanism.
+uses explicit `return` schemas when known, and honors `_flow.outputs` as an
+explicit authoring contract when present. Learned result files are a fallback,
+not the primary mechanism.
+Use `detail:"full"` to compare declared/static/learned/effective sources and
+warnings. Use `Engine.nodeOutputSchema()` or the MCP `flow-node-output-schema`
+tool when only one producer node, such as HTTP/exec/parser, needs schema
+inspection or learned-schema reset. Target by `nodeId` when unique; if search
+results show duplicate ids, pass the JSON Pointer path as `nodePointer`.
 
 Mutation helpers should prefer semantic node targeting when they have a
 `nodeId`: `{op:"replace", nodeId:"setMessage", property:"value", value:"Done"}`.

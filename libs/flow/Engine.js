@@ -3004,6 +3004,7 @@
 			describeTreeRequest: describeTreeRequest,
 			applyMutationRequest: applyMutationRequest,
 			outputSchemaRequest: outputSchemaRequest,
+			nodeOutputSchemaRequest: nodeOutputSchemaRequest,
 			readOutputSchema: readOutputSchema,
 			learnOutputSchema: learnOutputSchema,
 			flowNameFor: flowNameFor,
@@ -3085,6 +3086,7 @@
 			collectScopeRefs: collectScopeRefs,
 			collectTemplateRefs: collectTemplateRefs,
 			declaredPropertyOutputSchema: declaredPropertyOutputSchema,
+			declaredOutputSchema: declaredOutputSchema,
 			schemaSummary: schemaSummary,
 			expandFlowDefinition: expandFlowDefinition,
 			blocksWithFlowHelpers: blocksWithFlowHelpers,
@@ -3175,9 +3177,15 @@
 			visibleSearchFlows: visibleSearchFlows,
 			projectSchemasDir: projectSchemasDir,
 			readResultSchema: readResultSchema,
+			readOutputSchema: readOutputSchema,
 			declaredOutputSchema: declaredOutputSchema,
+			declaredPropertyOutputSchema: declaredPropertyOutputSchema,
 			resultSchemaFromAnalysis: resultSchemaFromAnalysis,
 			schemaScore: schemaScore,
+			schemaPaths: schemaPaths,
+			schemaAtPath: schemaAtPath,
+			schemaSimpleType: schemaSimpleType,
+			schemaSummary: schemaSummary,
 			objectSchema: objectSchema,
 			raise: raise,
 			intOption: intOption
@@ -3303,6 +3311,10 @@
 
 	function outputSchemaRequest(request, blocks) {
 		return flowTreeService().outputSchemaRequest(request, blocks, flowTreeServiceEnv());
+	}
+
+	function nodeOutputSchemaRequest(request, blocks) {
+		return flowTreeService().nodeOutputSchemaRequest(request, blocks, flowTreeServiceEnv());
 	}
 
 	function searchNeedle(request) {
@@ -3532,6 +3544,12 @@
 		outputSchema: function (requestJson) {
 			return engineCall("outputSchema", requestJson, function (request) {
 				return outputSchemaRequest(request, loadBlocks());
+			});
+		},
+
+		nodeOutputSchema: function (requestJson) {
+			return engineCall("nodeOutputSchema", requestJson, function (request) {
+				return nodeOutputSchemaRequest(request, loadBlocks());
 			});
 		},
 

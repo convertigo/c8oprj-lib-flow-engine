@@ -97,7 +97,8 @@
 
 	function outputSchemaForFlowSource(flowSource) {
 		var definition = parseSource(sourceForMaybeFlowScript(loadBlocks(), {}, flowSource));
-		return definition.output || definition.outputs || {};
+		var meta = definition && (definition.flow || definition._flow) || {};
+		return definition.output || definition.outputs || meta.output || meta.outputs || {};
 	}
 
 		return {

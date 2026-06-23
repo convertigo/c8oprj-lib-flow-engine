@@ -37,9 +37,15 @@
 		var visibleSearchFlows = env.visibleSearchFlows;
 		var projectSchemasDir = env.projectSchemasDir;
 		var readResultSchema = env.readResultSchema;
+		var readOutputSchema = env.readOutputSchema;
 		var declaredOutputSchema = env.declaredOutputSchema;
+		var declaredPropertyOutputSchema = env.declaredPropertyOutputSchema;
 		var resultSchemaFromAnalysis = env.resultSchemaFromAnalysis;
 		var schemaScore = env.schemaScore;
+		var schemaPaths = env.schemaPaths;
+		var schemaAtPath = env.schemaAtPath;
+		var schemaSimpleType = env.schemaSimpleType;
+		var schemaSummary = env.schemaSummary;
 		var objectSchema = env.objectSchema;
 		var raise = env.raise;
 		var intOption = env.intOption;
@@ -1844,19 +1850,336 @@
 		return out;
 	}
 
+	function fullSchemaDetail(request) {
+		var detail = String(request && (request.detail || request.mode) || "").toLowerCase();
+		return detail === "full" || request && (request.includeSources === true || request.includeDetails === true);
+	}
+
+	function schemaDetails(schema) {
+		var normalized = objectSchema(schema || {});
+		var available = !!schema && schemaScore(normalized) > 0;
+		var out = {
+			available: available,
+			score: schemaScore(normalized),
+			schema: normalized
+		};
+		if (schemaSummary) {
+			out.summary = schemaSummary(schema || {});
+		}
+		return out;
+	}
+
+	function schemaQuality(schema) {
+		return schemaScore(objectSchema(schema || {}));
+	}
+
+	function pathRemainder(path, base) {
+		if (path === base) {
+			return "";
+		}
+		var next = String(path).charAt(String(base).length);
+		return next === "." ? String(path).substring(String(base).length + 1) : String(path).substring(String(base).length);
+	}
+
+	function schemaForAnalysisPath(analysis, path) {
+		path = String(path || "");
+		if (!path) {
+			return null;
+		}
+		var schemas = analysis && analysis.schemas || {};
+		var best = "";
+		Object.keys(schemas).forEach(function (base) {
+			if (path === base || path.indexOf(base + ".") === 0 || path.indexOf(base + "[") === 0) {
+				if (base.length > best.length) {
+					best = base;
+				}
+			}
+		});
+		return best ? schemaAtPath(schemas[best], pathRemainder(path, best)) : null;
+	}
+
+	function missingSchemaPaths(base, richer, limit) {
+		limit = limit || 12;
+		var out = [];
+		var normalizedBase = objectSchema(base || {});
+		schemaPaths(objectSchema(richer || {}), "").forEach(function (path) {
+			if (path && !schemaAtPath(normalizedBase, path) && out.length < limit) {
+				out.push(path);
+			}
+		});
+		return out;
+	}
+
+	function unknownSchemaPaths(schema, limit) {
+		limit = limit || 12;
+		var out = [];
+		schemaPaths(objectSchema(schema || {}), "").forEach(function (path) {
+			if (path && schemaSimpleType(schemaAtPath(objectSchema(schema || {}), path)) === "unknown" && out.length < limit) {
+				out.push(path);
+			}
+		});
+		return out;
+	}
+
+	function addOutputSchemaWarnings(warnings, selectedSource, selectedSchema, sources) {
+		if (schemaQuality(selectedSchema) === 0) {
+			warnings.push({
+				code: "OUTPUT_SCHEMA_EMPTY",
+				message: "No usable output schema is available yet.",
+				hint: "Run the Flow or add a block analysis hook/static output schema, then retry."
+			});
+		}
+		var unknown = unknownSchemaPaths(selectedSchema, 8);
+		if (unknown.length > 0) {
+			warnings.push({
+				code: "OUTPUT_SCHEMA_UNKNOWN_PATHS",
+				message: "The selected output schema still contains unknown paths.",
+				paths: unknown,
+				hint: "Add block outputs/hooks or learn/adopt a richer runtime schema."
+			});
+		}
+		if (selectedSource === "declared") {
+			["static", "learned"].forEach(function (name) {
+				var other = sources[name];
+				if (schemaQuality(other) > 0) {
+					var missing = missingSchemaPaths(selectedSchema, other, 12);
+					if (missing.length > 0) {
+						warnings.push({
+							code: "DECLARED_SCHEMA_MISSING_PATHS",
+							source: name,
+							message: "The explicit output contract is missing paths visible in the " + name + " schema.",
+							paths: missing,
+							hint: "Review _flow.outputs or adopt the " + name + " schema if the runtime result is correct."
+						});
+					}
+				}
+			});
+		}
+	}
+
+	function selectedSchemaSource(request, declaredSchema, staticSchema, learnedSchema, options) {
+		options = options || {};
+		var wanted = String(request.source || request.schemaSource || "effective").toLowerCase();
+		var schemaSource = "effective";
+		var schema = null;
+		if (wanted === "declared" || wanted === "contract" || wanted === "explicit") {
+			schema = declaredSchema;
+			schemaSource = "declared";
+		} else if (wanted === "static" || wanted === "inferred") {
+			schema = staticSchema;
+			schemaSource = "static";
+		} else if (wanted === "learned" || wanted === "runtime") {
+			schema = learnedSchema;
+			schemaSource = "learned";
+		} else if (options.preferDeclared === false) {
+			var declaredQuality = schemaQuality(declaredSchema);
+			var staticQuality = schemaQuality(staticSchema);
+			var learnedQuality = schemaQuality(learnedSchema);
+			if (learnedQuality > staticQuality && learnedQuality > declaredQuality) {
+				schema = learnedSchema;
+				schemaSource = "learned";
+			} else if (staticQuality > declaredQuality) {
+				schema = staticSchema;
+				schemaSource = "static";
+			} else if (declaredSchema) {
+				schema = declaredSchema;
+				schemaSource = "declared";
+			} else {
+				schema = staticSchema || learnedSchema;
+				schemaSource = schema === learnedSchema ? "learned" : "static";
+			}
+		} else if (declaredSchema) {
+			schema = declaredSchema;
+			schemaSource = "declared";
+		} else if (schemaQuality(learnedSchema) > schemaQuality(staticSchema)) {
+			schema = learnedSchema;
+			schemaSource = "learned";
+		} else {
+			schema = staticSchema || learnedSchema;
+			schemaSource = schema === learnedSchema ? "learned" : "static";
+		}
+		return {
+			source: schemaSource,
+			schema: schema || {}
+		};
+	}
+
 	function outputSchemaRequest(request, blocks) {
 		request = request || {};
 		var definition = request.definition !== undefined && request.definition !== null
 			? canonicalFlowDefinition(normalizeTree(request.definition))
 			: parseSource(sourceForFlowRequest(request, blocks));
 		var declaredSchema = declaredOutputSchema(definition);
-		var staticSchema = declaredSchema ? null : resultSchemaFromAnalysis(analyzeFlowDefinition(blocks, definition, request));
+		var wantsFull = fullSchemaDetail(request);
+		var staticSchema = !declaredSchema || request.ignoreDeclared === true || wantsFull || String(request.source || request.schemaSource || "").match(/^(static|inferred)$/)
+			? resultSchemaFromAnalysis(analyzeFlowDefinition(blocks, definition, request))
+			: null;
 		var learnedSchema = readResultSchema(request, definition);
-		var schema = declaredSchema || (schemaScore(learnedSchema) > schemaScore(staticSchema) ? learnedSchema : staticSchema) || learnedSchema || {};
-		return {
+		var selected = selectedSchemaSource(request, declaredSchema, staticSchema, learnedSchema);
+		var warnings = [];
+		addOutputSchemaWarnings(warnings, selected.source, selected.schema, {
+			declared: declaredSchema,
+			static: staticSchema,
+			learned: learnedSchema
+		});
+		var out = {
 			ok: true,
-			schema: objectSchema(schema)
+			source: selected.source,
+			declared: !!declaredSchema,
+			schema: objectSchema(selected.schema),
+			warnings: warnings
 		};
+		if (wantsFull) {
+			out.sources = {
+				declared: schemaDetails(declaredSchema),
+				static: schemaDetails(staticSchema),
+				learned: schemaDetails(learnedSchema),
+				effective: schemaDetails(selected.schema)
+			};
+		}
+		return out;
+	}
+
+	function firstNodeOutput(nodeInfo, property) {
+		var outputs = nodeInfo && nodeInfo.outputs || [];
+		var fallback = null;
+		for (var i = 0; i < outputs.length; i++) {
+			var output = outputs[i];
+			if (!output || !output.path) {
+				continue;
+			}
+			if (!fallback) {
+				fallback = output;
+			}
+			if (property && output.property === property) {
+				return output;
+			}
+		}
+		return fallback;
+	}
+
+	function nodeProperty(node, key) {
+		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
+	}
+
+	function firstNodeOutputFromNode(node, catalog, property) {
+		var props = catalog && catalog.props || {};
+		var writes = catalog && catalog.writes || [];
+		var keys = [];
+		Object.keys(props || {}).forEach(function (key) {
+			var descriptor = props[key] || {};
+			if (writes.indexOf(key) !== -1 || descriptor.kind === "path" && descriptor.mode === "write") {
+				keys.push(key);
+			}
+		});
+		if (keys.length === 0) {
+			["out", "path"].forEach(function (key) {
+				if (nodeProperty(node, key) !== undefined) {
+					keys.push(key);
+				}
+			});
+		}
+		var wanted = property ? [property].concat(keys) : keys;
+		for (var i = 0; i < wanted.length; i++) {
+			var key = wanted[i];
+			var value = nodeProperty(node, key);
+			if (typeof value === "string" && value !== "") {
+				return {
+					property: key,
+					path: value
+				};
+			}
+		}
+		return null;
+	}
+
+	function nodeLocationFromPointer(root, pointer) {
+		var text = String(pointer || "");
+		if (!text) {
+			return null;
+		}
+		var node = valueAt(root, parseMutationPath(text));
+		if (!node || typeof node !== "object" || !blockName(node)) {
+			raise("INVALID_NODE_POINTER", "No Flow node found at path: " + text);
+		}
+		return {
+			node: node,
+			parts: parseMutationPath(text)
+		};
+	}
+
+	function nodeOutputSchemaRequest(request, blocks) {
+		request = request || {};
+		var definition = request.definition !== undefined && request.definition !== null
+			? canonicalFlowDefinition(normalizeTree(request.definition))
+			: parseSource(sourceForFlowRequest(request, blocks));
+		var expanded = expandFlowDefinition(blocks, definition);
+		var nodeId = request.nodeId || request.node || request.id || "";
+		var nodePointer = request.nodePointer || request.nodePath || request.pointer || "";
+		var location = nodePointer
+			? nodeLocationFromPointer(expanded, nodePointer)
+			: locateSingleNode(expanded, blocks, nodeId, "nodeId");
+		var node = location.node;
+		var catalog = blockCatalog(blocks[blockName(node)]);
+		var analysis = analyzeFlowDefinition(blocks, definition, request);
+		var byId = analysisByNodeId(analysis);
+		var effectiveNodeId = nodeId || nodePath(node);
+		var nodeInfo = byId[String(effectiveNodeId)] || null;
+		var property = String(request.property || request.output || "");
+		var output = nodePointer
+			? firstNodeOutputFromNode(node, catalog, property)
+			: firstNodeOutput(nodeInfo, property);
+		output = output || firstNodeOutput(nodeInfo, property) || firstNodeOutputFromNode(node, catalog, property);
+		if (!property) {
+			property = output && output.property || "out";
+		}
+		var outputPath = String(request.path || request.outPath || request.scope || output && output.path || "");
+		var declaredSchema = declaredPropertyOutputSchema(catalog, property);
+		var staticSchema = outputPath ? schemaForAnalysisPath(analysis, outputPath) : null;
+		var learnedSchema = readOutputSchema(request, definition, node, property, outputPath);
+		var selected = selectedSchemaSource(request, declaredSchema, staticSchema, learnedSchema, { preferDeclared: false });
+		var warnings = [];
+		addOutputSchemaWarnings(warnings, selected.source, selected.schema, {
+			declared: declaredSchema,
+			static: staticSchema,
+			learned: learnedSchema
+		});
+		if (!outputPath) {
+			warnings.push({
+				code: "NODE_OUTPUT_PATH_UNKNOWN",
+				message: "The node output path could not be inferred.",
+				hint: "Pass path/outPath or select a node property that writes to a scope path."
+			});
+		}
+		var out = {
+			ok: true,
+			source: selected.source,
+			schema: objectSchema(selected.schema),
+			target: {
+				nodeId: String(effectiveNodeId),
+				nodePointer: nodePointer || pointerPath(location.parts || []),
+				block: blockName(node),
+				property: property,
+				path: outputPath
+			},
+			warnings: warnings
+		};
+		if (fullSchemaDetail(request)) {
+			out.sources = {
+				declared: schemaDetails(declaredSchema),
+				static: schemaDetails(staticSchema),
+				learned: schemaDetails(learnedSchema),
+				effective: schemaDetails(selected.schema)
+			};
+			out.analysis = nodeInfo && (!nodePointer || firstNodeOutput(nodeInfo, property) && firstNodeOutput(nodeInfo, property).path === outputPath)
+				? nodeInfo
+				: {
+					id: nodePath(node),
+					block: blockName(node),
+					outputs: output ? [output] : []
+				};
+		}
+		return out;
 	}
 
 
@@ -1868,6 +2191,7 @@
 			searchFlowRequest: searchFlowRequest,
 			applyMutationRequest: applyMutationRequest,
 			outputSchemaRequest: outputSchemaRequest,
+			nodeOutputSchemaRequest: nodeOutputSchemaRequest,
 			searchNeedle: searchNeedle,
 			searchMatches: searchMatches,
 			searchSnippet: searchSnippet,
@@ -1896,6 +2220,9 @@
 		},
 		outputSchemaRequest: function (request, blocks, env) {
 			return create(env).outputSchemaRequest(request, blocks);
+		},
+		nodeOutputSchemaRequest: function (request, blocks, env) {
+			return create(env).nodeOutputSchemaRequest(request, blocks);
 		},
 		searchNeedle: function (request, env) {
 			return create(env).searchNeedle(request);

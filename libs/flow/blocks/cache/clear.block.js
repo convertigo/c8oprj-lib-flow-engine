@@ -49,10 +49,23 @@ const _meta = {
 }
 
 (function () {
+	function clearBridgeCaches() {
+		try {
+			var bridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
+			if (bridge && typeof bridge.clearCaches === "function") {
+				bridge.clearCaches();
+				return true;
+			}
+		} catch (e) {
+		}
+		return false;
+	}
+
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var info = ctx.cacheClear();
+			info.bridgeCachesCleared = clearBridgeCaches();
 			ctx.write(props.out || "local.cache", info);
 			return info;
 		}

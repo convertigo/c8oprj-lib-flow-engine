@@ -50,6 +50,7 @@
 		var describeTreeRequest = env.describeTreeRequest;
 		var applyMutationRequest = env.applyMutationRequest;
 		var outputSchemaRequest = env.outputSchemaRequest;
+		var nodeOutputSchemaRequest = env.nodeOutputSchemaRequest;
 		var readOutputSchema = env.readOutputSchema;
 		var learnOutputSchema = env.learnOutputSchema;
 		var flowNameFor = env.flowNameFor;
@@ -347,6 +348,12 @@
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
 					return outputSchemaRequest(args, loadBlocks());
+				});
+			};
+			ctx.nodeOutputSchemaSource = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return nodeOutputSchemaRequest(args, loadBlocks());
 				});
 			};
 			ctx.schemaForOutput = function (node, property, outPath) {

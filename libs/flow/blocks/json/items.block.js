@@ -44,6 +44,9 @@ const _meta = {
     }
   },
   "runtime": "rhino",
+  "hooks": {
+    "file": "items.hooks.js"
+  },
   "tags": [
     "json",
     "items",

@@ -23,8 +23,10 @@ types(requestJson)         -> property type descriptors
 ```
 
 The Java side passes `flowSource` as an opaque string. This project owns parsing, catalog, analysis and execution.
-For the POC, `Engine.js` is evaluated without the Rhino compiled-script cache so
-runtime engine changes can be picked up after the Java bootstrap is restarted.
+For the POC, `flow-cache-clear` clears both the Java bridge runtime cache and
+the Flow JavaScript descriptor caches, so changes to `Engine.js`, modules,
+blocks and hooks can be picked up by the next call without restarting the whole
+Convertigo engine.
 
 The long-term authoring path should behave like a hot worker plus a compact
 snapshot index. Studio, Admin and MCP ask the Flow engine for immutable
@@ -616,10 +618,11 @@ keeps a producer reference to the iterated source path.
 ## Learned schemas
 
 Flows learn their final `result` structure on the first successful named run
-when no declared `output` contract and no schema file exist yet. `http.request`
-and `http.get` also learn their node output structure on the first successful
-run when no node schema file exists yet. Stored files contain only types and
-object keys, never response values:
+when no declared output contract (`_flow.outputs`, `flow.outputs` or `output`)
+and no schema file exist yet. `http.request` and `http.get` also learn their
+node output structure on the first successful run when no node schema file
+exists yet. Stored files contain only types and object keys, never response
+values:
 
 ```text
 libs/flow/schemas/<flowName>/result.out.schema.json
@@ -633,8 +636,14 @@ To relearn, delete it through the `schemaReset()` API or the MCP
 Flow output schema resolution is static-first. `Engine.outputSchema()` starts by
 analyzing the Flow graph, propagates known block output schemas through values,
 merges `result.*` writes, and honors explicit `return` blocks when their value
-schema is known. Learned result schemas are only a fallback when static analysis
-does not know enough.
+schema is known. Optional `_flow.outputs` is treated as the explicit result
+contract and takes precedence over static and learned inference. Learned result
+schemas are only a fallback when static analysis does not know enough.
+Pass `detail:"full"` to compare declared/static/learned/effective sources and
+warnings. `Engine.nodeOutputSchema()` exposes the same comparison for a single
+producer node and can read learned node schemas such as HTTP response bodies.
+Target by `nodeId` when it is unique, or by the JSON Pointer path as
+`nodePointer` when duplicate node ids make the semantic id ambiguous.
 
 Block analysis hooks should declare schema propagation when a block preserves or
 projects a typed value. Use `ctx.addSameSchema(out, source)` for same-shape

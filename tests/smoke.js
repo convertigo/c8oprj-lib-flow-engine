@@ -601,6 +601,48 @@ var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(flowBackedRun.result.message === "Hello flow backed block",
 	"canonical YAML Flow block did not execute through its implementation file");
+var expressionEchoCodeSource = [
+	"const _meta = {",
+	"\t\"description\": \"Echoes an expression payload without templating nested strings.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {",
+	"\t\t\"payload\": {",
+	"\t\t\t\"kind\": \"expression\",",
+	"\t\t\t\"type\": \"object\"",
+	"\t\t}",
+	"\t},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": {",
+	"\t\t\t\"type\": \"object\"",
+	"\t\t}",
+	"\t}",
+	"}",
+	"",
+	"function expressionEcho({ input, config, result }) {",
+	"\treturn input.payload",
+	"}",
+	""
+].join("\n");
+var expressionEchoSet = JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.expressionEcho",
+	code: expressionEchoCodeSource
+})));
+assertTrue(expressionEchoSet.ok === true, "blockCodeSet did not create expressionEcho");
+var expressionEchoRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: echoExpressionObject",
+		"    block: smoke.expressionEcho",
+		"    payload:",
+		"      flowSource: \"value: {{ local.person.age }}\"",
+		"    out: result.payload",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(expressionEchoRun.result.payload.flowSource === "value: {{ local.person.age }}",
+	"Flow graph block expression object rendered nested template strings too early");
 var callBlockDescriptorSource = [
 	"version: 1",
 	"name: smoke.callBlock",
@@ -972,6 +1014,76 @@ assertTrue(staticOutputSchema.schema.properties.items.type === "array" &&
 	staticOutputSchema.schema.properties.items.items.properties.city.type === "string" &&
 	staticOutputSchema.schema.properties.items.items.properties.temperature.type === "integer",
 	"outputSchema did not derive result from static dataflow analysis");
+var staticOutputSchemaFull = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: staticSchemaFlowSource, detail: "full" })));
+assertTrue(staticOutputSchemaFull.sources.static.available === true &&
+	staticOutputSchemaFull.sources.effective.schema.properties.items.items.properties.city.type === "string",
+	"outputSchema detail full did not expose static/effective sources");
+var nodeOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
+	flowSource: staticSchemaFlowSource,
+	nodeId: "sourceItems",
+	detail: "full"
+})));
+assertTrue(nodeOutputSchema.target.property === "path" &&
+	nodeOutputSchema.target.path === "local.items" &&
+	nodeOutputSchema.schema.type === "array" &&
+	nodeOutputSchema.schema.items.properties.city.type === "string",
+	"nodeOutputSchema did not expose the node static output schema");
+var duplicateNodePointerSchemaSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: duplicated",
+	"    block: set",
+	"    path: local.first",
+	"    value: first",
+	"  - id: duplicated",
+	"    block: set",
+	"    path: local.second",
+	"    value:",
+	"      name: Ada",
+	""
+].join("\n");
+var nodePointerOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
+	flowSource: duplicateNodePointerSchemaSource,
+	nodePointer: "/nodes/1",
+	detail: "full"
+})));
+assertTrue(nodePointerOutputSchema.target.path === "local.second" &&
+	nodePointerOutputSchema.schema.properties.name.type === "string",
+	"nodeOutputSchema did not target an ambiguous node by pointer");
+var declaredFlowScriptOutputSource = [
+	"const _flow = {",
+	"  outputs: {",
+	"    message: { type: \"string\" },",
+	"    count: { type: \"integer\" }",
+	"  }",
+	"}",
+	"",
+	"function DeclaredOutput({ input, config, result }) {",
+	"  result.message = 42",
+	"  result.extra = true",
+	"  return result",
+	"}",
+	""
+].join("\n");
+var declaredFlowScriptOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({
+	flowSource: declaredFlowScriptOutputSource
+})));
+assertTrue(declaredFlowScriptOutputSchema.source === "declared" &&
+	declaredFlowScriptOutputSchema.declared === true &&
+	declaredFlowScriptOutputSchema.schema.properties.message.type === "string" &&
+	declaredFlowScriptOutputSchema.schema.properties.count.type === "integer" &&
+	declaredFlowScriptOutputSchema.schema.properties.extra === undefined,
+	"_flow.outputs was not used as the explicit result schema contract");
+var declaredFlowScriptOutputSchemaFull = JSON.parse(engine.outputSchema(JSON.stringify({
+	flowSource: declaredFlowScriptOutputSource,
+	detail: "full"
+})));
+assertTrue(declaredFlowScriptOutputSchemaFull.sources.declared.available === true &&
+	declaredFlowScriptOutputSchemaFull.sources.static.available === true &&
+	declaredFlowScriptOutputSchemaFull.warnings.some(function (warning) {
+		return warning.code === "DECLARED_SCHEMA_MISSING_PATHS" && warning.paths.indexOf("extra") !== -1;
+	}),
+	"outputSchema detail full did not warn about an incomplete declared contract");
 var explicitReturnSchemaFlowSource = [
 	"version: 1",
 	"nodes:",
@@ -1364,6 +1476,86 @@ assertTrue(listSchemaOutput.schema.properties.ages.type === "array" &&
 assertTrue(listSchemaOutput.schema.properties.sorted.type === "array" &&
 	listSchemaOutput.schema.properties.sorted.items.properties.city.type === "string",
 	"set did not reuse the propagated list schema for result output");
+
+var collectionSchemaFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: sourcePayload",
+	"    block: set",
+	"    path: local.payload",
+	"    value:",
+	"      items:",
+	"        - name: Ada",
+	"          age: 36",
+	"        - name: Grace",
+	"          age: 40",
+	"  - id: normalizeItems",
+	"    block: json.items",
+	"    source: local.payload",
+	"    path: items",
+	"    out: local.items",
+	"  - id: sourceGroups",
+	"    block: set",
+	"    path: local.groups",
+	"    value:",
+	"      - - name: Ada",
+	"          age: 36",
+	"      - - name: Grace",
+	"          age: 40",
+	"  - id: compactGroups",
+	"    block: list.compact",
+	"    items: local.groups",
+	"    flatten: true",
+	"    out: local.flatPeople",
+	""
+].join("\n");
+var collectionSchemaAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: collectionSchemaFlowSource })));
+var jsonItemsAgeOutput = schemaLeaf(nodeOutput(analysisNode(collectionSchemaAnalysis, "normalizeItems"), "local.items"), "[0].age");
+var compactAgeOutput = schemaLeaf(nodeOutput(analysisNode(collectionSchemaAnalysis, "compactGroups"), "local.flatPeople"), "[0].age");
+assertTrue(collectionSchemaAnalysis.schemas["local.items"].items.properties.age.type === "integer" &&
+	jsonItemsAgeOutput && jsonItemsAgeOutput.type === "integer",
+	"json.items did not derive item schema from source path");
+assertTrue(collectionSchemaAnalysis.schemas["local.flatPeople"].items.properties.name.type === "string" &&
+	compactAgeOutput && compactAgeOutput.type === "integer",
+	"list.compact did not preserve flattened item schema");
+
+var jsonObjectSchemaFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: sourcePerson",
+	"    block: set",
+	"    path: local.person",
+	"    value:",
+	"      name: Ada",
+	"      age: 36",
+	"  - id: buildCard",
+	"    block: json.object",
+	"    out: result.card",
+	"    fields:",
+	"      - id: fieldName",
+	"        block: json.field",
+	"        key: name",
+	"        value: \"{{ local.person.name }}\"",
+	"      - id: fieldAge",
+	"        block: json.field",
+	"        key: age",
+	"        value: \"{{ local.person.age }}\"",
+	"      - id: fieldActive",
+	"        block: json.field",
+	"        key: active",
+	"        value: true",
+	"      - id: fieldCity",
+	"        block: json.field",
+	"        key: city",
+	"        value: Paris",
+	""
+].join("\n");
+var jsonObjectOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: jsonObjectSchemaFlowSource })));
+assertTrue(jsonObjectOutputSchema.schema.properties.card.properties.name.type === "string" &&
+	jsonObjectOutputSchema.schema.properties.card.properties.age.type === "integer" &&
+	jsonObjectOutputSchema.schema.properties.card.properties.active.type === "boolean" &&
+	jsonObjectOutputSchema.schema.properties.card.properties.city.type === "string",
+	"json.object/json.field did not derive field schemas from typed values");
 
 var configUsePickerFlowSource = [
 	"version: 1",

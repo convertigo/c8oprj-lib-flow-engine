@@ -65,7 +65,8 @@
 	}
 
 	function declaredOutputSchema(definition) {
-		var schema = definition && (definition.output || definition.outputs);
+		var meta = definition && (definition.flow || definition._flow) || {};
+		var schema = definition && (definition.output || definition.outputs) || meta.output || meta.outputs;
 		return schema && Object.keys(schema).length > 0 ? schema : null;
 	}
 

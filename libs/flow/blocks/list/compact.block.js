@@ -43,6 +43,9 @@ const _meta = {
     }
   },
   "runtime": "rhino",
+  "hooks": {
+    "file": "compact.hooks.js"
+  },
   "tags": [
     "list",
     "array",

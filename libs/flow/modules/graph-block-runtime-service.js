@@ -160,6 +160,9 @@
 			value = descriptor["default"];
 		}
 		if (kind === "expression") {
+			if (value && typeof value === "object") {
+				return ctx.literal(value);
+			}
 			return ctx.expr(value);
 		}
 		if (kind === "template") {
