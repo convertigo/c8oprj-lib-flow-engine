@@ -1124,6 +1124,11 @@ var schemaChoiceFlowSource = [
 	"    block: set",
 	"    path: result.count",
 	"    value: true",
+	"  - id: tags",
+	"    block: set",
+	"    path: result.tags",
+	"    value:",
+	"      - stable",
 	""
 ].join("\n");
 var schemaChoiceDir = new java.io.File(projectDirFile, "libs/flow/schemas/SchemaChoiceSmoke");
@@ -1134,10 +1139,16 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(sche
 		value: {
 			type: "object",
 			properties: {
-				name: { type: "string" }
+				name: { type: "string" },
+				city: { type: "string" },
+				age: { type: "integer" }
 			}
 		},
-		count: { type: "integer" }
+		count: { type: "integer" },
+		tags: {
+			type: "array",
+			items: { type: "unknown" }
+		}
 	}
 }, null, 2), "UTF-8");
 var schemaChoiceOutput = JSON.parse(engine.outputSchema(JSON.stringify({
@@ -1148,10 +1159,11 @@ var schemaChoiceOutput = JSON.parse(engine.outputSchema(JSON.stringify({
 assertTrue(schemaChoiceOutput.source === "learned" &&
 	schemaChoiceOutput.schema.properties.value.properties.name.type === "string" &&
 	schemaChoiceOutput.schema.properties.count.type === "integer" &&
+	schemaChoiceOutput.schema.properties.tags.items.type === "string" &&
 	schemaChoiceOutput.sources.static.summary.leafPaths.some(function (entry) {
 		return entry.path === "value" && entry.type === "unknown";
 	}),
-	"outputSchema effective selection did not prefer learned schema over static unknown paths");
+	"outputSchema effective selection did not prefer learned schema and fill unknown paths from static");
 var nodeOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
 	flowSource: staticSchemaFlowSource,
 	nodeId: "sourceItems",

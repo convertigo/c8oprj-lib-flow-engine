@@ -1931,6 +1931,69 @@
 		return out;
 	}
 
+	function schemaTypeName(schema) {
+		if (schema && typeof schema === "object" && schema.type) {
+			return String(schema.type);
+		}
+		return typeof schema === "string" ? schema : "";
+	}
+
+	function mergeSchemaWithoutDowngrade(primary, secondary) {
+		if (!primary) {
+			return secondary;
+		}
+		if (!secondary) {
+			return primary;
+		}
+		primary = normalizeTree(primary);
+		secondary = normalizeTree(secondary);
+		var primaryType = schemaTypeName(primary);
+		var secondaryType = schemaTypeName(secondary);
+		if (primaryType === "unknown") {
+			return secondary;
+		}
+		if (secondaryType === "unknown") {
+			return primary;
+		}
+		if (primaryType && secondaryType && primaryType !== secondaryType) {
+			return primary;
+		}
+		if ((primaryType === "object" || primary.properties) && (secondaryType === "object" || secondary.properties)) {
+			var properties = {};
+			Object.keys(primary.properties || {}).forEach(function (key) {
+				properties[key] = primary.properties[key];
+			});
+			Object.keys(secondary.properties || {}).forEach(function (key) {
+				properties[key] = mergeSchemaWithoutDowngrade(properties[key], secondary.properties[key]);
+			});
+			return { type: "object", properties: properties };
+		}
+		if (primaryType === "array" && secondaryType === "array") {
+			return {
+				type: "array",
+				items: mergeSchemaWithoutDowngrade(primary.items, secondary.items) || { type: "unknown" }
+			};
+		}
+		return primary;
+	}
+
+	function mergedEffectiveSchema(selectedSource, selectedSchema, declaredSchema, staticSchema, learnedSchema, options) {
+		if (selectedSource === "declared" && (!options || options.preferDeclared !== false)) {
+			return selectedSchema;
+		}
+		var schema = selectedSchema;
+		[
+			declaredSchema,
+			staticSchema,
+			learnedSchema
+		].forEach(function (candidate) {
+			if (candidate && candidate !== schema && schemaQuality(candidate) > 0) {
+				schema = mergeSchemaWithoutDowngrade(schema, candidate);
+			}
+		});
+		return schema;
+	}
+
 	function addOutputSchemaWarnings(warnings, selectedSource, selectedSchema, sources) {
 		if (schemaQuality(selectedSchema) === 0) {
 			warnings.push({
@@ -1970,6 +2033,7 @@
 	function selectedSchemaSource(request, declaredSchema, staticSchema, learnedSchema, options) {
 		options = options || {};
 		var wanted = String(request.source || request.schemaSource || "effective").toLowerCase();
+		var wantsEffective = wanted === "effective" || wanted === "selected" || wanted === "best" || wanted === "";
 		var schemaSource = "effective";
 		var schema = null;
 		if (wanted === "declared" || wanted === "contract" || wanted === "explicit") {
@@ -2007,6 +2071,9 @@
 		} else {
 			schema = staticSchema || learnedSchema;
 			schemaSource = schema === learnedSchema ? "learned" : "static";
+		}
+		if (wantsEffective) {
+			schema = mergedEffectiveSchema(schemaSource, schema, declaredSchema, staticSchema, learnedSchema, options);
 		}
 		return {
 			source: schemaSource,
