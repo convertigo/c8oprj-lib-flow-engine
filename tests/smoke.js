@@ -1018,6 +1018,49 @@ var staticOutputSchemaFull = JSON.parse(engine.outputSchema(JSON.stringify({ flo
 assertTrue(staticOutputSchemaFull.sources.static.available === true &&
 	staticOutputSchemaFull.sources.effective.schema.properties.items.items.properties.city.type === "string",
 	"outputSchema detail full did not expose static/effective sources");
+var schemaChoiceFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: parsePayload",
+	"    block: json.safeParse",
+	"    text: \"{{ input.raw }}\"",
+	"    out: local.parsed",
+	"  - id: copyValue",
+	"    block: set",
+	"    path: result.value",
+	"    value: \"{{ local.parsed.value }}\"",
+	"  - id: count",
+	"    block: set",
+	"    path: result.count",
+	"    value: true",
+	""
+].join("\n");
+var schemaChoiceDir = new java.io.File(projectDirFile, "libs/flow/schemas/SchemaChoiceSmoke");
+schemaChoiceDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(schemaChoiceDir, "result.out.schema.json"), JSON.stringify({
+	type: "object",
+	properties: {
+		value: {
+			type: "object",
+			properties: {
+				name: { type: "string" }
+			}
+		},
+		count: { type: "integer" }
+	}
+}, null, 2), "UTF-8");
+var schemaChoiceOutput = JSON.parse(engine.outputSchema(JSON.stringify({
+	flowName: "SchemaChoiceSmoke",
+	flowSource: schemaChoiceFlowSource,
+	detail: "full"
+})));
+assertTrue(schemaChoiceOutput.source === "learned" &&
+	schemaChoiceOutput.schema.properties.value.properties.name.type === "string" &&
+	schemaChoiceOutput.schema.properties.count.type === "integer" &&
+	schemaChoiceOutput.sources.static.summary.leafPaths.some(function (entry) {
+		return entry.path === "value" && entry.type === "unknown";
+	}),
+	"outputSchema effective selection did not prefer learned schema over static unknown paths");
 var nodeOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
 	flowSource: staticSchemaFlowSource,
 	nodeId: "sourceItems",

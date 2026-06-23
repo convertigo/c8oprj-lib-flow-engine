@@ -1871,9 +1871,17 @@
 		return out;
 	}
 
-	function schemaQuality(schema) {
-		return schemaScore(objectSchema(schema || {}));
-	}
+		function schemaQuality(schema) {
+			return schemaScore(objectSchema(schema || {}));
+		}
+
+		function schemaChoiceScore(schema) {
+			var normalized = objectSchema(schema || {});
+			if (!schema || schemaQuality(normalized) === 0) {
+				return 0;
+			}
+			return schemaScore(normalized) * 2 - unknownSchemaPaths(normalized, 100000).length * 3;
+		}
 
 	function pathRemainder(path, base) {
 		if (path === base) {
@@ -1973,13 +1981,13 @@
 		} else if (wanted === "learned" || wanted === "runtime") {
 			schema = learnedSchema;
 			schemaSource = "learned";
-		} else if (options.preferDeclared === false) {
-			var declaredQuality = schemaQuality(declaredSchema);
-			var staticQuality = schemaQuality(staticSchema);
-			var learnedQuality = schemaQuality(learnedSchema);
-			if (learnedQuality > staticQuality && learnedQuality > declaredQuality) {
-				schema = learnedSchema;
-				schemaSource = "learned";
+			} else if (options.preferDeclared === false) {
+				var declaredQuality = schemaChoiceScore(declaredSchema);
+				var staticQuality = schemaChoiceScore(staticSchema);
+				var learnedQuality = schemaChoiceScore(learnedSchema);
+				if (learnedQuality > staticQuality && learnedQuality > declaredQuality) {
+					schema = learnedSchema;
+					schemaSource = "learned";
 			} else if (staticQuality > declaredQuality) {
 				schema = staticSchema;
 				schemaSource = "static";
@@ -1990,12 +1998,12 @@
 				schema = staticSchema || learnedSchema;
 				schemaSource = schema === learnedSchema ? "learned" : "static";
 			}
-		} else if (declaredSchema) {
-			schema = declaredSchema;
-			schemaSource = "declared";
-		} else if (schemaQuality(learnedSchema) > schemaQuality(staticSchema)) {
-			schema = learnedSchema;
-			schemaSource = "learned";
+			} else if (declaredSchema) {
+				schema = declaredSchema;
+				schemaSource = "declared";
+			} else if (schemaChoiceScore(learnedSchema) > schemaChoiceScore(staticSchema)) {
+				schema = learnedSchema;
+				schemaSource = "learned";
 		} else {
 			schema = staticSchema || learnedSchema;
 			schemaSource = schema === learnedSchema ? "learned" : "static";
