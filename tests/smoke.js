@@ -1706,6 +1706,10 @@ var listSchemaPropagationFlowSource = [
 	"    block: set",
 	"    path: result.sorted",
 	"    value: \"{{ local.sortedAdults }}\"",
+	"  - id: countSorted",
+	"    block: set",
+	"    path: result.count",
+	"    value: \"{{ local.sortedAdults.length }}\"",
 	""
 ].join("\n");
 var listSchemaAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
@@ -1741,12 +1745,15 @@ assertTrue(listSchemaAnalysis.schemas["local.sortedAdults"].items.properties.nam
 var filterAdultAgeOutput = schemaLeaf(nodeOutput(analysisNode(listSchemaAnalysis, "filterAdults"), "local.adults"), "[0].age");
 var mapNameOutput = schemaLeaf(nodeOutput(analysisNode(listSchemaAnalysis, "mapNames"), "result.names"), "[0]");
 var pluckAgeOutput = schemaLeaf(nodeOutput(analysisNode(listSchemaAnalysis, "pluckAges"), "result.ages"), "[0]");
+var countSortedOutput = nodeOutput(analysisNode(listSchemaAnalysis, "countSorted"), "result.count");
 assertTrue(filterAdultAgeOutput && filterAdultAgeOutput.type === "integer",
 	"list.filter node output schema still exposes the item as unknown");
 assertTrue(mapNameOutput && mapNameOutput.type === "string",
 	"list.map node output schema still exposes the mapped item as unknown");
 assertTrue(pluckAgeOutput && pluckAgeOutput.type === "integer",
 	"list.pluck node output schema still exposes the plucked item as unknown");
+assertTrue(countSortedOutput && countSortedOutput.schema && countSortedOutput.schema.type === "integer",
+	"list length expression did not infer an integer node output schema");
 var listSchemaOutput = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
 print(JSON.stringify(listSchemaOutput));
 assertTrue(listSchemaOutput.schema.properties.names.type === "array" &&
@@ -1758,6 +1765,8 @@ assertTrue(listSchemaOutput.schema.properties.ages.type === "array" &&
 assertTrue(listSchemaOutput.schema.properties.sorted.type === "array" &&
 	listSchemaOutput.schema.properties.sorted.items.properties.city.type === "string",
 	"set did not reuse the propagated list schema for result output");
+assertTrue(listSchemaOutput.schema.properties.count.type === "integer",
+	"outputSchema did not derive integer schema for list length expressions");
 
 var collectionSchemaFlowSource = [
 	"version: 1",

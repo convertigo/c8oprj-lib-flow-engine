@@ -145,6 +145,10 @@
 					return ctx.schemaForValue(value);
 				}
 				var expression = exactTemplateExpression(value) || String(value).trim();
+				var lengthSchema = schemaForLengthExpression(ctx, expression);
+				if (lengthSchema) {
+					return lengthSchema;
+				}
 				var refs = collectExpressionRefs(expression, []);
 				if (refs.length === 1 && expression === refs[0]) {
 					return schemaForAnalysisPath(ctx, refs[0]);
@@ -157,6 +161,10 @@
 				}
 				var expression = exactTemplateExpression(value);
 				if (expression) {
+					var lengthSchema = schemaForLengthExpression(ctx, expression);
+					if (lengthSchema) {
+						return lengthSchema;
+					}
 					var refs = collectExpressionRefs(expression, []);
 					for (var i = 0; i < refs.length; i++) {
 						var schema = schemaForAnalysisPath(ctx, refs[i]);
@@ -613,6 +621,28 @@
 
 		function schemaForAnalysisPath(ctx, path) {
 			return schemaForSchemasPath(ctx.schemas, path);
+		}
+
+		function schemaForLengthExpression(ctx, expression) {
+			expression = String(expression || "").trim();
+			var path = "";
+			var property = expression.match(/^(.+)\.length$/);
+			if (property) {
+				path = String(property[1] || "").trim();
+			} else {
+				var call = expression.match(/^(?:length|list\.length)\(\s*([^)]+?)\s*\)$/);
+				path = call ? String(call[1] || "").trim() : "";
+			}
+			if (!path) {
+				return null;
+			}
+			var refs = collectExpressionRefs(path, []);
+			if (refs.length !== 1 || refs[0] !== path) {
+				return null;
+			}
+			var schema = schemaForAnalysisPath(ctx, path);
+			var type = schema && (schema.type || (schema.properties ? "object" : ""));
+			return type === "array" || type === "string" ? { type: "integer" } : null;
 		}
 
 		function childGroups(node) {
