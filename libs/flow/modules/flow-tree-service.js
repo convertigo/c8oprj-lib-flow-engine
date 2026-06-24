@@ -1999,7 +1999,7 @@
 			warnings.push({
 				code: "OUTPUT_SCHEMA_EMPTY",
 				message: "No usable output schema is available yet.",
-				hint: "Run the Flow or add a block analysis hook/static output schema, then retry."
+				hint: "Add block output hooks/static schemas, declare _flow.outputs, or explicitly record/adopt a runtime schema."
 			});
 		}
 		var unknown = unknownSchemaPaths(selectedSchema, 8);
@@ -2008,7 +2008,7 @@
 				code: "OUTPUT_SCHEMA_UNKNOWN_PATHS",
 				message: "The selected output schema still contains unknown paths.",
 				paths: unknown,
-				hint: "Add block outputs/hooks or learn/adopt a richer runtime schema."
+				hint: "Add block outputs/hooks or explicitly learn/adopt a richer runtime schema."
 			});
 		}
 		if (selectedSource === "declared") {
@@ -2045,13 +2045,13 @@
 		} else if (wanted === "learned" || wanted === "runtime") {
 			schema = learnedSchema;
 			schemaSource = "learned";
-			} else if (options.preferDeclared === false) {
-				var declaredQuality = schemaChoiceScore(declaredSchema);
-				var staticQuality = schemaChoiceScore(staticSchema);
-				var learnedQuality = schemaChoiceScore(learnedSchema);
-				if (learnedQuality > staticQuality && learnedQuality > declaredQuality) {
-					schema = learnedSchema;
-					schemaSource = "learned";
+		} else if (options.preferDeclared === false) {
+			var declaredQuality = schemaChoiceScore(declaredSchema);
+			var staticQuality = schemaChoiceScore(staticSchema);
+			var learnedQuality = schemaChoiceScore(learnedSchema);
+			if (learnedQuality > staticQuality && learnedQuality > declaredQuality) {
+				schema = learnedSchema;
+				schemaSource = "learned";
 			} else if (staticQuality > declaredQuality) {
 				schema = staticSchema;
 				schemaSource = "static";
@@ -2062,12 +2062,12 @@
 				schema = staticSchema || learnedSchema;
 				schemaSource = schema === learnedSchema ? "learned" : "static";
 			}
-			} else if (declaredSchema) {
-				schema = declaredSchema;
-				schemaSource = "declared";
-			} else if (schemaChoiceScore(learnedSchema) > schemaChoiceScore(staticSchema)) {
-				schema = learnedSchema;
-				schemaSource = "learned";
+		} else if (declaredSchema) {
+			schema = declaredSchema;
+			schemaSource = "declared";
+		} else if (schemaChoiceScore(learnedSchema) > schemaChoiceScore(staticSchema)) {
+			schema = learnedSchema;
+			schemaSource = "learned";
 		} else {
 			schema = staticSchema || learnedSchema;
 			schemaSource = schema === learnedSchema ? "learned" : "static";

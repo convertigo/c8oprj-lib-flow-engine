@@ -3327,6 +3327,131 @@
 		return flowTreeService().nodeOutputSchemaRequest(request, blocks, flowTreeServiceEnv());
 	}
 
+	function contextMenuRequest(request, blocks) {
+		var target = request.targetObject || {};
+		var targetKind = String(target.kind || "");
+		var targetType = String(target.type || "");
+		var hasFlow = String(request.flowName || "").trim() !== "";
+		var isFlowSchemaTarget = hasFlow && (targetKind === "flow" || targetKind === "folder" && targetType === "flow");
+		var isRuntimeTarget = isFlowSchemaTarget || targetKind === "engine" ||
+			targetKind === "blockImplementation" || targetKind === "fragmentImplementation";
+		var items = [];
+		if (isFlowSchemaTarget) {
+			var output = outputSchemaRequest(Object.assign({}, request, {
+				source: "effective",
+				detail: "full"
+			}), blocks);
+			var learned = output.sources && output.sources.learned && output.sources.learned.available === true;
+			if (learned) {
+				items.push(contextMenuItem("flow.outputSchema.resetLearned", "Reset learned output schema",
+					"Deletes learned Flow result schemas without touching declared _flow.outputs.", "", {
+						action: "reset"
+					}, "Delete learned Flow result schemas for this Flow?", "/com/twinsoft/convertigo/beans/flow/images/flowvirtualobject_color_16x16.png"));
+			}
+		}
+		if (isRuntimeTarget) {
+			items.push(contextMenuItem("flow.cache.clear", "Clear Flow runtime caches",
+				"Clears Flow Java and JavaScript runtime caches for this project.", "", {},
+				"", "/com/twinsoft/convertigo/beans/core/images/project_color_16x16.png"));
+		}
+		return {
+			ok: true,
+			protocol: "flow.studio.menu.v1",
+			label: "Flow",
+			items: items
+		};
+	}
+
+	function contextMenuItem(id, label, description, group, payload, confirm, icon, enabled) {
+		return {
+			id: id,
+			label: label,
+			description: description,
+			group: group,
+			enabled: enabled !== false,
+			payload: payload || {},
+			confirm: confirm || "",
+			icon: icon || ""
+		};
+	}
+
+	function contextActionRequest(request, blocks) {
+		var action = request.action || {};
+		var id = String(action.id || request.actionId || "");
+		var payload = action.payload || {};
+		if (id === "flow.outputSchema.inspect") {
+			var output = outputSchemaRequest(Object.assign({}, request, payload, {
+				source: payload.source || "effective"
+			}), blocks);
+			return Object.assign({
+				ok: output.ok !== false,
+				title: "Flow output schema",
+				message: output.ok === false ? actionErrorMessage(output) : outputSchemaMessage(output),
+				schema: output.schema || null
+			}, output.ok === false ? { error: output.error } : {});
+		}
+		if (id === "flow.outputSchema.resetLearned") {
+			var reset = resetSchemaRequest(Object.assign({}, request, payload));
+			return {
+				ok: reset.ok !== false,
+				title: "Flow output schema",
+				message: reset.deleted ? "Learned Flow result schemas have been deleted." : "No learned Flow result schema was found.",
+				refresh: true,
+				details: reset
+			};
+		}
+		if (id === "flow.nodeOutputSchema.inspect") {
+			var target = request.targetObject || {};
+			var definition = target.definition || {};
+			var node = nodeOutputSchemaRequest(Object.assign({}, request, payload, {
+				nodeId: payload.nodeId || definition.id || ""
+			}), blocks);
+			return Object.assign({
+				ok: node.ok !== false,
+				title: "Flow node output schema",
+				message: node.ok === false ? actionErrorMessage(node) : "",
+				schema: node.schema || node.effective || null,
+				details: node
+			}, node.ok === false ? { error: node.error } : {});
+		}
+		if (id === "flow.cache.clear") {
+			var cleared = clearRuntimeCaches();
+			return {
+				ok: true,
+				title: "Flow runtime",
+				message: "Flow runtime caches have been cleared.",
+				refresh: true,
+				refreshPalette: true,
+				details: cleared
+			};
+		}
+		return failure("contextAction", {
+			code: "UNKNOWN_CONTEXT_ACTION",
+			message: "Unknown Flow context action: " + id
+		});
+	}
+
+	function actionErrorMessage(result) {
+		var error = result && result.error;
+		return error ? String(error.message || error) : "Flow action failed.";
+	}
+
+	function outputSchemaMessage(output) {
+		var source = String(output && output.source || "");
+		var schemaSource = String(output && output.schemaSource || "");
+		var warnings = output && output.warnings || [];
+		var parts = [];
+		if (source || schemaSource) {
+			parts.push("Schema source: " + (schemaSource || source));
+		}
+		if (warnings.length) {
+			parts.push("Warnings: " + warnings.map(function (warning) {
+				return String(warning.message || warning.code || warning);
+			}).join("; "));
+		}
+		return parts.join("\n");
+	}
+
 	function searchNeedle(request) {
 		return flowTreeService().searchNeedle(request, flowTreeServiceEnv());
 	}
@@ -3560,6 +3685,18 @@
 		nodeOutputSchema: function (requestJson) {
 			return engineCall("nodeOutputSchema", requestJson, function (request) {
 				return nodeOutputSchemaRequest(request, loadBlocks());
+			});
+		},
+
+		contextMenu: function (requestJson) {
+			return engineCall("contextMenu", requestJson, function (request) {
+				return contextMenuRequest(request, loadBlocks());
+			});
+		},
+
+		contextAction: function (requestJson) {
+			return engineCall("contextAction", requestJson, function (request) {
+				return contextActionRequest(request, loadBlocks());
 			});
 		},
 

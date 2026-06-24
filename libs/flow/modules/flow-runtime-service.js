@@ -167,6 +167,14 @@
 			return result;
 		}
 
+		function shouldLearnResultSchema(request) {
+			return request && (request.learnResultSchema === true ||
+				request.learnFlowResultSchema === true ||
+				request.recordResultSchema === true ||
+				request.recordOutputSchema === true ||
+				request.recordSchema === true);
+		}
+
 		function runFlowRequest(request, blocks) {
 			var parsedDefinition = parseSource(sourceForFlowRequest(request, blocks));
 			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, parsedDefinition) : blocks;
@@ -177,7 +185,7 @@
 				ctx.runNodes(definition.nodes || []);
 				var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
 				assertNoRuntimeHandle(result, "result");
-				var resultSchema = learnResultSchema(request, definition, result);
+				var resultSchema = shouldLearnResultSchema(request) ? learnResultSchema(request, definition, result) : null;
 				if (resultSchema && resultSchema.learned === true) {
 					ctx.schemaUpdates.push({
 						scope: "result",
@@ -186,7 +194,7 @@
 						property: "out",
 						file: resultSchema.file,
 						schema: schemaSummary(resultSchema.schema),
-						message: "Learned final result schema. Future output-schema calls can use it."
+						message: "Recorded final result schema. Future output-schema calls can use this explicit learned override."
 					});
 				}
 				closeRuntimeHandles(ctx);

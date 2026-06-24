@@ -1384,12 +1384,24 @@ var explicitReturnSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowS
 assertTrue(explicitReturnSchema.schema.type === "array" &&
 	explicitReturnSchema.schema.items.properties.city.type === "string",
 	"outputSchema did not derive explicit return schema from static dataflow analysis");
-var learnedRun = JSON.parse(engine.run(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource })));
-var learnedSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource })));
-assertTrue(learnedRun.result.message === "Hello Flow", "Named flow did not execute for schema learning");
-assertTrue(learnedSchema.schema.properties.cities.type === "array" &&
+var defaultRun = JSON.parse(engine.run(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource })));
+var defaultSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource, detail: "full" })));
+assertTrue(defaultRun.result.message === "Hello Flow", "Named flow did not execute before schema inspection");
+assertTrue(!defaultRun.schemaUpdates || defaultRun.schemaUpdates.length === 0,
+	"Default run should not record a learned Flow result schema");
+assertTrue(defaultSchema.source === "static" &&
+	defaultSchema.sources.learned.available === false &&
+	defaultSchema.schema.properties.cities.type === "array" &&
+	defaultSchema.schema.properties.message.type === "string",
+	"outputSchema should stay dynamic/static by default and not learn the Flow result");
+var learnedRun = JSON.parse(engine.run(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource, learnResultSchema: true })));
+var learnedSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowName: "SmokeResult", flowSource: flowSource, detail: "full" })));
+assertTrue(learnedRun.schemaUpdates && learnedRun.schemaUpdates.length > 0,
+	"Explicit learnResultSchema did not record a learned Flow result schema");
+assertTrue(learnedSchema.sources.learned.available === true &&
+	learnedSchema.schema.properties.cities.type === "array" &&
 	learnedSchema.schema.properties.message.type === "string",
-	"outputSchema did not expose the learned Flow result structure");
+	"outputSchema did not expose the explicitly learned Flow result structure");
 
 var implicitReturnFlowSource = [
 	"version: 1",

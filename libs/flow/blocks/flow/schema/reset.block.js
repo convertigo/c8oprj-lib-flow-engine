@@ -2,7 +2,7 @@ const _meta = {
   "version": 1,
   "private": true,
   "icon": "mdi:database-refresh-outline",
-  "description": "Deletes learned Flow schema files so the next run learns them again.",
+  "description": "Deletes learned Flow schema files so the Flow falls back to declared/static schema until an explicit record/adopt action is used.",
   "properties": {
     "flowName": {
       "label": "flowName",
