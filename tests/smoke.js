@@ -87,6 +87,55 @@ var typeListApi = JSON.parse(engine.types("{}"));
 assertTrue(typeListApi.ok === true && typeListApi.types.some(function (type) {
 	return type.name === "requestable";
 }), "types API did not expose core property types");
+var referencedProjectDir = new java.io.File(projectDirFile.getParentFile(), "c8oprj-lib-flow-process");
+if (referencedProjectDir.isDirectory()) {
+	Packages.org.apache.commons.io.FileUtils.deleteDirectory(referencedProjectDir);
+}
+var referencedBlocksDir = new java.io.File(referencedProjectDir, "libs/flow/blocks/process");
+referencedBlocksDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(projectDirFile, "c8oProject.yaml"), [
+	"↓SmokeProject [core.Project]:",
+	"  ↓lib_flow_process_reference [references.ProjectSchemaReference]:",
+	"    projectName: lib_flow_process",
+	""
+].join("\n"), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(referencedBlocksDir, "echo.block.js"), [
+	"const _meta = {",
+	"  version: 1,",
+	"  description: \"Referenced smoke block.\",",
+	"  properties: {",
+	"    value: { kind: \"template\", type: \"string\" }",
+	"  },",
+	"  outputs: { out: { type: \"string\" } },",
+	"  visibility: \"internal\"",
+	"}",
+	"",
+	"function process_echo({ input }) {",
+	"  return input.value",
+	"}",
+	""
+].join("\n"), "UTF-8");
+var referencedBlockFlowScriptSource = [
+	"function ReferencedBlockSmoke({ input, result }) {",
+	"\tvar value = process.echo({ value: \"reference-ok\" })",
+	"\tresult.value = value",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var referencedBlockValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "ReferencedBlockSmoke",
+	code: referencedBlockFlowScriptSource
+})));
+assertTrue(referencedBlockValidation.ok === true &&
+	referencedBlockValidation.definition.nodes[0].block === "process.echo",
+	"c8oprj-prefixed referenced project blocks were not available to Flow validation");
+var referencedBlockRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: referencedBlockFlowScriptSource,
+	includeTrace: false
+})));
+assertTrue(referencedBlockRun.result.value === "reference-ok",
+	"c8oprj-prefixed referenced project block did not execute correctly");
 var naturalFlowScriptSource = [
 	"function NaturalSyntaxSmoke({ input, config, result }) {",
 	"\tconst rows = [{ title: \"b\" }, { title: \"a\" }]",
@@ -151,6 +200,12 @@ assertTrue(declaredInputValidation.ok === true &&
 	!declaredInputValidation.diagnostics.some(function (diagnostic) {
 		return diagnostic.code === "FLOWSCRIPT_INPUT_NOT_DECLARED";
 	}), "Declared FlowScript inputs still reported a missing contract warning");
+var declaredInputOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({
+	flowSource: declaredInputFlowScriptSource
+})));
+assertTrue(declaredInputOutputSchema.ok === true &&
+	declaredInputOutputSchema.schema.properties.value.type === "string",
+	"Declared FlowScript input schemas did not propagate to result output schema");
 var declaredInputSync = JSON.parse(engine.syncInputs(JSON.stringify({
 	project: "SmokeProject",
 	flowName: "DeclaredInputContractSmoke",

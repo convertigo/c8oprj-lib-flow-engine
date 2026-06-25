@@ -525,6 +525,9 @@
 			ctx.requestableOutputSchema = request.allowRequestableSchema === false
 				? function () { return null; }
 				: requestableOutputSchema;
+			if (!sourceBlock) {
+				addInputDefinitionSchemas(ctx, definition);
+			}
 			if (sourceBlock) {
 				ctx.addPath("input");
 				Object.keys(sourceCatalog.props || {}).forEach(function (key) {
@@ -542,6 +545,49 @@
 			}
 			ctx.raise = raise;
 			return ctx;
+		}
+
+		function inputDefinitionsFromDefinition(definition) {
+			var meta = definition && (definition.flow || definition._flow) || {};
+			var inputs = meta.inputs || meta.input || definition && (definition.inputs || definition.input) || {};
+			return inputs && typeof inputs === "object" ? normalizeTree(inputs) : {};
+		}
+
+		function schemaFromInputDefinition(definition) {
+			definition = normalizeTree(definition || {});
+			if (definition.schema && typeof definition.schema === "object") {
+				return normalizeTree(definition.schema);
+			}
+			var schema = {};
+			["type", "properties", "items", "additionalProperties"].forEach(function (key) {
+				if (definition[key] !== undefined) {
+					schema[key] = definition[key];
+				}
+			});
+			if (Object.keys(schema).length) {
+				return normalizeTree(schema);
+			}
+			return definition["default"] !== undefined ? inferSchema(definition["default"]) : null;
+		}
+
+		function addInputDefinitionSchemas(ctx, definition) {
+			var inputDefinitions = inputDefinitionsFromDefinition(definition);
+			var inputProperties = {};
+			Object.keys(inputDefinitions || {}).forEach(function (key) {
+				var schema = schemaFromInputDefinition(inputDefinitions[key]);
+				if (schema) {
+					inputProperties[key] = schema;
+					ctx.addSchema("input." + key, schema);
+				} else {
+					ctx.addPath("input." + key);
+				}
+			});
+			if (Object.keys(inputProperties).length) {
+				ctx.addSchema("input", {
+					type: "object",
+					properties: inputProperties
+				});
+			}
 		}
 
 		function cloneSource(source) {

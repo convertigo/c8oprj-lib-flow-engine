@@ -29,6 +29,23 @@
 		return projectRoot ? String(projectRoot.getName() || "") : "";
 	}
 
+	function projectRootCandidate(parent, name, env) {
+		var slug = String(name || "").replace(/_/g, "-");
+		var candidates = [
+			new env.File(parent, name),
+			new env.File(parent, "c8oprj-" + name),
+			new env.File(parent, slug),
+			new env.File(parent, "c8oprj-" + slug)
+		];
+		for (var i = 0; i < candidates.length; i++) {
+			var root = candidates[i];
+			if (referencedBlocksDir(root, env).isDirectory()) {
+				return root;
+			}
+		}
+		return null;
+	}
+
 	function referencedProjectRoots(env) {
 		var roots = [];
 		var projectRoot = env.projectDir();
@@ -52,9 +69,8 @@
 				continue;
 			}
 			seen[name] = true;
-			var root = new env.File(parent, name);
-			var blocksDir = new env.File(root, "libs/flow/blocks");
-			if (blocksDir.isDirectory()) {
+			var root = projectRootCandidate(parent, name, env);
+			if (root) {
 				roots.push(root);
 			}
 		}
