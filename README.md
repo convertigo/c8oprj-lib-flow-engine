@@ -620,32 +620,36 @@ The analysis is positional. For the default `position: "before"`, paths written
 after the target node are not returned. Inside a `forEach`, the `current` scope
 keeps a producer reference to the iterated source path.
 
-## Learned schemas
+## Output and learned schemas
 
-Flows learn their final `result` structure on the first successful named run
-when no declared output contract (`_flow.outputs`, `flow.outputs` or `output`)
-and no schema file exist yet. `http.request` and `http.get` also learn their
-node output structure on the first successful run when no node schema file
-exists yet. Stored files contain only types and object keys, never response
-values:
+Flow output schema resolution is static-first. `Engine.outputSchema()` starts by
+analyzing the Flow graph, propagates known block output schemas through values,
+merges `result.*` writes, and honors explicit `return` blocks when their value
+schema is known. Optional `_flow.outputs` is treated as the explicit result
+contract and takes precedence over static and learned inference. Keep the schema
+dynamic when the static result is correct; adopt `_flow.outputs` only when a
+human or agent intentionally wants a fixed contract.
+
+Ordinary Flow execution does not learn the final `result` schema. Runtime result
+recording is explicit through request flags such as `learnResultSchema`,
+`learnFlowResultSchema`, `recordResultSchema`, `recordOutputSchema` or
+`recordSchema`, and learned result schemas are only a fallback when static
+analysis does not know enough. Producer nodes can still learn richer output
+schemas when their block hooks call the learning API; built-in HTTP blocks use
+that path for response bodies. Stored files contain only types and object keys,
+never response values:
 
 ```text
 libs/flow/schemas/<flowName>/result.out.schema.json
 libs/flow/schemas/<flowName>/<nodeId>.out.schema.json
 ```
 
-If a file exists, it is reused and never overwritten by runtime execution.
-To relearn one producer, remove it through `Engine.nodeOutputSchema()` or the
-MCP `flow-node-output-schema` tool with `action:"remove"`; the next successful
-run can create it again. Use `schemaReset()` / `flow-schema-reset` only for
-broader cleanup.
+If a file exists, it is reused and never overwritten by normal runtime
+execution. To relearn one producer, remove it through `Engine.nodeOutputSchema()`
+or the MCP `flow-node-output-schema` tool with `action:"remove"`; the next
+successful run can create it again when the producer hook learns schemas. Use
+`schemaReset()` / `flow-schema-reset` only for broader cleanup.
 
-Flow output schema resolution is static-first. `Engine.outputSchema()` starts by
-analyzing the Flow graph, propagates known block output schemas through values,
-merges `result.*` writes, and honors explicit `return` blocks when their value
-schema is known. Optional `_flow.outputs` is treated as the explicit result
-contract and takes precedence over static and learned inference. Learned result
-schemas are only a fallback when static analysis does not know enough.
 Pass `detail:"full"` to compare declared/static/learned/effective sources and
 warnings. `Engine.nodeOutputSchema()` exposes the same comparison for a single
 producer node and can read learned node schemas such as HTTP response bodies.
