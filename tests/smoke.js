@@ -206,6 +206,22 @@ var declaredInputOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({
 assertTrue(declaredInputOutputSchema.ok === true &&
 	declaredInputOutputSchema.schema.properties.value.type === "string",
 	"Declared FlowScript input schemas did not propagate to result output schema");
+var emptyArrayMergeFlowScriptSource = [
+	"function EmptyArrayMergeSchemaSmoke({ input, result }) {",
+	"\tvar names = [\"Ada\", \"Grace\"]",
+	"\tresult.names = names",
+	"\tresult.names = []",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var emptyArrayMergeOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({
+	flowSource: emptyArrayMergeFlowScriptSource
+})));
+assertTrue(emptyArrayMergeOutputSchema.ok === true &&
+	emptyArrayMergeOutputSchema.schema.properties.names.type === "array" &&
+	emptyArrayMergeOutputSchema.schema.properties.names.items.type === "string",
+	"Empty array writes downgraded an existing array item schema");
 var declaredInputSync = JSON.parse(engine.syncInputs(JSON.stringify({
 	project: "SmokeProject",
 	flowName: "DeclaredInputContractSmoke",

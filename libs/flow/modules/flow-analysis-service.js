@@ -116,6 +116,9 @@
 				if (ctx.returnedPathSchemas && ctx.returnedPathSchemas[basePath]) {
 					normalized = mergeGraphBlockSchema(normalized, ctx.returnedPathSchemas[basePath]) || normalized;
 				}
+				if (basePath !== "current" && ctx.schemas[basePath]) {
+					normalized = mergeSchema(ctx.schemas[basePath], normalized) || normalized;
+				}
 				ctx.schemas[basePath] = normalized;
 				ctx.addPath(basePath);
 				if (ctx.currentNodeInfo) {
