@@ -210,6 +210,7 @@
 		var previousInput = ctx.scopes.input;
 		var previousProps = ctx.scopes.props;
 		var previousLocal = ctx.scopes.local;
+		var previousResult = ctx.scopes.result;
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
@@ -219,18 +220,22 @@
 		ctx.scopes.props = resolveGraphBlockProps(ctx, node, catalog);
 		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
+		ctx.scopes.result = {};
 		ctx.returned = undefined;
 		ctx.stopped = false;
 		try {
 			var result = ctx.runNodes(block.__graphDefinition.nodes || []);
 			if (ctx.returned !== undefined) {
 				result = ctx.returned;
+			} else if (ctx.scopes.result && Object.keys(ctx.scopes.result).length > 0) {
+				result = ctx.scopes.result;
 			}
 			return result;
 		} finally {
 			ctx.scopes.input = previousInput;
 			ctx.scopes.props = previousProps;
 			ctx.scopes.local = previousLocal;
+			ctx.scopes.result = previousResult;
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;

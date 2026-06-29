@@ -63,9 +63,9 @@ const _meta = {
 			var props = ctx.props(node);
 			return ctx.callBlock("http.request", {
 				method: "GET",
-				url: props.url,
-				query: props.query,
-				headers: props.headers,
+				url: ctx.template(props.url),
+				query: ctx.template(props.query),
+				headers: ctx.template(props.headers),
 				out: props.out
 			}, {
 				id: node.id || "request"

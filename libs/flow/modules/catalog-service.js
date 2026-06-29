@@ -156,6 +156,9 @@
 		if (descriptor["private"] === true) {
 			out["private"] = true;
 		}
+		if (descriptor.mock === true) {
+			out.mock = true;
+		}
 		if (descriptor.visibility && descriptor.visibility !== "public") {
 			out.visibility = descriptor.visibility;
 		}
@@ -243,6 +246,9 @@
 		if (descriptor["private"] === true) {
 			out["private"] = true;
 		}
+		if (descriptor.mock === true) {
+			out.mock = true;
+		}
 		if (descriptor.visibility && descriptor.visibility !== "public") {
 			out.visibility = descriptor.visibility;
 		}
@@ -259,6 +265,9 @@
 			out.slots = descriptor.slots.map(function (slot) {
 				return slot.name;
 			});
+		}
+		if (descriptor.mock === true) {
+			out.mock = true;
 		}
 		return out;
 	}

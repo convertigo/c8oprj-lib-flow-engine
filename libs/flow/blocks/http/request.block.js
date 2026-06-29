@@ -142,7 +142,8 @@ const _meta = {
 			Object.keys(headers).forEach(function (key) {
 				conn.setRequestProperty(String(key), String(headers[key]));
 			});
-			writeBody(conn, props.body === undefined ? undefined : ctx.expr(props.body), headers);
+			var body = props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body);
+			writeBody(conn, body, headers);
 			var response = readResponse(conn);
 			if (props.out && response.status < 400 && ctx.learnOutputSchema) {
 				ctx.learnOutputSchema(node, "out", props.out, response);

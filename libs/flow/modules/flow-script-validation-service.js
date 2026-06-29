@@ -115,14 +115,15 @@
 						candidates: candidates,
 						next: candidates.length && candidates[0].score >= 35
 							? "Try " + candidates[0].block + " first, or call flow-block-get for its exact contract."
-							: "No strong palette match. If this is a real domain concept, create a project block with flow-block-code-set, then use it from FlowScript.",
+							: "No strong palette match. If this is intentional domain vocabulary, create an explicit project mock with flow-block-mock, typed properties and typed outputs, then implement that block with real FlowScript.",
 						create: {
-							tool: "flow-block-code-set",
-							name: name
+							tool: candidates.length && candidates[0].score >= 35 ? "flow-block-get" : "flow-block-mock",
+							name: name,
+							block: name
 						},
 						hint: candidates.length
 							? "Use one candidate block, inspect it with flow-block-get, or create " + name + " as a project block if none matches."
-							: "Create a project block with flow-block-code-set before using " + name + "."
+							: "Use flow-block-mock to keep the parent Flow executable, then replace the mock with a real FlowScript implementation."
 					});
 				} else {
 					var catalog = env.blockCatalog(block);
@@ -216,9 +217,13 @@
 	}
 
 	function inputDefinitionsFromDefinition(definition) {
-		var meta = definition && (definition.flow || definition._flow) || {};
+		var meta = flowMetaFromDefinition(definition);
 		var inputs = meta.inputs || meta.input || definition && (definition.inputs || definition.input) || {};
 		return inputs && typeof inputs === "object" ? inputs : {};
+	}
+
+	function flowMetaFromDefinition(definition) {
+		return definition && (definition.flow || definition._flow) || {};
 	}
 
 	function inputDeclarationSnippet(missing) {
@@ -250,6 +255,132 @@
 			missingInputs: missing,
 			message: "FlowScript reads " + missing.map(function (name) { return "input." + name; }).join(", ") + " without declaring them in _flow.inputs.",
 			hint: "Declare request inputs before the function so Studio, SDK callers, test cases and MCP agree on the Flow contract. Example: " + inputDeclarationSnippet(missing)
+		}];
+	}
+
+	function walkDefinitionNodes(nodes, visitor) {
+		(nodes || []).forEach(function (node) {
+			visitor(node);
+			["nodes", "then", "else", "fields"].forEach(function (slot) {
+				if (Object.prototype.toString.call(node && node[slot]) === "[object Array]") {
+					walkDefinitionNodes(node[slot], visitor);
+				}
+			});
+		});
+	}
+
+	function repetitionStyleDiagnostics(definition, env) {
+		var watched = {
+			"http.get": true,
+			"http.post": true,
+			"http.put": true,
+			"http.delete": true,
+			"http.request": true,
+			"requestable.call": true
+		};
+		var counts = {};
+		var firstLine = {};
+		function count(nodes) {
+			walkDefinitionNodes(nodes, function (node) {
+				var name = env.blockName(node);
+				if (!watched[name]) {
+					return;
+				}
+				counts[name] = (counts[name] || 0) + 1;
+				if (firstLine[name] === undefined) {
+					firstLine[name] = node.__flowScriptLine || 0;
+				}
+			});
+		}
+		(definition.helpers || []).forEach(function (helper) {
+			count(helper.nodes || []);
+		});
+		count(definition.nodes || []);
+		return Object.keys(counts).filter(function (name) {
+			return counts[name] > 3;
+		}).map(function (name) {
+			return {
+				severity: "warning",
+				code: "FLOWSCRIPT_REPEATED_EXTERNAL_CALLS",
+				line: firstLine[name] || 0,
+				block: name,
+				count: counts[name],
+				message: "FlowScript contains " + counts[name] + " " + name + " calls.",
+				hint: "If these calls share the same shape, move repeated rows/endpoints to project config and iterate with list.map, calling one per-item FlowScript block from the map body."
+			};
+		});
+	}
+
+	function collectLargeConfigArrays(value, path, out) {
+		if (!value || typeof value !== "object") {
+			return;
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			if (value.length >= 10) {
+				out.push({ path: path, length: value.length });
+			}
+			value.forEach(function (item, index) {
+				collectLargeConfigArrays(item, path + "[" + index + "]", out);
+			});
+			return;
+		}
+		Object.keys(value).forEach(function (key) {
+			collectLargeConfigArrays(value[key], path ? path + "." + key : key, out);
+		});
+	}
+
+	function localConfigStyleDiagnostics(definition) {
+		var meta = flowMetaFromDefinition(definition);
+		var config = meta.config;
+		if (!config || typeof config !== "object") {
+			return [];
+		}
+		var arrays = [];
+		collectLargeConfigArrays(config, "config", arrays);
+		if (!arrays.length) {
+			return [];
+		}
+		return [{
+			severity: "warning",
+			code: "FLOWSCRIPT_LARGE_LOCAL_CONFIG",
+			path: arrays[0].path,
+			length: arrays[0].length,
+			message: "_flow.config contains a large local table at " + arrays[0].path + " (" + arrays[0].length + " items).",
+			hint: "Use _flow.config only for Flow-local defaults. If the project already has high-level FlowEngine config, read config.* directly instead of duplicating constants in the Flow source."
+		}];
+	}
+
+	function lineForOffset(code, offset) {
+		return String(code || "").slice(0, Math.max(0, offset)).split(/\r\n|\r|\n/).length;
+	}
+
+	function hardCodedServiceUrlDiagnostics(code) {
+		var source = String(code || "");
+		var urlRe = /["'`](https?:\/\/[^"'`\s]+)["'`]/g;
+		var match;
+		var urls = [];
+		var seen = {};
+		var firstOffset = -1;
+		while ((match = urlRe.exec(source)) !== null) {
+			var url = String(match[1] || "");
+			if (!seen[url]) {
+				seen[url] = true;
+				urls.push(url);
+			}
+			if (firstOffset < 0) {
+				firstOffset = match.index;
+			}
+		}
+		if (!urls.length) {
+			return [];
+		}
+		return [{
+			severity: "warning",
+			code: "FLOWSCRIPT_HARDCODED_SERVICE_URL",
+			line: lineForOffset(source, firstOffset),
+			urlCount: urls.length,
+			message: "FlowScript contains " + urls.length + " hard-coded service URL" + (urls.length > 1 ? "s" : "") + ".",
+			hint: "Move structural endpoints to project FlowEngine config, for example config.services.weather.forecastUrl, and pass that value into reusable blocks."
 		}];
 	}
 
@@ -366,6 +497,15 @@
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = [].concat(definition.__flowScriptDiagnostics || [], validateDefinition(blocks, definition, env));
 		inputContractDiagnostics(definition, request).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		repetitionStyleDiagnostics(definition, env).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		localConfigStyleDiagnostics(definition).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		hardCodedServiceUrlDiagnostics(code).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		var clean = env.stripFlowScriptMetadata(definition);

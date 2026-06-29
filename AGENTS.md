@@ -172,6 +172,9 @@ provider details in every executable Flow. The sub-block should expose simple
 `limit`, call `http.get` / `http.request`, and return a small typed object that
 pickers and agents can reuse. The executable Flow should orchestrate these
 blocks and shape `result.*`.
+Store structural service constants such as base URLs, API paths, namespaces,
+tokens and timeouts under project or Flow config, not as hidden literals inside
+low-level blocks.
 
 When a FlowScript source reads `input.foo`, treat `foo` as a request input that
 must be visible to users and tests. Agent-facing tooling may report
@@ -267,6 +270,10 @@ properties and `local.*` for implementation-private state. `props.*` and
 `flow.*` are not expression scopes; JS hooks/raw implementations can inspect the
 raw node with `ctx.props(node)`. Use `runtime: rhino`
 only when the behavior needs Rhino/Java code or would be awkward as a graph.
+Generated top-down placeholder blocks may use `_meta.mock = true` only with
+typed outputs and an obvious TODO. They are acceptable for keeping a parent
+Flow executable during exploration, but callers are not complete until the mock
+is replaced by a real FlowScript implementation.
 
 When a Rhino block calls `ctx.lib("name")`, declare the dependency in the
 descriptor with `uses: [name]` so the library appears under `Catalog >

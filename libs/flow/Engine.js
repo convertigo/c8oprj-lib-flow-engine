@@ -1733,7 +1733,7 @@
 					reason: "sequence-not-found"
 				};
 			}
-			var flowClass = Packages.com.twinsoft.convertigo.beans.flow.Flow.class;
+			var flowClass = Packages.java.lang.Class.forName("com.twinsoft.convertigo.beans.flow.Flow");
 			if (!flowClass.isAssignableFrom(sequence.getClass())) {
 				return {
 					flow: null,
@@ -2494,6 +2494,8 @@
 			readProjectFlowWorkingCode: readProjectFlowWorkingCode,
 			writeProjectFlowWorkingCode: writeProjectFlowWorkingCode,
 			discardProjectFlowWorkingCopy: discardProjectFlowWorkingCopy,
+			projectFlowBean: projectFlowBean,
+			projectFlowBeanLookup: projectFlowBeanLookup,
 			flowScriptGetRequest: flowScriptGetRequest,
 			normalizeFlowScriptCode: normalizeFlowScriptCode,
 			stripFlowScriptMirrorHeader: stripFlowScriptMirrorHeader,

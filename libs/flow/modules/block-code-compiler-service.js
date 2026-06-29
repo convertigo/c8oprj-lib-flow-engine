@@ -45,7 +45,7 @@
 				raise("INVALID_BLOCK_RUNTIME", "Unsupported .block.js runtime: " + runtime,
 					null, "Use runtime: \"flow\" or runtime: \"rhino\" in _meta.");
 			}
-			["private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties"].forEach(function (key) {
+			["private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo"].forEach(function (key) {
 				if (meta[key] !== undefined) {
 					descriptor[key] = meta[key];
 				}
@@ -64,7 +64,7 @@
 				descriptor = normalizeTree(request.definition);
 			}
 			var meta = {};
-			["version", "description", "icon", "private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties"].forEach(function (key) {
+			["version", "description", "icon", "private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo"].forEach(function (key) {
 				if (descriptor[key] !== undefined) {
 					meta[key] = descriptor[key];
 				}

@@ -68,10 +68,11 @@ const _meta = {
 			var props = ctx.props(node);
 			return ctx.callBlock("http.request", {
 				method: "PUT",
-				url: props.url,
-				query: props.query,
-				headers: props.headers,
-				body: props.body,
+				url: ctx.template(props.url),
+				query: ctx.template(props.query),
+				headers: ctx.template(props.headers),
+				body: props.body === undefined ? undefined : ctx.expr(props.body),
+				bodyResolved: props.body !== undefined,
 				out: props.out
 			}, {
 				id: node.id || "request"

@@ -719,6 +719,48 @@ var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(flowBackedRun.result.message === "Hello flow backed block",
 	"canonical YAML Flow block did not execute through its implementation file");
+var httpInputUrlFile = new java.io.File(projectDirFile, "flow-http-input-url-smoke.txt");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(httpInputUrlFile, "Flow HTTP input URL smoke", "UTF-8");
+var httpInputUrlCodeSource = [
+	"const _meta = {",
+	"\t\"description\": \"Reads an URL received through block input.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {",
+	"\t\t\"url\": { \"kind\": \"expression\", \"type\": \"string\" }",
+	"\t},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": { \"type\": \"string\" }",
+	"\t}",
+	"}",
+	"",
+	"function httpInputUrl({ input }) {",
+	"\tvar page = http.get({ url: input.url })",
+	"\treturn page.text",
+	"}",
+	""
+].join("\n");
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.httpInputUrl",
+	code: httpInputUrlCodeSource
+}))).ok === true, "blockCodeSet did not create httpInputUrl");
+var httpInputUrlRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: url",
+		"    block: set",
+		"    path: local.url",
+		"    value: " + JSON.stringify(String(httpInputUrlFile.toURI().toURL())),
+		"  - id: read",
+		"    block: smoke.httpInputUrl",
+		"    url: local.url",
+		"    out: result.text",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(httpInputUrlRun.result.text === "Flow HTTP input URL smoke",
+	"http.get shortcut lost the caller input scope inside a FlowScript block");
 var innerLeakCodeSource = [
 	"const _meta = {",
 	"\t\"description\": \"Inner Flow block whose result scope must stay private to the block.\",",
@@ -810,6 +852,23 @@ assertTrue(compositeProps.count && compositeProps.count.type === "integer" &&
 	compositeProps.type && compositeProps.type.type === "string" &&
 	compositeProps.body === undefined,
 	"composite Flow block analysis leaked internal result fields into the caller output schema");
+var compositeRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: outer",
+		"    block: smoke.outerLeak",
+		"    value: Hello isolated runtime",
+		"    out: result.outer",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(compositeRun.result.outer &&
+	compositeRun.result.outer.count === 1 &&
+	compositeRun.result.outer.message === "Hello isolated runtime" &&
+	compositeRun.result.body === undefined,
+	"composite Flow block runtime leaked internal result fields into the caller result scope");
 var expressionEchoCodeSource = [
 	"const _meta = {",
 	"\t\"description\": \"Echoes an expression payload without templating nested strings.\",",

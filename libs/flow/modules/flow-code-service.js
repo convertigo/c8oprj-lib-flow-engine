@@ -12,6 +12,8 @@
 		var readProjectFlowWorkingCode = env.readProjectFlowWorkingCode;
 		var writeProjectFlowWorkingCode = env.writeProjectFlowWorkingCode;
 		var discardProjectFlowWorkingCopy = env.discardProjectFlowWorkingCopy;
+		var projectFlowBean = env.projectFlowBean;
+		var projectFlowBeanLookup = env.projectFlowBeanLookup;
 		var flowScriptGetRequest = env.flowScriptGetRequest;
 		var normalizeFlowScriptCode = env.normalizeFlowScriptCode;
 		var stripFlowScriptMirrorHeader = env.stripFlowScriptMirrorHeader;
@@ -393,7 +395,7 @@
 		var draft = flowCodeDraftRead(name);
 		var official = flowCodeOfficialRead(blocks, request, name);
 		var dirty = draft !== null && (!official || draft.revision !== official.revision);
-		return {
+		var status = {
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
@@ -410,6 +412,29 @@
 				? "Working copy differs from the official Flow. Run/check it, promote it to save, or discard it."
 				: "No unsaved FlowScript working copy."
 		};
+		if (projectFlowBean || projectFlowBeanLookup) {
+			status.dboStatusAvailable = true;
+			try {
+				var lookup = projectFlowBeanLookup ? projectFlowBeanLookup(name, request) : projectFlowBean(name, request);
+				var flow = lookup && lookup.flow !== undefined ? lookup.flow : lookup;
+				if (lookup && lookup.reason !== undefined) {
+					status.dboStatusReason = String(lookup.reason || "");
+					status.dboStatusProject = String(lookup.projectName || "");
+					status.dboStatusFlow = String(lookup.flowName || "");
+				}
+				if (flow) {
+					status.dboHasChanged = flow.hasChanged === true;
+					status.dboBNew = flow.bNew === true;
+					status.dboFlowSourceDirty = flow.isFlowSourceDirty && flow.isFlowSourceDirty() === true;
+					status.dboVariableCount = flow.numberOfVariables ? Number(flow.numberOfVariables()) : -1;
+				}
+			} catch (e) {
+				status.dboStatusError = String(e && e.message || e);
+			}
+		} else {
+			status.dboStatusAvailable = false;
+		}
+		return status;
 	}
 
 	function flowCodeDiscardRequest(blocks, request) {
@@ -689,13 +714,13 @@
 				error: flowCodeError("UNKNOWN_BLOCK", "Unknown Flow block: " + name,
 					candidates.length
 						? "Use one of the candidates, or call flow-catalog once if none matches. Do not probe arbitrary block names with flow-block-code-get."
-						: "No matching block exists. For a domain-specific need, create a project block with flow-block-code-set; otherwise use flow-catalog once."),
+						: "No matching block exists. For intentional domain vocabulary, create an explicit mock with flow-block-mock and typed properties/outputs; otherwise use flow-catalog once."),
 				candidates: candidates,
 				next: exactCandidate
 					? "Use " + exactCandidate.block + "."
 					: (candidates.length
 						? "No exact block exists. Pick a candidate only if it matches the intent, otherwise create a project block."
-						: "Use existing blocks directly, or create a project block if this is a new reusable concept."),
+						: "Use flow-block-mock for a top-down placeholder, then implement the generated project block with real FlowScript."),
 				warnings: []
 			};
 		}
