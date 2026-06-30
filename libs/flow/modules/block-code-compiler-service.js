@@ -142,6 +142,9 @@
 		function flowScriptBlockAuthoringWarnings(name, functionCode, meta, definition) {
 			var warnings = [];
 			var outputs = normalizeTree(meta.outputs || meta.output || {});
+			var declaredProps = normalizeTree(meta.properties || meta.props || {});
+			var unknownProps = unknownDescriptorPaths(declaredProps, "");
+			var unknownOutputs = unknownDescriptorPaths(outputs, "");
 			var hasOutOutput = outputs.out !== undefined || outputs.type || outputs.properties || outputs.items;
 			if (hasOutOutput && String(functionCode || "").match(/return\s*\{\s*out\s*:/)) {
 				warnings.push({
@@ -151,7 +154,26 @@
 					hint: "The caller's out property writes the returned value into scope. Use return { temperature, unit } rather than return { out: { temperature, unit } }."
 				});
 			}
-			var declaredProps = normalizeTree(meta.properties || meta.props || {});
+			if (unknownProps.length) {
+				warnings.push({
+					severity: "warning",
+					code: "FLOW_BLOCK_PROPERTY_UNKNOWN",
+					block: String(name),
+					paths: unknownProps,
+					message: "FlowScript block " + name + " declares unknown property types: " + unknownProps.join(", ") + ".",
+					hint: "Patch _meta.properties with native JSON types such as string, number, integer, boolean, object or array. Use type:\"any\" with a description only when the property is intentionally generic."
+				});
+			}
+			if (unknownOutputs.length) {
+				warnings.push({
+					severity: "warning",
+					code: "FLOW_BLOCK_OUTPUT_UNKNOWN",
+					block: String(name),
+					paths: unknownOutputs,
+					message: "FlowScript block " + name + " declares unknown output schema paths: " + unknownOutputs.join(", ") + ".",
+					hint: "Declare _meta.outputs.out for the stable public return value, or add an analyzer hook when the output depends on an input schema."
+				});
+			}
 			var inputReads = flowScriptDefinitionInputReads(definition);
 			var missingInputs = inputReads.filter(function (name) {
 				return declaredProps[name] === undefined;
@@ -170,6 +192,52 @@
 				});
 			}
 			return warnings;
+		}
+
+		function unknownDescriptorPaths(value, prefix) {
+			var out = [];
+			collectUnknownDescriptorPaths(value, prefix || "", out, 16);
+			return out;
+		}
+
+		function collectUnknownDescriptorPaths(value, prefix, out, limit) {
+			if (!value || typeof value !== "object" || out.length >= limit) {
+				return;
+			}
+			if (Object.prototype.toString.call(value) === "[object Array]") {
+				return;
+			}
+			if (value.type !== undefined) {
+				if (String(value.type || "").trim() === "unknown") {
+					out.push(prefix || "out");
+					return;
+				}
+				if (value.type === "array") {
+					collectUnknownDescriptorPaths(value.items, prefix ? prefix + "[]" : "[]", out, limit);
+					return;
+				}
+				if (value.type !== "object" && !value.properties) {
+					return;
+				}
+			}
+			if (!value.type && !value.properties && !value.items) {
+				Object.keys(value).forEach(function (key) {
+					if (out.length >= limit) {
+						return;
+					}
+					collectUnknownDescriptorPaths(value[key], prefix ? prefix + "." + key : key, out, limit);
+				});
+				return;
+			}
+			Object.keys(value.properties || {}).forEach(function (key) {
+				if (out.length >= limit) {
+					return;
+				}
+				collectUnknownDescriptorPaths(value.properties[key], prefix ? prefix + "." + key : key, out, limit);
+			});
+			if (value.items) {
+				collectUnknownDescriptorPaths(value.items, prefix ? prefix + "[]" : "[]", out, limit);
+			}
 		}
 
 		function scanFlowScriptInputReads(value, inputs) {

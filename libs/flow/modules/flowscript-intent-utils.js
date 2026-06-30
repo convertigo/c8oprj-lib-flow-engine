@@ -163,6 +163,41 @@
 		}).slice(0, limit);
 	}
 
+	function numberSetting(settings, path, fallback, min, max) {
+		var value = String(path || "").split(".").reduce(function (current, part) {
+			return current && current[part] !== undefined ? current[part] : undefined;
+		}, settings || {});
+		if (value === undefined || value === null || value === "") {
+			return fallback;
+		}
+		var number = parseInt(String(value), 10);
+		if (isNaN(number)) {
+			return fallback;
+		}
+		if (min !== undefined && number < min) {
+			return min;
+		}
+		if (max !== undefined && number > max) {
+			return max;
+		}
+		return number;
+	}
+
+	function blockCandidateDecision(candidates, settings) {
+		candidates = candidates || [];
+		var threshold = numberSetting(settings, "blockCandidate.preferExistingScore", 140, 1, 1000);
+		var best = candidates.length ? candidates[0] : null;
+		var score = best ? Number(best.score || 0) : 0;
+		var recommendation = best && score >= threshold ? "existing" : "mock";
+		return {
+			recommendation: recommendation,
+			tool: recommendation === "existing" ? "flow-block-get" : "flow-block-mock",
+			bestBlock: best ? best.block : "",
+			bestScore: score,
+			preferExistingScore: threshold
+		};
+	}
+
 	function propertyCandidates(props, wanted, limit, env) {
 		limit = limit || 5;
 		var wantedTokens = expandIntentTokens(intentTokens(wanted), env);
@@ -192,6 +227,7 @@
 	return {
 		stripMetadata: stripMetadata,
 		blockCandidates: blockCandidates,
+		blockCandidateDecision: blockCandidateDecision,
 		propertyCandidates: propertyCandidates
 	};
 })();

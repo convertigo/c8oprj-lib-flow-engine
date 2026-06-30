@@ -23,10 +23,10 @@ types(requestJson)         -> property type descriptors
 ```
 
 The Java side passes `flowSource` as an opaque string. This project owns parsing, catalog, analysis and execution.
-For the POC, `flow-cache-clear` clears both the Java bridge runtime cache and
-the Flow JavaScript descriptor caches, so changes to `Engine.js`, modules,
-blocks and hooks can be picked up by the next call without restarting the whole
-Convertigo engine.
+The Java bridge and Flow JavaScript caches are keyed by source fingerprints, so
+changes to `Engine.js`, modules, blocks, hooks, project blocks and schemas are
+picked up by later calls without a manual cache clear. `flow-cache-clear` is
+reserved for explicit cache debugging.
 
 The long-term authoring path should behave like a hot worker plus a compact
 snapshot index. Studio, Admin and MCP ask the Flow engine for immutable

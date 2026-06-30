@@ -12,12 +12,70 @@
 		return dir ? new env.File(dir, "libs/flow/engine.yaml") : null;
 	}
 
-	function loadProjectEngineDefinition(env) {
-		var file = projectEngineFile(env);
+	function engineDefinitionFile(env) {
+		var dir = env.engineDir && env.engineDir();
+		return dir ? new env.File(dir, "engine.yaml") : null;
+	}
+
+	function readYamlFile(file, fallback, env) {
 		if (!file || !file.isFile()) {
 			return {};
 		}
-		return env.parseYamlSource(env.FileUtils.readFileToString(file, "UTF-8"), "version: 1\n");
+		return env.parseYamlSource(env.FileUtils.readFileToString(file, "UTF-8"), fallback || "version: 1\n");
+	}
+
+	function loadProjectEngineDefinition(env) {
+		return readYamlFile(projectEngineFile(env), "version: 1\n", env);
+	}
+
+	function loadEngineDefinition(env) {
+		return readYamlFile(engineDefinitionFile(env), "version: 1\n", env);
+	}
+
+	function mergeObject(target, source) {
+		Object.keys(source || {}).forEach(function (key) {
+			var value = source[key];
+			if (value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]") {
+				if (!target[key] || typeof target[key] !== "object" || Object.prototype.toString.call(target[key]) === "[object Array]") {
+					target[key] = {};
+				}
+				mergeObject(target[key], value);
+			} else {
+				target[key] = value;
+			}
+		});
+		return target;
+	}
+
+	function authoringSettings(env) {
+		var settings = {};
+		mergeObject(settings, loadEngineDefinition(env).authoring || {});
+		mergeObject(settings, loadProjectEngineDefinition(env).authoring || {});
+		return env.normalizeTree(settings);
+	}
+
+	function pathValue(value, path) {
+		return String(path || "").split(".").reduce(function (current, part) {
+			return current && current[part] !== undefined ? current[part] : undefined;
+		}, value);
+	}
+
+	function authoringNumber(path, fallback, min, max, env) {
+		var value = pathValue(authoringSettings(env), path);
+		if (value === undefined || value === null || value === "") {
+			return fallback;
+		}
+		var number = parseInt(String(value), 10);
+		if (isNaN(number)) {
+			return fallback;
+		}
+		if (min !== undefined && number < min) {
+			return min;
+		}
+		if (max !== undefined && number > max) {
+			return max;
+		}
+		return number;
 	}
 
 	function effectiveConfig(request, definition, projectEngine, env) {
@@ -49,7 +107,10 @@
 	return {
 		readGlobalValue: readGlobalValue,
 		projectEngineFile: projectEngineFile,
+		loadEngineDefinition: loadEngineDefinition,
 		loadProjectEngineDefinition: loadProjectEngineDefinition,
+		authoringSettings: authoringSettings,
+		authoringNumber: authoringNumber,
 		effectiveConfig: effectiveConfig
 	};
 })();

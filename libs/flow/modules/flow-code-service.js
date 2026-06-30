@@ -25,6 +25,16 @@
 		var flowScriptBlockMetaFromRequest = env.flowScriptBlockMetaFromRequest;
 		var flowScriptBlockCodeSource = env.flowScriptBlockCodeSource;
 		var flowScriptBlockCandidates = env.flowScriptBlockCandidates || function () { return []; };
+		var flowScriptBlockCandidateDecision = env.flowScriptBlockCandidateDecision || function (candidates) {
+			candidates = candidates || [];
+			return {
+				recommendation: candidates.length && candidates[0].score >= 140 ? "existing" : "mock",
+				tool: candidates.length && candidates[0].score >= 140 ? "flow-block-get" : "flow-block-mock",
+				bestBlock: candidates.length ? candidates[0].block : "",
+				bestScore: candidates.length ? Number(candidates[0].score || 0) : 0,
+				preferExistingScore: 140
+			};
+		};
 		var listProjectFlows = env.listProjectFlows;
 		var runFlowRequest = env.runFlowRequest;
 		var analyzeFlowSource = env.analyzeFlowSource;
@@ -111,7 +121,7 @@
 			return !severity || diagnostic.severity === severity;
 		}).map(function (diagnostic) {
 			var out = {};
-			["severity", "phase", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "next", "create", "hint"].forEach(function (key) {
+			["severity", "phase", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "candidateDecision", "next", "create", "mock", "hint"].forEach(function (key) {
 				if (diagnostic[key] !== undefined && diagnostic[key] !== null && diagnostic[key] !== "") {
 					out[key] = diagnostic[key];
 				}
@@ -705,21 +715,38 @@
 		}
 		if (!blocks[String(name)]) {
 			var candidates = flowScriptBlockCandidates(blocks, name, 5);
+			var decision = flowScriptBlockCandidateDecision(candidates);
+			var preferExisting = decision.recommendation === "existing";
 			var exactCandidate = candidates.filter(function (candidate) {
 				return String(candidate.block || "") === name;
 			})[0];
+			var create = {
+				tool: decision.tool,
+				name: name,
+				block: preferExisting ? decision.bestBlock : name
+			};
+			if (preferExisting) {
+				create.alternativeTool = "flow-block-mock";
+			} else if (candidates.length) {
+				create.candidateTool = "flow-block-get";
+				create.candidateBlock = decision.bestBlock;
+			}
 			return {
 				ok: false,
 				name: name,
 				error: flowCodeError("UNKNOWN_BLOCK", "Unknown Flow block: " + name,
-					candidates.length
-						? "Use one of the candidates, or call flow-catalog once if none matches. Do not probe arbitrary block names with flow-block-code-get."
-						: "No matching block exists. For intentional domain vocabulary, create an explicit mock with flow-block-mock and typed properties/outputs; otherwise use flow-catalog once."),
+					preferExisting
+						? "Best candidate " + decision.bestBlock + " scored " + decision.bestScore + " (threshold " + decision.preferExistingScore + "). Use it only if it matches the intent."
+						: (candidates.length
+							? "Best candidate " + decision.bestBlock + " scored " + decision.bestScore + " below threshold " + decision.preferExistingScore + ". For intentional domain vocabulary, create an explicit mock with flow-block-mock and typed properties/outputs."
+							: "No matching block exists. For intentional domain vocabulary, create an explicit mock with flow-block-mock and typed properties/outputs; otherwise use flow-catalog once.")),
 				candidates: candidates,
+				candidateDecision: decision,
+				create: create,
 				next: exactCandidate
 					? "Use " + exactCandidate.block + "."
-					: (candidates.length
-						? "No exact block exists. Pick a candidate only if it matches the intent, otherwise create a project block."
+					: (preferExisting
+						? "Inspect " + decision.bestBlock + " with flow-block-get. If it is not the intended concept, create " + name + " with flow-block-mock."
 						: "Use flow-block-mock for a top-down placeholder, then implement the generated project block with real FlowScript."),
 				warnings: []
 			};

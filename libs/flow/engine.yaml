@@ -1,4 +1,7 @@
 version: 1
 engineQName: lib_flow_engine.Engine
 bindings: {}
+authoring:
+  blockCandidate:
+    preferExistingScore: 140
 config: {}

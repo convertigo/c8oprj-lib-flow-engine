@@ -107,23 +107,48 @@
 				var line = node.__flowScriptLine || 0;
 				if (!block) {
 					var candidates = env.flowScriptBlockCandidates(activeBlocks, name, 5);
+					var decision = env.flowScriptBlockCandidateDecision
+						? env.flowScriptBlockCandidateDecision(candidates)
+						: {
+							recommendation: candidates.length && candidates[0].score >= 140 ? "existing" : "mock",
+							tool: candidates.length && candidates[0].score >= 140 ? "flow-block-get" : "flow-block-mock",
+							bestBlock: candidates.length ? candidates[0].block : "",
+							bestScore: candidates.length ? Number(candidates[0].score || 0) : 0,
+							preferExistingScore: 140
+						};
+					var preferExisting = decision.recommendation === "existing";
+					var create = {
+						tool: decision.tool,
+						name: name,
+						block: preferExisting ? decision.bestBlock : name
+					};
+					if (preferExisting) {
+						create.alternativeTool = "flow-block-mock";
+					} else if (candidates.length) {
+						create.candidateTool = "flow-block-get";
+						create.candidateBlock = decision.bestBlock;
+					}
 					diagnostics.push({
 						severity: "error",
 						code: "UNKNOWN_BLOCK",
 						line: line,
 						message: "Unknown Flow block: " + name,
 						candidates: candidates,
-						next: candidates.length && candidates[0].score >= 35
-							? "Try " + candidates[0].block + " first, or call flow-block-get for its exact contract."
-							: "No strong palette match. If this is intentional domain vocabulary, create an explicit project mock with flow-block-mock, typed properties and typed outputs, then implement that block with real FlowScript.",
-						create: {
-							tool: candidates.length && candidates[0].score >= 35 ? "flow-block-get" : "flow-block-mock",
+						candidateDecision: decision,
+						next: preferExisting
+							? "Best candidate " + decision.bestBlock + " scored " + decision.bestScore + " (threshold " + decision.preferExistingScore + "). Try it only if it matches the intent; otherwise keep the top-down FlowScript and create " + name + " with flow-block-mock, typed properties and typed outputs."
+							: (candidates.length
+								? "Best candidate " + decision.bestBlock + " scored " + decision.bestScore + " below threshold " + decision.preferExistingScore + ". Keep the top-down FlowScript and create " + name + " as an explicit project mock with flow-block-mock, typed properties and typed outputs, then implement that block with real FlowScript."
+								: "No palette match. Keep the top-down FlowScript and create " + name + " as an explicit project mock with flow-block-mock, typed properties and typed outputs, then implement that block with real FlowScript."),
+						create: create,
+						mock: {
+							tool: "flow-block-mock",
 							name: name,
-							block: name
+							when: preferExisting ? "Use this when the candidate is not the intended domain block." : "Use this to keep the parent Flow executable while the domain block is implemented."
 						},
 						hint: candidates.length
-							? "Use one candidate block, inspect it with flow-block-get, or create " + name + " as a project block if none matches."
-							: "Use flow-block-mock to keep the parent Flow executable, then replace the mock with a real FlowScript implementation."
+							? "Use one candidate block only when it really matches the requested behavior; otherwise create " + name + " as a project-local mock and run flow-block-mock-list before claiming completion."
+							: "Use flow-block-mock to keep the parent Flow executable, then replace the mock with a real FlowScript implementation. Run flow-block-mock-list before claiming completion."
 					});
 				} else {
 					var catalog = env.blockCatalog(block);
@@ -380,7 +405,7 @@
 			line: lineForOffset(source, firstOffset),
 			urlCount: urls.length,
 			message: "FlowScript contains " + urls.length + " hard-coded service URL" + (urls.length > 1 ? "s" : "") + ".",
-			hint: "Move structural endpoints to project FlowEngine config, for example config.services.weather.forecastUrl, and pass that value into reusable blocks."
+			hint: "Move structural endpoints to project FlowEngine config, for example config.services.weather.forecastUrl. Reusable domain blocks should read shared config or accept simple typed values such as latitude, longitude, city or limit, not prebuilt URLs."
 		}];
 	}
 
@@ -430,6 +455,11 @@
 		return type === "" || type === "unknown" || type === "any";
 	}
 
+	function isActionableUnknownPropertyType(type) {
+		type = String(type || "").trim();
+		return type === "string" || type === "number" || type === "integer" || type === "boolean" || type === "object";
+	}
+
 	function compatibleSchemaType(expected, actual) {
 		if (isLooseType(expected) || isLooseType(actual)) {
 			return true;
@@ -460,7 +490,23 @@
 			expected: expected,
 			actual: actual,
 			message: node.block + "." + input.property + " declares " + expected + " but " + input.path + " is " + actual + ".",
-			hint: "Patch the block property type to " + actual + " when the value should keep its native type, or convert the value explicitly before calling the block."
+			next: "If " + node.block + " is project-local and should accept the native value, patch its _meta.properties." + input.property + ".type to " + actual + "; otherwise convert " + input.path + " explicitly before the call.",
+			hint: "Treat this as block contract feedback. Do not stringify just to silence the compiler unless the block really expects a string."
+		};
+	}
+
+	function projectBlockUnknownPropertyDiagnostic(node, input, actual) {
+		return {
+			severity: "warning",
+			code: "FLOWSCRIPT_PROJECT_BLOCK_PROPERTY_UNKNOWN",
+			line: node.line || 0,
+			block: node.block,
+			property: input.property,
+			path: input.path,
+			actual: actual,
+			message: node.block + "." + input.property + " is declared unknown but " + input.path + " is " + actual + ".",
+			next: "Patch the project-local block _meta.properties." + input.property + ".type to " + actual + " so Studio pickers and future agents see the native contract.",
+			hint: "Use type:\"any\" with a description only when the property is intentionally generic."
 		};
 	}
 
@@ -470,7 +516,9 @@
 			return diagnostics;
 		}
 		analysis.nodes.forEach(function (node) {
-			var catalog = env.blockCatalog(blocks[node.block]);
+			var block = blocks[node.block];
+			var catalog = env.blockCatalog(block);
+			var projectBlock = block && String(block.__flowOrigin || "") === "project";
 			(node.inputs || []).forEach(function (input) {
 				var descriptor = catalog.props && catalog.props[input.property] || {};
 				var expected = String(descriptor.type || "").trim();
@@ -504,6 +552,10 @@
 					return;
 				}
 				if (!input.exactRef) {
+					return;
+				}
+				if (projectBlock && isLooseType(expected) && isActionableUnknownPropertyType(actual)) {
+					diagnostics.push(projectBlockUnknownPropertyDiagnostic(node, input, actual));
 					return;
 				}
 				if (expected === "array" || compatibleSchemaType(expected, actual)) {

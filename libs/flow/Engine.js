@@ -514,6 +514,7 @@
 			File: File,
 			FileUtils: FileUtils,
 			globalScope: globalScope,
+			engineDir: engineDir,
 			projectDir: projectDir,
 			parseYamlSource: parseYamlSource,
 			jsValue: jsValue,
@@ -532,6 +533,10 @@
 
 	function loadProjectEngineDefinition() {
 		return projectConfigService().loadProjectEngineDefinition(projectConfigEnv());
+	}
+
+	function authoringSettings() {
+		return projectConfigService().authoringSettings(projectConfigEnv());
 	}
 
 	function effectiveConfig(request, definition, projectEngine) {
@@ -2487,6 +2492,10 @@
 		return flowScriptIntentUtils().blockCandidates(blocks, wanted, limit, flowScriptIntentEnv());
 	}
 
+	function flowScriptBlockCandidateDecision(candidates) {
+		return flowScriptIntentUtils().blockCandidateDecision(candidates, authoringSettings(), flowScriptIntentEnv());
+	}
+
 	function flowScriptPropertyCandidates(props, wanted, limit) {
 		return flowScriptIntentUtils().propertyCandidates(props, wanted, limit, flowScriptIntentEnv());
 	}
@@ -2508,6 +2517,7 @@
 			flowScriptSlotNames: flowScriptSlotNames,
 			flowScriptArgKeys: flowScriptArgKeys,
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
+			flowScriptBlockCandidateDecision: flowScriptBlockCandidateDecision,
 			flowScriptPropertyCandidates: flowScriptPropertyCandidates,
 			tokenizeExpression: tokenizeExpression,
 			exactTemplateExpression: exactTemplateExpression,
@@ -2629,6 +2639,7 @@
 			flowScriptBlockMetaFromRequest: flowScriptBlockMetaFromRequest,
 			flowScriptBlockCodeSource: flowScriptBlockCodeSource,
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
+			flowScriptBlockCandidateDecision: flowScriptBlockCandidateDecision,
 			listProjectFlows: listProjectFlows,
 			runFlowRequest: runFlowRequest,
 			analyzeFlowSource: analyzeFlowSource,
@@ -3460,8 +3471,6 @@
 		var targetType = String(target.type || "");
 		var hasFlow = String(request.flowName || "").trim() !== "";
 		var isFlowSchemaTarget = hasFlow && (targetKind === "flow" || targetKind === "folder" && targetType === "flow");
-		var isRuntimeTarget = isFlowSchemaTarget || targetKind === "engine" ||
-			targetKind === "blockImplementation" || targetKind === "fragmentImplementation";
 		var items = [];
 		if (isFlowSchemaTarget) {
 			var output = outputSchemaRequest(Object.assign({}, request, {
@@ -3475,11 +3484,6 @@
 						action: "reset"
 					}, "Delete learned Flow result schemas for this Flow?", "/com/twinsoft/convertigo/beans/flow/images/flowvirtualobject_color_16x16.png"));
 			}
-		}
-		if (isRuntimeTarget) {
-			items.push(contextMenuItem("flow.cache.clear", "Clear Flow runtime caches",
-				"Clears Flow Java and JavaScript runtime caches for this project.", "", {},
-				"", "/com/twinsoft/convertigo/beans/core/images/project_color_16x16.png"));
 		}
 		return {
 			ok: true,

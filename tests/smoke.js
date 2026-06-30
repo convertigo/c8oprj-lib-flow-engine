@@ -175,6 +175,41 @@ var naturalTraceRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(naturalTraceRun.trace && naturalTraceRun.trace.nodes && naturalTraceRun.trace.nodes.length > 0,
 	"includeTrace true should keep the runtime trace available");
+var objectMapFlowScriptSource = [
+	"function ObjectMapSmoke({ result }) {",
+	"\tconst rates = { EUR: { rate: 1, label: \"Euro\" }, USD: { rate: 1.1, label: \"Dollar\" } }",
+	"\tconst codes = object.keys({ source: rates })",
+	"\tconst first = object.firstEntry({ source: rates })",
+	"\tconst info = object.get({ source: rates, key: first.key })",
+	"\tresult.codes = codes",
+	"\tresult.firstCode = first.key",
+	"\tresult.label = info.label",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var objectMapValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "ObjectMapSmoke",
+	code: objectMapFlowScriptSource
+})));
+assertTrue(objectMapValidation.ok === true &&
+	objectMapValidation.definition.nodes[1].block === "object.keys" &&
+	objectMapValidation.definition.nodes[2].block === "object.firstEntry" &&
+	objectMapValidation.definition.nodes[3].block === "object.get",
+	"object map FlowScript did not compile to object.* blocks");
+var objectMapRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: objectMapFlowScriptSource,
+	includeTrace: false
+})));
+assertTrue(objectMapRun.result.codes.join(",") === "EUR,USD" &&
+	objectMapRun.result.firstCode === "EUR" &&
+	objectMapRun.result.label === "Euro",
+	"object map FlowScript did not run object.keys/object.firstEntry/object.get correctly");
+var objectMapAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: objectMapFlowScriptSource })));
+assertTrue(objectMapAnalysis.schemas["local.codes"].items.type === "string" &&
+	objectMapAnalysis.schemas["local.first"].properties.value.properties.label.type === "string" &&
+	objectMapAnalysis.schemas["local.info"].properties.label.type === "string",
+	"object map FlowScript did not propagate object.* schemas");
 var missingInputValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	name: "MissingInputContractSmoke",
 	code: [
@@ -763,8 +798,66 @@ assertTrue(propertyTypeMismatchValidation.ok === true &&
 			diagnostic.property === "latitude" &&
 			diagnostic.path === "current.latitude" &&
 			diagnostic.expected === "string" &&
-			diagnostic.actual === "number";
+			diagnostic.actual === "number" &&
+			diagnostic.next.indexOf("_meta.properties.latitude.type to number") !== -1 &&
+			diagnostic.hint.indexOf("block contract feedback") !== -1;
 	}), "FlowScript property type mismatch warning was not reported");
+var unknownDomainBlockFlowScriptSource = [
+	"function UnknownDomainBlockSmoke({ input, config, result }) {",
+	"\tvar item = domain.fetchWeatherItem({ zone: input.zone, forecastUrl: config.services.weather.forecastUrl })",
+	"\tresult.item = item",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var unknownDomainBlockValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "UnknownDomainBlockSmoke",
+	code: unknownDomainBlockFlowScriptSource,
+	maxDiagnostics: 25
+})));
+assertTrue(unknownDomainBlockValidation.ok === false &&
+	unknownDomainBlockValidation.diagnostics.some(function (diagnostic) {
+		return diagnostic.code === "UNKNOWN_BLOCK" &&
+			diagnostic.message === "Unknown Flow block: domain.fetchWeatherItem" &&
+			diagnostic.mock &&
+			diagnostic.mock.tool === "flow-block-mock" &&
+			diagnostic.mock.name === "domain.fetchWeatherItem" &&
+			diagnostic.candidateDecision &&
+			diagnostic.candidateDecision.recommendation === "mock" &&
+			diagnostic.candidateDecision.bestScore < diagnostic.candidateDecision.preferExistingScore &&
+			diagnostic.create &&
+			diagnostic.create.tool === "flow-block-mock" &&
+			diagnostic.create.candidateTool === "flow-block-get" &&
+			diagnostic.next.indexOf("flow-block-mock") !== -1 &&
+			diagnostic.next.indexOf("typed properties") !== -1 &&
+			diagnostic.hint.indexOf("flow-block-mock-list") !== -1;
+	}), "FlowScript unknown domain block did not guide toward a typed project mock");
+var existingCandidateFlowScriptSource = [
+	"function ExistingCandidateSmoke({ input, result }) {",
+	"\tvar value = requestable.cal({ requestable: input.requestable })",
+	"\tresult.value = value",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var existingCandidateValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "ExistingCandidateSmoke",
+	code: existingCandidateFlowScriptSource,
+	maxDiagnostics: 25
+})));
+assertTrue(existingCandidateValidation.ok === false &&
+	existingCandidateValidation.diagnostics.some(function (diagnostic) {
+		return diagnostic.code === "UNKNOWN_BLOCK" &&
+			diagnostic.message === "Unknown Flow block: requestable.cal" &&
+			diagnostic.candidateDecision &&
+			diagnostic.candidateDecision.recommendation === "existing" &&
+			diagnostic.candidateDecision.bestBlock === "requestable.call" &&
+			diagnostic.candidateDecision.bestScore >= diagnostic.candidateDecision.preferExistingScore &&
+			diagnostic.create &&
+			diagnostic.create.tool === "flow-block-get" &&
+			diagnostic.create.block === "requestable.call" &&
+			diagnostic.create.alternativeTool === "flow-block-mock";
+	}), "FlowScript unknown close block did not guide toward the scored existing candidate");
 var declaredResponseBlockSource = [
 	"const _meta = {",
 	"\t\"description\": \"FlowScript block with a declared returned response schema.\",",
@@ -2174,6 +2267,13 @@ var standardDataFlowSource = [
 	"      metrics:",
 	"        temperature: 38",
 	"        unit: C",
+	"      currencies:",
+	"        EUR:",
+	"          name: Euro",
+	"          symbol: EUR",
+	"        DKK:",
+	"          name: Danish krone",
+	"          symbol: DKK",
 	"  - id: pickFields",
 	"    block: object.pick",
 	"    source: local.profile",
@@ -2181,12 +2281,37 @@ var standardDataFlowSource = [
 	"      - city",
 	"      - metrics.temperature",
 	"    out: local.selected",
+	"  - id: currencyKeys",
+	"    block: object.keys",
+	"    source: local.profile.currencies",
+	"    out: local.currencyCodes",
+	"  - id: firstCurrency",
+	"    block: object.firstEntry",
+	"    source: local.profile.currencies",
+	"    out: local.firstCurrency",
+	"  - id: currencyInfo",
+	"    block: object.get",
+	"    source: local.profile.currencies",
+	"    key: local.firstCurrency.key",
+	"    out: local.currencyInfo",
 	"  - id: mergeAlert",
 	"    block: object.merge",
 	"    target: local.selected",
 	"    source:",
 	"      alert: true",
 	"    out: result.payload",
+	"  - id: setCurrencyCodes",
+	"    block: set",
+	"    path: result.currencyCodes",
+	"    value: \"{{ local.currencyCodes }}\"",
+	"  - id: setCurrencyCode",
+	"    block: set",
+	"    path: result.currencyCode",
+	"    value: \"{{ local.firstCurrency.key }}\"",
+	"  - id: setCurrencyName",
+	"    block: set",
+	"    path: result.currencyName",
+	"    value: \"{{ local.currencyInfo.name }}\"",
 	"  - id: stringify",
 	"    block: json.stringify",
 	"    value: \"{{ result.payload }}\"",
@@ -2202,8 +2327,16 @@ print(JSON.stringify(standardDataRun));
 assertTrue(standardDataRun.result.payload.city === "Paris" &&
 	standardDataRun.result.payload.temperature === 38 &&
 	standardDataRun.result.payload.alert === true &&
-	standardDataRun.result.roundtrip.city === "Paris",
-	"Standard data blocks did not pick, merge, stringify and parse correctly");
+	standardDataRun.result.roundtrip.city === "Paris" &&
+	standardDataRun.result.currencyCodes.join(",") === "EUR,DKK" &&
+	standardDataRun.result.currencyCode === "EUR" &&
+	standardDataRun.result.currencyName === "Euro",
+	"Standard data blocks did not pick, merge, inspect, get, stringify and parse correctly");
+var standardDataAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: standardDataFlowSource })));
+assertTrue(standardDataAnalysis.schemas["local.currencyCodes"].items.type === "string" &&
+	standardDataAnalysis.schemas["local.firstCurrency"].properties.value.properties.name.type === "string" &&
+	standardDataAnalysis.schemas["local.currencyInfo"].properties.name.type === "string",
+	"object.keys/object.firstEntry/object.get did not propagate object schemas");
 
 var inputFlowSource = [
 	"version: 1",
