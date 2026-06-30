@@ -15,6 +15,15 @@
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
+	var compiledScriptCache = {};
+	var compiledScriptCacheSizeValue = 0;
+	var compiledScriptCacheClock = 0;
+	var compiledScriptCacheLimit = 1024;
+	var compiledScriptStats = {
+		hits: 0,
+		misses: 0,
+		evictions: 0
+	};
 	var cacheUtilsModule = null;
 	var fingerprintUtilsModule = null;
 	var flowNodeUtilsModule = null;
@@ -24,12 +33,13 @@
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
 		caches: {
-			blocks: createRuntimeCacheState(),
-			types: createRuntimeCacheState(),
+			blocks: createRuntimeMapCacheState(),
+			types: createRuntimeMapCacheState(),
 			libraries: createRuntimeMapCacheState(),
 			engineModules: createRuntimeMapCacheState(),
 			propertyEditor: createRuntimeCacheState(),
-			treeSnapshots: createRuntimeMapCacheState()
+			treeSnapshots: createRuntimeMapCacheState(),
+			expressionTokens: createRuntimeBoundedMapCacheState(4096)
 		}
 	};
 
@@ -98,6 +108,101 @@
 
 	function parseRequest(requestJson) {
 		return JSON.parse(String(requestJson || "{}"));
+	}
+
+	function compiledScriptCacheSize() {
+		return compiledScriptCacheSizeValue;
+	}
+
+	function compiledScriptCacheInfo() {
+		return {
+			name: "compiledScripts",
+			size: compiledScriptCacheSize(),
+			limit: compiledScriptCacheLimit,
+			hits: compiledScriptStats.hits,
+			misses: compiledScriptStats.misses,
+			evictions: compiledScriptStats.evictions
+		};
+	}
+
+	function clearCompiledScriptCache() {
+		compiledScriptCache = {};
+		compiledScriptCacheSizeValue = 0;
+		compiledScriptCacheClock = 0;
+		compiledScriptStats.evictions++;
+	}
+
+	function evictOldestCompiledScript() {
+		var oldestKey = null;
+		var oldestUsedAt = Number.MAX_VALUE;
+		Object.keys(compiledScriptCache).forEach(function (key) {
+			var usedAt = Number(compiledScriptCache[key].usedAt || 0);
+			if (oldestKey === null || usedAt < oldestUsedAt) {
+				oldestKey = key;
+				oldestUsedAt = usedAt;
+			}
+		});
+		if (oldestKey !== null) {
+			delete compiledScriptCache[oldestKey];
+			compiledScriptCacheSizeValue = Math.max(0, compiledScriptCacheSizeValue - 1);
+			compiledScriptStats.evictions++;
+			return true;
+		}
+		return false;
+	}
+
+	function compiledScriptKey(source, sourceName, fingerprint) {
+		sourceName = String(sourceName || "flow-script");
+		fingerprint = fingerprint === undefined || fingerprint === null || String(fingerprint) === ""
+			? sha256Hex(source)
+			: String(fingerprint);
+		return sourceName + "\n" + fingerprint;
+	}
+
+	function compileScript(source, sourceName, fingerprint) {
+		source = String(source || "");
+		var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+		if (!cx || typeof cx.compileString !== "function") {
+			return null;
+		}
+		var key = compiledScriptKey(source, sourceName, fingerprint);
+		var cached = compiledScriptCache[key];
+		if (cached) {
+			compiledScriptStats.hits++;
+			cached.usedAt = ++compiledScriptCacheClock;
+			return cached.script;
+		}
+		compiledScriptStats.misses++;
+		while (compiledScriptCacheSizeValue >= compiledScriptCacheLimit) {
+			if (!evictOldestCompiledScript()) {
+				break;
+			}
+		}
+		cached = cx.compileString(source, String(sourceName || "flow-script"), 1, null);
+		compiledScriptCache[key] = {
+			script: cached,
+			usedAt: ++compiledScriptCacheClock
+		};
+		compiledScriptCacheSizeValue++;
+		return cached;
+	}
+
+	function compiledScriptScope(cx) {
+		var scope = cx.newObject(globalScope);
+		if (typeof flowSummary !== "undefined") {
+			scope.flowSummary = flowSummary;
+		}
+		return scope;
+	}
+
+	function evalCompiledSource(source, sourceName, fingerprint) {
+		source = String(source || "");
+		var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+		var script = compileScript(source, sourceName, fingerprint);
+		if (!cx || !script) {
+			return eval(source);
+		}
+		return script.exec(cx, compiledScriptScope(cx));
 	}
 
 	function parseYamlSource(source, fallback) {
@@ -481,12 +586,17 @@
 		return cacheUtils().createMapState();
 	}
 
+	function createRuntimeBoundedMapCacheState(limit) {
+		return cacheUtils().createBoundedMapState(limit);
+	}
+
 	function loadBootstrapModule(name) {
 		var file = engineModuleFile(name);
 		if (!file.isFile()) {
 			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
 		}
-		var module = eval(String(FileUtils.readFileToString(file, "UTF-8")));
+		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var module = evalCompiledSource(source, canonicalPath(file), file.lastModified() + ":" + file.length());
 		if (!module || typeof module !== "object") {
 			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
 				null, "A Flow engine module must evaluate to an object.");
@@ -540,6 +650,7 @@
 		flowNodeUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
+		clearCompiledScriptCache();
 	}
 
 	function runtimeCacheService() {
@@ -555,7 +666,9 @@
 			engineDir: engineDir,
 			Thread: Packages.java.lang.Thread,
 			globalScope: globalScope,
-			resetModuleCaches: resetRuntimeModuleCaches
+			resetModuleCaches: resetRuntimeModuleCaches,
+			compiledScriptCacheInfo: compiledScriptCacheInfo,
+			clearCompiledScriptCache: clearCompiledScriptCache
 		};
 	}
 
@@ -596,7 +709,7 @@
 			return cached;
 		}
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var module = eval(source);
+		var module = evalCompiledSource(source, key, fingerprint);
 		if (!module || typeof module !== "object") {
 			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
 				null, "A Flow engine module must evaluate to an object.");
@@ -629,6 +742,8 @@
 			isScopePath: isScopePath,
 			isRuntimeHandle: isRuntimeHandle,
 			runtimeHandleSummary: runtimeHandleSummary,
+			cacheUtils: cacheUtils(),
+			expressionTokenCache: runtimeState.caches.expressionTokens,
 			sanitizeRuntimeValue: sanitizeRuntimeValue
 		};
 	}
@@ -902,6 +1017,7 @@
 			blockDescriptorFileName: blockDescriptorFileName,
 			blockCodeDescriptorFileName: blockCodeDescriptorFileName,
 			blockIdFromResourcePath: blockIdFromResourcePath,
+			evalCompiledSource: evalCompiledSource,
 			validateBlockImplementationSource: validateBlockImplementationSource,
 			validateBlockFlowImplementationSource: validateBlockFlowImplementationSource,
 			validateBlockHooksSource: validateBlockHooksSource,
@@ -1000,6 +1116,7 @@
 			fileFingerprint: fileFingerprint,
 			readRuntimeMapCache: readRuntimeMapCache,
 			writeRuntimeMapCache: writeRuntimeMapCache,
+			evalCompiledSource: evalCompiledSource,
 			safeFilePart: safeFilePart,
 			raise: raise,
 			cache: runtimeState.caches.libraries
@@ -1031,8 +1148,8 @@
 			resourceName: resourceName,
 			canonicalPath: canonicalPath,
 			directoryFingerprint: directoryFingerprint,
-			readRuntimeCache: readRuntimeCache,
-			writeRuntimeCache: writeRuntimeCache,
+			readRuntimeCache: readRuntimeMapCache,
+			writeRuntimeCache: writeRuntimeMapCache,
 			flowProviderName: flowProviderName,
 			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
 			loadGraphBlockFile: loadGraphBlockFile,
@@ -1125,6 +1242,8 @@
 
 	function blockPolicyEnv() {
 		return {
+			sha256Hex: sha256Hex,
+			evalCompiledSource: evalCompiledSource,
 			raise: raise
 		};
 	}
@@ -1217,6 +1336,9 @@
 		return {
 			File: File,
 			FileUtils: FileUtils,
+			canonicalPath: canonicalPath,
+			fileFingerprint: fileFingerprint,
+			evalCompiledSource: evalCompiledSource,
 			normalizeTree: normalizeTree,
 			raise: raise,
 			blockImplementation: blockImplementation,
@@ -3104,6 +3226,8 @@
 			sourceForFlowRequest: sourceForFlowRequest,
 			objectSchema: objectSchema,
 			assignSchemaAtPath: assignSchemaAtPath,
+			loadProjectEngineDefinition: loadProjectEngineDefinition,
+			effectiveConfig: effectiveConfig,
 			hasSchemaContent: hasSchemaContent,
 			activeSlots: activeSlots,
 			canonicalFlowDefinition: canonicalFlowDefinition
@@ -3181,6 +3305,7 @@
 			sourceForFlowRequest: sourceForFlowRequest,
 			expandFlowDefinition: expandFlowDefinition,
 			blocksWithFlowHelpers: blocksWithFlowHelpers,
+			analyzeFlowSource: analyzeFlowSource,
 			analyzeFlowDefinition: analyzeFlowDefinition,
 			analysisByNodeId: analysisByNodeId,
 			currentProjectName: currentProjectName,

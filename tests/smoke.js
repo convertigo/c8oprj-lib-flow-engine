@@ -62,6 +62,9 @@ print(JSON.stringify(catalog));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "requestable.call";
 }), "catalog did not expose requestable.call");
+var compiledScriptsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.compiledScripts;
+assertTrue(compiledScriptsAfterCatalog.size > 0 && compiledScriptsAfterCatalog.misses > 0,
+	"compiled script cache did not compile Rhino scripts");
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "json.push" && block.namespace === "json" && block.name === "push" &&
 		block.provider === "lib_flow_engine" && block.origin === "core";
@@ -164,6 +167,14 @@ var naturalRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
 	"natural FlowScript syntax did not execute correctly");
+assertTrue(naturalRun.trace === undefined,
+	"includeTrace false should skip runtime trace materialization");
+var naturalTraceRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: naturalFlowScriptSource,
+	includeTrace: true
+})));
+assertTrue(naturalTraceRun.trace && naturalTraceRun.trace.nodes && naturalTraceRun.trace.nodes.length > 0,
+	"includeTrace true should keep the runtime trace available");
 var missingInputValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	name: "MissingInputContractSmoke",
 	code: [
@@ -515,6 +526,47 @@ var docResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 })));
 assertTrue(docResourceGet.content.indexOf("Flow documentation resource.") !== -1,
 	"resourceGet did not read project Flow documentation resources");
+var flowEngineConfigFile = new java.io.File(projectDirFile, "libs/flow/engine.yaml");
+flowEngineConfigFile.getParentFile().mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowEngineConfigFile, [
+	"version: 1",
+	"engineQName: lib_flow_engine.Engine",
+	"bindings: {}",
+	"config: {}",
+	""
+].join("\n"), "UTF-8");
+var projectConfigSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
+	query: "engineQName",
+	doc: false,
+	hints: false
+})));
+assertTrue(projectConfigSearch.resources.some(function (resource) {
+	return resource.path === "libs/flow/engine.yaml" && resource.kind === "projectConfig";
+}), "resourceSearch did not include project Flow engine config");
+var projectConfigGet = JSON.parse(engine.resourceGet(JSON.stringify({
+	path: "libs/flow/engine.yaml"
+})));
+assertTrue(projectConfigGet.kind === "projectConfig" &&
+	projectConfigGet.content.indexOf("engineQName: lib_flow_engine.Engine") !== -1,
+	"resourceGet did not read project Flow engine config");
+var projectConfigPatch = JSON.parse(engine.resourcePatch(JSON.stringify({
+	path: "libs/flow/engine.yaml",
+	baseHash: projectConfigGet.hash,
+	patch: [
+		"--- a/libs/flow/engine.yaml",
+		"+++ b/libs/flow/engine.yaml",
+		"@@ -1,4 +1,6 @@",
+		" version: 1",
+		" engineQName: lib_flow_engine.Engine",
+		" bindings: {}",
+		"-config: {}",
+		"+config:",
+		"+  services:",
+		"+    weatherUrl: https://example.invalid/forecast"
+	].join("\n")
+})));
+assertTrue(projectConfigPatch.ok === true && projectConfigPatch.validation.kind === "projectConfig",
+	"resourcePatch did not patch project Flow engine config: " + JSON.stringify(projectConfigPatch));
 var canonicalBlockJs = [
 	"const _meta = {",
 	"\t\"version\": 1,",
@@ -658,6 +710,61 @@ assertTrue(flowBackedBlockGet.implementationRuntime === "flow" &&
 	flowBackedBlockGet.code.indexOf("function flowBacked") !== -1 &&
 	flowBackedBlockGet.implementationSource.indexOf("block: \"return\"") !== -1,
 	"blockGet did not expose Flow implementation source");
+var stringLatitudeBlockSource = [
+	"const _meta = {",
+	"\t\"description\": \"Block with an intentionally narrow latitude contract.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {",
+	"\t\t\"latitude\": { \"type\": \"string\" }",
+	"\t},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": { \"type\": \"object\" }",
+	"\t}",
+	"}",
+	"",
+	"function stringLatitude({ input }) {",
+	"\treturn { latitude: input.latitude }",
+	"}",
+	""
+].join("\n");
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.stringLatitude",
+	code: stringLatitudeBlockSource
+}))).ok === true, "blockCodeSet did not create stringLatitude");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowEngineConfigFile, [
+	"version: 1",
+	"engineQName: lib_flow_engine.Engine",
+	"bindings: {}",
+	"config:",
+	"  timezones:",
+	"    representatives:",
+	"      - city: Paris",
+	"        latitude: 48.8566",
+	""
+].join("\n"), "UTF-8");
+var propertyTypeMismatchFlowScriptSource = [
+	"function PropertyTypeMismatchSmoke({ input, result }) {",
+	"\tvar places = config.timezones.representatives",
+	"\tvar items = list.map({ items: places, select: smoke.stringLatitude({ latitude: current.latitude }) })",
+	"\tresult.items = items",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var propertyTypeMismatchValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "PropertyTypeMismatchSmoke",
+	code: propertyTypeMismatchFlowScriptSource,
+	maxDiagnostics: 25
+})));
+assertTrue(propertyTypeMismatchValidation.ok === true &&
+	propertyTypeMismatchValidation.diagnostics.some(function (diagnostic) {
+		return diagnostic.code === "FLOWSCRIPT_PROPERTY_TYPE_MISMATCH" &&
+			diagnostic.block === "smoke.stringLatitude" &&
+			diagnostic.property === "latitude" &&
+			diagnostic.path === "current.latitude" &&
+			diagnostic.expected === "string" &&
+			diagnostic.actual === "number";
+	}), "FlowScript property type mismatch warning was not reported");
 var declaredResponseBlockSource = [
 	"const _meta = {",
 	"\t\"description\": \"FlowScript block with a declared returned response schema.\",",

@@ -417,6 +417,53 @@
 		}).slice(0, 8);
 	}
 
+	function splitTypes(value) {
+		return String(value || "").split("|").map(function (type) {
+			return String(type || "").trim();
+		}).filter(function (type) {
+			return type !== "";
+		});
+	}
+
+	function isLooseType(type) {
+		type = String(type || "").trim();
+		return type === "" || type === "unknown" || type === "any";
+	}
+
+	function compatibleSchemaType(expected, actual) {
+		if (isLooseType(expected) || isLooseType(actual)) {
+			return true;
+		}
+		if (expected === actual) {
+			return true;
+		}
+		if (expected === "number" && actual === "integer") {
+			return true;
+		}
+		if (expected.indexOf("|") === -1) {
+			return false;
+		}
+		return splitTypes(expected).some(function (type) {
+			return compatibleSchemaType(type, actual);
+		});
+	}
+
+	function propertyTypeMismatchDiagnostic(node, input, descriptor, actual) {
+		var expected = String(descriptor && descriptor.type || "").trim();
+		return {
+			severity: "warning",
+			code: "FLOWSCRIPT_PROPERTY_TYPE_MISMATCH",
+			line: node.line || 0,
+			block: node.block,
+			property: input.property,
+			path: input.path,
+			expected: expected,
+			actual: actual,
+			message: node.block + "." + input.property + " declares " + expected + " but " + input.path + " is " + actual + ".",
+			hint: "Patch the block property type to " + actual + " when the value should keep its native type, or convert the value explicitly before calling the block."
+		};
+	}
+
 	function analysisDiagnostics(blocks, analysis, env) {
 		var diagnostics = [];
 		if (!analysis || !analysis.nodes) {
@@ -426,35 +473,43 @@
 			var catalog = env.blockCatalog(blocks[node.block]);
 			(node.inputs || []).forEach(function (input) {
 				var descriptor = catalog.props && catalog.props[input.property] || {};
-					var expected = String(descriptor.type || "");
-					if (descriptor.kind !== "expression" || expected !== "array" || !input.path) {
-						return;
-					}
-					if (input.propertyValueType === "array") {
-						return;
-					}
-					var schema = env.schemaForSchemasPath(analysis.schemas || {}, input.path);
+				var expected = String(descriptor.type || "").trim();
+				if (!input.path) {
+					return;
+				}
+				var schema = env.schemaForSchemasPath(analysis.schemas || {}, input.path);
 				if (!schema) {
 					return;
 				}
 				var actual = env.schemaSimpleType(schema);
-				if (actual === "array" || actual === "unknown") {
+				if (descriptor.kind === "expression" && expected === "array" && input.propertyValueType !== "array") {
+					if (actual === "array" || actual === "unknown") {
+						return;
+					}
+					var candidates = arrayPathCandidates(input.path, schema, env);
+					diagnostics.push({
+						severity: "warning",
+						code: "FLOWSCRIPT_EXPECTED_ARRAY",
+						line: node.line || 0,
+						block: node.block,
+						property: input.property,
+						path: input.path,
+						actual: actual,
+						candidates: candidates,
+						message: node.block + "." + input.property + " expects an array but " + input.path + " is " + actual + ".",
+						hint: candidates.length
+							? "Use " + candidates[0] + " or another array path from candidates."
+							: "Use a path whose schema type is array."
+					});
 					return;
 				}
-				var candidates = arrayPathCandidates(input.path, schema, env);
-				diagnostics.push({
-					severity: "warning",
-					code: "FLOWSCRIPT_EXPECTED_ARRAY",
-					block: node.block,
-					property: input.property,
-					path: input.path,
-					actual: actual,
-					candidates: candidates,
-					message: node.block + "." + input.property + " expects an array but " + input.path + " is " + actual + ".",
-					hint: candidates.length
-						? "Use " + candidates[0] + " or another array path from candidates."
-						: "Use a path whose schema type is array."
-				});
+				if (!input.exactRef) {
+					return;
+				}
+				if (expected === "array" || compatibleSchemaType(expected, actual)) {
+					return;
+				}
+				diagnostics.push(propertyTypeMismatchDiagnostic(node, input, descriptor, actual));
 			});
 		});
 		return diagnostics;

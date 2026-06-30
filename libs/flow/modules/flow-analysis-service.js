@@ -33,6 +33,8 @@
 		var sourceForFlowRequest = env.sourceForFlowRequest;
 		var objectSchema = env.objectSchema;
 		var assignSchemaAtPath = env.assignSchemaAtPath;
+		var loadProjectEngineDefinition = env.loadProjectEngineDefinition;
+		var effectiveConfig = env.effectiveConfig;
 
 		function joinSchemaPath(base, leaf) {
 			base = String(base || "");
@@ -531,6 +533,7 @@
 			if (!sourceBlock) {
 				addInputDefinitionSchemas(ctx, definition);
 			}
+			addEffectiveConfigSchemas(ctx, request, definition);
 			if (sourceBlock) {
 				ctx.addPath("input");
 				Object.keys(sourceCatalog.props || {}).forEach(function (key) {
@@ -590,6 +593,21 @@
 					type: "object",
 					properties: inputProperties
 				});
+			}
+		}
+
+		function addEffectiveConfigSchemas(ctx, request, definition) {
+			var config = {};
+			if (typeof effectiveConfig === "function") {
+				var projectEngine = typeof loadProjectEngineDefinition === "function" ? loadProjectEngineDefinition() : {};
+				config = effectiveConfig(request || {}, definition || {}, projectEngine || {}) || {};
+			} else if (request && request.config && typeof request.config === "object") {
+				config = request.config;
+			}
+			if (config && typeof config === "object" && Object.keys(config).length) {
+				ctx.addSchema("config", inferSchema(config));
+			} else {
+				ctx.addPath("config");
 			}
 		}
 
@@ -713,6 +731,13 @@
 			var inputs = [];
 			var outputs = [];
 			var writeProps = catalog.writes || [];
+			function isExactRefValue(value, path) {
+				if (typeof value !== "string") {
+					return false;
+				}
+				var text = String(value || "").trim();
+				return text === path || exactTemplateExpression(text) === path;
+			}
 			Object.keys(props).forEach(function (key) {
 				var value = props[key];
 				var descriptor = catalog.props && !Object.prototype.toString.call(catalog.props).match(/Array/) ?
@@ -757,6 +782,7 @@
 						inputs.push({
 							property: key,
 							path: path,
+							exactRef: isExactRefValue(value, path),
 							propertyValueType: Object.prototype.toString.call(value) === "[object Array]"
 								? "array"
 								: value && typeof value === "object" ? "object" : typeof value,
@@ -786,6 +812,7 @@
 			var info = {
 				id: nodePath(node),
 				block: name,
+				line: node.__flowScriptLine || 0,
 				properties: Object.keys(props),
 				reads: [],
 				writes: [],
@@ -888,6 +915,7 @@
 				id: nodePath(node),
 				path: path || "",
 				block: name,
+				line: node.__flowScriptLine || 0,
 				properties: Object.keys(props),
 				reads: [],
 				writes: [],

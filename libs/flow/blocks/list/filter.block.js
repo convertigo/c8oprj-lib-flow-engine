@@ -50,8 +50,99 @@ const _meta = {
 }
 
 (function () {
-	function shouldKeep(ctx, props) {
-		return !!ctx.expr(props.where);
+	function comparable(value) {
+		if (typeof value === "string" && value.trim() !== "") {
+			var number = Number(value);
+			if (!isNaN(number)) {
+				return number;
+			}
+		}
+		return value;
+	}
+
+	function literal(value) {
+		value = String(value || "").trim();
+		if (/^-?(?:\d+|\d*\.\d+)$/.test(value)) {
+			return { ok: true, value: Number(value) };
+		}
+		if (value === "true") {
+			return { ok: true, value: true };
+		}
+		if (value === "false") {
+			return { ok: true, value: false };
+		}
+		if (value === "null") {
+			return { ok: true, value: null };
+		}
+		if (value === "undefined") {
+			return { ok: true, value: undefined };
+		}
+		if (value.charAt(0) === "\"" && value.charAt(value.length - 1) === "\"") {
+			try {
+				return { ok: true, value: JSON.parse(value) };
+			} catch (e) {
+			}
+		}
+		if (value.charAt(0) === "'" && value.charAt(value.length - 1) === "'") {
+			return { ok: true, value: value.substring(1, value.length - 1) };
+		}
+		return { ok: false };
+	}
+
+	function operand(ctx, source) {
+		source = String(source || "").trim();
+		if (source === "current") {
+			return { ok: true, current: true, path: "" };
+		}
+		if (source.indexOf("current.") === 0) {
+			return { ok: true, current: true, path: source.substring("current.".length) };
+		}
+		var parsed = literal(source);
+		if (parsed.ok) {
+			return { ok: true, value: parsed.value };
+		}
+		if (/^(request|input|config|local|result|trace)(?:\.[A-Za-z_$][\w$]*|\.\d+)*$/.test(source)) {
+			return { ok: true, value: ctx.read(source) };
+		}
+		return { ok: false };
+	}
+
+	function valueOf(ctx, spec, item) {
+		return spec.current ? ctx.readObjectPath(item, spec.path) : spec.value;
+	}
+
+	function compare(left, op, right) {
+		if (op === "==" || op === "!=") {
+			return op === "!=" ? left != right : left == right;
+		}
+		left = comparable(left);
+		right = comparable(right);
+		if (op === ">") {
+			return left > right;
+		}
+		if (op === ">=") {
+			return left >= right;
+		}
+		if (op === "<") {
+			return left < right;
+		}
+		return left <= right;
+	}
+
+	function predicateFor(ctx, where) {
+		var match = String(where || "").match(/^\s*(.+?)\s*(>=|<=|==|!=|>|<)\s*(.+?)\s*$/);
+		if (!match) {
+			return null;
+		}
+		var left = operand(ctx, match[1]);
+		var right = operand(ctx, match[3]);
+		if (!left.ok || !right.ok) {
+			return null;
+		}
+		var op = match[2];
+		return function (item) {
+			return compare(valueOf(ctx, left, item), op, valueOf(ctx, right, item));
+		};
 	}
 
 	return {
@@ -60,14 +151,19 @@ const _meta = {
 			var items = ctx.expr(props.items || props["in"]) || [];
 			var previous = ctx.scopes.current;
 			var filtered = [];
-			for (var i = 0; i < items.length; i++) {
-				ctx.scopes.current = items[i];
-				if (shouldKeep(ctx, props)) {
-					filtered.push(items[i]);
+			var predicate = predicateFor(ctx, props.where);
+			try {
+				for (var i = 0; i < items.length; i++) {
+					var item = items[i];
+					ctx.scopes.current = item;
+					if (predicate ? predicate(item) : ctx.expr(props.where)) {
+						filtered.push(items[i]);
+					}
 				}
+				return filtered;
+			} finally {
+				ctx.scopes.current = previous;
 			}
-			ctx.scopes.current = previous;
-			return filtered;
 		}
 	};
 }())

@@ -27,6 +27,9 @@
 
 	function isAllowedPath(path) {
 		var ext = extension(path);
+		if (String(path) === "libs/flow/engine.yaml") {
+			return true;
+		}
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
 			return String(path).endsWith(".block.js") || String(path).endsWith(".hooks.js");
 		}
@@ -49,6 +52,9 @@
 	}
 
 	function kind(path) {
+		if (String(path) === "libs/flow/engine.yaml") {
+			return "projectConfig";
+		}
 		if (String(path).indexOf("libs/flow/blocks/") === 0) {
 			if (String(path).endsWith(".block.js")) {
 				return "graphBlockCode";

@@ -1,6 +1,14 @@
 (function () {
+	function evaluateSource(name, source, kind, env) {
+		source = String(source || "");
+		if (env.evalCompiledSource) {
+			return env.evalCompiledSource(source, kind + ":" + String(name || ""), env.sha256Hex ? env.sha256Hex(source) : "");
+		}
+		return eval(source);
+	}
+
 	function validateImplementationSource(name, source, env) {
-		var block = eval(String(source || ""));
+		var block = evaluateSource(name, source, "block-implementation", env || {});
 		if (!block || typeof block.run !== "function") {
 			env.raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid block implementation: " + name,
 				null, "A Rhino .block.js implementation must evaluate to an object with run(ctx, node).");
@@ -56,7 +64,7 @@
 	}
 
 	function validateHooksSource(name, source, env) {
-		var hooks = eval(String(source || ""));
+		var hooks = evaluateSource(name, source, "block-hooks", env || {});
 		if (!hooks || typeof hooks !== "object") {
 			env.raise("INVALID_BLOCK_HOOKS", "Invalid block hooks: " + name,
 				null, "A hooks script must evaluate to an object, usually with displayName(node), analyze(ctx, node), and/or analyzeShallow(ctx, node).");

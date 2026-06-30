@@ -4,6 +4,49 @@
 			Object.prototype.toString.call(value) === "[object Object]");
 	}
 
+	function isSimpleScopePath(value, env) {
+		var text = String(value || "");
+		return env.isScopePath(text) &&
+			/^(request|input|config|local|result|trace|current)(?:\.[A-Za-z_$][\w$]*|\.\d+)*$/.test(text);
+	}
+
+	function simplePathPartsFor(ctx, source) {
+		var key = String(source || "");
+		var cache = ctx.__flowSimpleScopePathCache;
+		if (!cache) {
+			cache = ctx.__flowSimpleScopePathCache = {};
+		}
+		if (!cache[key]) {
+			cache[key] = key.split(".");
+		}
+		return cache[key];
+	}
+
+	function readSimpleScopePath(ctx, source) {
+		if (!ctx || !ctx.scopes) {
+			return ctx.read(source);
+		}
+		var parts = simplePathPartsFor(ctx, source);
+		var current = ctx.scopes[parts[0]];
+		for (var i = 1; i < parts.length; i++) {
+			if (current === null || current === undefined) {
+				return undefined;
+			}
+			current = current[parts[i]];
+		}
+		return current;
+	}
+
+	function comparableValue(value) {
+		if (typeof value === "string" && value.trim() !== "") {
+			var number = Number(value);
+			if (!isNaN(number)) {
+				return number;
+			}
+		}
+		return value;
+	}
+
 	function renderTemplate(template, ctx, env) {
 		return String(template || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, path) {
 			var value = evaluate(ctx, path, env);
@@ -90,6 +133,25 @@
 				return JSON.stringify(env.sanitizeRuntimeValue(value));
 			}
 		};
+	}
+
+	function tokensFor(ctx, source, env) {
+		var key = String(source || "");
+		if (env.cacheUtils && env.expressionTokenCache) {
+			var cached = env.cacheUtils.readBoundedMap(env.expressionTokenCache, key, key);
+			if (cached) {
+				return cached;
+			}
+			return env.cacheUtils.writeBoundedMap(env.expressionTokenCache, key, key, tokenize(key, env), "Flow expressions");
+		}
+		var cache = ctx.__flowExpressionTokenCache;
+		if (!cache) {
+			cache = ctx.__flowExpressionTokenCache = {};
+		}
+		if (!cache[key]) {
+			cache[key] = tokenize(key, env);
+		}
+		return cache[key];
 	}
 
 	function unknownFunctionHint(name) {
@@ -286,7 +348,10 @@
 			if (typeof source !== "string") {
 				return literalValue(source, env);
 			}
-			var tokens = tokenize(source, env);
+			if (isSimpleScopePath(source, env)) {
+				return readSimpleScopePath(ctx, source);
+			}
+			var tokens = tokensFor(ctx, source, env);
 		var position = 0;
 		var fns = expressionFunctions(env);
 		function peek(value) {
@@ -307,18 +372,9 @@
 			}
 			return left;
 		}
-		function comparable(value) {
-			if (typeof value === "string" && value.trim() !== "") {
-				var number = Number(value);
-				if (!isNaN(number)) {
-					return number;
-				}
+			function parseExpression() {
+				return parseTernary();
 			}
-			return value;
-		}
-		function parseExpression() {
-			return parseTernary();
-		}
 		function parseTernary() {
 			var condition = parseNullish();
 			if (peek("?")) {
@@ -350,13 +406,13 @@
 				return op === "!=" || op === "!==" ? left != right : left == right;
 			});
 		}
-		function parseComparison() {
-			return binary(parseAdd, [">", ">=", "<", "<="], function (left, op, right) {
-				left = comparable(left);
-				right = comparable(right);
-				if (op === ">") {
-					return left > right;
-				}
+			function parseComparison() {
+				return binary(parseAdd, [">", ">=", "<", "<="], function (left, op, right) {
+					left = comparableValue(left);
+					right = comparableValue(right);
+					if (op === ">") {
+						return left > right;
+					}
 				if (op === ">=") {
 					return left >= right;
 				}
@@ -465,9 +521,9 @@
 				if (name === "undefined") {
 					return undefined;
 				}
-				if (env.isScopePath(name)) {
-					return ctx.read(name);
-				}
+					if (env.isScopePath(name)) {
+						return isSimpleScopePath(name, env) ? readSimpleScopePath(ctx, name) : ctx.read(name);
+					}
 				env.raise("INVALID_EXPRESSION", "Unknown expression identifier: " + name, null, unknownIdentifierHint(name));
 			}
 			if (peek("(")) {
@@ -491,6 +547,8 @@
 		renderValue: renderValue,
 		renderTree: renderTree,
 		literalValue: literalValue,
+		isSimpleScopePath: isSimpleScopePath,
+		readSimpleScopePath: readSimpleScopePath,
 		expressionFunctions: expressionFunctions,
 		tokenize: tokenize,
 		evaluate: evaluate

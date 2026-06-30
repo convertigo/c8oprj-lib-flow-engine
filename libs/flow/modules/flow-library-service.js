@@ -83,7 +83,7 @@
 			return cached;
 		}
 		var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
-		var library = eval(source);
+		var library = env.evalCompiledSource(source, key, fingerprint);
 		if (!library || typeof library !== "object") {
 			env.raise("INVALID_LIBRARY", "Invalid Flow library: " + file.getAbsolutePath(),
 				null, "A Flow library must evaluate to an object.");

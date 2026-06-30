@@ -22,6 +22,21 @@
 		};
 	}
 
+	function createBoundedMapState(limit) {
+		return {
+			entries: {},
+			limit: Math.max(1, Number(limit || 1024)),
+			size: 0,
+			clock: 0,
+			hits: 0,
+			misses: 0,
+			evictions: 0,
+			clears: 0,
+			updatedAt: "",
+			label: ""
+		};
+	}
+
 	function now() {
 		return new Date().toISOString();
 	}
@@ -64,6 +79,58 @@
 		return value;
 	}
 
+	function evictOldest(cache) {
+		var oldestKey = null;
+		var oldestUsedAt = Number.MAX_VALUE;
+		Object.keys(cache.entries || {}).forEach(function (key) {
+			var entry = cache.entries[key] || {};
+			var usedAt = Number(entry.usedAt || 0);
+			if (oldestKey === null || usedAt < oldestUsedAt) {
+				oldestKey = key;
+				oldestUsedAt = usedAt;
+			}
+		});
+		if (oldestKey !== null) {
+			delete cache.entries[oldestKey];
+			cache.size = Math.max(0, Number(cache.size || 0) - 1);
+			cache.evictions++;
+			return true;
+		}
+		return false;
+	}
+
+	function readBoundedMap(cache, key, fingerprint) {
+		var entry = cache.entries[key];
+		if (entry && (fingerprint === undefined || entry.fingerprint === fingerprint)) {
+			cache.hits++;
+			entry.usedAt = ++cache.clock;
+			return entry.value;
+		}
+		cache.misses++;
+		return null;
+	}
+
+	function writeBoundedMap(cache, key, fingerprint, value, label) {
+		var entry = cache.entries[key];
+		if (!entry) {
+			while (cache.size >= cache.limit) {
+				if (!evictOldest(cache)) {
+					break;
+				}
+			}
+			cache.size++;
+		}
+		cache.entries[key] = {
+			fingerprint: fingerprint,
+			value: value,
+			updatedAt: now(),
+			usedAt: ++cache.clock
+		};
+		cache.label = label || "";
+		cache.updatedAt = cache.entries[key].updatedAt;
+		return value;
+	}
+
 	function clearValue(cache) {
 		cache.key = "";
 		cache.value = null;
@@ -73,6 +140,14 @@
 
 	function clearMap(cache) {
 		cache.entries = {};
+		cache.clears++;
+		cache.updatedAt = now();
+	}
+
+	function clearBoundedMap(cache) {
+		cache.entries = {};
+		cache.size = 0;
+		cache.clock = 0;
 		cache.clears++;
 		cache.updatedAt = now();
 	}
@@ -102,10 +177,12 @@
 			warm: cache.entries ? entries.length > 0 : !!cache.value,
 			hits: cache.hits,
 			misses: cache.misses,
+			evictions: cache.evictions || undefined,
 			clears: cache.clears,
 			updatedAt: cache.updatedAt,
 			label: cache.label,
-			entryCount: entries.length || undefined
+			entryCount: entries.length || undefined,
+			limit: cache.limit || undefined
 		};
 		if (includeEntries === true && entries.length) {
 			out.entries = entries.slice(0, 20).map(function (key) {
@@ -122,12 +199,16 @@
 	return {
 		createValueState: createValueState,
 		createMapState: createMapState,
+		createBoundedMapState: createBoundedMapState,
 		readValue: readValue,
 		writeValue: writeValue,
 		readMap: readMap,
 		writeMap: writeMap,
+		readBoundedMap: readBoundedMap,
+		writeBoundedMap: writeBoundedMap,
 		clearValue: clearValue,
 		clearMap: clearMap,
+		clearBoundedMap: clearBoundedMap,
 		clearMapWhere: clearMapWhere,
 		summary: summary
 	};

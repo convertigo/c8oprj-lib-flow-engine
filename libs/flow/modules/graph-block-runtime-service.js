@@ -36,7 +36,7 @@
 
 	function loadBlockScript(file, label) {
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var script = eval(source);
+		var script = env.evalCompiledSource(source, env.canonicalPath(file), env.fileFingerprint(file));
 		if (!script || typeof script !== "object") {
 			raise("INVALID_BLOCK_IMPLEMENTATION", "Invalid " + label + ": " + file.getAbsolutePath(),
 				null, "The script must evaluate to an object.");

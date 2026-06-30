@@ -63,6 +63,9 @@ const _meta = {
 			var offset = Math.max(0, numberOr(props.offset === undefined ? 0 : ctx.expr(props.offset), 0));
 			var hasCount = props.count !== undefined && props.count !== null && String(props.count).trim() !== "";
 			var count = hasCount ? Math.max(0, numberOr(ctx.expr(props.count), 0)) : Number.MAX_SAFE_INTEGER || 9007199254740991;
+			if (items.slice) {
+				return items.slice(offset, offset + count);
+			}
 			var out = [];
 			for (var i = offset; i < items.length && out.length < count; i++) {
 				out.push(items[i]);

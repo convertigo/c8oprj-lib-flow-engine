@@ -32,6 +32,7 @@
 		var expandFlowDefinition = env.expandFlowDefinition;
 		var blocksWithFlowHelpers = env.blocksWithFlowHelpers;
 		var analyzeFlowDefinition = env.analyzeFlowDefinition;
+		var analyzeFlowSource = env.analyzeFlowSource;
 		var analysisByNodeId = env.analysisByNodeId;
 		var currentProjectName = env.currentProjectName;
 		var visibleSearchFlows = env.visibleSearchFlows;
@@ -1037,18 +1038,20 @@
 		request = request || {};
 		var target = String(request.target || "flow");
 		var children = [];
-				if (target === "flow") {
-					var definition = request.definition !== undefined && request.definition !== null
-						? canonicalFlowDefinition(normalizeTree(request.definition))
-						: parseSource(sourceForFlowRequest(request, blocks));
-					var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, definition) : blocks;
-					definition = expandFlowDefinition(activeBlocks, definition);
+		if (target === "flow") {
+			var definition = request.definition !== undefined && request.definition !== null
+				? canonicalFlowDefinition(normalizeTree(request.definition))
+				: parseSource(sourceForFlowRequest(request, blocks));
+			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, definition) : blocks;
+			definition = expandFlowDefinition(activeBlocks, definition);
+			var analysisById = {};
+			if (request.includeAnalysis === true || request.includeProperties === true || request.includeSchema === true) {
 				var analysisRequest = Object.assign({}, request, {
 					allowRequestableSchema: false
 				});
-			analysisRequest.flowSource = sourceFromDefinition(definition);
-			var analysis = analyzeFlowDefinition(activeBlocks, definition, analysisRequest);
-			var analysisById = analysisByNodeId(analysis);
+				analysisRequest.flowSource = sourceFromDefinition(definition);
+				analysisById = analysisByNodeId(analyzeFlowDefinition(activeBlocks, definition, analysisRequest));
+			}
 			addContracts(children, definition.contracts, "contracts");
 			addBindings(children, definition.bindings, "bindings");
 			addHelpers(children, definition.helpers || [], "helpers", activeBlocks, analysisById,
@@ -1057,14 +1060,14 @@
 		} else if (target === "engine") {
 			var engine = parseYamlSource(request.engineSource, "version: 1\n");
 			var engineQName = String(engine.engineQName || request.engineQName || "");
-				children.push(virtualNode("engine", "engine", engineQName, "engineQName", engineQName, engineQName, null, "mdi:engine-outline"));
-				addBindings(children, engine.bindings, "bindings");
-				addConfig(children, engine.config, "config");
-				addFragments(children, blocks);
-				addCatalog(children, blocks, {
-					includePrivate: request.includePrivate !== false
-				});
-			} else {
+			children.push(virtualNode("engine", "engine", engineQName, "engineQName", engineQName, engineQName, null, "mdi:engine-outline"));
+			addBindings(children, engine.bindings, "bindings");
+			addConfig(children, engine.config, "config");
+			addFragments(children, blocks);
+			addCatalog(children, blocks, {
+				includePrivate: request.includePrivate !== false
+			});
+		} else {
 			raise("UNKNOWN_TREE_TARGET", "Unknown Flow tree target: " + target);
 		}
 		return compactTreeResponse({

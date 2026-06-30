@@ -53,20 +53,23 @@
 				types: cacheSummary("types", caches.types, env),
 				libraries: cacheSummary("libraries", caches.libraries, env),
 				engineModules: cacheSummary("engineModules", caches.engineModules, env),
+				compiledScripts: env.compiledScriptCacheInfo ? env.compiledScriptCacheInfo() : { name: "compiledScripts", size: 0 },
 				propertyEditor: cacheSummary("propertyEditor", caches.propertyEditor, env),
-				treeSnapshots: cacheSummary("treeSnapshots", caches.treeSnapshots, env)
+				treeSnapshots: cacheSummary("treeSnapshots", caches.treeSnapshots, env),
+				expressions: cacheSummary("expressions", caches.expressionTokens, env)
 			}
 		};
 	}
 
 	function clear(env) {
 		var caches = env.runtimeState.caches;
-		env.cacheUtils.clearValue(caches.blocks);
-		env.cacheUtils.clearValue(caches.types);
+		env.cacheUtils.clearMap(caches.blocks);
+		env.cacheUtils.clearMap(caches.types);
 		env.cacheUtils.clearMap(caches.libraries);
 		env.cacheUtils.clearMap(caches.engineModules);
 		env.cacheUtils.clearValue(caches.propertyEditor);
 		env.cacheUtils.clearMap(caches.treeSnapshots);
+		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
 		env.resetModuleCaches();
 		return info(env);
 	}

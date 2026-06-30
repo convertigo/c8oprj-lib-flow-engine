@@ -152,11 +152,11 @@
 
 	function loadBlocks(env) {
 		var key = blocksCacheKey(env);
-		var cached = env.readRuntimeCache(env.blockCache, key);
+		var cached = env.readRuntimeCache(env.blockCache, key, key);
 		if (cached) {
 			return cached;
 		}
-		return env.writeRuntimeCache(env.blockCache, key, loadBlocksUncached(env),
+		return env.writeRuntimeCache(env.blockCache, key, key, loadBlocksUncached(env),
 			"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project"));
 	}
 
@@ -208,11 +208,11 @@
 
 	function loadTypes(env) {
 		var key = typesCacheKey(env);
-		var cached = env.readRuntimeCache(env.typeCache, key);
+		var cached = env.readRuntimeCache(env.typeCache, key, key);
 		if (cached) {
 			return cached;
 		}
-		return env.writeRuntimeCache(env.typeCache, key, loadTypesUncached(env),
+		return env.writeRuntimeCache(env.typeCache, key, key, loadTypesUncached(env),
 			"types for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project"));
 	}
 

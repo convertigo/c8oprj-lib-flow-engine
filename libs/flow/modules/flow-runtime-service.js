@@ -240,6 +240,7 @@
 				schemaUpdates: [],
 				graphBlockStack: [],
 				maxGraphBlockDepth: intOption(request.maxGraphBlockDepth, 128, 1, 1000),
+				traceEnabled: request.includeTrace !== false,
 				scopes: {
 					request: requestScope,
 					input: normalizeTree(request.input || {}),
@@ -674,6 +675,9 @@
 				return throwFlowError(options, node);
 			};
 			ctx.trace = function (node, name, result) {
+				if (!ctx.traceEnabled) {
+					return;
+				}
 				ctx.scopes.trace.nodes.push({
 					id: nodePath(node),
 					block: name,

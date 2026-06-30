@@ -8,7 +8,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/engine.yaml, libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);
@@ -67,6 +67,13 @@
 			return [];
 		}
 		var out = [];
+		var engineConfig = new env.File(base, "libs/flow/engine.yaml");
+		if (engineConfig.isFile()) {
+			out.push({
+				path: "libs/flow/engine.yaml",
+				file: engineConfig
+			});
+		}
 		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/resources", "libs/flow/types"].forEach(function (path) {
 			collectResourceFiles(new env.File(base, path), base, out, env);
 		});
@@ -262,7 +269,7 @@
 		if (request.hints !== false) {
 			out.hints = [
 				"If you understood, call with hints=false.",
-				"Use this for block/fragment/type/editor/library sources. Use flow-search for Flow graph nodes.",
+				"Use this for project config, block/fragment/type/editor/library sources. Use flow-search for Flow graph nodes.",
 				"Call flow-resource-get before patching; pass its hash as baseHash.",
 				"Pass doc=false on repeated calls when the short tool contract is already known."
 			];
@@ -307,8 +314,10 @@
 			env.compileProjectBlockCode(env.loadBlocks(), blockId, content);
 		} else if (kind === "fragment") {
 			env.parseYamlSource(content, "version: 1\nnodes: []\n");
+		} else if (kind === "projectConfig") {
+			env.parseYamlSource(content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n");
 		} else if (kind === "library") {
-			var library = eval(String(content || ""));
+			var library = env.evalCompiledSource(String(content || ""), "resource:" + path, env.sha256Hex(content));
 			if (!library || typeof library !== "object") {
 				env.raise("INVALID_LIBRARY", "Invalid Flow library resource: " + path,
 					null, "A Flow library must evaluate to an object.");
