@@ -3754,9 +3754,13 @@
 		var target = request.targetObject || {};
 		var targetInfo = target.info || {};
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || target.projectDir || "");
-		var explicit = payload.modelPath || targetInfo.sourcePath || "";
+		var explicit = payload.modelPath || "";
 		if (explicit) {
 			return fileForProjectPath(projectRoot || new File("."), explicit);
+		}
+		var targetSource = String(targetInfo.sourcePath || "");
+		if (targetSource.endsWith(".front.json") || targetSource.endsWith("/+page.flow.svelte")) {
+			return fileForProjectPath(projectRoot || new File("."), targetSource);
 		}
 		return fileForProjectPath(projectRoot || new File("."), info.settings.modelPath || "");
 	}
@@ -3778,22 +3782,89 @@
 		return null;
 	}
 
+	function frontendDraftEntriesUnder(request, baseDir) {
+		var drafts = frontendSourceDrafts(request);
+		var basePath = canonicalPath(baseDir);
+		var entries = [];
+		Object.keys(drafts).forEach(function (key) {
+			var file = new File(String(key));
+			var path = canonicalPath(file);
+			if (path === basePath || path.indexOf(basePath + File.separator) !== 0) {
+				return;
+			}
+			entries.push({
+				file: file,
+				relativePath: path.substring(basePath.length + 1),
+				content: String(drafts[key])
+			});
+		});
+		return entries;
+	}
+
+	function frontendWriteFile(file, content) {
+		var parent = file.getParentFile();
+		if (parent) {
+			parent.mkdirs();
+		}
+		FileUtils.writeStringToFile(file, String(content || ""), "UTF-8");
+	}
+
+	function frontendCopyFlowSvelteOverlay(sourceDir, overlayDir, request) {
+		var listed = sourceDir && sourceDir.listFiles();
+		if (listed) {
+			Arrays.asList(listed).toArray().forEach(function (file) {
+				if (file.isDirectory()) {
+					frontendCopyFlowSvelteOverlay(file, new File(overlayDir, file.getName()), request);
+				} else if (file.isFile() && String(file.getName()).endsWith(".flow.svelte")) {
+					var draft = frontendDraftForFile(request, file);
+					var content = draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
+					frontendWriteFile(new File(overlayDir, file.getName()), content);
+				}
+			});
+		}
+	}
+
+	function frontendWriteExtraDraftEntries(entries, baseDir, overlayDir) {
+		entries.forEach(function (entry) {
+			var target = new File(overlayDir, String(entry.relativePath));
+			if (!target.isFile()) {
+				frontendWriteFile(target, entry.content);
+			}
+		});
+	}
+
 	function frontendEffectiveModelPath(request, info, modelPath) {
 		var draft = frontendDraftForFile(request, modelPath);
+		var isFlowSvelte = String(modelPath.getName()).endsWith(".flow.svelte");
+		var draftEntries = isFlowSvelte ? frontendDraftEntriesUnder(request, modelPath.getParentFile()) : [];
 		if (draft === null) {
-			return {
-				file: modelPath,
-				cleanup: null
-			};
+			if (!isFlowSvelte || draftEntries.length === 0) {
+				return {
+					file: modelPath,
+					cleanup: null
+				};
+			}
 		}
 		var settings = info.settings || {};
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "");
 		var sourceRoot = String(settings.privateDir || "_private/svelte").replace(/^\/+/, "");
 		var draftDir = new File(projectRoot || new File("."), sourceRoot + "/.flow-drafts");
 		draftDir.mkdirs();
-		var suffix = String(modelPath.getName()).endsWith(".flow.svelte") ? ".flow.svelte" : ".front.json";
-		var draftFile = new File(draftDir, sha256Hex(String(modelPath.getCanonicalPath())).substring(0, 16) + suffix);
-		FileUtils.writeStringToFile(draftFile, draft, "UTF-8");
+		if (isFlowSvelte) {
+			var overlayDir = new File(draftDir, sha256Hex(String(modelPath.getCanonicalPath())).substring(0, 16));
+			if (overlayDir.exists()) {
+				FileUtils.deleteDirectory(overlayDir);
+			}
+			overlayDir.mkdirs();
+			frontendCopyFlowSvelteOverlay(modelPath.getParentFile(), overlayDir, request);
+			frontendWriteExtraDraftEntries(draftEntries, modelPath.getParentFile(), overlayDir);
+			return {
+				file: new File(overlayDir, modelPath.getName()).getCanonicalFile(),
+				cleanup: overlayDir
+			};
+		}
+		var draftFile = new File(draftDir, sha256Hex(String(modelPath.getCanonicalPath())).substring(0, 16) + ".front.json");
+		frontendWriteFile(draftFile, draft);
 		return {
 			file: draftFile.getCanonicalFile(),
 			cleanup: draftFile
@@ -3844,7 +3915,11 @@
 		} finally {
 			try {
 				if (effective.cleanup) {
-					effective.cleanup["delete"]();
+					if (effective.cleanup.isDirectory()) {
+						FileUtils.deleteDirectory(effective.cleanup);
+					} else {
+						effective.cleanup["delete"]();
+					}
 				}
 			} catch (e) {
 			}
