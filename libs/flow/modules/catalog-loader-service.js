@@ -43,6 +43,15 @@
 				return root;
 			}
 		}
+		if (typeof env.projectRootForName === "function") {
+			try {
+				var loadedRoot = env.projectRootForName(name);
+				if (loadedRoot && referencedBlocksDir(loadedRoot, env).isDirectory()) {
+					return loadedRoot;
+				}
+			} catch (e) {
+			}
+		}
 		return null;
 	}
 

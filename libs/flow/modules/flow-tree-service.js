@@ -50,6 +50,7 @@
 		var schemaSimpleType = env.schemaSimpleType;
 		var schemaSummary = env.schemaSummary;
 		var objectSchema = env.objectSchema;
+		var frontendBlocksForSettings = env.frontendBlocksForSettings || function () { return []; };
 		var raise = env.raise;
 		var intOption = env.intOption;
 
@@ -226,6 +227,403 @@
 		var folder = virtualNode("config", "scope", "config", path, "Config", compact(config), null, "mdi:cog-outline");
 		out.push(folder);
 		addObjectFields(folder, config, path);
+	}
+
+	function frontbuilderSettings(config) {
+		var root = config && config.frontbuilder;
+		if (!root || typeof root !== "object") {
+			return [];
+		}
+		return Object.keys(root).sort().map(function (key) {
+			var settings = root[key];
+			if (!settings || typeof settings !== "object") {
+				settings = {};
+			}
+			return {
+				name: key,
+				settings: settings
+			};
+		});
+	}
+
+	function frontendModelFile(modelPath) {
+		var root = projectDir();
+		var path = String(modelPath || "").trim();
+		if (!root || !path) {
+			return null;
+		}
+		var file = new File(path);
+		if (!file.isAbsolute()) {
+			file = new File(root, path);
+		}
+		var rootPath = String(root.getCanonicalPath());
+		var filePath = String(file.getCanonicalPath());
+		if (filePath !== rootPath && filePath.indexOf(rootPath + File.separator) !== 0) {
+			return null;
+		}
+		return file;
+	}
+
+	function frontendDraftForFile(request, file) {
+		if (!file) {
+			return null;
+		}
+		var drafts = request && request.frontendSourceDrafts || {};
+		if (!drafts || typeof drafts !== "object") {
+			return null;
+		}
+		var key = String(file.getCanonicalPath());
+		if (Object.prototype.hasOwnProperty.call(drafts, key)) {
+			return String(drafts[key]);
+		}
+		return null;
+	}
+
+	function frontendModelSource(request, file) {
+		var draft = frontendDraftForFile(request, file);
+		return draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
+	}
+
+	function frontendModelDirty(request, file) {
+		return frontendDraftForFile(request, file) !== null;
+	}
+
+	function frontendSourceInfo(file, kind, mutationPath, request) {
+		var source = sourceDefinitionForFile(file ? String(file.getAbsolutePath()) : "", kind || "frontend-model");
+		source.sourceMutationPath = mutationPath || "";
+		source.frontendModel = true;
+		source.sourceDirty = frontendModelDirty(request, file);
+		return source;
+	}
+
+	function addFrontendModels(out, config, path, request) {
+		var builders = frontbuilderSettings(config);
+		if (builders.length === 0) {
+			return;
+		}
+		var folder = virtualNode("frontends", "folder", "frontends", path,
+			"Frontends", compact({ count: builders.length }), null, "mdi:monitor-dashboard");
+		out.push(folder);
+		builders.forEach(function (entry) {
+			addFrontendBuilder(folder, entry.name, entry.settings, path + "." + safeVirtualName("builder", entry.name), request);
+		});
+	}
+
+	function addFrontendBuilder(parent, name, settings, path, request) {
+		var modelFile = frontendModelFile(settings.modelPath);
+		var definition = {
+			id: name,
+			target: settings.target || "",
+			modelPath: settings.modelPath || "",
+			privateDir: settings.privateDir || "",
+			buildOutput: settings.buildOutput || "",
+			resourceRoot: settings.resourceRoot || ""
+		};
+		var sourceInfo = frontendSourceInfo(modelFile, "frontend-model", "", request);
+		var builder = virtualNode("builder_" + name, "frontendBuilder", name, path,
+			"SvelteBuilder " + name, compact(definition),
+			compact(sourceObjectInfo(sourceInfo, frontendBuilderPropertyDefinitions(),
+				["id", "target", "modelPath", "privateDir", "buildOutput", "resourceRoot", "sourceRelativePath", "sourceWritable", "sourceDirty"])),
+			"mdi:application-braces-outline");
+		parent.children.push(builder);
+		if (settings.modelPath) {
+			builder.children.push(virtualNode("sourceModel", "frontendSource", "model", path + ".source",
+				"Source model", compact({
+					path: settings.modelPath,
+					dirty: frontendModelDirty(request, modelFile)
+				}), compact(sourceObjectInfo(sourceInfo, frontendSourcePropertyDefinitions(),
+					["sourceRelativePath", "sourceWritable", "sourceDirty"])), "mdi:file-code-outline"));
+		}
+		addFrontendUiBlocks(builder, name, settings, path + ".uiBlocks");
+		if (!settings.modelPath) {
+			return;
+		}
+		if (!modelFile || !modelFile.isFile()) {
+			builder.children.push(virtualNode("missingModel", "error", "frontendModel", path + ".model",
+				"Missing model: " + String(settings.modelPath || ""), compact(definition), null, "mdi:alert-outline"));
+			return;
+		}
+		try {
+			var model = normalizeTree(JSON.parse(frontendModelSource(request, modelFile)));
+			builder.definition = compact(Object.assign(definition, {
+				appId: model.app && model.app.id || "",
+				title: model.app && model.app.title || "",
+				modelVersion: model.version || "",
+				dirty: frontendModelDirty(request, modelFile)
+			}));
+			addFrontendModelTree(builder, model, path + ".model", modelFile);
+		} catch (e) {
+			builder.children.push(virtualNode("modelError", "error", "frontendModel", path + ".model",
+				"Invalid model: " + String(e && e.message || e), compact({ error: String(e && e.message || e) }), null, "mdi:alert-outline"));
+		}
+	}
+
+	function frontendBuilderPropertyDefinitions() {
+		return {
+			id: propertyDefinition("Builder", "Base properties", "Frontend builder family.", { readOnly: true }),
+			target: propertyDefinition("Target", "Base properties", "Frontend target runtime.", { readOnly: true }),
+			modelPath: propertyDefinition("Model path", "Base properties", "Project-relative frontend model source.", { readOnly: true }),
+			privateDir: propertyDefinition("Private dir", "Build", "Generated source directory.", { readOnly: true }),
+			buildOutput: propertyDefinition("Build output", "Build", "Production output directory.", { readOnly: true }),
+			resourceRoot: propertyDefinition("Resource root", "Build", "Builder resource directory.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited from this project.", { readOnly: true }),
+			sourceDirty: propertyDefinition("Dirty", "Information", "Whether this source has a live draft.", { readOnly: true })
+		};
+	}
+
+	function frontendSourcePropertyDefinitions() {
+		return {
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited from this project.", { readOnly: true }),
+			sourceDirty: propertyDefinition("Dirty", "Information", "Whether this source has a live draft.", { readOnly: true })
+		};
+	}
+
+	function addFrontendUiBlocks(parent, name, settings, path) {
+		var blocks = frontendBlocksForSettings(name, settings) || [];
+		if (blocks.length === 0) {
+			return;
+		}
+		var folder = virtualNode("uiBlocks", "folder", "frontendBlocks", path,
+			"UI blocks", compact({ count: blocks.length }), null, "mdi:widgets-outline");
+		parent.children.push(folder);
+		var groups = {};
+		blocks.forEach(function (block) {
+			var category = String(block.category || "Svelte / Widgets");
+			var categoryKey = safeVirtualName("category", category);
+			if (!groups[categoryKey]) {
+				groups[categoryKey] = virtualNode("category_" + categoryKey, "folder", "frontendBlockCategory",
+					path + "." + categoryKey, category, compact({ category: category }), null, "mdi:folder-outline");
+				folder.children.push(groups[categoryKey]);
+			}
+			var blockInfo = sourceObjectInfo(sourceDefinitionForFile(block.file || block.sourcePath || "", "frontend-block"),
+				frontendBlockPropertyDefinitions(),
+				["id", "label", "kind", "target", "provider", "sourceRelativePath", "sourceWritable"]);
+			blockInfo.frontendBlock = true;
+			blockInfo.frontendBuilder = name;
+			["icon", "iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"].forEach(function (key) {
+				if (block[key] !== undefined && block[key] !== null && String(block[key]) !== "") {
+					blockInfo[key] = String(block[key]);
+				}
+			});
+			groups[categoryKey].children.push(virtualNode("block_" + (block.id || block.name), "frontendBlock", block.id || block.name,
+				path + "." + safeVirtualName("block", block.id || block.name), block.label || block.name || block.id,
+				compact(block), compact(blockInfo), null));
+		});
+	}
+
+	function frontendBlockPropertyDefinitions() {
+		return {
+			id: propertyDefinition("Id", "Base properties", "Reusable UI block id.", { readOnly: true }),
+			label: propertyDefinition("Label", "Base properties", "Visible palette label.", { readOnly: true }),
+			kind: propertyDefinition("Kind", "Base properties", "Frontend object kind inserted by this block.", { readOnly: true }),
+			target: propertyDefinition("Target", "Base properties", "Frontend target runtime.", { readOnly: true }),
+			provider: propertyDefinition("Provider", "Information", "Library providing this UI block.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "UI block descriptor source.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this descriptor can be edited from this project.", { readOnly: true })
+		};
+	}
+
+	function frontendItemInfo(file, mutationPath, definitions, order) {
+		var info = sourceObjectInfo(frontendSourceInfo(file, "frontend-model", mutationPath), definitions, order);
+		info.frontendModelPath = mutationPath || "";
+		return info;
+	}
+
+	function addFrontendModelTree(builder, model, path, modelFile) {
+		var app = model.app || {};
+		var appNode = virtualNode("app", "frontendApp", app.id || "app", path + ".app",
+			app.title || app.id || "App", compact(app),
+			compact(frontendItemInfo(modelFile, "app", frontendAppPropertyDefinitions(),
+				["id", "title", "defaultLayout", "sourceRelativePath", "sourceWritable"])), "mdi:application-outline");
+		builder.children.push(appNode);
+		addFrontendNavigation(appNode, app.navigation || [], path + ".app.navigation", modelFile);
+		addFrontendPages(appNode, app.pages || [], path + ".app.pages", modelFile);
+		addFrontendLayouts(builder, model.layouts || [], path + ".layouts", modelFile);
+		addFrontendComponents(builder, model.components || [], path + ".components", modelFile);
+		addFrontendClientActions(builder, model.clientActions || [], path + ".clientActions", modelFile);
+		addFrontendBackendCalls(builder, model.backendCalls || [], path + ".backendCalls", modelFile);
+		addFrontendStyling(builder, model.styling || {}, path + ".styling", modelFile);
+	}
+
+	function frontendAppPropertyDefinitions() {
+		return {
+			id: propertyDefinition("Id", "Base properties", "Application id.", { readOnly: true }),
+			title: propertyDefinition("Title", "Base properties", "Visible application title.", { readOnly: true }),
+			defaultLayout: propertyDefinition("Default layout", "Layout", "Default layout id.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited.", { readOnly: true })
+		};
+	}
+
+	function addFrontendNavigation(parent, navigation, path, modelFile) {
+		if (!navigation || navigation.length === 0) {
+			return;
+		}
+		var folder = virtualNode("navigation", "folder", "frontendNavigation", path,
+			"Navigation", compact({ count: navigation.length }), null, "mdi:menu");
+		parent.children.push(folder);
+		navigation.forEach(function (item, index) {
+			var summary = String(item.label || item.route || "item");
+			folder.children.push(virtualNode("nav_" + index, "frontendNavigationItem", "navigationItem",
+				path + "[" + index + "]", summary, compact(item),
+				compact(frontendItemInfo(modelFile, "app.navigation[" + index + "]", null, null)), "mdi:link-variant"));
+		});
+	}
+
+	function addFrontendPages(parent, pages, path, modelFile) {
+		var folder = virtualNode("pages", "folder", "frontendPages", path,
+			"Pages", compact({ count: pages.length }), null, "mdi:file-document-multiple-outline");
+		parent.children.push(folder);
+		pages.forEach(function (page, index) {
+			var pagePath = path + "[" + index + "]";
+			var pageNode = virtualNode("page_" + (page.id || index), "frontendPage", page.id || "page",
+				pagePath, page.title || page.id || "Page", compact(page),
+				compact(frontendItemInfo(modelFile, "app.pages[" + index + "]", frontendPagePropertyDefinitions(),
+					["id", "title", "route", "layout", "sourceRelativePath", "sourceWritable"])), "mdi:file-outline");
+			folder.children.push(pageNode);
+			addFrontendRegions(pageNode, page.regions || {}, pagePath + ".regions", modelFile);
+			addFrontendComponentRefs(pageNode, page.components || [], pagePath + ".components", modelFile);
+		});
+	}
+
+	function frontendPagePropertyDefinitions() {
+		return {
+			id: propertyDefinition("Id", "Base properties", "Page id.", { readOnly: true }),
+			title: propertyDefinition("Title", "Base properties", "Page title.", { readOnly: true }),
+			route: propertyDefinition("Route", "Routing", "Page route.", { readOnly: true }),
+			layout: propertyDefinition("Layout", "Layout", "Layout id used by this page.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited.", { readOnly: true })
+		};
+	}
+
+	function addFrontendRegions(parent, regions, path, modelFile) {
+		Object.keys(regions || {}).sort().forEach(function (name) {
+			var refs = regions[name] || [];
+			var regionNode = virtualNode("region_" + name, "frontendRegion", name, path + "." + name,
+				name, compact({ id: name, components: refs }),
+				compact(frontendItemInfo(modelFile, "regions." + name, null, null)), "mdi:page-layout-body");
+			parent.children.push(regionNode);
+			addFrontendComponentRefs(regionNode, refs, path + "." + name, modelFile);
+		});
+	}
+
+	function addFrontendComponentRefs(parent, refs, path, modelFile) {
+		(refs || []).forEach(function (ref, index) {
+			parent.children.push(virtualNode("componentRef_" + ref, "frontendComponentRef", ref,
+				path + "[" + index + "]", String(ref), compact({ component: ref }),
+				compact(frontendItemInfo(modelFile, "", null, null)), "mdi:link-variant"));
+		});
+	}
+
+	function addFrontendLayouts(parent, layouts, path, modelFile) {
+		var folder = virtualNode("layouts", "folder", "frontendLayouts", path,
+			"Layouts", compact({ count: layouts.length }), null, "mdi:page-layout-header-footer");
+		parent.children.push(folder);
+		layouts.forEach(function (layout, index) {
+			var layoutNode = virtualNode("layout_" + (layout.id || index), "frontendLayout", layout.id || "layout",
+				path + "[" + index + "]", layout.title || layout.id || "Layout", compact(layout),
+				compact(frontendItemInfo(modelFile, "layouts[" + index + "]", null, null)), "mdi:page-layout-outline");
+			folder.children.push(layoutNode);
+			(layout.regions || []).forEach(function (region, regionIndex) {
+				layoutNode.children.push(virtualNode("region_" + (region.id || regionIndex), "frontendLayoutRegion", region.id || "region",
+					path + "[" + index + "].regions[" + regionIndex + "]", region.id || "region", compact(region),
+					compact(frontendItemInfo(modelFile, "layouts[" + index + "].regions[" + regionIndex + "]", null, null)), "mdi:page-layout-body"));
+			});
+		});
+	}
+
+	function addFrontendComponents(parent, components, path, modelFile) {
+		var folder = virtualNode("components", "folder", "frontendComponents", path,
+			"Components", compact({ count: components.length }), null, "mdi:view-module-outline");
+		parent.children.push(folder);
+		components.forEach(function (component, index) {
+			var componentNode = virtualNode("component_" + (component.id || index), "frontendComponent", component.id || "component",
+				path + "[" + index + "]", component.id || "Component", compact(component),
+				compact(frontendItemInfo(modelFile, "components[" + index + "]", frontendComponentPropertyDefinitions(),
+					["id", "sourceRelativePath", "sourceWritable"])), "mdi:view-dashboard-outline");
+			folder.children.push(componentNode);
+			addFrontendWidgets(componentNode, component.widgets || [], path + "[" + index + "].widgets",
+				"components[" + index + "].widgets", modelFile);
+		});
+	}
+
+	function frontendComponentPropertyDefinitions() {
+		return {
+			id: propertyDefinition("Id", "Base properties", "Reusable component id.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited.", { readOnly: true })
+		};
+	}
+
+	function addFrontendWidgets(parent, widgets, path, mutationPath, modelFile) {
+		(widgets || []).forEach(function (widget, index) {
+			var label = widget.label || widget.text || widget.kind || widget.id || "Widget";
+			parent.children.push(virtualNode("widget_" + (widget.id || index), "frontendWidget", widget.kind || "widget",
+				path + "[" + index + "]", String(label), compact(widget),
+				compact(frontendItemInfo(modelFile, mutationPath + "[" + index + "]", frontendWidgetPropertyDefinitions(),
+					["id", "kind", "label", "clientAction", "source", "sourceRelativePath", "sourceWritable"])), widgetIcon(widget.kind)));
+		});
+	}
+
+	function frontendWidgetPropertyDefinitions() {
+		return {
+			id: propertyDefinition("Id", "Base properties", "Widget id.", { readOnly: true }),
+			kind: propertyDefinition("Kind", "Base properties", "Widget kind.", { readOnly: true }),
+			label: propertyDefinition("Label", "Base properties", "Visible label.", { readOnly: true }),
+			clientAction: propertyDefinition("Client action", "Action", "Client action id.", { readOnly: true }),
+			source: propertyDefinition("Source", "Data", "Backend result source path.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited.", { readOnly: true })
+		};
+	}
+
+	function widgetIcon(kind) {
+		kind = String(kind || "");
+		if (kind === "button") {
+			return "mdi:gesture-tap-button";
+		}
+		if (kind === "table") {
+			return "mdi:table";
+		}
+		if (kind === "json") {
+			return "mdi:code-json";
+		}
+		if (kind === "status") {
+			return "mdi:information-outline";
+		}
+		return "mdi:text-box-outline";
+	}
+
+	function addFrontendClientActions(parent, actions, path, modelFile) {
+		var folder = virtualNode("clientActions", "folder", "frontendClientActions", path,
+			"Client actions", compact({ count: actions.length }), null, "mdi:gesture-tap");
+		parent.children.push(folder);
+		(actions || []).forEach(function (action, index) {
+			folder.children.push(virtualNode("clientAction_" + (action.id || index), "frontendClientAction", action.kind || "clientAction",
+				path + "[" + index + "]", action.id || "Client action", compact(action),
+				compact(frontendItemInfo(modelFile, "clientActions[" + index + "]", null, null)), "mdi:gesture-tap"));
+		});
+	}
+
+	function addFrontendBackendCalls(parent, calls, path, modelFile) {
+		var folder = virtualNode("backendCalls", "folder", "frontendBackendCalls", path,
+			"Backend calls", compact({ count: calls.length }), null, "mdi:server-network");
+		parent.children.push(folder);
+		(calls || []).forEach(function (call, index) {
+			folder.children.push(virtualNode("backendCall_" + (call.id || index), "frontendBackendCall", call.requestable || "requestable",
+				path + "[" + index + "]", call.id || call.requestable || "Backend call", compact(call),
+				compact(frontendItemInfo(modelFile, "backendCalls[" + index + "]", null, null)), "mdi:server-network"));
+		});
+	}
+
+	function addFrontendStyling(parent, styling, path, modelFile) {
+		var folder = virtualNode("styling", "frontendStyling", styling.engine || "styling", path,
+			"Styling", compact(styling), compact(frontendItemInfo(modelFile, "styling", null, null)), "mdi:palette-outline");
+		parent.children.push(folder);
+		addObjectFields(folder, styling.tokens || {}, path + ".tokens");
 	}
 
 	function normalizeSlotDefinition(slot) {
@@ -1063,6 +1461,7 @@
 			children.push(virtualNode("engine", "engine", engineQName, "engineQName", engineQName, engineQName, null, "mdi:engine-outline"));
 			addBindings(children, engine.bindings, "bindings");
 			addConfig(children, engine.config, "config");
+			addFrontendModels(children, engine.config, "frontends", request);
 			addFragments(children, blocks);
 			addCatalog(children, blocks, {
 				includePrivate: request.includePrivate !== false

@@ -8,7 +8,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/engine.yaml, libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/engine.yaml, libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,yaml,yml}, libs/flow/frontbuilder/**/*.{front,uiblock}.json, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);
@@ -74,7 +74,7 @@
 				file: engineConfig
 			});
 		}
-		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/resources", "libs/flow/types"].forEach(function (path) {
+		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/resources", "libs/flow/frontbuilder", "libs/flow/types"].forEach(function (path) {
 			collectResourceFiles(new env.File(base, path), base, out, env);
 		});
 		return out;
@@ -316,6 +316,8 @@
 			env.parseYamlSource(content, "version: 1\nnodes: []\n");
 		} else if (kind === "projectConfig") {
 			env.parseYamlSource(content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n");
+		} else if (kind === "frontendModel" || kind === "frontendBlock") {
+			JSON.parse(String(content || "{}"));
 		} else if (kind === "library") {
 			var library = env.evalCompiledSource(String(content || ""), "resource:" + path, env.sha256Hex(content));
 			if (!library || typeof library !== "object") {

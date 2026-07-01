@@ -32,6 +32,7 @@
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
+		frontendDevServers: {},
 		caches: {
 			blocks: createRuntimeMapCacheState(),
 			types: createRuntimeMapCacheState(),
@@ -1136,6 +1137,25 @@
 		return flowLibraryService().projectRootFromFlowDir(flowDir, flowLibraryServiceEnv());
 	}
 
+	function loadedProjectRootForName(name) {
+		try {
+			if (typeof Packages === "undefined" || !name) {
+				return null;
+			}
+			var engine = Packages.com.twinsoft.convertigo.engine.Engine;
+			if (!engine.theApp || !engine.theApp.databaseObjectsManager) {
+				return null;
+			}
+			var project = engine.theApp.databaseObjectsManager.getOriginalProjectByName(String(name), false);
+			if (!project) {
+				return null;
+			}
+			return new File(String(project.getDirPath()));
+		} catch (e) {
+			return null;
+		}
+	}
+
 	function catalogLoaderService() {
 		return loadEngineModule("catalog-loader-service.js");
 	}
@@ -1156,6 +1176,7 @@
 			readRuntimeCache: readRuntimeMapCache,
 			writeRuntimeCache: writeRuntimeMapCache,
 			flowProviderName: flowProviderName,
+			projectRootForName: loadedProjectRootForName,
 			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
 			loadGraphBlockFile: loadGraphBlockFile,
 			reserveFlowScriptBlockFile: reserveFlowScriptBlockFile,
@@ -3283,6 +3304,83 @@
 		return loadEngineModule("flow-tree-service.js");
 	}
 
+	function frontendCatalogService() {
+		return loadEngineModule("frontend-catalog-service.js");
+	}
+
+	function frontendCatalogServiceEnv() {
+		return {
+			File: File,
+			FileUtils: FileUtils,
+			Arrays: Arrays,
+			projectDir: projectDir,
+			canonicalPath: canonicalPath,
+			directoryFingerprint: directoryFingerprint,
+			resourceRelativePath: resourceRelativePath,
+			resolveBlockIcon: resolveBlockIcon,
+			normalizeTree: normalizeTree,
+			raise: raise
+		};
+	}
+
+	function frontendBlocksForSettings(name, settings) {
+		return frontendCatalogService().frontendBlocksForSettings(name, settings, frontendCatalogServiceEnv());
+	}
+
+	function frontendBlocksForConfig(config) {
+		return frontendCatalogService().frontendBlocksForConfig(config, frontendCatalogServiceEnv());
+	}
+
+	function projectEngineDefinitionForRequest(request) {
+		request = request || {};
+		if (request.engineSource !== undefined && request.engineSource !== null && String(request.engineSource).trim() !== "") {
+			return parseYamlSource(request.engineSource, "version: 1\n");
+		}
+		try {
+			return loadProjectEngineDefinition();
+		} catch (e) {
+			return {};
+		}
+	}
+
+	function frontendCatalogFingerprintForRequest(request) {
+		try {
+			var engine = projectEngineDefinitionForRequest(request);
+			return frontendCatalogService().fingerprintForConfig(engine.config || {}, frontendCatalogServiceEnv());
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function frontendModelFingerprintForRequest(request) {
+		try {
+			var engine = projectEngineDefinitionForRequest(request);
+			var root = projectDir();
+			if (!root) {
+				return "";
+			}
+			return frontendCatalogService().frontbuilderSettings(engine.config || {}).map(function (entry) {
+				var settings = entry.settings || {};
+				var modelPath = String(settings.modelPath || "");
+				if (!modelPath) {
+					return entry.name + ":";
+				}
+				var file = new File(modelPath);
+				if (!file.isAbsolute()) {
+					file = new File(root, modelPath);
+				}
+				var draft = frontendDraftForFile(request, file);
+				return [
+					entry.name,
+					canonicalPath(file),
+					draft !== null ? "draft:" + sha256Hex(draft) : file.isFile() ? fileFingerprint(file) : "missing"
+				].join(":");
+			}).join("\n");
+		} catch (e) {
+			return "";
+		}
+	}
+
 	function flowTreeServiceEnv() {
 		return {
 			File: File,
@@ -3335,6 +3433,7 @@
 			schemaSimpleType: schemaSimpleType,
 			schemaSummary: schemaSummary,
 			objectSchema: objectSchema,
+			frontendBlocksForSettings: frontendBlocksForSettings,
 			raise: raise,
 			intOption: intOption
 		};
@@ -3432,11 +3531,13 @@
 			}
 		}
 		return [
-			blocksCacheKey(),
-			typesCacheKey(),
-			sourceFileFingerprint,
-			describeTreeSourceFingerprintInput(request)
-		].join("\n");
+				blocksCacheKey(),
+				typesCacheKey(),
+				request.target === "engine" ? frontendCatalogFingerprintForRequest(request) : "",
+				request.target === "engine" ? frontendModelFingerprintForRequest(request) : "",
+				sourceFileFingerprint,
+				describeTreeSourceFingerprintInput(request)
+			].join("\n");
 	}
 
 	function describeTreeSourceFingerprintInput(request) {
@@ -3465,6 +3566,496 @@
 		return flowTreeService().nodeOutputSchemaRequest(request, blocks, flowTreeServiceEnv());
 	}
 
+	function isFrontendTarget(request) {
+		var target = request.targetObject || {};
+		var kind = String(target.kind || "");
+		var path = String(target.path || "");
+		return kind.indexOf("frontend") === 0 || path === "frontends" || path.indexOf("frontends.") === 0;
+	}
+
+	function frontbuilderNameForTarget(request) {
+		var target = request.targetObject || {};
+		var path = String(target.path || "");
+		var match = path.match(/^frontends\.([A-Za-z0-9_]+)/);
+		if (match) {
+			return match[1];
+		}
+		var definition = target.definition || {};
+		if (definition.id) {
+			return String(definition.id);
+		}
+		var config = projectEngineDefinitionForRequest(request).config || {};
+		var builders = frontendCatalogService().frontbuilderSettings(config);
+		return builders.length === 1 ? builders[0].name : "";
+	}
+
+	function frontbuilderSettingsForRequest(request) {
+		var config = projectEngineDefinitionForRequest(request).config || {};
+		var name = frontbuilderNameForTarget(request);
+		var root = config.frontbuilder || {};
+		var settings = name && root[name] && typeof root[name] === "object" ? root[name] : {};
+		return {
+			name: name,
+			settings: settings
+		};
+	}
+
+	function fileForProjectPath(projectRoot, value) {
+		var raw = String(value || "").trim();
+		if (!raw) {
+			return null;
+		}
+		var file = new File(raw);
+		if (!file.isAbsolute()) {
+			file = new File(projectRoot, raw);
+		}
+		return file.getCanonicalFile();
+	}
+
+	function frontendModelPath(request, info) {
+		var payload = request.action && request.action.payload || {};
+		var target = request.targetObject || {};
+		var targetInfo = target.info || {};
+		var projectRoot = fileForProjectPath(new File("."), request.projectDir || target.projectDir || "");
+		var explicit = payload.modelPath || targetInfo.sourcePath || "";
+		if (explicit) {
+			return fileForProjectPath(projectRoot || new File("."), explicit);
+		}
+		return fileForProjectPath(projectRoot || new File("."), info.settings.modelPath || "");
+	}
+
+	function frontendSourceDrafts(request) {
+		var drafts = request && request.frontendSourceDrafts || {};
+		return drafts && typeof drafts === "object" ? drafts : {};
+	}
+
+	function frontendDraftForFile(request, file) {
+		if (!file) {
+			return null;
+		}
+		var drafts = frontendSourceDrafts(request);
+		var key = String(file.getCanonicalPath());
+		if (Object.prototype.hasOwnProperty.call(drafts, key)) {
+			return String(drafts[key]);
+		}
+		return null;
+	}
+
+	function frontendEffectiveModelPath(request, info, modelPath) {
+		var draft = frontendDraftForFile(request, modelPath);
+		if (draft === null) {
+			return {
+				file: modelPath,
+				cleanup: null
+			};
+		}
+		var settings = info.settings || {};
+		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "");
+		var sourceRoot = String(settings.privateDir || "_private/svelte").replace(/^\/+/, "");
+		var draftDir = new File(projectRoot || new File("."), sourceRoot + "/.flow-drafts");
+		draftDir.mkdirs();
+		var draftFile = new File(draftDir, sha256Hex(String(modelPath.getCanonicalPath())).substring(0, 16) + ".front.json");
+		FileUtils.writeStringToFile(draftFile, draft, "UTF-8");
+		return {
+			file: draftFile.getCanonicalFile(),
+			cleanup: draftFile
+		};
+	}
+
+	function frontendRunDefinition(action, request, info, modelPath) {
+		var settings = info.settings || {};
+		return {
+			version: 1,
+			nodes: [{
+				id: "frontbuilder_" + action,
+				block: "frontbuilder.svelte.run",
+				action: action,
+				projectRoot: "input.projectRoot",
+				resourceRoot: "input.resourceRoot",
+				modelPath: "input.modelPath",
+				sourceRoot: "input.sourceRoot",
+				buildOutput: "input.buildOutput",
+				out: "result.frontbuilder"
+			}]
+		};
+	}
+
+	function frontendRunAction(request, blocks, action) {
+		var info = frontbuilderSettingsForRequest(request);
+		var modelPath = frontendModelPath(request, info);
+		if (!modelPath || !modelPath.isFile()) {
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_MODEL_REQUIRED",
+				message: "No frontend model file is available for this action."
+			});
+		}
+		var effective = frontendEffectiveModelPath(request, info, modelPath);
+		var run;
+		try {
+			run = runFlowRequest(Object.assign({}, request, {
+				definition: frontendRunDefinition(action, request, info, effective.file),
+				input: {
+					projectRoot: request.projectDir || "",
+					resourceRoot: info.settings.resourceRoot || "libs/flow/frontbuilder/svelte",
+					modelPath: effective.file ? String(effective.file.getAbsolutePath()) : (info.settings.modelPath || ""),
+					sourceRoot: info.settings.privateDir || "_private/svelte",
+					buildOutput: info.settings.buildOutput || "DisplayObjects/mobile"
+				},
+				includeTrace: false
+			}), blocks);
+		} finally {
+			try {
+				if (effective.cleanup) {
+					effective.cleanup["delete"]();
+				}
+			} catch (e) {
+			}
+		}
+		var frontbuilder = run.result && run.result.frontbuilder || {};
+		var ok = run.ok !== false && frontbuilder.ok !== false;
+		var steps = (frontbuilder.steps || []).map(function (step) {
+			var out = {
+				action: step.action || "",
+				ok: step.ok !== false,
+				exitCode: step.exitCode
+			};
+			if (step.ok === false && step.stdout) {
+				out.stdout = String(step.stdout).substring(0, 4000);
+			}
+			return out;
+		});
+		return {
+			ok: ok,
+			title: "Svelte frontbuilder",
+			message: ok ? "Svelte frontbuilder action completed: " + action + "." : "Svelte frontbuilder action failed: " + action + ".",
+			refresh: action === "generate" || action === "build",
+			details: {
+				action: action,
+				projectRoot: frontbuilder.projectRoot || request.projectDir || "",
+				sourceRoot: frontbuilder.sourceRoot || "",
+				buildOutput: frontbuilder.buildOutput || "",
+				steps: steps
+			}
+		};
+	}
+
+	function frontendProjectName(request) {
+		var target = request.targetObject || {};
+		var root = request.root || {};
+		return String(target.project || root.project || currentProjectName(request) || "");
+	}
+
+	function frontendBuiltUrl(request) {
+		var info = frontbuilderSettingsForRequest(request);
+		var project = frontendProjectName(request);
+		var buildOutput = String(info.settings.buildOutput || "DisplayObjects/mobile").replace(/^\/+/, "");
+		if (!project) {
+			return "";
+		}
+		return "http://localhost:18080/convertigo/projects/" + encodeURIComponent(project) + "/" + buildOutput + "/index.html";
+	}
+
+	function frontendDevKey(request, info) {
+		return String(request.projectDir || "") + "|" + String(info.name || "svelte");
+	}
+
+	function frontendDevEntry(request, info) {
+		var key = frontendDevKey(request, info);
+		var entry = runtimeState.frontendDevServers[key];
+		if (entry && entry.process && typeof entry.process.isAlive === "function" && !entry.process.isAlive()) {
+			delete runtimeState.frontendDevServers[key];
+			return null;
+		}
+		return entry || null;
+	}
+
+	function frontendDevDetails(entry) {
+		if (!entry) {
+			return {};
+		}
+		return {
+			url: entry.url,
+			port: entry.port,
+			projectRoot: entry.projectRoot,
+			generatedRoot: entry.generatedRoot,
+			logFile: entry.logFile,
+			startedAt: entry.startedAt
+		};
+	}
+
+	function frontendExecutable(name) {
+		var path = String(Packages.java.lang.System.getenv("PATH") || "");
+		var parts = path.split(String(File.pathSeparator));
+		var home = String(Packages.java.lang.System.getProperty("user.home") || "");
+		["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].forEach(function (dir) {
+			parts.push(dir);
+		});
+		var nvmRoot = new File(home, ".nvm/versions/node");
+		var versions = nvmRoot.listFiles();
+		if (versions) {
+			versions = Arrays.asList(versions).toArray();
+			versions.sort(function (a, b) {
+				return String(b.getName()).localeCompare(String(a.getName()));
+			});
+			versions.forEach(function (version) {
+				parts.push(String(new File(version, "bin").getAbsolutePath()));
+			});
+		}
+		for (var i = 0; i < parts.length; i++) {
+			var candidate = new File(parts[i], name);
+			if (candidate.isFile() && candidate.canExecute()) {
+				return String(candidate.getAbsolutePath());
+			}
+		}
+		return name;
+	}
+
+	function freePort() {
+		var socket = new Packages.java.net.ServerSocket(0);
+		try {
+			return socket.getLocalPort();
+		} finally {
+			socket.close();
+		}
+	}
+
+	function javaStringList(values) {
+		var list = new java.util.ArrayList();
+		for (var i = 0; i < values.length; i++) {
+			list.add(String(values[i]));
+		}
+		return list;
+	}
+
+	function frontendStudioLog(message, warn) {
+		try {
+			var engine = Packages.com.twinsoft.convertigo.engine.Engine;
+			var log = engine.logStudio || engine.logEngine;
+			if (warn === true) {
+				log.warn(String(message));
+			} else {
+				log.info(String(message));
+			}
+		} catch (e) {
+		}
+	}
+
+	function frontendLogTail(file, maxLines) {
+		try {
+			if (!file || !file.isFile()) {
+				return "";
+			}
+			var lines = String(FileUtils.readFileToString(file, "UTF-8")).split(/\r?\n/);
+			var start = Math.max(0, lines.length - (maxLines || 80));
+			return lines.slice(start).join("\n").trim();
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function frontendStartLogPump(process, logFile, label) {
+		var Runnable = Packages.java.lang.Runnable;
+		var Thread = Packages.java.lang.Thread;
+		var BufferedReader = Packages.java.io.BufferedReader;
+		var FileOutputStream = Packages.java.io.FileOutputStream;
+		var InputStreamReader = Packages.java.io.InputStreamReader;
+		var OutputStreamWriter = Packages.java.io.OutputStreamWriter;
+		var PrintWriter = Packages.java.io.PrintWriter;
+		logFile.getParentFile().mkdirs();
+		var thread = new Thread(new Runnable({
+			run: function () {
+				var reader = null;
+				var writer = null;
+				try {
+					reader = new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"));
+					writer = new PrintWriter(new OutputStreamWriter(new FileOutputStream(logFile, true), "UTF-8"), true);
+					var line;
+					while ((line = reader.readLine()) !== null) {
+						line = String(line);
+						writer.println(line);
+						frontendStudioLog("[" + label + "] " + line);
+					}
+				} catch (e) {
+					frontendStudioLog("[" + label + "] log pump stopped: " + String(e), true);
+				} finally {
+					try {
+						if (reader) {
+							reader.close();
+						}
+					} catch (e1) {
+					}
+					try {
+						if (writer) {
+							writer.close();
+						}
+					} catch (e2) {
+					}
+				}
+			}
+		}), "Flow Svelte dev log");
+		thread.setDaemon(true);
+		thread.start();
+		return thread;
+	}
+
+	function frontendWaitForPort(host, port, process, timeoutMs) {
+		var InetSocketAddress = Packages.java.net.InetSocketAddress;
+		var Socket = Packages.java.net.Socket;
+		var Thread = Packages.java.lang.Thread;
+		var deadline = Number(new Date().getTime()) + Number(timeoutMs || 20000);
+		while (Number(new Date().getTime()) < deadline) {
+			if (process && typeof process.isAlive === "function" && !process.isAlive()) {
+				return false;
+			}
+			var socket = null;
+			try {
+				socket = new Socket();
+				socket.connect(new InetSocketAddress(String(host), Number(port)), 300);
+				return true;
+			} catch (e) {
+			} finally {
+				try {
+					if (socket) {
+						socket.close();
+					}
+				} catch (ignored) {
+				}
+			}
+			Thread.sleep(250);
+		}
+		return false;
+	}
+
+	function frontendStartDev(request, blocks) {
+		var info = frontbuilderSettingsForRequest(request);
+		var existing = frontendDevEntry(request, info);
+		if (existing) {
+			return {
+				ok: true,
+				title: "Svelte dev mode",
+				message: "Svelte dev mode is already running.",
+				openUrl: existing.url,
+				details: frontendDevDetails(existing)
+			};
+		}
+		var settings = info.settings || {};
+		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "");
+		var generatedRoot = fileForProjectPath(projectRoot, settings.privateDir || "_private/svelte");
+		var install = frontendRunAction(request, blocks, "install");
+		if (install.ok === false) {
+			return install;
+		}
+		var nodeModules = new File(generatedRoot, "node_modules");
+		if (!nodeModules.isDirectory()) {
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_APP_DEPENDENCIES_MISSING",
+				message: "Svelte app dependencies were not installed before starting dev mode.",
+				details: {
+					generatedRoot: String(generatedRoot.getAbsolutePath()),
+					nodeModules: String(nodeModules.getAbsolutePath()),
+					install: install.details || {}
+				}
+			});
+		}
+		var npm = frontendExecutable("npm");
+		var port = freePort();
+		var url = "http://localhost:" + port + "/";
+		var logFile = new File(generatedRoot, "vite-dev.log");
+		try {
+			FileUtils.writeStringToFile(logFile, "", "UTF-8");
+		} catch (e) {
+		}
+		var pb = new Packages.java.lang.ProcessBuilder(javaStringList([
+			npm, "--prefix", String(generatedRoot.getAbsolutePath()), "exec", "--",
+			"vite", "--host", "127.0.0.1", "--port", String(port), "--strictPort"
+		]));
+		pb.directory(generatedRoot);
+		pb.redirectErrorStream(true);
+		var nodeBin = String(new File(npm).getParentFile().getAbsolutePath());
+		pb.environment().put("PATH", nodeBin + File.pathSeparator + String(Packages.java.lang.System.getenv("PATH") || ""));
+		frontendStudioLog("[Svelte dev] > " + npm + " --prefix " + generatedRoot.getAbsolutePath() + " exec -- vite --host 127.0.0.1 --port " + port + " --strictPort");
+		var process = pb.start();
+		var logPump = frontendStartLogPump(process, logFile, "Svelte dev");
+		if (!frontendWaitForPort("127.0.0.1", port, process, 20000)) {
+			try {
+				process.destroy();
+			} catch (e) {
+			}
+			var tail = frontendLogTail(logFile, 80);
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_DEV_START_FAILED",
+				message: "Svelte dev mode did not start on " + url + ". See Studio log or " + logFile.getAbsolutePath() + ".",
+				details: {
+					url: url,
+					port: port,
+					generatedRoot: String(generatedRoot.getAbsolutePath()),
+					logFile: String(logFile.getAbsolutePath()),
+					logTail: tail
+				}
+			});
+		}
+		var entry = {
+			url: url,
+			port: port,
+			projectRoot: String(projectRoot.getAbsolutePath()),
+			generatedRoot: String(generatedRoot.getAbsolutePath()),
+			logFile: String(logFile.getAbsolutePath()),
+			startedAt: new Date().toISOString(),
+			logPump: logPump,
+			process: process
+		};
+		runtimeState.frontendDevServers[frontendDevKey(request, info)] = entry;
+		return {
+			ok: true,
+			title: "Svelte dev mode",
+			message: "Svelte dev mode started.",
+			openUrl: url,
+			details: frontendDevDetails(entry)
+		};
+	}
+
+	function frontendStopDev(request) {
+		var info = frontbuilderSettingsForRequest(request);
+		var key = frontendDevKey(request, info);
+		var entry = frontendDevEntry(request, info);
+		if (!entry) {
+			return {
+				ok: true,
+				title: "Svelte dev mode",
+				message: "Svelte dev mode is not running."
+			};
+		}
+		try {
+			entry.process.destroy();
+		} catch (e) {
+		}
+		delete runtimeState.frontendDevServers[key];
+		return {
+			ok: true,
+			title: "Svelte dev mode",
+			message: "Svelte dev mode stopped."
+		};
+	}
+
+	function frontendOpenDev(request) {
+		var info = frontbuilderSettingsForRequest(request);
+		var entry = frontendDevEntry(request, info);
+		if (!entry) {
+			return {
+				ok: false,
+				title: "Svelte dev mode",
+				message: "Svelte dev mode is not running."
+			};
+		}
+		return {
+			ok: true,
+			title: "Svelte dev mode",
+			message: "Opening Svelte dev mode.",
+			openUrl: entry.url,
+			details: frontendDevDetails(entry)
+		};
+	}
+
 	function contextMenuRequest(request, blocks) {
 		var target = request.targetObject || {};
 		var targetKind = String(target.kind || "");
@@ -3483,6 +4074,29 @@
 					"Deletes learned Flow result schemas without touching declared _flow.outputs.", "", {
 						action: "reset"
 					}, "Delete learned Flow result schemas for this Flow?", "/com/twinsoft/convertigo/beans/flow/images/flowvirtualobject_color_16x16.png"));
+			}
+		}
+		if (isFrontendTarget(request)) {
+			var info = frontbuilderSettingsForRequest(request);
+			var modelPath = frontendModelPath(request, info);
+			var hasModel = modelPath && modelPath.isFile();
+			var dev = frontendDevEntry(request, info);
+			if (hasModel) {
+				items.push(contextMenuItem("frontbuilder.svelte.dev.start", "Start dev mode",
+					"Generate the Svelte project, install app dependencies and start Vite dev server.", "Svelte dev",
+					{}, "", "", !dev));
+				items.push(contextMenuItem("frontbuilder.svelte.dev.stop", "Stop dev mode",
+					"Stop the Vite dev server started for this frontend.", "Svelte dev",
+					{}, "", "", !!dev));
+				items.push(contextMenuItem("frontbuilder.svelte.dev.open", "Open dev mode",
+					"Open the running Vite dev server in the default browser.", "Svelte dev",
+					{}, "", "", !!dev));
+				items.push(contextMenuItem("frontbuilder.svelte.generate", "Update generated source",
+					"Regenerate the Svelte sources under the project private directory.", "Svelte build"));
+				items.push(contextMenuItem("frontbuilder.svelte.build", "Build prod",
+					"Generate and build production assets under DisplayObjects/mobile.", "Svelte build"));
+				items.push(contextMenuItem("frontbuilder.svelte.openBuilt", "Open built prod",
+					"Open the built production frontend in the default browser.", "Svelte build"));
 			}
 		}
 		return {
@@ -3555,6 +4169,30 @@
 				refreshPalette: true,
 				details: cleared
 			};
+		}
+		if (id === "frontbuilder.svelte.generate") {
+			return frontendRunAction(request, blocks, "generate");
+		}
+		if (id === "frontbuilder.svelte.build") {
+			return frontendRunAction(request, blocks, "build");
+		}
+		if (id === "frontbuilder.svelte.openBuilt") {
+			var builtUrl = frontendBuiltUrl(request);
+			return {
+				ok: builtUrl !== "",
+				title: "Svelte frontbuilder",
+				message: builtUrl ? "Opening built production frontend." : "Unable to resolve built production URL.",
+				openUrl: builtUrl
+			};
+		}
+		if (id === "frontbuilder.svelte.dev.start") {
+			return frontendStartDev(request, blocks);
+		}
+		if (id === "frontbuilder.svelte.dev.stop") {
+			return frontendStopDev(request);
+		}
+		if (id === "frontbuilder.svelte.dev.open") {
+			return frontendOpenDev(request);
 		}
 		return failure("contextAction", {
 			code: "UNKNOWN_CONTEXT_ACTION",
@@ -3867,7 +4505,7 @@
 					} catch (e) {
 					}
 				}
-				return Object.assign({ ok: true }, catalogDefinition(blocks, {
+				var out = Object.assign({ ok: true }, catalogDefinition(blocks, {
 					detail: request.detail || request.mode || "full",
 					includePrivate: request.includePrivate === true,
 					includeInternal: request.includeInternal === true,
@@ -3878,6 +4516,12 @@
 					limit: request.limit,
 					cursor: request.cursor
 				}));
+				try {
+					out.frontendBlocks = frontendBlocksForConfig(projectEngineDefinitionForRequest(request).config || {});
+				} catch (e) {
+					out.frontendBlocks = [];
+				}
+				return out;
 			});
 		},
 
