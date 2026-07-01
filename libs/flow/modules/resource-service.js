@@ -316,8 +316,13 @@
 			env.parseYamlSource(content, "version: 1\nnodes: []\n");
 		} else if (kind === "projectConfig") {
 			env.parseYamlSource(content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n");
-		} else if (kind === "frontendModel" || kind === "frontendBlock") {
+		} else if (kind === "frontendBlock" || kind === "frontendModel" && String(path).endsWith(".front.json")) {
 			JSON.parse(String(content || "{}"));
+		} else if (kind === "frontendModel" && String(path).endsWith(".flow.svelte")) {
+			if (String(content || "").indexOf("<script") === -1) {
+				env.raise("INVALID_FRONTEND_SOURCE", "Invalid Svelte Flow frontend source: " + path,
+					null, "A *.flow.svelte source must remain Svelte-like and carry its metadata in a module script.");
+			}
 		} else if (kind === "library") {
 			var library = env.evalCompiledSource(String(content || ""), "resource:" + path, env.sha256Hex(content));
 			if (!library || typeof library !== "object") {

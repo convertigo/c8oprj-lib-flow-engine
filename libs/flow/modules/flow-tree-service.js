@@ -306,7 +306,7 @@
 		var componentNames = flowSvelteComponentReferences(source);
 		var components = componentNames.map(function (name) {
 			var componentFile = new File(new File(baseDir, "components"), name + ".flow.svelte");
-			var componentSource = String(FileUtils.readFileToString(componentFile, "UTF-8"));
+			var componentSource = frontendModelSource(request, componentFile);
 			var componentMeta = flowSvelteMeta(componentSource);
 			return {
 				id: componentMeta.id || lowerFirst(name),
@@ -575,20 +575,36 @@
 	}
 
 	function frontendItemInfo(file, mutationPath, definitions, order) {
-		var info = sourceObjectInfo(frontendSourceInfo(file, "frontend-model", mutationPath), definitions, order);
+		var allDefinitions = frontendSourceTargetPropertyDefinitions(definitions);
+		var info = sourceObjectInfo(frontendSourceInfo(file, "frontend-model", mutationPath), allDefinitions, order);
 		info.frontendModelPath = mutationPath || "";
 		return info;
 	}
 
+	function frontendSourceTargetPropertyDefinitions(definitions) {
+		var out = {};
+		Object.keys(definitions || {}).forEach(function (key) {
+			out[key] = definitions[key];
+		});
+		out.frontendInsertSourcePath = propertyDefinition("Insert source path", "Information",
+			"Internal source file used when a child UI block is inserted from the palette.",
+			{ readOnly: true, hidden: true });
+		out.frontendInsertMutationPath = propertyDefinition("Insert mutation path", "Information",
+			"Internal mutation path used when a child UI block is inserted from the palette.",
+			{ readOnly: true, hidden: true });
+		return out;
+	}
+
 	function addFrontendModelTree(builder, model, path, modelFile) {
 		var app = model.app || {};
+		var componentTargets = frontendComponentTargets(model.components || [], modelFile);
 		var appNode = virtualNode("app", "frontendApp", app.id || "app", path + ".app",
 			app.title || app.id || "App", compact(app),
 			compact(frontendItemInfo(modelFile, "app", frontendAppPropertyDefinitions(),
 				["id", "title", "defaultLayout", "sourceRelativePath", "sourceWritable"])), "mdi:application-outline");
 		builder.children.push(appNode);
 		addFrontendNavigation(appNode, app.navigation || [], path + ".app.navigation", modelFile);
-		addFrontendPages(appNode, app.pages || [], path + ".app.pages", modelFile);
+		addFrontendPages(appNode, app.pages || [], path + ".app.pages", modelFile, componentTargets);
 		addFrontendLayouts(builder, model.layouts || [], path + ".layouts", modelFile);
 		addFrontendComponents(builder, model.components || [], path + ".components", modelFile);
 		addFrontendClientActions(builder, model.clientActions || [], path + ".clientActions", modelFile);
@@ -621,19 +637,21 @@
 		});
 	}
 
-	function addFrontendPages(parent, pages, path, modelFile) {
+	function addFrontendPages(parent, pages, path, modelFile, componentTargets) {
 		var folder = virtualNode("pages", "folder", "frontendPages", path,
 			"Pages", compact({ count: pages.length }), null, "mdi:file-document-multiple-outline");
 		parent.children.push(folder);
 		pages.forEach(function (page, index) {
 			var pagePath = path + "[" + index + "]";
+			var pageInfo = frontendItemInfo(modelFile, "app.pages[" + index + "]", frontendPagePropertyDefinitions(),
+				["id", "title", "route", "layout", "sourceRelativePath", "sourceWritable"]);
+			applyFrontendInsertTarget(pageInfo, firstFrontendComponentTarget(page.components || [], componentTargets));
 			var pageNode = virtualNode("page_" + (page.id || index), "frontendPage", page.id || "page",
 				pagePath, page.title || page.id || "Page", compact(page),
-				compact(frontendItemInfo(modelFile, "app.pages[" + index + "]", frontendPagePropertyDefinitions(),
-					["id", "title", "route", "layout", "sourceRelativePath", "sourceWritable"])), "mdi:file-outline");
+				compact(pageInfo), "mdi:file-outline");
 			folder.children.push(pageNode);
-			addFrontendRegions(pageNode, page.regions || {}, pagePath + ".regions", modelFile);
-			addFrontendComponentRefs(pageNode, page.components || [], pagePath + ".components", modelFile);
+			addFrontendRegions(pageNode, page.regions || {}, pagePath + ".regions", modelFile, componentTargets);
+			addFrontendComponentRefs(pageNode, page.components || [], pagePath + ".components", modelFile, componentTargets);
 		});
 	}
 
@@ -648,22 +666,29 @@
 		};
 	}
 
-	function addFrontendRegions(parent, regions, path, modelFile) {
+	function addFrontendRegions(parent, regions, path, modelFile, componentTargets) {
 		Object.keys(regions || {}).sort().forEach(function (name) {
 			var refs = regions[name] || [];
+			var regionInfo = frontendItemInfo(modelFile, "regions." + name, null, null);
+			applyFrontendInsertTarget(regionInfo, firstFrontendComponentTarget(refs, componentTargets));
 			var regionNode = virtualNode("region_" + name, "frontendRegion", name, path + "." + name,
 				name, compact({ id: name, components: refs }),
-				compact(frontendItemInfo(modelFile, "regions." + name, null, null)), "mdi:page-layout-body");
+				compact(regionInfo), "mdi:page-layout-body");
 			parent.children.push(regionNode);
-			addFrontendComponentRefs(regionNode, refs, path + "." + name, modelFile);
+			addFrontendComponentRefs(regionNode, refs, path + "." + name, modelFile, componentTargets);
 		});
 	}
 
-	function addFrontendComponentRefs(parent, refs, path, modelFile) {
+	function addFrontendComponentRefs(parent, refs, path, modelFile, componentTargets) {
 		(refs || []).forEach(function (ref, index) {
+			var target = frontendComponentTarget(ref, componentTargets);
+			var componentInfo = target
+				? frontendItemInfo(target.file, target.mutationPath, null, null)
+				: frontendItemInfo(modelFile, "", null, null);
+			applyFrontendInsertTarget(componentInfo, target);
 			parent.children.push(virtualNode("componentRef_" + ref, "frontendComponentRef", ref,
 				path + "[" + index + "]", String(ref), compact({ component: ref }),
-				compact(frontendItemInfo(modelFile, "", null, null)), "mdi:link-variant"));
+				compact(componentInfo), "mdi:link-variant"));
 		});
 	}
 
@@ -702,6 +727,41 @@
 		});
 	}
 
+	function frontendComponentTargets(components, modelFile) {
+		var targets = {};
+		(components || []).forEach(function (component, index) {
+			var id = String(component.id || lowerFirst(component.name || "") || index);
+			targets[id] = {
+				file: component.__sourceFile ? new File(String(component.__sourceFile)) : modelFile,
+				mutationPath: "components[" + index + "].widgets"
+			};
+		});
+		return targets;
+	}
+
+	function frontendComponentTarget(ref, targets) {
+		return targets && targets[String(ref || "")] || null;
+	}
+
+	function firstFrontendComponentTarget(refs, targets) {
+		for (var i = 0; i < (refs || []).length; i++) {
+			var target = frontendComponentTarget(refs[i], targets);
+			if (target) {
+				return target;
+			}
+		}
+		return null;
+	}
+
+	function applyFrontendInsertTarget(info, target) {
+		if (!info || !target) {
+			return info;
+		}
+		info.frontendInsertSourcePath = String(target.file.getAbsolutePath());
+		info.frontendInsertMutationPath = target.mutationPath;
+		return info;
+	}
+
 	function frontendComponentPropertyDefinitions() {
 		return {
 			id: propertyDefinition("Id", "Base properties", "Reusable component id.", { readOnly: true }),
@@ -716,7 +776,7 @@
 			parent.children.push(virtualNode("widget_" + (widget.id || index), "frontendWidget", widget.kind || "widget",
 				path + "[" + index + "]", String(label), compact(widget),
 				compact(frontendItemInfo(modelFile, mutationPath + "[" + index + "]", frontendWidgetPropertyDefinitions(),
-					["id", "kind", "label", "clientAction", "source", "sourceRelativePath", "sourceWritable"])), widgetIcon(widget.kind)));
+					["id", "kind", "text", "label", "clientAction", "source", "columns", "sourceRelativePath", "sourceWritable"])), widgetIcon(widget.kind)));
 		});
 	}
 
@@ -724,9 +784,18 @@
 		return {
 			id: propertyDefinition("Id", "Base properties", "Widget id.", { readOnly: true }),
 			kind: propertyDefinition("Kind", "Base properties", "Widget kind.", { readOnly: true }),
-			label: propertyDefinition("Label", "Base properties", "Visible label.", { readOnly: true }),
-			clientAction: propertyDefinition("Client action", "Action", "Client action id.", { readOnly: true }),
-			source: propertyDefinition("Source", "Data", "Backend result source path.", { readOnly: true }),
+			text: propertyDefinition("Text", "Base properties", "Text rendered by the widget.", { kind: "text", type: "string" }),
+			label: propertyDefinition("Label", "Base properties", "Visible label.", { kind: "text", type: "string" }),
+			clientAction: propertyDefinition("Client action", "Action", "Client action id.", { kind: "text", type: "string" }),
+			source: propertyDefinition("Source", "Data", "Backend result source path.", { kind: "path", type: "string" }),
+			columns: propertyDefinition("Columns", "Data", "Table column descriptors.", {
+				kind: "array",
+				type: "array",
+				items: {
+					kind: "literal",
+					type: "object"
+				}
+			}),
 			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
 			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited.", { readOnly: true })
 		};
