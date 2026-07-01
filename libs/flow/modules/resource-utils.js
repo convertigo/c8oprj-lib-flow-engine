@@ -43,7 +43,7 @@
 			return ["md", "txt", "json", "yaml", "yml"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
-			return String(path).endsWith(".front.json") || String(path).endsWith(".uiblock.json");
+			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte") || String(path).endsWith(".uiblock.json");
 		}
 		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
 			return ["html", "css", "js"].indexOf(ext) !== -1;
@@ -91,7 +91,7 @@
 		if (slash >= 0) {
 			filename = filename.substring(slash + 1);
 		}
-		[".fragment.yaml", ".block.js", ".hooks.js", ".type.yaml", ".js"].some(function (suffix) {
+		[".fragment.yaml", ".block.js", ".hooks.js", ".type.yaml", ".flow.svelte", ".front.json", ".uiblock.json", ".js"].some(function (suffix) {
 			if (filename.endsWith(suffix)) {
 				filename = filename.substring(0, filename.length - suffix.length);
 				return true;

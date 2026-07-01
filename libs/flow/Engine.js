@@ -3558,6 +3558,143 @@
 		return flowTreeService().applyMutationRequest(request, blocks, flowTreeServiceEnv());
 	}
 
+	function applySourceMutationRequest(request, blocks) {
+		request = request || {};
+		var sourcePath = String(request.sourceFile || request.sourcePath || "");
+		if (!sourcePath.endsWith(".flow.svelte")) {
+			return applyMutationRequest(request, blocks);
+		}
+		return applyFlowSvelteSourceMutationRequest(request);
+	}
+
+	function applyFlowSvelteSourceMutationRequest(request) {
+		var sourcePath = String(request.sourceFile || request.sourcePath || "");
+		var sourceFile = new File(sourcePath);
+		var source = request.source !== undefined && request.source !== null
+			? String(request.source)
+			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
+		var mutation = request.mutation || {};
+		var resourceRoot = frontendSvelteResourceRoot(request);
+		var sourceTemp = File.createTempFile("c8o-flow-svelte-source-", ".flow.svelte");
+		var mutationTemp = File.createTempFile("c8o-flow-svelte-mutation-", ".json");
+		try {
+			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
+			FileUtils.writeStringToFile(mutationTemp, JSON.stringify(mutation), "UTF-8");
+			var npm = frontendExecutable("npm");
+			var args = [
+				npm, "--prefix", String(resourceRoot.getAbsolutePath()), "exec", "--",
+				"tsx", "src-builder/sourceMutateCli.ts",
+				"--source-file", String(sourceFile.getAbsolutePath()),
+				"--source-input", String(sourceTemp.getAbsolutePath()),
+				"--mutation", String(mutationTemp.getAbsolutePath())
+			];
+			var output = frontendRunOneShot(args, resourceRoot, "Svelte source mutate");
+			var result = frontendMarkedJson(output, "__C8O_FLOW_SOURCE_MUTATION__");
+			if (!result || result.ok !== true || typeof result.source !== "string") {
+				var error = new Error("Svelte source mutation did not return a valid source.");
+				error.code = "FRONTEND_SOURCE_MUTATION_INVALID_RESULT";
+				error.hint = "Check src-builder/sourceMutateCli.ts output for " + sourcePath + ".";
+				throw error;
+			}
+			return {
+				ok: true,
+				source: result.source,
+				sourceFile: String(sourceFile.getAbsolutePath()),
+				mutation: mutation
+			};
+		} finally {
+			try {
+				sourceTemp["delete"]();
+			} catch (e1) {
+			}
+			try {
+				mutationTemp["delete"]();
+			} catch (e2) {
+			}
+		}
+	}
+
+	function frontendSvelteResourceRoot(request) {
+		var config = projectEngineDefinitionForRequest(request).config || {};
+		var entries = frontendCatalogService().frontbuilderSettings(config) || [];
+		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
+		var fallback = null;
+		for (var i = 0; i < entries.length; i++) {
+			var entry = entries[i] || {};
+			var settings = entry.settings || {};
+			var target = String(settings.target || "");
+			var name = String(entry.name || "");
+			if (target && target !== "svelte5" && name !== "svelte") {
+				continue;
+			}
+			var root = fileForProjectPath(projectRoot, settings.resourceRoot || "libs/flow/frontbuilder/svelte");
+			if (!fallback) {
+				fallback = root;
+			}
+			if (root && root.isDirectory()) {
+				return root;
+			}
+		}
+		if (fallback) {
+			return fallback;
+		}
+		return fileForProjectPath(projectRoot, "libs/flow/frontbuilder/svelte");
+	}
+
+	function frontendRunOneShot(args, cwd, label) {
+		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
+		pb.directory(cwd);
+		pb.redirectErrorStream(true);
+		var env = pb.environment();
+		var executableFile = new File(args[0]);
+		var executableParent = executableFile.getParentFile();
+		if (executableParent) {
+			env.put("PATH", String(executableParent.getAbsolutePath()) + File.pathSeparator + String(Packages.java.lang.System.getenv("PATH") || ""));
+		}
+		frontendStudioLog("[" + label + "] > " + args.join(" "));
+		var process = pb.start();
+		var output = frontendReadProcessOutput(process.getInputStream(), label);
+		var exitCode = process.waitFor();
+		if (exitCode !== 0) {
+			var error = new Error(label + " failed with exit code " + exitCode + ".\n" + output);
+			error.code = "FRONTEND_SOURCE_MUTATION_FAILED";
+			error.hint = "Check the Studio log for the Svelte source mutation command.";
+			throw error;
+		}
+		return output;
+	}
+
+	function frontendReadProcessOutput(stream, label) {
+		var BufferedReader = Packages.java.io.BufferedReader;
+		var InputStreamReader = Packages.java.io.InputStreamReader;
+		var reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+		var lines = [];
+		try {
+			var line;
+			while ((line = reader.readLine()) !== null) {
+				line = String(line);
+				lines.push(line);
+				if (line.indexOf("__C8O_FLOW_SOURCE_MUTATION__") !== 0) {
+					frontendStudioLog("[" + label + "] " + line);
+				}
+			}
+		} finally {
+			reader.close();
+		}
+		return lines.join("\n");
+	}
+
+	function frontendMarkedJson(output, marker) {
+		var lines = String(output || "").split(/\r?\n/);
+		for (var i = lines.length - 1; i >= 0; i--) {
+			var index = lines[i].indexOf(marker);
+			if (index >= 0) {
+				return JSON.parse(lines[i].substring(index + marker.length));
+			}
+		}
+		return null;
+	}
+
 	function outputSchemaRequest(request, blocks) {
 		return flowTreeService().outputSchemaRequest(request, blocks, flowTreeServiceEnv());
 	}
@@ -3654,7 +3791,8 @@
 		var sourceRoot = String(settings.privateDir || "_private/svelte").replace(/^\/+/, "");
 		var draftDir = new File(projectRoot || new File("."), sourceRoot + "/.flow-drafts");
 		draftDir.mkdirs();
-		var draftFile = new File(draftDir, sha256Hex(String(modelPath.getCanonicalPath())).substring(0, 16) + ".front.json");
+		var suffix = String(modelPath.getName()).endsWith(".flow.svelte") ? ".flow.svelte" : ".front.json";
+		var draftFile = new File(draftDir, sha256Hex(String(modelPath.getCanonicalPath())).substring(0, 16) + suffix);
 		FileUtils.writeStringToFile(draftFile, draft, "UTF-8");
 		return {
 			file: draftFile.getCanonicalFile(),
@@ -4540,6 +4678,12 @@
 		applyMutation: function (requestJson) {
 			return engineCall("applyMutation", requestJson, function (request) {
 				return applyMutationRequest(request, loadBlocks());
+			});
+		},
+
+		applySourceMutation: function (requestJson) {
+			return engineCall("applySourceMutation", requestJson, function (request) {
+				return applySourceMutationRequest(request, loadBlocks());
 			});
 		},
 

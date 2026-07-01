@@ -288,6 +288,155 @@
 		return frontendDraftForFile(request, file) !== null;
 	}
 
+	function isFlowSvelteModel(file) {
+		return file && String(file.getName()).endsWith(".flow.svelte");
+	}
+
+	function frontendModelObject(request, file) {
+		var source = frontendModelSource(request, file);
+		if (isFlowSvelteModel(file)) {
+			return frontendFlowSvelteModel(request, file, source);
+		}
+		return normalizeTree(JSON.parse(source));
+	}
+
+	function frontendFlowSvelteModel(request, file, source) {
+		var meta = flowSvelteMeta(source);
+		var baseDir = file.getParentFile();
+		var componentNames = flowSvelteComponentReferences(source);
+		var components = componentNames.map(function (name) {
+			var componentFile = new File(new File(baseDir, "components"), name + ".flow.svelte");
+			var componentSource = String(FileUtils.readFileToString(componentFile, "UTF-8"));
+			var componentMeta = flowSvelteMeta(componentSource);
+			return {
+				id: componentMeta.id || lowerFirst(name),
+				__sourceFile: String(componentFile.getAbsolutePath()),
+				widgets: flowSvelteWidgets(componentSource)
+			};
+		});
+		var appMeta = meta.app || {};
+		var pageMeta = meta.page || {};
+		return normalizeTree({
+			version: 1,
+			builder: Object.assign({
+				id: "lib_flow_frontbuilder_svelte",
+				target: "svelte5"
+			}, meta.builder || {}),
+			styling: meta.styling,
+			layouts: meta.layouts || [],
+			app: {
+				id: appMeta.id || "SvelteFrontend",
+				title: appMeta.title || pageMeta.title || "Svelte Frontend",
+				defaultLayout: appMeta.defaultLayout || pageMeta.layout || "",
+				navigation: appMeta.navigation || [],
+				pages: [{
+					id: pageMeta.id || "home",
+					route: pageMeta.route || "/",
+					title: pageMeta.title || appMeta.title || "Svelte Frontend",
+					layout: pageMeta.layout || appMeta.defaultLayout || "",
+					components: componentNames.map(lowerFirst)
+				}]
+			},
+			components: components,
+			clientActions: meta.clientActions || [],
+			backendCalls: meta.backendCalls || []
+		});
+	}
+
+	function flowSvelteMeta(source) {
+		var match = String(source || "").match(/export\s+const\s+_flow\s*=\s*([\s\S]*?);\s*<\/script>/);
+		if (!match) {
+			return {};
+		}
+		try {
+			return normalizeTree(new Function("return (" + match[1] + ");")());
+		} catch (e) {
+			throw new Error("Invalid _flow metadata: " + String(e && e.message || e));
+		}
+	}
+
+	function stripSvelteScripts(source) {
+		return String(source || "").replace(/<script[\s\S]*?<\/script>/g, "");
+	}
+
+	function flowSvelteComponentReferences(source) {
+		var names = [];
+		var seen = {};
+		var body = stripSvelteScripts(source);
+		var re = /<([A-Z][A-Za-z0-9_]*)\b/g;
+		var match;
+		while ((match = re.exec(body)) !== null) {
+			var name = String(match[1]);
+			if (!isFrontendWidgetTag(name) && !seen[name]) {
+				seen[name] = true;
+				names.push(name);
+			}
+		}
+		return names;
+	}
+
+	function flowSvelteWidgets(source) {
+		var widgets = [];
+		var body = stripSvelteScripts(source);
+		var re = /<(Text|Button|Status|Json|JSON|Table)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g;
+		var match;
+		while ((match = re.exec(body)) !== null) {
+			var tag = String(match[1]);
+			var attrs = flowSvelteAttributes(String(match[2] || ""));
+			var kind = frontendWidgetKind(tag);
+			var widget = {
+				id: attrs.id || kind + (widgets.length + 1),
+				kind: kind
+			};
+			if (kind === "text") {
+				widget.text = attrs.text || String(match[3] || "").trim();
+			} else if (kind === "button") {
+				widget.label = attrs.label || String(match[3] || "").trim() || "Call backend";
+				widget.clientAction = attrs.clientAction || "";
+			} else {
+				widget.source = attrs.source || "";
+				widget.clientAction = attrs.clientAction || "";
+			}
+			widgets.push(widget);
+		}
+		return widgets;
+	}
+
+	function flowSvelteAttributes(text) {
+		var attrs = {};
+		var re = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"/g;
+		var match;
+		while ((match = re.exec(text)) !== null) {
+			attrs[String(match[1])] = String(match[2]);
+		}
+		return attrs;
+	}
+
+	function isFrontendWidgetTag(name) {
+		return ["Text", "Button", "Status", "Json", "JSON", "Table"].indexOf(String(name)) !== -1;
+	}
+
+	function frontendWidgetKind(name) {
+		if (name === "Button") {
+			return "button";
+		}
+		if (name === "Status") {
+			return "status";
+		}
+		if (name === "Json" || name === "JSON") {
+			return "json";
+		}
+		if (name === "Table") {
+			return "table";
+		}
+		return "text";
+	}
+
+	function lowerFirst(value) {
+		value = String(value || "");
+		return value ? value.charAt(0).toLowerCase() + value.substring(1) : value;
+	}
+
 	function frontendSourceInfo(file, kind, mutationPath, request) {
 		var source = sourceDefinitionForFile(file ? String(file.getAbsolutePath()) : "", kind || "frontend-model");
 		source.sourceMutationPath = mutationPath || "";
@@ -344,7 +493,7 @@
 			return;
 		}
 		try {
-			var model = normalizeTree(JSON.parse(frontendModelSource(request, modelFile)));
+			var model = frontendModelObject(request, modelFile);
 			builder.definition = compact(Object.assign(definition, {
 				appId: model.app && model.app.id || "",
 				title: model.app && model.app.title || "",
@@ -540,13 +689,16 @@
 			"Components", compact({ count: components.length }), null, "mdi:view-module-outline");
 		parent.children.push(folder);
 		components.forEach(function (component, index) {
+			var componentFile = component.__sourceFile ? new File(String(component.__sourceFile)) : modelFile;
+			var componentDefinition = compact(component);
+			delete componentDefinition.__sourceFile;
 			var componentNode = virtualNode("component_" + (component.id || index), "frontendComponent", component.id || "component",
-				path + "[" + index + "]", component.id || "Component", compact(component),
-				compact(frontendItemInfo(modelFile, "components[" + index + "]", frontendComponentPropertyDefinitions(),
+				path + "[" + index + "]", component.id || "Component", componentDefinition,
+				compact(frontendItemInfo(componentFile, "components[" + index + "]", frontendComponentPropertyDefinitions(),
 					["id", "sourceRelativePath", "sourceWritable"])), "mdi:view-dashboard-outline");
 			folder.children.push(componentNode);
 			addFrontendWidgets(componentNode, component.widgets || [], path + "[" + index + "].widgets",
-				"components[" + index + "].widgets", modelFile);
+				"components[" + index + "].widgets", componentFile);
 		});
 	}
 
