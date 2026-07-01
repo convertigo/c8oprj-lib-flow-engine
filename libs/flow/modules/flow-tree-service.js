@@ -686,9 +686,14 @@
 				? frontendItemInfo(target.file, target.mutationPath, null, null)
 				: frontendItemInfo(modelFile, "", null, null);
 			applyFrontendInsertTarget(componentInfo, target);
-			parent.children.push(virtualNode("componentRef_" + ref, "frontendComponentRef", ref,
+			var componentNode = virtualNode("componentRef_" + ref, "frontendComponentRef", ref,
 				path + "[" + index + "]", String(ref), compact({ component: ref }),
-				compact(componentInfo), "mdi:link-variant"));
+				compact(componentInfo), "mdi:link-variant");
+			parent.children.push(componentNode);
+			if (target && target.component) {
+				addFrontendWidgets(componentNode, target.component.widgets || [],
+					path + "[" + index + "].widgets", target.mutationPath, target.file);
+			}
 		});
 	}
 
@@ -733,7 +738,8 @@
 			var id = String(component.id || lowerFirst(component.name || "") || index);
 			targets[id] = {
 				file: component.__sourceFile ? new File(String(component.__sourceFile)) : modelFile,
-				mutationPath: "components[" + index + "].widgets"
+				mutationPath: "components[" + index + "].widgets",
+				component: component
 			};
 		});
 		return targets;
