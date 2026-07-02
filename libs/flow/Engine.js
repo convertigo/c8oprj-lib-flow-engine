@@ -3370,10 +3370,26 @@
 					file = new File(root, modelPath);
 				}
 				var draft = frontendDraftForFile(request, file);
+				var componentDir = new File(file.getParentFile(), "components");
+				var drafts = frontendSourceDrafts(request);
+				var basePath = String(file.getParentFile().getCanonicalPath());
+				var draftParts = [];
+				Object.keys(drafts).sort().forEach(function (key) {
+					try {
+						var draftFile = new File(String(key)).getCanonicalFile();
+						var draftPath = String(draftFile.getCanonicalPath());
+						if (draftPath === basePath || draftPath.indexOf(basePath + File.separator) === 0) {
+							draftParts.push(draftPath + ":" + sha256Hex(String(drafts[key])));
+						}
+					} catch (e1) {
+					}
+				});
 				return [
 					entry.name,
 					canonicalPath(file),
-					draft !== null ? "draft:" + sha256Hex(draft) : file.isFile() ? fileFingerprint(file) : "missing"
+					draft !== null ? "draft:" + sha256Hex(draft) : file.isFile() ? fileFingerprint(file) : "missing",
+					componentDir.isDirectory() ? directoryFingerprint(componentDir) : "",
+					draftParts.join("|")
 				].join(":");
 			}).join("\n");
 		} catch (e) {
@@ -3434,6 +3450,7 @@
 			schemaSummary: schemaSummary,
 			objectSchema: objectSchema,
 			frontendBlocksForSettings: frontendBlocksForSettings,
+			describeFrontendDocument: describeFrontendDocument,
 			raise: raise,
 			intOption: intOption
 		};
@@ -3567,6 +3584,52 @@
 		return applyFlowSvelteSourceMutationRequest(request);
 	}
 
+	function describeFrontendDocument(request) {
+		request = request || {};
+		var sourcePath = String(request.sourceFile || request.sourcePath || "");
+		var sourceFile = new File(sourcePath);
+		var source = request.source !== undefined && request.source !== null
+			? String(request.source)
+			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
+		var resourceRoot = frontendSvelteResourceRoot(request);
+		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
+		var drafts = request.drafts || request.frontendSourceDrafts || {};
+		var sourceTemp = File.createTempFile("c8o-front-document-source-", ".flow.svelte");
+		var draftsTemp = File.createTempFile("c8o-front-document-drafts-", ".json");
+		try {
+			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
+			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(drafts), "UTF-8");
+			var npm = frontendExecutable("npm");
+			var args = [
+				npm, "--prefix", String(resourceRoot.getAbsolutePath()), "exec", "--",
+				"tsx", "src-builder/frontDocumentCli.ts",
+				"--source-file", String(sourceFile.getAbsolutePath()),
+				"--source-input", String(sourceTemp.getAbsolutePath()),
+				"--drafts", String(draftsTemp.getAbsolutePath()),
+				"--resource-root", String(resourceRoot.getAbsolutePath()),
+				"--project-root", String(projectRoot.getAbsolutePath())
+			];
+			var output = frontendRunOneShot(args, resourceRoot, "Svelte front document");
+			var result = frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
+			if (!result || !result.model) {
+				var error = new Error("Svelte front document did not return a valid model.");
+				error.code = "FRONTEND_DOCUMENT_INVALID_RESULT";
+				error.hint = "Check src-builder/frontDocumentCli.ts output for " + sourcePath + ".";
+				throw error;
+			}
+			return result;
+		} finally {
+			try {
+				sourceTemp["delete"]();
+			} catch (e1) {
+			}
+			try {
+				draftsTemp["delete"]();
+			} catch (e2) {
+			}
+		}
+	}
+
 	function applyFlowSvelteSourceMutationRequest(request) {
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
 		var sourceFile = new File(sourcePath);
@@ -3674,7 +3737,7 @@
 			while ((line = reader.readLine()) !== null) {
 				line = String(line);
 				lines.push(line);
-				if (line.indexOf("__C8O_FLOW_SOURCE_MUTATION__") !== 0) {
+				if (line.indexOf("__C8O_") !== 0) {
 					frontendStudioLog("[" + label + "] " + line);
 				}
 			}

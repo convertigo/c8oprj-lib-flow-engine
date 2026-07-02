@@ -67,12 +67,20 @@
 			id = builderName + "." + String(file.getName()).replace(/\.uiblock\.json$/, "");
 		}
 		var insert = raw.insert || {};
+		var label = raw.label || raw.name || id;
+		var tag = String(raw.tag || insert.tag || pascalCase(insert.kind || label || id));
+		var aliases = raw.aliases && Object.prototype.toString.call(raw.aliases) === "[object Array]" ? raw.aliases.slice() : [];
+		if (String(label).toUpperCase() === String(label) && String(label).toLowerCase() === tag.toLowerCase() && aliases.indexOf(label) === -1) {
+			aliases.push(label);
+		}
 		var descriptor = {
 			id: id,
-			name: raw.name || raw.label || id,
-			label: raw.label || raw.name || id,
+			name: raw.name || label,
+			label: label,
 			category: raw.category || "Svelte / Widgets",
 			kind: raw.kind || "widget",
+			tag: tag,
+			aliases: aliases,
 			targetKinds: raw.targetKinds || ["frontendComponent", "frontendWidget"],
 			description: raw.description || "",
 			icon: raw.icon || "mdi:view-module-outline",
@@ -92,6 +100,19 @@
 			}, descriptor);
 		}
 		return descriptor;
+	}
+
+	function pascalCase(value) {
+		return String(value || "")
+			.split(/[^A-Za-z0-9]+/)
+			.filter(function (part) {
+				return !!part;
+			})
+			.map(function (part) {
+				return part.charAt(0).toUpperCase() + part.substring(1);
+			})
+			.join("")
+			.replace(/^[^A-Za-z_]/, "_$&") || "Widget";
 	}
 
 	function frontendBlocksForSettings(name, settings, env) {
