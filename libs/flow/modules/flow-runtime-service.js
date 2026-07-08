@@ -49,6 +49,9 @@
 		var searchFlowRequest = env.searchFlowRequest;
 		var describeTreeRequest = env.describeTreeRequest;
 		var applyMutationRequest = env.applyMutationRequest;
+		var authoringTreeRequest = env.authoringTreeRequest || describeTreeRequest;
+		var authoringPaletteRequest = env.authoringPaletteRequest || describeTreeRequest;
+		var authoringMutateRequest = env.authoringMutateRequest || applyMutationRequest;
 		var outputSchemaRequest = env.outputSchemaRequest;
 		var nodeOutputSchemaRequest = env.nodeOutputSchemaRequest;
 		var readOutputSchema = env.readOutputSchema;
@@ -351,6 +354,24 @@
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
 					return applyMutationRequest(args, loadBlocks());
+				});
+			};
+			ctx.authoringTreeSource = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return authoringTreeRequest(args, loadBlocks());
+				});
+			};
+			ctx.authoringPaletteSource = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return authoringPaletteRequest(args, loadBlocks());
+				});
+			};
+			ctx.authoringMutateSource = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return authoringMutateRequest(args, loadBlocks());
 				});
 			};
 			ctx.outputSchemaSource = function (args) {

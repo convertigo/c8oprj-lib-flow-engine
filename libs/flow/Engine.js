@@ -15,6 +15,7 @@
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
+	var activeRequest = null;
 	var compiledScriptCache = {};
 	var compiledScriptCacheSizeValue = 0;
 	var compiledScriptCacheClock = 0;
@@ -40,6 +41,7 @@
 			engineModules: createRuntimeMapCacheState(),
 			propertyEditor: createRuntimeCacheState(),
 			treeSnapshots: createRuntimeMapCacheState(),
+			frontendDocuments: createRuntimeMapCacheState(),
 			expressionTokens: createRuntimeBoundedMapCacheState(4096)
 		}
 	};
@@ -1173,6 +1175,7 @@
 			resourceName: resourceName,
 			canonicalPath: canonicalPath,
 			directoryFingerprint: directoryFingerprint,
+			sourceDraftsFingerprint: sourceDraftsFingerprint,
 			readRuntimeCache: readRuntimeMapCache,
 			writeRuntimeCache: writeRuntimeMapCache,
 			flowProviderName: flowProviderName,
@@ -1531,6 +1534,7 @@
 	function blockFileLoaderEnv() {
 		return {
 			FileUtils: FileUtils,
+			sourceForFile: sourceForFile,
 			normalizeTree: normalizeTree,
 			raise: raise,
 			blockIdFromDescriptorFile: blockIdFromDescriptorFile,
@@ -3167,6 +3171,9 @@
 			searchFlowRequest: searchFlowRequest,
 			describeTreeRequest: describeTreeRequest,
 			applyMutationRequest: applyMutationRequest,
+			authoringTreeRequest: authoringTreeRequest,
+			authoringPaletteRequest: authoringPaletteRequest,
+			authoringMutateRequest: authoringMutateRequest,
 			outputSchemaRequest: outputSchemaRequest,
 			nodeOutputSchemaRequest: nodeOutputSchemaRequest,
 			readOutputSchema: readOutputSchema,
@@ -3327,8 +3334,16 @@
 		return frontendCatalogService().frontendBlocksForSettings(name, settings, frontendCatalogServiceEnv());
 	}
 
+	function frontendCreateDescriptorsForSettings(name, settings) {
+		return frontendCatalogService().frontendCreateDescriptorsForSettings(name, settings, frontendCatalogServiceEnv());
+	}
+
 	function frontendBlocksForConfig(config) {
 		return frontendCatalogService().frontendBlocksForConfig(config, frontendCatalogServiceEnv());
+	}
+
+	function frontendCreateDescriptorsForConfig(config) {
+		return frontendCatalogService().frontendCreateDescriptorsForConfig(config, frontendCatalogServiceEnv());
 	}
 
 	function projectEngineDefinitionForRequest(request) {
@@ -3434,7 +3449,8 @@
 			analyzeFlowDefinition: analyzeFlowDefinition,
 			analysisByNodeId: analysisByNodeId,
 			currentProjectName: currentProjectName,
-			visibleSearchFlows: visibleSearchFlows,
+				visibleSearchFlows: visibleSearchFlows,
+				projectEngineDefinitionForRequest: projectEngineDefinitionForRequest,
 				projectSchemasDir: projectSchemasDir,
 				readResultSchema: readResultSchema,
 				readOutputSchema: readOutputSchema,
@@ -3448,11 +3464,12 @@
 			schemaAtPath: schemaAtPath,
 			schemaSimpleType: schemaSimpleType,
 			schemaSummary: schemaSummary,
-			objectSchema: objectSchema,
-			frontendBlocksForSettings: frontendBlocksForSettings,
-			describeFrontendDocument: describeFrontendDocument,
-			raise: raise,
-			intOption: intOption
+				objectSchema: objectSchema,
+				frontendBlocksForSettings: frontendBlocksForSettings,
+				frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,
+				describeFrontendDocument: describeFrontendDocument,
+				raise: raise,
+				intOption: intOption
 		};
 	}
 
@@ -3495,6 +3512,22 @@
 		pruneDescribeTreeCacheFamily(cache, request);
 		var tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
+	}
+
+	function authoringTreeRequest(request, blocks) {
+		return flowTreeService().authoringTreeRequest(request || {}, blocks, flowTreeServiceEnv());
+	}
+
+	function authoringPaletteRequest(request, blocks) {
+		return flowTreeService().authoringPaletteRequest(request || {}, blocks, flowTreeServiceEnv());
+	}
+
+	function authoringMutateRequest(request, blocks) {
+		request = request || {};
+		if (request.sourceFile || request.sourcePath) {
+			return applySourceMutationRequest(request, blocks);
+		}
+		return flowTreeService().authoringMutateRequest(request, blocks, flowTreeServiceEnv());
 	}
 
 	function describeTreeCacheKey(request) {
@@ -3575,9 +3608,78 @@
 		return flowTreeService().applyMutationRequest(request, blocks, flowTreeServiceEnv());
 	}
 
+	function blockCodeSourceMutationName(request, sourcePath, source) {
+		var explicit = String(request.sourceBlockName || request.blockName || request.name || request.flowName || "").trim();
+		if (explicit) {
+			return explicit;
+		}
+		try {
+			var meta = extractFlowScriptBlockMeta(source).meta || {};
+			var metaName = String(meta.name || meta.blockId || meta.id || "").trim();
+			if (metaName) {
+				return metaName;
+			}
+		} catch (_ignoreMetaName) {
+		}
+		var sourceFile = new File(String(sourcePath || ""));
+		var suffix = ".block.js";
+		var fileName = String(sourceFile.getName());
+		var fallback = fileName.endsWith(suffix) ? fileName.substring(0, fileName.length - suffix.length) : fileName;
+		try {
+			var projectRoot = request.projectDir ? new File(String(request.projectDir)) : projectDir();
+			if (projectRoot) {
+				var blocksDir = new File(projectRoot, "libs/flow/blocks");
+				var blocksPath = String(blocksDir.getCanonicalPath()) + String(File.separator);
+				var filePath = String(sourceFile.getCanonicalPath());
+				if (filePath.indexOf(blocksPath) === 0 && filePath.endsWith(suffix)) {
+					return filePath.substring(blocksPath.length, filePath.length - suffix.length).replace(/[\\\/]+/g, ".");
+				}
+			}
+		} catch (_ignorePathName) {
+		}
+		return fallback;
+	}
+
+	function applyBlockCodeSourceMutationRequest(request, blocks) {
+		request = request || {};
+		var sourcePath = String(request.sourceFile || request.sourcePath || "");
+		var source = request.source !== undefined && request.source !== null
+			? String(request.source)
+			: request.flowSource !== undefined && request.flowSource !== null
+				? String(request.flowSource)
+				: String(FileUtils.readFileToString(new File(sourcePath), "UTF-8"));
+		var extracted = extractFlowScriptBlockMeta(source);
+		var meta = normalizeTree(extracted.meta || {});
+		var runtime = String(blockCodeRuntimeFromMeta(meta) || "flow");
+		if (runtime !== "flow") {
+			raise("UNSUPPORTED_BLOCK_SOURCE_MUTATION", "Only FlowScript block implementations can be edited as Flow nodes: " + sourcePath);
+		}
+		var name = blockCodeSourceMutationName(request, sourcePath, source);
+		var flowName = blockLocalName(name) || name || "Block";
+		var response = applyMutationRequest(Object.assign({}, request, {
+			target: "flow",
+			name: flowName,
+			flowName: flowName,
+			flowSource: source,
+			sourceFile: sourcePath,
+			sourcePath: sourcePath
+		}), blocks);
+		if (response && response.ok && response.source !== undefined && response.source !== null) {
+			var code = flowScriptBlockCodeSource(name, String(response.source), meta);
+			response.source = code;
+			response.code = code;
+			response.name = name;
+			response.format = "blockjs";
+		}
+		return response;
+	}
+
 	function applySourceMutationRequest(request, blocks) {
 		request = request || {};
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
+		if (sourcePath.endsWith(".block.js")) {
+			return applyBlockCodeSourceMutationRequest(request, blocks);
+		}
 		if (!sourcePath.endsWith(".flow.svelte")) {
 			return applyMutationRequest(request, blocks);
 		}
@@ -3593,7 +3695,25 @@
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
-		var drafts = request.drafts || request.frontendSourceDrafts || {};
+		var drafts = frontendSourceDrafts(request);
+		var cache = runtimeState.caches.frontendDocuments;
+		var key = [
+			String(sourceFile.getAbsolutePath()),
+			String(resourceRoot.getAbsolutePath()),
+			String(projectRoot.getAbsolutePath())
+		].join("\n");
+		var fingerprint = sha256Hex([
+			source,
+			JSON.stringify(drafts || {})
+		].join("\n"));
+		var cached = readRuntimeMapCache(cache, key, fingerprint);
+		if (cached) {
+			return normalizeTree(cached);
+		}
+		var local = describeFrontAstDocument(source, request, sourceFile, projectRoot);
+		if (local) {
+			return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, local, "Svelte front documents"));
+		}
 		var sourceTemp = File.createTempFile("c8o-front-document-source-", ".flow.svelte");
 		var draftsTemp = File.createTempFile("c8o-front-document-drafts-", ".json");
 		try {
@@ -3617,7 +3737,7 @@
 				error.hint = "Check src-builder/frontDocumentCli.ts output for " + sourcePath + ".";
 				throw error;
 			}
-			return result;
+			return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents"));
 		} finally {
 			try {
 				sourceTemp["delete"]();
@@ -3637,6 +3757,10 @@
 			? String(request.source)
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
 		var mutation = request.mutation || {};
+		var frontAstResult = applyFrontAstSourceMutation(source, mutation, sourceFile);
+		if (frontAstResult) {
+			return frontAstResult;
+		}
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var sourceTemp = File.createTempFile("c8o-flow-svelte-source-", ".flow.svelte");
 		var mutationTemp = File.createTempFile("c8o-flow-svelte-mutation-", ".json");
@@ -3675,6 +3799,1466 @@
 			} catch (e2) {
 			}
 		}
+	}
+
+	function applyFrontAstSourceMutation(source, mutation, sourceFile) {
+		mutation = mutation || {};
+		var path = String(mutation.path || "");
+		if (path.indexOf("frontAst") !== 0) {
+			return null;
+		}
+		var sourceText = String(source || "");
+		if (sourceText.indexOf("<FlowComponent") < 0) {
+			var nonCanonical = new Error("Svelte Flow source is not canonical: missing <FlowComponent>.");
+			nonCanonical.code = "FRONTAST_SOURCE_NOT_CANONICAL";
+			nonCanonical.hint = "Migrate the page/component to the FlowComponent source format before editing it from the tree.";
+			throw nonCanonical;
+		}
+		var root = frontAstParseSource(sourceText);
+		if (!root) {
+			var invalid = new Error("Svelte Flow source is not canonical: unable to parse the root <FlowComponent>.");
+			invalid.code = "FRONTAST_SOURCE_INVALID";
+			invalid.hint = "Check that the source contains a single valid FlowComponent root before editing it from the tree.";
+			throw invalid;
+		}
+		var op = frontAstNormalizeOp(String(mutation.op || "replace"));
+		var debug = {
+			op: op,
+			path: path,
+			from: String(mutation.from || mutation.source || ""),
+			fromId: String(mutation.fromId || ""),
+			sourceFile: String(sourceFile.getAbsolutePath())
+		};
+		if (op === "append" || op === "insert") {
+			var array = frontAstArrayAtPath(root, path, true);
+			var value = frontAstTemplateNode(mutation.value || {});
+			var index = op === "insert" && mutation.index !== undefined && mutation.index !== null
+				? frontAstClamp(Number(mutation.index), 0, array.length)
+				: array.length;
+			debug.beforeLength = array.length;
+			debug.index = index;
+			debug.insertTag = value.tag;
+			debug.insertId = String(value.attrs && value.attrs.id || "");
+			array.splice(index, 0, value);
+			debug.afterLength = array.length;
+		} else if (op === "delete") {
+			var location = frontAstNodeLocation(root, path);
+			if (!location) {
+				throw new Error("Unknown FrontAst mutation path: " + path);
+			}
+			debug.sourceIndex = location.index;
+			debug.sourceTag = String(location.array[location.index] && location.array[location.index].tag || "");
+			debug.sourceId = String(location.array[location.index] && location.array[location.index].attrs
+				&& location.array[location.index].attrs.id || "");
+			location.array.splice(location.index, 1);
+		} else if (op === "move") {
+			var from = String(mutation.from || mutation.source || "");
+			var sourceLocation = String(mutation.fromId || "")
+				? frontAstNodeLocationById(root, path, String(mutation.fromId || ""))
+				: null;
+			debug.foundById = !!sourceLocation;
+			if (!sourceLocation) {
+				sourceLocation = frontAstNodeLocation(root, from);
+			}
+			if (!sourceLocation) {
+				throw new Error("Unknown FrontAst move source: " + from);
+			}
+			var targetArray = frontAstArrayAtPath(root, path, true);
+			var targetIndex = mutation.index !== undefined && mutation.index !== null
+				? frontAstClamp(Number(mutation.index), 0, targetArray.length)
+				: targetArray.length;
+			debug.sourceIndex = sourceLocation.index;
+			var moved = sourceLocation.array.splice(sourceLocation.index, 1)[0];
+			debug.sourceTag = String(moved && moved.tag || "");
+			debug.sourceId = String(moved && moved.attrs && moved.attrs.id || "");
+			debug.targetIndex = targetIndex;
+			debug.sameArray = sourceLocation.array === targetArray;
+			debug.targetLengthBeforeInsert = targetArray.length;
+			targetArray.splice(targetIndex, 0, moved);
+			debug.targetLengthAfterInsert = targetArray.length;
+		} else if (op === "replace" || op === "merge") {
+			frontAstSetValueAtPath(root, path, mutation.value, op === "merge");
+		} else {
+			throw new Error("Unsupported FrontAst mutation op: " + String(mutation.op || ""));
+		}
+		var nextSource = frontAstRenderComponent(root).replace(/\s+$/g, "") + "\n";
+		debug.changed = nextSource !== sourceText;
+		frontendStudioLog("[Flow frontend DnD] frontAst mutation " + JSON.stringify(debug), !debug.changed);
+		return {
+			ok: true,
+			target: "frontAst",
+			source: nextSource,
+			sourceFile: String(sourceFile.getAbsolutePath()),
+			mutation: mutation,
+			debug: debug
+		};
+	}
+
+	function frontAstParseSource(source) {
+		var holder = { tag: "__root__", attrs: {}, children: [] };
+		var stack = [holder];
+		var text = String(source || "");
+		var index = 0;
+		while (index < text.length) {
+			var start = text.indexOf("<", index);
+			if (start < 0) {
+				break;
+			}
+			if (text.substring(start, start + 4) === "<!--") {
+				var commentEnd = text.indexOf("-->", start + 4);
+				index = commentEnd < 0 ? text.length : commentEnd + 3;
+				continue;
+			}
+			if (text.charAt(start + 1) === "/") {
+				var closeEnd = text.indexOf(">", start + 2);
+				if (closeEnd < 0) {
+					break;
+				}
+				if (stack.length > 1) {
+					stack.pop();
+				}
+				index = closeEnd + 1;
+				continue;
+			}
+			if (text.charAt(start + 1) === "!" || text.charAt(start + 1) === "?") {
+				var declarationEnd = text.indexOf(">", start + 2);
+				index = declarationEnd < 0 ? text.length : declarationEnd + 1;
+				continue;
+			}
+			var end = frontAstTagEnd(text, start + 1);
+			if (end < 0) {
+				break;
+			}
+			var raw = text.substring(start + 1, end);
+			var parsed = frontAstParseTag(raw);
+			if (parsed && parsed.tag) {
+				stack[stack.length - 1].children.push(parsed);
+				if (!parsed.selfClosing) {
+					stack.push(parsed);
+				}
+			}
+			index = end + 1;
+		}
+		for (var i = 0; i < holder.children.length; i++) {
+			if (holder.children[i].tag === "FlowComponent") {
+				return holder.children[i];
+			}
+		}
+		return null;
+	}
+
+	function frontAstTagEnd(text, start) {
+		var quote = "";
+		var braces = 0;
+		for (var i = start; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === quote && text.charAt(i - 1) !== "\\") {
+					quote = "";
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'") {
+				quote = ch;
+				continue;
+			}
+			if (ch === "{") {
+				braces++;
+				continue;
+			}
+			if (ch === "}" && braces > 0) {
+				braces--;
+				continue;
+			}
+			if (ch === ">" && braces === 0) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	function frontAstParseTag(raw) {
+		raw = String(raw || "");
+		var trimmed = raw.replace(/^\s+|\s+$/g, "");
+		if (!trimmed) {
+			return null;
+		}
+		var selfClosing = /\/\s*$/.test(trimmed);
+		if (selfClosing) {
+			trimmed = trimmed.replace(/\/\s*$/, "");
+		}
+		var match = /^([A-Za-z_$][A-Za-z0-9_$.-]*)/.exec(trimmed);
+		if (!match) {
+			return null;
+		}
+		var tag = match[1];
+		var attrs = frontAstParseAttributes(trimmed.substring(match[0].length));
+		return { tag: tag, attrs: attrs, children: [], selfClosing: selfClosing };
+	}
+
+	function frontAstParseAttributes(text) {
+		var attrs = {};
+		var i = 0;
+		text = String(text || "");
+		while (i < text.length) {
+			while (i < text.length && /\s/.test(text.charAt(i))) {
+				i++;
+			}
+			if (i >= text.length) {
+				break;
+			}
+			var nameStart = i;
+			while (i < text.length && !/[\s=]/.test(text.charAt(i))) {
+				i++;
+			}
+			var name = text.substring(nameStart, i);
+			while (i < text.length && /\s/.test(text.charAt(i))) {
+				i++;
+			}
+			if (text.charAt(i) !== "=") {
+				attrs[name] = true;
+				continue;
+			}
+			i++;
+			while (i < text.length && /\s/.test(text.charAt(i))) {
+				i++;
+			}
+			var ch = text.charAt(i);
+			if (ch === "\"" || ch === "'") {
+				var quote = ch;
+				i++;
+				var valueStart = i;
+				while (i < text.length && !(text.charAt(i) === quote && text.charAt(i - 1) !== "\\")) {
+					i++;
+				}
+				attrs[name] = text.substring(valueStart, i).replace(/\\"/g, "\"").replace(/\\'/g, "'");
+				i++;
+			} else if (ch === "{") {
+				var end = frontAstExpressionEnd(text, i);
+				attrs[name] = text.substring(i + 1, end);
+				i = end + 1;
+			} else {
+				var bareStart = i;
+				while (i < text.length && !/\s/.test(text.charAt(i))) {
+					i++;
+				}
+				attrs[name] = text.substring(bareStart, i);
+			}
+		}
+		return attrs;
+	}
+
+	function frontAstExpressionEnd(text, start) {
+		var quote = "";
+		var braces = 0;
+		for (var i = start; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === quote && text.charAt(i - 1) !== "\\") {
+					quote = "";
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'") {
+				quote = ch;
+				continue;
+			}
+			if (ch === "{") {
+				braces++;
+				continue;
+			}
+			if (ch === "}") {
+				braces--;
+				if (braces === 0) {
+					return i;
+				}
+			}
+		}
+		return text.length;
+	}
+
+	function frontAstArrayAtPath(root, path, create) {
+		var value = frontAstValueAtPath(root, path, create);
+		if (!value || !value.splice) {
+			throw new Error("FrontAst path is not an array: " + path);
+		}
+		return value;
+	}
+
+	function frontAstNodeLocation(root, path) {
+		var match = /^(.*)\[(\d+)\]$/.exec(String(path || ""));
+		if (!match) {
+			return null;
+		}
+		var array = frontAstArrayAtPath(root, match[1], false);
+		var index = Number(match[2]);
+		return index >= 0 && index < array.length ? { array: array, index: index } : null;
+	}
+
+	function frontAstNodeLocationById(root, arrayPath, id) {
+		try {
+			var array = frontAstArrayAtPath(root, arrayPath, false);
+			for (var i = 0; i < array.length; i++) {
+				if (String(array[i] && array[i].attrs && array[i].attrs.id || "") === id) {
+					return { array: array, index: i };
+				}
+			}
+		} catch (e) {
+		}
+		return null;
+	}
+
+	function frontAstValueAtPath(root, path, create) {
+		var tokens = frontAstPathTokens(path);
+		var current = root;
+		for (var i = 0; i < tokens.length; i++) {
+			var token = tokens[i];
+			if (token === "frontAst") {
+				continue;
+			}
+			if (token === "slots" && typeof tokens[i + 1] === "string") {
+				current = frontAstSlotNode(current, String(tokens[i + 1]), create);
+				i++;
+				continue;
+			}
+			if (token === "children") {
+				if (!current.children && create) {
+					current.children = [];
+				}
+				current = current.children;
+				continue;
+			}
+			if (token === "props") {
+				if (!current.attrs && create) {
+					current.attrs = {};
+				}
+				current = current.attrs;
+				continue;
+			}
+			if (typeof token === "number") {
+				current = current[token];
+				continue;
+			}
+			current = current ? current[token] : undefined;
+		}
+		return current;
+	}
+
+	function frontAstSetValueAtPath(root, path, value, merge) {
+		var tokens = frontAstPathTokens(path);
+		var current = root;
+		for (var i = 0; i < tokens.length - 1; i++) {
+			var token = tokens[i];
+			if (token === "frontAst") {
+				continue;
+			}
+			if (token === "slots" && typeof tokens[i + 1] === "string") {
+				current = frontAstSlotNode(current, String(tokens[i + 1]), false);
+				i++;
+				continue;
+			}
+			if (token === "children") {
+				current = current.children;
+				continue;
+			}
+			if (token === "props") {
+				current = current.attrs;
+				continue;
+			}
+			current = current[token];
+		}
+		var last = tokens[tokens.length - 1];
+		if (last === "props") {
+			if (!current.attrs) {
+				current.attrs = {};
+			}
+			if (merge && frontAstIsObject(value)) {
+				for (var propKey in value) {
+					if (Object.prototype.hasOwnProperty.call(value, propKey)) {
+						current.attrs[propKey] = value[propKey];
+					}
+				}
+			} else {
+				current.attrs = frontAstIsObject(value) ? value : {};
+			}
+			return;
+		}
+		if (merge && frontAstIsObject(current[last]) && frontAstIsObject(value)) {
+			for (var key in value) {
+				if (Object.prototype.hasOwnProperty.call(value, key)) {
+					current[last][key] = value[key];
+				}
+			}
+		} else {
+			current[last] = value;
+		}
+	}
+
+	function frontAstPathTokens(path) {
+		var tokens = [];
+		var parts = String(path || "").split(".");
+		for (var i = 0; i < parts.length; i++) {
+			var match = /^([^\[]+)(?:\[(\d+)\])?$/.exec(parts[i]);
+			if (!match) {
+				throw new Error("Unsupported FrontAst path segment: " + parts[i]);
+			}
+			tokens.push(match[1]);
+			if (match[2] !== undefined) {
+				tokens.push(Number(match[2]));
+			}
+		}
+		return tokens;
+	}
+
+	function frontAstSlotNode(node, name, create) {
+		var tag = frontAstSlotTag(name);
+		var children = node.children || [];
+		for (var i = 0; i < children.length; i++) {
+			if (children[i].tag === tag) {
+				return children[i];
+			}
+		}
+		if (!create) {
+			return undefined;
+		}
+		var slot = { tag: tag, attrs: {}, children: [], selfClosing: false };
+		if (!node.children) {
+			node.children = [];
+		}
+		node.children.push(slot);
+		return slot;
+	}
+
+	function frontAstTemplateNode(value) {
+		var record = frontAstIsObject(value) ? frontAstClone(value) : {};
+		var tag = String(record.tag || frontAstTagForKind(String(record.kind || record.label || "Node")));
+		var kind = String(record.kind || frontAstCanonicalKind(tag));
+		if (kind === "event") {
+			kind = frontAstEventKindFromName(String(record.event || "click"));
+			tag = frontAstEventTagForKind(kind);
+		}
+		var id = String(record.id || frontAstDefaultId(kind));
+		delete record.tag;
+		record.id = id;
+		record.kind = kind;
+		var node = { tag: tag, attrs: record, children: [], selfClosing: false };
+		var slots = frontAstDefaultSlots(kind);
+		for (var i = 0; i < slots.length; i++) {
+			node.children.push({ tag: frontAstSlotTag(slots[i]), attrs: {}, children: [], selfClosing: false });
+		}
+		return node;
+	}
+
+	function frontAstDefaultSlots(kind) {
+		if (kind === "button") {
+			return ["events"];
+		}
+		if (frontAstEventKind(kind)) {
+			return ["actions"];
+		}
+		if (kind === "callSequence") {
+			return ["variables"];
+		}
+		if (kind === "if") {
+			return ["then", "else"];
+		}
+		if (kind === "each") {
+			return ["default", "else"];
+		}
+		if (kind === "await") {
+			return ["pending", "then", "catch"];
+		}
+		if (kind === "table") {
+			return ["data", "columns"];
+		}
+		return [];
+	}
+
+	function frontAstRenderComponent(root) {
+		return frontAstRenderNode(root, 0) + "\n";
+	}
+
+	function frontAstRenderNode(node, level) {
+		var pad = new Array(level + 1).join("  ");
+		var attrs = frontAstRenderAttributes(node.tag, node.attrs || {});
+		var children = node.children || [];
+		if (!children.length) {
+			return pad + "<" + node.tag + (attrs ? " " + attrs : "") + " />";
+		}
+		var rendered = [];
+		for (var i = 0; i < children.length; i++) {
+			rendered.push(frontAstRenderNode(children[i], level + 1));
+		}
+		return pad + "<" + node.tag + (attrs ? " " + attrs : "") + ">\n"
+			+ rendered.join("\n")
+			+ "\n" + pad + "</" + node.tag + ">";
+	}
+
+	function frontAstRenderAttributes(tag, attrs) {
+		var names = [];
+		var order = frontAstPropOrder(tag, attrs);
+		for (var i = 0; i < order.length; i++) {
+			if (attrs[order[i]] !== undefined && attrs[order[i]] !== null && attrs[order[i]] !== "") {
+				names.push(order[i]);
+			}
+		}
+		for (var name in attrs) {
+			if (!Object.prototype.hasOwnProperty.call(attrs, name)) {
+				continue;
+			}
+			if (name === "kind" || name === "tag") {
+				continue;
+			}
+			if (names.indexOf(name) < 0 && attrs[name] !== undefined && attrs[name] !== null && attrs[name] !== "") {
+				names.push(name);
+			}
+		}
+		var rendered = [];
+		for (var j = 0; j < names.length; j++) {
+			rendered.push(names[j] + "=" + frontAstRenderAttributeValue(names[j], attrs[names[j]]));
+		}
+		return rendered.join(" ");
+	}
+
+	function frontAstRenderAttributeValue(name, value) {
+		if (typeof value === "number" || typeof value === "boolean") {
+			return "{" + JSON.stringify(value) + "}";
+		}
+		var text = String(value);
+		var trimmed = text.replace(/^\s+|\s+$/g, "");
+		if ((name === "test" || name === "condition" || name === "expression" || name === "value")
+				&& /^-?\d+(?:\.\d+)?$|^true$|^false$/.test(trimmed)) {
+			return "{" + trimmed + "}";
+		}
+		if ((name === "test" || name === "condition" || name === "expression" || name === "value")
+				&& frontAstLooksLikeExpression(text)) {
+			return "{" + text + "}";
+		}
+		return JSON.stringify(text);
+	}
+
+	function frontAstPropOrder(tag, attrs) {
+		var kind = String((attrs || {}).kind || frontAstCanonicalKind(tag));
+		if (tag === "FlowComponent") {
+			return ["id", "label"];
+		}
+		if (kind === "if") {
+			return ["id", "test"];
+		}
+		if (kind === "each") {
+			return ["id", "source", "context", "index", "key"];
+		}
+		if (kind === "await") {
+			return ["id", "expression"];
+		}
+		if (kind === "button") {
+			return ["id", "label"];
+		}
+		if (frontAstEventKind(kind)) {
+			return ["id", "event"];
+		}
+		if (kind === "callSequence") {
+			return ["id", "requestable"];
+		}
+		if (kind === "table") {
+			return ["id", "source"];
+		}
+		if (kind === "text") {
+			return ["id", "text"];
+		}
+		if (kind === "status" || kind === "json") {
+			return ["id", "source"];
+		}
+		if (kind === "variable") {
+			return ["name", "value"];
+		}
+		if (kind === "column") {
+			return ["label", "path", "value"];
+		}
+		if (kind === "dataBinding") {
+			return ["source", "value"];
+		}
+		return ["id", "label"];
+	}
+
+	function frontAstSlotTag(name) {
+		var tags = {
+			structure: "Structure",
+			events: "Events",
+			actions: "Actions",
+			variables: "Variables",
+			"default": "Default",
+			then: "Then",
+			"else": "Else",
+			pending: "Pending",
+			"catch": "Catch",
+			columns: "Columns",
+			data: "Data"
+		};
+		return tags[name] || frontAstTitle(name);
+	}
+
+	function frontAstTagForKind(kind) {
+		if (kind === "json") {
+			return "Json";
+		}
+		if (kind === "each") {
+			return "ForEach";
+		}
+		if (frontAstEventKind(kind)) {
+			return frontAstEventTagForKind(kind);
+		}
+		return frontAstTitle(kind);
+	}
+
+	function frontAstCanonicalKind(value) {
+		value = String(value || "");
+		if (value === "JSON") {
+			return "json";
+		}
+		if (value === "ForEach") {
+			return "each";
+		}
+		return value ? value.charAt(0).toLowerCase() + value.substring(1) : "";
+	}
+
+	function frontAstNormalizeOp(op) {
+		if (op === "set") {
+			return "replace";
+		}
+		if (op === "remove") {
+			return "delete";
+		}
+		return op;
+	}
+
+	function frontAstLooksLikeExpression(value) {
+		return /[.$()[\]?:]|=>|\|\||&&|\s/.test(value) && !/^[-A-Za-z0-9_ ]+$/.test(value);
+	}
+
+	function frontAstEventKind(kind) {
+		return /^on[A-Z]/.test(String(kind || ""));
+	}
+
+	function frontAstEventTagForKind(kind) {
+		kind = String(kind || "");
+		return kind ? kind.charAt(0).toUpperCase() + kind.substring(1) : "OnClick";
+	}
+
+	function frontAstEventKindFromName(name) {
+		return "on" + frontAstTitle(name).replace(/[^A-Za-z0-9_$]/g, "");
+	}
+
+	function frontAstDefaultId(kind) {
+		return String(kind || "node");
+	}
+
+	function frontAstTitle(value) {
+		value = String(value || "Node").replace(/[_-]+/g, " ");
+		return value ? value.charAt(0).toUpperCase() + value.substring(1) : "Node";
+	}
+
+	function frontAstClamp(value, min, max) {
+		if (!isFinite(value)) {
+			return max;
+		}
+		return Math.min(max, Math.max(min, Math.floor(value)));
+	}
+
+	function frontAstClone(value) {
+		return JSON.parse(JSON.stringify(value || {}));
+	}
+
+	function frontAstIsObject(value) {
+		return value && typeof value === "object" && !value.splice;
+	}
+
+	function describeFrontAstDocument(source, request, sourceFile, projectRoot) {
+		var root = frontAstParseSource(source);
+		var meta = frontAstFlowMeta(source);
+		var isPage = String(sourceFile.getName()) === "+page.flow.svelte" || !!meta.page || !!meta.app;
+		if (!root && !isPage) {
+			return null;
+		}
+		var sourceRoot = sourceFile.getParentFile();
+		var components = [];
+		var componentByTag = {};
+		var componentById = {};
+		if (root) {
+			var ownComponent = frontAstComponentModel(root, sourceFile, projectRoot);
+			components.push(ownComponent);
+			componentByTag[frontAstComponentTag(sourceFile)] = ownComponent;
+			componentById[String(ownComponent.id || "")] = ownComponent;
+		}
+		if (isPage) {
+			var componentDir = new File(sourceRoot, "components");
+			var files = [];
+			if (componentDir.isDirectory()) {
+				Arrays.asList(componentDir.listFiles()).toArray().forEach(function (file) {
+					files.push(file);
+				});
+			}
+			files.sort(function (a, b) {
+				return String(a.getName()).localeCompare(String(b.getName()));
+			});
+			for (var i = 0; i < files.length; i++) {
+				var file = files[i];
+				if (!file.isFile() || !String(file.getName()).endsWith(".flow.svelte")) {
+					continue;
+				}
+				var componentSource = frontAstSourceForFile(request, file);
+				var componentRoot = frontAstParseSource(componentSource);
+				if (!componentRoot) {
+					continue;
+				}
+				var component = frontAstComponentModel(componentRoot, file, projectRoot);
+				components.push(component);
+				componentByTag[frontAstComponentTag(file)] = component;
+				componentById[String(component.id || "")] = component;
+			}
+		}
+		var componentRefs = isPage ? frontAstPageComponentRefs(source, componentByTag) : [];
+		var app = frontAstClone(meta.app || {});
+		var pageMeta = frontAstClone(meta.page || {});
+		if (!app.id && pageMeta.id) {
+			app.id = pageMeta.id;
+		}
+		if (!app.title && pageMeta.title) {
+			app.title = pageMeta.title;
+		}
+		var model = {
+			version: 1,
+			builder: frontAstClone(meta.builder || {}),
+			styling: frontAstClone(meta.styling || {}),
+			layouts: frontAstClone(meta.layouts || []),
+			app: app,
+			components: components,
+			clientActions: frontAstMergeById([].concat(
+				frontAstArray(meta.clientActions),
+				frontAstFlatten(components.map(function (component) { return component.clientActions || []; }))
+			)),
+			backendCalls: frontAstMergeById([].concat(
+				frontAstArray(meta.backendCalls),
+				frontAstFlatten(components.map(function (component) { return component.backendCalls || []; }))
+			))
+		};
+		var pageRootNode = root ? components[0].nodes[0] : null;
+		var routePageNodes = frontAstRoutePageNodes(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, pageRootNode);
+		var pageNodes = isPage
+			? routePageNodes
+			: root ? [components[0].nodes[0]] : routePageNodes;
+		var children = isPage
+			? frontAstAuthoringChildren(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, components, pageRootNode)
+			: [frontAstComponentSourceNode(sourceFile, sourceRoot, projectRoot, components[0])];
+		return {
+			ok: true,
+			sourcePath: String(sourceFile.getAbsolutePath()),
+			sourceRoot: String(sourceRoot.getAbsolutePath()),
+			diagnostics: [],
+			descriptors: [],
+			tree: {
+				sourcePath: String(sourceFile.getAbsolutePath()),
+				sourceRoot: String(sourceRoot.getAbsolutePath()),
+				children: children,
+				app: app,
+				pageNodes: pageNodes,
+				components: components
+			},
+			pageNodes: pageNodes,
+			componentRefs: componentRefs.map(function (ref) { return ref.tag; }),
+			model: model
+		};
+	}
+
+	function frontAstFlowMeta(source) {
+		var start = String(source || "").indexOf("export const _flow");
+		if (start < 0) {
+			return {};
+		}
+		var equals = String(source).indexOf("=", start);
+		var brace = String(source).indexOf("{", equals);
+		if (brace < 0) {
+			return {};
+		}
+		var end = frontAstMatchingBrace(source, brace);
+		if (end < 0) {
+			return {};
+		}
+		try {
+			return eval("(" + String(source).substring(brace, end + 1) + ")") || {};
+		} catch (e) {
+			return {};
+		}
+	}
+
+	function frontAstMatchingBrace(source, start) {
+		var quote = "";
+		var braces = 0;
+		var text = String(source || "");
+		for (var i = start; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === quote && text.charAt(i - 1) !== "\\") {
+					quote = "";
+				}
+				continue;
+			}
+			if (ch === "\"" || ch === "'" || ch === "`") {
+				quote = ch;
+				continue;
+			}
+			if (ch === "{") {
+				braces++;
+				continue;
+			}
+			if (ch === "}") {
+				braces--;
+				if (braces === 0) {
+					return i;
+				}
+			}
+		}
+		return -1;
+	}
+
+	function frontAstComponentModel(root, sourceFile, projectRoot) {
+		var rootNode = frontAstRootNodeModel(root, sourceFile, projectRoot);
+		var actions = frontAstCompatibilityActions(rootNode);
+		return {
+			id: rootNode.id,
+			name: rootNode.label,
+			sourceFile: String(sourceFile.getAbsolutePath()),
+			__sourceFile: String(sourceFile.getAbsolutePath()),
+			nodes: [rootNode],
+			widgets: [],
+			clientActions: actions.clientActions,
+			backendCalls: actions.backendCalls
+		};
+	}
+
+	function frontAstRootNodeModel(root, sourceFile, projectRoot) {
+		var id = String(root.attrs && root.attrs.id || "component");
+		var label = String(root.attrs && (root.attrs.label || root.attrs.title) || frontAstTitle(id));
+		return {
+			id: id,
+			kind: "frontendComponent",
+			type: "component",
+			tag: "FlowComponent",
+			label: label,
+			sourcePath: String(sourceFile.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(sourceFile, projectRoot),
+			sourceMutationPath: "frontAst",
+			sourceWritable: true,
+			traits: ["definition.uiBlock", "ui.container"],
+			props: { id: id, label: label },
+			propertyDefinitions: {
+				id: { label: "Id", category: "Base properties", type: "string", readOnly: true },
+				label: { label: "Label", category: "Base properties", kind: "text", type: "string" }
+			},
+			slots: {
+				structure: frontAstSlotDefinition("structure", "frontAst.slots.structure.children", true)
+			},
+			children: [
+				frontAstSlotModel(root, "structure", "frontAst", sourceFile, projectRoot)
+			]
+		};
+	}
+
+	function frontAstSlotModel(parent, slotName, parentPath, sourceFile, projectRoot) {
+		var slot = frontAstSlotNode(parent, slotName, true);
+		var path = parentPath + ".slots." + slotName + ".children";
+		var children = [];
+		var rawChildren = slot && slot.children || [];
+		for (var i = 0; i < rawChildren.length; i++) {
+			children.push(frontAstNodeModel(rawChildren[i], path + "[" + i + "]", sourceFile, projectRoot));
+		}
+		var spec = frontAstSlotSpec(slotName);
+		return {
+			id: slotName,
+			kind: spec.kind,
+			type: slotName,
+			label: spec.label,
+			sourcePath: String(sourceFile.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(sourceFile, projectRoot),
+			sourceMutationPath: path,
+			sourceWritable: true,
+			props: { count: children.length },
+			traits: ["ui.container"],
+			slots: frontAstSlotMap(slotName, path, true),
+			children: children
+		};
+	}
+
+	function frontAstNodeModel(node, path, sourceFile, projectRoot) {
+		var tag = String(node.tag || "");
+		var kind = frontAstCanonicalKind(tag);
+		if (tag === "ForEach") {
+			kind = "each";
+		}
+		if (frontAstEventTag(tag)) {
+			kind = frontAstCanonicalKind(tag);
+		}
+		if (tag === "CallSequence") {
+			kind = "callSequence";
+		}
+		if (tag === "Variable") {
+			kind = "variable";
+		}
+		if (tag === "Column") {
+			kind = "column";
+		}
+		if (tag === "DataBinding") {
+			kind = "dataBinding";
+		}
+		var props = frontAstClone(node.attrs || {});
+		props.kind = kind;
+		var id = String(props.id || (kind === "variable" ? "variable" : kind || tag || "node"));
+		var label = frontAstNodeLabel(kind, tag, props);
+		var slots = frontAstNodeSlots(kind);
+		var children = [];
+		for (var i = 0; i < slots.length; i++) {
+			children.push(frontAstSlotModel(node, slots[i], path, sourceFile, projectRoot));
+		}
+		return {
+			id: id,
+			kind: frontAstVirtualKind(kind),
+			type: tag,
+			tag: tag,
+			label: label,
+			sourcePath: String(sourceFile.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(sourceFile, projectRoot),
+			sourceMutationPath: path,
+			sourceWritable: true,
+			props: props,
+			descriptorId: frontAstDescriptorId(kind),
+			icon: frontAstIcon(kind),
+			propertyDefinitions: frontAstPropertyDefinitions(kind),
+			traits: frontAstTraits(kind),
+			slots: frontAstSlotDefinitionsForKinds(slots, path, true),
+			children: children,
+			sourcePropertyMutationPaths: frontAstPropertyMutationPaths(props, path)
+		};
+	}
+
+	function frontAstRoutePageNodes(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, pageRootNode) {
+		var page = frontAstPageNode(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, pageRootNode);
+		return page ? [page] : [];
+	}
+
+	function frontAstAuthoringChildren(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, components, pageRootNode) {
+		return [
+			frontAstRoutesNode(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, pageRootNode),
+			frontAstLibraryNode(sourceRoot, projectRoot, components)
+		];
+	}
+
+	function frontAstRoutesNode(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, pageRootNode) {
+		return {
+			id: "routes",
+			kind: "frontendRoutes",
+			type: "routes",
+			label: "Routes",
+			sourcePath: String(sourceRoot.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(sourceRoot, projectRoot),
+			sourceWritable: true,
+			props: { root: true, pathless: false },
+			children: frontAstRoutePageNodes(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, pageRootNode)
+		};
+	}
+
+	function frontAstPageNode(sourceFile, sourceRoot, projectRoot, pageMeta, componentRefs, componentByTag, pageRootNode) {
+		var pageId = String(pageMeta.id || "page");
+		var title = String(pageMeta.title || pageId || "Page");
+		var route = String(pageMeta.route || "/");
+		var structureChildren = [];
+		var structureSourcePath = String(sourceFile.getAbsolutePath());
+		var structureMutationPath = "frontAst.slots.structure.children";
+		if (pageRootNode) {
+			var rootStructure = pageRootNode.children && pageRootNode.children[0];
+			structureChildren = rootStructure && rootStructure.children || [];
+		} else {
+			for (var i = 0; i < componentRefs.length; i++) {
+				structureChildren.push(frontAstComponentInstanceNode(componentRefs[i], i, sourceFile, projectRoot, componentByTag));
+			}
+			var defaultInsert = frontAstComponentInsertTarget(componentRefs.length ? componentRefs[0] : null, componentByTag);
+			structureSourcePath = defaultInsert.sourcePath;
+			structureMutationPath = defaultInsert.mutationPath;
+		}
+		return {
+			id: "page_" + frontAstSafeName("page", String(sourceFile.getName()).replace(/\.flow\.svelte$/, "")),
+			kind: "frontendPage",
+			type: "page",
+			label: title,
+			sourcePath: String(sourceFile.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(sourceFile, projectRoot),
+			sourceWritable: true,
+			frontendInsertSourcePath: structureSourcePath,
+			frontendInsertMutationPath: structureMutationPath,
+			props: { role: "page", id: pageId, title: title, route: route, kind: String(pageMeta.kind || "") },
+			children: [{
+				id: "structure",
+				kind: "frontendStructure",
+				type: "structure",
+				label: "Structure",
+				sourcePath: String(sourceFile.getAbsolutePath()),
+				sourceRelativePath: frontAstRelativePath(sourceFile, projectRoot),
+				sourceMutationPath: structureMutationPath,
+				sourceWritable: true,
+				frontendInsertSourcePath: structureSourcePath,
+				frontendInsertMutationPath: structureMutationPath,
+				props: { count: structureChildren.length },
+				traits: ["ui.container"],
+				slots: {
+					structure: frontAstSlotDefinition("structure", structureMutationPath, true)
+				},
+				children: structureChildren
+			}]
+		};
+	}
+
+	function frontAstComponentInstanceNode(ref, index, sourceFile, projectRoot, componentByTag) {
+		var component = componentByTag[ref.tag] || {};
+		var componentSource = String(component.sourceFile || "");
+		var componentId = String(component.id || frontAstCanonicalKind(ref.tag));
+		var id = String(ref.attrs.id || componentId + (index + 1));
+		var node = {
+			id: id,
+			kind: componentId,
+			type: "Component",
+			tag: ref.tag,
+			label: id,
+			sourcePath: String(sourceFile.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(sourceFile, projectRoot),
+			sourceMutationPath: "widgets[" + index + "]",
+			props: {
+				id: id,
+				componentId: componentId,
+				componentSourcePath: componentSource,
+				componentSourceRelativePath: componentSource ? frontAstRelativePath(new File(componentSource), projectRoot) : undefined
+			},
+			frontendInsertSourcePath: componentSource,
+			frontendInsertMutationPath: componentSource ? "frontAst.slots.structure.children" : "",
+			traits: ["ui.container"],
+			slots: componentSource ? {
+				structure: frontAstSlotDefinition("structure", "frontAst.slots.structure.children", true)
+			} : {},
+			children: []
+		};
+		return node;
+	}
+
+	function frontAstComponentInsertTarget(ref, componentByTag) {
+		var component = ref && componentByTag ? componentByTag[ref.tag] : null;
+		var sourcePath = String(component && component.sourceFile || "");
+		return {
+			sourcePath: sourcePath,
+			mutationPath: sourcePath ? "frontAst.slots.structure.children" : ""
+		};
+	}
+
+	function frontAstLibraryNode(sourceRoot, projectRoot, components) {
+		return {
+			id: "library",
+			kind: "frontendLibrary",
+			type: "library",
+			label: "Library",
+			sourcePath: String(sourceRoot.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(sourceRoot, projectRoot),
+			children: [{
+				id: "uiBlocks",
+				kind: "frontendSharedComponents",
+				type: "uiBlocks",
+				label: "UI block sources",
+				props: { count: components.length },
+				children: components.map(function (component) {
+					return frontAstComponentSourceNode(new File(String(component.sourceFile)), sourceRoot, projectRoot, component);
+				})
+			}]
+		};
+	}
+
+	function frontAstComponentSourceNode(file, sourceRoot, projectRoot, component) {
+		return {
+			id: "flow_svelte_ui_block_" + frontAstSafeName("component", frontAstRelativePath(file, sourceRoot)),
+			kind: "frontendComponent",
+			type: "flow-svelte-ui-block",
+			label: frontAstComponentTag(file),
+			sourcePath: String(file.getAbsolutePath()),
+			sourceRelativePath: frontAstRelativePath(file, projectRoot),
+			props: {
+				role: "component",
+				libraryRoot: frontAstRelativePath(file.getParentFile(), projectRoot),
+				componentName: frontAstComponentTag(file)
+			},
+			children: component && component.nodes || []
+		};
+	}
+
+	function frontAstPageComponentRefs(source, componentByTag) {
+		var body = String(source || "").replace(/<script[\s\S]*?<\/script>/g, "");
+		var refs = [];
+		var seen = {};
+		var re = /<([A-Z][A-Za-z0-9_$]*)(\s[^>]*)?\/?>/g;
+		var match;
+		while ((match = re.exec(body)) !== null) {
+			var tag = match[1];
+			if (!componentByTag[tag] || seen[tag + ":" + match.index]) {
+				continue;
+			}
+			seen[tag + ":" + match.index] = true;
+			refs.push({ tag: tag, attrs: frontAstParseAttributes(String(match[2] || "").replace(/\/\s*$/, "")) });
+		}
+		return refs;
+	}
+
+	function frontAstSourceForFile(request, file) {
+		var draft = frontendDraftForFile(request, file);
+		return draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
+	}
+
+	function frontAstCompatibilityActions(rootNode) {
+		var clientActions = [];
+		var backendCalls = [];
+		frontAstWalkNode(rootNode, function (node) {
+			if (String(node.props && node.props.kind || "") !== "callSequence") {
+				return;
+			}
+			var requestable = String(node.props.requestable || "");
+			var id = String(node.props.id || frontAstActionIdFromRequestable(requestable));
+			var backendCall = frontAstActionIdFromRequestable(requestable) || id;
+			clientActions.push({ id: id, kind: "backendCall", backendCall: backendCall });
+			backendCalls.push({
+				id: backendCall,
+				requestable: requestable,
+				parameters: frontAstVariablesFromNode(node)
+			});
+		});
+		return {
+			clientActions: frontAstMergeById(clientActions),
+			backendCalls: frontAstMergeById(backendCalls)
+		};
+	}
+
+	function frontAstVariablesFromNode(node) {
+		var variables = {};
+		var slot = frontAstChildSlot(node, "variables");
+		(slot && slot.children || []).forEach(function (variable) {
+			var name = String(variable.props && variable.props.name || "");
+			if (name) {
+				variables[name] = variable.props ? variable.props.value : "";
+			}
+		});
+		return variables;
+	}
+
+	function frontAstWalkNode(node, visitor) {
+		visitor(node);
+		(node.children || []).forEach(function (child) {
+			frontAstWalkNode(child, visitor);
+		});
+	}
+
+	function frontAstChildSlot(node, name) {
+		var children = node && node.children || [];
+		for (var i = 0; i < children.length; i++) {
+			if (children[i].type === name || children[i].id === name) {
+				return children[i];
+			}
+		}
+		return null;
+	}
+
+	function frontAstMergeById(items) {
+		var out = [];
+		var seen = {};
+		(items || []).forEach(function (item) {
+			var id = item && item.id || JSON.stringify(item);
+			if (!seen[id]) {
+				seen[id] = true;
+				out.push(item);
+			}
+		});
+		return out;
+	}
+
+	function frontAstFlatten(lists) {
+		var out = [];
+		(lists || []).forEach(function (list) {
+			(list || []).forEach(function (item) {
+				out.push(item);
+			});
+		});
+		return out;
+	}
+
+	function frontAstArray(value) {
+		return Object.prototype.toString.call(value) === "[object Array]" ? value : [];
+	}
+
+	function frontAstComponentTag(file) {
+		return String(file.getName()).replace(/\.flow\.svelte$|\.svelte$/g, "");
+	}
+
+	function frontAstRelativePath(file, root) {
+		try {
+			if (!file || !root) {
+				return "";
+			}
+			var filePath = String(file.getCanonicalPath());
+			var rootPath = String(root.getCanonicalPath());
+			return filePath === rootPath ? "" : filePath.indexOf(rootPath + File.separator) === 0
+				? filePath.substring(rootPath.length + 1)
+				: filePath;
+		} catch (e) {
+			return file ? String(file.getAbsolutePath()) : "";
+		}
+	}
+
+	function frontAstNodeLabel(kind, tag, props) {
+		if (kind === "text") {
+			return String(props.text || "Text");
+		}
+		if (kind === "button") {
+			return String(props.label || "Button");
+		}
+		if (kind === "callSequence") {
+			return String(props.requestable || "CallSequence");
+		}
+		if (kind === "variable") {
+			return String(props.name || "Variable");
+		}
+		if (kind === "column") {
+			return String(props.label || props.path || "Column");
+		}
+		if (kind === "if") {
+			return "If";
+		}
+		if (kind === "each") {
+			return "ForEach";
+		}
+		if (kind === "await") {
+			return "Await";
+		}
+		if (frontAstEventKind(kind)) {
+			return frontAstEventTagForKind(kind);
+		}
+		return String(props.label || props.title || props.id || tag || frontAstTitle(kind));
+	}
+
+	function frontAstVirtualKind(kind) {
+		if (frontAstEventKind(kind)) {
+			return "frontendEventBlock";
+		}
+		if (kind === "callSequence") {
+			return "frontendActionBlock";
+		}
+		if (kind === "variable") {
+			return "frontendActionVariable";
+		}
+		if (kind === "column" || kind === "dataBinding") {
+			return "frontendDataBlock";
+		}
+		if (kind === "if" || kind === "each" || kind === "await") {
+			return "frontendDirectiveBlock";
+		}
+		return kind;
+	}
+
+	function frontAstNodeSlots(kind) {
+		if (kind === "button") {
+			return ["events"];
+		}
+		if (frontAstEventKind(kind)) {
+			return ["actions"];
+		}
+		if (kind === "callSequence") {
+			return ["variables"];
+		}
+		if (kind === "if") {
+			return ["then", "else"];
+		}
+		if (kind === "each") {
+			return ["default", "else"];
+		}
+		if (kind === "await") {
+			return ["pending", "then", "catch"];
+		}
+		if (kind === "table") {
+			return ["columns", "data"];
+		}
+		return [];
+	}
+
+	function frontAstSlotSpec(name) {
+		var specs = {
+			structure: { label: "Structure", kind: "frontendStructure", accepts: ["ui.block", "ui.directive"] },
+			events: { label: "Events", kind: "frontendEvents", accepts: ["ui.event"] },
+			actions: { label: "Actions", kind: "frontendSlot", accepts: ["ui.action"] },
+			variables: { label: "Variables", kind: "frontendActionVariables", accepts: ["ui.action.variable"] },
+			"default": { label: "Each", kind: "frontendSlot", accepts: ["ui.block", "ui.directive"] },
+			then: { label: "Then", kind: "frontendSlot", accepts: ["ui.block", "ui.directive"] },
+			"else": { label: "Else", kind: "frontendSlot", accepts: ["ui.block", "ui.directive"] },
+			pending: { label: "Pending", kind: "frontendSlot", accepts: ["ui.block", "ui.directive"] },
+			"catch": { label: "Catch", kind: "frontendSlot", accepts: ["ui.block", "ui.directive"] },
+			columns: { label: "Columns", kind: "frontendColumns", accepts: ["ui.table.column"] },
+			data: { label: "Data", kind: "frontendDataBindings", accepts: ["ui.data.binding"] }
+		};
+		return specs[name] || { label: frontAstTitle(name), kind: "frontendSlot", accepts: ["ui.block"] };
+	}
+
+	function frontAstSlotDefinition(name, path, writable) {
+		var spec = frontAstSlotSpec(name);
+		return {
+			id: name,
+			label: spec.label,
+			accepts: spec.accepts,
+			sourceMutationPath: path,
+			sourceWritable: writable !== false,
+			ordered: true
+		};
+	}
+
+	function frontAstSlotMap(name, path, writable) {
+		var out = {};
+		out[name] = frontAstSlotDefinition(name, path, writable);
+		return out;
+	}
+
+	function frontAstSlotDefinitionsForKinds(slots, path, writable) {
+		var out = {};
+		(slots || []).forEach(function (name) {
+			out[name] = frontAstSlotDefinition(name, path + ".slots." + name + ".children", writable);
+		});
+		return out;
+	}
+
+	function frontAstPropertyMutationPaths(props, path) {
+		var out = {};
+		Object.keys(props || {}).forEach(function (key) {
+			out[key] = path + ".props." + key;
+		});
+		return out;
+	}
+
+	function frontAstPropertyDefinitions(kind) {
+		var definitions = {
+			text: {
+				id: { label: "Id", kind: "text", type: "string" },
+				text: { label: "Text", kind: "text", type: "string" }
+			},
+			button: {
+				id: { label: "Id", kind: "text", type: "string" },
+				label: { label: "Label", kind: "text", type: "string" }
+			},
+			status: {
+				id: { label: "Id", kind: "text", type: "string" },
+				text: { label: "Text", kind: "text", type: "string" },
+				source: { label: "Source", kind: "path", type: "string" }
+			},
+			table: {
+				id: { label: "Id", kind: "text", type: "string" },
+				source: { label: "Source", kind: "path", type: "string" }
+			},
+			json: {
+				id: { label: "Id", kind: "text", type: "string" },
+				source: { label: "Source", kind: "path", type: "string" }
+			},
+			if: {
+				test: { label: "Condition", category: "Logic", kind: "expression", type: "string" }
+			},
+			callSequence: {
+				id: { label: "Id", category: "Base properties", type: "string" },
+				requestable: { label: "Requestable", category: "Action", kind: "requestable", type: "requestable" }
+			},
+			variable: {
+				name: { label: "Name", category: "Variable", type: "string" },
+				value: { label: "Value", category: "Variable", kind: "expression", type: "string" }
+			},
+			column: {
+				label: { label: "Label", kind: "text", type: "string" },
+				path: { label: "Path", kind: "path", type: "string" },
+				value: { label: "Value", kind: "path", type: "string" }
+			}
+		};
+		return definitions[kind] || {};
+	}
+
+	function frontAstTraits(kind) {
+		if (frontAstEventKind(kind)) {
+			return ["ui.event", "ui.container"];
+		}
+		if (kind === "if" || kind === "each" || kind === "await") {
+			return ["ui.directive", "ui.container"];
+		}
+		if (kind === "callSequence") {
+			return ["ui.action"];
+		}
+		if (kind === "variable") {
+			return ["ui.action.variable"];
+		}
+		if (kind === "column") {
+			return ["ui.table.column"];
+		}
+		if (kind === "button") {
+			return ["ui.block", "ui.interactive", "ui.events.owner"];
+		}
+		return ["ui.block"];
+	}
+
+	function frontAstDescriptorId(kind) {
+		if (kind === "text" || kind === "button" || kind === "status" || kind === "table" || kind === "json") {
+			return "svelte." + kind;
+		}
+		if (kind === "if" || kind === "each" || kind === "await" || kind === "callSequence" || kind === "variable" || kind === "column") {
+			return "frontbuilder.svelte." + (kind === "each" ? "forEach" : kind);
+		}
+		if (frontAstEventKind(kind)) {
+			return "frontbuilder.svelte." + kind;
+		}
+		return "";
+	}
+
+	function frontAstIcon(kind) {
+		var icons = {
+			text: "mdi:text-box-outline",
+			button: "mdi:gesture-tap-button",
+			status: "mdi:information-outline",
+			table: "mdi:table",
+			json: "mdi:code-json",
+			if: "mdi:source-branch",
+			each: "mdi:repeat",
+			await: "mdi:timer-sand",
+			callSequence: "mdi:play-box-outline",
+			variable: "mdi:variable",
+			column: "mdi:table-column",
+			dataBinding: "mdi:database-arrow-right-outline"
+		};
+		if (frontAstEventKind(kind)) {
+			return "mdi:flash";
+		}
+		return icons[kind] || "mdi:view-module-outline";
+	}
+
+	function frontAstActionIdFromRequestable(value) {
+		var parts = String(value || "").replace(/^\./, "").split(/[./]/).filter(Boolean);
+		return parts.length ? frontAstCanonicalKind(parts[parts.length - 1]) : "";
+	}
+
+	function frontAstEventTag(tag) {
+		return /^On[A-Z]/.test(String(tag || ""));
+	}
+
+	function frontAstSafeName(prefix, value) {
+		var name = String(value === undefined || value === null || value === "" ? prefix : value)
+			.replace(/[^A-Za-z0-9_]/g, "_")
+			.replace(/_+/g, "_");
+		if (!name) {
+			name = prefix || "item";
+		}
+		if (!name.charAt(0).match(/[A-Za-z_]/)) {
+			name = "_" + name;
+		}
+		return name;
 	}
 
 	function frontendSvelteResourceRoot(request) {
@@ -3774,9 +5358,19 @@
 	}
 
 	function frontbuilderNameForTarget(request) {
+		var payload = request.action && request.action.payload || {};
+		var explicit = String(payload.builder || payload.builderName || request.builder || request.builderName || "").trim();
+		if (explicit) {
+			return explicit;
+		}
 		var target = request.targetObject || {};
 		var path = String(target.path || "");
 		var match = path.match(/^frontends\.([A-Za-z0-9_]+)/);
+		if (match) {
+			return match[1];
+		}
+		var sourcePath = String(payload.sourcePath || request.sourcePath || request.sourceFile || "");
+		match = sourcePath.replace(/\\/g, "/").match(/\/libs\/flow\/frontbuilder\/([^/]+)\//);
 		if (match) {
 			return match[1];
 		}
@@ -3821,16 +5415,38 @@
 		if (explicit) {
 			return fileForProjectPath(projectRoot || new File("."), explicit);
 		}
-		var targetSource = String(targetInfo.sourcePath || "");
-		if (targetSource.endsWith(".front.json") || targetSource.endsWith("/+page.flow.svelte")) {
-			return fileForProjectPath(projectRoot || new File("."), targetSource);
+		var sources = [
+			payload.sourcePath,
+			request.sourcePath,
+			request.sourceFile,
+			targetInfo.sourcePath
+		];
+		for (var i = 0; i < sources.length; i++) {
+			var source = String(sources[i] || "");
+			var normalized = source.replace(/\\/g, "/");
+			if (normalized.endsWith(".front.json") || normalized.endsWith("/+page.flow.svelte")) {
+				return fileForProjectPath(projectRoot || new File("."), source);
+			}
 		}
 		return fileForProjectPath(projectRoot || new File("."), info.settings.modelPath || "");
 	}
 
 	function frontendSourceDrafts(request) {
-		var drafts = request && request.frontendSourceDrafts || {};
+		var drafts = request && (request.sourceDrafts || request.frontendSourceDrafts || request.drafts) || {};
 		return drafts && typeof drafts === "object" ? drafts : {};
+	}
+
+	function frontendDraftCount(request) {
+		return Object.keys(frontendSourceDrafts(request)).length;
+	}
+
+	function sourceDraftsFingerprint() {
+		var drafts = frontendSourceDrafts(activeRequest);
+		var parts = [];
+		Object.keys(drafts).sort().forEach(function (key) {
+			parts.push(canonicalPath(new File(String(key))) + ":" + sha256Hex(String(drafts[key])));
+		});
+		return parts.join("|");
 	}
 
 	function frontendDraftForFile(request, file) {
@@ -3842,7 +5458,25 @@
 		if (Object.prototype.hasOwnProperty.call(drafts, key)) {
 			return String(drafts[key]);
 		}
+		var absolute = String(file.getAbsolutePath());
+		if (Object.prototype.hasOwnProperty.call(drafts, absolute)) {
+			return String(drafts[absolute]);
+		}
+		var normalized = key.replace(/\\/g, "/");
+		var keys = Object.keys(drafts);
+		for (var i = 0; i < keys.length; i++) {
+			var draftKey = String(keys[i]);
+			var draftPath = draftKey.replace(/\\/g, "/");
+			if (draftPath === normalized) {
+				return String(drafts[draftKey]);
+			}
+		}
 		return null;
+	}
+
+	function sourceForFile(file) {
+		var draft = frontendDraftForFile(activeRequest, file);
+		return draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
 	}
 
 	function frontendDraftEntriesUnder(request, baseDir) {
@@ -3934,21 +5568,57 @@
 		};
 	}
 
-	function frontendRunDefinition(action, request, info, modelPath) {
-		var settings = info.settings || {};
+	function frontendRunCommandFor(action, npm, resourceRoot, projectRoot, modelPath, generatedRoot, generationMode) {
+		if (action === "installBuilder") {
+			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "install"];
+		}
+		if (action === "generate") {
+			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "exec", "--",
+				"tsx", "src-builder/cli.ts",
+				"--project-root", String(projectRoot.getAbsolutePath()),
+				"--model", String(modelPath.getAbsolutePath()),
+				"--mode", generationMode];
+		}
+		if (action === "installApp") {
+			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "install"];
+		}
+		if (action === "check") {
+			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "exec", "--",
+				"svelte-check", "--tsconfig", String(new File(generatedRoot, "tsconfig.json").getAbsolutePath())];
+		}
+		if (action === "build") {
+			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "exec", "--", "vite", "build"];
+		}
+		var error = new Error("Unsupported frontbuilder action: " + action + ". Use install, generate, check or build.");
+		error.code = "FRONTBUILDER_UNSUPPORTED_ACTION";
+		throw error;
+	}
+
+	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, modelPath, generatedRoot, generationMode, envValues) {
+		var cwd = stepAction === "installApp" || stepAction === "check" || stepAction === "build"
+			? generatedRoot
+			: resourceRoot;
+		var args = frontendRunCommandFor(stepAction, npm, resourceRoot, projectRoot, modelPath, generatedRoot, generationMode);
+		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
+		pb.directory(cwd);
+		pb.redirectErrorStream(true);
+		var env = pb.environment();
+		Object.keys(envValues || {}).forEach(function (key) {
+			env.put(String(key), String(envValues[key]));
+		});
+		frontendStudioLog("[Svelte frontbuilder] > " + args.join(" "));
+		var process = pb.start();
+		var output = frontendReadProcessOutput(process.getInputStream(), "Svelte frontbuilder");
+		var exitCode = process.waitFor();
+		frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
 		return {
-			version: 1,
-			nodes: [{
-				id: "frontbuilder_" + action,
-				block: "frontbuilder.svelte.run",
-				action: action,
-				projectRoot: "input.projectRoot",
-				resourceRoot: "input.resourceRoot",
-				modelPath: "input.modelPath",
-				sourceRoot: "input.sourceRoot",
-				buildOutput: "input.buildOutput",
-				out: "result.frontbuilder"
-			}]
+			action: stepAction,
+			command: args.join(" "),
+			cwd: String(cwd.getAbsolutePath()),
+			exitCode: exitCode,
+			stdout: output,
+			stderr: "",
+			ok: exitCode === 0
 		};
 	}
 
@@ -3962,19 +5632,47 @@
 			});
 		}
 		var effective = frontendEffectiveModelPath(request, info, modelPath);
-		var run;
+		var sourcePath = String((request.action && request.action.payload && request.action.payload.sourcePath) || request.sourcePath || request.sourceFile || "");
+		var draftCount = frontendDraftCount(request);
+		var settings = info.settings || {};
+		var projectRoot = frontendProjectRootFile(request);
+		var resourceRoot = frontendSvelteResourceRoot(request);
+		var generatedRoot = frontendGeneratedRootFile(request, info);
+		var generationMode = "incremental";
+		var sourceRoot = String(settings.privateDir || "_private/svelte");
+		var buildOutput = String(settings.buildOutput || "DisplayObjects/mobile");
+		var npm = frontendExecutable("npm");
+		var nodeBin = String(new File(npm).getParentFile().getAbsolutePath());
+		var envValues = {
+			FRONTBUILDER_PROJECT_ROOT: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
+			FRONTBUILDER_SOURCE_ROOT: sourceRoot,
+			FRONTBUILDER_BUILD_OUTPUT: buildOutput,
+			PATH: nodeBin + File.pathSeparator + String(Packages.java.lang.System.getenv("PATH") || "")
+		};
+		var actions = action === "install"
+			? ["installBuilder", "generate", "installApp"]
+			: action === "check" || action === "build"
+				? ["generate", "installApp", action]
+				: [action];
+		var steps = [];
+		var ok = true;
 		try {
-			run = runFlowRequest(Object.assign({}, request, {
-				definition: frontendRunDefinition(action, request, info, effective.file),
-				input: {
-					projectRoot: request.projectDir || "",
-					resourceRoot: info.settings.resourceRoot || "libs/flow/frontbuilder/svelte",
-					modelPath: effective.file ? String(effective.file.getAbsolutePath()) : (info.settings.modelPath || ""),
-					sourceRoot: info.settings.privateDir || "_private/svelte",
-					buildOutput: info.settings.buildOutput || "DisplayObjects/mobile"
-				},
-				includeTrace: false
-			}), blocks);
+			for (var i = 0; i < actions.length; i++) {
+				var step = frontendRunStep(actions[i], npm, resourceRoot, projectRoot, effective.file, generatedRoot, generationMode, envValues);
+				steps.push(step);
+				if (step.ok === false) {
+					ok = false;
+					break;
+				}
+			}
+		} catch (e) {
+			ok = false;
+			steps.push({
+				action: action,
+				ok: false,
+				exitCode: -1,
+				stdout: String(e && (e.message || e) || "")
+			});
 		} finally {
 			try {
 				if (effective.cleanup) {
@@ -3987,9 +5685,7 @@
 			} catch (e) {
 			}
 		}
-		var frontbuilder = run.result && run.result.frontbuilder || {};
-		var ok = run.ok !== false && frontbuilder.ok !== false;
-		var steps = (frontbuilder.steps || []).map(function (step) {
+		var compactSteps = steps.map(function (step) {
 			var out = {
 				action: step.action || "",
 				ok: step.ok !== false,
@@ -4007,10 +5703,15 @@
 			refresh: action === "generate" || action === "build",
 			details: {
 				action: action,
-				projectRoot: frontbuilder.projectRoot || request.projectDir || "",
-				sourceRoot: frontbuilder.sourceRoot || "",
-				buildOutput: frontbuilder.buildOutput || "",
-				steps: steps
+				projectRoot: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
+				resourceRoot: resourceRoot ? String(resourceRoot.getAbsolutePath()) : "",
+				modelPath: modelPath ? String(modelPath.getAbsolutePath()) : "",
+				effectiveModelPath: effective.file ? String(effective.file.getAbsolutePath()) : "",
+				sourcePath: sourcePath,
+				draftCount: draftCount,
+				sourceRoot: sourceRoot,
+				buildOutput: buildOutput,
+				steps: compactSteps
 			}
 		};
 	}
@@ -4035,14 +5736,203 @@
 		return String(request.projectDir || "") + "|" + String(info.name || "svelte");
 	}
 
+	function frontendProjectRootFile(request) {
+		return fileForProjectPath(new File("."), request.projectDir || "");
+	}
+
+	function frontendGeneratedRootFile(request, info) {
+		var settings = info && info.settings || {};
+		var projectRoot = frontendProjectRootFile(request);
+		return fileForProjectPath(projectRoot || new File("."), settings.privateDir || "_private/svelte");
+	}
+
+	function frontendDevStateFile(request, info) {
+		var generatedRoot = frontendGeneratedRootFile(request, info);
+		return generatedRoot ? new File(generatedRoot, ".flow-svelte-dev.json") : null;
+	}
+
+	function frontendConnects(host, port, timeoutMs) {
+		if (!port) {
+			return false;
+		}
+		var InetSocketAddress = Packages.java.net.InetSocketAddress;
+		var Socket = Packages.java.net.Socket;
+		var socket = null;
+		try {
+			socket = new Socket();
+			socket.connect(new InetSocketAddress(String(host || "127.0.0.1"), Number(port)), Number(timeoutMs || 300));
+			return true;
+		} catch (e) {
+			return false;
+		} finally {
+			try {
+				if (socket) {
+					socket.close();
+				}
+			} catch (ignored) {
+			}
+		}
+	}
+
+	function frontendProcessAlive(pid) {
+		if (!pid) {
+			return false;
+		}
+		try {
+			var optional = Packages.java.lang.ProcessHandle.of(Packages.java.lang.Long.valueOf(String(pid)));
+			return optional && optional.isPresent() && optional.get().isAlive();
+		} catch (e) {
+			return false;
+		}
+	}
+
+	function frontendDevAlive(entry) {
+		if (!entry) {
+			return false;
+		}
+		if (entry.process && typeof entry.process.isAlive === "function" && entry.process.isAlive()) {
+			return true;
+		}
+		if (frontendProcessAlive(entry.pid)) {
+			return true;
+		}
+		return frontendConnects("127.0.0.1", entry.port, 300);
+	}
+
+	function frontendReadDevState(request, info) {
+		var file = frontendDevStateFile(request, info);
+		if (!file || !file.isFile()) {
+			return null;
+		}
+		try {
+			var entry = JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+			entry.stateFile = String(file.getAbsolutePath());
+			entry.detected = "stateFile";
+			return entry;
+		} catch (e) {
+			try {
+				file["delete"]();
+			} catch (_ignoreDeleteState) {
+			}
+			return null;
+		}
+	}
+
+	function frontendReadDevLogState(request, info) {
+		var generatedRoot = frontendGeneratedRootFile(request, info);
+		var logFile = generatedRoot ? new File(generatedRoot, "vite-dev.log") : null;
+		if (!logFile || !logFile.isFile()) {
+			return null;
+		}
+		try {
+			var text = String(FileUtils.readFileToString(logFile, "UTF-8"));
+			var match = /https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/.exec(text);
+			if (!match) {
+				return null;
+			}
+			var port = Number(match[1]);
+			if (!frontendConnects("127.0.0.1", port, 300)) {
+				return null;
+			}
+			var projectRoot = frontendProjectRootFile(request);
+			return {
+				url: "http://localhost:" + port + "/",
+				port: port,
+				pid: frontendPidForPort(port),
+				projectRoot: projectRoot ? String(projectRoot.getAbsolutePath()) : "",
+				generatedRoot: String(generatedRoot.getAbsolutePath()),
+				logFile: String(logFile.getAbsolutePath()),
+				startedAt: new Date(logFile.lastModified()).toISOString(),
+				detected: "viteLog"
+			};
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function frontendWriteDevState(request, info, entry) {
+		var file = frontendDevStateFile(request, info);
+		if (!file || !entry) {
+			return;
+		}
+		var state = {
+			url: entry.url || "",
+			port: entry.port || 0,
+			pid: entry.pid || 0,
+			projectRoot: entry.projectRoot || "",
+			generatedRoot: entry.generatedRoot || "",
+			logFile: entry.logFile || "",
+			startedAt: entry.startedAt || new Date().toISOString()
+		};
+		frontendWriteFile(file, JSON.stringify(state, null, 2) + "\n");
+		entry.stateFile = String(file.getAbsolutePath());
+	}
+
+	function frontendDeleteDevState(request, info) {
+		var file = frontendDevStateFile(request, info);
+		if (file && file.isFile()) {
+			try {
+				file["delete"]();
+			} catch (e) {
+			}
+		}
+	}
+
+	function frontendCommandOutput(args) {
+		try {
+			var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
+			pb.redirectErrorStream(true);
+			var process = pb.start();
+			var output = frontendReadProcessOutput(process.getInputStream(), "Svelte dev state");
+			process.waitFor();
+			return String(output || "");
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function frontendPidForPort(port) {
+		if (!port) {
+			return 0;
+		}
+		var lsof = new File("/usr/sbin/lsof").isFile() ? "/usr/sbin/lsof" : "lsof";
+		var output = frontendCommandOutput([lsof, "-nP", "-iTCP:" + Number(port), "-sTCP:LISTEN", "-t"]);
+		var lines = output.split(/\r?\n/);
+		for (var i = 0; i < lines.length; i++) {
+			var pid = Number(String(lines[i] || "").trim());
+			if (pid > 0) {
+				return pid;
+			}
+		}
+		return 0;
+	}
+
 	function frontendDevEntry(request, info) {
 		var key = frontendDevKey(request, info);
 		var entry = runtimeState.frontendDevServers[key];
-		if (entry && entry.process && typeof entry.process.isAlive === "function" && !entry.process.isAlive()) {
+		if (entry && !frontendDevAlive(entry)) {
 			delete runtimeState.frontendDevServers[key];
-			return null;
+			frontendDeleteDevState(request, info);
+			entry = null;
 		}
-		return entry || null;
+		if (entry) {
+			return entry;
+		}
+		entry = frontendReadDevState(request, info);
+		if (entry && frontendDevAlive(entry)) {
+			runtimeState.frontendDevServers[key] = entry;
+			return entry;
+		}
+		if (entry) {
+			frontendDeleteDevState(request, info);
+		}
+		entry = frontendReadDevLogState(request, info);
+		if (entry && frontendDevAlive(entry)) {
+			runtimeState.frontendDevServers[key] = entry;
+			frontendWriteDevState(request, info, entry);
+			return entry;
+		}
+		return null;
 	}
 
 	function frontendDevDetails(entry) {
@@ -4055,7 +5945,9 @@
 			projectRoot: entry.projectRoot,
 			generatedRoot: entry.generatedRoot,
 			logFile: entry.logFile,
-			startedAt: entry.startedAt
+			startedAt: entry.startedAt,
+			pid: entry.pid || 0,
+			stateFile: entry.stateFile || ""
 		};
 	}
 
@@ -4202,6 +6094,18 @@
 		return false;
 	}
 
+	function frontendStudioBrowser(request, url, title, kind) {
+		var projectName = frontendProjectName(request) || "project";
+		return {
+			id: "flow.frontend:" + projectName + ":" + String(kind || "preview"),
+			title: String(title || "Flow frontend"),
+			project: projectName,
+			url: String(url || ""),
+			tooltip: String(url || ""),
+			kind: String(kind || "preview")
+		};
+	}
+
 	function frontendStartDev(request, blocks) {
 		var info = frontbuilderSettingsForRequest(request);
 		var existing = frontendDevEntry(request, info);
@@ -4211,6 +6115,7 @@
 				title: "Svelte dev mode",
 				message: "Svelte dev mode is already running.",
 				openUrl: existing.url,
+				browser: frontendStudioBrowser(request, existing.url, "Svelte dev mode", "frontbuilder.svelte.dev"),
 				details: frontendDevDetails(existing)
 			};
 		}
@@ -4273,6 +6178,7 @@
 		var entry = {
 			url: url,
 			port: port,
+			pid: typeof process.pid === "function" ? Number(process.pid()) : 0,
 			projectRoot: String(projectRoot.getAbsolutePath()),
 			generatedRoot: String(generatedRoot.getAbsolutePath()),
 			logFile: String(logFile.getAbsolutePath()),
@@ -4281,13 +6187,46 @@
 			process: process
 		};
 		runtimeState.frontendDevServers[frontendDevKey(request, info)] = entry;
+		frontendWriteDevState(request, info, entry);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
 			message: "Svelte dev mode started.",
 			openUrl: url,
+			browser: frontendStudioBrowser(request, url, "Svelte dev mode", "frontbuilder.svelte.dev"),
 			details: frontendDevDetails(entry)
 		};
+	}
+
+	function frontendDestroyDevProcess(entry) {
+		if (!entry) {
+			return;
+		}
+		try {
+			if (entry.process && typeof entry.process.destroy === "function") {
+				entry.process.destroy();
+			}
+		} catch (e) {
+		}
+		try {
+			if (entry.pid) {
+				var optional = Packages.java.lang.ProcessHandle.of(Packages.java.lang.Long.valueOf(String(entry.pid)));
+				if (optional && optional.isPresent()) {
+					var handle = optional.get();
+					var Consumer = Packages.java.util.function.Consumer;
+					handle.descendants().forEach(new Consumer({
+						accept: function (child) {
+							try {
+								child.destroy();
+							} catch (e) {
+							}
+						}
+					}));
+					handle.destroy();
+				}
+			}
+		} catch (e2) {
+		}
 	}
 
 	function frontendStopDev(request) {
@@ -4301,16 +6240,40 @@
 				message: "Svelte dev mode is not running."
 			};
 		}
-		try {
-			entry.process.destroy();
-		} catch (e) {
-		}
+		frontendDestroyDevProcess(entry);
 		delete runtimeState.frontendDevServers[key];
+		frontendDeleteDevState(request, info);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
 			message: "Svelte dev mode stopped."
 		};
+	}
+
+	function frontendSyncDev(request, blocks) {
+		var info = frontbuilderSettingsForRequest(request);
+		var entry = frontendDevEntry(request, info);
+		if (!entry) {
+			var sourcePath = String((request.action && request.action.payload && request.action.payload.sourcePath) || request.sourcePath || request.sourceFile || "");
+			return {
+				ok: true,
+				title: "Svelte dev mode",
+				message: "Svelte dev mode is not running; generated source was not updated.",
+				generated: false,
+				details: {
+					sourcePath: sourcePath,
+					draftCount: frontendDraftCount(request)
+				}
+			};
+		}
+		var generated = frontendRunAction(request, blocks, "generate");
+		generated.title = "Svelte dev mode";
+		generated.generated = generated.ok !== false;
+		generated.dev = frontendDevDetails(entry);
+		generated.message = generated.ok === false
+			? "Svelte dev source update failed."
+			: "Svelte dev source updated.";
+		return generated;
 	}
 
 	function frontendOpenDev(request) {
@@ -4328,6 +6291,7 @@
 			title: "Svelte dev mode",
 			message: "Opening Svelte dev mode.",
 			openUrl: entry.url,
+			browser: frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev"),
 			details: frontendDevDetails(entry)
 		};
 	}
@@ -4365,14 +6329,14 @@
 					"Stop the Vite dev server started for this frontend.", "Svelte dev",
 					{}, "", "", !!dev));
 				items.push(contextMenuItem("frontbuilder.svelte.dev.open", "Open dev mode",
-					"Open the running Vite dev server in the default browser.", "Svelte dev",
+					"Open the running Vite dev server in a Studio browser.", "Svelte dev",
 					{}, "", "", !!dev));
 				items.push(contextMenuItem("frontbuilder.svelte.generate", "Update generated source",
 					"Regenerate the Svelte sources under the project private directory.", "Svelte build"));
 				items.push(contextMenuItem("frontbuilder.svelte.build", "Build prod",
 					"Generate and build production assets under DisplayObjects/mobile.", "Svelte build"));
 				items.push(contextMenuItem("frontbuilder.svelte.openBuilt", "Open built prod",
-					"Open the built production frontend in the default browser.", "Svelte build"));
+					"Open the built production frontend in a Studio browser.", "Svelte build"));
 			}
 		}
 		return {
@@ -4458,8 +6422,12 @@
 				ok: builtUrl !== "",
 				title: "Svelte frontbuilder",
 				message: builtUrl ? "Opening built production frontend." : "Unable to resolve built production URL.",
-				openUrl: builtUrl
+				openUrl: builtUrl,
+				browser: builtUrl ? frontendStudioBrowser(request, builtUrl, "Svelte production frontend", "frontbuilder.svelte.prod") : null
 			};
+		}
+		if (id === "frontbuilder.svelte.dev.sync") {
+			return frontendSyncDev(request, blocks);
 		}
 		if (id === "frontbuilder.svelte.dev.start") {
 			return frontendStartDev(request, blocks);
@@ -4644,7 +6612,13 @@
 	function engineCall(operation, requestJson, callback) {
 		try {
 			var request = parseRequest(requestJson);
-			return response(callback(request));
+			var previousRequest = activeRequest;
+			activeRequest = request;
+			try {
+				return response(callback(request));
+			} finally {
+				activeRequest = previousRequest;
+			}
 		} catch (e) {
 			return response(failure(operation, e));
 		}
@@ -4792,11 +6766,14 @@
 					limit: request.limit,
 					cursor: request.cursor
 				}));
-				try {
-					out.frontendBlocks = frontendBlocksForConfig(projectEngineDefinitionForRequest(request).config || {});
-				} catch (e) {
-					out.frontendBlocks = [];
-				}
+					try {
+						var projectConfig = projectEngineDefinitionForRequest(request).config || {};
+						out.frontendBlocks = frontendBlocksForConfig(projectConfig);
+						out.frontendCreateDescriptors = frontendCreateDescriptorsForConfig(projectConfig);
+					} catch (e) {
+						out.frontendBlocks = [];
+						out.frontendCreateDescriptors = [];
+					}
 				return out;
 			});
 		},
@@ -4804,6 +6781,24 @@
 		describeTree: function (requestJson) {
 			return engineCall("describeTree", requestJson, function (request) {
 				return describeTreeRequest(request, loadBlocks());
+			});
+		},
+
+		authoringTree: function (requestJson) {
+			return engineCall("authoringTree", requestJson, function (request) {
+				return authoringTreeRequest(request, loadBlocks());
+			});
+		},
+
+		authoringPalette: function (requestJson) {
+			return engineCall("authoringPalette", requestJson, function (request) {
+				return authoringPaletteRequest(request, loadBlocks());
+			});
+		},
+
+		authoringMutate: function (requestJson) {
+			return engineCall("authoringMutate", requestJson, function (request) {
+				return authoringMutateRequest(request, loadBlocks());
 			});
 		},
 

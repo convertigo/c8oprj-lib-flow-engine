@@ -27,8 +27,14 @@
 		};
 	}
 
+	function sourceForFile(file, env) {
+		return String(typeof env.sourceForFile === "function"
+			? env.sourceForFile(file)
+			: env.FileUtils.readFileToString(file, "UTF-8"));
+	}
+
 	function loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, env) {
-		var code = String(env.FileUtils.readFileToString(file, "UTF-8"));
+		var code = sourceForFile(file, env);
 		var name = nameFromBlockFile(file, blocksDir, ".block.js", env);
 		var compiled = env.compileProjectBlockCode(blocks, name, code, {
 			allowPrimitiveRhino: origin !== "project"
@@ -40,7 +46,7 @@
 	}
 
 	function reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, env) {
-		var code = String(env.FileUtils.readFileToString(file, "UTF-8"));
+		var code = sourceForFile(file, env);
 		var name = nameFromBlockFile(file, blocksDir, ".block.js", env);
 		ensureNotDuplicate(blocks, name, "Rename the project block or remove the duplicate.", env);
 		var extracted = env.extractFlowScriptBlockMeta(code);

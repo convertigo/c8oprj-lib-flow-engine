@@ -136,6 +136,12 @@
 			});
 			key.push("project", env.canonicalPath(env.projectDir()), env.directoryFingerprint(localBlocksDir));
 		}
+		if (typeof env.sourceDraftsFingerprint === "function") {
+			var draftsFingerprint = env.sourceDraftsFingerprint();
+			if (draftsFingerprint) {
+				key.push("drafts", draftsFingerprint);
+			}
+		}
 		return key.join("\n");
 	}
 

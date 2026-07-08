@@ -212,6 +212,12 @@
 					null, "Pass code to flow-block-code-set, or descriptor/implementationSource for compatibility.");
 			}
 			overwrite = overwrite === true || request.overwrite === true;
+			if (request.code !== undefined && request.code !== null) {
+				return setProjectBlockCode(blocks, name, {
+					code: request.code,
+					overwrite: overwrite
+				}).block;
+			}
 			var descriptorFile = projectBlockDescriptorFile(name);
 			var codeFile = projectBlockCodeFile(name);
 			var block = blocks[String(name || "")];

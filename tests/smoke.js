@@ -26,6 +26,23 @@ function findChild(parent, name) {
 	return null;
 }
 
+function findNode(parent, predicate) {
+	if (!parent) {
+		return null;
+	}
+	if (predicate(parent)) {
+		return parent;
+	}
+	var children = parent.children || [];
+	for (var i = 0; i < children.length; i++) {
+		var found = findNode(children[i], predicate);
+		if (found) {
+			return found;
+		}
+	}
+	return null;
+}
+
 var flowSource = [
 	"version: 1",
 	"nodes:",
@@ -745,6 +762,56 @@ assertTrue(flowBackedBlockGet.implementationRuntime === "flow" &&
 	flowBackedBlockGet.code.indexOf("function flowBacked") !== -1 &&
 	flowBackedBlockGet.implementationSource.indexOf("block: \"return\"") !== -1,
 	"blockGet did not expose Flow implementation source");
+var sourceMutationBlockSource = [
+	"const _meta = {",
+	"\t\"description\": \"FlowScript block source mutation smoke.\",",
+	"\t\"runtime\": \"flow\",",
+	"\t\"properties\": {",
+	"\t\t\"one\": { \"type\": \"string\" },",
+	"\t\t\"two\": { \"type\": \"string\" }",
+	"\t},",
+	"\t\"outputs\": {",
+	"\t\t\"out\": {",
+	"\t\t\t\"type\": \"object\"",
+	"\t\t}",
+	"\t}",
+	"}",
+	"",
+	"function sourceMutation({ input, result }) {",
+	"\tresult.one = input.one",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.sourceMutation",
+	code: sourceMutationBlockSource
+}))).ok === true, "blockCodeSet did not create sourceMutation");
+var sourceMutationFile = new java.io.File(projectDirFile, "libs/flow/blocks/smoke/sourceMutation.block.js");
+var sourceMutationResponse = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(sourceMutationFile.getAbsolutePath()),
+	sourcePath: String(sourceMutationFile.getAbsolutePath()),
+	flowSource: sourceMutationBlockSource,
+	projectDir: String(projectDirFile.getAbsolutePath()),
+	mutation: {
+		op: "append",
+		path: "nodes",
+		value: {
+			id: "setTwo",
+			block: "set",
+			path: "result.two",
+			value: "{{ input.two }}"
+		}
+	}
+})));
+assertTrue(sourceMutationResponse.ok === true &&
+	sourceMutationResponse.format === "blockjs" &&
+	sourceMutationResponse.name === "smoke.sourceMutation" &&
+	sourceMutationResponse.source.indexOf("const _meta") !== -1 &&
+	sourceMutationResponse.source.indexOf("FlowScript block source mutation smoke.") !== -1 &&
+	sourceMutationResponse.source.indexOf("function sourceMutation") !== -1 &&
+	sourceMutationResponse.source.indexOf("function Flow") === -1,
+	"applySourceMutation did not preserve canonical FlowScript block source");
 var stringLatitudeBlockSource = [
 	"const _meta = {",
 	"\t\"description\": \"Block with an intentionally narrow latitude contract.\",",
@@ -2642,6 +2709,180 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	].join("\n"),
 	"UTF-8"
 );
+var frontendRoot = new java.io.File(projectDirFile, "libs/flow/frontbuilder/svelte");
+var frontendUiDir = new java.io.File(frontendRoot, "ui/project");
+frontendUiDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(frontendUiDir, "Text.uiblock.json"), JSON.stringify({
+	id: "project.text",
+	label: "Text",
+	category: "Project / UI blocks",
+	kind: "widget",
+	tag: "Text",
+	targetKinds: ["frontendStructure"],
+	acceptedPositions: ["inside"],
+	insert: {
+		id: "text",
+		kind: "text",
+		text: "Text"
+	},
+	properties: {
+		text: {
+			label: "Text",
+			kind: "text",
+			type: "string"
+		}
+	}
+}, null, 2), "UTF-8");
+var frontendEngineSource = [
+	"version: 1",
+	"config:",
+	"  frontbuilder:",
+	"    svelte:",
+	"      target: svelte5",
+	"      resourceRoot: libs/flow/frontbuilder/svelte",
+	"      modelPath: libs/flow/frontbuilder/svelte/model/App.front.json",
+	""
+].join("\n");
+var authoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	engineSource: frontendEngineSource,
+	detail: "full"
+})));
+var authoringProvider = findNode(authoringTree, function (node) {
+	return node.type === "frontendBlockProvider" && node.summary === String(projectDirFile.getName());
+});
+assertTrue(authoringProvider !== null, "authoring-tree did not expose the current project as a frontend catalog provider");
+var authoringTextBlock = findNode(authoringProvider, function (node) {
+	return node.kind === "frontendBlock" && node.type === "project.text";
+});
+assertTrue(authoringTextBlock !== null && authoringTextBlock.info.indexOf("\"sourceWritable\":true") !== -1,
+	"authoring-tree did not expose project Text as a writable source-backed frontend UI block");
+var authoringUiBlocks = findNode(authoringProvider, function (node) {
+	return node.type === "frontendBlocks";
+});
+assertTrue(authoringUiBlocks !== null, "authoring-tree did not expose the project UI blocks folder");
+var createFrontendPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	engineSource: frontendEngineSource,
+	focusPath: authoringUiBlocks.path
+})));
+assertTrue(createFrontendPalette.ok === true &&
+	createFrontendPalette.items.some(function (item) { return item.id === "frontbuilder.svelte.flowUiBlock"; }) &&
+	createFrontendPalette.items.some(function (item) { return item.id === "frontbuilder.svelte.svelteUiBlock"; }),
+	"authoring-palette did not propose source-backed UI block creation actions on writable project UI blocks");
+var fallbackFrontendPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	engineSource: frontendEngineSource,
+	focusPath: authoringTextBlock.path
+})));
+assertTrue(fallbackFrontendPalette.ok === true && fallbackFrontendPalette.eligibleCount > 0 &&
+	fallbackFrontendPalette.fallback && fallbackFrontendPalette.fallback.available === true &&
+	fallbackFrontendPalette.fallback.applied === true &&
+	fallbackFrontendPalette.items.some(function (item) { return item.id === "frontbuilder.svelte.flowUiBlock"; }),
+	"authoring-palette did not apply parent fallback for a frontend definition leaf focus");
+
+var flowSvelteModelDir = new java.io.File(frontendRoot, "model/AstSmoke");
+var flowSvelteComponentDir = new java.io.File(flowSvelteModelDir, "components");
+flowSvelteComponentDir.mkdirs();
+var flowSveltePageFile = new java.io.File(flowSvelteModelDir, "+page.flow.svelte");
+var flowSvelteComponentFile = new java.io.File(flowSvelteComponentDir, "SmokePanel.flow.svelte");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
+	"<script module>",
+	"  export const _flow = {",
+	"    app: { id: \"AstSmoke\", title: \"Ast smoke\" },",
+	"    page: { id: \"home\", route: \"/\", title: \"Ast smoke\" },",
+	"    builder: { id: \"lib_flow_frontbuilder_svelte\" }",
+	"  };",
+	"</script>",
+	"",
+	"<FlowComponent id=\"home\" label=\"Ast smoke\">",
+	"  <Structure>",
+	"    <SmokePanel id=\"smokePanel1\" />",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n"), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSvelteComponentFile, [
+	"<FlowComponent id=\"smokePanel\" label=\"Smoke panel\">",
+	"  <Structure>",
+	"    <Text id=\"first\" text=\"First\" />",
+	"    <If id=\"guard\" test={ready}>",
+	"      <Then>",
+	"        <Text id=\"inside\" text=\"Inside\" />",
+	"      </Then>",
+	"    </If>",
+	"    <Text id=\"last\" text=\"Last\" />",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n"), "UTF-8");
+var flowSvelteEngineSource = [
+	"version: 1",
+	"config:",
+	"  frontbuilder:",
+	"    svelte:",
+	"      target: svelte5",
+	"      resourceRoot: libs/flow/frontbuilder/svelte",
+	"      modelPath: libs/flow/frontbuilder/svelte/model/AstSmoke/+page.flow.svelte",
+	""
+].join("\n");
+var flowSvelteTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "full"
+})));
+function nodeInfoObject(node) {
+	return node && node.info ? JSON.parse(node.info) : {};
+}
+var smokePanelRoot = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendComponent" && node.summary === "Smoke panel";
+});
+var smokePanelRouteRef = findNode(flowSvelteTree, function (node) {
+	return node.type === "SmokePanel" && node.summary === "smokePanel1";
+});
+var smokeIf = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendDirectiveBlock" && node.summary === "If";
+});
+assertTrue(nodeInfoObject(smokePanelRoot).frontendInsertMutationPath === "frontAst.slots.structure.children",
+	"flow-svelte component root did not expose the AST structure insert path");
+assertTrue(smokePanelRouteRef !== null,
+	"flow-svelte canonical route page did not expose the referenced component instance");
+assertTrue(nodeInfoObject(smokeIf).frontendInsertMutationPath === "frontAst.slots.structure.children[1].slots.then.children",
+	"flow-svelte directive did not expose its default AST insert slot");
+var flowSvelteMoveSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowSvelteComponentFile, "UTF-8"));
+var flowSvelteMove = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteMoveSource,
+	mutation: {
+		op: "move",
+		from: "frontAst.slots.structure.children[2]",
+		fromId: "last",
+		path: "frontAst.slots.structure.children",
+		index: 1
+	}
+})));
+assertTrue(flowSvelteMove.ok === true && String(flowSvelteMove.source).indexOf("id=\"last\"") < String(flowSvelteMove.source).indexOf("id=\"guard\""),
+	"flow-svelte AST move did not reorder siblings");
+var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "full",
+	frontendSourceDrafts: (function () {
+		var drafts = {};
+		drafts[String(flowSvelteComponentFile.getCanonicalPath())] = flowSvelteMove.source;
+		return drafts;
+	})()
+})));
+var smokePanelCatalogRoot = findNode(flowSvelteDraftTree, function (node) {
+	return node.kind === "frontendComponent" && node.summary === "Smoke panel" &&
+		String(node.path || "").indexOf(".catalog.") !== -1;
+});
+var smokePanelCatalogStructure = findNode(smokePanelCatalogRoot, function (node) {
+	return node.type === "structure";
+});
+assertTrue(smokePanelCatalogStructure && smokePanelCatalogStructure.children.length >= 3 &&
+	smokePanelCatalogStructure.children[1].summary === "Last",
+	"flow-svelte catalog tree did not use the live frontend source draft");
 var describedEngineTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: [

@@ -51,6 +51,7 @@
 		var schemaSummary = env.schemaSummary;
 		var objectSchema = env.objectSchema;
 		var frontendBlocksForSettings = env.frontendBlocksForSettings || function () { return []; };
+		var frontendCreateDescriptorsForSettings = env.frontendCreateDescriptorsForSettings || function () { return []; };
 		var describeFrontendDocument = env.describeFrontendDocument || function () { return null; };
 		var raise = env.raise;
 		var intOption = env.intOption;
@@ -230,6 +231,28 @@
 		addObjectFields(folder, config, path);
 	}
 
+	function addEngineMetadata(out, engine, path) {
+		engine = engine || {};
+		var definition = {
+			version: engine.version || 1,
+			engineQName: String(engine.engineQName || "")
+		};
+		var info = sourceObjectInfo(definition, {
+			version: propertyDefinition("Version", "Information", "Flow engine config version.", {
+				readOnly: true,
+				kind: "number",
+				type: "number"
+			}),
+			engineQName: propertyDefinition("Engine QName", "Information", "Convertigo FlowEngine object used by this project.", {
+				readOnly: true,
+				kind: "text",
+				type: "string"
+			})
+		}, ["version", "engineQName"]);
+		out.push(virtualNode("engine", "engine", "engine", path,
+			definition.engineQName || "Flow engine", compact(definition), compact(info), "mdi:state-machine"));
+	}
+
 	function frontbuilderSettings(config) {
 		var root = config && config.frontbuilder;
 		if (!root || typeof root !== "object") {
@@ -293,7 +316,7 @@
 		return file && String(file.getName()).endsWith(".flow.svelte");
 	}
 
-	function frontendModelObject(request, file, settings) {
+	function frontendModelDocument(request, file, settings) {
 		var source = frontendModelSource(request, file);
 		if (isFlowSvelteModel(file)) {
 			var described = describeFrontendDocument({
@@ -307,14 +330,26 @@
 			if (!described || !described.model) {
 				throw new Error("Frontend document service did not return a model for " + String(file.getAbsolutePath()));
 			}
-			return normalizeTree(described.model);
+			return normalizeTree(described);
 		}
-		return normalizeTree(JSON.parse(source));
+		return {
+			model: normalizeTree(JSON.parse(source))
+		};
+	}
+
+	function frontendModelObject(request, file, settings) {
+		return normalizeTree(frontendModelDocument(request, file, settings).model);
 	}
 
 	function lowerFirst(value) {
 		value = String(value || "");
 		return value ? value.charAt(0).toLowerCase() + value.substring(1) : value;
+	}
+
+	function titleFromCamel(value) {
+		value = String(value || "").replace(/[_-]+/g, " ");
+		value = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+		return value ? value.charAt(0).toUpperCase() + value.substring(1) : "Node";
 	}
 
 	function frontendSourceInfo(file, kind, mutationPath, request) {
@@ -339,6 +374,7 @@
 	}
 
 	function addFrontendBuilder(parent, name, settings, path, request) {
+		settings = settings || {};
 		var modelFile = frontendModelFile(settings.modelPath);
 		var definition = {
 			id: name,
@@ -350,7 +386,7 @@
 		};
 		var sourceInfo = frontendSourceInfo(modelFile, "frontend-model", "", request);
 		var builder = virtualNode("builder_" + name, "frontendBuilder", name, path,
-			"SvelteBuilder " + name, compact(definition),
+			name === "svelte" ? "Svelte builder" : name + " builder", compact(definition),
 			compact(sourceObjectInfo(sourceInfo, frontendBuilderPropertyDefinitions(),
 				["id", "target", "modelPath", "privateDir", "buildOutput", "resourceRoot", "sourceRelativePath", "sourceWritable", "sourceDirty"])),
 			"mdi:application-braces-outline");
@@ -363,7 +399,7 @@
 				}), compact(sourceObjectInfo(sourceInfo, frontendSourcePropertyDefinitions(),
 					["sourceRelativePath", "sourceWritable", "sourceDirty"])), "mdi:file-code-outline"));
 		}
-		addFrontendUiBlocks(builder, name, settings, path + ".uiBlocks");
+		addFrontendBlockCatalog(builder, name, settings, path, request);
 		if (!settings.modelPath) {
 			return;
 		}
@@ -373,14 +409,19 @@
 			return;
 		}
 		try {
-			var model = frontendModelObject(request, modelFile, settings);
+			var document = frontendModelDocument(request, modelFile, settings);
+			var model = normalizeTree(document.model);
 			builder.definition = compact(Object.assign(definition, {
 				appId: model.app && model.app.id || "",
 				title: model.app && model.app.title || "",
 				modelVersion: model.version || "",
 				dirty: frontendModelDirty(request, modelFile)
 			}));
-			addFrontendModelTree(builder, model, path + ".model", modelFile);
+			if (document.tree && document.tree.children) {
+				addFrontendAuthoringTree(builder, document.tree, path + ".authoring", modelFile);
+			} else {
+				addFrontendModelTree(builder, model, path + ".model", modelFile);
+			}
 		} catch (e) {
 			builder.children.push(virtualNode("modelError", "error", "frontendModel", path + ".model",
 				"Invalid model: " + String(e && e.message || e), compact({ error: String(e && e.message || e) }), null, "mdi:alert-outline"));
@@ -391,7 +432,7 @@
 		return {
 			id: propertyDefinition("Builder", "Base properties", "Frontend builder family.", { readOnly: true }),
 			target: propertyDefinition("Target", "Base properties", "Frontend target runtime.", { readOnly: true }),
-			modelPath: propertyDefinition("Model path", "Base properties", "Project-relative frontend model source.", { readOnly: true }),
+			modelPath: propertyDefinition("Model path", "Base properties", "Project-relative frontend model source.", { readOnly: true, hidden: true }),
 			privateDir: propertyDefinition("Private dir", "Build", "Generated source directory.", { readOnly: true }),
 			buildOutput: propertyDefinition("Build output", "Build", "Production output directory.", { readOnly: true }),
 			resourceRoot: propertyDefinition("Resource root", "Build", "Builder resource directory.", { readOnly: true }),
@@ -409,55 +450,675 @@
 		};
 	}
 
-	function addFrontendUiBlocks(parent, name, settings, path) {
+	function addFrontendBlockCatalog(parent, name, settings, path, request) {
 		var blocks = frontendBlocksForSettings(name, settings) || [];
-		if (blocks.length === 0) {
+		var createDescriptors = frontendCreateDescriptorsForSettings(name, settings) || [];
+		if (blocks.length === 0 && createDescriptors.length === 0) {
 			return;
 		}
-		var folder = virtualNode("uiBlocks", "folder", "frontendBlocks", path,
-			"UI blocks", compact({ count: blocks.length }), null, "mdi:widgets-outline");
-		parent.children.push(folder);
-		var groups = {};
+		var catalog = virtualNode("catalog", "folder", "frontendBlockCatalog", path + ".catalog",
+			"Catalog", compact({
+				count: blocks.length
+			}), null, "mdi:library-shelves");
+		parent.children.push(catalog);
+		var providers = {};
 		blocks.forEach(function (block) {
-			var category = String(block.category || "Svelte / Widgets");
-			var categoryKey = safeVirtualName("category", category);
-			if (!groups[categoryKey]) {
-				groups[categoryKey] = virtualNode("category_" + categoryKey, "folder", "frontendBlockCategory",
-					path + "." + categoryKey, category, compact({ category: category }), null, "mdi:folder-outline");
-				folder.children.push(groups[categoryKey]);
+			var provider = frontendCatalogProvider(block);
+			if (!providers[provider]) {
+				providers[provider] = [];
 			}
-			var blockInfo = sourceObjectInfo(sourceDefinitionForFile(block.file || block.sourcePath || "", "frontend-block"),
+			providers[provider].push(block);
+		});
+		var projectProvider = currentFrontendProjectProvider();
+		if (!providers[projectProvider]) {
+			providers[projectProvider] = [];
+		}
+		Object.keys(providers).sort(function (a, b) {
+			if (a === projectProvider) {
+				return -1;
+			}
+			if (b === projectProvider) {
+				return 1;
+			}
+			return a.localeCompare(b);
+		}).forEach(function (provider) {
+			addFrontendProviderCatalog(catalog, name, projectProvider, provider, providers[provider],
+				path + ".catalog." + safeVirtualName("provider", provider), settings, request);
+		});
+	}
+
+	function currentFrontendProjectProvider() {
+		var dir = projectDir ? projectDir() : null;
+		return dir ? String(dir.getName()) : "project";
+	}
+
+	function frontendCatalogProvider(block) {
+		return String(block && block.provider || "project") || "project";
+	}
+
+	function frontendCatalogNamespace(block) {
+		return String(block && block.namespace || "_root") || "_root";
+	}
+
+	function addFrontendProviderCatalog(parent, name, projectProvider, provider, blocks, path, settings, request) {
+		var writable = provider === projectProvider;
+		var definition = {
+			provider: provider,
+			count: blocks.length,
+			sourceWritable: writable
+		};
+		var info = sourceObjectInfo(definition, frontendCatalogProviderPropertyDefinitions(), ["provider", "count", "sourceWritable"]);
+		var providerNode = virtualNode("provider_" + safeVirtualName("provider", provider), "folder", "frontendBlockProvider",
+			path, provider, compact(definition), compact(info), writable ? "mdi:folder-account-outline" : "mdi:package-variant-closed");
+		parent.children.push(providerNode);
+		var namespaces = {};
+		blocks.forEach(function (block) {
+			var namespace = frontendCatalogNamespace(block);
+			if (!namespaces[namespace]) {
+				namespaces[namespace] = [];
+			}
+			namespaces[namespace].push(block);
+		});
+		if (writable && !namespaces.project) {
+			namespaces.project = [];
+		}
+		Object.keys(namespaces).sort(function (a, b) {
+			if (a === "project") {
+				return -1;
+			}
+			if (b === "project") {
+				return 1;
+			}
+			return a.localeCompare(b);
+		}).forEach(function (namespace) {
+			addFrontendNamespaceCatalog(providerNode, name, namespace, namespaces[namespace],
+				path + "." + safeVirtualName("namespace", namespace), settings, writable, request);
+		});
+	}
+
+	function addFrontendNamespaceCatalog(parent, name, namespace, blocks, path, settings, writable, request) {
+		var definition = {
+			namespace: namespace === "_root" ? "" : namespace,
+			count: blocks.length,
+			sourceWritable: writable === true
+		};
+		var info = sourceObjectInfo(definition, frontendCatalogNamespacePropertyDefinitions(), ["namespace", "count", "sourceWritable"]);
+		var label = namespace === "_root" ? "(root)" : namespace;
+		var namespaceNode = virtualNode("namespace_" + safeVirtualName("namespace", namespace), "folder", "frontendBlockNamespace",
+			path, label, compact(definition), compact(info), writable ? "mdi:folder-pound-outline" : "mdi:folder-outline");
+		parent.children.push(namespaceNode);
+		addFrontendBlocksFolder(namespaceNode, name, blocks.filter(frontendStructureBlock), path + ".structureBlocks",
+			"structureBlocks", "frontendStructureBlocks", "Structure blocks", "mdi:shape-outline", settings, writable, request);
+		addFrontendBlocksFolder(namespaceNode, name, blocks.filter(frontendActionBlock), path + ".actionBlocks",
+			"actionBlocks", "frontendActionBlocks", "Action blocks", "mdi:gesture-tap", settings, writable, request);
+		addFrontendBlocksFolder(namespaceNode, name, blocks.filter(frontendUiBlock), path + ".uiBlocks",
+			"uiBlocks", "frontendBlocks", "UI blocks", "mdi:widgets-outline", settings, writable, request);
+	}
+
+	function frontendStructureBlock(block) {
+		var kind = String(block && block.kind || "");
+		return kind.indexOf("frontend") === 0
+			&& kind.endsWith("Definition")
+			&& kind !== "frontendUiBlockDefinition"
+			&& !frontendActionBlock(block);
+	}
+
+	function frontendActionBlock(block) {
+		var kind = String(block && block.kind || "");
+		return kind === "frontendClientActionDefinition"
+			|| kind === "frontendBackendCallDefinition"
+			|| kind === "frontendSharedActionDefinition"
+			|| kind === "frontendClientActionSourceDefinition";
+	}
+
+	function frontendUiBlock(block) {
+		return String(block && block.kind || "") === "frontendUiBlockDefinition"
+			|| !frontendStructureBlock(block) && !frontendActionBlock(block);
+	}
+
+	function addFrontendBlocksFolder(parent, name, blocks, path, nodeName, nodeType, summary, icon, settings, showWhenEmpty, request) {
+		if (!blocks.length && !showWhenEmpty) {
+			return;
+		}
+		var folderDefinition = {
+			count: blocks.length,
+			sourceWritable: showWhenEmpty === true
+		};
+		var folder = virtualNode(nodeName, "folder", nodeType, path,
+			summary, compact(folderDefinition),
+			compact(sourceObjectInfo(folderDefinition, frontendCatalogProviderPropertyDefinitions(), ["count", "sourceWritable"])), icon);
+		parent.children.push(folder);
+		blocks.slice().sort(function (a, b) {
+			var left = a.localName || a.label || a.name || a.id || "";
+			var right = b.localName || b.label || b.name || b.id || "";
+			return String(left).localeCompare(String(right));
+		}).forEach(function (block) {
+			var blockSource = sourceDefinitionForFile(block.file || block.sourcePath || "", "frontend-block");
+			var blockInfo = sourceObjectInfo(blockSource,
 				frontendBlockPropertyDefinitions(),
-				["id", "label", "kind", "target", "provider", "sourceRelativePath", "sourceWritable"]);
+				["id", "namespace", "localName", "name", "label", "kind", "tag", "category", "description", "runtime",
+					"target", "provider", "sourceRelativePath", "sourceWritable"]);
 			blockInfo.frontendBlock = true;
 			blockInfo.frontendBuilder = name;
+			if (!blockSource.sourceWritable) {
+				blockInfo.readOnlyReference = true;
+			}
+			if (blockSource.sourceWritable && isFlowSvelteFrontendBlock(block)) {
+				blockInfo.frontendInsertSourcePath = blockSource.sourcePath;
+				blockInfo.frontendInsertMutationPath = "nodes";
+			}
 			["icon", "iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"].forEach(function (key) {
 				if (block[key] !== undefined && block[key] !== null && String(block[key]) !== "") {
 					blockInfo[key] = String(block[key]);
 				}
 			});
-			groups[categoryKey].children.push(virtualNode("block_" + (block.id || block.name), "frontendBlock", block.id || block.name,
-				path + "." + safeVirtualName("block", block.id || block.name), block.label || block.name || block.id,
-				compact(block), compact(blockInfo), null));
+			var blockDefinition = compact(block);
+			["sourcePath", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"].forEach(function (key) {
+				if (blockSource[key] !== undefined) {
+					blockDefinition[key] = blockSource[key];
+				}
+			});
+			var blockPath = path + "." + safeVirtualName("block", block.id || block.name);
+			var blockNode = virtualNode("block_" + (block.id || block.name), "frontendBlock", block.id || block.name,
+				blockPath, block.label || block.name || block.id,
+				blockDefinition, compact(blockInfo), null);
+			folder.children.push(blockNode);
+			addFrontendBlockDetails(blockNode, block, blockPath, settings, request);
 		});
+	}
+
+	function frontendCatalogProviderPropertyDefinitions() {
+		return {
+			provider: propertyDefinition("Provider", "Information", "Project or referenced library providing these frontend catalog entries.", { readOnly: true }),
+			count: propertyDefinition("Count", "Information", "Number of catalog entries in this provider.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this provider is the current project.", { readOnly: true })
+		};
+	}
+
+	function frontendCatalogNamespacePropertyDefinitions() {
+		return {
+			namespace: propertyDefinition("Namespace", "Information", "Frontend catalog namespace.", { readOnly: true }),
+			count: propertyDefinition("Count", "Information", "Number of catalog entries in this namespace.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this namespace belongs to the current project.", { readOnly: true })
+		};
 	}
 
 	function frontendBlockPropertyDefinitions() {
 		return {
 			id: propertyDefinition("Id", "Base properties", "Reusable UI block id.", { readOnly: true }),
+			namespace: propertyDefinition("Namespace", "Base properties", "Path-derived frontend block namespace.", { readOnly: true }),
+			localName: propertyDefinition("Local name", "Base properties", "Frontend block local name inside its namespace.", { readOnly: true }),
 			label: propertyDefinition("Label", "Base properties", "Visible palette label.", { readOnly: true }),
+			name: propertyDefinition("Name", "Base properties", "Reusable UI block name.", { readOnly: true }),
 			kind: propertyDefinition("Kind", "Base properties", "Frontend object kind inserted by this block.", { readOnly: true }),
+			tag: propertyDefinition("Tag", "Base properties", "Svelte component tag inserted by this block.", { readOnly: true }),
 			target: propertyDefinition("Target", "Base properties", "Frontend target runtime.", { readOnly: true }),
 			provider: propertyDefinition("Provider", "Information", "Library providing this UI block.", { readOnly: true }),
+			category: propertyDefinition("Category", "Information", "Palette category.", { readOnly: true }),
+			description: propertyDefinition("Description", "Documentation", "Short UI block documentation.", { readOnly: true }),
+			longDescription: propertyDefinition("Long description", "Documentation", "Detailed UI block documentation.", { readOnly: true }),
+			runtime: propertyDefinition("Runtime", "Implementation", "Frontend UI block runtime kind.", { readOnly: true }),
 			sourceRelativePath: propertyDefinition("Relative path", "Information", "UI block descriptor source.", { readOnly: true }),
 			sourceWritable: propertyDefinition("Writable", "Information", "Whether this descriptor can be edited from this project.", { readOnly: true })
 		};
+	}
+
+	function addFrontendBlockDetails(parent, block, path, settings, request) {
+		addFrontendBlockProperties(parent, block, path);
+		addFrontendBlockSnippets(parent, block, path);
+		if (!addFrontendFlowSvelteBlockTree(parent, block, path, settings, request)) {
+			addFrontendBlockImplementation(parent, block, path, settings);
+		}
+	}
+
+	function addFrontendBlockProperties(parent, block, path) {
+		var props = normalizeTree(block && (block.properties || block.props) || {});
+		var keys = Object.keys(props);
+		var propsSource = sourceDefinitionForFile(block.file || block.sourcePath || "", "frontend-properties");
+		propsSource.sourceMutationPath = "props";
+		var folderInfo = sourceObjectInfo(propsSource, blockPropertiesFolderDefinitions(), ["count", "sourceRelativePath", "sourceWritable"]);
+		var folder = virtualNode("properties", "folder", "frontendBlockProperties",
+			path + ".properties", "Properties", compact({ count: keys.length }), compact(folderInfo), "mdi:form-textbox");
+		parent.children.push(folder);
+		keys.forEach(function (key) {
+			var propDefinition = normalizeTree(props[key] || {});
+			propDefinition.name = key;
+			var propSource = sourceDefinitionForFile(block.file || block.sourcePath || "", "frontend-property");
+			propSource.sourceMutationPath = "props." + key;
+			var propInfo = sourceObjectInfo(propSource,
+				blockPropertyDefinitionDefinitions(),
+				["name", "label", "kind", "type", "mode", "description", "default", "items", "component",
+					"sourceRelativePath", "sourceOrigin", "sourceWritable"]);
+			folder.children.push(virtualNode("property_" + safeVirtualName("property", key), "frontendBlockProperty", key,
+				path + ".properties." + safeVirtualName("property", key),
+				propertyDefinitionSummary(key, propDefinition), compact(propDefinition), compact(propInfo),
+				propertyDefinitionIcon(propDefinition)));
+		});
+	}
+
+	function addFrontendBlockSnippets(parent, block, path) {
+		var snippets = normalizeTree(block && block.snippets || {});
+		var keys = Object.keys(snippets);
+		if (!keys.length) {
+			return;
+		}
+		var folder = virtualNode("snippets", "folder", "frontendBlockSnippets",
+			path + ".snippets", "Snippets", compact({ count: keys.length }), null, "mdi:code-braces");
+		parent.children.push(folder);
+		keys.forEach(function (key) {
+			var definition = normalizeTree(snippets[key] || {});
+			definition.name = key;
+			folder.children.push(virtualNode("snippet_" + safeVirtualName("snippet", key), "frontendBlockSnippet", key,
+				path + ".snippets." + safeVirtualName("snippet", key),
+				key, compact(definition), null, "mdi:code-braces"));
+		});
+	}
+
+	function isFlowSvelteFrontendBlock(block) {
+		var sourcePath = String(block && (block.file || block.sourcePath) || "");
+		return String(block && block.runtime || "") === "flow-svelte" || sourcePath.endsWith(".flow.svelte");
+	}
+
+	function flowSvelteLiteSlotSpec(name) {
+		var specs = {
+			structure: { label: "Structure", kind: "frontendStructure", type: "structure", accepts: ["ui.block", "ui.directive"] },
+			events: { label: "Events", kind: "frontendEvents", type: "events", accepts: ["ui.event"] },
+			actions: { label: "Actions", kind: "frontendSlot", type: "actions", accepts: ["ui.action"] },
+			variables: { label: "Variables", kind: "frontendActionVariables", type: "variables", accepts: ["ui.action.variable"] },
+			"default": { label: "Each", kind: "frontendSlot", type: "default", accepts: ["ui.block", "ui.directive"] },
+			then: { label: "Then", kind: "frontendSlot", type: "then", accepts: ["ui.block", "ui.directive"] },
+			"else": { label: "Else", kind: "frontendSlot", type: "else", accepts: ["ui.block", "ui.directive"] },
+			pending: { label: "Pending", kind: "frontendSlot", type: "pending", accepts: ["ui.block", "ui.directive"] },
+			"catch": { label: "Catch", kind: "frontendSlot", type: "catch", accepts: ["ui.block", "ui.directive"] },
+			columns: { label: "Columns", kind: "frontendColumns", type: "columns", accepts: ["ui.table.column"] },
+			data: { label: "Data", kind: "frontendDataBindings", type: "data", accepts: ["ui.data.binding"] }
+		};
+		return specs[name] || { label: titleFromCamel(name), kind: "frontendSlot", type: name, accepts: ["ui.block"] };
+	}
+
+	function flowSvelteLiteSlotName(tag) {
+		var slots = {
+			Structure: "structure",
+			Events: "events",
+			Actions: "actions",
+			Variables: "variables",
+			Default: "default",
+			Then: "then",
+			Else: "else",
+			Pending: "pending",
+			Catch: "catch",
+			Columns: "columns",
+			Data: "data"
+		};
+		return slots[String(tag || "")] || "";
+	}
+
+	function flowSvelteLiteTagKind(tag, props) {
+		tag = String(tag || "");
+		var explicit = String(props && props.kind || "");
+		if (explicit) {
+			return explicit;
+		}
+		if (tag === "JSON") {
+			return "json";
+		}
+		if (tag === "ForEach") {
+			return "each";
+		}
+		if (/^On[A-Z]/.test(tag)) {
+			return lowerFirst(tag);
+		}
+		return lowerFirst(tag);
+	}
+
+	function flowSvelteLiteTreeKind(kind) {
+		if (kind === "if" || kind === "each" || kind === "await") {
+			return "frontendDirectiveBlock";
+		}
+		if (/^on[A-Z]/.test(kind)) {
+			return "frontendEventBlock";
+		}
+		if (kind === "callSequence") {
+			return "frontendActionBlock";
+		}
+		if (kind === "variable") {
+			return "frontendActionVariable";
+		}
+		if (kind === "column" || kind === "dataBinding") {
+			return "frontendDataBlock";
+		}
+		return kind;
+	}
+
+	function flowSvelteLiteTraits(kind) {
+		if (kind === "if" || kind === "each" || kind === "await") {
+			return ["ui.directive", "ui.container"];
+		}
+		if (/^on[A-Z]/.test(kind)) {
+			return ["ui.event", "ui.container"];
+		}
+		if (kind === "callSequence") {
+			return ["ui.action"];
+		}
+		if (kind === "variable") {
+			return ["ui.action.variable"];
+		}
+		if (kind === "column") {
+			return ["ui.table.column"];
+		}
+		if (kind === "dataBinding") {
+			return ["ui.data.binding"];
+		}
+		if (kind === "button") {
+			return ["ui.block", "ui.interactive", "ui.events.owner"];
+		}
+		return ["ui.block"];
+	}
+
+	function flowSvelteLiteLabel(kind, tag, props) {
+		if (kind === "text") {
+			return String(props.text || "Text");
+		}
+		if (kind === "button") {
+			return String(props.label || "Button");
+		}
+		if (kind === "callSequence") {
+			return String(props.requestable || "CallSequence");
+		}
+		if (kind === "variable") {
+			return String(props.name || "Variable");
+		}
+		if (kind === "column") {
+			return String(props.label || "Column");
+		}
+		if (kind === "if") {
+			return "If";
+		}
+		return String(props.label || props.title || props.id || titleFromCamel(tag || kind));
+	}
+
+	function flowSvelteLiteSlot(name, parentPath, children, sourcePath) {
+		var spec = flowSvelteLiteSlotSpec(name);
+		var path = parentPath + ".slots." + name + ".children";
+		return {
+			id: name,
+			kind: spec.kind,
+			type: spec.type,
+			label: spec.label,
+			sourcePath: sourcePath,
+			sourceMutationPath: path,
+			sourceWritable: true,
+			props: { count: children.length },
+			traits: ["ui.container"],
+			slots: {
+				[name]: frontendSlot(spec.label, spec.accepts, path, true)
+			},
+			children: children
+		};
+	}
+
+	function flowSvelteLiteSlotDefinition(name, path) {
+		var spec = flowSvelteLiteSlotSpec(name);
+		return frontendSlot(spec.label, spec.accepts, path, true);
+	}
+
+	function flowSvelteLiteDefaultSlotNames(kind) {
+		if (kind === "button") {
+			return ["events"];
+		}
+		if (/^on[A-Z]/.test(kind)) {
+			return ["actions"];
+		}
+		if (kind === "callSequence") {
+			return ["variables"];
+		}
+		if (kind === "if") {
+			return ["then", "else"];
+		}
+		if (kind === "each") {
+			return ["default", "else"];
+		}
+		if (kind === "await") {
+			return ["pending", "then", "catch"];
+		}
+		if (kind === "table") {
+			return ["columns", "data"];
+		}
+		return [];
+	}
+
+	function flowSvelteLiteParseAttributes(raw) {
+		var props = {};
+		var re = /([A-Za-z_][A-Za-z0-9_:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|\{([^}]*)\}|([^\s>]+))/g;
+		var match;
+		while ((match = re.exec(String(raw || ""))) !== null) {
+			props[match[1]] = match[2] !== undefined ? match[2]
+				: match[3] !== undefined ? match[3]
+				: match[4] !== undefined ? match[4]
+				: match[5] !== undefined ? match[5]
+				: "";
+		}
+		return props;
+	}
+
+	function flowSvelteLiteParseElements(source) {
+		source = String(source || "")
+			.replace(/<script\b[\s\S]*?<\/script>/g, "")
+			.replace(/<style\b[\s\S]*?<\/style>/g, "");
+		var root = { tag: "__root", attrs: {}, children: [] };
+		var stack = [root];
+		var re = /<\/?([A-Za-z][A-Za-z0-9_]*)\b([^>]*?)(\/?)>/g;
+		var match;
+		while ((match = re.exec(source)) !== null) {
+			var full = match[0];
+			var tag = match[1];
+			var closing = full.indexOf("</") === 0;
+			if (closing) {
+				for (var i = stack.length - 1; i > 0; i--) {
+					if (stack[i].tag === tag) {
+						stack.length = i;
+						break;
+					}
+				}
+				continue;
+			}
+			var node = {
+				tag: tag,
+				attrs: flowSvelteLiteParseAttributes(match[2]),
+				children: []
+			};
+			stack[stack.length - 1].children.push(node);
+			if (full.charAt(full.length - 2) !== "/") {
+				stack.push(node);
+			}
+		}
+		return root.children;
+	}
+
+	function flowSvelteLiteBuildChildren(elements, arrayPath, sourcePath) {
+		var out = [];
+		(elements || []).forEach(function (element) {
+			var node = flowSvelteLiteBuildNode(element, arrayPath + "[" + out.length + "]", sourcePath);
+			if (node) {
+				out.push(node);
+			}
+		});
+		return out;
+	}
+
+	function flowSvelteLiteBuildNode(element, path, sourcePath) {
+		var slotName = flowSvelteLiteSlotName(element.tag);
+		if (slotName) {
+			return flowSvelteLiteSlot(slotName, path, flowSvelteLiteBuildChildren(element.children, path + ".children", sourcePath), sourcePath);
+		}
+		var props = normalizeTree(element.attrs || {});
+		var kind = flowSvelteLiteTagKind(element.tag, props);
+		var direct = [];
+		var slots = {};
+		(element.children || []).forEach(function (child) {
+			var childSlot = flowSvelteLiteSlotName(child.tag);
+			if (childSlot) {
+				slots[childSlot] = flowSvelteLiteBuildChildren(child.children, path + ".slots." + childSlot + ".children", sourcePath);
+			} else {
+				direct.push(child);
+			}
+		});
+		if (/^on[A-Z]/.test(kind) && direct.length && !slots.actions) {
+			slots.actions = flowSvelteLiteBuildChildren(direct, path + ".slots.actions.children", sourcePath);
+		}
+		if (kind === "callSequence" && direct.length && !slots.variables) {
+			slots.variables = flowSvelteLiteBuildChildren(direct, path + ".slots.variables.children", sourcePath);
+		}
+		if (kind === "table" && direct.length && !slots.columns) {
+			slots.columns = flowSvelteLiteBuildChildren(direct, path + ".slots.columns.children", sourcePath);
+		}
+		flowSvelteLiteDefaultSlotNames(kind).forEach(function (name) {
+			if (!slots[name]) {
+				slots[name] = [];
+			}
+		});
+		var slotChildren = [];
+		var slotDefinitions = {};
+		Object.keys(slots).forEach(function (name) {
+			slotChildren.push(flowSvelteLiteSlot(name, path, slots[name], sourcePath));
+			slotDefinitions[name] = flowSvelteLiteSlotDefinition(name, path + ".slots." + name + ".children");
+		});
+		var id = String(props.id || props.name || kind || "node");
+		props.kind = kind;
+		if (props.id === undefined && !(/^on[A-Z]/.test(kind) || kind === "variable" || kind === "column" || kind === "dataBinding")) {
+			props.id = id;
+		}
+		return {
+			id: id,
+			kind: flowSvelteLiteTreeKind(kind),
+			type: String(element.tag || kind),
+			tag: String(element.tag || ""),
+			label: flowSvelteLiteLabel(kind, element.tag, props),
+			sourcePath: sourcePath,
+			sourceMutationPath: path,
+			sourceWritable: true,
+			props: props,
+			traits: flowSvelteLiteTraits(kind),
+			slots: slotDefinitions,
+			children: slotChildren
+		};
+	}
+
+	function flowSvelteLiteComponentRoot(sourcePath, source) {
+		if (String(source || "").indexOf("<FlowComponent") < 0) {
+			return null;
+		}
+		var elements = flowSvelteLiteParseElements(source);
+		var rootElement = null;
+		(elements || []).forEach(function (element) {
+			if (!rootElement && element.tag === "FlowComponent") {
+				rootElement = element;
+			}
+		});
+		if (!rootElement) {
+			return null;
+		}
+		var props = normalizeTree(rootElement.attrs || {});
+		var id = String(props.id || "component");
+		var label = String(props.label || props.title || id);
+		var rootPath = "frontAst";
+		var structure = null;
+		(rootElement.children || []).forEach(function (child) {
+			if (!structure && flowSvelteLiteSlotName(child.tag) === "structure") {
+				structure = flowSvelteLiteSlot("structure", rootPath,
+					flowSvelteLiteBuildChildren(child.children, rootPath + ".slots.structure.children", sourcePath), sourcePath);
+			}
+		});
+		if (!structure) {
+			structure = flowSvelteLiteSlot("structure", rootPath, [], sourcePath);
+		}
+		props.id = id;
+		props.label = label;
+		return {
+			id: id,
+			kind: "frontendComponent",
+			type: "component",
+			tag: "FlowComponent",
+			label: label,
+			sourcePath: sourcePath,
+			sourceMutationPath: rootPath,
+			sourceWritable: true,
+			props: props,
+			traits: ["definition.uiBlock", "ui.container"],
+			slots: {
+				structure: flowSvelteLiteSlotDefinition("structure", rootPath + ".slots.structure.children")
+			},
+			children: [structure]
+		};
+	}
+
+	function addFrontendFlowSvelteBlockTree(parent, block, path, settings, request) {
+		if (!isFlowSvelteFrontendBlock(block)) {
+			return false;
+		}
+		var sourcePath = String(block && (block.file || block.sourcePath) || "");
+		if (!sourcePath) {
+			return true;
+		}
+		var sourceFile = new File(sourcePath);
+		if (!sourceFile.isFile()) {
+			return true;
+		}
+		try {
+			var source = frontendModelSource(request, sourceFile);
+			var frontAstRoot = flowSvelteLiteComponentRoot(String(sourceFile.getAbsolutePath()), source);
+			if (!frontAstRoot) {
+				return false;
+			}
+			addFrontendAuthoringNode(parent, frontAstRoot,
+				path + ".nodes." + safeVirtualName("node", frontAstRoot.id || "component"), sourceFile);
+		} catch (e) {
+			var source = sourceDefinitionForFile(sourcePath, "flow-svelte");
+			source.error = String(e && e.message || e);
+			parent.children.push(virtualNode("implementationError", "error", "flow-svelte",
+				path + ".implementationError", "Invalid flow.svelte",
+				compact(source), compact(sourceObjectInfo(source, sourcePropertyDefinitions(),
+					["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "error"])), "mdi:alert-outline"));
+		}
+		return true;
+	}
+
+	function addFrontendBlockImplementation(parent, block, path, settings) {
+		var sourcePath = block.file || block.sourcePath || "";
+		var source = sourceDefinitionForFile(sourcePath, block.runtime || "svelte");
+		var implementation = normalizeTree(block.implementation || {});
+		Object.keys(implementation).forEach(function (key) {
+			if (source[key] === undefined) {
+				source[key] = implementation[key];
+			}
+		});
+		if (source.sourceWritable) {
+			source.sourceMutationPath = source.sourceMutationPath || "widgets";
+			source.frontendInsertSourcePath = source.sourcePath;
+			source.frontendInsertMutationPath = "widgets";
+		}
+		var sourceInfo = sourceObjectInfo(source, sourcePropertyDefinitions(),
+			["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly",
+				"frontendInsertSourcePath", "frontendInsertMutationPath"]);
+		var implementationNode = virtualNode("implementation", "frontendBlockImplementation", block.runtime || "svelte",
+			path + ".implementation", "Implementation",
+			compact(source), compact(sourceInfo), "mdi:file-code-outline");
+		parent.children.push(implementationNode);
 	}
 
 	function frontendItemInfo(file, mutationPath, definitions, order) {
 		var allDefinitions = frontendSourceTargetPropertyDefinitions(definitions);
 		var info = sourceObjectInfo(frontendSourceInfo(file, "frontend-model", mutationPath), allDefinitions, order);
 		info.frontendModelPath = mutationPath || "";
+		return info;
+	}
+
+	function frontendContainerInfo(file, mutationPath, insertMutationPath, definitions, order) {
+		var info = frontendItemInfo(file, mutationPath, definitions, order);
+		if (file) {
+			info.frontendInsertSourcePath = String(file.getAbsolutePath());
+			info.frontendInsertMutationPath = insertMutationPath || mutationPath || "";
+		}
 		return info;
 	}
 
@@ -472,7 +1133,512 @@
 		out.frontendInsertMutationPath = propertyDefinition("Insert mutation path", "Information",
 			"Internal mutation path used when a child UI block is inserted from the palette.",
 			{ readOnly: true, hidden: true });
+		out.traits = propertyDefinition("Traits", "Authoring", "Low-code authoring traits exposed by this node.",
+			{ readOnly: true, hidden: true });
+		out.slots = propertyDefinition("Slots", "Authoring", "Low-code authoring child slots exposed by this node.",
+			{ readOnly: true, hidden: true });
 		return out;
+	}
+
+	function frontendArray(value) {
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return value.slice();
+		}
+		if (typeof value === "string" && value) {
+			return [value];
+		}
+		return [];
+	}
+
+	function frontendSlot(label, accepts, mutationPath, writable) {
+		var slot = {
+			label: label,
+			accepts: frontendArray(accepts),
+			sourceMutationPath: String(mutationPath || "")
+		};
+		if (writable !== undefined && writable !== null) {
+			slot.sourceWritable = writable !== false;
+		}
+		return slot;
+	}
+
+	function frontendActionParametersPath(node) {
+		var path = String(node && node.sourceMutationPath || "");
+		return path ? path + ".parameters" : "";
+	}
+
+	function frontendAuthoringTraits(node) {
+		var traits = frontendArray(node && node.traits);
+		if (traits.length) {
+			return traits;
+		}
+		var kind = String(node && node.kind || "");
+		var type = String(node && node.type || "");
+		if (kind === "frontendDirectiveBlock" || type === "if" || type === "each" || type === "await") {
+			return ["ui.directive", "ui.container"];
+		}
+		if (kind === "frontendDirectiveBranch" || type === "else" || type === "elseIf") {
+			return ["ui.directive.branch", "ui.container"];
+		}
+		if (kind === "frontendEventBlock") {
+			return ["ui.event", "ui.container"];
+		}
+		if (kind === "frontendEvents" || type === "events" || kind === "frontendDataBindings" || type === "data") {
+			return ["ui.container"];
+		}
+		if (kind === "frontendActionBlock") {
+			return ["ui.action"];
+		}
+		if (kind === "frontendActionVariables" || type === "variables" || kind === "frontendColumns" || type === "columns") {
+			return ["ui.container"];
+		}
+		if (kind === "frontendActionVariable") {
+			return ["ui.action.variable"];
+		}
+		if (kind === "frontendDataBlock") {
+			return ["ui.data.binding", "ui.table.column"];
+		}
+		if (kind === "frontendStructure" || kind === "frontendSlot" || kind === "frontendWidgetRoot") {
+			return ["ui.container"];
+		}
+		if (kind === "frontendWidget" || node && node.sourceMutationPath) {
+			return ["ui.block"];
+		}
+		return [];
+	}
+
+	function frontendAuthoringSlots(node) {
+		var explicit = node && node.slots;
+		if (explicit && typeof explicit === "object") {
+			return normalizeTree(explicit);
+		}
+		var slots = {};
+		var kind = String(node && node.kind || "");
+		var type = String(node && node.type || "");
+		var path = String(node && node.sourceMutationPath || "");
+		var writable = node && node.sourceWritable;
+		if (kind === "frontendStructure" || kind === "frontendSlot" || kind === "frontendWidgetRoot"
+			|| kind === "frontendPage" || kind === "frontendRouteLayout" || kind === "frontendComponent") {
+			slots.structure = frontendSlot("Structure", ["ui.block", "ui.directive"], frontendNodeInsertMutationPath(node), writable);
+		}
+		if (String(type).toLowerCase() === "button" || String(kind).toLowerCase() === "button") {
+			slots.events = frontendSlot("Events", ["ui.event"], path ? path + ".events" : "", writable);
+		}
+		if (kind === "frontendEvents") {
+			slots.events = frontendSlot("Events", ["ui.event"], path, writable);
+		}
+		if (kind === "frontendEventBlock") {
+			slots.actions = frontendSlot("Actions", ["ui.action"], path ? path + ".actions" : "", writable);
+		}
+		if (kind === "frontendDirectiveBranch" || type === "else" || type === "elseIf") {
+			slots.structure = frontendSlot("Structure", ["ui.block", "ui.directive"], path ? path + ".children" : "", writable);
+		}
+		if (kind === "frontendActionBlock") {
+			slots.variables = frontendSlot("Variables", ["ui.action.variable"], frontendActionParametersPath(node), writable);
+		}
+		if (kind === "frontendActionVariables") {
+			slots.variables = frontendSlot("Variables", ["ui.action.variable"], path, writable);
+		}
+		if (kind === "frontendDataBindings") {
+			slots.data = frontendSlot("Data", ["ui.data.binding"], path, writable);
+		}
+		if (kind === "frontendColumns") {
+			slots.columns = frontendSlot("Columns", ["ui.table.column"], path, writable);
+		}
+		if (kind === "frontendDirectiveBlock" || type === "if" || type === "each" || type === "await") {
+			if (type === "each") {
+				slots.default = frontendSlot("Each", ["ui.block", "ui.directive"], path ? path + ".children" : "", writable);
+			} else if (type === "await") {
+				slots.pending = frontendSlot("Pending", ["ui.block", "ui.directive"], path ? path + ".pending" : "", writable);
+				slots.then = frontendSlot("Then", ["ui.block", "ui.directive"], path ? path + ".then" : "", writable);
+				slots.catch = frontendSlot("Catch", ["ui.block", "ui.directive"], path ? path + ".catch" : "", writable);
+			} else {
+				slots.then = frontendSlot("Then", ["ui.block", "ui.directive"], path ? path + ".then" : "", writable);
+				slots.else = frontendSlot("Else", ["ui.block", "ui.directive"], path ? path + ".else" : "", writable);
+				slots.branches = frontendSlot("Branches", ["ui.directive.branch"], path ? path + ".branches" : "", writable);
+			}
+		}
+		return slots;
+	}
+
+	function addFrontendAuthoringTree(builder, tree, path, modelFile) {
+		(tree.children || []).forEach(function (node, index) {
+			addFrontendAuthoringNode(builder, node, path + "." + safeVirtualName("node", node.id || index), modelFile);
+		});
+	}
+
+	function addFrontendAuthoringNode(parent, node, path, modelFile) {
+		node = node || {};
+		var sourceFile = frontendNodeSourceFile(node, modelFile);
+		var mutationPath = String(node.sourceMutationPath || "");
+		var insertMutationPath = frontendNodeInsertMutationPath(node);
+		var definitions = frontendAuthoringPropertyDefinitions(node);
+		var order = frontendAuthoringPropertyOrder(node);
+		var info = insertMutationPath
+			? frontendContainerInfo(sourceFile, mutationPath, insertMutationPath, definitions, order)
+			: frontendItemInfo(sourceFile, mutationPath, definitions, order);
+		applyFrontendAuthoringInsertTarget(info, node);
+		var definition = frontendAuthoringDefinition(node);
+		var traits = frontendAuthoringTraits(node);
+		var slots = frontendAuthoringSlots(node);
+		if (traits.length) {
+			info.traits = traits;
+			definition.traits = traits;
+		}
+		if (Object.keys(slots).length) {
+			info.slots = slots;
+			definition.slots = slots;
+		}
+		var virtualKind = frontendAuthoringVirtualKind(node);
+		var virtualType = String(node.type || node.kind || "frontendNode");
+		var summary = String(node.label || node.name || node.id || virtualType || "Node");
+		var virtual = virtualNode("authoring_" + (node.id || safeVirtualName("node", summary)), virtualKind, virtualType,
+			path, summary, compact(definition), compact(info), frontendAuthoringIcon(node));
+		parent.children.push(virtual);
+		(node.children || []).forEach(function (child, index) {
+			addFrontendAuthoringNode(virtual, child, path + "." + safeVirtualName("node", child.id || index), sourceFile || modelFile);
+		});
+	}
+
+	function applyFrontendAuthoringInsertTarget(info, node) {
+		if (!info || !node) {
+			return info;
+		}
+		var sourcePath = String(node.frontendInsertSourcePath || "");
+		var mutationPath = String(node.frontendInsertMutationPath || "");
+		if (sourcePath) {
+			info.frontendInsertSourcePath = sourcePath;
+		}
+		if (mutationPath) {
+			info.frontendInsertMutationPath = mutationPath;
+		}
+		return info;
+	}
+
+	function frontendNodeSourceFile(node, fallback) {
+		var sourcePath = String(node && node.sourcePath || "");
+		if (!sourcePath) {
+			return fallback || null;
+		}
+		var file = new File(sourcePath);
+		return file.isFile() ? file : fallback || null;
+	}
+
+	function frontendNodeInsertMutationPath(node) {
+		var kind = String(node && node.kind || "");
+		var type = String(node && node.type || "");
+		var explicitInsert = String(node && node.frontendInsertMutationPath || "");
+		if (explicitInsert) {
+			return explicitInsert;
+		}
+		var frontAstSlot = frontendFrontAstInsertMutationPath(node, kind, type);
+		if (frontAstSlot) {
+			return frontAstSlot;
+		}
+		if (kind === "frontendPage" || kind === "frontendRouteLayout" || kind === "frontendComponent") {
+			return "widgets";
+		}
+		if (kind === "frontendStructure") {
+			return String(node && node.sourceMutationPath || "widgets");
+		}
+		if (kind === "frontendEvents" || kind === "frontendDataBindings") {
+			return String(node && node.sourceMutationPath || "");
+		}
+		if (kind === "frontendEventBlock") {
+			var eventPath = String(node && node.sourceMutationPath || "");
+			return eventPath ? eventPath + ".actions" : "";
+		}
+		if (kind === "frontendDirectiveBlock") {
+			var directivePath = String(node && node.sourceMutationPath || "");
+			return directivePath ? directivePath + ".then" : "";
+		}
+		if (kind === "frontendWidget") {
+			var widgetPath = String(node && node.sourceMutationPath || "");
+			return widgetPath ? widgetPath + ".events" : "";
+		}
+			if (kind === "frontendColumns" || kind === "frontendActionVariables") {
+				return String(node && node.sourceMutationPath || "");
+			}
+			if (kind === "frontendActionBlock") {
+				var actionPath = String(node && node.sourceMutationPath || "");
+				return actionPath ? actionPath + ".parameters" : "";
+			}
+			if (kind === "frontendWidgetRoot") {
+				return "widgets";
+			}
+		if (type === "page" || type === "layout" || type.indexOf("component") !== -1) {
+			return "widgets";
+		}
+		return "";
+	}
+
+	function frontendFrontAstInsertMutationPath(node, kind, type) {
+		var path = String(node && node.sourceMutationPath || "");
+		if (path.indexOf("frontAst") !== 0) {
+			return "";
+		}
+		if (kind === "frontendPage" || kind === "frontendRouteLayout" || kind === "frontendComponent") {
+			return frontendSlotMutationPath(node, ["structure"]) || path;
+		}
+		if (kind === "frontendStructure" || kind === "frontendSlot") {
+			return path;
+		}
+		if (String(type).toLowerCase() === "button" || String(kind).toLowerCase() === "button") {
+			return frontendSlotMutationPath(node, ["events"]);
+		}
+		if (kind === "frontendEvents" || kind === "frontendDataBindings"
+				|| kind === "frontendColumns" || kind === "frontendActionVariables") {
+			return path;
+		}
+		if (kind === "frontendEventBlock") {
+			return frontendSlotMutationPath(node, ["actions"]);
+		}
+		if (kind === "frontendActionBlock") {
+			return frontendSlotMutationPath(node, ["variables"]);
+		}
+		if (kind === "frontendDirectiveBlock" || type === "if" || type === "each" || type === "await") {
+			if (type === "each") {
+				return frontendSlotMutationPath(node, ["default", "then", "structure"]);
+			}
+			if (type === "await") {
+				return frontendSlotMutationPath(node, ["then", "pending", "catch", "structure"]);
+			}
+			return frontendSlotMutationPath(node, ["then", "structure"]);
+		}
+		return "";
+	}
+
+	function frontendSlotMutationPath(node, names) {
+		var slots = node && node.slots;
+		if (!slots || typeof slots !== "object") {
+			return "";
+		}
+		for (var i = 0; i < names.length; i++) {
+			var slot = slots[names[i]];
+			var path = String(slot && slot.sourceMutationPath || "");
+			if (path) {
+				return path;
+			}
+		}
+		return "";
+	}
+
+	function frontendAuthoringVirtualKind(node) {
+		var kind = String(node && node.kind || "");
+		if (kind === "frontendStructure") {
+			return kind;
+		}
+		if (kind.indexOf("frontend") === 0) {
+			return kind;
+		}
+		if (node && node.sourceMutationPath) {
+			return "frontendWidget";
+		}
+		return "frontendWidget";
+	}
+
+	function frontendAuthoringDefinition(node) {
+		var out = {};
+		Object.keys(node || {}).forEach(function (key) {
+			if (key !== "children" && key !== "propertyDefinitions") {
+				out[key] = node[key];
+			}
+		});
+		var props = node && node.props || {};
+		Object.keys(props).forEach(function (key) {
+			if (out[key] === undefined) {
+				out[key] = props[key];
+			}
+		});
+		return out;
+	}
+
+	function frontendAuthoringPropertyDefinitions(node) {
+		var extra = node && node.propertyDefinitions || {};
+		var definitions = {
+			id: propertyDefinition("Id", "Base properties", "Low-code object id.", { readOnly: true }),
+			kind: propertyDefinition("Kind", "Base properties", "Low-code object kind.", { readOnly: true }),
+			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative source path.", { readOnly: true }),
+			sourceWritable: propertyDefinition("Writable", "Information", "Whether this source can be edited.", { readOnly: true }),
+			traits: propertyDefinition("Traits", "Authoring", "Low-code authoring traits exposed by this node.", { readOnly: true, hidden: true }),
+			slots: propertyDefinition("Slots", "Authoring", "Low-code authoring child slots exposed by this node.", { readOnly: true, hidden: true }),
+			sourcePropertyMutationPaths: propertyDefinition("Property mutation paths", "Information", "Internal per-property source mutation paths.", { readOnly: true, hidden: true })
+		};
+		var known = {
+			type: propertyDefinition("Type", "Base properties", "Source or AST node type.", { readOnly: true }),
+			tag: propertyDefinition("Tag", "Base properties", "Svelte component or HTML tag.", { readOnly: true }),
+			role: propertyDefinition("Role", "Routing", "Route file or library role.", { readOnly: true }),
+			segment: propertyDefinition("Segment", "Routing", "SvelteKit route segment directory.", { readOnly: true }),
+			pathless: propertyDefinition("Pathless", "Routing", "Whether this route segment contributes to the URL path.", { readOnly: true }),
+			param: propertyDefinition("Parameter", "Routing", "SvelteKit parameter name.", { readOnly: true }),
+			matcher: propertyDefinition("Matcher", "Routing", "SvelteKit parameter matcher.", { readOnly: true }),
+			route: propertyDefinition("Route", "Routing", "Declared route path.", { kind: "text", type: "string" }),
+			title: propertyDefinition("Title", "Base properties", "Visible title.", { kind: "text", type: "string" }),
+			text: propertyDefinition("Text", "Base properties", "Text rendered by the component.", { kind: "text", type: "string" }),
+			label: propertyDefinition("Label", "Base properties", "Visible label.", { kind: "text", type: "string" }),
+			directive: propertyDefinition("Directive", "Logic", "Frontend directive kind.", { readOnly: true }),
+			event: propertyDefinition("Event", "Event", "Frontend event name.", { readOnly: true }),
+			clientAction: propertyDefinition("Client action", "Information", "Internal event action link.", { kind: "text", type: "string", readOnly: true, hidden: true }),
+			backendCall: propertyDefinition("Backend call", "Information", "Internal backend call link.", { kind: "text", type: "string", readOnly: true, hidden: true }),
+			requestable: propertyDefinition("Requestable", "Action", "Convertigo requestable called by this action.", { kind: "requestable", type: "requestable" }),
+			parameters: propertyDefinition("Parameters", "Action", "Request parameters.", { kind: "literal", type: "object" }),
+			name: propertyDefinition("Name", "Variable", "Variable name.", { kind: "text", type: "string", readOnly: true }),
+			path: propertyDefinition("Path", "Data", "Data path.", { kind: "path", type: "string" }),
+			source: propertyDefinition("Source", "Data", "Data source path.", { kind: "path", type: "string" }),
+			value: propertyDefinition("Value", "Data", "Data value or binding path.", { kind: "path", type: "string" }),
+			condition: propertyDefinition("Condition", "Logic", "Frontend condition expression.", { kind: "expression", type: "string" }),
+			expression: propertyDefinition("Expression", "Logic", "Svelte expression.", { kind: "expression", type: "string" }),
+			test: propertyDefinition("Test", "Logic", "Svelte condition expression.", { kind: "expression", type: "string" }),
+			context: propertyDefinition("Context", "Logic", "Svelte each context.", { kind: "text", type: "string" }),
+			index: propertyDefinition("Index", "Logic", "Svelte each index.", { kind: "text", type: "string" }),
+			inferred: propertyDefinition("Inferred", "Information", "Whether this node is derived from another source object.", { kind: "boolean", type: "boolean", readOnly: true }),
+			readOnly: propertyDefinition("Read only", "Information", "Whether this node is informative and cannot be edited directly.", { kind: "boolean", type: "boolean", readOnly: true })
+		};
+		Object.keys(extra || {}).forEach(function (key) {
+			definitions[key] = frontendPropertyDefinition(key, extra[key]);
+		});
+		var props = node && node.props || {};
+		Object.keys(props).forEach(function (key) {
+			if (!frontendAuthoringPropertyVisible(node, key)) {
+				return;
+			}
+			if (!definitions[key]) {
+				definitions[key] = known[key] || frontendPropertyDefinition(key, { type: typeof props[key] === "boolean" ? "boolean" : "string" });
+			}
+		});
+		return definitions;
+	}
+
+	function frontendAuthoringPropertyVisible(node, key) {
+		key = String(key || "");
+		if (key !== "requestable" && key !== "parameters") {
+			return true;
+		}
+		var kind = String(node && node.kind || "");
+		var type = String(node && node.type || "");
+		var props = node && node.props || {};
+		var semanticKind = String(props.kind || "");
+		if (key === "requestable") {
+			return kind === "frontendActionBlock" || type === "CallSequence" || semanticKind === "callSequence";
+		}
+		return kind === "frontendBackendCall" || type === "backendCall";
+	}
+
+	function frontendAuthoringPropertyOrder(node) {
+		var preferred = ["id", "kind", "type", "tag", "title", "label", "text", "route", "segment", "param", "matcher",
+			"directive", "event", "clientAction", "backendCall", "requestable", "parameters", "source", "value",
+			"path", "name", "condition", "expression", "test", "context", "index",
+			"inferred", "readOnly", "sourceRelativePath", "sourceWritable"];
+		var order = [];
+		var props = node && node.props || {};
+		preferred.forEach(function (key) {
+			if (!frontendAuthoringPropertyVisible(node, key)) {
+				return;
+			}
+			if (key === "id" || key === "kind" || key === "sourceRelativePath" || key === "sourceWritable"
+					|| props[key] !== undefined || node && node[key] !== undefined) {
+				order.push(key);
+			}
+		});
+		Object.keys(props).forEach(function (key) {
+			if (!frontendAuthoringPropertyVisible(node, key)) {
+				return;
+			}
+			if (order.indexOf(key) === -1) {
+				order.push(key);
+			}
+		});
+		return order;
+	}
+
+	function frontendAuthoringIcon(node) {
+		var kind = String(node && node.kind || "");
+		var type = String(node && node.type || "");
+		if (node && node.icon) {
+			return node.icon;
+		}
+		if (kind === "frontendRoutes") {
+			return "mdi:routes";
+		}
+		if (kind === "frontendRouteGroup") {
+			return "mdi:folder-pound-outline";
+		}
+		if (kind === "frontendRouteSegment") {
+			return type === "param" || type === "optionalParam" || type === "restParam" ? "mdi:folder-key-outline" : "mdi:folder-outline";
+		}
+		if (kind === "frontendRouteLayout") {
+			return "mdi:page-layout-header-footer";
+		}
+		if (kind === "frontendPage") {
+			return "mdi:file-outline";
+		}
+		if (kind === "frontendStructure") {
+			return "mdi:format-list-bulleted-square";
+		}
+		if (kind === "frontendSlot" || kind === "frontendSnippetBlock") {
+			return "mdi:code-braces";
+		}
+		if (kind === "frontendEvents") {
+			return "mdi:gesture-tap";
+		}
+		if (kind === "frontendEventBlock") {
+			return "mdi:flash-outline";
+		}
+		if (kind === "frontendActionBlock") {
+			return "mdi:play-box-outline";
+		}
+		if (kind === "frontendActionVariables") {
+			return "mdi:variable-box";
+		}
+		if (kind === "frontendActionVariable") {
+			return "mdi:variable";
+		}
+		if (kind === "frontendColumns") {
+			return "mdi:table-column";
+		}
+		if (kind === "frontendDataBindings") {
+			return "mdi:database-arrow-right-outline";
+		}
+		if (kind === "frontendDataBlock") {
+			return "mdi:table-row";
+		}
+		if (kind === "frontendDirectiveBlock") {
+			return type === "each" ? "mdi:repeat" : type === "await" ? "mdi:timer-sand" : "mdi:source-branch";
+		}
+		if (kind === "frontendDirectiveBlocks") {
+			return "mdi:source-branch";
+		}
+		if (kind === "frontendLibrary") {
+			return "mdi:library-outline";
+		}
+		if (kind === "frontendSharedComponents") {
+			return "mdi:view-module-outline";
+		}
+		if (kind === "frontendSharedActions") {
+			return "mdi:gesture-tap";
+		}
+		if (kind === "frontendComponent") {
+			return "mdi:view-dashboard-outline";
+		}
+		if (kind === "frontendSharedAction") {
+			return "mdi:language-javascript";
+		}
+		if (kind === "if") {
+			return "mdi:source-branch";
+		}
+		if (kind === "each") {
+			return "mdi:repeat";
+		}
+		if (kind === "await") {
+			return "mdi:timer-sand";
+		}
+		if (kind === "element") {
+			return "mdi:xml";
+		}
+		if (kind === "textNode") {
+			return "mdi:text";
+		}
+		return widgetIcon(kind);
 	}
 
 	function addFrontendModelTree(builder, model, path, modelFile) {
@@ -503,11 +1669,10 @@
 	}
 
 	function addFrontendNavigation(parent, navigation, path, modelFile) {
-		if (!navigation || navigation.length === 0) {
-			return;
-		}
+		navigation = navigation || [];
 		var folder = virtualNode("navigation", "folder", "frontendNavigation", path,
-			"Navigation", compact({ count: navigation.length }), null, "mdi:menu");
+			"Navigation", compact({ count: navigation.length }),
+			compact(frontendContainerInfo(modelFile, "app.navigation", "app.navigation", null, null)), "mdi:menu");
 		parent.children.push(folder);
 		navigation.forEach(function (item, index) {
 			var summary = String(item.label || item.route || "item");
@@ -518,8 +1683,10 @@
 	}
 
 	function addFrontendPages(parent, pages, path, modelFile, componentTargets) {
+		pages = pages || [];
 		var folder = virtualNode("pages", "folder", "frontendPages", path,
-			"Pages", compact({ count: pages.length }), null, "mdi:file-document-multiple-outline");
+			"Pages", compact({ count: pages.length }),
+			compact(frontendContainerInfo(modelFile, "app.pages", "app.pages", null, null)), "mdi:file-document-multiple-outline");
 		parent.children.push(folder);
 		pages.forEach(function (page, index) {
 			var pagePath = path + "[" + index + "]";
@@ -570,21 +1737,20 @@
 				path + "[" + index + "]", String(ref), compact({ component: ref }),
 				compact(componentInfo), "mdi:link-variant");
 			parent.children.push(componentNode);
-			if (target && target.component) {
-				addFrontendWidgets(componentNode, target.component.nodes || target.component.widgets || [],
-					path + "[" + index + "].widgets", target.mutationPath, target.file);
-			}
 		});
 	}
 
 	function addFrontendLayouts(parent, layouts, path, modelFile) {
+		layouts = layouts || [];
 		var folder = virtualNode("layouts", "folder", "frontendLayouts", path,
-			"Layouts", compact({ count: layouts.length }), null, "mdi:page-layout-header-footer");
+			"Layouts", compact({ count: layouts.length }),
+			compact(frontendContainerInfo(modelFile, "layouts", "layouts", null, null)), "mdi:page-layout-header-footer");
 		parent.children.push(folder);
 		layouts.forEach(function (layout, index) {
+			var layoutInfo = frontendContainerInfo(modelFile, "layouts[" + index + "]", "layouts[" + index + "].regions", null, null);
 			var layoutNode = virtualNode("layout_" + (layout.id || index), "frontendLayout", layout.id || "layout",
 				path + "[" + index + "]", layout.title || layout.id || "Layout", compact(layout),
-				compact(frontendItemInfo(modelFile, "layouts[" + index + "]", null, null)), "mdi:page-layout-outline");
+				compact(layoutInfo), "mdi:page-layout-outline");
 			folder.children.push(layoutNode);
 			(layout.regions || []).forEach(function (region, regionIndex) {
 				layoutNode.children.push(virtualNode("region_" + (region.id || regionIndex), "frontendLayoutRegion", region.id || "region",
@@ -595,8 +1761,10 @@
 	}
 
 	function addFrontendComponents(parent, components, path, modelFile) {
+		components = components || [];
 		var folder = virtualNode("components", "folder", "frontendComponents", path,
-			"Components", compact({ count: components.length }), null, "mdi:view-module-outline");
+			"UI block sources", compact({ count: components.length }),
+			compact(frontendContainerInfo(modelFile, "components", "components", null, null)), "mdi:view-module-outline");
 		parent.children.push(folder);
 		components.forEach(function (component, index) {
 			var componentFile = component.__sourceFile ? new File(String(component.__sourceFile)) : modelFile;
@@ -607,9 +1775,20 @@
 				compact(frontendItemInfo(componentFile, "components[" + index + "]", frontendComponentPropertyDefinitions(),
 					["id", "sourceRelativePath", "sourceWritable"])), "mdi:view-dashboard-outline");
 			folder.children.push(componentNode);
-			addFrontendWidgets(componentNode, component.nodes || component.widgets || [], path + "[" + index + "].widgets",
+			addFrontendComponentChildren(componentNode, component, path + "[" + index + "]",
 				"components[" + index + "].widgets", componentFile);
 		});
+	}
+
+	function addFrontendComponentChildren(parent, component, path, mutationPath, componentFile) {
+		var nodes = component && component.nodes || [];
+		if (nodes.length) {
+			nodes.forEach(function (node, index) {
+				addFrontendAuthoringNode(parent, node, path + ".nodes." + safeVirtualName("node", node.id || index), componentFile);
+			});
+			return;
+		}
+		addFrontendWidgets(parent, component && component.widgets || [], path + ".widgets", mutationPath, componentFile);
 	}
 
 	function frontendComponentTargets(components, modelFile) {
@@ -650,7 +1829,7 @@
 
 	function frontendComponentPropertyDefinitions() {
 		return {
-			id: propertyDefinition("Id", "Base properties", "Reusable component id.", { readOnly: true }),
+			id: propertyDefinition("Id", "Base properties", "Reusable UI block id.", { readOnly: true }),
 			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative model source.", { readOnly: true }),
 			sourceWritable: propertyDefinition("Writable", "Information", "Whether this model can be edited.", { readOnly: true })
 		};
@@ -675,7 +1854,7 @@
 			kind: propertyDefinition("Kind", "Base properties", "Widget kind.", { readOnly: true }),
 			text: propertyDefinition("Text", "Base properties", "Text rendered by the widget.", { kind: "text", type: "string" }),
 			label: propertyDefinition("Label", "Base properties", "Visible label.", { kind: "text", type: "string" }),
-			clientAction: propertyDefinition("Client action", "Action", "Client action id.", { kind: "text", type: "string" }),
+			clientAction: propertyDefinition("Client action", "Information", "Internal event action link.", { kind: "text", type: "string", readOnly: true, hidden: true }),
 			source: propertyDefinition("Source", "Data", "Backend result source path.", { kind: "path", type: "string" }),
 			columns: propertyDefinition("Columns", "Data", "Table column descriptors.", {
 				kind: "array",
@@ -696,17 +1875,18 @@
 
 	function frontendPropertyDefinition(key, value) {
 		value = value && typeof value === "object" ? value : {};
+		var internalActionLink = key === "clientAction" || key === "backendCall";
 		return propertyDefinition(
 			value.label || key,
-			value.category || "Base properties",
+			internalActionLink ? "Information" : value.category || "Base properties",
 			value.description || "",
 			{
 				kind: value.kind || value.editor || value.type || "text",
 				type: value.type || "string",
 				items: value.items,
 				defaultValue: value["default"],
-				readOnly: value.readOnly === true,
-				hidden: value.hidden === true
+				readOnly: internalActionLink || value.readOnly === true,
+				hidden: internalActionLink || value.hidden === true
 			}
 		);
 	}
@@ -729,8 +1909,10 @@
 	}
 
 	function addFrontendClientActions(parent, actions, path, modelFile) {
+		actions = actions || [];
 		var folder = virtualNode("clientActions", "folder", "frontendClientActions", path,
-			"Client actions", compact({ count: actions.length }), null, "mdi:gesture-tap");
+			"Client actions", compact({ count: actions.length }),
+			compact(frontendContainerInfo(modelFile, "clientActions", "clientActions", null, null)), "mdi:gesture-tap");
 		parent.children.push(folder);
 		(actions || []).forEach(function (action, index) {
 			folder.children.push(virtualNode("clientAction_" + (action.id || index), "frontendClientAction", action.kind || "clientAction",
@@ -740,8 +1922,10 @@
 	}
 
 	function addFrontendBackendCalls(parent, calls, path, modelFile) {
+		calls = calls || [];
 		var folder = virtualNode("backendCalls", "folder", "frontendBackendCalls", path,
-			"Backend calls", compact({ count: calls.length }), null, "mdi:server-network");
+			"Backend calls", compact({ count: calls.length }),
+			compact(frontendContainerInfo(modelFile, "backendCalls", "backendCalls", null, null)), "mdi:server-network");
 		parent.children.push(folder);
 		(calls || []).forEach(function (call, index) {
 			folder.children.push(virtualNode("backendCall_" + (call.id || index), "frontendBackendCall", call.requestable || "requestable",
@@ -1587,9 +2771,10 @@
 				request.sourceFile || request.sourcePath || "");
 			addNodes(children, definition.nodes || [], "nodes", activeBlocks, analysisById);
 		} else if (target === "engine") {
-			var engine = parseYamlSource(request.engineSource, "version: 1\n");
-			var engineQName = String(engine.engineQName || request.engineQName || "");
-			children.push(virtualNode("engine", "engine", engineQName, "engineQName", engineQName, engineQName, null, "mdi:engine-outline"));
+			var engine = request.definition !== undefined && request.definition !== null
+				? normalizeTree(request.definition)
+				: parseYamlSource(request.engineSource, "version: 1\n");
+			addEngineMetadata(children, engine, "engine");
 			addBindings(children, engine.bindings, "bindings");
 			addConfig(children, engine.config, "config");
 			addFrontendModels(children, engine.config, "frontends", request);
@@ -1605,6 +2790,660 @@
 			target: target,
 			children: children
 		}, request);
+	}
+
+	function authoringEngineDefinition(request) {
+		request = request || {};
+		if (request.definition !== undefined && request.definition !== null) {
+			return normalizeTree(request.definition);
+		}
+		if (env.projectEngineDefinitionForRequest) {
+			try {
+				return normalizeTree(env.projectEngineDefinitionForRequest(request) || {});
+			} catch (e) {
+			}
+		}
+		return parseYamlSource(request.engineSource, "version: 1\n");
+	}
+
+	function authoringEngineTree(request, blocks) {
+		request = request || {};
+		return describeTreeRequest(Object.assign({}, request, {
+			target: "engine",
+			detail: "full",
+			definition: authoringEngineDefinition(request)
+		}), blocks);
+	}
+
+	function authoringBuilderName(request, engine) {
+		var builder = String(request && request.builder || "");
+		if (builder) {
+			return builder;
+		}
+		var entries = frontbuilderSettings(engine && engine.config || {});
+		return entries.length === 1 ? entries[0].name : "";
+	}
+
+	function findAuthoringBuilderNode(tree, builder) {
+		var frontends = findTreeNode(tree, "frontends");
+		if (!frontends) {
+			return null;
+		}
+		if (!builder) {
+			return frontends;
+		}
+		var children = frontends.children || [];
+		for (var i = 0; i < children.length; i++) {
+			if (children[i].kind === "frontendBuilder" && children[i].type === builder) {
+				return children[i];
+			}
+		}
+		return null;
+	}
+
+	function authoringTreeRequest(request, blocks) {
+		request = request || {};
+		var engine = authoringEngineDefinition(request);
+		var tree = authoringEngineTree(Object.assign({}, request, { definition: engine }), blocks);
+		var surface = String(request.surface || "frontend");
+		var builder = authoringBuilderName(request, engine);
+		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
+		var children = focus ? [focus] : tree.children || [];
+		return compactTreeResponse({
+			ok: true,
+			target: "authoring",
+			surface: surface,
+			builder: builder,
+			children: children
+		}, request);
+	}
+
+	function authoringDescriptors(request, engine) {
+		request = request || {};
+		var surface = String(request.surface || "frontend");
+		if (surface !== "frontend") {
+			return [];
+		}
+		var builder = authoringBuilderName(request, engine);
+		var entries = frontbuilderSettings(engine && engine.config || {});
+		var descriptors = [];
+		if (!entries.length) {
+			descriptors = descriptors.concat(frontendCreateDescriptorsForSettings(builder || "svelte", {
+				target: "svelte5"
+			}) || []);
+			return descriptors;
+		}
+		entries.forEach(function (entry) {
+			if (builder && entry.name !== builder) {
+				return;
+			}
+			descriptors = descriptors.concat(frontendBlocksForSettings(entry.name, entry.settings) || []);
+			descriptors = descriptors.concat(frontendCreateDescriptorsForSettings(entry.name, entry.settings) || []);
+		});
+		return descriptors;
+	}
+
+	function findTreeNode(root, path) {
+		if (!root || !path) {
+			return null;
+		}
+		var found = null;
+		function visit(node, parent) {
+			if (!node || found) {
+				return;
+			}
+			if (node.path === path) {
+				found = {
+					node: node,
+					parent: parent || null
+				};
+				return;
+			}
+			(node.children || []).forEach(function (child) {
+				visit(child, node);
+			});
+		}
+		if (root.path === path) {
+			return { node: root, parent: null };
+		}
+		(root.children || []).forEach(function (child) {
+			visit(child, root);
+		});
+		return found;
+	}
+
+	function nodeJson(node, key) {
+		var value = node && node[key];
+		if (!value) {
+			return {};
+		}
+		if (typeof value === "object") {
+			return normalizeTree(value);
+		}
+		var text = String(value);
+		try {
+			return normalizeTree(JSON.parse(text));
+		} catch (e) {
+			return {};
+		}
+	}
+
+	function nodeValue(node, key) {
+		var info = nodeJson(node, "info");
+		if (info[key] !== undefined) {
+			return info[key];
+		}
+		var definition = nodeJson(node, "definition");
+		return definition[key];
+	}
+
+	function nodeFlag(node, key) {
+		var value = nodeValue(node, key);
+		return value === true || String(value) === "true";
+	}
+
+	function nodeObjectValue(node, key) {
+		var value = nodeValue(node, key);
+		if (!value) {
+			return {};
+		}
+		if (typeof value === "object") {
+			return normalizeTree(value);
+		}
+		try {
+			return normalizeTree(JSON.parse(String(value)));
+		} catch (e) {
+			return {};
+		}
+	}
+
+	function inheritedWritable(value, fallback) {
+		if (value === undefined || value === null || value === "") {
+			return fallback;
+		}
+		return value === true || String(value) === "true";
+	}
+
+	function authoringDerivedSlots(focus) {
+		var slots = {};
+		var kind = String(focus.kind || "");
+		var type = String(focus.type || "");
+		var writable = focus.sourceWritable;
+		function add(id, label, accepts, mutationPath) {
+			slots[id] = {
+				id: id,
+				label: label,
+				accepts: frontendArray(accepts),
+				sourceMutationPath: String(mutationPath || ""),
+				sourceWritable: writable
+			};
+		}
+		if (kind === "frontendBuilder") {
+			add("catalog", "Catalog", ["definition.page", "definition.layout", "definition.uiBlock"], "");
+		}
+		if (kind === "folder" && type === "frontends") {
+			add("builders", "Frontends", ["definition.frontendBuilder"], "");
+		}
+		if (type === "frontendBlockProvider" || type === "frontendBlockNamespace") {
+			add("definitions", "Definitions", ["definition.uiBlock"], "");
+		}
+		if (type === "frontendBlocks") {
+			add("uiBlocks", "UI blocks", ["definition.uiBlock"], "");
+		}
+		if (kind === "folder" && type === "frontendBlockProperties") {
+			add("properties", "Properties", ["definition.property"], focus.sourceMutationPath || "props");
+		}
+		if (type === "frontendActionBlocks") {
+			add("actionBlocks", "Action blocks", ["definition.clientAction", "definition.backendCall"], "");
+		}
+		if (type === "frontendStructureBlocks") {
+			add("structureBlocks", "Structure blocks", ["definition.page", "definition.layout",
+				"definition.layoutRegion", "definition.navigationItem"], "");
+		}
+		return slots;
+	}
+
+	function normalizedAuthoringSlots(node, focus) {
+		var raw = nodeObjectValue(node, "slots");
+		var slots = {};
+		Object.keys(raw || {}).forEach(function (key) {
+			var slot = raw[key] && typeof raw[key] === "object" ? normalizeTree(raw[key]) : {};
+			slot.id = slot.id || key;
+			slot.label = slot.label || key;
+			slot.accepts = frontendArray(slot.accepts);
+			slot.sourceMutationPath = String(slot.sourceMutationPath || "");
+			slot.sourceWritable = inheritedWritable(slot.sourceWritable, focus.sourceWritable);
+			slots[key] = slot;
+		});
+		if (Object.keys(slots).length) {
+			return slots;
+		}
+		return authoringDerivedSlots(focus);
+	}
+
+	function authoringNodeSummary(node) {
+		if (!node) {
+			return null;
+		}
+		var summary = {
+			path: node.path || "",
+			name: node.name || "",
+			kind: node.kind || "",
+			type: node.type || "",
+			summary: node.summary || "",
+			readOnly: nodeFlag(node, "readOnly"),
+			readOnlyReference: nodeFlag(node, "readOnlyReference"),
+			inferred: nodeFlag(node, "inferred"),
+			sourceWritable: nodeValue(node, "sourceWritable") === undefined ? null : nodeFlag(node, "sourceWritable"),
+			sourcePath: String(nodeValue(node, "sourcePath") || ""),
+			insertSourcePath: String(nodeValue(node, "frontendInsertSourcePath") || ""),
+			sourceMutationPath: String(nodeValue(node, "sourceMutationPath") || ""),
+			insertMutationPath: String(nodeValue(node, "frontendInsertMutationPath") || ""),
+			traits: frontendArray(nodeValue(node, "traits"))
+		};
+		summary.slots = normalizedAuthoringSlots(node, summary);
+		return summary;
+	}
+
+	function arrayContains(array, value) {
+		if (!array || !array.length) {
+			return true;
+		}
+		for (var i = 0; i < array.length; i++) {
+			if (String(array[i]) === String(value)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function arraysIntersect(left, right) {
+		left = frontendArray(left);
+		right = frontendArray(right);
+		if (!left.length || !right.length) {
+			return false;
+		}
+		var values = {};
+		left.forEach(function (value) {
+			values[String(value)] = true;
+		});
+		for (var i = 0; i < right.length; i++) {
+			if (values[String(right[i])]) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function descriptorTargetMatch(descriptor, focus) {
+		var targets = descriptor && descriptor.targetKinds || [];
+		if (!targets || !targets.length) {
+			return true;
+		}
+		var accepted = {};
+		accepted[String(focus.kind || "")] = true;
+		accepted[String(focus.type || "")] = true;
+		if (focus.kind === "engine" || focus.type === "engine") {
+			accepted.flowEngine = true;
+		}
+		for (var i = 0; i < targets.length; i++) {
+			if (accepted[String(targets[i])]) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function descriptorSlotMatch(descriptor, focus, target) {
+		var traits = frontendArray(descriptor && descriptor.traits);
+		var accepts = frontendArray(target && target.accepts);
+		if (traits.length && accepts.length) {
+			return arraysIntersect(traits, accepts);
+		}
+		return descriptorTargetMatch(descriptor, focus);
+	}
+
+	function descriptorPositionMatch(descriptor, position) {
+		var accepted = descriptor && descriptor.acceptedPositions || [];
+		position = position || "inside";
+		if ((position === "before" || position === "after") && arrayContains(accepted, "inside")) {
+			return true;
+		}
+		return arrayContains(accepted, position);
+	}
+
+	function descriptorMatchesQuery(descriptor, query) {
+		query = String(query || "").trim().toLowerCase();
+		if (!query) {
+			return true;
+		}
+		var text = [
+			descriptor.id,
+			descriptor.name,
+			descriptor.localName,
+			descriptor.label,
+			descriptor.category,
+			descriptor.description,
+			descriptor.kind
+		].join(" ").toLowerCase();
+		return text.indexOf(query) !== -1;
+	}
+
+	function descriptorMutationTargetIssue(descriptor, focus, position, target) {
+		var insert = descriptor && descriptor.insert || {};
+		var writable = target && target.sourceWritable !== undefined && target.sourceWritable !== null
+			? target.sourceWritable
+			: focus.sourceWritable;
+		if (insert.__engineMutationPath || insert.__frontendMutationPath) {
+			return null;
+		}
+		if (insert.__frontendCreateSource) {
+			return writable === false ? "noWritableSource" : null;
+		}
+		if (focus.readOnlyReference || target && target.readOnlyReference) {
+			return "readOnlyReference";
+		}
+		if (writable === false) {
+			return "noWritableSource";
+		}
+		if (target && target.sourceMutationPath) {
+			return null;
+		}
+		if (position === "before" || position === "after") {
+			return focus.sourceMutationPath ? null : "noMutationPath";
+		}
+		return (focus.insertMutationPath || focus.sourceMutationPath) ? null : "noMutationPath";
+	}
+
+	function descriptorMutationTargetPossible(descriptor, focus, position, target) {
+		return descriptorMutationTargetIssue(descriptor, focus, position, target) === null;
+	}
+
+	function descriptorItem(descriptor, target) {
+		var out = {};
+		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace",
+			"sourceBacked", "descriptorKind", "sourceWritable"].forEach(function (key) {
+			if (descriptor[key] !== undefined && descriptor[key] !== null && descriptor[key] !== "") {
+				out[key] = descriptor[key];
+			}
+		});
+		out.traits = frontendArray(descriptor.traits);
+		out.slots = descriptor.slots || {};
+		out.targetKinds = descriptor.targetKinds || [];
+		out.acceptedPositions = descriptor.acceptedPositions || [];
+		if (target) {
+			out.targetSlot = {
+				id: target.id,
+				label: target.label,
+				accepts: target.accepts || [],
+				sourceMutationPath: target.sourceMutationPath || "",
+				position: target.position || "inside",
+				mode: target.mode || "inside"
+			};
+			if (target.index !== undefined && target.index !== null) {
+				out.targetSlot.index = target.index;
+			}
+		}
+		if (descriptor.insert) {
+			out.insert = descriptor.insert;
+		}
+		return out;
+	}
+
+	function indexedMutationPath(path) {
+		path = String(path || "");
+		var match = /^(.*)\[(\d+)\]$/.exec(path);
+		return match ? { path: match[1], index: Number(match[2]) } : null;
+	}
+
+	function siblingInsertionAccepts(focus) {
+		var traits = frontendArray(focus && focus.traits);
+		if (traits.indexOf("ui.event") !== -1) {
+			return ["ui.event"];
+		}
+		if (traits.indexOf("ui.action") !== -1) {
+			return ["ui.action"];
+		}
+		if (traits.indexOf("ui.action.variable") !== -1) {
+			return ["ui.action.variable"];
+		}
+		if (traits.indexOf("ui.table.column") !== -1) {
+			return ["ui.table.column"];
+		}
+		if (traits.indexOf("ui.data.binding") !== -1) {
+			return ["ui.data.binding"];
+		}
+		if (traits.indexOf("ui.directive.branch") !== -1) {
+			return ["ui.directive.branch"];
+		}
+		if (traits.indexOf("ui.block") !== -1 || traits.indexOf("ui.directive") !== -1) {
+			return ["ui.block", "ui.directive"];
+		}
+		return traits.length ? traits : ["ui.block", "ui.directive"];
+	}
+
+	function siblingInsertionTarget(focus, position, mode) {
+		if (position !== "before" && position !== "after") {
+			return null;
+		}
+		var indexed = indexedMutationPath(focus && focus.sourceMutationPath);
+		if (!indexed) {
+			return null;
+		}
+		return {
+			id: "siblings",
+			label: "Siblings",
+			accepts: siblingInsertionAccepts(focus),
+			sourceMutationPath: indexed.path,
+			sourceWritable: focus.sourceWritable,
+			readOnlyReference: focus.readOnlyReference === true,
+			position: position,
+			mode: mode || "sibling",
+			index: position === "before" ? indexed.index : indexed.index + 1
+		};
+	}
+
+	function authoringPaletteTargets(focus, position, mode) {
+		position = position || "inside";
+		var siblingTarget = siblingInsertionTarget(focus, position, mode);
+		if (siblingTarget) {
+			return [siblingTarget];
+		}
+		var targets = [];
+		var slots = focus && focus.slots || {};
+		Object.keys(slots).forEach(function (key) {
+			var slot = slots[key] || {};
+			var accepts = frontendArray(slot.accepts);
+			if (!accepts.length) {
+				return;
+			}
+			var mutationPath = String(slot.sourceMutationPath || "");
+			if (!mutationPath && String(position || "inside") === "inside") {
+				mutationPath = focus.insertMutationPath || focus.sourceMutationPath || "";
+			}
+			targets.push({
+				id: slot.id || key,
+				label: slot.label || key,
+				accepts: accepts,
+				sourceMutationPath: mutationPath,
+				sourceWritable: inheritedWritable(slot.sourceWritable, focus.sourceWritable),
+				readOnlyReference: slot.readOnlyReference === true || focus.readOnlyReference === true,
+				position: position,
+				mode: mode || "inside"
+			});
+		});
+		return targets;
+	}
+
+	function computeAuthoringPalette(request, tree, descriptors, focusInfo) {
+		var position = String(request.position || "inside");
+		var query = String(request.query || request.q || "");
+		var focus = authoringNodeSummary(focusInfo.node);
+		var filters = {
+			targetKinds: 0,
+			acceptedPositions: 0,
+			readOnly: 0,
+			mutationTarget: 0,
+			query: 0,
+			noMatchingTrait: 0,
+			noWritableSource: 0,
+			noMutationPath: 0,
+			readOnlyReference: 0,
+			queryFiltered: 0
+		};
+		var targets = authoringPaletteTargets(focus, position, "inside");
+		var items = [];
+		(descriptors || []).forEach(function (descriptor) {
+			if (!descriptorPositionMatch(descriptor, position)) {
+				filters.acceptedPositions++;
+				return;
+			}
+			if (!targets.length) {
+				if (!descriptorTargetMatch(descriptor, focus)) {
+					filters.targetKinds++;
+					return;
+				}
+				var legacyIssue = descriptorMutationTargetIssue(descriptor, focus, position, null);
+				if (legacyIssue) {
+					filters.mutationTarget++;
+					if (filters[legacyIssue] !== undefined) {
+						filters[legacyIssue]++;
+					}
+					return;
+				}
+				if (!descriptorMatchesQuery(descriptor, query)) {
+					filters.query++;
+					filters.queryFiltered++;
+					return;
+				}
+				items.push(descriptorItem(descriptor, null));
+				return;
+			}
+			var matchedTrait = false;
+			var matchedMutation = false;
+			var lastIssue = "";
+			targets.forEach(function (target) {
+				if (!descriptorSlotMatch(descriptor, focus, target)) {
+					return;
+				}
+				matchedTrait = true;
+				var issue = descriptorMutationTargetIssue(descriptor, focus, position, target);
+				if (issue) {
+					lastIssue = issue;
+					return;
+				}
+				matchedMutation = true;
+				if (!descriptorMatchesQuery(descriptor, query)) {
+					return;
+				}
+				items.push(descriptorItem(descriptor, target));
+			});
+			if (!matchedTrait) {
+				filters.noMatchingTrait++;
+				filters.targetKinds++;
+				return;
+			}
+			if (!descriptorMatchesQuery(descriptor, query)) {
+				filters.query++;
+				filters.queryFiltered++;
+				return;
+			}
+			if (!matchedMutation) {
+				filters.mutationTarget++;
+				if (lastIssue && filters[lastIssue] !== undefined) {
+					filters[lastIssue]++;
+				}
+			}
+		});
+		return {
+			ok: true,
+			target: "authoring.palette",
+			surface: String(request.surface || "frontend"),
+			builder: String(request.builder || ""),
+			focus: focus,
+			targets: targets,
+			position: position,
+			query: query,
+			candidateCount: (descriptors || []).length,
+			eligibleCount: items.length,
+			filters: filters,
+			items: items
+		};
+	}
+
+	function authoringPaletteRequest(request, blocks) {
+		request = request || {};
+		var engine = authoringEngineDefinition(request);
+		var tree = authoringEngineTree(Object.assign({}, request, { definition: engine }), blocks);
+		var descriptors = authoringDescriptors(request, engine);
+		var focusPath = String(request.focusPath || request.path || "");
+		if (!focusPath) {
+			var builderNode = findAuthoringBuilderNode(tree, authoringBuilderName(request, engine));
+			focusPath = builderNode ? builderNode.path : "frontends";
+		}
+		var focusInfo = findTreeNode(tree, focusPath);
+		if (!focusInfo) {
+			return {
+				ok: false,
+				target: "authoring.palette",
+				error: {
+					code: "AUTHORING_FOCUS_NOT_FOUND",
+					message: "No authoring tree node matches focusPath: " + focusPath
+				},
+				focusPath: focusPath,
+				candidateCount: descriptors.length,
+				eligibleCount: 0,
+				filters: {
+					targetKinds: 0,
+					acceptedPositions: 0,
+					readOnly: 0,
+					mutationTarget: 0,
+					query: 0
+				},
+				items: []
+			};
+		}
+		var result = computeAuthoringPalette(request, tree, descriptors, focusInfo);
+		if (result.eligibleCount === 0 && focusInfo.parent) {
+			var cursor = focusInfo.parent;
+			var fallbackResult = null;
+			while (cursor) {
+				var parentRequest = Object.assign({}, request, {
+					focusPath: cursor.path
+				});
+				var parentResult = computeAuthoringPalette(parentRequest, tree, descriptors, {
+					node: cursor,
+					parent: null
+				});
+				if (parentResult.eligibleCount > 0) {
+					fallbackResult = parentResult;
+					break;
+				}
+				var parentInfo = findTreeNode(tree, cursor.path);
+				cursor = parentInfo && parentInfo.parent;
+			}
+			var applyFallback = request.applyFallback !== false && fallbackResult && fallbackResult.eligibleCount > 0;
+			result.fallback = {
+				applied: applyFallback,
+				from: result.focus,
+				to: fallbackResult ? fallbackResult.focus : authoringNodeSummary(focusInfo.parent),
+				available: !!fallbackResult,
+				eligibleCount: fallbackResult ? fallbackResult.eligibleCount : 0,
+				items: fallbackResult ? fallbackResult.items : [],
+				reason: "No compatible candidate on focused node; using nearest parent insertion slot."
+			};
+			if (applyFallback) {
+				fallbackResult.fallback = result.fallback;
+				fallbackResult.fallback.applied = true;
+				return fallbackResult;
+			}
+		}
+		return result;
+	}
+
+	function authoringMutateRequest(request, blocks) {
+		request = request || {};
+		return applyMutationRequest(request, blocks);
 	}
 
 	function intOption(value, fallback, min, max) {
@@ -2856,6 +4695,9 @@
 			activeSlots: activeSlots,
 			toYamlSource: toYamlSource,
 			describeTreeRequest: describeTreeRequest,
+			authoringTreeRequest: authoringTreeRequest,
+			authoringPaletteRequest: authoringPaletteRequest,
+			authoringMutateRequest: authoringMutateRequest,
 			searchFlowRequest: searchFlowRequest,
 			applyMutationRequest: applyMutationRequest,
 			outputSchemaRequest: outputSchemaRequest,
@@ -2879,6 +4721,15 @@
 		},
 		describeTreeRequest: function (request, blocks, env) {
 			return create(env).describeTreeRequest(request, blocks);
+		},
+		authoringTreeRequest: function (request, blocks, env) {
+			return create(env).authoringTreeRequest(request, blocks);
+		},
+		authoringPaletteRequest: function (request, blocks, env) {
+			return create(env).authoringPaletteRequest(request, blocks);
+		},
+		authoringMutateRequest: function (request, blocks, env) {
+			return create(env).authoringMutateRequest(request, blocks);
 		},
 		searchFlowRequest: function (request, blocks, env) {
 			return create(env).searchFlowRequest(request, blocks);
