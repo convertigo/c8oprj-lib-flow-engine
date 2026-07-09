@@ -1098,12 +1098,17 @@
 		return resourceService().patch(request, resourceServiceEnv());
 	}
 
+	function resourceDeleteRequest(request) {
+		return resourceService().remove(request, resourceServiceEnv());
+	}
+
 	function resourceApi() {
 		return {
 			search: resourceSearchRequest,
 			list: resourceListRequest,
 			get: resourceGetRequest,
-			patch: resourcePatchRequest
+			patch: resourcePatchRequest,
+			remove: resourceDeleteRequest
 		};
 	}
 
@@ -3174,6 +3179,8 @@
 			authoringTreeRequest: authoringTreeRequest,
 			authoringPaletteRequest: authoringPaletteRequest,
 			authoringMutateRequest: authoringMutateRequest,
+			contextMenuRequest: contextMenuRequest,
+			contextActionRequest: contextActionRequest,
 			outputSchemaRequest: outputSchemaRequest,
 			nodeOutputSchemaRequest: nodeOutputSchemaRequest,
 			readOutputSchema: readOutputSchema,
@@ -3320,12 +3327,14 @@
 			File: File,
 			FileUtils: FileUtils,
 			Arrays: Arrays,
+			engineDir: engineDir,
 			projectDir: projectDir,
 			canonicalPath: canonicalPath,
 			directoryFingerprint: directoryFingerprint,
 			resourceRelativePath: resourceRelativePath,
 			resolveBlockIcon: resolveBlockIcon,
 			normalizeTree: normalizeTree,
+			projectRootForName: loadedProjectRootForName,
 			raise: raise
 		};
 	}
@@ -3686,10 +3695,22 @@
 		return applyFlowSvelteSourceMutationRequest(request);
 	}
 
+	function frontendRequestSourceFile(request, mustExist) {
+		var sourcePath = String(request && (request.sourceFile || request.sourcePath) || "");
+		if (!sourcePath) {
+			raise("MISSING_FRONTEND_SOURCE", "A Flow Svelte source path is required.");
+		}
+		var sourceFile = new File(sourcePath);
+		if (sourceFile.isAbsolute()) {
+			return sourceFile.getCanonicalFile();
+		}
+		return projectResourceFile(sourcePath, mustExist).file.getCanonicalFile();
+	}
+
 	function describeFrontendDocument(request) {
 		request = request || {};
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
-		var sourceFile = new File(sourcePath);
+		var sourceFile = frontendRequestSourceFile(request, request.source === undefined || request.source === null);
 		var source = request.source !== undefined && request.source !== null
 			? String(request.source)
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
@@ -3710,7 +3731,10 @@
 		if (cached) {
 			return normalizeTree(cached);
 		}
-		var local = describeFrontAstDocument(source, request, sourceFile, projectRoot);
+		var normalizedSourcePath = String(sourceFile.getCanonicalPath()).replace(/\\/g, "/");
+		var local = normalizedSourcePath.indexOf("/src/routes/") >= 0
+			? null
+			: describeFrontAstDocument(source, request, sourceFile, projectRoot);
 		if (local) {
 			return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, local, "Svelte front documents"));
 		}
@@ -3752,7 +3776,7 @@
 
 	function applyFlowSvelteSourceMutationRequest(request) {
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
-		var sourceFile = new File(sourcePath);
+		var sourceFile = frontendRequestSourceFile(request, request.source === undefined || request.source === null);
 		var source = request.source !== undefined && request.source !== null
 			? String(request.source)
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
@@ -3881,7 +3905,7 @@
 		} else {
 			throw new Error("Unsupported FrontAst mutation op: " + String(mutation.op || ""));
 		}
-		var nextSource = frontAstRenderComponent(root).replace(/\s+$/g, "") + "\n";
+		var nextSource = frontAstRenderSource(sourceText, root);
 		debug.changed = nextSource !== sourceText;
 		frontendStudioLog("[Flow frontend DnD] frontAst mutation " + JSON.stringify(debug), !debug.changed);
 		return {
@@ -4231,6 +4255,9 @@
 
 	function frontAstTemplateNode(value) {
 		var record = frontAstIsObject(value) ? frontAstClone(value) : {};
+		var explicitProps = frontAstIsObject(record.props) ? frontAstClone(record.props) : {};
+		var rawSlots = record.slots;
+		var rawChildren = record.children;
 		var tag = String(record.tag || frontAstTagForKind(String(record.kind || record.label || "Node")));
 		var kind = String(record.kind || frontAstCanonicalKind(tag));
 		if (kind === "event") {
@@ -4238,7 +4265,15 @@
 			tag = frontAstEventTagForKind(kind);
 		}
 		var id = String(record.id || frontAstDefaultId(kind));
+		delete record.children;
+		delete record.props;
+		delete record.slots;
 		delete record.tag;
+		for (var propKey in explicitProps) {
+			if (Object.prototype.hasOwnProperty.call(explicitProps, propKey)) {
+				record[propKey] = explicitProps[propKey];
+			}
+		}
 		record.id = id;
 		record.kind = kind;
 		var node = { tag: tag, attrs: record, children: [], selfClosing: false };
@@ -4246,7 +4281,57 @@
 		for (var i = 0; i < slots.length; i++) {
 			node.children.push({ tag: frontAstSlotTag(slots[i]), attrs: {}, children: [], selfClosing: false });
 		}
+		frontAstApplyTemplateSlots(node, kind, rawSlots, rawChildren);
 		return node;
+	}
+
+	function frontAstApplyTemplateSlots(node, kind, rawSlots, rawChildren) {
+		if (rawChildren !== undefined) {
+			frontAstSetTemplateSlot(node, frontAstDirectChildrenSlot(kind), rawChildren);
+		}
+		if (!frontAstIsObject(rawSlots)) {
+			return;
+		}
+		for (var name in rawSlots) {
+			if (Object.prototype.hasOwnProperty.call(rawSlots, name)) {
+				frontAstSetTemplateSlot(node, frontAstCanonicalSlotName(kind, name), rawSlots[name]);
+			}
+		}
+	}
+
+	function frontAstSetTemplateSlot(node, name, rawChildren) {
+		var slot = frontAstTemplateSlotNode(node, name);
+		slot.children = frontAstTemplateChildren(rawChildren);
+		slot.selfClosing = false;
+	}
+
+	function frontAstTemplateSlotNode(node, name) {
+		var tag = frontAstSlotTag(name);
+		var children = node.children || (node.children = []);
+		for (var i = 0; i < children.length; i++) {
+			if (children[i].tag === tag) {
+				return children[i];
+			}
+		}
+		var slot = { tag: tag, attrs: {}, children: [], selfClosing: false };
+		children.push(slot);
+		return slot;
+	}
+
+	function frontAstTemplateChildren(value) {
+		var raw = [];
+		if (value && value.splice) {
+			raw = value;
+		} else if (frontAstIsObject(value) && value.children && value.children.splice) {
+			raw = value.children;
+		} else if (frontAstIsObject(value) && value.nodes && value.nodes.splice) {
+			raw = value.nodes;
+		}
+		var out = [];
+		for (var i = 0; i < raw.length; i++) {
+			out.push(frontAstTemplateNode(raw[i]));
+		}
+		return out;
 	}
 
 	function frontAstDefaultSlots(kind) {
@@ -4263,7 +4348,7 @@
 			return ["then", "else"];
 		}
 		if (kind === "each") {
-			return ["default", "else"];
+			return ["children", "else"];
 		}
 		if (kind === "await") {
 			return ["pending", "then", "catch"];
@@ -4271,11 +4356,45 @@
 		if (kind === "table") {
 			return ["data", "columns"];
 		}
+		if (frontAstSimpleChildrenKind(kind)) {
+			return ["children"];
+		}
 		return [];
+	}
+
+	function frontAstSimpleChildrenKind(kind) {
+		return kind === "pageShell"
+			|| kind === "rowLayout"
+			|| kind === "columnLayout"
+			|| kind === "gridLayout"
+			|| kind === "card";
+	}
+
+	function frontAstDirectChildrenSlot(kind) {
+		return frontAstSimpleChildrenKind(kind) || kind === "each" ? "children" : "children";
+	}
+
+	function frontAstCanonicalSlotName(kind, name) {
+		name = String(name || "");
+		if (name === "default" && (kind === "each" || frontAstSimpleChildrenKind(kind))) {
+			return "children";
+		}
+		return name;
 	}
 
 	function frontAstRenderComponent(root) {
 		return frontAstRenderNode(root, 0) + "\n";
+	}
+
+	function frontAstRenderSource(originalSource, root) {
+		var moduleScript = frontAstModuleScript(originalSource);
+		return (moduleScript ? moduleScript.replace(/\s+$/g, "") + "\n\n" : "")
+			+ frontAstRenderComponent(root).replace(/\s+$/g, "") + "\n";
+	}
+
+	function frontAstModuleScript(source) {
+		var match = /<script\s+module(?:\s[^>]*)?>[\s\S]*?<\/script>/.exec(String(source || ""));
+		return match ? match[0] : "";
 	}
 
 	function frontAstRenderNode(node, level) {
@@ -4364,7 +4483,13 @@
 			return ["id", "source"];
 		}
 		if (kind === "text") {
-			return ["id", "text"];
+			return ["id", "text", "source"];
+		}
+		if (kind === "image") {
+			return ["id", "src", "source", "alt"];
+		}
+		if (kind === "card") {
+			return ["id", "padding", "radius", "variant"];
 		}
 		if (kind === "status" || kind === "json") {
 			return ["id", "source"];
@@ -4387,6 +4512,7 @@
 			events: "Events",
 			actions: "Actions",
 			variables: "Variables",
+			children: "Children",
 			"default": "Default",
 			then: "Then",
 			"else": "Else",
@@ -5530,10 +5656,33 @@
 		});
 	}
 
+	function frontendFlowSvelteSourceRoot(modelPath) {
+		var filePath = String(modelPath.getCanonicalPath());
+		var marker = File.separator + "src" + File.separator + "routes" + File.separator;
+		var index = filePath.indexOf(marker);
+		if (index >= 0) {
+			return new File(filePath.substring(0, index)).getCanonicalFile();
+		}
+		return modelPath.getParentFile().getCanonicalFile();
+	}
+
+	function frontendRelativePath(baseDir, file) {
+		var basePath = canonicalPath(baseDir);
+		var filePath = canonicalPath(file);
+		if (filePath === basePath) {
+			return "";
+		}
+		if (filePath.indexOf(basePath + File.separator) === 0) {
+			return filePath.substring(basePath.length + 1);
+		}
+		return file.getName();
+	}
+
 	function frontendEffectiveModelPath(request, info, modelPath) {
 		var draft = frontendDraftForFile(request, modelPath);
 		var isFlowSvelte = String(modelPath.getName()).endsWith(".flow.svelte");
-		var draftEntries = isFlowSvelte ? frontendDraftEntriesUnder(request, modelPath.getParentFile()) : [];
+		var sourceBaseDir = isFlowSvelte ? frontendFlowSvelteSourceRoot(modelPath) : null;
+		var draftEntries = isFlowSvelte ? frontendDraftEntriesUnder(request, sourceBaseDir) : [];
 		if (draft === null) {
 			if (!isFlowSvelte || draftEntries.length === 0) {
 				return {
@@ -5553,10 +5702,10 @@
 				FileUtils.deleteDirectory(overlayDir);
 			}
 			overlayDir.mkdirs();
-			frontendCopyFlowSvelteOverlay(modelPath.getParentFile(), overlayDir, request);
-			frontendWriteExtraDraftEntries(draftEntries, modelPath.getParentFile(), overlayDir);
+			frontendCopyFlowSvelteOverlay(sourceBaseDir, overlayDir, request);
+			frontendWriteExtraDraftEntries(draftEntries, sourceBaseDir, overlayDir);
 			return {
-				file: new File(overlayDir, modelPath.getName()).getCanonicalFile(),
+				file: new File(overlayDir, frontendRelativePath(sourceBaseDir, modelPath)).getCanonicalFile(),
 				cleanup: overlayDir
 			};
 		}
@@ -5583,11 +5732,10 @@
 			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "install"];
 		}
 		if (action === "check") {
-			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "exec", "--",
-				"svelte-check", "--tsconfig", String(new File(generatedRoot, "tsconfig.json").getAbsolutePath())];
+			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "run", "check"];
 		}
 		if (action === "build") {
-			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "exec", "--", "vite", "build"];
+			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "run", "build"];
 		}
 		var error = new Error("Unsupported frontbuilder action: " + action + ". Use install, generate, check or build.");
 		error.code = "FRONTBUILDER_UNSUPPORTED_ACTION";
@@ -6692,6 +6840,12 @@
 		resourcePatch: function (requestJson) {
 			return engineCall("resourcePatch", requestJson, function (request) {
 				return resourcePatchRequest(request);
+			});
+		},
+
+		resourceDelete: function (requestJson) {
+			return engineCall("resourceDelete", requestJson, function (request) {
+				return resourceDeleteRequest(request);
 			});
 		},
 

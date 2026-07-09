@@ -362,9 +362,6 @@
 
 	function addFrontendModels(out, config, path, request) {
 		var builders = frontbuilderSettings(config);
-		if (builders.length === 0) {
-			return;
-		}
 		var folder = virtualNode("frontends", "folder", "frontends", path,
 			"Frontends", compact({ count: builders.length }), null, "mdi:monitor-dashboard");
 		out.push(folder);
@@ -3443,6 +3440,16 @@
 
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
+		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
+		var engineMutations = mutations.filter(function (mutation) {
+			return !!engineMutationSpec(mutation);
+		});
+		if (engineMutations.length > 0) {
+			if (engineMutations.length !== mutations.length) {
+				raise("MIXED_AUTHORING_MUTATIONS", "Engine config mutations cannot be batched with source mutations.");
+			}
+			return applyEngineMutationRequest(request, blocks, engineMutations);
+		}
 		return applyMutationRequest(request, blocks);
 	}
 
@@ -4222,6 +4229,77 @@
 			out.analysis = analyzeFlowSource(blocks, source);
 		}
 		return out;
+	}
+
+	function engineMutationSpec(mutation) {
+		var value = mutation && mutation.value || {};
+		var path = value.__engineMutationPath || mutation && mutation.__engineMutationPath;
+		if (!path) {
+			return null;
+		}
+		var payload = {};
+		Object.keys(value || {}).forEach(function (key) {
+			if (String(key).indexOf("__") !== 0) {
+				payload[key] = value[key];
+			}
+		});
+		return {
+			op: String(value.__engineMutationOp || mutation.__engineMutationOp || mutation.op || "merge"),
+			path: String(path),
+			value: payload
+		};
+	}
+
+	function applyEngineMutationRequest(request, blocks, mutations) {
+		var base = projectDir && projectDir();
+		if (!base) {
+			raise("PROJECT_RESOURCES_UNAVAILABLE", "Project Flow resources are unavailable.",
+				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
+		}
+		var file = new File(base, "libs/flow/engine.yaml");
+		var fallback = "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n";
+		var oldSource = file.isFile()
+			? String(FileUtils.readFileToString(file, "UTF-8"))
+			: fallback;
+		var definition = parseYamlSource(oldSource, fallback);
+		mutations.forEach(function (mutation) {
+			var spec = engineMutationSpec(mutation);
+			if (!spec) {
+				raise("UNSUPPORTED_AUTHORING_MUTATION", "Engine authoring mutations require a palette payload with __engineMutationPath.");
+			}
+			applyOneMutation(definition, spec, blocks);
+		});
+		if (definition.version === undefined || definition.version === null) {
+			definition.version = 1;
+		}
+		if (!definition.engineQName) {
+			definition.engineQName = "lib_flow_engine.Engine";
+		}
+		var source = toYamlSource(definition);
+		if (request.dryRun !== true && request.write !== false && request.persist !== false) {
+			FileUtils.forceMkdir(file.getParentFile());
+			FileUtils.writeStringToFile(file, source, "UTF-8");
+		}
+		var tree = authoringTreeRequest({
+			surface: request.surface || "frontend",
+			builder: request.builder || "svelte",
+			engineSource: source,
+			sourceFile: String(file.getAbsolutePath()),
+			detail: request.detail || "compact",
+			maxDepth: request.maxDepth || 4
+		}, blocks);
+		return {
+			ok: true,
+			target: "engine",
+			path: "libs/flow/engine.yaml",
+			sourceFile: String(file.getAbsolutePath()),
+			source: source,
+			oldHash: env.sha256Hex ? env.sha256Hex(oldSource) : "",
+			newHash: env.sha256Hex ? env.sha256Hex(source) : "",
+			changed: oldSource !== source,
+			written: request.dryRun === true || request.write === false || request.persist === false ? false : oldSource !== source,
+			children: tree.children || []
+		};
 	}
 
 	function fullSchemaDetail(request) {

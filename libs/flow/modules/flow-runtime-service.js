@@ -52,6 +52,10 @@
 		var authoringTreeRequest = env.authoringTreeRequest || describeTreeRequest;
 		var authoringPaletteRequest = env.authoringPaletteRequest || describeTreeRequest;
 		var authoringMutateRequest = env.authoringMutateRequest || applyMutationRequest;
+		var contextMenuRequest = env.contextMenuRequest || function () { return { ok: true, items: [] }; };
+		var contextActionRequest = env.contextActionRequest || function () {
+			return { ok: false, error: { code: "CONTEXT_ACTION_UNAVAILABLE", message: "Context actions are not available." } };
+		};
 		var outputSchemaRequest = env.outputSchemaRequest;
 		var nodeOutputSchemaRequest = env.nodeOutputSchemaRequest;
 		var readOutputSchema = env.readOutputSchema;
@@ -374,6 +378,18 @@
 					return authoringMutateRequest(args, loadBlocks());
 				});
 			};
+			ctx.contextMenuSource = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return contextMenuRequest(args, loadBlocks());
+				});
+			};
+			ctx.contextActionSource = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return contextActionRequest(args, loadBlocks());
+				});
+			};
 			ctx.outputSchemaSource = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
@@ -435,6 +451,12 @@
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
 					return resources.patch(args);
+				});
+			};
+			ctx.resourceDelete = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return resources.remove(args);
 				});
 			};
 			ctx.runFlowSource = function (flowSource, config, options) {

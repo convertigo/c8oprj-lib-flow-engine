@@ -367,6 +367,31 @@
 		}, request.includeContent === true ? { content: applied.content } : {});
 	}
 
+	function remove(request, env) {
+		request = request || {};
+		var entry = projectResourceFile(request.path, true, env);
+		var oldContent = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+		var oldHash = env.sha256Hex(oldContent);
+		if (request.baseHash && String(request.baseHash) !== oldHash) {
+			env.raise("RESOURCE_BASE_HASH_MISMATCH", "Flow resource changed since it was read: " + entry.path,
+				null, "Read the resource again and delete from the new hash.");
+		}
+		var deleted = false;
+		if (request.dryRun !== true) {
+			deleted = entry.file["delete"]();
+			if (!deleted && entry.file.isFile()) {
+				env.raise("RESOURCE_DELETE_FAILED", "Unable to delete Flow resource: " + entry.path);
+			}
+		}
+		return {
+			ok: true,
+			path: entry.path,
+			dryRun: request.dryRun === true,
+			oldHash: oldHash,
+			deleted: request.dryRun === true ? false : deleted
+		};
+	}
+
 	return {
 		projectResourceFile: projectResourceFile,
 		projectResourceEntries: projectResourceEntries,
@@ -377,6 +402,7 @@
 		search: search,
 		get: get,
 		validateResourceContent: validateResourceContent,
-		patch: patch
+		patch: patch,
+		remove: remove
 	};
 }())

@@ -659,10 +659,10 @@
 		});
 	}
 
-	function frontendAuthoringBlocksForSettings(builderName, settings) {
+	function frontendAuthoringBlocksForSettings(builderName, settings, env) {
 		settings = settings || {};
 		var blocks = [
-			frontendBuilderBootstrapDescriptor(builderName, settings)
+			frontendBuilderBootstrapDescriptor(builderName, settings, env)
 		].concat(frontendSourceDefinitionDescriptors(builderName, settings));
 		return blocks.concat([
 			frontendAuthoringDescriptor(builderName, settings, {
@@ -1031,7 +1031,7 @@
 				acceptedPositions: ["inside"],
 				description: "Creates a source-backed low-code UI block edited through its parsed .flow.svelte AST.",
 				baseId: "project.flowUiBlock",
-				directory: "components/${namespacePath}",
+				directory: frontendComponentSourceDirectory(builderName, settings) + "/${namespacePath}",
 				fileName: "${tag}.flow.svelte",
 				source: frontendUiBlockSourceTemplate("flow-svelte", "Flow UI block")
 			}),
@@ -1046,7 +1046,7 @@
 				acceptedPositions: ["inside"],
 				description: "Creates a source-backed UI block implemented as pure Svelte code.",
 				baseId: "project.svelteUiBlock",
-				directory: "components/${namespacePath}",
+				directory: frontendComponentSourceDirectory(builderName, settings) + "/${namespacePath}",
 				fileName: "${tag}.svelte",
 				source: frontendUiBlockSourceTemplate("svelte", "Svelte UI block")
 			}),
@@ -1061,23 +1061,40 @@
 				acceptedPositions: ["inside"],
 				description: "Creates a source-backed client action implemented as a .svelte.js module.",
 				baseId: "project.clientAction",
-				directory: "actions/${namespacePath}",
+				directory: frontendActionSourceDirectory(builderName, settings) + "/${namespacePath}",
 				fileName: "${actionName}.svelte.js",
 				source: frontendClientActionSourceTemplate()
 			})
 		];
 	}
 
-	function frontendPageSourceDirectory(builderName, settings) {
+	function frontendModelSourceDirectory(builderName, settings) {
 		var rootPrefix = "libs/flow/frontbuilder/" + safePathSegment(builderName || "svelte") + "/";
 		var modelPath = String(settings && settings.modelPath || "");
-		if (modelPath.indexOf(rootPrefix) === 0) {
-			modelPath = modelPath.substring(rootPrefix.length);
+		var rootIndex = modelPath.indexOf(rootPrefix);
+		if (rootIndex >= 0) {
+			modelPath = modelPath.substring(rootIndex + rootPrefix.length);
+		}
+		var routesIndex = modelPath.indexOf("/src/routes/");
+		if (routesIndex >= 0) {
+			return modelPath.substring(0, routesIndex);
 		}
 		if (modelPath.endsWith("/+page.flow.svelte")) {
 			return modelPath.substring(0, modelPath.length - "/+page.flow.svelte".length);
 		}
 		return "model/" + safePathSegment(builderName || "svelte");
+	}
+
+	function frontendPageSourceDirectory(builderName, settings) {
+		return frontendModelSourceDirectory(builderName, settings) + "/src/routes";
+	}
+
+	function frontendComponentSourceDirectory(builderName, settings) {
+		return frontendModelSourceDirectory(builderName, settings) + "/src/lib/components";
+	}
+
+	function frontendActionSourceDirectory(builderName, settings) {
+		return frontendModelSourceDirectory(builderName, settings) + "/src/lib/actions";
 	}
 
 	function frontendSourceDefinitionDescriptor(builderName, settings, options) {
@@ -1137,9 +1154,9 @@
 			"      }",
 			"    },",
 			"    snippets: {",
-			"      default: {",
+			"      children: {",
 			"        label: \"Content\",",
-			"        description: \"Default child content rendered by the UI block.\"",
+			"        description: \"Child content rendered by the UI block.\"",
 			"      }",
 			"    },",
 			"    insert: {",
@@ -1229,8 +1246,46 @@
 		].join("\n");
 	}
 
-	function frontendBuilderBootstrapDescriptor(builderName, settings) {
+	function defaultBuilderResourceRoot(builderName, settings, env) {
+		function usableRoot(root) {
+			if (!root || !root.isDirectory()) {
+				return "";
+			}
+			var cli = new env.File(root, "src-builder/frontDocumentCli.ts");
+			return cli.isFile() ? String(root.getAbsolutePath()) : "";
+		}
+		if (settings && settings.resourceRoot) {
+			var configuredRoot = usableRoot(resourceRootForSettings(settings, env));
+			if (configuredRoot) {
+				return settings.resourceRoot;
+			}
+		}
+		if (String(builderName || "svelte") === "svelte" && env && typeof env.projectRootForName === "function") {
+			var projectRoot = env.projectRootForName("lib_flow_frontbuilder_svelte");
+			if (projectRoot) {
+				var loadedRoot = usableRoot(new env.File(projectRoot, "libs/flow/frontbuilder/svelte"));
+				if (loadedRoot) {
+					return loadedRoot;
+				}
+			}
+		}
+		if (String(builderName || "svelte") === "svelte" && env && typeof env.engineDir === "function") {
+			var engineFlowDir = env.engineDir();
+			var engineProjectDir = engineFlowDir && engineFlowDir.getParentFile() && engineFlowDir.getParentFile().getParentFile();
+			var gitRoot = engineProjectDir && engineProjectDir.getParentFile();
+			if (gitRoot) {
+				var devRoot = usableRoot(new env.File(gitRoot, "c8oprj-lib-flow-frontbuilder-svelte/libs/flow/frontbuilder/svelte"));
+				if (devRoot) {
+					return devRoot;
+				}
+			}
+		}
+		return "libs/flow/frontbuilder/svelte";
+	}
+
+	function frontendBuilderBootstrapDescriptor(builderName, settings, env) {
 		settings = settings || {};
+		builderName = builderName || "svelte";
 		return frontendAuthoringDescriptor(builderName || "svelte", settings, {
 			id: "frontbuilder.svelte.builder",
 			label: "Svelte builder",
@@ -1245,9 +1300,9 @@
 				__engineMutationPath: "config.frontbuilder.svelte",
 				__engineMutationOp: "merge",
 				target: "svelte5",
-				resourceRoot: "libs/flow/frontbuilder/svelte",
+				resourceRoot: defaultBuilderResourceRoot(builderName, settings, env),
 				privateDir: "_private/svelte",
-				modelPath: "libs/flow/frontbuilder/svelte/model/SvelteFrontend/+page.flow.svelte",
+				modelPath: "libs/flow/frontbuilder/svelte/model/SvelteFrontend/src/routes/+page.flow.svelte",
 				buildOutput: "DisplayObjects/mobile"
 			},
 			properties: {
@@ -1486,7 +1541,7 @@
 		var authoringSettings = Object.assign({}, settings, {
 			provider: currentProjectProvider(env)
 		});
-		return frontendAuthoringBlocksForSettings(name, authoringSettings);
+		return frontendAuthoringBlocksForSettings(name, authoringSettings, env);
 	}
 
 	function frontendBlocksForConfig(config, env) {
@@ -1505,7 +1560,7 @@
 			out.push(frontendBuilderBootstrapDescriptor("svelte", {
 				target: "svelte5",
 				provider: currentProjectProvider(env)
-			}));
+			}, env));
 			return out;
 		}
 		entries.forEach(function (entry) {

@@ -2779,9 +2779,11 @@ assertTrue(fallbackFrontendPalette.ok === true && fallbackFrontendPalette.eligib
 	"authoring-palette did not apply parent fallback for a frontend definition leaf focus");
 
 var flowSvelteModelDir = new java.io.File(frontendRoot, "model/AstSmoke");
-var flowSvelteComponentDir = new java.io.File(flowSvelteModelDir, "components");
+var flowSvelteRoutesDir = new java.io.File(flowSvelteModelDir, "src/routes");
+var flowSvelteComponentDir = new java.io.File(flowSvelteModelDir, "src/lib/components");
 flowSvelteComponentDir.mkdirs();
-var flowSveltePageFile = new java.io.File(flowSvelteModelDir, "+page.flow.svelte");
+flowSvelteRoutesDir.mkdirs();
+var flowSveltePageFile = new java.io.File(flowSvelteRoutesDir, "+page.flow.svelte");
 var flowSvelteComponentFile = new java.io.File(flowSvelteComponentDir, "SmokePanel.flow.svelte");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"<script module>",
@@ -2820,7 +2822,7 @@ var flowSvelteEngineSource = [
 	"    svelte:",
 	"      target: svelte5",
 	"      resourceRoot: libs/flow/frontbuilder/svelte",
-	"      modelPath: libs/flow/frontbuilder/svelte/model/AstSmoke/+page.flow.svelte",
+	"      modelPath: libs/flow/frontbuilder/svelte/model/AstSmoke/src/routes/+page.flow.svelte",
 	""
 ].join("\n");
 var flowSvelteTree = JSON.parse(engine.describeTree(JSON.stringify({
