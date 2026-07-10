@@ -1195,6 +1195,10 @@
 		if (kind === "frontendDataBlock") {
 			return ["ui.data.binding", "ui.table.column"];
 		}
+		if (kind === "frontendRoutes" || kind === "frontendRouteRoot" || kind === "frontendRouteGroup"
+			|| kind === "frontendRouteSegment" || kind === "frontendRouteChildren") {
+			return ["route.container"];
+		}
 		if (kind === "frontendStructure" || kind === "frontendSlot" || kind === "frontendWidgetRoot") {
 			return ["ui.container"];
 		}
@@ -1214,6 +1218,10 @@
 		var type = String(node && node.type || "");
 		var path = String(node && node.sourceMutationPath || "");
 		var writable = node && node.sourceWritable;
+		if (kind === "frontendRoutes" || kind === "frontendRouteRoot" || kind === "frontendRouteGroup"
+			|| kind === "frontendRouteSegment" || kind === "frontendRouteChildren") {
+			slots.routes = frontendSlot("Routes", ["definition.routePage", "definition.routeLayout", "definition.routeFolder"], "", writable);
+		}
 		if (kind === "frontendStructure" || kind === "frontendSlot" || kind === "frontendWidgetRoot"
 			|| kind === "frontendPage" || kind === "frontendRouteLayout" || kind === "frontendComponent") {
 			slots.structure = frontendSlot("Structure", ["ui.block", "ui.directive"], frontendNodeInsertMutationPath(node), writable);
@@ -1260,8 +1268,14 @@
 
 	function addFrontendAuthoringTree(builder, tree, path, modelFile) {
 		(tree.children || []).forEach(function (node, index) {
-			addFrontendAuthoringNode(builder, node, path + "." + safeVirtualName("node", node.id || index), modelFile);
+			addFrontendAuthoringNode(builder, node, path + "." + frontendAuthoringPathSegment(node, index), modelFile);
 		});
+	}
+
+	function frontendAuthoringPathSegment(node, index) {
+		node = node || {};
+		var base = safeVirtualName("node", node.id || node.type || node.kind || index);
+		return base + "_" + index;
 	}
 
 	function addFrontendAuthoringNode(parent, node, path, modelFile) {
@@ -1274,6 +1288,7 @@
 		var info = insertMutationPath
 			? frontendContainerInfo(sourceFile, mutationPath, insertMutationPath, definitions, order)
 			: frontendItemInfo(sourceFile, mutationPath, definitions, order);
+		applyFrontendAuthoringSourcePath(info, node);
 		applyFrontendAuthoringInsertTarget(info, node);
 		var definition = frontendAuthoringDefinition(node);
 		var traits = frontendAuthoringTraits(node);
@@ -1293,8 +1308,19 @@
 			path, summary, compact(definition), compact(info), frontendAuthoringIcon(node));
 		parent.children.push(virtual);
 		(node.children || []).forEach(function (child, index) {
-			addFrontendAuthoringNode(virtual, child, path + "." + safeVirtualName("node", child.id || index), sourceFile || modelFile);
+			addFrontendAuthoringNode(virtual, child, path + "." + frontendAuthoringPathSegment(child, index), sourceFile || modelFile);
 		});
+	}
+
+	function applyFrontendAuthoringSourcePath(info, node) {
+		if (!info || !node || !node.sourcePath) {
+			return info;
+		}
+		info.sourcePath = String(node.sourcePath);
+		if (node.sourceRelativePath) {
+			info.sourceRelativePath = String(node.sourceRelativePath);
+		}
+		return info;
 	}
 
 	function applyFrontendAuthoringInsertTarget(info, node) {
@@ -2885,11 +2911,14 @@
 			return null;
 		}
 		var found = null;
+		function nodeMatches(node) {
+			return node && (node.path === path || node.sourceMutationPath === path);
+		}
 		function visit(node, parent) {
 			if (!node || found) {
 				return;
 			}
-			if (node.path === path) {
+			if (nodeMatches(node)) {
 				found = {
 					node: node,
 					parent: parent || null
@@ -2900,7 +2929,7 @@
 				visit(child, node);
 			});
 		}
-		if (root.path === path) {
+		if (nodeMatches(root)) {
 			return { node: root, parent: null };
 		}
 		(root.children || []).forEach(function (child) {
@@ -2976,7 +3005,12 @@
 			};
 		}
 		if (kind === "frontendBuilder") {
-			add("catalog", "Catalog", ["definition.page", "definition.layout", "definition.uiBlock"], "");
+			add("catalog", "Catalog", ["definition.page", "definition.layout", "definition.routePage",
+				"definition.routeLayout", "definition.routeFolder", "definition.uiBlock"], "");
+		}
+		if (kind === "frontendRoutes" || kind === "frontendRouteRoot" || kind === "frontendRouteGroup"
+			|| kind === "frontendRouteSegment" || kind === "frontendRouteChildren") {
+			add("routes", "Routes", ["definition.routePage", "definition.routeLayout", "definition.routeFolder"], "");
 		}
 		if (kind === "folder" && type === "frontends") {
 			add("builders", "Frontends", ["definition.frontendBuilder"], "");
@@ -3156,6 +3190,10 @@
 		return descriptorMutationTargetIssue(descriptor, focus, position, target) === null;
 	}
 
+	function cloneAuthoringInsert(insert) {
+		return normalizeTree(insert || {});
+	}
+
 	function descriptorItem(descriptor, target) {
 		var out = {};
 		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace",
@@ -3174,6 +3212,7 @@
 				label: target.label,
 				accepts: target.accepts || [],
 				sourceMutationPath: target.sourceMutationPath || "",
+				sourcePath: target.sourcePath || "",
 				position: target.position || "inside",
 				mode: target.mode || "inside"
 			};
@@ -3182,7 +3221,10 @@
 			}
 		}
 		if (descriptor.insert) {
-			out.insert = descriptor.insert;
+			out.insert = cloneAuthoringInsert(descriptor.insert);
+			if (target && target.sourcePath && out.insert.__frontendCreateSource) {
+				out.insert.__frontendCreateSource.targetSourcePath = target.sourcePath;
+			}
 		}
 		return out;
 	}
@@ -3232,6 +3274,7 @@
 			label: "Siblings",
 			accepts: siblingInsertionAccepts(focus),
 			sourceMutationPath: indexed.path,
+			sourcePath: focus.sourcePath || "",
 			sourceWritable: focus.sourceWritable,
 			readOnlyReference: focus.readOnlyReference === true,
 			position: position,
@@ -3263,6 +3306,7 @@
 				label: slot.label || key,
 				accepts: accepts,
 				sourceMutationPath: mutationPath,
+				sourcePath: slot.sourcePath || focus.sourcePath || "",
 				sourceWritable: inheritedWritable(slot.sourceWritable, focus.sourceWritable),
 				readOnlyReference: slot.readOnlyReference === true || focus.readOnlyReference === true,
 				position: position,

@@ -1011,14 +1011,79 @@
 				category: "Frontend page definitions",
 				kind: "frontendPageDefinition",
 				icon: "mdi:file-outline",
-				traits: ["definition.page"],
+				traits: ["definition.routePage"],
 				targetKinds: ["frontendBuilder", "frontendRoutes", "frontendRouteGroup", "frontendRouteSegment"],
 				acceptedPositions: ["inside"],
 				description: "Creates a source-backed low-code route page edited through its parsed .flow.svelte AST.",
 				baseId: "page",
-				directory: frontendPageSourceDirectory(builderName, settings) + "/${localName}",
+				directory: "${targetRouteDirectory}",
+				fallbackDirectory: frontendPageSourceDirectory(builderName, settings),
 				fileName: "+page.flow.svelte",
 				source: frontendPageSourceTemplate()
+			}),
+			frontendSourceDefinitionDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.layout",
+				label: "Layout",
+				category: "Frontend layout definitions",
+				kind: "frontendRouteLayoutDefinition",
+				icon: "mdi:page-layout-outline",
+				traits: ["definition.routeLayout"],
+				targetKinds: ["frontendBuilder", "frontendRoutes", "frontendRouteGroup", "frontendRouteSegment"],
+				acceptedPositions: ["inside"],
+				description: "Creates a source-backed SvelteKit route layout for the selected route segment.",
+				baseId: "layout",
+				directory: "${targetRouteDirectory}",
+				fallbackDirectory: frontendPageSourceDirectory(builderName, settings),
+				fileName: "+layout.flow.svelte",
+				source: frontendRouteLayoutSourceTemplate()
+			}),
+			frontendSourceDefinitionDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.routeSegment",
+				label: "Route segment",
+				category: "Frontend route definitions",
+				kind: "frontendRouteSegmentDefinition",
+				icon: "mdi:folder-outline",
+				traits: ["definition.routeFolder"],
+				targetKinds: ["frontendRoutes", "frontendRouteGroup", "frontendRouteSegment"],
+				acceptedPositions: ["inside"],
+				description: "Creates a SvelteKit route directory below the selected route segment.",
+				baseId: "segment",
+				directory: "${targetRouteDirectory}/${localName}",
+				directoryOnly: true,
+				markerFile: ".flow-route.json",
+				markerSource: "{\n  \"kind\": \"segment\"\n}\n"
+			}),
+			frontendSourceDefinitionDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.routeGroup",
+				label: "Route group",
+				category: "Frontend route definitions",
+				kind: "frontendRouteGroupDefinition",
+				icon: "mdi:folder-hidden",
+				traits: ["definition.routeFolder"],
+				targetKinds: ["frontendRoutes", "frontendRouteGroup", "frontendRouteSegment"],
+				acceptedPositions: ["inside"],
+				description: "Creates a SvelteKit pathless route group below the selected route segment.",
+				baseId: "group",
+				directory: "${targetRouteDirectory}/(${localName})",
+				directoryOnly: true,
+				markerFile: ".flow-route.json",
+				markerSource: "{\n  \"kind\": \"group\"\n}\n"
+			}),
+			frontendSourceDefinitionDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.routeParam",
+				label: "Route parameter",
+				category: "Frontend route definitions",
+				kind: "frontendRouteSegmentDefinition",
+				icon: "mdi:folder-key-outline",
+				traits: ["definition.routeFolder"],
+				targetKinds: ["frontendRoutes", "frontendRouteGroup", "frontendRouteSegment"],
+				acceptedPositions: ["inside"],
+				description: "Creates a SvelteKit dynamic route segment below the selected route segment.",
+				baseId: "id",
+				directory: "${targetRouteDirectory}/[${localName}]",
+				directoryOnly: true,
+				markerFile: ".flow-route.json",
+				markerSource: "{\n  \"kind\": \"parameter\"\n}\n"
 			}),
 			frontendSourceDefinitionDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.flowUiBlock",
@@ -1112,8 +1177,12 @@
 				__frontendCreateSource: {
 					baseId: options.baseId,
 					directory: options.directory,
+					fallbackDirectory: options.fallbackDirectory || "",
 					fileName: options.fileName,
-					source: options.source
+					source: options.source,
+					directoryOnly: options.directoryOnly === true,
+					markerFile: options.markerFile || "",
+					markerSource: options.markerSource || ""
 				}
 			},
 			properties: {}
@@ -1190,7 +1259,6 @@
 			"  export const _flow = {",
 			"    page: {",
 			"      id: \"${localName}\",",
-			"      route: \"/${localName}\",",
 			"      title: \"${LocalName}\"",
 			"    }",
 			"  };",
@@ -1198,6 +1266,21 @@
 			"",
 			"<FlowComponent id=\"${localName}\" label=\"${LocalName}\">",
 			"  <Structure />",
+			"</FlowComponent>",
+			""
+		].join("\n");
+	}
+
+	function frontendRouteLayoutSourceTemplate() {
+		return [
+			"<FlowComponent id=\"${localName}Layout\" label=\"${LocalName} layout\">",
+			"  <Structure>",
+			"    <PageShell id=\"pageShell\" maxWidth=\"1120px\" padding=\"24px\" gap=\"16px\" align=\"stretch\">",
+			"      <Children>",
+			"        <PageContent id=\"pageContent\" />",
+			"      </Children>",
+			"    </PageShell>",
+			"  </Structure>",
 			"</FlowComponent>",
 			""
 		].join("\n");
