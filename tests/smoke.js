@@ -1063,6 +1063,33 @@ var httpInputUrlRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(httpInputUrlRun.result.text === "Flow HTTP input URL smoke",
 	"http.get shortcut lost the caller input scope inside a FlowScript block");
+var xmlParseCatalog = JSON.parse(engine.catalog(JSON.stringify({ q: "xml.parse" })));
+assertTrue(xmlParseCatalog.blocks.some(function (block) {
+	return block.blockId === "xml.parse" && block.namespace === "xml" && block.origin === "core";
+}), "catalog did not expose xml.parse");
+var xmlParseRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: parseFeed",
+		"    block: xml.parse",
+		"    text: \"<rss><channel><item><title>One</title><enclosure url=\\\"https://example.test/one.png\\\" /></item><item><title>Two</title></item></channel></rss>\"",
+		"    out: local.feed",
+		"  - id: firstTitle",
+		"    block: set",
+		"    path: result.title",
+		"    value: \"{{ local.feed.rss.channel.item[0].title }}\"",
+		"  - id: firstImage",
+		"    block: set",
+		"    path: result.imageUrl",
+		"    value: \"{{ local.feed.rss.channel.item[0].enclosure.attr.url }}\"",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(xmlParseRun.result.title === "One" &&
+	xmlParseRun.result.imageUrl === "https://example.test/one.png",
+	"xml.parse did not expose the expected Convertigo XML-to-JSON shape");
 var innerLeakCodeSource = [
 	"const _meta = {",
 	"\t\"description\": \"Inner Flow block whose result scope must stay private to the block.\",",
