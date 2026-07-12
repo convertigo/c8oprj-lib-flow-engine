@@ -470,7 +470,7 @@
 				}), compact(sourceObjectInfo(sourceInfo, frontendSourcePropertyDefinitions(),
 					["sourceRelativePath", "sourceWritable", "sourceDirty"])), "mdi:file-code-outline"));
 		}
-		addFrontendBlockCatalog(builder, name, settings, path, request);
+		var catalogNode = addFrontendBlockCatalog(builder, name, settings, path, request);
 		if (!settings.modelPath) {
 			return;
 		}
@@ -490,6 +490,9 @@
 			}));
 			if (document.tree && document.tree.children) {
 				addFrontendAuthoringTree(builder, document.tree, path + ".authoring", modelFile);
+				if (catalogNode) {
+					addFrontendAuthoringCatalogMirror(catalogNode, document.tree, path + ".catalog.authoring", modelFile);
+				}
 			} else {
 				addFrontendModelTree(builder, model, path + ".model", modelFile);
 			}
@@ -525,7 +528,7 @@
 		var blocks = frontendBlocksForSettings(name, settings) || [];
 		var createDescriptors = frontendCreateDescriptorsForSettings(name, settings) || [];
 		if (blocks.length === 0 && createDescriptors.length === 0) {
-			return;
+			return null;
 		}
 		var catalog = virtualNode("catalog", "folder", "frontendBlockCatalog", path + ".catalog",
 			"Catalog", compact({
@@ -556,6 +559,7 @@
 			addFrontendProviderCatalog(catalog, name, projectProvider, provider, providers[provider],
 				path + ".catalog." + safeVirtualName("provider", provider), settings, request);
 		});
+		return catalog;
 	}
 
 	function currentFrontendProjectProvider() {
@@ -1346,6 +1350,75 @@
 		});
 	}
 
+	function addFrontendAuthoringCatalogMirror(catalog, tree, path, modelFile) {
+		var mirrored = 0;
+		(tree.children || []).forEach(function (node, index) {
+			if (String(node && node.kind || "") !== "frontendLibrary" && String(node && node.type || "") !== "library") {
+				return;
+			}
+			addFrontendAuthoringNode(catalog, node, path + "." + frontendAuthoringPathSegment(node, index), modelFile);
+			mirrored++;
+		});
+		if (mirrored) {
+			var definition = {};
+			try {
+				definition = JSON.parse(String(catalog.definition || "{}"));
+			} catch (e) {
+				definition = {};
+			}
+			definition.authoringMirror = true;
+			definition.authoringLibraryCount = mirrored;
+			catalog.definition = compact(definition);
+		}
+	}
+
+	function normalizeFrontendFlowSvelteRootNode(node, sourceFile) {
+		if (!node || !sourceFile || !sourceFile.isFile() || String(node.kind || "") !== "frontendComponent") {
+			return node;
+		}
+		var mutationPath = String(node.sourceMutationPath || "");
+		var insertPath = String(node.frontendInsertMutationPath || "") || frontendSlotMutationPath(node, ["structure"]);
+		if (mutationPath.indexOf("frontAst") === 0 || insertPath.indexOf("frontAst") === 0) {
+			return node;
+		}
+		if (!String(sourceFile.getName()).endsWith(".flow.svelte")) {
+			return node;
+		}
+		try {
+			var root = flowSvelteLiteComponentRoot(String(sourceFile.getAbsolutePath()),
+				String(FileUtils.readFileToString(sourceFile, "UTF-8")));
+			if (!root) {
+				return node;
+			}
+			node.label = root.label || node.label;
+			node.sourceMutationPath = root.sourceMutationPath || "frontAst";
+			node.frontendInsertSourcePath = String(sourceFile.getAbsolutePath());
+			node.frontendInsertMutationPath = frontendSlotMutationPath(root, ["structure"]) || "frontAst.slots.structure.children";
+			node.slots = Object.assign({}, node.slots || {}, root.slots || {});
+			node.traits = node.traits || root.traits;
+			node.props = Object.assign({}, node.props || {});
+			if (root.props && root.props.label !== undefined && node.props.label === undefined) {
+				node.props.label = root.props.label;
+			}
+		} catch (e) {
+		}
+		return node;
+	}
+
+	function normalizeFrontendComponentInstanceNode(node) {
+		if (!node || !node.sourceMutationPath) {
+			return node;
+		}
+		var tag = String(node.tag || node.type || "");
+		var props = node.props || {};
+		var traits = frontendArray(node.traits);
+		if (traits.indexOf("ui.directive") === -1 && /^[A-Z]/.test(tag) &&
+				props.id !== undefined && String(node.label || "") === tag) {
+			node.label = String(props.id);
+		}
+		return node;
+	}
+
 	function frontendAuthoringPathSegment(node, index) {
 		node = node || {};
 		var base = safeVirtualName("node", node.id || node.type || node.kind || index);
@@ -1355,6 +1428,8 @@
 	function addFrontendAuthoringNode(parent, node, path, modelFile) {
 		node = node || {};
 		var sourceFile = frontendNodeSourceFile(node, modelFile);
+		normalizeFrontendFlowSvelteRootNode(node, sourceFile);
+		normalizeFrontendComponentInstanceNode(node);
 		var mutationPath = String(node.sourceMutationPath || "");
 		var insertMutationPath = frontendNodeInsertMutationPath(node);
 		var definitions = frontendAuthoringPropertyDefinitions(node);

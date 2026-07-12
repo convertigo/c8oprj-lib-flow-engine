@@ -84,6 +84,9 @@ const _meta = {
 	var URLEncoder = Packages.java.net.URLEncoder;
 	var URI = Packages.java.net.URI;
 	var Duration = Packages.java.time.Duration;
+	var File = Packages.java.io.File;
+	var Files = Packages.java.nio.file.Files;
+	var FileUtils = Packages.org.apache.commons.io.FileUtils;
 	var JavaHttpClient = Packages.java.net.http.HttpClient;
 	var JavaHttpRequest = Packages.java.net.http.HttpRequest;
 	var JavaHttpResponse = Packages.java.net.http.HttpResponse;
@@ -176,6 +179,24 @@ const _meta = {
 		return javaHttpClient;
 	}
 
+	function isFileUrl(url) {
+		return String(url || "").match(/^file:/i) !== null;
+	}
+
+	function runFileHttp(method, url) {
+		method = String(method || "GET").toUpperCase();
+		if (method !== "GET" && method !== "HEAD") {
+			throw new Error("Unsupported file URL HTTP method: " + method);
+		}
+		var file = new File(URI.create(String(url)));
+		if (!file.isFile()) {
+			return responseObject(404, "", "");
+		}
+		var contentType = String(Files.probeContentType(file.toPath()) || "");
+		var text = method === "HEAD" ? "" : String(FileUtils.readFileToString(file, "UTF-8"));
+		return responseObject(200, contentType, text);
+	}
+
 	function runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs) {
 		var builder = JavaHttpRequest.newBuilder(URI.create(String(url)))
 			.timeout(Duration.ofMillis(readTimeoutMs));
@@ -224,10 +245,14 @@ const _meta = {
 			var readTimeoutMs = props.readTimeoutMs === undefined ? 60000 : Number(ctx.expr(props.readTimeoutMs));
 			var body = props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body);
 			var response;
-			try {
-				response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs);
-			} catch (e) {
-				response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs);
+			if (isFileUrl(url)) {
+				response = runFileHttp(method, url);
+			} else {
+				try {
+					response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs);
+				} catch (e) {
+					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs);
+				}
 			}
 			if (props.out && response.status < 400 && ctx.learnOutputSchema) {
 				ctx.learnOutputSchema(node, "out", props.out, response);

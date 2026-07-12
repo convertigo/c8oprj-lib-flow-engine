@@ -3743,16 +3743,13 @@
 		try {
 			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
 			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(drafts), "UTF-8");
-			var npm = frontendExecutable("npm");
-			var args = [
-				npm, "--prefix", String(resourceRoot.getAbsolutePath()), "exec", "--",
-				"tsx", "src-builder/frontDocumentCli.ts",
+			var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", [
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--drafts", String(draftsTemp.getAbsolutePath()),
 				"--resource-root", String(resourceRoot.getAbsolutePath()),
 				"--project-root", String(projectRoot.getAbsolutePath())
-			];
+			]);
 			var output = frontendRunOneShot(args, resourceRoot, "Svelte front document");
 			var result = frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
 			if (!result || !result.model) {
@@ -3791,14 +3788,11 @@
 		try {
 			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
 			FileUtils.writeStringToFile(mutationTemp, JSON.stringify(mutation), "UTF-8");
-			var npm = frontendExecutable("npm");
-			var args = [
-				npm, "--prefix", String(resourceRoot.getAbsolutePath()), "exec", "--",
-				"tsx", "src-builder/sourceMutateCli.ts",
+			var args = frontendTsxCommand(resourceRoot, "src-builder/sourceMutateCli.ts", [
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--mutation", String(mutationTemp.getAbsolutePath())
-			];
+			]);
 			var output = frontendRunOneShot(args, resourceRoot, "Svelte source mutate");
 			var result = frontendMarkedJson(output, "__C8O_FLOW_SOURCE_MUTATION__");
 			if (!result || result.ok !== true || typeof result.source !== "string") {
@@ -5442,6 +5436,8 @@
 		pb.directory(cwd);
 		pb.redirectErrorStream(true);
 		var env = pb.environment();
+		env.remove("npm_config_prefix");
+		env.remove("NPM_CONFIG_PREFIX");
 		var executableFile = new File(args[0]);
 		var executableParent = executableFile.getParentFile();
 		if (executableParent) {
@@ -5745,11 +5741,11 @@
 			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "install"];
 		}
 		if (action === "generate") {
-			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "exec", "--",
-				"tsx", "src-builder/cli.ts",
+			return frontendTsxCommand(resourceRoot, "src-builder/cli.ts", [
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--model", String(modelPath.getAbsolutePath()),
-				"--mode", generationMode];
+				"--mode", generationMode
+			]);
 		}
 		if (action === "installApp") {
 			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "install"];
@@ -5774,6 +5770,8 @@
 		pb.directory(cwd);
 		pb.redirectErrorStream(true);
 		var env = pb.environment();
+		env.remove("npm_config_prefix");
+		env.remove("NPM_CONFIG_PREFIX");
 		Object.keys(envValues || {}).forEach(function (key) {
 			env.put(String(key), String(envValues[key]));
 		});
@@ -6147,6 +6145,52 @@
 			}
 		}
 		return name;
+	}
+
+	function frontendSvelteToolRoot(resourceRoot, script) {
+		function usable(root) {
+			if (!root || !root.isDirectory()) {
+				return null;
+			}
+			var scriptFile = new File(root, script);
+			if (!scriptFile.isFile()) {
+				return null;
+			}
+			return root;
+		}
+		var root = usable(resourceRoot);
+		if (root) {
+			return root;
+		}
+		var loadedRoot = loadedProjectRootForName("lib_flow_frontbuilder_svelte");
+		root = loadedRoot ? usable(new File(loadedRoot, "libs/flow/frontbuilder/svelte")) : null;
+		if (root) {
+			return root;
+		}
+		var engineFlowDir = engineDir();
+		var engineProjectDir = engineFlowDir && engineFlowDir.getParentFile() && engineFlowDir.getParentFile().getParentFile();
+		var gitRoot = engineProjectDir && engineProjectDir.getParentFile();
+		root = gitRoot ? usable(new File(gitRoot, "c8oprj-lib-flow-frontbuilder-svelte/libs/flow/frontbuilder/svelte")) : null;
+		return root || resourceRoot;
+	}
+
+	function frontendTsxCommand(resourceRoot, script, args) {
+		args = args || [];
+		var toolRoot = frontendSvelteToolRoot(resourceRoot, script);
+		var scriptFile = new File(toolRoot, script);
+		var tsxCli = new File(toolRoot, "node_modules/tsx/dist/cli.mjs");
+		if (tsxCli.isFile()) {
+			var command = [frontendExecutable("node"), String(tsxCli.getAbsolutePath()), String(scriptFile.getAbsolutePath())];
+			args.forEach(function (arg) {
+				command.push(arg);
+			});
+			return command;
+		}
+		var fallback = [frontendExecutable("npm"), "--prefix", String(toolRoot.getAbsolutePath()), "exec", "--", "tsx", String(scriptFile.getAbsolutePath())];
+		args.forEach(function (arg) {
+			fallback.push(arg);
+		});
+		return fallback;
 	}
 
 	function freePort() {
@@ -6962,19 +7006,19 @@
 		},
 
 		authoringTree: function (requestJson) {
-			return engineCall("authoringTree", requestJson, function (request) {
+			return projectCall("authoringTree", requestJson, function (request) {
 				return authoringTreeRequest(request, loadBlocks());
 			});
 		},
 
 		authoringPalette: function (requestJson) {
-			return engineCall("authoringPalette", requestJson, function (request) {
+			return projectCall("authoringPalette", requestJson, function (request) {
 				return authoringPaletteRequest(request, loadBlocks());
 			});
 		},
 
 		authoringMutate: function (requestJson) {
-			return engineCall("authoringMutate", requestJson, function (request) {
+			return projectCall("authoringMutate", requestJson, function (request) {
 				return authoringMutateRequest(request, loadBlocks());
 			});
 		},
