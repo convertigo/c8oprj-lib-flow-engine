@@ -3021,6 +3021,63 @@ assertTrue(flowSvelteImplicitProps.ok === true &&
 	flowSvelteImplicitProps.debug.path === "frontAst.slots.structure.children[0].props" &&
 	String(flowSvelteImplicitProps.source).indexOf("text=\"Edited without explicit props\"") !== -1,
 	"flow-svelte AST property mutation without .props was not normalized to node attributes");
+var flowSvelteReplaceNode = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteMoveSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0]",
+		value: {
+			id: "replacementCard",
+			kind: "card",
+			tag: "Card",
+			variant: "sky",
+			slots: {
+				children: [{
+					id: "replacementText",
+					kind: "text",
+					tag: "Text",
+					text: "Replacement text"
+				}]
+			}
+		}
+	}
+})));
+assertTrue(flowSvelteReplaceNode.ok === true &&
+	String(flowSvelteReplaceNode.source).indexOf("<Card id=\"replacementCard\"") !== -1 &&
+	String(flowSvelteReplaceNode.source).indexOf("<Text id=\"replacementText\"") !== -1,
+	"flow-svelte AST node replacement did not template palette-style values");
+var flowSvelteBatchMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteMoveSource,
+	mutations: [{
+		op: "insert",
+		path: "frontAst.slots.structure.children",
+		value: {
+			id: "batchOne",
+			kind: "text",
+			tag: "Text",
+			text: "Batch one"
+		}
+	}, {
+		op: "insert",
+		path: "frontAst.slots.structure.children",
+		value: {
+			id: "batchTwo",
+			kind: "text",
+			tag: "Text",
+			text: "Batch two"
+		}
+	}]
+})));
+assertTrue(flowSvelteBatchMutation.ok === true &&
+	flowSvelteBatchMutation.mutationCount === 2 &&
+	flowSvelteBatchMutation.results.length === 2 &&
+	String(flowSvelteBatchMutation.source).indexOf("text=\"Batch one\"") !== -1 &&
+	String(flowSvelteBatchMutation.source).indexOf("text=\"Batch one\"") < String(flowSvelteBatchMutation.source).indexOf("text=\"Batch two\""),
+	"flow-svelte source mutations were not applied as one ordered batch");
 var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: flowSvelteEngineSource,

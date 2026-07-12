@@ -1459,6 +1459,10 @@
 		}
 		add(projectFrontendRootForSettings(builderName, settings, env));
 		add(resourceRootForSettings(settings, env));
+		var projectRoot = env.projectDir();
+		if (projectRoot) {
+			add(resolveFile(projectRoot, defaultBuilderResourceRoot(builderName, settings, env), env));
+		}
 		return roots;
 	}
 

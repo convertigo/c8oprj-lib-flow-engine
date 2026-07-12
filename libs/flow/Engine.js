@@ -3777,7 +3777,41 @@
 		var source = request.source !== undefined && request.source !== null
 			? String(request.source)
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
-		var mutation = request.mutation || {};
+		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
+		if (mutations.length === 0) {
+			raise("MISSING_FRONTEND_MUTATION", "Svelte frontend source mutation requires mutation or mutations.");
+		}
+		var results = [];
+		for (var i = 0; i < mutations.length; i++) {
+			var result = applyOneFlowSvelteSourceMutation(request, source, mutations[i], sourceFile, sourcePath);
+			source = String(result.source || "");
+			results.push({
+				ok: result.ok === true,
+				target: result.target || "flowSvelte",
+				mutation: result.mutation || mutations[i],
+				debug: result.debug || null
+			});
+		}
+		var out = {
+			ok: true,
+			source: source,
+			sourceFile: String(sourceFile.getAbsolutePath()),
+			mutationCount: mutations.length,
+			mutations: mutations,
+			results: results
+		};
+		if (mutations.length === 1) {
+			out.mutation = mutations[0];
+			out.target = results[0] && results[0].target || "flowSvelte";
+			if (results[0] && results[0].debug) {
+				out.debug = results[0].debug;
+			}
+		}
+		return out;
+	}
+
+	function applyOneFlowSvelteSourceMutation(request, source, mutation, sourceFile, sourcePath) {
+		mutation = mutation || {};
 		var frontAstResult = applyFrontAstSourceMutation(source, mutation, sourceFile);
 		if (frontAstResult) {
 			return frontAstResult;
@@ -4230,6 +4264,9 @@
 					current[last][key] = value[key];
 				}
 			}
+		} else if (typeof last === "number" && current && current.splice && frontAstIsObject(value)
+				&& (value.tag || value.kind || value.children || value.slots)) {
+			current[last] = frontAstTemplateNode(value);
 		} else {
 			current[last] = value;
 		}
@@ -5811,12 +5848,11 @@
 		var sourceRoot = String(settings.privateDir || "_private/svelte");
 		var buildOutput = String(settings.buildOutput || "DisplayObjects/mobile");
 		var npm = frontendExecutable("npm");
-		var nodeBin = String(new File(npm).getParentFile().getAbsolutePath());
 		var envValues = {
 			FRONTBUILDER_PROJECT_ROOT: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
 			FRONTBUILDER_SOURCE_ROOT: sourceRoot,
 			FRONTBUILDER_BUILD_OUTPUT: buildOutput,
-			PATH: nodeBin + File.pathSeparator + String(Packages.java.lang.System.getenv("PATH") || "")
+			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
 		};
 		var actions = action === "install"
 			? ["installBuilder", "generate", "installApp"]
@@ -6147,6 +6183,11 @@
 		return name;
 	}
 
+	function frontendExecutablePathPrefix(executable) {
+		var parent = new File(String(executable || "")).getParentFile();
+		return parent ? String(parent.getAbsolutePath()) + File.pathSeparator : "";
+	}
+
 	function frontendSvelteToolRoot(resourceRoot, script) {
 		function usable(root) {
 			if (!root || !root.isDirectory()) {
@@ -6367,8 +6408,7 @@
 		]));
 		pb.directory(generatedRoot);
 		pb.redirectErrorStream(true);
-		var nodeBin = String(new File(npm).getParentFile().getAbsolutePath());
-		pb.environment().put("PATH", nodeBin + File.pathSeparator + String(Packages.java.lang.System.getenv("PATH") || ""));
+		pb.environment().put("PATH", frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || ""));
 		frontendStudioLog("[Svelte dev] > " + npm + " --prefix " + generatedRoot.getAbsolutePath() + " exec -- vite --host 127.0.0.1 --port " + port + " --strictPort");
 		var process = pb.start();
 		var logPump = frontendStartLogPump(process, logFile, "Svelte dev");
