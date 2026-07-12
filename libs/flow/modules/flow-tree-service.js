@@ -175,14 +175,17 @@
 		addObjectFields(folder, schema, path);
 	}
 
-	function addObjectFields(parent, object, path) {
+	function addObjectFields(parent, object, path, filter) {
 		Object.keys(object || {}).sort().forEach(function (key) {
 			var value = object[key];
 			var fieldPath = path + "." + key;
+			if (filter && filter(fieldPath, key, value) === false) {
+				return;
+			}
 			if (value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]") {
 				var folder = virtualNode(key, "object", key, fieldPath, key, compact(value), null, "mdi:cube-outline");
 				parent.children.push(folder);
-				addObjectFields(folder, value, fieldPath);
+				addObjectFields(folder, value, fieldPath, filter);
 			} else {
 				parent.children.push(virtualNode(key, "field", value, fieldPath, key + ": " + String(value), compact(value), null, "mdi:variable"));
 			}
@@ -222,13 +225,84 @@
 		});
 	}
 
-	function addConfig(out, config, path) {
+	function flattenConfigVisibility(value, prefix, out) {
+		out = out || {};
+		if (!value || typeof value !== "object") {
+			return out;
+		}
+		Object.keys(value).forEach(function (key) {
+			var child = value[key];
+			var childPath = prefix ? prefix + "." + key : key;
+			if (typeof child === "string") {
+				out[childPath] = String(child).toLowerCase();
+			} else if (child && typeof child === "object") {
+				if (typeof child.visibility === "string") {
+					out[childPath] = String(child.visibility).toLowerCase();
+				}
+				flattenConfigVisibility(child, childPath, out);
+			}
+		});
+		return out;
+	}
+
+	function configVisibility(visibilityMap, fieldPath) {
+		var relative = String(fieldPath || "").replace(/^config\.?/, "");
+		if (!relative) {
+			return "public";
+		}
+		var parts = relative.split(".");
+		for (var i = parts.length; i > 0; i--) {
+			var key = parts.slice(0, i).join(".");
+			if (Object.prototype.hasOwnProperty.call(visibilityMap, key)) {
+				return visibilityMap[key] || "public";
+			}
+		}
+		if (relative === "frontbuilder" || relative.indexOf("frontbuilder.") === 0) {
+			return "private";
+		}
+		return "public";
+	}
+
+	function configPathVisible(visibilityMap, fieldPath, request) {
+		if (request && request.includePrivateConfig === true) {
+			return true;
+		}
+		var visibility = configVisibility(visibilityMap, fieldPath);
+		return visibility !== "private" && visibility !== "internal" && visibility !== "hidden";
+	}
+
+	function visibleConfigObject(value, path, visibilityMap, request) {
+		if (!value || typeof value !== "object" || Object.prototype.toString.call(value) === "[object Array]") {
+			return value;
+		}
+		var out = {};
+		Object.keys(value).sort().forEach(function (key) {
+			var fieldPath = path + "." + key;
+			if (!configPathVisible(visibilityMap, fieldPath, request)) {
+				return;
+			}
+			var visibleValue = visibleConfigObject(value[key], fieldPath, visibilityMap, request);
+			if (visibleValue && typeof visibleValue === "object" && Object.prototype.toString.call(visibleValue) !== "[object Array]" &&
+					Object.keys(visibleValue).length === 0) {
+				return;
+			}
+			out[key] = visibleValue;
+		});
+		return out;
+	}
+
+	function addConfig(out, config, path, visibility, request) {
 		if (!config || typeof config !== "object" || Object.keys(config).length === 0) {
 			return;
 		}
-		var folder = virtualNode("config", "scope", "config", path, "Config", compact(config), null, "mdi:cog-outline");
+		var visibilityMap = flattenConfigVisibility(visibility || {});
+		var visibleConfig = visibleConfigObject(config, path, visibilityMap, request);
+		if (!visibleConfig || typeof visibleConfig !== "object" || Object.keys(visibleConfig).length === 0) {
+			return;
+		}
+		var folder = virtualNode("config", "scope", "config", path, "Config", compact(visibleConfig), null, "mdi:cog-outline");
 		out.push(folder);
-		addObjectFields(folder, config, path);
+		addObjectFields(folder, visibleConfig, path);
 	}
 
 	function addEngineMetadata(out, engine, path) {
@@ -2709,7 +2783,50 @@
 		out.push(folder);
 	}
 
-	function compactTreeNode(node, depth, maxDepth, includeDefinition) {
+	function inspectTreeProps(definition) {
+		var raw = definition && definition.props && typeof definition.props === "object" ? definition.props : {};
+		var out = {};
+		function add(key, value) {
+			if (key === "id" || key === "kind") {
+				return;
+			}
+			if (value === undefined || value === null || typeof value === "object") {
+				return;
+			}
+			out[key] = value;
+		}
+		Object.keys(raw).sort().forEach(function (key) {
+			add(key, raw[key]);
+		});
+		[
+			"text", "label", "source", "value", "path", "test", "condition", "requestable",
+			"clientAction", "backendCall", "context", "index", "key", "variant", "padding",
+			"radius", "fullWidth", "maxWidth", "align", "gap", "href", "src", "alt", "title",
+			"route"
+		].forEach(function (key) {
+			if (out[key] === undefined && definition && definition[key] !== undefined) {
+				add(key, definition[key]);
+			}
+		});
+		return out;
+	}
+
+	function inspectTreeSlots(definition) {
+		var slots = definition && definition.slots && typeof definition.slots === "object" ? definition.slots : {};
+		return Object.keys(slots).sort().map(function (key) {
+			var slot = slots[key] || {};
+			var out = {
+				name: key,
+				label: slot.label || key
+			};
+			if (slot.accepts && slot.accepts.length) {
+				out.accepts = slot.accepts.slice(0, 8);
+			}
+			return out;
+		});
+	}
+
+	function compactTreeNode(node, depth, maxDepth, includeDefinition, includeInspect) {
 		var out = {
 			name: node.name,
 			kind: node.kind,
@@ -2717,18 +2834,29 @@
 			path: node.path,
 			summary: node.summary
 		};
+		var parsedDefinition = null;
 		if (node.definition) {
 			try {
-				var definition = JSON.parse(node.definition);
-				if (definition && typeof definition === "object" && Object.prototype.toString.call(definition) !== "[object Array]") {
-					if (definition.id !== undefined) {
-						out.nodeId = definition.id;
+				parsedDefinition = JSON.parse(node.definition);
+				if (parsedDefinition && typeof parsedDefinition === "object" && Object.prototype.toString.call(parsedDefinition) !== "[object Array]") {
+					if (parsedDefinition.id !== undefined) {
+						out.nodeId = parsedDefinition.id;
 					}
-					if (definition.block !== undefined) {
-						out.block = definition.block;
+					if (parsedDefinition.block !== undefined) {
+						out.block = parsedDefinition.block;
 					}
 				}
 			} catch (e) {
+			}
+			if (includeInspect === true && parsedDefinition) {
+				var props = inspectTreeProps(parsedDefinition);
+				if (Object.keys(props).length) {
+					out.props = props;
+				}
+				var slots = inspectTreeSlots(parsedDefinition);
+				if (slots.length) {
+					out.slots = slots;
+				}
 			}
 			if (includeDefinition === true) {
 				out.definition = node.definition;
@@ -2738,7 +2866,7 @@
 		out.childCount = children.length;
 		if (children.length && depth < maxDepth) {
 			out.children = children.map(function (child) {
-				return compactTreeNode(child, depth + 1, maxDepth, includeDefinition);
+				return compactTreeNode(child, depth + 1, maxDepth, includeDefinition, includeInspect);
 			});
 		}
 		return out;
@@ -2750,7 +2878,8 @@
 		if (detail === "full") {
 			return tree;
 		}
-		var maxDepth = intOption(request.maxDepth, detail === "summary" ? 2 : 4, 0, 20);
+		var includeInspect = detail === "inspect";
+		var maxDepth = intOption(request.maxDepth, detail === "summary" ? 2 : includeInspect ? 6 : 4, 0, 20);
 		var includeDefinition = request.includeDefinition === true || String(request.includeDefinition || "") === "true";
 		var out = {
 			ok: tree.ok,
@@ -2758,9 +2887,14 @@
 			detail: detail,
 			childCount: (tree.children || []).length,
 			children: (tree.children || []).map(function (child) {
-				return compactTreeNode(child, 0, maxDepth, includeDefinition);
+				return compactTreeNode(child, 0, maxDepth, includeDefinition, includeInspect);
 			})
 		};
+		["surface", "builder", "focusPath", "rootPath", "error", "warning", "warnings", "next"].forEach(function (key) {
+			if (tree[key] !== undefined) {
+				out[key] = tree[key];
+			}
+		});
 		if (tree.source && request.includeSource === true) {
 			out.source = tree.source;
 		}
@@ -2799,7 +2933,7 @@
 				: parseYamlSource(request.engineSource, "version: 1\n");
 			addEngineMetadata(children, engine, "engine");
 			addBindings(children, engine.bindings, "bindings");
-			addConfig(children, engine.config, "config");
+			addConfig(children, engine.config, "config", engine.configVisibility, request);
 			addFrontendModels(children, engine.config, "frontends", request);
 			addFragments(children, blocks);
 			addCatalog(children, blocks, {
@@ -2848,7 +2982,8 @@
 	}
 
 	function findAuthoringBuilderNode(tree, builder) {
-		var frontends = findTreeNode(tree, "frontends");
+		var frontendsMatch = findTreeNode(tree, "frontends");
+		var frontends = frontendsMatch && frontendsMatch.node ? frontendsMatch.node : frontendsMatch;
 		if (!frontends) {
 			return null;
 		}
@@ -2872,11 +3007,33 @@
 		var builder = authoringBuilderName(request, engine);
 		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
 		var children = focus ? [focus] : tree.children || [];
+		var focusPath = String(request.focusPath || request.rootPath || request.path || "");
+		if (focusPath) {
+			var scopedRoot = { children: children };
+			var focused = findTreeNode(scopedRoot, focusPath) || findTreeNode(tree, focusPath);
+			if (!focused || !focused.node) {
+				return compactTreeResponse({
+					ok: false,
+					target: "authoring",
+					surface: surface,
+					builder: builder,
+					focusPath: focusPath,
+					children: [],
+					error: {
+						code: "AUTHORING_TREE_FOCUS_NOT_FOUND",
+						message: "No authoring tree node matches focusPath: " + focusPath
+					},
+					next: "Call frontend-svelte-tree without focusPath to discover valid paths, then retry with one returned path."
+				}, request);
+			}
+			children = [focused.node];
+		}
 		return compactTreeResponse({
 			ok: true,
 			target: "authoring",
 			surface: surface,
 			builder: builder,
+			focusPath: focusPath,
 			children: children
 		}, request);
 	}
@@ -3157,7 +3314,18 @@
 			descriptor.description,
 			descriptor.kind
 		].join(" ").toLowerCase();
-		return text.indexOf(query) !== -1;
+		if (text.indexOf(query) !== -1) {
+			return true;
+		}
+		var tokens = query.split(/\s+/).filter(function (token) {
+			return token.length > 1;
+		});
+		if (!tokens.length) {
+			return true;
+		}
+		return tokens.some(function (token) {
+			return text.indexOf(token) !== -1;
+		});
 	}
 
 	function descriptorMutationTargetIssue(descriptor, focus, position, target) {

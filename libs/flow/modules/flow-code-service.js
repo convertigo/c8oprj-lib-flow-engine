@@ -497,13 +497,15 @@
 		}
 		var normalized = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
-		if (!written) {
-			memoryDrafts[String(name)] = {
-				code: normalized,
-				revision: sha256Hex(normalized)
-			};
-		}
-		var revision = written && written.revision ? written.revision : memoryDrafts[String(name)].revision;
+		// Keep a runtime-owned mirror even when the current DBO accepts the draft.
+		// Studio tree refreshes may replace that DBO instance before promotion.
+		memoryDrafts[String(name)] = {
+			code: normalized,
+			revision: written && written.revision ? written.revision : sha256Hex(normalized),
+			file: written && written.file || "",
+			codeFile: written && (written.codeFile || written.file) || ""
+		};
+		var revision = memoryDrafts[String(name)].revision;
 		var checked = flowCodeValidate(blocks, request, name, normalized);
 		var out = {
 			ok: checked.error === null && checked.validation && checked.validation.ok === true,

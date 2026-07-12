@@ -3827,7 +3827,8 @@
 
 	function applyFrontAstSourceMutation(source, mutation, sourceFile) {
 		mutation = mutation || {};
-		var path = String(mutation.path || "");
+		var requestedPath = String(mutation.path || "");
+		var path = requestedPath;
 		if (path.indexOf("frontAst") !== 0) {
 			return null;
 		}
@@ -3846,9 +3847,17 @@
 			throw invalid;
 		}
 		var op = frontAstNormalizeOp(String(mutation.op || "replace"));
+		if ((op === "replace" || op === "merge") && frontAstPropertyPayload(mutation.value)) {
+			var target = frontAstValueAtPath(root, path, false);
+			if (frontAstIsNode(target) && path.indexOf(".props") < 0) {
+				path += ".props";
+			}
+		}
 		var debug = {
 			op: op,
 			path: path,
+			requestedPath: requestedPath,
+			propertyPathNormalized: path !== requestedPath,
 			from: String(mutation.from || mutation.source || ""),
 			fromId: String(mutation.fromId || ""),
 			sourceFile: String(sourceFile.getAbsolutePath())
@@ -3916,6 +3925,20 @@
 			mutation: mutation,
 			debug: debug
 		};
+	}
+
+	function frontAstIsNode(value) {
+		return !!(value && typeof value === "object" && typeof value.tag === "string" && value.attrs && typeof value.attrs === "object");
+	}
+
+	function frontAstPropertyPayload(value) {
+		if (!frontAstIsObject(value)) {
+			return false;
+		}
+		var structural = { tag: true, attrs: true, children: true, slots: true, selfClosing: true };
+		return Object.keys(value).every(function (key) {
+			return structural[key] !== true;
+		});
 	}
 
 	function frontAstParseSource(source) {

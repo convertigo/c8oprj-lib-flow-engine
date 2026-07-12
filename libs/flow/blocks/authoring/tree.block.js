@@ -43,6 +43,18 @@ const _meta = {
       "type": "number",
       "description": "Maximum child depth returned in compact or summary detail."
     },
+    "focusPath": {
+      "label": "focusPath",
+      "kind": "text",
+      "type": "string",
+      "description": "Optional tree path to return as the root of the response."
+    },
+    "rootPath": {
+      "label": "rootPath",
+      "kind": "text",
+      "type": "string",
+      "description": "Alias for focusPath."
+    },
     "projectDir": {
       "label": "projectDir",
       "kind": "text",

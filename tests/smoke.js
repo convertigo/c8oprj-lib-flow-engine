@@ -43,6 +43,41 @@ function findNode(parent, predicate) {
 	return null;
 }
 
+var flowCodeServiceFile = new java.io.File(engineDir, "modules/flow-code-service.js");
+var flowCodeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowCodeServiceFile, "UTF-8"));
+var isolatedFlowCodeService = eval(flowCodeServiceSource);
+var isolatedFlowCodeEnv = {
+	raise: function (code, message) {
+		var error = new Error(message);
+		error.code = code;
+		throw error;
+	},
+	normalizeFlowScriptFunctionSyntax: function (code) { return String(code); },
+	currentProjectName: function () { return "DraftSmoke"; },
+	renderFlowScript: function () { return ""; },
+	sha256Hex: function (code) { return "hash:" + String(code).length; },
+	flowScriptValidateRequest: function () { return { ok: true, source: "version: 1\nnodes: []\n", definition: {}, diagnostics: [] }; },
+	readProjectFlowWorkingCode: function () { return null; },
+	writeProjectFlowWorkingCode: function (name, code) {
+		return { name: name, code: code, revision: "dbo:" + String(code).length, file: "/draft/" + name + ".flow.js" };
+	},
+	discardProjectFlowWorkingCopy: function () { return false; },
+	flowScriptGetRequest: function () {
+		var error = new Error("missing");
+		error.code = "UNKNOWN_FLOW";
+		throw error;
+	},
+	normalizeFlowScriptCode: function (code) { return String(code); },
+	stripFlowScriptMirrorHeader: function (code) { return String(code); },
+	normalizeTree: function (value) { return value; }
+};
+var mirroredDraftCode = "function MirrorDraft({ result }) { result.ok = true; return result }\n";
+var mirroredDraftSet = isolatedFlowCodeService.flowCodeDraftSetRequest({}, {}, "MirrorDraft", mirroredDraftCode, isolatedFlowCodeEnv);
+var mirroredDraftRead = isolatedFlowCodeService.flowCodeDraftRead("MirrorDraft", isolatedFlowCodeEnv);
+assertTrue(mirroredDraftSet.ok === true && mirroredDraftRead && mirroredDraftRead.code === mirroredDraftCode &&
+	mirroredDraftRead.revision === mirroredDraftSet.revision,
+	"FlowScript draft was not mirrored when a live DBO accepted the working copy");
+
 var flowSource = [
 	"version: 1",
 	"nodes:",
@@ -2831,6 +2866,86 @@ var flowSvelteTree = JSON.parse(engine.describeTree(JSON.stringify({
 	projectDir: __flowProjectDir,
 	detail: "full"
 })));
+assertTrue(findNode(flowSvelteTree, function (node) {
+	return node.path === "config.frontbuilder";
+}) === null, "engine tree exposed private frontbuilder config in the Config branch");
+assertTrue(findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendBuilder" && node.type === "svelte";
+}) !== null, "engine tree did not expose the Svelte builder in the dedicated Frontends branch");
+var flowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "compact",
+	maxDepth: 2
+})));
+assertTrue(flowSvelteAuthoringTree.childCount === 1 &&
+	flowSvelteAuthoringTree.children[0].kind === "frontendBuilder",
+	"authoring tree did not focus the Svelte builder by default");
+var flowSvelteRoutesNode = findNode(flowSvelteAuthoringTree, function (node) {
+	return node.kind === "frontendRoutes";
+});
+assertTrue(flowSvelteRoutesNode !== null && flowSvelteRoutesNode.path,
+	"authoring tree did not expose a stable Svelte routes focus path");
+var flowSvelteRoutesTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteRoutesNode.path,
+	detail: "compact",
+	maxDepth: 3
+})));
+assertTrue(flowSvelteRoutesTree.childCount === 1 &&
+	flowSvelteRoutesTree.children[0].kind === "frontendRoutes",
+	"authoring tree focusPath did not return the focused Svelte route branch");
+var flowSvelteStructureNode = findNode(flowSvelteRoutesTree, function (node) {
+	return node.kind === "frontendStructure";
+});
+assertTrue(flowSvelteStructureNode !== null && flowSvelteStructureNode.path,
+	"authoring tree did not expose a Svelte structure focus path");
+var flowSvelteMultiQueryPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteStructureNode.path,
+	query: "Text Card"
+})));
+assertTrue(flowSvelteMultiQueryPalette.ok === true &&
+	flowSvelteMultiQueryPalette.items.some(function (item) { return item.id === "project.text"; }),
+	"authoring palette should match useful tokens from a multi-intent frontend query");
+var configVisibilityEngineSource = [
+	"version: 1",
+	"configVisibility:",
+	"  services.secret: private",
+	"config:",
+	"  services:",
+	"    publicUrl: https://example.test/api",
+	"    secret: keep-me-out-of-tree",
+	"  frontbuilder:",
+	"    svelte:",
+	"      target: svelte5",
+	"      resourceRoot: libs/flow/frontbuilder/svelte",
+	"      modelPath: libs/flow/frontbuilder/svelte/model/AstSmoke/src/routes/+page.flow.svelte",
+	""
+].join("\n");
+var configVisibilityTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: configVisibilityEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "full"
+})));
+assertTrue(findNode(configVisibilityTree, function (node) {
+	return node.path === "config.services.publicUrl";
+}) !== null, "engine tree hid public config");
+assertTrue(findNode(configVisibilityTree, function (node) {
+	return node.path === "config.services.secret";
+}) === null, "engine tree exposed configVisibility private config");
+assertTrue(findNode(configVisibilityTree, function (node) {
+	return node.path === "config.frontbuilder";
+}) === null, "engine tree exposed default-private frontbuilder config");
 function nodeInfoObject(node) {
 	return node && node.info ? JSON.parse(node.info) : {};
 }
@@ -2864,6 +2979,21 @@ var flowSvelteMove = JSON.parse(engine.applySourceMutation(JSON.stringify({
 })));
 assertTrue(flowSvelteMove.ok === true && String(flowSvelteMove.source).indexOf("id=\"last\"") < String(flowSvelteMove.source).indexOf("id=\"guard\""),
 	"flow-svelte AST move did not reorder siblings");
+var flowSvelteImplicitProps = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteMoveSource,
+	mutation: {
+		op: "merge",
+		path: "frontAst.slots.structure.children[0]",
+		value: { text: "Edited without explicit props" }
+	}
+})));
+assertTrue(flowSvelteImplicitProps.ok === true &&
+	flowSvelteImplicitProps.debug.propertyPathNormalized === true &&
+	flowSvelteImplicitProps.debug.path === "frontAst.slots.structure.children[0].props" &&
+	String(flowSvelteImplicitProps.source).indexOf("text=\"Edited without explicit props\"") !== -1,
+	"flow-svelte AST property mutation without .props was not normalized to node attributes");
 var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: flowSvelteEngineSource,
