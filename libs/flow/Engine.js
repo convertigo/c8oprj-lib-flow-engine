@@ -36,6 +36,7 @@
 		frontendDevServers: {},
 		caches: {
 			blocks: createRuntimeMapCacheState(),
+			blockCatalogHeads: createRuntimeMapCacheState(),
 			types: createRuntimeMapCacheState(),
 			flowPlans: createRuntimeBoundedMapCacheState(256),
 			libraries: createRuntimeMapCacheState(),
@@ -697,6 +698,12 @@
 		return runtimeCacheService().clear(runtimeCacheEnv());
 	}
 
+	function invalidateBlockCatalogCaches() {
+		cacheUtils().clearMap(runtimeState.caches.blocks);
+		cacheUtils().clearMap(runtimeState.caches.blockCatalogHeads);
+		cacheUtils().clearBoundedMap(runtimeState.caches.flowPlans);
+	}
+
 	function cacheInfoRequest() {
 		return runtimeCacheService().info(runtimeCacheEnv());
 	}
@@ -1213,6 +1220,9 @@
 			validateTypeDescriptorSource: validateTypeDescriptorSource,
 			raise: raise,
 			blockCache: runtimeState.caches.blocks,
+			blockCatalogHeadCache: runtimeState.caches.blockCatalogHeads,
+			currentTimeMillis: function () { return new Date().getTime(); },
+			blockCatalogProbeIntervalMs: 1000,
 			typeCache: runtimeState.caches.types
 		};
 	}
@@ -1237,8 +1247,8 @@
 		return catalogLoaderService().loadBlocksUncached(catalogLoaderEnv());
 	}
 
-	function loadBlocks() {
-		return catalogLoaderService().loadBlocks(catalogLoaderEnv());
+	function loadBlocks(allowHot) {
+		return catalogLoaderService().loadBlocks(catalogLoaderEnv(), allowHot === true);
 	}
 
 	function loadTypeDescriptorFile(types, file, origin) {
@@ -1667,7 +1677,9 @@
 	}
 
 	function setProjectBlockCode(blocks, name, request) {
-		return blockAuthoringService().setProjectBlockCode(blocks, name, request, blockAuthoringEnv());
+		var result = blockAuthoringService().setProjectBlockCode(blocks, name, request, blockAuthoringEnv());
+		invalidateBlockCatalogCaches();
+		return result;
 	}
 
 	function createProjectBlock(blocks, name, request, overwrite) {
@@ -6925,7 +6937,7 @@
 	return {
 		run: function (requestJson) {
 			return engineCall("run", requestJson, function (request) {
-				return runFlowRequest(request, loadBlocks());
+				return runFlowRequest(request, loadBlocks(true));
 			});
 		},
 

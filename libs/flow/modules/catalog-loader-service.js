@@ -145,6 +145,45 @@
 		return key.join("\n");
 	}
 
+	function blockCatalogHeadKey(env) {
+		return [
+			"engine", env.canonicalPath(env.engineDir()),
+			"project", env.projectDir() ? env.canonicalPath(env.projectDir()) : ""
+		].join("\n");
+	}
+
+	function readHotBlockCatalog(env) {
+		var cache = env.blockCatalogHeadCache;
+		if (!cache || !cache.entries) {
+			return null;
+		}
+		var entry = cache.entries[blockCatalogHeadKey(env)];
+		var now = env.currentTimeMillis ? env.currentTimeMillis() : new Date().getTime();
+		var interval = Math.max(0, Number(env.blockCatalogProbeIntervalMs || 0));
+		if (entry && now - Number(entry.checkedAt || 0) < interval) {
+			cache.hits++;
+			return entry.value;
+		}
+		cache.misses++;
+		return null;
+	}
+
+	function writeHotBlockCatalog(env, blocks) {
+		var cache = env.blockCatalogHeadCache;
+		if (!cache || !cache.entries) {
+			return blocks;
+		}
+		var now = env.currentTimeMillis ? env.currentTimeMillis() : new Date().getTime();
+		cache.entries[blockCatalogHeadKey(env)] = {
+			value: blocks,
+			checkedAt: now,
+			updatedAt: new Date(now).toISOString()
+		};
+		cache.label = "hot block catalogs";
+		cache.updatedAt = new Date(now).toISOString();
+		return blocks;
+	}
+
 	function loadBlocksUncached(env) {
 		var blocks = {};
 		var coreBlocksDir = new env.File(env.engineDir(), "blocks");
@@ -165,14 +204,20 @@
 		return blocks;
 	}
 
-	function loadBlocks(env) {
+	function loadBlocks(env, allowHot) {
+		if (allowHot === true) {
+			var hot = readHotBlockCatalog(env);
+			if (hot) {
+				return hot;
+			}
+		}
 		var key = blocksCacheKey(env);
 		var cached = env.readRuntimeCache(env.blockCache, key, key);
 		if (cached) {
-			return cached;
+			return writeHotBlockCatalog(env, cached);
 		}
-		return env.writeRuntimeCache(env.blockCache, key, key, loadBlocksUncached(env),
-			"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project"));
+		return writeHotBlockCatalog(env, env.writeRuntimeCache(env.blockCache, key, key, loadBlocksUncached(env),
+			"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project")));
 	}
 
 	function loadTypeDescriptorFile(types, file, origin, env) {

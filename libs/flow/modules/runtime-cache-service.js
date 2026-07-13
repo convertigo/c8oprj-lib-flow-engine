@@ -50,6 +50,7 @@
 			bridgeRuntimeCache: bridgeRuntimeCacheInfo(env.globalScope),
 			caches: {
 				blocks: cacheSummary("blocks", caches.blocks, env),
+				blockCatalogHeads: cacheSummary("blockCatalogHeads", caches.blockCatalogHeads, env),
 				types: cacheSummary("types", caches.types, env),
 				flowPlans: cacheSummary("flowPlans", caches.flowPlans, env),
 				libraries: cacheSummary("libraries", caches.libraries, env),
@@ -65,6 +66,7 @@
 	function clear(env) {
 		var caches = env.runtimeState.caches;
 		env.cacheUtils.clearMap(caches.blocks);
+		env.cacheUtils.clearMap(caches.blockCatalogHeads);
 		env.cacheUtils.clearMap(caches.types);
 		env.cacheUtils.clearBoundedMap(caches.flowPlans);
 		env.cacheUtils.clearMap(caches.libraries);
