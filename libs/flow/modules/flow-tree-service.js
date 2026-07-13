@@ -2056,6 +2056,7 @@
 				kind: value.kind || value.editor || value.type || "text",
 				type: value.type || "string",
 				items: value.items,
+				bindingSources: value.bindingSources,
 				defaultValue: value["default"],
 				readOnly: internalActionLink || value.readOnly === true,
 				hidden: internalActionLink || value.hidden === true
@@ -2367,6 +2368,9 @@
 		}
 		if (options.items !== undefined) {
 			definition.items = options.items;
+		}
+		if (options.bindingSources !== undefined) {
+			definition.bindingSources = normalizeTree(options.bindingSources);
 		}
 		if (options.defaultValue !== undefined) {
 			definition.default = options.defaultValue;

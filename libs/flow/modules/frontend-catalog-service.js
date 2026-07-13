@@ -1675,6 +1675,131 @@
 		return parts.join("\n");
 	}
 
+	function bindingSchemaAtPath(schema, segments) {
+		var current = schema;
+		(segments || []).forEach(function (segment) {
+			if (!current || typeof current !== "object") {
+				current = null;
+				return;
+			}
+			if (segment && segment.kind === "index") {
+				current = current.type === "array" ? current.items : null;
+				return;
+			}
+			var name = segment && segment.kind === "property" ? String(segment.name || "") : "";
+			var properties = current.properties || current;
+			current = name && properties && properties[name] || null;
+		});
+		return current;
+	}
+
+	function schemaForBinding(binding, actionSchemas, iterationSchemas) {
+		if (!binding || binding.mode !== "source" || !binding.source) {
+			return null;
+		}
+		var source = binding.source;
+		var schema = null;
+		if (source.category === "requestable" || source.category === "action") {
+			schema = actionSchemas[String(source.actionId || "")];
+		} else if (source.category === "iteration") {
+			schema = iterationSchemas[String(source.scopeId || "")];
+		}
+		return bindingSchemaAtPath(schema, binding.path || []);
+	}
+
+	function schemaInfo(schema, env) {
+		if (!schema) {
+			return null;
+		}
+		var normalized = env.normalizeTree(schema);
+		var leafTypes = {};
+		(env.schemaLeafEntries(normalized, "") || []).forEach(function (entry) {
+			if (entry && entry.path) {
+				leafTypes[String(entry.path)] = String(entry.type || "unknown");
+			}
+		});
+		var arrayPaths = env.schemaArrayPaths(normalized, "") || [];
+		var arrays = {};
+		arrayPaths.forEach(function (path) { arrays[String(path)] = true; });
+		var paths = (env.schemaPaths(normalized, "") || []).map(function (path) {
+			path = String(path);
+			return {
+				path: path,
+				type: arrays[path] ? "array" : leafTypes[path] || env.schemaSimpleType(env.schemaAtPath(normalized, path)) || "object"
+			};
+		});
+		return {
+			schema: normalized,
+			paths: paths,
+			arrayPaths: arrayPaths,
+			leafPaths: env.schemaLeafEntries(normalized, "") || []
+		};
+	}
+
+	function walkDocument(value, visitor) {
+		if (!value || typeof value !== "object") {
+			return;
+		}
+		visitor(value);
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			value.forEach(function (item) { walkDocument(item, visitor); });
+			return;
+		}
+		Object.keys(value).forEach(function (key) {
+			walkDocument(value[key], visitor);
+		});
+	}
+
+	function enrichBindingSources(document, actionSchemas, env) {
+		document = env.normalizeTree(document || {});
+		actionSchemas = actionSchemas || {};
+		var iterations = {};
+		walkDocument(document, function (node) {
+			var props = node.props || {};
+			var kind = String(props.kind || node.kind || "");
+			if ((kind === "each" || String(node.type || "") === "ForEach") && node.id && props.source) {
+				iterations[String(node.id)] = props.source;
+			}
+		});
+		var iterationSchemas = {};
+		var pending = Object.keys(iterations);
+		for (var pass = 0; pass < pending.length + 1 && pending.length; pass++) {
+			pending = pending.filter(function (id) {
+				var schema = schemaForBinding(iterations[id], actionSchemas, iterationSchemas);
+				if (!schema) {
+					return true;
+				}
+				iterationSchemas[id] = schema.type === "array" && schema.items ? schema.items : schema;
+				return false;
+			});
+		}
+		walkDocument(document, function (node) {
+			var definitions = node.propertyDefinitions || {};
+			Object.keys(definitions).forEach(function (name) {
+				var definition = definitions[name];
+				var candidates = definition && definition.bindingSources;
+				if (Object.prototype.toString.call(candidates) !== "[object Array]") {
+					return;
+				}
+				candidates.forEach(function (candidate) {
+					var source = candidate && (candidate.source || candidate) || {};
+					var schema = source.category === "iteration"
+						? iterationSchemas[String(source.scopeId || candidate.id || "")]
+						: actionSchemas[String(source.actionId || candidate.id || "")];
+					var info = schemaInfo(schema, env);
+					if (!info) {
+						return;
+					}
+					candidate.schema = info.schema;
+					candidate.paths = info.paths;
+					candidate.arrayPaths = info.arrayPaths;
+					candidate.leafPaths = info.leafPaths;
+				});
+			});
+		});
+		return document;
+	}
+
 	return {
 		frontbuilderSettings: frontbuilderSettings,
 			resourceRootForSettings: resourceRootForSettings,
@@ -1682,6 +1807,7 @@
 			frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,
 			frontendBlocksForConfig: frontendBlocksForConfig,
 			frontendCreateDescriptorsForConfig: frontendCreateDescriptorsForConfig,
-			fingerprintForConfig: fingerprintForConfig
+			fingerprintForConfig: fingerprintForConfig,
+			enrichBindingSources: enrichBindingSources
 		};
 }())

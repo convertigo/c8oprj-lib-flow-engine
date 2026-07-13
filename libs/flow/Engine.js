@@ -3752,6 +3752,48 @@
 		return projectResourceFile(sourcePath, mustExist).file.getCanonicalFile();
 	}
 
+	function frontendBindingActionSchemas(document, request, projectRoot) {
+		var model = document && document.model || {};
+		var calls = {};
+		(model.backendCalls || []).forEach(function (call) {
+			if (call && call.id && call.requestable) {
+				calls[String(call.id)] = String(call.requestable);
+			}
+		});
+		var projectName = currentProjectName(request) || projectRoot && String(projectRoot.getName()) || "";
+		var schemas = {};
+		(model.clientActions || []).forEach(function (action) {
+			var requestable = action && calls[String(action.backendCall || "")];
+			if (!action || !action.id || !requestable) {
+				return;
+			}
+			try {
+				var response = requestableSchemaRequest({
+					requestable: requestable,
+					project: projectName,
+					projectDir: projectRoot ? String(projectRoot.getAbsolutePath()) : ""
+				});
+				if (response && response.ok === true && response.schema) {
+					schemas[String(action.id)] = response.schema;
+				}
+			} catch (e) {
+			}
+		});
+		return schemas;
+	}
+
+	function enrichFrontendBindingSources(document, request, projectRoot) {
+		return frontendCatalogService().enrichBindingSources(document,
+			frontendBindingActionSchemas(document, request, projectRoot), {
+				normalizeTree: normalizeTree,
+				schemaPaths: schemaPaths,
+				schemaArrayPaths: schemaArrayPaths,
+				schemaLeafEntries: schemaLeafEntries,
+				schemaSimpleType: schemaSimpleType,
+				schemaAtPath: schemaAtPath
+			});
+	}
+
 	function describeFrontendDocument(request) {
 		request = request || {};
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
@@ -3774,14 +3816,15 @@
 		].join("\n"));
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (cached) {
-			return normalizeTree(cached);
+			return enrichFrontendBindingSources(cached, request, projectRoot);
 		}
 		var normalizedSourcePath = String(sourceFile.getCanonicalPath()).replace(/\\/g, "/");
 		var local = normalizedSourcePath.indexOf("/src/routes/") >= 0
 			? null
 			: describeFrontAstDocument(source, request, sourceFile, projectRoot);
 		if (local) {
-			return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, local, "Svelte front documents"));
+			var cachedLocal = writeRuntimeMapCache(cache, key, fingerprint, local, "Svelte front documents");
+			return enrichFrontendBindingSources(cachedLocal, request, projectRoot);
 		}
 		var sourceTemp = File.createTempFile("c8o-front-document-source-", ".flow.svelte");
 		var draftsTemp = File.createTempFile("c8o-front-document-drafts-", ".json");
@@ -3803,7 +3846,8 @@
 				error.hint = "Check src-builder/frontDocumentCli.ts output for " + sourcePath + ".";
 				throw error;
 			}
-			return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents"));
+			var cachedResult = writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents");
+			return enrichFrontendBindingSources(cachedResult, request, projectRoot);
 		} finally {
 			try {
 				sourceTemp["delete"]();

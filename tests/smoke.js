@@ -142,6 +142,69 @@ assertTrue(bindingType && bindingType.type === "object" && bindingType.editor &&
 	String(bindingType.editor.component) === "flow-binding-editor" &&
 	String(bindingType.editor.file).indexOf("binding.html") !== -1,
 	"catalog did not expose the binding SmartType-style web editor");
+var frontendCatalogServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/frontend-catalog-service.js"), "UTF-8"));
+var isolatedFrontendCatalogService = eval(frontendCatalogServiceSource);
+var requestableBindingSchema = {
+	type: "object",
+	properties: {
+		news: {
+			type: "array",
+			items: { type: "object", properties: { title: { type: "string" } } }
+		}
+	}
+};
+var bindingSchemaDocument = {
+	tree: {
+		children: [{
+			id: "feedItems",
+			type: "ForEach",
+			props: {
+				kind: "each",
+				source: {
+					mode: "source",
+					source: { category: "requestable", actionId: "getFeed" },
+					path: [{ kind: "property", name: "news" }]
+				}
+			},
+			propertyDefinitions: {
+				source: { bindingSources: [{ id: "getFeed", source: { category: "requestable", actionId: "getFeed" } }] }
+			},
+			children: [{
+				id: "title",
+				propertyDefinitions: {
+					source: { bindingSources: [{ id: "feedItems", source: { category: "iteration", scopeId: "feedItems", value: "item" } }] }
+				}
+			}]
+		}]
+	}
+};
+var enrichedBindingDocument = isolatedFrontendCatalogService.enrichBindingSources(bindingSchemaDocument, {
+	getFeed: requestableBindingSchema
+}, {
+	normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); },
+	schemaPaths: function (schema) {
+		return schema.properties && schema.properties.news ? ["news", "news[0]", "news[0].title"] : ["title"];
+	},
+	schemaArrayPaths: function (schema) { return schema.properties && schema.properties.news ? ["news"] : []; },
+	schemaLeafEntries: function (schema) {
+		return schema.properties && schema.properties.news ? [{ path: "news[0].title", type: "string" }] : [{ path: "title", type: "string" }];
+	},
+	schemaSimpleType: function (schema) { return schema && schema.type || "unknown"; },
+	schemaAtPath: function (schema, path) {
+		if (path === "news") return schema.properties.news;
+		if (path === "news[0]") return schema.properties.news.items;
+		if (path === "news[0].title") return schema.properties.news.items.properties.title;
+		return schema.properties && schema.properties[path];
+	}
+});
+var enrichedLoop = enrichedBindingDocument.tree.children[0];
+var enrichedRequestable = enrichedLoop.propertyDefinitions.source.bindingSources[0];
+var enrichedIteration = enrichedLoop.children[0].propertyDefinitions.source.bindingSources[0];
+assertTrue(enrichedRequestable.paths.some(function (entry) { return entry.path === "news" && entry.type === "array"; }) &&
+	enrichedIteration.paths.some(function (entry) { return entry.path === "title" && entry.type === "string"; }) &&
+	enrichedIteration.schema.properties.title.type === "string",
+	"frontend binding schemas did not propagate requestable array items into the lexical iteration scope");
 assertTrue(catalog.types.some(function (type) {
 	return type.name === "configOverrides" && type.editor && String(type.editor.file).indexOf("configOverrides.html") !== -1;
 }), "catalog did not expose configOverrides type editor resources");
