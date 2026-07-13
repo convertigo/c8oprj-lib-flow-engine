@@ -18,10 +18,21 @@
 	}
 
 	function readYamlFile(file, fallback, env) {
-		if (!file || !file.isFile()) {
-			return {};
+		var cache = env.configDefinitionCache;
+		var key = file ? env.canonicalPath(file) : "missing";
+		var fingerprint = file ? env.fileFingerprint(file) : "missing";
+		if (cache && env.readRuntimeCache) {
+			var cached = env.readRuntimeCache(cache, key, fingerprint);
+			if (cached) {
+				return cached;
+			}
 		}
-		return env.parseYamlSource(env.FileUtils.readFileToString(file, "UTF-8"), fallback || "version: 1\n");
+		var definition = !file || !file.isFile()
+			? {}
+			: env.parseYamlSource(env.FileUtils.readFileToString(file, "UTF-8"), fallback || "version: 1\n");
+		return cache && env.writeRuntimeCache
+			? env.writeRuntimeCache(cache, key, fingerprint, definition, "Flow engine configuration")
+			: definition;
 	}
 
 	function loadProjectEngineDefinition(env) {

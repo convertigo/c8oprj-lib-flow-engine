@@ -53,6 +53,7 @@
 				blockCatalogHeads: cacheSummary("blockCatalogHeads", caches.blockCatalogHeads, env),
 				types: cacheSummary("types", caches.types, env),
 				flowPlans: cacheSummary("flowPlans", caches.flowPlans, env),
+				configDefinitions: cacheSummary("configDefinitions", caches.configDefinitions, env),
 				libraries: cacheSummary("libraries", caches.libraries, env),
 				engineModules: cacheSummary("engineModules", caches.engineModules, env),
 				compiledScripts: env.compiledScriptCacheInfo ? env.compiledScriptCacheInfo() : { name: "compiledScripts", size: 0 },
@@ -69,6 +70,7 @@
 		env.cacheUtils.clearMap(caches.blockCatalogHeads);
 		env.cacheUtils.clearMap(caches.types);
 		env.cacheUtils.clearBoundedMap(caches.flowPlans);
+		env.cacheUtils.clearMap(caches.configDefinitions);
 		env.cacheUtils.clearMap(caches.libraries);
 		env.cacheUtils.clearMap(caches.engineModules);
 		env.cacheUtils.clearValue(caches.propertyEditor);

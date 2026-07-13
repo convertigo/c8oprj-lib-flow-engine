@@ -39,6 +39,7 @@
 			blockCatalogHeads: createRuntimeMapCacheState(),
 			types: createRuntimeMapCacheState(),
 			flowPlans: createRuntimeBoundedMapCacheState(256),
+			configDefinitions: createRuntimeMapCacheState(),
 			libraries: createRuntimeMapCacheState(),
 			engineModules: createRuntimeMapCacheState(),
 			propertyEditor: createRuntimeCacheState(),
@@ -528,7 +529,12 @@
 			parseYamlSource: parseYamlSource,
 			jsValue: jsValue,
 			normalizeTree: normalizeTree,
-			collectConfigKeys: collectConfigKeys
+			collectConfigKeys: collectConfigKeys,
+			canonicalPath: canonicalPath,
+			fileFingerprint: fileFingerprint,
+			readRuntimeCache: readRuntimeMapCache,
+			writeRuntimeCache: writeRuntimeMapCache,
+			configDefinitionCache: runtimeState.caches.configDefinitions
 		};
 	}
 
