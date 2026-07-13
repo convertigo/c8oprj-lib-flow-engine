@@ -250,7 +250,7 @@
 				closeRuntimeHandles(ctx);
 				var out = {
 					ok: true,
-					result: snapshot(result)
+					result: result
 				};
 				if (ctx.schemaUpdates.length > 0) {
 					out.schemaUpdates = snapshot(ctx.schemaUpdates);
