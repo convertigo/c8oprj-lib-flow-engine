@@ -14,6 +14,7 @@
 		var readRuntimeBoundedCache = env.readRuntimeBoundedCache;
 		var writeRuntimeBoundedCache = env.writeRuntimeBoundedCache;
 		var flowPlanCache = env.flowPlanCache;
+		var flowPlanCompilerFingerprint = env.flowPlanCompilerFingerprint;
 		var sourceForWriteRequest = env.sourceForWriteRequest;
 		var loadProjectEngineDefinition = env.loadProjectEngineDefinition;
 		var runtimeHandles = env.runtimeHandles;
@@ -33,6 +34,7 @@
 		var readObjectPath = env.readObjectPath;
 		var writeScopePath = env.writeScopePath;
 		var evaluateExpression = env.evaluateExpression;
+		var compileExpression = env.compileExpression;
 		var literalValue = env.literalValue;
 		var renderTemplate = env.renderTemplate;
 		var renderTemplateTree = env.renderTemplateTree;
@@ -202,10 +204,11 @@
 		function compileFlowPlan(request, blocks) {
 			var identity = flowPlanIdentity(request);
 			var cacheKey = "";
+			var compilerFingerprint = flowPlanCompilerFingerprint ? flowPlanCompilerFingerprint() : "";
 			if (identity && flowPlanCache && readRuntimeBoundedCache && sha256Hex) {
 				cacheKey = String(request.flowQName || request.name || request.flowName || "Flow") + "\n" + sha256Hex(identity);
-				var cached = readRuntimeBoundedCache(flowPlanCache, cacheKey, blocks);
-				if (cached) {
+				var cached = readRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint);
+				if (cached && cached.catalog === blocks) {
 					return cached;
 				}
 			}
@@ -213,10 +216,11 @@
 			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, parsedDefinition) : blocks;
 			var plan = {
 				definition: expandFlowDefinition(activeBlocks, parsedDefinition),
-				blocks: activeBlocks
+				blocks: activeBlocks,
+				catalog: blocks
 			};
 			if (cacheKey && writeRuntimeBoundedCache) {
-				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, blocks, plan, "compiled Flow plans");
+				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint, plan, "compiled Flow plans");
 			}
 			return plan;
 		}
@@ -311,6 +315,10 @@
 			};
 			ctx.expr = function (value) {
 				return evaluateExpression(ctx, value);
+			};
+			ctx.compileExpr = function (value) {
+				var compiled = compileExpression(value);
+				return function () { return compiled(ctx); };
 			};
 			ctx.path = function (path) {
 				return ctx.read(path);

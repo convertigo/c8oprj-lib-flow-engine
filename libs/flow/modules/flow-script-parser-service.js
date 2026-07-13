@@ -1131,12 +1131,10 @@
 			if (!itemToken || !selectToken) {
 				return null;
 			}
-			if (isFlowScriptObjectLiteral(selectToken)) {
-				return buildNaturalListMapNodes(blocks, imports, varName, [itemToken, selectToken], locals, lineNumber);
-			}
-			var selectObjectLiteral = flowScriptObjectLiteralFromExpressionToken(selectToken);
-			if (selectObjectLiteral) {
-				return buildNaturalListMapNodes(blocks, imports, varName, [itemToken, selectObjectLiteral], locals, lineNumber);
+			// Structured projections execute directly in list.map. Only mapper block
+			// calls need expansion into per-item child nodes.
+			if (isFlowScriptObjectLiteral(selectToken) || flowScriptObjectLiteralFromExpressionToken(selectToken)) {
+				return null;
 			}
 			return buildNaturalListMapBlockCallNodes(blocks, imports, varName, itemToken, selectToken, locals, lineNumber);
 		}

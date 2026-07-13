@@ -467,6 +467,10 @@
 		return expressionUtils().evaluate(ctx, source, expressionUtilsEnv());
 	}
 
+	function compileExpression(source) {
+		return expressionUtils().compile(source, expressionUtilsEnv());
+	}
+
 	function inputValue(ctx, props, fallback) {
 		if (props.value !== undefined) {
 			return renderTemplateTree(ctx, literalValue(props.value));
@@ -711,6 +715,14 @@
 
 	function engineModuleFile(name) {
 		return new File(engineDir(), "modules/" + name);
+	}
+
+	function flowPlanCompilerFingerprint() {
+		return [
+			"flow-script-parser-service.js",
+			"flow-repository-service.js",
+			"flow-source-service.js"
+		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
 	}
 
 	function loadEngineModule(name) {
@@ -3158,6 +3170,7 @@
 			readRuntimeBoundedCache: readRuntimeBoundedMapCache,
 			writeRuntimeBoundedCache: writeRuntimeBoundedMapCache,
 			flowPlanCache: runtimeState.caches.flowPlans,
+			flowPlanCompilerFingerprint: flowPlanCompilerFingerprint,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
 			runtimeHandles: runtimeHandleApi(),
@@ -3174,6 +3187,7 @@
 			readObjectPath: readObjectPath,
 			writeScopePath: writeScopePath,
 			evaluateExpression: evaluateExpression,
+			compileExpression: compileExpression,
 			literalValue: literalValue,
 			renderTemplate: renderTemplate,
 			renderTemplateTree: renderTemplateTree,

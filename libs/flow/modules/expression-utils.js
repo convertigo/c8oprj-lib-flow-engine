@@ -90,6 +90,59 @@
 		return value;
 	}
 
+	function compileValue(value, env) {
+		if (typeof value !== "string") {
+			return function () { return value; };
+		}
+		var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+		if (exact && isSimpleScopePath(exact[1], env)) {
+			var exactPath = exact[1];
+			return function (ctx) { return readSimpleScopePath(ctx, exactPath); };
+		}
+		if (exact) {
+			var expression = exact[1];
+			return function (ctx) { return evaluate(ctx, expression, env); };
+		}
+		if (value.indexOf("{{") !== -1) {
+			return function (ctx) { return renderTemplate(value, ctx, env); };
+		}
+		return function () { return value; };
+	}
+
+	function compileTree(value, env) {
+		if (typeof value === "string") {
+			return compileValue(value, env);
+		}
+		if (value && Object.prototype.toString.call(value) === "[object Array]") {
+			var itemCompilers = value.map(function (item) { return compileTree(item, env); });
+			return function (ctx) {
+				return itemCompilers.map(function (compileItem) { return compileItem(ctx); });
+			};
+		}
+		if (value && typeof value === "object") {
+			var keys = Object.keys(value);
+			var fieldCompilers = keys.map(function (key) { return compileTree(value[key], env); });
+			return function (ctx) {
+				var out = {};
+				for (var i = 0; i < keys.length; i++) {
+					out[keys[i]] = fieldCompilers[i](ctx);
+				}
+				return out;
+			};
+		}
+		return function () { return value; };
+	}
+
+	function compile(value, env) {
+		if (isStructuredValue(value)) {
+			return compileTree(value, env);
+		}
+		if (typeof value === "string" && isSimpleScopePath(value, env)) {
+			return function (ctx) { return readSimpleScopePath(ctx, value); };
+		}
+		return function (ctx) { return evaluate(ctx, value, env); };
+	}
+
 	function literalValue(value, env) {
 		return env.normalizeTree(value);
 	}
@@ -549,6 +602,7 @@
 		literalValue: literalValue,
 		isSimpleScopePath: isSimpleScopePath,
 		readSimpleScopePath: readSimpleScopePath,
+		compile: compile,
 		expressionFunctions: expressionFunctions,
 		tokenize: tokenize,
 		evaluate: evaluate

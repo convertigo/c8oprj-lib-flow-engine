@@ -55,11 +55,13 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var items = ctx.expr(props.items || props["in"]) || [];
+			var select = props.select === undefined ? "current" : props.select;
+			var project = ctx.compileExpr ? ctx.compileExpr(select) : function () { return ctx.expr(select); };
 			var previous = ctx.scopes.current;
 			var mapped = [];
 			for (var i = 0; i < items.length; i++) {
 				ctx.scopes.current = items[i];
-				mapped.push(ctx.expr(props.select === undefined ? "current" : props.select));
+				mapped.push(project());
 			}
 			ctx.scopes.current = previous;
 			return mapped;

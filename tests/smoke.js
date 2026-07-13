@@ -236,6 +236,30 @@ var naturalTraceRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(naturalTraceRun.trace && naturalTraceRun.trace.nodes && naturalTraceRun.trace.nodes.length > 0,
 	"includeTrace true should keep the runtime trace available");
+var structuredMapFlowScriptSource = [
+	"function StructuredMapSmoke({ result }) {",
+	"\tvar rows = [{ title: \"first\", detail: { url: \"one\" } }, { title: \"second\", detail: { url: \"two\" } }]",
+	"\tvar projected = list.map({ items: rows, select: { title: current.title, url: current.detail.url } })",
+	"\tresult.items = projected",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var structuredMapValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "StructuredMapSmoke",
+	code: structuredMapFlowScriptSource
+})));
+assertTrue(structuredMapValidation.ok === true && structuredMapValidation.definition.nodes[1].block === "list.map" &&
+	structuredMapValidation.definition.nodes.length === 3,
+	"structured list.map was not preserved as one executable Flow block");
+var structuredMapRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: structuredMapFlowScriptSource,
+	includeTrace: false
+})));
+assertTrue(structuredMapRun.result.items.length === 2 &&
+	structuredMapRun.result.items[0].title === "first" && structuredMapRun.result.items[0].url === "one" &&
+	structuredMapRun.result.items[1].title === "second" && structuredMapRun.result.items[1].url === "two",
+	"structured list.map projection did not preserve its result");
 var objectMapFlowScriptSource = [
 	"function ObjectMapSmoke({ result }) {",
 	"\tconst rates = { EUR: { rate: 1, label: \"Euro\" }, USD: { rate: 1.1, label: \"Dollar\" } }",
