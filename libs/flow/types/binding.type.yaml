@@ -1,0 +1,12 @@
+version: 1
+name: "binding"
+label: "Binding"
+icon: "mdi:database-arrow-right-outline"
+type: "object"
+description: "Literal, contextual source or validated expression bound to a frontend property."
+editor:
+  label: "Binding editor"
+  kind: "webcomponent"
+  component: "flow-binding-editor"
+  file: "editors/binding.html"
+  icon: "mdi:application-brackets-outline"

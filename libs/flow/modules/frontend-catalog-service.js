@@ -915,7 +915,7 @@
 				},
 				properties: {
 					id: { type: "string" },
-					source: { type: "string", kind: "expression" },
+					source: { type: "object", kind: "binding" },
 					context: { type: "string" }
 				}
 			}),

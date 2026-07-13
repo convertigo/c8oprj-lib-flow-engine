@@ -1,0 +1,224 @@
+<template id="flow-binding-editor-template">
+	<style>
+		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		.modes { display: flex; gap: 4px; margin-bottom: 10px; }
+		button { border: 1px solid #48525c; border-radius: 4px; background: #22282e; color: #d7e1e7; padding: 6px 10px; cursor: pointer; }
+		button.active { border-color: #48d8ff; background: #0b7592; color: white; font-weight: 700; }
+		.source { display: grid; grid-template-columns: 110px minmax(180px, 0.7fr) minmax(260px, 1.3fr); gap: 8px; align-items: end; }
+		.field { display: grid; gap: 4px; }
+		label { color: #c8d2d9; font-weight: 700; }
+		input, select { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		.path { margin-top: 10px; }
+		.hint { color: #9da7af; margin-top: 6px; line-height: 1.35; }
+		.hidden { display: none; }
+	</style>
+	<div class="modes">
+		<button type="button" data-mode="literal">Literal</button>
+		<button type="button" data-mode="source">Source</button>
+		<button type="button" data-mode="expression">Expression</button>
+	</div>
+	<div data-panel="literal"><flow-literal-editor data-child="literal"></flow-literal-editor></div>
+	<div data-panel="source">
+		<div class="source">
+			<div class="field"><label>Category</label><select data-category></select></div>
+			<div class="field"><label>Source</label><select data-source></select></div>
+			<div class="field"><label>Stable id</label><input data-source-id spellcheck="false"></div>
+		</div>
+		<div class="path"><flow-path-editor data-child="path"></flow-path-editor></div>
+		<div class="hint">The source id identifies an action or lexical scope. The path stays relative to that source.</div>
+	</div>
+	<div data-panel="expression"><flow-expression-editor data-child="expression"></flow-expression-editor></div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-binding-editor")) return;
+
+		var categories = ["requestable", "action", "iteration"];
+
+		function esc(value) {
+			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+				return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+			});
+		}
+
+		function record(value) {
+			if (value && typeof value === "object" && !Array.isArray(value)) return value;
+			if (typeof value === "string" && value.trim()) {
+				try {
+					var parsed = JSON.parse(value);
+					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+				} catch (e) {}
+			}
+			return null;
+		}
+
+		function pathParts(path) {
+			var parts = [], text = String(path || ""), token = "", i = 0;
+			function push() { if (token) { parts.push({ kind: "property", name: token }); token = ""; } }
+			while (i < text.length) {
+				var ch = text.charAt(i);
+				if (ch === ".") { push(); i++; continue; }
+				if (ch !== "[") { token += ch; i++; continue; }
+				push(); i++;
+				while (/\s/.test(text.charAt(i))) i++;
+				var quote = text.charAt(i), value = "";
+				if (quote === "\"" || quote === "'") {
+					i++;
+					while (i < text.length && text.charAt(i) !== quote) {
+						if (text.charAt(i) === "\\" && i + 1 < text.length) i++;
+						value += text.charAt(i++);
+					}
+					i++;
+				} else {
+					while (i < text.length && text.charAt(i) !== "]") value += text.charAt(i++);
+					value = value.trim();
+				}
+				while (i < text.length && text.charAt(i) !== "]") i++;
+				if (text.charAt(i) === "]") i++;
+				parts.push(/^\d+$/.test(value) ? { kind: "index", index: Number(value) } : { kind: "property", name: value });
+			}
+			push();
+			return parts;
+		}
+
+		function pathText(parts) {
+			var out = "";
+			(parts || []).forEach(function (part) {
+				if (part && part.kind === "index") { out += "[" + Number(part.index || 0) + "]"; return; }
+				var name = String(part && part.name || "");
+				if (!name) return;
+				if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) out += (out ? "." : "") + name;
+				else out += "[" + JSON.stringify(name) + "]";
+			});
+			return out;
+		}
+
+		function normalize(value) {
+			var parsed = record(value);
+			if (parsed && ["literal", "source", "expression"].indexOf(parsed.mode) !== -1) return parsed;
+			if (value !== undefined && value !== null && value !== "") return { mode: "literal", value: value };
+			return { mode: "source", source: { category: "requestable", actionId: "" }, path: [] };
+		}
+
+		function sources(state) {
+			var definition = state && state.propertyDefinition || {};
+			var info = state && state.info || {};
+			var rows = state && state.bindingSources || definition.bindingSources || info.bindingSources || [];
+			return Array.isArray(rows) ? rows : [];
+		}
+
+		function sourceId(source) {
+			return String(source && (source.actionId || source.scopeId || source.instanceId || source.formId || source.ownerId || source.name || source.path) || "");
+		}
+
+		function sourceRef(category, id, previous) {
+			var out = { category: category };
+			if (category === "requestable" || category === "action") out.actionId = id;
+			else if (category === "iteration") { out.scopeId = id; out.value = previous && previous.value || "item"; }
+			else if (category === "component") { out.instanceId = id; out.value = previous && previous.value || "props"; }
+			else if (category === "form") { out.formId = id; out.value = previous && previous.value || "values"; }
+			else if (category === "local") out.ownerId = id;
+			else if (category === "icon") { out.provider = previous && previous.provider || "mdi"; out.name = id; }
+			else if (category === "asset") { out.project = previous && previous.project || ""; out.path = id; }
+			return out;
+		}
+
+		customElements.define("flow-binding-editor", class extends HTMLElement {
+			constructor() { super(); this._state = {}; this._binding = normalize(""); }
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" }).append(document.getElementById("flow-binding-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("click", this);
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("change", this);
+					this.shadowRoot.addEventListener("flow-value", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				this._state = state || {};
+				this._binding = normalize(this._state.value);
+				this.render();
+			}
+
+			get value() { return JSON.stringify(this._binding); }
+
+			handleEvent(event) {
+				var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
+				if (event.type === "click" && mode) {
+					this.setMode(mode); this.render(); this.emit(); return;
+				}
+				if (event.type === "flow-value") {
+					var child = event.target && event.target.getAttribute && event.target.getAttribute("data-child");
+					if (!child) return;
+					event.stopPropagation();
+					if (child === "path") this._binding.path = pathParts(event.detail && event.detail.value);
+					else if (child === "expression") this._binding.expression = String(event.detail && event.detail.value || "");
+					else if (child === "literal") {
+						var value = event.detail && event.detail.value;
+						try { this._binding.value = JSON.parse(value); } catch (e) { this._binding.value = value; }
+					}
+					this.emit(); return;
+				}
+				if (event.type !== "input" && event.type !== "change") return;
+				var category = this.shadowRoot.querySelector("[data-category]");
+				var id = this.shadowRoot.querySelector("[data-source-id]");
+				var selected = this.shadowRoot.querySelector("[data-source]");
+				if (event.target === selected && selected.value !== "") {
+					var candidate = sources(this._state)[Number(selected.value)];
+					if (candidate) {
+						this._binding.source = candidate.source || sourceRef(candidate.category, candidate.id, this._binding.source);
+						this._binding.path = [];
+						this.render(); this.emit(); return;
+					}
+				}
+				this._binding.source = sourceRef(category.value, id.value, this._binding.source);
+				this.emit();
+			}
+
+			setMode(mode) {
+				if (mode === "literal") this._binding = { mode: "literal", value: this._binding.value === undefined ? "" : this._binding.value };
+				else if (mode === "expression") this._binding = { mode: "expression", expression: this._binding.expression || "" };
+				else this._binding = { mode: "source", source: this._binding.source || { category: "requestable", actionId: "" }, path: this._binding.path || [] };
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value } }));
+			}
+
+			render() {
+				if (!this.shadowRoot) return;
+				var self = this, mode = this._binding.mode || "source";
+				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) { button.classList.toggle("active", button.getAttribute("data-mode") === mode); });
+				this.shadowRoot.querySelectorAll("[data-panel]").forEach(function (panel) { panel.classList.toggle("hidden", panel.getAttribute("data-panel") !== mode); });
+				if (mode === "literal") {
+					var literal = this.shadowRoot.querySelector('[data-child="literal"]');
+					if (literal && literal.setState) literal.setState(Object.assign({}, this._state, { value: JSON.stringify(this._binding.value) }));
+					return;
+				}
+				if (mode === "expression") {
+					var expression = this.shadowRoot.querySelector('[data-child="expression"]');
+					if (expression && expression.setState) expression.setState(Object.assign({}, this._state, { value: this._binding.expression || "" }));
+					return;
+				}
+				var category = this.shadowRoot.querySelector("[data-category]");
+				var currentCategory = String(this._binding.source && this._binding.source.category || "requestable");
+				category.innerHTML = categories.map(function (name) { return '<option value="' + esc(name) + '"' + (name === currentCategory ? " selected" : "") + '>' + esc(name) + '</option>'; }).join("");
+				var available = sources(this._state);
+				var sourceSelect = this.shadowRoot.querySelector("[data-source]");
+				sourceSelect.innerHTML = '<option value="">Custom source</option>' + available.map(function (entry, index) {
+					var selected = sourceId(entry.source || entry) === sourceId(self._binding.source) && String(entry.category || entry.source && entry.source.category) === currentCategory;
+					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(entry.label || entry.id || sourceId(entry.source || entry)) + '</option>';
+				}).join("");
+				this.shadowRoot.querySelector("[data-source-id]").value = sourceId(this._binding.source);
+				var selectedSource = available.find(function (entry) { return sourceId(entry.source || entry) === sourceId(self._binding.source); });
+				var context = selectedSource && selectedSource.context || this._state.context || {};
+				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };
+				var path = this.shadowRoot.querySelector('[data-child="path"]');
+				if (path && path.setState) path.setState(Object.assign({}, this._state, { context: context, value: pathText(this._binding.path) }));
+			}
+		});
+	}());
+</script>

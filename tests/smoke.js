@@ -135,6 +135,13 @@ var expressionType = catalog.types.filter(function (type) {
 })[0];
 assertTrue(expressionType && expressionType.editor && String(expressionType.editor.file).indexOf("expression.html") !== -1,
 	"catalog did not expose type editor resources");
+var bindingType = catalog.types.filter(function (type) {
+	return type.name === "binding";
+})[0];
+assertTrue(bindingType && bindingType.type === "object" && bindingType.editor &&
+	String(bindingType.editor.component) === "flow-binding-editor" &&
+	String(bindingType.editor.file).indexOf("binding.html") !== -1,
+	"catalog did not expose the binding SmartType-style web editor");
 assertTrue(catalog.types.some(function (type) {
 	return type.name === "configOverrides" && type.editor && String(type.editor.file).indexOf("configOverrides.html") !== -1;
 }), "catalog did not expose configOverrides type editor resources");
@@ -1461,6 +1468,7 @@ assertTrue(propertyEditor.html.indexOf("flow-requestable-editor") !== -1 &&
 	propertyEditor.html.indexOf("relativeQName(qname, currentProject)") !== -1,
 	"propertyEditor did not embed standalone requestable editor");
 assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
+	propertyEditor.html.indexOf("flow-binding-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-template-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-value-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-expression-editor") !== -1 &&
