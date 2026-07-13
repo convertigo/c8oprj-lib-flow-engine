@@ -217,6 +217,15 @@ var naturalRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: naturalFlowScriptSource,
 	includeTrace: false
 })));
+var flowPlanCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.flowPlans;
+var naturalRunRepeat = JSON.parse(engine.run(JSON.stringify({
+	flowSource: naturalFlowScriptSource,
+	includeTrace: false
+})));
+var flowPlanCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.flowPlans;
+assertTrue(naturalRunRepeat.result.first === "b" && naturalRunRepeat.result.encoded === "[\"a\",\"b\"]" &&
+	flowPlanCacheAfterRepeat.hits > flowPlanCacheBeforeRepeat.hits,
+	"repeated Flow execution did not reuse its compiled plan");
 assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
 	"natural FlowScript syntax did not execute correctly");
 assertTrue(naturalRun.trace === undefined,

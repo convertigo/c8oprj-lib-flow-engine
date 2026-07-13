@@ -37,6 +37,7 @@
 		caches: {
 			blocks: createRuntimeMapCacheState(),
 			types: createRuntimeMapCacheState(),
+			flowPlans: createRuntimeBoundedMapCacheState(256),
 			libraries: createRuntimeMapCacheState(),
 			engineModules: createRuntimeMapCacheState(),
 			propertyEditor: createRuntimeCacheState(),
@@ -650,6 +651,14 @@
 
 	function writeRuntimeMapCache(cache, key, fingerprint, value, label) {
 		return cacheUtils().writeMap(cache, key, fingerprint, value, label);
+	}
+
+	function readRuntimeBoundedMapCache(cache, key, fingerprint) {
+		return cacheUtils().readBoundedMap(cache, key, fingerprint);
+	}
+
+	function writeRuntimeBoundedMapCache(cache, key, fingerprint, value, label) {
+		return cacheUtils().writeBoundedMap(cache, key, fingerprint, value, label);
 	}
 
 	function resetRuntimeModuleCaches() {
@@ -3145,6 +3154,10 @@
 			renderFlowScript: renderFlowScript,
 			parseSource: parseSource,
 			sourceForFlowRequest: sourceForFlowRequest,
+			sha256Hex: sha256Hex,
+			readRuntimeBoundedCache: readRuntimeBoundedMapCache,
+			writeRuntimeBoundedCache: writeRuntimeBoundedMapCache,
+			flowPlanCache: runtimeState.caches.flowPlans,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
 			runtimeHandles: runtimeHandleApi(),

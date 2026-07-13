@@ -51,6 +51,7 @@
 			caches: {
 				blocks: cacheSummary("blocks", caches.blocks, env),
 				types: cacheSummary("types", caches.types, env),
+				flowPlans: cacheSummary("flowPlans", caches.flowPlans, env),
 				libraries: cacheSummary("libraries", caches.libraries, env),
 				engineModules: cacheSummary("engineModules", caches.engineModules, env),
 				compiledScripts: env.compiledScriptCacheInfo ? env.compiledScriptCacheInfo() : { name: "compiledScripts", size: 0 },
@@ -65,6 +66,7 @@
 		var caches = env.runtimeState.caches;
 		env.cacheUtils.clearMap(caches.blocks);
 		env.cacheUtils.clearMap(caches.types);
+		env.cacheUtils.clearBoundedMap(caches.flowPlans);
 		env.cacheUtils.clearMap(caches.libraries);
 		env.cacheUtils.clearMap(caches.engineModules);
 		env.cacheUtils.clearValue(caches.propertyEditor);

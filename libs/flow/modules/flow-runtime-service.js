@@ -10,6 +10,10 @@
 		var blocksWithFlowHelpers = env.blocksWithFlowHelpers;
 		var parseSource = env.parseSource;
 		var sourceForFlowRequest = env.sourceForFlowRequest;
+		var sha256Hex = env.sha256Hex;
+		var readRuntimeBoundedCache = env.readRuntimeBoundedCache;
+		var writeRuntimeBoundedCache = env.writeRuntimeBoundedCache;
+		var flowPlanCache = env.flowPlanCache;
 		var sourceForWriteRequest = env.sourceForWriteRequest;
 		var loadProjectEngineDefinition = env.loadProjectEngineDefinition;
 		var runtimeHandles = env.runtimeHandles;
@@ -182,10 +186,45 @@
 				request.recordSchema === true);
 		}
 
-		function runFlowRequest(request, blocks) {
+		function flowPlanIdentity(request) {
+			if (!request) {
+				return "";
+			}
+			if (request.definition !== undefined && request.definition !== null) {
+				return "definition\n" + JSON.stringify(request.definition);
+			}
+			if (request.flowSource !== undefined && request.flowSource !== null && String(request.flowSource).trim() !== "") {
+				return "source\n" + String(request.flowSource);
+			}
+			return "";
+		}
+
+		function compileFlowPlan(request, blocks) {
+			var identity = flowPlanIdentity(request);
+			var cacheKey = "";
+			if (identity && flowPlanCache && readRuntimeBoundedCache && sha256Hex) {
+				cacheKey = String(request.flowQName || request.name || request.flowName || "Flow") + "\n" + sha256Hex(identity);
+				var cached = readRuntimeBoundedCache(flowPlanCache, cacheKey, blocks);
+				if (cached) {
+					return cached;
+				}
+			}
 			var parsedDefinition = parseSource(sourceForFlowRequest(request, blocks));
 			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, parsedDefinition) : blocks;
-			var definition = expandFlowDefinition(activeBlocks, parsedDefinition);
+			var plan = {
+				definition: expandFlowDefinition(activeBlocks, parsedDefinition),
+				blocks: activeBlocks
+			};
+			if (cacheKey && writeRuntimeBoundedCache) {
+				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, blocks, plan, "compiled Flow plans");
+			}
+			return plan;
+		}
+
+		function runFlowRequest(request, blocks) {
+			var plan = compileFlowPlan(request, blocks);
+			var definition = plan.definition;
+			var activeBlocks = plan.blocks;
 			var projectEngine = loadProjectEngineDefinition();
 			var ctx = createRunContext(request, definition, activeBlocks, projectEngine);
 			try {
@@ -736,6 +775,7 @@
 			callBlock: callBlock,
 			executeNodes: executeNodes,
 			runFlowRequest: runFlowRequest,
+			compileFlowPlan: compileFlowPlan,
 			createRunContext: createRunContext
 		};
 	}
