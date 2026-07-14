@@ -4100,7 +4100,8 @@
 			targetArray.splice(targetIndex, 0, moved);
 			debug.targetLengthAfterInsert = targetArray.length;
 		} else if (op === "replace" || op === "merge") {
-			frontAstSetValueAtPath(root, path, mutation.value, op === "merge");
+			var mutationValue = frontAstValidateBindingMutation(root, path, mutation.value);
+			frontAstSetValueAtPath(root, path, mutationValue, op === "merge");
 		} else {
 			throw new Error("Unsupported FrontAst mutation op: " + String(mutation.op || ""));
 		}
@@ -4129,6 +4130,102 @@
 		return Object.keys(value).every(function (key) {
 			return structural[key] !== true;
 		});
+	}
+
+	function frontAstValidateBindingMutation(root, path, value) {
+		var propsMatch = /^(.*)\.props$/.exec(String(path || ""));
+		if (propsMatch && frontAstIsObject(value)) {
+			var propsNode = frontAstValueAtPath(root, propsMatch[1], false);
+			var normalized = {};
+			for (var key in value) {
+				if (Object.prototype.hasOwnProperty.call(value, key)) {
+					normalized[key] = frontAstValidateBindingProperty(propsNode, key, value[key]);
+				}
+			}
+			return normalized;
+		}
+		var propertyMatch = /^(.*)\.props\.([^.[\]]+)$/.exec(String(path || ""));
+		if (!propertyMatch) {
+			return value;
+		}
+		return frontAstValidateBindingProperty(
+			frontAstValueAtPath(root, propertyMatch[1], false), propertyMatch[2], value);
+	}
+
+	function frontAstValidateBindingProperty(node, name, value) {
+		if (!node || !node.tag) {
+			return value;
+		}
+		var definitions = frontAstPropertyDefinitions(frontAstCanonicalKind(node.tag));
+		var definition = definitions[String(name || "")] || {};
+		if (definition.kind !== "binding" && definition.type !== "binding") {
+			return value;
+		}
+		var normalized = frontAstBindingValue(value);
+		if (normalized === "" || normalized === null || normalized === undefined) {
+			return normalized;
+		}
+		if (!frontAstIsFlowValueBinding(normalized)) {
+			var error = new Error("Property " + name + " requires a structured FlowValueBinding. Use the binding or mutation returned by the picker; string paths are migration input only.");
+			error.code = "FRONTEND_BINDING_REQUIRED";
+			error.hint = "Select a schema-backed picker candidate and pass its mutation unchanged.";
+			throw error;
+		}
+		return normalized;
+	}
+
+	function frontAstBindingValue(value) {
+		if (typeof value !== "string") {
+			return value;
+		}
+		var text = value.trim();
+		if (text.charAt(0) !== "{") {
+			return value;
+		}
+		try {
+			return JSON.parse(text);
+		} catch (e) {
+			return value;
+		}
+	}
+
+	function frontAstIsFlowValueBinding(value) {
+		if (!frontAstIsObject(value)) {
+			return false;
+		}
+		if (value.mode === "literal") {
+			return Object.prototype.hasOwnProperty.call(value, "value");
+		}
+		if (value.mode === "expression") {
+			return typeof value.expression === "string";
+		}
+		if (value.mode !== "source" || !frontAstIsObject(value.source) || !frontAstBindingPath(value.path)) {
+			return false;
+		}
+		var source = value.source;
+		if (source.category === "requestable" || source.category === "action") {
+			return typeof source.actionId === "string" && source.actionId !== "";
+		}
+		return source.category === "iteration" && typeof source.scopeId === "string" && source.scopeId !== ""
+			&& (source.value === "item" || source.value === "index");
+	}
+
+	function frontAstBindingPath(path) {
+		if (path === undefined || path === null) {
+			return true;
+		}
+		if (Object.prototype.toString.call(path) !== "[object Array]") {
+			return false;
+		}
+		for (var i = 0; i < path.length; i++) {
+			var segment = path[i];
+			if (!frontAstIsObject(segment) || !(
+				(segment.kind === "property" && typeof segment.name === "string")
+				|| (segment.kind === "index" && typeof segment.index === "number" && isFinite(segment.index)))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	function frontAstParseSource(source) {
@@ -4656,6 +4753,9 @@
 	}
 
 	function frontAstRenderAttributeValue(name, value) {
+		if (value && typeof value === "object") {
+			return "{" + JSON.stringify(value) + "}";
+		}
 		if (typeof value === "number" || typeof value === "boolean") {
 			return "{" + JSON.stringify(value) + "}";
 		}
@@ -5078,7 +5178,7 @@
 			traits: frontAstTraits(kind),
 			slots: frontAstSlotDefinitionsForKinds(slots, path, true),
 			children: children,
-			sourcePropertyMutationPaths: frontAstPropertyMutationPaths(props, path)
+			sourcePropertyMutationPaths: frontAstPropertyMutationPaths(props, path, kind)
 		};
 	}
 
@@ -5474,9 +5574,12 @@
 		return out;
 	}
 
-	function frontAstPropertyMutationPaths(props, path) {
+	function frontAstPropertyMutationPaths(props, path, kind) {
 		var out = {};
 		Object.keys(props || {}).forEach(function (key) {
+			out[key] = path + ".props." + key;
+		});
+		Object.keys(frontAstPropertyDefinitions(kind) || {}).forEach(function (key) {
 			out[key] = path + ".props." + key;
 		});
 		return out;
@@ -5486,7 +5589,12 @@
 		var definitions = {
 			text: {
 				id: { label: "Id", kind: "text", type: "string" },
-				text: { label: "Text", kind: "text", type: "string" }
+				text: { label: "Text", kind: "text", type: "string" },
+				source: { label: "Source", kind: "binding", type: "object" }
+			},
+			image: {
+				id: { label: "Id", kind: "text", type: "string" },
+				source: { label: "Source", kind: "binding", type: "object" }
 			},
 			button: {
 				id: { label: "Id", kind: "text", type: "string" },
@@ -5499,11 +5607,16 @@
 			},
 			table: {
 				id: { label: "Id", kind: "text", type: "string" },
-				source: { label: "Source", kind: "path", type: "string" }
+				source: { label: "Source", kind: "binding", type: "object" }
 			},
 			json: {
 				id: { label: "Id", kind: "text", type: "string" },
-				source: { label: "Source", kind: "path", type: "string" }
+				source: { label: "Source", kind: "binding", type: "object" }
+			},
+			each: {
+				id: { label: "Id", kind: "text", type: "string" },
+				source: { label: "Source", kind: "binding", type: "object" },
+				context: { label: "Context", kind: "text", type: "string" }
 			},
 			if: {
 				test: { label: "Condition", category: "Logic", kind: "expression", type: "string" }

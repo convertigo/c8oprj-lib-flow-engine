@@ -1736,6 +1736,36 @@
 		};
 	}
 
+	function bindingPathSegments(path) {
+		var segments = [];
+		var matcher = /([^.[\]]+)|\[(\d+)\]/g;
+		var match;
+		while ((match = matcher.exec(String(path || ""))) !== null) {
+			segments.push(match[1] !== undefined
+				? { kind: "property", name: match[1] }
+				: { kind: "index", index: Number(match[2]) });
+		}
+		return segments;
+	}
+
+	function bindingCandidate(source, path, type, mutation, env) {
+		var binding = {
+			mode: "source",
+			source: env.normalizeTree(source || {}),
+			path: bindingPathSegments(path)
+		};
+		var out = {
+			path: String(path || ""),
+			type: String(type || "unknown"),
+			binding: binding
+		};
+		if (mutation && mutation.path) {
+			out.mutation = env.normalizeTree(mutation);
+			out.mutation.value = binding;
+		}
+		return out;
+	}
+
 	function walkDocument(value, visitor) {
 		if (!value || typeof value !== "object") {
 			return;
@@ -1794,6 +1824,14 @@
 					candidate.paths = info.paths;
 					candidate.arrayPaths = info.arrayPaths;
 					candidate.leafPaths = info.leafPaths;
+					candidate.binding = {
+						mode: "source",
+						source: env.normalizeTree(source),
+						path: []
+					};
+					candidate.bindings = info.paths.map(function (entry) {
+						return bindingCandidate(source, entry.path, entry.type, candidate.mutation, env);
+					});
 				});
 			});
 		});

@@ -2905,6 +2905,47 @@
 		});
 	}
 
+	function inspectTreeBindings(node, definition) {
+		var info = null;
+		try {
+			info = node && node.info ? JSON.parse(node.info) : null;
+		} catch (e) {
+		}
+		var definitions = info && info.propertyDefinitions || {};
+		var bindings = {};
+		Object.keys(definitions).sort().forEach(function (name) {
+			var property = definitions[name] || {};
+			if (property.kind !== "binding" && property.type !== "binding") {
+				return;
+			}
+			var sources = (property.bindingSources || []).map(function (candidate) {
+				var out = {
+					category: candidate.category || candidate.source && candidate.source.category || "",
+					id: candidate.id || candidate.source && (candidate.source.actionId || candidate.source.scopeId) || "",
+					label: candidate.label || candidate.id || "",
+					binding: candidate.binding || null,
+					mutation: candidate.mutation || null
+				};
+				if (candidate.bindings && candidate.bindings.length) {
+					out.bindings = candidate.bindings.slice(0, 40).map(function (entry) {
+						return {
+							path: entry.path || "",
+							type: entry.type || "unknown",
+							binding: entry.binding || null,
+							mutation: entry.mutation || null
+						};
+					});
+				}
+				return out;
+			});
+			bindings[name] = {
+				current: definition && definition[name] !== undefined ? definition[name] : null,
+				sources: sources
+			};
+		});
+		return bindings;
+	}
+
 	function compactTreeNode(node, depth, maxDepth, includeDefinition, includeInspect) {
 		var out = {
 			name: node.name,
@@ -2935,6 +2976,10 @@
 				var slots = inspectTreeSlots(parsedDefinition);
 				if (slots.length) {
 					out.slots = slots;
+				}
+				var bindings = inspectTreeBindings(node, parsedDefinition);
+				if (Object.keys(bindings).length) {
+					out.bindings = bindings;
 				}
 			}
 			if (includeDefinition === true) {
