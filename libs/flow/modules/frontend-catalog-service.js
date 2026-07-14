@@ -910,7 +910,7 @@
 					id: "forEach",
 					kind: "each",
 					tag: "ForEach",
-					source: "[]",
+					source: { mode: "literal", value: [] },
 					context: "item"
 				},
 				properties: {

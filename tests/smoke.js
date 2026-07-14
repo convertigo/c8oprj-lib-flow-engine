@@ -3135,6 +3135,26 @@ var flowSvelteMultiQueryPalette = JSON.parse(engine.authoringPalette(JSON.string
 assertTrue(flowSvelteMultiQueryPalette.ok === true &&
 	flowSvelteMultiQueryPalette.items.some(function (item) { return item.id === "project.text"; }),
 	"authoring palette should match useful tokens from a multi-intent frontend query");
+var flowSvelteForEachPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteStructureNode.path,
+	query: "ForEach"
+})));
+var flowSvelteForEachInsert = null;
+flowSvelteForEachPalette.items.some(function (item) {
+	if (item.id === "frontbuilder.svelte.forEach") {
+		flowSvelteForEachInsert = item.insert;
+		return true;
+	}
+	return false;
+});
+assertTrue(flowSvelteForEachInsert && flowSvelteForEachInsert.source &&
+	flowSvelteForEachInsert.source.mode === "literal" &&
+	Object.prototype.toString.call(flowSvelteForEachInsert.source.value) === "[object Array]",
+	"authoring palette ForEach should insert a structured literal binding");
 var configVisibilityEngineSource = [
 	"version: 1",
 	"configVisibility:",
@@ -3270,6 +3290,35 @@ assertTrue(flowSvelteBatchMutation.ok === true &&
 	String(flowSvelteBatchMutation.source).indexOf("text=\"Batch one\"") !== -1 &&
 	String(flowSvelteBatchMutation.source).indexOf("text=\"Batch one\"") < String(flowSvelteBatchMutation.source).indexOf("text=\"Batch two\""),
 	"flow-svelte source mutations were not applied as one ordered batch");
+var flowSvelteBindingRoundTripSource = [
+	"<FlowComponent id=\"bindingRoundTrip\" label=\"Binding round trip\">",
+	"  <Structure>",
+	"    <ForEach id=\"items\" source={{\"mode\":\"source\",\"source\":{\"category\":\"requestable\",\"actionId\":\"loadItems\"},\"path\":[{\"kind\":\"property\",\"name\":\"items\"}]}} context=\"item\">",
+	"      <Children>",
+	"        <Text id=\"itemTitle\" text=\"Placeholder\" source={{\"mode\":\"source\",\"source\":{\"category\":\"iteration\",\"scopeId\":\"items\",\"value\":\"item\"},\"path\":[{\"kind\":\"property\",\"name\":\"title\"}]}} />",
+	"      </Children>",
+	"      <Else />",
+	"    </ForEach>",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n");
+var flowSvelteBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteBindingRoundTripSource,
+	mutation: {
+		op: "insert",
+		path: "frontAst.slots.structure.children[0].slots.children.children",
+		index: 1,
+		value: { id: "itemDescription", kind: "text", tag: "Text", text: "Description" }
+	}
+})));
+assertTrue(flowSvelteBindingRoundTrip.ok === true &&
+	(String(flowSvelteBindingRoundTrip.source).match(/source=\{\{/g) || []).length === 2 &&
+	String(flowSvelteBindingRoundTrip.source).indexOf('source="{') === -1,
+	"flow-svelte AST mutations should preserve all structured binding attributes across reparses: " +
+		JSON.stringify(flowSvelteBindingRoundTrip));
 var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: flowSvelteEngineSource,

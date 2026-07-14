@@ -4369,7 +4369,7 @@
 				i++;
 			} else if (ch === "{") {
 				var end = frontAstExpressionEnd(text, i);
-				attrs[name] = text.substring(i + 1, end);
+				attrs[name] = frontAstParseAttributeExpression(text.substring(i + 1, end));
 				i = end + 1;
 			} else {
 				var bareStart = i;
@@ -4380,6 +4380,21 @@
 			}
 		}
 		return attrs;
+	}
+
+	function frontAstParseAttributeExpression(value) {
+		value = String(value || "");
+		var trimmed = value.replace(/^\s+|\s+$/g, "");
+		var first = trimmed.charAt(0);
+		var last = trimmed.charAt(trimmed.length - 1);
+		if ((first === "{" && last === "}") || (first === "[" && last === "]")) {
+			try {
+				return JSON.parse(trimmed);
+			} catch (e) {
+				// Preserve non-JSON Svelte expressions for the renderer.
+			}
+		}
+		return value;
 	}
 
 	function frontAstExpressionEnd(text, start) {
