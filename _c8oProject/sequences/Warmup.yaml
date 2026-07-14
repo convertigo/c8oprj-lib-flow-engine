@@ -1,2 +1,0 @@
-autoStart: true
-comment: Prewarms the shared Flow runtime and core in-memory blocks without external I/O.
