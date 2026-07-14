@@ -118,6 +118,7 @@ var compiledScriptsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.compiled
 assertTrue(compiledScriptsAfterCatalog.size > 0 && compiledScriptsAfterCatalog.misses > 0,
 	"compiled script cache did not compile Rhino scripts");
 var blockArtifactsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.blockArtifacts;
+var coreBlocksAfterCatalog = JSON.parse(engine.cacheInfo()).caches.coreBlocks;
 var secondProjectDir = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-smoke-project-2");
 secondProjectDir.mkdirs();
 var secondProjectPreload = JSON.parse(engine.preload(JSON.stringify({
@@ -125,10 +126,14 @@ var secondProjectPreload = JSON.parse(engine.preload(JSON.stringify({
 	projectDir: String(secondProjectDir.getAbsolutePath())
 })));
 var blockArtifactsAfterSecondProject = JSON.parse(engine.cacheInfo()).caches.blockArtifacts;
+var coreBlocksAfterSecondProject = JSON.parse(engine.cacheInfo()).caches.coreBlocks;
 assertTrue(secondProjectPreload.ok === true && secondProjectPreload.blockCount >= catalog.count &&
-	blockArtifactsAfterSecondProject.hits > blockArtifactsAfterCatalog.hits,
+	(coreBlocksAfterSecondProject.hits > coreBlocksAfterCatalog.hits ||
+		blockArtifactsAfterSecondProject.hits > blockArtifactsAfterCatalog.hits) &&
+	blockArtifactsAfterSecondProject.misses === blockArtifactsAfterCatalog.misses,
 	"a second project catalog reparsed core blocks instead of reusing global block artifacts: " +
-	JSON.stringify({ preload: secondProjectPreload, before: blockArtifactsAfterCatalog, after: blockArtifactsAfterSecondProject,
+	JSON.stringify({ preload: secondProjectPreload, artifactsBefore: blockArtifactsAfterCatalog,
+		artifactsAfter: blockArtifactsAfterSecondProject, coreBefore: coreBlocksAfterCatalog, coreAfter: coreBlocksAfterSecondProject,
 		catalogCount: catalog.count }));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "json.push" && block.namespace === "json" && block.name === "push" &&

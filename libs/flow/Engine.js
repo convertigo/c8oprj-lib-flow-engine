@@ -10,6 +10,7 @@
 	var YAMLFactory = Packages.com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
 	var Base64 = Packages.java.util.Base64;
+	var JavaSystem = Packages.java.lang.System;
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
@@ -34,8 +35,11 @@
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
 		frontendDevServers: {},
+		blockArtifactCompilerFingerprint: null,
+		flowPlanCompilerFingerprint: null,
 		caches: {
 			blocks: createRuntimeMapCacheState(),
+			coreBlocks: createRuntimeMapCacheState(),
 			blockArtifacts: createRuntimeMapCacheState(),
 			blockCatalogHeads: createRuntimeMapCacheState(),
 			types: createRuntimeMapCacheState(),
@@ -702,7 +706,10 @@
 	}
 
 	function clearRuntimeCaches() {
-		return runtimeCacheService().clear(runtimeCacheEnv());
+		var result = runtimeCacheService().clear(runtimeCacheEnv());
+		runtimeState.blockArtifactCompilerFingerprint = null;
+		runtimeState.flowPlanCompilerFingerprint = null;
+		return result;
 	}
 
 	function invalidateBlockCatalogCaches() {
@@ -732,21 +739,29 @@
 	}
 
 	function flowPlanCompilerFingerprint() {
-		return [
+		if (runtimeState.flowPlanCompilerFingerprint !== null) {
+			return runtimeState.flowPlanCompilerFingerprint;
+		}
+		runtimeState.flowPlanCompilerFingerprint = [
 			"flow-script-parser-service.js",
 			"flow-repository-service.js",
 			"flow-source-service.js"
 		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
+		return runtimeState.flowPlanCompilerFingerprint;
 	}
 
 	function blockArtifactCompilerFingerprint() {
-		return [
+		if (runtimeState.blockArtifactCompilerFingerprint !== null) {
+			return runtimeState.blockArtifactCompilerFingerprint;
+		}
+		runtimeState.blockArtifactCompilerFingerprint = [
 			"block-code-compiler-service.js",
 			"block-file-loader-service.js",
 			"block-policy-service.js",
 			"flow-script-parser-service.js",
 			"graph-block-runtime-service.js"
 		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
+		return runtimeState.blockArtifactCompilerFingerprint;
 	}
 
 	function loadEngineModule(name) {
@@ -1237,6 +1252,7 @@
 			validateTypeDescriptorSource: validateTypeDescriptorSource,
 			raise: raise,
 			blockCache: runtimeState.caches.blocks,
+			coreBlockCache: runtimeState.caches.coreBlocks,
 			blockCatalogHeadCache: runtimeState.caches.blockCatalogHeads,
 			currentTimeMillis: function () { return new Date().getTime(); },
 			blockCatalogProbeIntervalMs: 1000,
@@ -1271,12 +1287,19 @@
 	function preloadProjectRequest(request) {
 		var started = new Date().getTime();
 		var blocks = loadBlocks(false);
+		var compilerStarted = new Date().getTime();
+		compileFlowPlan({
+			flowQName: "lib_flow_engine.__compiler_preload__",
+			flowName: "__compiler_preload__",
+			flowSource: "function __compiler_preload__({ result }) {\n  return result\n}\n"
+		}, blocks);
 		return {
 			ok: true,
 			project: String(request.project || ""),
 			projectDir: String(projectDir() || ""),
 			blockCount: Object.keys(blocks).length,
 			durationMs: new Date().getTime() - started,
+			compilerDurationMs: new Date().getTime() - compilerStarted,
 			blockArtifacts: cacheUtils().summary("blockArtifacts", runtimeState.caches.blockArtifacts)
 		};
 	}
@@ -1603,6 +1626,10 @@
 			sourceForFile: sourceForFile,
 			sha256Hex: sha256Hex,
 			blockCompilerFingerprint: blockArtifactCompilerFingerprint(),
+			blockSourceFingerprint: function (file) {
+				var draft = frontendDraftForFile(activeRequest, file);
+				return draft === null ? fileFingerprint(file) : "draft:" + sha256Hex(draft);
+			},
 			readBlockArtifact: function (key, fingerprint) {
 				return readRuntimeMapCache(runtimeState.caches.blockArtifacts, key, fingerprint);
 			},
@@ -3290,7 +3317,8 @@
 			flowCode: flowCodeApi(),
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
-			context: typeof context === "undefined" ? null : context
+			context: typeof context === "undefined" ? null : context,
+			nanoTime: function () { return Number(JavaSystem.nanoTime()); }
 		};
 	}
 
@@ -3308,6 +3336,10 @@
 
 	function runFlowRequest(request, blocks) {
 		return flowRuntimeService().runFlowRequest(request, blocks, flowRuntimeServiceEnv());
+	}
+
+	function compileFlowPlan(request, blocks) {
+		return flowRuntimeService().compileFlowPlan(request, blocks, flowRuntimeServiceEnv());
 	}
 
 	function createRunContext(request, definition, blocks, projectEngine) {
@@ -7027,9 +7059,32 @@
 			});
 		},
 
+		prepare: function (requestJson) {
+			return engineCall("prepare", requestJson, function (request) {
+				var started = JavaSystem.nanoTime();
+				var blocks = loadBlocks(true);
+				var catalogMs = Number(JavaSystem.nanoTime() - started) / 1000000;
+				var compileStarted = JavaSystem.nanoTime();
+				var plan = compileFlowPlan(request, blocks);
+				return {
+					ok: true,
+					flowQName: String(request.flowQName || ""),
+					blockCount: Object.keys(plan.blocks || {}).length,
+					catalogMs: catalogMs,
+					compileMs: Number(JavaSystem.nanoTime() - compileStarted) / 1000000,
+					durationMs: Number(JavaSystem.nanoTime() - started) / 1000000
+				};
+			});
+		},
+
 		run: function (requestJson) {
 			return engineCall("run", requestJson, function (request) {
-				return runFlowRequest(request, loadBlocks(true));
+				var started = request.profile === true ? JavaSystem.nanoTime() : 0;
+				var blocks = loadBlocks(true);
+				if (request.profile === true) {
+					request.loadBlocksMs = Number(JavaSystem.nanoTime() - started) / 1000000;
+				}
+				return runFlowRequest(request, blocks);
 			});
 		},
 

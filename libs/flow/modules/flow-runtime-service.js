@@ -91,6 +91,22 @@
 		var requestables = env.requestables;
 		var throwFlowError = env.throwFlowError;
 		var liveContext = env.context;
+		var nanoTime = env.nanoTime || function () { return 0; };
+
+		function profileDuration(started) {
+			return Number(nanoTime() - started) / 1000000;
+		}
+
+		function recordProfile(ctx, kind, name, started) {
+			if (!ctx || !ctx.profile) {
+				return;
+			}
+			ctx.profile.blocks.push({
+				kind: kind,
+				name: String(name || ""),
+				durationMs: profileDuration(started)
+			});
+		}
 
 		function executeNode(ctx, node) {
 			if (ctx.stopped || !node || node.disabled) {
@@ -102,7 +118,13 @@
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 			}
 			var props = nodeProps(node);
-			var result = block.run(ctx, node);
+			var started = ctx.profile ? nanoTime() : 0;
+			var result;
+			try {
+				result = block.run(ctx, node);
+			} finally {
+				recordProfile(ctx, "node", name, started);
+			}
 			if (props.out && result !== undefined) {
 				ctx.write(props.out, result);
 			}
@@ -144,6 +166,7 @@
 			ctx.scopes.local = {};
 			ctx.returned = undefined;
 			ctx.stopped = false;
+			var started = ctx.profile ? nanoTime() : 0;
 			try {
 				var nodeProperties = nodeProps(node);
 				var result = block.run(ctx, node);
@@ -158,6 +181,7 @@
 				}
 				return result;
 			} finally {
+				recordProfile(ctx, "call", name, started);
 				ctx.scopes.input = previousInput;
 				ctx.scopes.props = previousProps;
 				ctx.scopes.local = previousLocal;
@@ -226,13 +250,32 @@
 		}
 
 		function runFlowRequest(request, blocks) {
+			var runStarted = request.profile === true ? nanoTime() : 0;
+			var compileStarted = request.profile === true ? nanoTime() : 0;
 			var plan = compileFlowPlan(request, blocks);
+			var compileMs = request.profile === true ? profileDuration(compileStarted) : 0;
 			var definition = plan.definition;
 			var activeBlocks = plan.blocks;
+			var configStarted = request.profile === true ? nanoTime() : 0;
 			var projectEngine = loadProjectEngineDefinition();
+			var configMs = request.profile === true ? profileDuration(configStarted) : 0;
+			var contextStarted = request.profile === true ? nanoTime() : 0;
 			var ctx = createRunContext(request, definition, activeBlocks, projectEngine);
+			if (request.profile === true) {
+				ctx.profile = {
+					loadBlocksMs: Number(request.loadBlocksMs || 0),
+					compilePlanMs: compileMs,
+					loadConfigMs: configMs,
+					createContextMs: profileDuration(contextStarted),
+					blocks: []
+				};
+			}
 			try {
+				var executeStarted = request.profile === true ? nanoTime() : 0;
 				ctx.runNodes(definition.nodes || []);
+				if (ctx.profile) {
+					ctx.profile.executeNodesMs = profileDuration(executeStarted);
+				}
 				var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
 				assertNoRuntimeHandle(result, "result");
 				var resultSchema = shouldLearnResultSchema(request) ? learnResultSchema(request, definition, result) : null;
@@ -260,6 +303,10 @@
 				}
 				if (request.includeTrace !== false) {
 					out.trace = snapshot(ctx.scopes.trace);
+				}
+				if (ctx.profile) {
+					ctx.profile.runFlowRequestMs = profileDuration(runStarted);
+					out.profile = ctx.profile;
 				}
 				return out;
 			} finally {
@@ -808,6 +855,11 @@
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
 			return create(env).runFlowRequest.apply(null, args);
+		},
+		compileFlowPlan: function () {
+			var args = Array.prototype.slice.call(arguments);
+			var env = args.pop();
+			return create(env).compileFlowPlan.apply(null, args);
 		},
 		createRunContext: function () {
 			var args = Array.prototype.slice.call(arguments);

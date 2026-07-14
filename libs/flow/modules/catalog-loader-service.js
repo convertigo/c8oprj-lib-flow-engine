@@ -122,12 +122,13 @@
 		});
 	}
 
-	function blocksCacheKey(env) {
+	function blocksCacheIdentity(env) {
 		var coreBlocksDir = new env.File(env.engineDir(), "blocks");
-		var key = [
+		var coreKey = [
 			"engine", env.canonicalPath(env.engineDir()),
 			"core", env.directoryFingerprint(coreBlocksDir)
 		];
+		var key = coreKey.slice();
 		var localBlocksDir = env.projectBlocksDir();
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
 			referencedProjectRoots(env).forEach(function (root) {
@@ -140,9 +141,17 @@
 			var draftsFingerprint = env.sourceDraftsFingerprint();
 			if (draftsFingerprint) {
 				key.push("drafts", draftsFingerprint);
+				coreKey.push("drafts", draftsFingerprint);
 			}
 		}
-		return key.join("\n");
+		return {
+			key: key.join("\n"),
+			coreKey: coreKey.join("\n")
+		};
+	}
+
+	function blocksCacheKey(env) {
+		return blocksCacheIdentity(env).key;
 	}
 
 	function blockCatalogHeadKey(env) {
@@ -184,11 +193,23 @@
 		return blocks;
 	}
 
-	function loadBlocksUncached(env) {
+	function loadCoreBlocks(env, coreKey) {
+		var cached = env.readRuntimeCache(env.coreBlockCache, coreKey, coreKey);
+		if (cached) {
+			return cached;
+		}
 		var blocks = {};
 		var coreBlocksDir = new env.File(env.engineDir(), "blocks");
 		reserveBlockDir(blocks, coreBlocksDir, "core", env.flowProviderName(env.engineDir(), "lib_flow_engine"), env);
 		loadBlockDir(blocks, coreBlocksDir, "core", env.flowProviderName(env.engineDir(), "lib_flow_engine"), env);
+		return env.writeRuntimeCache(env.coreBlockCache, coreKey, coreKey, blocks, "core Flow blocks");
+	}
+
+	function loadBlocksUncached(env, coreKey) {
+		coreKey = coreKey || blocksCacheIdentity(env).coreKey;
+		var coreBlocks = loadCoreBlocks(env, coreKey);
+		var blocks = Object.assign({}, coreBlocks);
+		var coreBlocksDir = new env.File(env.engineDir(), "blocks");
 		var localBlocksDir = env.projectBlocksDir();
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
 			referencedProjectRoots(env).forEach(function (root) {
@@ -211,12 +232,14 @@
 				return hot;
 			}
 		}
-		var key = blocksCacheKey(env);
+		var identity = blocksCacheIdentity(env);
+		var key = identity.key;
 		var cached = env.readRuntimeCache(env.blockCache, key, key);
 		if (cached) {
 			return writeHotBlockCatalog(env, cached);
 		}
-		return writeHotBlockCatalog(env, env.writeRuntimeCache(env.blockCache, key, key, loadBlocksUncached(env),
+		return writeHotBlockCatalog(env, env.writeRuntimeCache(env.blockCache, key, key,
+			loadBlocksUncached(env, identity.coreKey),
 			"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project")));
 	}
 
