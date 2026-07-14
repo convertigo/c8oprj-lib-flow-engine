@@ -78,6 +78,57 @@ assertTrue(mirroredDraftSet.ok === true && mirroredDraftRead && mirroredDraftRea
 	mirroredDraftRead.revision === mirroredDraftSet.revision,
 	"FlowScript draft was not mirrored when a live DBO accepted the working copy");
 
+var blockFileLoaderSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/block-file-loader-service.js"), "UTF-8"));
+var isolatedBlockFileLoader = eval(blockFileLoaderSource);
+var lazySourceReads = 0;
+var lazyCompiles = 0;
+var lazyBlocks = {};
+var lazyFile = {
+	getName: function () { return "lazy.block.js"; },
+	getParentFile: function () { return null; },
+	getAbsolutePath: function () { return "/smoke/lazy.block.js"; }
+};
+var lazyBlockEnv = {
+	blockIdFromDescriptorFile: function () { return "smoke.lazy"; },
+	readBlockArtifact: function () { return null; },
+	writeBlockArtifact: function () {},
+	blockSourceFingerprint: function () { return "lazy-source"; },
+	blockCompilerFingerprint: "smoke",
+	sourceForFile: function () {
+		lazySourceReads++;
+		return "const _meta = { runtime: 'flow' }; function lazy({ result }) { return result }";
+	},
+	extractFlowScriptBlockMeta: function () { return { meta: { runtime: "flow" } }; },
+	flowScriptBlockMetaFromRequest: function () { return {}; },
+	normalizeTree: function (value) { return value; },
+	blockCodeRuntimeFromMeta: function (meta) { return meta.runtime; },
+	flowScriptBlockDescriptorFromMeta: function (name, meta) {
+		return { name: name, implementation: { runtime: meta.runtime }, props: {} };
+	},
+	graphBlockCatalog: function (descriptor) { return descriptor; },
+	compileProjectBlockCode: function () {
+		lazyCompiles++;
+		return { descriptor: { name: "smoke.lazy", implementation: { runtime: "flow" }, props: {} } };
+	},
+	graphBlockFromDefinition: function () {
+		return { name: "smoke.lazy", run: function () { return "lazy"; }, catalog: function () { return {}; } };
+	},
+	raise: function (code, message) { throw new Error(code + ": " + message); }
+};
+isolatedBlockFileLoader.reserveFlowScriptBlockFile(lazyBlocks, lazyFile, "project", "Smoke", null, lazyBlockEnv);
+assertTrue(lazySourceReads === 0 && lazyCompiles === 0,
+	"reserving a project block parsed or compiled its implementation eagerly");
+lazyBlocks["smoke.lazy"].catalog();
+assertTrue(lazySourceReads === 1 && lazyCompiles === 0,
+	"reading lazy block metadata did not stay separate from implementation compilation");
+isolatedBlockFileLoader.materializeFlowScriptBlock(lazyBlocks, "smoke.lazy", "rhino");
+assertTrue(lazyCompiles === 0 && lazyBlocks["smoke.lazy"].__flowScriptPlaceholder === true,
+	"targeted Rhino preparation compiled a Flow composite block");
+isolatedBlockFileLoader.materializeFlowScriptBlock(lazyBlocks, "smoke.lazy");
+assertTrue(lazyCompiles === 1 && lazyBlocks["smoke.lazy"].__flowScriptPlaceholder !== true,
+	"lazy project block did not compile on first unrestricted materialization");
+
 var flowSource = [
 	"version: 1",
 	"nodes:",

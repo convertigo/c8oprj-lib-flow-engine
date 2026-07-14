@@ -92,6 +92,9 @@
 		var throwFlowError = env.throwFlowError;
 		var liveContext = env.context;
 		var nanoTime = env.nanoTime || function () { return 0; };
+		var materializeFlowScriptBlock = env.materializeFlowScriptBlock || function (blocks, name) {
+			return blocks && blocks[name];
+		};
 
 		function profileDuration(started) {
 			return Number(nanoTime() - started) / 1000000;
@@ -113,7 +116,7 @@
 				return undefined;
 			}
 			var name = blockName(node);
-			var block = ctx.blocks[name];
+			var block = materializeFlowScriptBlock(ctx.blocks, name);
 			if (!block) {
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 			}
@@ -138,7 +141,7 @@
 			if (!name) {
 				raise("MISSING_BLOCK_NAME", "ctx.callBlock requires a block name.");
 			}
-			var block = ctx.blocks[name];
+			var block = materializeFlowScriptBlock(ctx.blocks, name);
 			if (!block) {
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, null, "Use flow-catalog or blockList to list supported blocks.");
 			}
@@ -238,6 +241,7 @@
 			}
 			var parsedDefinition = parseSource(sourceForFlowRequest(request, blocks));
 			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, parsedDefinition) : blocks;
+			materializeDefinitionBlocks(activeBlocks, parsedDefinition);
 			var plan = {
 				definition: expandFlowDefinition(activeBlocks, parsedDefinition),
 				blocks: activeBlocks,
@@ -247,6 +251,28 @@
 				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint, plan, "compiled Flow plans");
 			}
 			return plan;
+		}
+
+		function materializeDefinitionBlocks(blocks, definition) {
+			function visit(value) {
+				if (!value || typeof value !== "object") {
+					return;
+				}
+				if (Object.prototype.toString.call(value) === "[object Array]") {
+					value.forEach(visit);
+					return;
+				}
+				var name = blockName(value);
+				if (name) {
+					materializeFlowScriptBlock(blocks, name, "rhino");
+				}
+				Object.keys(value).forEach(function (key) {
+					if (key !== "props") {
+						visit(value[key]);
+					}
+				});
+			}
+			visit(definition && definition.nodes || []);
 		}
 
 		function runFlowRequest(request, blocks) {

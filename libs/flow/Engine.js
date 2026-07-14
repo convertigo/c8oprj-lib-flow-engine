@@ -1659,6 +1659,10 @@
 		return blockFileLoaderService().reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
 	}
 
+	function materializeFlowScriptBlock(blocks, name, runtime) {
+		return blockFileLoaderService().materializeFlowScriptBlock(blocks, name, runtime);
+	}
+
 	function reserveGraphBlockFile(blocks, file, origin, provider, blocksDir) {
 		return blockFileLoaderService().reserveGraphBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
 	}
@@ -3244,6 +3248,7 @@
 			normalizeTree: normalizeTree,
 			expandFlowDefinition: expandFlowDefinition,
 			blocksWithFlowHelpers: blocksWithFlowHelpers,
+			materializeFlowScriptBlock: materializeFlowScriptBlock,
 			renderFlowScript: renderFlowScript,
 			parseSource: parseSource,
 			sourceForFlowRequest: sourceForFlowRequest,

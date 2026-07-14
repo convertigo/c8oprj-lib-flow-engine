@@ -215,11 +215,8 @@
 			referencedProjectRoots(env).forEach(function (root) {
 				var refBlocksDir = referencedBlocksDir(root, env);
 				reserveBlockDir(blocks, refBlocksDir, "reference", projectNameFromRoot(root), env, refBlocksDir);
-				loadBlockDir(blocks, refBlocksDir, "reference", projectNameFromRoot(root), env, refBlocksDir);
 			});
 			reserveBlockDir(blocks, localBlocksDir, "project",
-				env.flowProviderName(new env.File(env.projectDir(), "libs/flow"), "project"), env);
-			loadBlockDir(blocks, localBlocksDir, "project",
 				env.flowProviderName(new env.File(env.projectDir(), "libs/flow"), "project"), env);
 		}
 		return blocks;
