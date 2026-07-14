@@ -856,6 +856,13 @@ var canonicalBlockJs = [
 	"\t\t\t\"type\": \"unknown\",",
 	"\t\t\t\"description\": \"Value returned by the block.\"",
 	"\t\t},",
+	"\t\t\"options\": {",
+	"\t\t\t\"kind\": \"literal\",",
+	"\t\t\t\"type\": \"object\",",
+	"\t\t\t\"properties\": { \"enabled\": { \"type\": \"boolean\" } },",
+	"\t\t\t\"required\": [\"enabled\"],",
+	"\t\t\t\"additionalProperties\": false",
+	"\t\t},",
 	"\t\t\"out\": {",
 	"\t\t\t\"kind\": \"path\",",
 	"\t\t\t\"mode\": \"write\",",
@@ -907,7 +914,10 @@ canonicalCatalog.blocks.forEach(function (block) {
 });
 var canonicalProps = canonicalBlock ? canonicalBlock.props || canonicalBlock.properties || {} : {};
 assertTrue(canonicalBlock && canonicalBlock.implementation === "rhino" &&
-	canonicalProps.value && canonicalProps.value.kind === "value",
+	canonicalProps.value && canonicalProps.value.kind === "value" &&
+	canonicalProps.options.properties.enabled.type === "boolean" &&
+	canonicalProps.options.required[0] === "enabled" &&
+	canonicalProps.options.additionalProperties === false,
 	"catalog did not expose canonical FlowScript metadata for a Rhino block");
 var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
