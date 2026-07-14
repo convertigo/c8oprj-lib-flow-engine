@@ -36,6 +36,7 @@
 		frontendDevServers: {},
 		caches: {
 			blocks: createRuntimeMapCacheState(),
+			blockArtifacts: createRuntimeMapCacheState(),
 			blockCatalogHeads: createRuntimeMapCacheState(),
 			types: createRuntimeMapCacheState(),
 			flowPlans: createRuntimeBoundedMapCacheState(256),
@@ -738,6 +739,16 @@
 		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
 	}
 
+	function blockArtifactCompilerFingerprint() {
+		return [
+			"block-code-compiler-service.js",
+			"block-file-loader-service.js",
+			"block-policy-service.js",
+			"flow-script-parser-service.js",
+			"graph-block-runtime-service.js"
+		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
+	}
+
 	function loadEngineModule(name) {
 		var file = engineModuleFile(name);
 		if (!file.isFile()) {
@@ -1257,6 +1268,19 @@
 		return catalogLoaderService().loadBlocks(catalogLoaderEnv(), allowHot === true);
 	}
 
+	function preloadProjectRequest(request) {
+		var started = new Date().getTime();
+		var blocks = loadBlocks(false);
+		return {
+			ok: true,
+			project: String(request.project || ""),
+			projectDir: String(projectDir() || ""),
+			blockCount: Object.keys(blocks).length,
+			durationMs: new Date().getTime() - started,
+			blockArtifacts: cacheUtils().summary("blockArtifacts", runtimeState.caches.blockArtifacts)
+		};
+	}
+
 	function loadTypeDescriptorFile(types, file, origin) {
 		return catalogLoaderService().loadTypeDescriptorFile(types, file, origin, catalogLoaderEnv());
 	}
@@ -1577,6 +1601,15 @@
 		return {
 			FileUtils: FileUtils,
 			sourceForFile: sourceForFile,
+			sha256Hex: sha256Hex,
+			blockCompilerFingerprint: blockArtifactCompilerFingerprint(),
+			readBlockArtifact: function (key, fingerprint) {
+				return readRuntimeMapCache(runtimeState.caches.blockArtifacts, key, fingerprint);
+			},
+			writeBlockArtifact: function (key, fingerprint, value) {
+				return writeRuntimeMapCache(runtimeState.caches.blockArtifacts, key, fingerprint, value,
+					"compiled Flow block artifacts");
+			},
 			normalizeTree: normalizeTree,
 			raise: raise,
 			blockIdFromDescriptorFile: blockIdFromDescriptorFile,
@@ -6988,6 +7021,12 @@
 	}
 
 	return {
+		preload: function (requestJson) {
+			return projectCall("preload", requestJson, function (request) {
+				return preloadProjectRequest(request);
+			});
+		},
+
 		run: function (requestJson) {
 			return engineCall("run", requestJson, function (request) {
 				return runFlowRequest(request, loadBlocks(true));

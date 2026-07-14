@@ -117,6 +117,19 @@ assertTrue(catalog.blocks.some(function (block) {
 var compiledScriptsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.compiledScripts;
 assertTrue(compiledScriptsAfterCatalog.size > 0 && compiledScriptsAfterCatalog.misses > 0,
 	"compiled script cache did not compile Rhino scripts");
+var blockArtifactsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.blockArtifacts;
+var secondProjectDir = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-smoke-project-2");
+secondProjectDir.mkdirs();
+var secondProjectPreload = JSON.parse(engine.preload(JSON.stringify({
+	project: "SmokeProject2",
+	projectDir: String(secondProjectDir.getAbsolutePath())
+})));
+var blockArtifactsAfterSecondProject = JSON.parse(engine.cacheInfo()).caches.blockArtifacts;
+assertTrue(secondProjectPreload.ok === true && secondProjectPreload.blockCount >= catalog.count &&
+	blockArtifactsAfterSecondProject.hits > blockArtifactsAfterCatalog.hits,
+	"a second project catalog reparsed core blocks instead of reusing global block artifacts: " +
+	JSON.stringify({ preload: secondProjectPreload, before: blockArtifactsAfterCatalog, after: blockArtifactsAfterSecondProject,
+		catalogCount: catalog.count }));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "json.push" && block.namespace === "json" && block.name === "push" &&
 		block.provider === "lib_flow_engine" && block.origin === "core";
