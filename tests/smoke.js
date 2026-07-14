@@ -434,6 +434,25 @@ assertTrue(declaredInputSync.ok === true &&
 	declaredInputSync.inputDefinitions.value &&
 	declaredInputSync.inputDefinitions.value.type === "string",
 	"syncInputs did not extract FlowScript _flow.inputs without a full Flow validation");
+var outputOnlyInputSync = JSON.parse(engine.syncInputs(JSON.stringify({
+	project: "SmokeProject",
+	flowName: "OutputOnlyContractSmoke",
+	flowQName: "SmokeProject.OutputOnlyContractSmoke",
+	projectDir: String(projectDirFile.getAbsolutePath()),
+	flowSource: [
+		"const _flow = { outputs: { ready: { type: \"boolean\" } } }",
+		"function OutputOnlyContractSmoke({ result }) {",
+		"\tunknown.block({ value: true })",
+		"\tresult.ready = true",
+		"\treturn result",
+		"}",
+		""
+	].join("\n")
+})));
+assertTrue(outputOnlyInputSync.ok === true &&
+	outputOnlyInputSync.metadataOnly === true &&
+	Object.keys(outputOnlyInputSync.inputDefinitions).length === 0,
+	"syncInputs compiled an output-only FlowScript instead of using its top-level metadata");
 var configUseFlowScriptSource = [
 	"function ConfigUseSmoke({ input, config, result }) {",
 	"\tresult.beforeTimeout = config.http.timeout",

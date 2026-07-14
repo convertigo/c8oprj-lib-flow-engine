@@ -2089,11 +2089,8 @@
 		return inputs && typeof inputs === "object" ? normalizeTree(inputs) : {};
 	}
 
-	function flowInputDefinitionsFromFlowScriptSource(source) {
-		if (!isFlowScriptSource(source)) {
-			return {};
-		}
-		var meta = parseFlowScriptTopLevelObjectFromCode(source, "flow") || {};
+	function flowInputDefinitionsFromFlowScriptMetadata(meta) {
+		meta = meta || {};
 		var inputs = meta.inputs || meta.input || {};
 		return inputs && typeof inputs === "object" ? normalizeTree(inputs) : {};
 	}
@@ -2105,8 +2102,13 @@
 			var parts = String(request.flowQName).split(".");
 			name = parts[parts.length - 1];
 		}
-		var inputDefinitions = flowInputDefinitionsFromFlowScriptSource(request.flowSource || "");
-		if (!Object.keys(inputDefinitions).length) {
+		var flowSource = String(request.flowSource || "");
+		var flowMetadata = isFlowScriptSource(flowSource)
+			? parseFlowScriptTopLevelObjectFromCode(flowSource, "flow")
+			: null;
+		var declaredMetadata = flowMetadata !== null;
+		var inputDefinitions = flowInputDefinitionsFromFlowScriptMetadata(flowMetadata);
+		if (!declaredMetadata && !Object.keys(inputDefinitions).length) {
 			var definition = parseSource(sourceForFlowRequest(request, blocks || loadBlocks()));
 			inputDefinitions = flowInputDefinitionsFromDefinition(definition);
 		}
@@ -2118,6 +2120,7 @@
 			flowName: name,
 			projectName: currentProjectName(request),
 			projectDir: String(projectDir() || ""),
+			metadataOnly: declaredMetadata,
 			inputDefinitions: inputDefinitions,
 			inputSync: inputSync
 		};
