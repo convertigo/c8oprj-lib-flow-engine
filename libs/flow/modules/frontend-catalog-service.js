@@ -783,6 +783,69 @@
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.client.fullsync.get",
+				label: "FullSync Get",
+				category: "Svelte / FullSync",
+				kind: "frontendActionDefinition",
+				icon: "mdi:database-search-outline",
+				traits: ["ui.action"],
+				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Reads one document from the local FullSync database.",
+				insert: { id: "fullSyncGet", kind: "fullSyncGet", tag: "FullSyncGet", database: "", docid: "" },
+				properties: {
+					id: { type: "string" },
+					database: { type: "string", kind: "fullsync" },
+					docid: { type: "binding", kind: "binding" },
+					marker: { type: "string" },
+					schemaRequestable: { type: "requestable", kind: "requestable" },
+					outputSchema: { type: "object", kind: "literal" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.client.fullsync.view",
+				label: "FullSync View",
+				category: "Svelte / FullSync",
+				kind: "frontendActionDefinition",
+				icon: "mdi:database-eye-outline",
+				traits: ["ui.action"],
+				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Queries one view from the local FullSync database.",
+				insert: { id: "fullSyncView", kind: "fullSyncView", tag: "FullSyncView", database: "", ddoc: "", view: "" },
+				properties: {
+					id: { type: "string" },
+					database: { type: "string", kind: "fullsync" },
+					ddoc: { type: "string" },
+					view: { type: "string" },
+					marker: { type: "string" },
+					schemaRequestable: { type: "requestable", kind: "requestable" },
+					outputSchema: { type: "object", kind: "literal" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.client.fullsync.sync",
+				label: "FullSync Sync",
+				category: "Svelte / FullSync",
+				kind: "frontendActionDefinition",
+				icon: "mdi:database-sync-outline",
+				traits: ["ui.action"],
+				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Synchronizes, pulls or pushes a FullSync database and reports progress.",
+				insert: { id: "fullSyncSync", kind: "fullSyncSync", tag: "FullSyncSync", database: "", mode: "sync" },
+				properties: {
+					id: { type: "string" },
+					database: { type: "string", kind: "fullsync" },
+					mode: { type: "string", enum: ["sync", "pull", "push"] },
+					marker: { type: "string" },
+					outputSchema: { type: "object", kind: "literal" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.dataBinding",
 				label: "Data binding",
 				category: "Svelte / Data",
@@ -969,11 +1032,11 @@
 						kind: "variable",
 						tag: "Variable",
 						name: "variable",
-						value: "input.value"
+						value: { mode: "literal", value: "" }
 					},
 					properties: {
 						name: { type: "string" },
-						value: { type: "string", kind: "path" }
+						value: { type: "binding", kind: "binding" }
 					}
 				}),
 			frontendAuthoringDescriptor(builderName, settings, {

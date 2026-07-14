@@ -3830,14 +3830,22 @@
 		var calls = {};
 		(model.backendCalls || []).forEach(function (call) {
 			if (call && call.id && call.requestable) {
-				calls[String(call.id)] = String(call.requestable);
+				calls[String(call.id)] = call;
 			}
 		});
 		var projectName = currentProjectName(request) || projectRoot && String(projectRoot.getName()) || "";
 		var schemas = {};
 		(model.clientActions || []).forEach(function (action) {
-			var requestable = action && calls[String(action.backendCall || "")];
-			if (!action || !action.id || !requestable) {
+			var call = action && calls[String(action.backendCall || "")];
+			if (!action || !action.id || !call) {
+				return;
+			}
+			if (call.outputSchema && typeof call.outputSchema === "object") {
+				schemas[String(action.id)] = normalizeTree(call.outputSchema);
+				return;
+			}
+			var requestable = String(call.requestable || "");
+			if (action.kind === "fullSync" || requestable.indexOf("fs://") === 0) {
 				return;
 			}
 			try {
