@@ -756,6 +756,31 @@
 			}),
 		].concat(frontendSvelteEventDescriptors(builderName, settings), [
 			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.onMount",
+				label: "OnMount",
+				category: "Svelte / Lifecycle",
+				kind: "frontendEventDefinition",
+				icon: "mdi:play-circle-outline",
+				traits: ["ui.block", "ui.event", "ui.container"],
+				slots: {
+					actions: {
+						label: "Actions",
+						accepts: ["ui.action"]
+					}
+				},
+				targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
+				acceptedPositions: ["inside"],
+				description: "Runs explicit client actions when the page or component mounts.",
+				insert: {
+					id: "onMount",
+					kind: "onMount",
+					tag: "OnMount"
+				},
+				properties: {
+					id: { type: "string" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.setValue",
 				label: "Set value",
 				category: "Svelte / Actions",
@@ -776,6 +801,50 @@
 					id: { type: "string" },
 					target: { type: "string" },
 					value: { type: "binding", kind: "binding" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.navigate",
+				label: "Navigate",
+				category: "Svelte / Actions",
+				kind: "frontendActionDefinition",
+				icon: "mdi:arrow-right-circle-outline",
+				traits: ["ui.action"],
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Navigates after preceding client actions complete.",
+				insert: {
+					id: "navigate",
+					kind: "navigate",
+					tag: "Navigate",
+					to: "/",
+					replace: false
+				},
+				properties: {
+					id: { type: "string" },
+					to: { type: "string", kind: "text" },
+					replace: { type: "boolean", kind: "boolean" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.goBack",
+				label: "Go back",
+				category: "Svelte / Actions",
+				kind: "frontendActionDefinition",
+				icon: "mdi:arrow-left-circle-outline",
+				traits: ["ui.action"],
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Returns through application history with a direct-entry fallback route.",
+				insert: {
+					id: "goBack",
+					kind: "goBack",
+					tag: "GoBack",
+					fallback: "/"
+				},
+				properties: {
+					id: { type: "string" },
+					fallback: { type: "string", kind: "text" }
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {
