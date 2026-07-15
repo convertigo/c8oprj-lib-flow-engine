@@ -187,6 +187,13 @@
 			if (learnedSchema) {
 				return learnedSchema;
 			}
+			try {
+				if (connectorName && String(dbo.getConnector().getClass().getName()) ===
+						"com.twinsoft.convertigo.beans.connectors.FullSyncConnector") {
+					return null;
+				}
+			} catch (_ignoreConnectorType) {
+			}
 			var project = dbo.getProject();
 			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
 			var xso = Packages.com.twinsoft.convertigo.engine.enums.SchemaMeta.getXmlSchemaObject(schema, dbo);
