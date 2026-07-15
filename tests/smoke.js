@@ -43,6 +43,20 @@ function findNode(parent, predicate) {
 	return null;
 }
 
+var requestableServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/requestable-service.js"), "UTF-8"));
+var isolatedRequestableService = eval(requestableServiceSource);
+assertTrue(isolatedRequestableService.runtimeSampleError({
+	couchdb_output: {
+		error: { text: "not_found" },
+		reason: { text: "missing" },
+		_c8oMeta: { statusCode: { text: "404" } }
+	}
+}) === "The requestable returned HTTP 404: missing.",
+	"Requestable schema learning did not reject a CouchDB error envelope");
+assertTrue(isolatedRequestableService.runtimeSampleError({ rows: [], total_rows: 0 }) === "",
+	"Requestable schema learning rejected a valid empty read response");
+
 var flowCodeServiceFile = new java.io.File(engineDir, "modules/flow-code-service.js");
 var flowCodeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowCodeServiceFile, "UTF-8"));
 var isolatedFlowCodeService = eval(flowCodeServiceSource);
@@ -367,6 +381,33 @@ assertTrue(naturalRunRepeat.result.first === "b" && naturalRunRepeat.result.enco
 	"repeated Flow execution did not reuse its compiled plan");
 assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
 	"natural FlowScript syntax did not execute correctly");
+var earlyReturnFlowScriptSource = [
+	"function EarlyReturnSmoke({ input, result }) {",
+	"\tif (input.skip) {",
+	"\t\tresult.message = \"skipped\"",
+	"\t\treturn result",
+	"\t}",
+	"\tresult.message = \"continued\"",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var earlyReturnValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "EarlyReturnSmoke",
+	code: earlyReturnFlowScriptSource
+})));
+assertTrue(earlyReturnValidation.ok === true &&
+	earlyReturnValidation.definition.nodes[0].block === "if" &&
+	earlyReturnValidation.definition.nodes[0].then[1].block === "return" &&
+	earlyReturnValidation.definition.nodes.length === 2,
+	"nested return result did not compile to the core early-return block");
+var earlyReturnRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: earlyReturnFlowScriptSource,
+	input: { skip: true },
+	includeTrace: false
+})));
+assertTrue(earlyReturnRun.result.message === "skipped",
+	"nested return result did not stop FlowScript execution");
 assertTrue(naturalRun.trace === undefined,
 	"includeTrace false should skip runtime trace materialization");
 var naturalTraceRun = JSON.parse(engine.run(JSON.stringify({
@@ -3329,6 +3370,24 @@ assertTrue(flowSvelteBindingRoundTrip.ok === true &&
 	String(flowSvelteBindingRoundTrip.source).indexOf('source="{') === -1,
 	"flow-svelte AST mutations should preserve all structured binding attributes across reparses: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
+var flowSvelteFullSyncBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteBindingRoundTripSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].props.source",
+		value: {
+			mode: "source",
+			source: { category: "fullsync", actionId: "readItems", operation: "view" },
+			path: [{ kind: "property", name: "rows" }]
+		}
+	}
+})));
+assertTrue(flowSvelteFullSyncBinding.ok === true &&
+	String(flowSvelteFullSyncBinding.source).indexOf('"category":"fullsync"') !== -1 &&
+	String(flowSvelteFullSyncBinding.source).indexOf('"operation":"view"') !== -1,
+	"flow-svelte AST mutations should accept structured FullSync binding sources");
 var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: flowSvelteEngineSource,

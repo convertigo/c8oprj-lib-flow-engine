@@ -1489,9 +1489,9 @@
 			}];
 		}
 	
-		function buildNaturalFlowScriptReturn(expr, locals, lineNumber) {
+		function buildNaturalFlowScriptReturn(expr, locals, lineNumber, nested) {
 			expr = stripFlowScriptSemicolon(String(expr || "").replace(/^return\b/, ""));
-			if (expr === "result") {
+			if (expr === "result" && !nested) {
 				return [];
 			}
 			if (isFlowScriptObjectLiteral(expr)) {
@@ -1844,7 +1844,7 @@
 					continue;
 				}
 				if (line.match(/^return(?:\s|;|$)/)) {
-					buildNaturalFlowScriptReturn(line, locals, lineNumber).forEach(function (node) {
+					buildNaturalFlowScriptReturn(line, locals, lineNumber, stack.length > 1).forEach(function (node) {
 						addFlowScriptNode(stack[stack.length - 1], node);
 					});
 					continue;

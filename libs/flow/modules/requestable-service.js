@@ -487,6 +487,15 @@
 		var sample;
 		if (!output && request.learn === true) {
 			sample = sampleOutput(target, request.input || {}, env);
+			var sampleError = runtimeSampleError(sample);
+			if (sampleError) {
+				return {
+					ok: false,
+					target: targetPublic(target, env.currentProjectName(request)),
+					error: env.flowCodeError("REQUESTABLE_LEARN_FAILED", sampleError,
+						"Fix the safe read requestable and retry learn:true. Error responses are not valid binding schemas.")
+				};
+			}
 			output = env.unwrapDocumentSchema(env.inferSchema(sample));
 			learned = true;
 		}
@@ -518,12 +527,39 @@
 		return out;
 	}
 
+	function scalarValue(value) {
+		if (value && typeof value === "object" && value.text !== undefined) {
+			return value.text;
+		}
+		return value;
+	}
+
+	function runtimeSampleError(sample) {
+		var payload = sample && sample.couchdb_output ? sample.couchdb_output : sample;
+		if (!payload || typeof payload !== "object") {
+			return "The requestable returned no usable object response.";
+		}
+		var meta = payload._c8oMeta || payload.c8oMeta;
+		var statusCode = Number(scalarValue(meta && meta.statusCode));
+		if (statusCode >= 400) {
+			var reason = scalarValue(payload.reason) || scalarValue(meta.reasonPhrase) || "request failed";
+			return "The requestable returned HTTP " + statusCode + ": " + String(reason) + ".";
+		}
+		if (payload.error && (payload.reason !== undefined || payload.exception !== undefined || payload.details !== undefined)) {
+			var message = scalarValue(payload.message) || scalarValue(payload.reason) || scalarValue(payload.error) || "request failed";
+			return "The requestable returned an error: " + String(message) + ".";
+		}
+		return "";
+	}
+
 	function sampleOutput(target, input, env) {
 		if (!env.context) {
 			env.raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "requestable.schema learn:true needs a live Convertigo context.");
 		}
 		var request = new Packages.java.util.HashMap();
 		request.put("__project", target.project);
+		request.put("__context", "flow-schema-" + String(Packages.java.util.UUID.randomUUID()));
+		request.put("__removeContext", "true");
 		if (target.kind === "transaction") {
 			request.put("__connector", target.connector);
 			request.put("__transaction", target.transaction || target.requestable);
@@ -545,6 +581,7 @@
 		targetPublic: targetPublic,
 		list: list,
 		schema: schema,
-		sampleOutput: sampleOutput
+		sampleOutput: sampleOutput,
+		runtimeSampleError: runtimeSampleError
 	};
 })();

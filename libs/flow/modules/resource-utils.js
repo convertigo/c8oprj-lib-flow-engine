@@ -40,7 +40,7 @@
 			return ext === "js";
 		}
 		if (String(path).indexOf("libs/flow/resources/") === 0) {
-			return ["md", "txt", "json", "yaml", "yml"].indexOf(ext) !== -1;
+			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
 			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte") || String(path).endsWith(".uiblock.json");
@@ -111,6 +111,9 @@
 		}
 		if (ext === "json") {
 			return "application/json";
+		}
+		if (ext === "xml") {
+			return "application/xml";
 		}
 		if (ext === "yaml" || ext === "yml") {
 			return "text/yaml";

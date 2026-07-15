@@ -4214,6 +4214,10 @@
 		if (source.category === "requestable" || source.category === "action") {
 			return typeof source.actionId === "string" && source.actionId !== "";
 		}
+		if (source.category === "fullsync") {
+			return typeof source.actionId === "string" && source.actionId !== ""
+				&& typeof source.operation === "string" && source.operation !== "";
+		}
 		return source.category === "iteration" && typeof source.scopeId === "string" && source.scopeId !== ""
 			&& (source.value === "item" || source.value === "index");
 	}

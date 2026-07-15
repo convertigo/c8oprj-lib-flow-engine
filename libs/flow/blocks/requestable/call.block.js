@@ -162,6 +162,8 @@ const _meta = {
 	function requestFromTarget(target) {
 		var request = new HashMap();
 		request.put("__project", target.project);
+		request.put("__context", "flow-" + String(Packages.java.util.UUID.randomUUID()));
+		request.put("__removeContext", "true");
 		if (target.kind === "transaction") {
 			request.put("__connector", target.connector);
 			request.put("__transaction", target.transaction || target.requestable);
