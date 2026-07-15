@@ -892,6 +892,7 @@
 					docid: { type: "binding", kind: "binding" },
 					marker: { type: "string" },
 					schemaRequestable: { type: "requestable", kind: "requestable" },
+					schemaInput: { type: "object", kind: "literal" },
 					outputSchema: { type: "object", kind: "literal" }
 				}
 			}),
@@ -914,6 +915,7 @@
 					view: { type: "string" },
 					marker: { type: "string" },
 					schemaRequestable: { type: "requestable", kind: "requestable" },
+					schemaInput: { type: "object", kind: "literal" },
 					outputSchema: { type: "object", kind: "literal" }
 				}
 			}),
