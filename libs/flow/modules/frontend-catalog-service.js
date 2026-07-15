@@ -924,6 +924,25 @@
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.client.fullsync.reset",
+				label: "FullSync Reset",
+				category: "Svelte / FullSync",
+				kind: "frontendActionDefinition",
+				icon: "mdi:database-refresh-outline",
+				traits: ["ui.action"],
+				slots: {},
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Resets a local FullSync database once per optional migration marker.",
+				insert: { id: "fullSyncReset", kind: "fullSyncReset", tag: "FullSyncReset", target: "", database: "", marker: "" },
+				properties: {
+					id: { type: "string" },
+					target: { type: "string" },
+					database: { type: "string", kind: "fullsync" },
+					marker: { type: "string" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.client.fullsync.sync",
 				label: "FullSync Sync",
 				category: "Svelte / FullSync",
