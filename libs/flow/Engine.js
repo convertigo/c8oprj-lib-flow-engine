@@ -4825,6 +4825,12 @@
 		if (kind === "setValue") {
 			return ["id", "target", "value"];
 		}
+		if (kind === "navigate") {
+			return ["id", "to", "replace"];
+		}
+		if (kind === "goBack") {
+			return ["id", "fallback"];
+		}
 		if (kind === "table") {
 			return ["id", "source"];
 		}
@@ -5395,7 +5401,34 @@
 		var clientActions = [];
 		var backendCalls = [];
 		frontAstWalkNode(rootNode, function (node) {
-			if (String(node.props && node.props.kind || "") !== "callSequence") {
+			var kind = String(node.props && node.props.kind || "");
+			if (kind === "setValue") {
+				clientActions.push({
+					id: String(node.props.id || "setValue"),
+					kind: "setValue",
+					target: String(node.props.target || node.props.id || "setValue"),
+					value: node.props.value
+				});
+				return;
+			}
+			if (kind === "navigate") {
+				clientActions.push({
+					id: String(node.props.id || "navigate"),
+					kind: "navigate",
+					to: node.props.to,
+					replace: node.props.replace === true
+				});
+				return;
+			}
+			if (kind === "goBack") {
+				clientActions.push({
+					id: String(node.props.id || "goBack"),
+					kind: "goBack",
+					fallback: node.props.fallback
+				});
+				return;
+			}
+			if (kind !== "callSequence") {
 				return;
 			}
 			var requestable = String(node.props.requestable || "");
@@ -5527,7 +5560,7 @@
 		if (frontAstEventKind(kind)) {
 			return "frontendEventBlock";
 		}
-		if (kind === "callSequence" || kind === "setValue") {
+		if (kind === "callSequence" || kind === "setValue" || kind === "navigate" || kind === "goBack") {
 			return "frontendActionBlock";
 		}
 		if (kind === "variable") {
@@ -5666,6 +5699,15 @@
 				target: { label: "Target", category: "Action", type: "string" },
 				value: { label: "Value", category: "Action", kind: "binding", type: "object" }
 			},
+			navigate: {
+				id: { label: "Id", category: "Base properties", type: "string" },
+				to: { label: "Route", category: "Navigation", kind: "text", type: "string" },
+				replace: { label: "Replace history", category: "Navigation", kind: "boolean", type: "boolean" }
+			},
+			goBack: {
+				id: { label: "Id", category: "Base properties", type: "string" },
+				fallback: { label: "Fallback route", category: "Navigation", kind: "text", type: "string" }
+			},
 			variable: {
 				name: { label: "Name", category: "Variable", type: "string" },
 				value: { label: "Value", category: "Variable", kind: "expression", type: "string" }
@@ -5686,7 +5728,7 @@
 		if (kind === "if" || kind === "each" || kind === "await") {
 			return ["ui.directive", "ui.container"];
 		}
-		if (kind === "callSequence" || kind === "setValue") {
+		if (kind === "callSequence" || kind === "setValue" || kind === "navigate" || kind === "goBack") {
 			return ["ui.action"];
 		}
 		if (kind === "variable") {
@@ -5705,7 +5747,7 @@
 		if (kind === "text" || kind === "button" || kind === "status" || kind === "table" || kind === "json") {
 			return "svelte." + kind;
 		}
-		if (kind === "if" || kind === "each" || kind === "await" || kind === "callSequence" || kind === "setValue" || kind === "variable" || kind === "column") {
+		if (kind === "if" || kind === "each" || kind === "await" || kind === "callSequence" || kind === "setValue" || kind === "navigate" || kind === "goBack" || kind === "variable" || kind === "column") {
 			return "frontbuilder.svelte." + (kind === "each" ? "forEach" : kind);
 		}
 		if (frontAstEventKind(kind)) {
@@ -5726,6 +5768,8 @@
 			await: "mdi:timer-sand",
 			callSequence: "mdi:play-box-outline",
 			setValue: "mdi:variable-box-outline",
+			navigate: "mdi:arrow-right-circle-outline",
+			goBack: "mdi:arrow-left-circle-outline",
 			variable: "mdi:variable",
 			column: "mdi:table-column",
 			dataBinding: "mdi:database-arrow-right-outline"
