@@ -51,12 +51,47 @@ const _meta = {
 }
 
 (function () {
+	function hasFlowBlock(value) {
+		if (!value || typeof value !== "object") {
+			return false;
+		}
+		if (typeof value.__flowBlock === "string") {
+			return true;
+		}
+		return Object.keys(value).some(function (key) {
+			return hasFlowBlock(value[key]);
+		});
+	}
+
+	function projectValue(ctx, value) {
+		if (!value || typeof value !== "object") {
+			return ctx.input({ value: value });
+		}
+		if (typeof value.__flowBlock === "string") {
+			var properties = {};
+			Object.keys(value.properties || {}).forEach(function (key) {
+				properties[key] = ctx.input({ value: value.properties[key] });
+			});
+			return ctx.callBlock(value.__flowBlock, properties, { trace: false });
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return value.map(function (item) { return projectValue(ctx, item); });
+		}
+		var out = {};
+		Object.keys(value).forEach(function (key) {
+			out[key] = projectValue(ctx, value[key]);
+		});
+		return out;
+	}
+
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var items = ctx.expr(props.items || props["in"]) || [];
 			var select = props.select === undefined ? "current" : props.select;
-			var project = ctx.compileExpr ? ctx.compileExpr(select) : function () { return ctx.expr(select); };
+			var project = hasFlowBlock(select)
+				? function () { return projectValue(ctx, select); }
+				: ctx.compileExpr ? ctx.compileExpr(select) : function () { return ctx.expr(select); };
 			var previous = ctx.scopes.current;
 			var mapped = [];
 			for (var i = 0; i < items.length; i++) {

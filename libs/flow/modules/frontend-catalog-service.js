@@ -1762,7 +1762,7 @@
 		}
 		var source = binding.source;
 		var schema = null;
-		if (source.category === "requestable" || source.category === "action") {
+		if (source.category === "requestable" || source.category === "action" || source.category === "fullsync") {
 			schema = actionSchemas[String(source.actionId || "")];
 		} else if (source.category === "iteration") {
 			schema = iterationSchemas[String(source.scopeId || "")];

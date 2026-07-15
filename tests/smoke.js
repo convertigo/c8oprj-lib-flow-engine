@@ -288,6 +288,36 @@ assertTrue(enrichedRequestable.paths.some(function (entry) { return entry.path =
 	enrichedIteration.paths.some(function (entry) { return entry.path === "title" && entry.type === "string"; }) &&
 	enrichedIteration.schema.properties.title.type === "string",
 	"frontend binding schemas did not propagate requestable array items into the lexical iteration scope");
+var fullSyncBindingDocument = JSON.parse(JSON.stringify(bindingSchemaDocument));
+var fullSyncLoop = fullSyncBindingDocument.tree.children[0];
+fullSyncLoop.props.source.source = { category: "fullsync", actionId: "rootCatalog", operation: "view" };
+fullSyncLoop.propertyDefinitions.source.bindingSources[0] = {
+	id: "rootCatalog",
+	source: { category: "fullsync", actionId: "rootCatalog", operation: "view" }
+};
+var enrichedFullSyncDocument = isolatedFrontendCatalogService.enrichBindingSources(fullSyncBindingDocument, {
+	rootCatalog: requestableBindingSchema
+}, {
+	normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); },
+	schemaPaths: function (schema) {
+		return schema.properties && schema.properties.news ? ["news", "news[0]", "news[0].title"] : ["title"];
+	},
+	schemaArrayPaths: function (schema) { return schema.properties && schema.properties.news ? ["news"] : []; },
+	schemaLeafEntries: function (schema) {
+		return schema.properties && schema.properties.news ? [{ path: "news[0].title", type: "string" }] : [{ path: "title", type: "string" }];
+	},
+	schemaSimpleType: function (schema) { return schema && schema.type || "unknown"; },
+	schemaAtPath: function (schema, path) {
+		if (path === "news") return schema.properties.news;
+		if (path === "news[0]") return schema.properties.news.items;
+		if (path === "news[0].title") return schema.properties.news.items.properties.title;
+		return schema.properties && schema.properties[path];
+	}
+});
+var enrichedFullSyncIteration = enrichedFullSyncDocument.tree.children[0].children[0].propertyDefinitions.source.bindingSources[0];
+assertTrue(enrichedFullSyncIteration.paths.some(function (entry) {
+	return entry.path === "title" && entry.type === "string";
+}), "frontend binding schemas did not propagate FullSync array items into the lexical iteration scope");
 assertTrue(catalog.types.some(function (type) {
 	return type.name === "configOverrides" && type.editor && String(type.editor.file).indexOf("configOverrides.html") !== -1;
 }), "catalog did not expose configOverrides type editor resources");
@@ -408,6 +438,38 @@ var earlyReturnRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(earlyReturnRun.result.message === "skipped",
 	"nested return result did not stop FlowScript execution");
+var nestedProjectionFlowScriptSource = [
+	"function NestedProjectionSmoke({ input, result }) {",
+	"\tvar items = list.map({",
+	"\t\titems: input.items,",
+	"\t\tselect: { name: object.get({ source: current, key: \"name\" }) }",
+	"\t})",
+	"\tresult.items = items",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var nestedProjectionRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: nestedProjectionFlowScriptSource,
+	input: { items: [{ name: "Category" }] },
+	includeTrace: false
+})));
+assertTrue(nestedProjectionRun.ok === true && nestedProjectionRun.result.items[0].name === "Category",
+	"nested Flow block calls in list.map object projections did not execute per item: " + JSON.stringify(nestedProjectionRun));
+var objectValuesRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"function ObjectValuesSmoke({ input, result }) {",
+		"\tvar values = object.values({ source: input.map })",
+		"\tresult.values = values",
+		"\treturn result",
+		"}",
+		""
+	].join("\n"),
+	input: { map: { first: "Menu", second: "NEWS" } },
+	includeTrace: false
+})));
+assertTrue(objectValuesRun.ok === true && objectValuesRun.result.values.join(",") === "Menu,NEWS",
+	"object.values did not preserve object values as an array: " + JSON.stringify(objectValuesRun));
 assertTrue(naturalRun.trace === undefined,
 	"includeTrace false should skip runtime trace materialization");
 var naturalTraceRun = JSON.parse(engine.run(JSON.stringify({

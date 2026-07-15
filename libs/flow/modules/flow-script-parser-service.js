@@ -1131,10 +1131,19 @@
 			if (!itemToken || !selectToken) {
 				return null;
 			}
-			// Structured projections execute directly in list.map. Only mapper block
-			// calls need expansion into per-item child nodes.
-			if (isFlowScriptObjectLiteral(selectToken) || flowScriptObjectLiteralFromExpressionToken(selectToken)) {
-				return null;
+			// Plain structured projections execute directly in list.map. Projections
+			// containing Flow block calls need per-item child nodes.
+			var selectObject = isFlowScriptObjectLiteral(selectToken)
+				? selectToken
+				: flowScriptObjectLiteralFromExpressionToken(selectToken);
+			if (selectObject) {
+				var hasNestedBlock = naturalFlowScriptObjectFields(selectObject).some(function (field) {
+					var call = parseNaturalFlowScriptCall(field.token);
+					return call && blocks && blocks[resolveFlowScriptName(call.name, imports)];
+				});
+				return hasNestedBlock
+					? buildNaturalListMapNodes(blocks, imports, varName, [itemToken, selectObject], locals, lineNumber)
+					: null;
 			}
 			return buildNaturalListMapBlockCallNodes(blocks, imports, varName, itemToken, selectToken, locals, lineNumber);
 		}
@@ -1183,6 +1192,41 @@
 			var objectFields = naturalFlowScriptObjectFields(args[1]);
 			if (!objectFields.length) {
 				return null;
+			}
+			var compiledProjection = {};
+			var hasNestedProjectionBlock = false;
+			objectFields.forEach(function (field) {
+				var nestedCall = parseNaturalFlowScriptCall(field.token);
+				var nestedBlock = nestedCall && resolveFlowScriptName(nestedCall.name, imports);
+				if (!nestedCall || !blocks || !blocks[nestedBlock]) {
+					compiledProjection[field.key] = flowScriptValueFromToken(field.token, locals, lineNumber);
+					return;
+				}
+				var nestedArgs = splitFlowScriptTopLevel(nestedCall.args, ",");
+				if (nestedArgs.length !== 1 || !isFlowScriptObjectLiteral(nestedArgs[0])) {
+					raiseFlowScriptBlockSignature(blocks, nestedBlock, field.token, lineNumber);
+				}
+				var nestedNode = normalizeNaturalFlowScriptNode(blocks, imports, locals, nestedBlock,
+					parseFlowScriptObjectLiteral(nestedArgs[0], lineNumber), lineNumber);
+				delete nestedNode.id;
+				delete nestedNode.out;
+				delete nestedNode.block;
+				delete nestedNode.__flowScriptLine;
+				compiledProjection[field.key] = {
+					__flowBlock: nestedBlock,
+					properties: nestedNode
+				};
+				hasNestedProjectionBlock = true;
+			});
+			if (hasNestedProjectionBlock) {
+				return [{
+					id: env.safeIdentifier(varName),
+					block: "list.map",
+					items: flowScriptRewriteExpression(args[0], locals),
+					select: compiledProjection,
+					out: "local." + env.safeIdentifier(varName),
+					__flowScriptLine: lineNumber
+				}];
 			}
 			var cap = capitalizedIdentifier(varName);
 			var itemName = env.safeIdentifier(varName + "Item");
