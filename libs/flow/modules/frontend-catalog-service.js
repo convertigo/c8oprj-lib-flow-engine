@@ -867,10 +867,12 @@
 					id: "callSequence",
 					kind: "callSequence",
 					tag: "CallSequence",
+					target: "",
 					requestable: ".Sequence",
 				},
 				properties: {
 					id: { type: "string" },
+					target: { type: "string" },
 					requestable: { type: "requestable", kind: "requestable" }
 				}
 			}),
@@ -885,9 +887,10 @@
 				targetKinds: ["frontendEventBlock"],
 				acceptedPositions: ["inside"],
 				description: "Reads one document from the local FullSync database.",
-				insert: { id: "fullSyncGet", kind: "fullSyncGet", tag: "FullSyncGet", database: "", docid: "" },
+				insert: { id: "fullSyncGet", kind: "fullSyncGet", tag: "FullSyncGet", target: "", database: "", docid: "" },
 				properties: {
 					id: { type: "string" },
+					target: { type: "string" },
 					database: { type: "string", kind: "fullsync" },
 					docid: { type: "binding", kind: "binding" },
 					marker: { type: "string" },
@@ -907,9 +910,10 @@
 				targetKinds: ["frontendEventBlock"],
 				acceptedPositions: ["inside"],
 				description: "Queries one view from the local FullSync database.",
-				insert: { id: "fullSyncView", kind: "fullSyncView", tag: "FullSyncView", database: "", ddoc: "", view: "" },
+				insert: { id: "fullSyncView", kind: "fullSyncView", tag: "FullSyncView", target: "", database: "", ddoc: "", view: "" },
 				properties: {
 					id: { type: "string" },
+					target: { type: "string" },
 					database: { type: "string", kind: "fullsync" },
 					ddoc: { type: "string" },
 					view: { type: "string" },
@@ -930,9 +934,10 @@
 				targetKinds: ["frontendEventBlock"],
 				acceptedPositions: ["inside"],
 				description: "Synchronizes, pulls or pushes a FullSync database and reports progress.",
-				insert: { id: "fullSyncSync", kind: "fullSyncSync", tag: "FullSyncSync", database: "", mode: "sync" },
+				insert: { id: "fullSyncSync", kind: "fullSyncSync", tag: "FullSyncSync", target: "", database: "", mode: "sync" },
 				properties: {
 					id: { type: "string" },
+					target: { type: "string" },
 					database: { type: "string", kind: "fullsync" },
 					mode: { type: "string", enum: ["sync", "pull", "push"] },
 					marker: { type: "string" },

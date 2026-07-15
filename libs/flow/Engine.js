@@ -3835,13 +3835,20 @@
 		});
 		var projectName = currentProjectName(request) || projectRoot && String(projectRoot.getName()) || "";
 		var schemas = {};
+		function setActionSchema(action, schema) {
+			var normalized = normalizeTree(schema);
+			schemas[String(action.id)] = normalized;
+			if (action.target) {
+				schemas[String(action.target)] = normalized;
+			}
+		}
 		(model.clientActions || []).forEach(function (action) {
 			var call = action && calls[String(action.backendCall || "")];
 			if (!action || !action.id || !call) {
 				return;
 			}
 			if (call.outputSchema && typeof call.outputSchema === "object") {
-				schemas[String(action.id)] = normalizeTree(call.outputSchema);
+				setActionSchema(action, call.outputSchema);
 				return;
 			}
 			var requestable = String(call.requestable || "");
@@ -3855,7 +3862,7 @@
 					projectDir: projectRoot ? String(projectRoot.getAbsolutePath()) : ""
 				});
 				if (response && response.ok === true && response.schema) {
-					schemas[String(action.id)] = response.schema;
+					setActionSchema(action, response.schema);
 				}
 			} catch (e) {
 			}
