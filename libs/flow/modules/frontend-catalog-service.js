@@ -756,6 +756,29 @@
 			}),
 		].concat(frontendSvelteEventDescriptors(builderName, settings), [
 			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.setValue",
+				label: "Set value",
+				category: "Svelte / Actions",
+				kind: "frontendActionDefinition",
+				icon: "mdi:variable-box-outline",
+				traits: ["ui.action"],
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Stores a literal or bound value in local client action state.",
+				insert: {
+					id: "setValue",
+					kind: "setValue",
+					tag: "SetValue",
+					target: "",
+					value: { mode: "literal", value: true }
+				},
+				properties: {
+					id: { type: "string" },
+					target: { type: "string" },
+					value: { type: "binding", kind: "binding" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.callSequence",
 				label: "CallSequence",
 				category: "Svelte / Actions",

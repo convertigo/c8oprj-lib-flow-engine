@@ -4822,6 +4822,9 @@
 		if (kind === "callSequence") {
 			return ["id", "requestable"];
 		}
+		if (kind === "setValue") {
+			return ["id", "target", "value"];
+		}
 		if (kind === "table") {
 			return ["id", "source"];
 		}
@@ -5170,6 +5173,9 @@
 		if (tag === "CallSequence") {
 			kind = "callSequence";
 		}
+		if (tag === "SetValue") {
+			kind = "setValue";
+		}
 		if (tag === "Variable") {
 			kind = "variable";
 		}
@@ -5493,6 +5499,9 @@
 		if (kind === "callSequence") {
 			return String(props.requestable || "CallSequence");
 		}
+		if (kind === "setValue") {
+			return String(props.target || props.id || "Set value");
+		}
 		if (kind === "variable") {
 			return String(props.name || "Variable");
 		}
@@ -5518,7 +5527,7 @@
 		if (frontAstEventKind(kind)) {
 			return "frontendEventBlock";
 		}
-		if (kind === "callSequence") {
+		if (kind === "callSequence" || kind === "setValue") {
 			return "frontendActionBlock";
 		}
 		if (kind === "variable") {
@@ -5646,11 +5655,16 @@
 				context: { label: "Context", kind: "text", type: "string" }
 			},
 			if: {
-				test: { label: "Condition", category: "Logic", kind: "expression", type: "string" }
+				test: { label: "Condition", category: "Logic", kind: "binding", type: "object" }
 			},
 			callSequence: {
 				id: { label: "Id", category: "Base properties", type: "string" },
 				requestable: { label: "Requestable", category: "Action", kind: "requestable", type: "requestable" }
+			},
+			setValue: {
+				id: { label: "Id", category: "Base properties", type: "string" },
+				target: { label: "Target", category: "Action", type: "string" },
+				value: { label: "Value", category: "Action", kind: "binding", type: "object" }
 			},
 			variable: {
 				name: { label: "Name", category: "Variable", type: "string" },
@@ -5672,7 +5686,7 @@
 		if (kind === "if" || kind === "each" || kind === "await") {
 			return ["ui.directive", "ui.container"];
 		}
-		if (kind === "callSequence") {
+		if (kind === "callSequence" || kind === "setValue") {
 			return ["ui.action"];
 		}
 		if (kind === "variable") {
@@ -5691,7 +5705,7 @@
 		if (kind === "text" || kind === "button" || kind === "status" || kind === "table" || kind === "json") {
 			return "svelte." + kind;
 		}
-		if (kind === "if" || kind === "each" || kind === "await" || kind === "callSequence" || kind === "variable" || kind === "column") {
+		if (kind === "if" || kind === "each" || kind === "await" || kind === "callSequence" || kind === "setValue" || kind === "variable" || kind === "column") {
 			return "frontbuilder.svelte." + (kind === "each" ? "forEach" : kind);
 		}
 		if (frontAstEventKind(kind)) {
@@ -5711,6 +5725,7 @@
 			each: "mdi:repeat",
 			await: "mdi:timer-sand",
 			callSequence: "mdi:play-box-outline",
+			setValue: "mdi:variable-box-outline",
 			variable: "mdi:variable",
 			column: "mdi:table-column",
 			dataBinding: "mdi:database-arrow-right-outline"

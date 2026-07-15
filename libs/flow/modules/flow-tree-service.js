@@ -853,7 +853,7 @@
 		if (/^on[A-Z]/.test(kind)) {
 			return "frontendEventBlock";
 		}
-		if (kind === "callSequence") {
+		if (kind === "callSequence" || kind === "setValue" || /^fullSync(?:Get|View|Sync)$/.test(kind)) {
 			return "frontendActionBlock";
 		}
 		if (kind === "variable") {
@@ -872,7 +872,7 @@
 		if (/^on[A-Z]/.test(kind)) {
 			return ["ui.event", "ui.container"];
 		}
-		if (kind === "callSequence") {
+		if (kind === "callSequence" || kind === "setValue" || /^fullSync(?:Get|View|Sync)$/.test(kind)) {
 			return ["ui.action"];
 		}
 		if (kind === "variable") {
@@ -899,6 +899,9 @@
 		}
 		if (kind === "callSequence") {
 			return String(props.requestable || "CallSequence");
+		}
+		if (kind === "setValue") {
+			return String(props.target || props.id || "Set value");
 		}
 		if (kind === "variable") {
 			return String(props.name || "Variable");
@@ -944,7 +947,7 @@
 		if (/^on[A-Z]/.test(kind)) {
 			return ["actions"];
 		}
-		if (kind === "callSequence") {
+		if (kind === "callSequence" || /^fullSync(?:Get|View|Sync)$/.test(kind)) {
 			return ["variables"];
 		}
 		if (kind === "if") {
