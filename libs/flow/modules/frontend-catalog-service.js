@@ -919,7 +919,7 @@
 				},
 				properties: {
 					id: { type: "string" },
-					test: { type: "string", kind: "expression" }
+					test: { type: "binding", kind: "binding" }
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {
