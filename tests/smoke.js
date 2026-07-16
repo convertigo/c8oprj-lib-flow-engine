@@ -456,6 +456,16 @@ var nestedProjectionRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(nestedProjectionRun.ok === true && nestedProjectionRun.result.items[0].name === "Category",
 	"nested Flow block calls in list.map object projections did not execute per item: " + JSON.stringify(nestedProjectionRun));
+var nestedProjectionTraceRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: nestedProjectionFlowScriptSource,
+	input: { items: Array.apply(null, Array(1000)).map(function (_, index) { return { name: "Category " + index }; }) },
+	includeTrace: true
+})));
+assertTrue(nestedProjectionTraceRun.ok === true && nestedProjectionTraceRun.result.items.length === 1000,
+	"nested Flow block calls did not preserve all mapped results with tracing enabled");
+assertTrue(nestedProjectionTraceRun.trace.nodes.length < 10 &&
+	nestedProjectionTraceRun.trace.nodes.every(function (entry) { return entry.block !== "object.get"; }),
+	"trace:false nested calls retained one internal trace per mapped item: " + nestedProjectionTraceRun.trace.nodes.length);
 var objectValuesRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
 		"function ObjectValuesSmoke({ input, result }) {",

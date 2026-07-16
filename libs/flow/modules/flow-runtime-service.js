@@ -164,11 +164,15 @@
 			var previousCurrent = ctx.scopes.current;
 			var previousReturned = ctx.returned;
 			var previousStopped = ctx.stopped;
+			var previousTraceEnabled = ctx.traceEnabled;
 			ctx.scopes.props = nodeProps(node);
 			ctx.scopes.input = ctx.scopes.props;
 			ctx.scopes.local = {};
 			ctx.returned = undefined;
 			ctx.stopped = false;
+			if (options.trace === false) {
+				ctx.traceEnabled = false;
+			}
 			var started = ctx.profile ? nanoTime() : 0;
 			try {
 				var nodeProperties = nodeProps(node);
@@ -191,6 +195,7 @@
 				ctx.scopes.current = previousCurrent;
 				ctx.returned = previousReturned;
 				ctx.stopped = previousStopped;
+				ctx.traceEnabled = previousTraceEnabled;
 			}
 		}
 
