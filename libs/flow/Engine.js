@@ -3900,7 +3900,8 @@
 		].join("\n");
 		var fingerprint = sha256Hex([
 			source,
-			JSON.stringify(drafts || {})
+			JSON.stringify(drafts || {}),
+			frontendRouteSourcesFingerprint(sourceFile)
 		].join("\n"));
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (cached) {
@@ -3946,6 +3947,34 @@
 			} catch (e2) {
 			}
 		}
+	}
+
+	function frontendRouteSourcesFingerprint(sourceFile) {
+		var routeRoot = sourceFile && sourceFile.getParentFile();
+		while (routeRoot && String(routeRoot.getName()) !== "routes") {
+			routeRoot = routeRoot.getParentFile();
+		}
+		if (!routeRoot || !routeRoot.isDirectory()) {
+			return "";
+		}
+		var entries = [];
+		function visit(directory, prefix) {
+			var files = directory.listFiles();
+			if (!files) {
+				return;
+			}
+			Arrays.asList(files).toArray().forEach(function (file) {
+				var relative = prefix ? prefix + "/" + file.getName() : String(file.getName());
+				if (file.isDirectory()) {
+					visit(file, relative);
+				} else if (relative === ".flow-route.json" || /(^|\/)\.flow-route\.json$/.test(relative) || /\.(flow\.)?svelte$/.test(relative)) {
+					entries.push(relative + "\n" + String(FileUtils.readFileToString(file, "UTF-8")));
+				}
+			});
+		}
+		visit(routeRoot, "");
+		entries.sort();
+		return sha256Hex(entries.join("\n"));
 	}
 
 	function applyFlowSvelteSourceMutationRequest(request) {
