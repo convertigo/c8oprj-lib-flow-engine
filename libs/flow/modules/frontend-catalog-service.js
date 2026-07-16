@@ -804,6 +804,62 @@
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.updateList",
+				label: "Update list",
+				category: "Svelte / Actions",
+				kind: "frontendActionDefinition",
+				icon: "mdi:format-list-bulleted",
+				traits: ["ui.action"],
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Updates a list held in local client action state.",
+				insert: {
+					id: "updateList",
+					kind: "updateList",
+					tag: "UpdateList",
+					target: "listState",
+					operation: "append",
+					value: { mode: "literal", value: null },
+					count: { mode: "literal", value: 0 }
+				},
+				properties: {
+					id: { type: "string" },
+					target: { type: "string" },
+					operation: { type: "string", "enum": ["set", "append", "truncate", "clear"] },
+					value: { type: "binding", kind: "binding" },
+					count: { type: "binding", kind: "binding" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.updateNumber",
+				label: "Update number",
+				category: "Svelte / Actions",
+				kind: "frontendActionDefinition",
+				icon: "mdi:numeric",
+				traits: ["ui.action"],
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Updates a bounded numeric value held in local client action state.",
+				insert: {
+					id: "updateNumber",
+					kind: "updateNumber",
+					tag: "UpdateNumber",
+					target: "numberState",
+					operation: "set",
+					value: { mode: "literal", value: 0 },
+					step: { mode: "literal", value: 1 }
+				},
+				properties: {
+					id: { type: "string" },
+					target: { type: "string" },
+					operation: { type: "string", "enum": ["set", "increment", "decrement"] },
+					value: { type: "binding", kind: "binding" },
+					step: { type: "binding", kind: "binding" },
+					min: { type: "binding", kind: "binding" },
+					max: { type: "binding", kind: "binding" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.navigate",
 				label: "Navigate",
 				category: "Svelte / Actions",
