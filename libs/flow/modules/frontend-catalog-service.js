@@ -1944,6 +1944,86 @@
 		return bindingSchemaAtPath(schema, binding.path || []);
 	}
 
+	function literalSchema(value) {
+		if (value === null || value === undefined) {
+			return null;
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return {
+				type: "array",
+				items: value.length ? literalSchema(value[0]) || {} : {}
+			};
+		}
+		if (typeof value === "object") {
+			var properties = {};
+			Object.keys(value).forEach(function (key) {
+				properties[key] = literalSchema(value[key]) || {};
+			});
+			return { type: "object", properties: properties };
+		}
+		return { type: typeof value === "number" ? "number" : typeof value === "boolean" ? "boolean" : "string" };
+	}
+
+	function schemaForActionValue(value, actionSchemas, iterationSchemas) {
+		if (value && value.mode === "literal") {
+			return literalSchema(value.value);
+		}
+		return schemaForBinding(value, actionSchemas, iterationSchemas);
+	}
+
+	function schemaRichness(schema) {
+		if (!schema || typeof schema !== "object") {
+			return 0;
+		}
+		var score = schema.type && schema.type !== "unknown" ? 1 : 0;
+		if (schema.items) {
+			score += schemaRichness(schema.items);
+		}
+		Object.keys(schema.properties || {}).forEach(function (key) {
+			score += 1 + schemaRichness(schema.properties[key]);
+		});
+		return score;
+	}
+
+	function deriveStateActionSchemas(document, actionSchemas, iterationSchemas) {
+		var actions = document && document.model && document.model.clientActions || [];
+		for (var pass = 0; pass < actions.length + 1; pass++) {
+			var changed = false;
+			actions.forEach(function (action) {
+				if (!action || !action.id || actionSchemas[String(action.id)]) {
+					return;
+				}
+				var schema = null;
+				if (action.kind === "updateNumber") {
+					schema = { type: "number" };
+				} else if (action.kind === "setValue") {
+					schema = schemaForActionValue(action.value, actionSchemas, iterationSchemas);
+				} else if (action.kind === "updateList") {
+					var itemSchema = schemaForActionValue(action.value, actionSchemas, iterationSchemas);
+					if (action.operation === "set" && itemSchema && itemSchema.type === "array") {
+						schema = itemSchema;
+					} else if (itemSchema) {
+						schema = { type: "array", items: itemSchema };
+					}
+				}
+				if (!schema) {
+					return;
+				}
+				actionSchemas[String(action.id)] = schema;
+				if (action.target) {
+					var target = String(action.target);
+					if (!actionSchemas[target] || schemaRichness(schema) > schemaRichness(actionSchemas[target])) {
+						actionSchemas[target] = schema;
+					}
+				}
+				changed = true;
+			});
+			if (!changed) {
+				break;
+			}
+		}
+	}
+
 	function schemaInfo(schema, env) {
 		if (!schema) {
 			return null;
@@ -2019,7 +2099,7 @@
 
 	function enrichBindingSources(document, actionSchemas, env) {
 		document = env.normalizeTree(document || {});
-		actionSchemas = actionSchemas || {};
+		actionSchemas = Object.assign({}, actionSchemas || {});
 		var iterations = {};
 		walkDocument(document, function (node) {
 			var props = node.props || {};
@@ -2029,17 +2109,22 @@
 			}
 		});
 		var iterationSchemas = {};
-		var pending = Object.keys(iterations);
-		for (var pass = 0; pass < pending.length + 1 && pending.length; pass++) {
-			pending = pending.filter(function (id) {
-				var schema = schemaForBinding(iterations[id], actionSchemas, iterationSchemas);
-				if (!schema) {
-					return true;
-				}
-				iterationSchemas[id] = schema.type === "array" && schema.items ? schema.items : schema;
-				return false;
-			});
+		function resolveIterationSchemas() {
+			var pending = Object.keys(iterations).filter(function (id) { return !iterationSchemas[id]; });
+			for (var pass = 0; pass < pending.length + 1 && pending.length; pass++) {
+				pending = pending.filter(function (id) {
+					var schema = schemaForBinding(iterations[id], actionSchemas, iterationSchemas);
+					if (!schema) {
+						return true;
+					}
+					iterationSchemas[id] = schema.type === "array" && schema.items ? schema.items : schema;
+					return false;
+				});
+			}
 		}
+		resolveIterationSchemas();
+		deriveStateActionSchemas(document, actionSchemas, iterationSchemas);
+		resolveIterationSchemas();
 		walkDocument(document, function (node) {
 			var definitions = node.propertyDefinitions || {};
 			Object.keys(definitions).forEach(function (name) {

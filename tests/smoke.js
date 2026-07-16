@@ -318,6 +318,70 @@ var enrichedFullSyncIteration = enrichedFullSyncDocument.tree.children[0].childr
 assertTrue(enrichedFullSyncIteration.paths.some(function (entry) {
 	return entry.path === "title" && entry.type === "string";
 }), "frontend binding schemas did not propagate FullSync array items into the lexical iteration scope");
+var stateBindingDocument = JSON.parse(JSON.stringify(bindingSchemaDocument));
+stateBindingDocument.model = {
+	clientActions: [{
+		id: "appendBreadcrumb",
+		kind: "updateList",
+		target: "breadcrumbs",
+		operation: "append",
+		value: {
+			mode: "source",
+			source: { category: "iteration", scopeId: "feedItems", value: "item" },
+			path: []
+		}
+	}, {
+		id: "clearBreadcrumb",
+		kind: "updateList",
+		target: "breadcrumbs",
+		operation: "set",
+		value: { mode: "literal", value: [] }
+	}]
+};
+stateBindingDocument.tree.children.push({
+	id: "breadcrumbs",
+	type: "ForEach",
+	props: {
+		kind: "each",
+		source: {
+			mode: "source",
+			source: { category: "action", actionId: "breadcrumbs" },
+			path: []
+		}
+	},
+	children: [{
+		id: "breadcrumbLabel",
+		propertyDefinitions: {
+			source: { bindingSources: [{
+				id: "breadcrumbs",
+				source: { category: "iteration", scopeId: "breadcrumbs", value: "item" }
+			}] }
+		}
+	}]
+});
+var enrichedStateBinding = isolatedFrontendCatalogService.enrichBindingSources(stateBindingDocument, {
+	getFeed: requestableBindingSchema
+}, {
+	normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); },
+	schemaPaths: function (schema) {
+		return schema.properties && schema.properties.news ? ["news", "news[0]", "news[0].title"] : ["title"];
+	},
+	schemaArrayPaths: function (schema) { return schema.properties && schema.properties.news ? ["news"] : []; },
+	schemaLeafEntries: function (schema) {
+		return schema.properties && schema.properties.news ? [{ path: "news[0].title", type: "string" }] : [{ path: "title", type: "string" }];
+	},
+	schemaSimpleType: function (schema) { return schema && schema.type || "unknown"; },
+	schemaAtPath: function (schema, path) {
+		if (path === "news") return schema.properties.news;
+		if (path === "news[0]") return schema.properties.news.items;
+		if (path === "news[0].title") return schema.properties.news.items.properties.title;
+		return schema.properties && schema.properties[path];
+	}
+});
+var enrichedStateIteration = enrichedStateBinding.tree.children[1].children[0].propertyDefinitions.source.bindingSources[0];
+assertTrue(enrichedStateIteration.paths.some(function (entry) {
+	return entry.path === "title" && entry.type === "string";
+}), "frontend binding schemas did not propagate an iterator item through UpdateList state into a second iterator");
 assertTrue(catalog.types.some(function (type) {
 	return type.name === "configOverrides" && type.editor && String(type.editor.file).indexOf("configOverrides.html") !== -1;
 }), "catalog did not expose configOverrides type editor resources");
