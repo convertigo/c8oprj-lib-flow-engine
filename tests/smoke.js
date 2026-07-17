@@ -3524,6 +3524,33 @@ assertTrue(flowSvelteFullSyncBinding.ok === true &&
 	String(flowSvelteFullSyncBinding.source).indexOf('"category":"fullsync"') !== -1 &&
 	String(flowSvelteFullSyncBinding.source).indexOf('"operation":"view"') !== -1,
 	"flow-svelte AST mutations should accept structured FullSync binding sources");
+var flowSvelteConditionalBindingSource = [
+	"<FlowComponent id=\"conditionalBinding\" label=\"Conditional binding\">",
+	"  <Structure>",
+	"    <If id=\"alternateCard\" test={{\"mode\":\"source\",\"source\":{\"category\":\"iteration\",\"scopeId\":\"items\",\"value\":\"item\"},\"path\":[{\"kind\":\"property\",\"name\":\"alternate\"}]}}>",
+	"      <Then>",
+	"        <Text id=\"conditionalText\" text=\"Visible\" />",
+	"      </Then>",
+	"    </If>",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n");
+var flowSvelteConditionalBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteConditionalBindingSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].slots.then.children[0].props.text",
+		value: "Still visible"
+	}
+})));
+assertTrue(flowSvelteConditionalBindingRoundTrip.ok === true &&
+	String(flowSvelteConditionalBindingRoundTrip.source).indexOf('test={{"mode":"source"') !== -1 &&
+	String(flowSvelteConditionalBindingRoundTrip.source).indexOf("test={{{") === -1,
+	"flow-svelte AST mutations should preserve structured conditional bindings across reparses: " +
+		JSON.stringify(flowSvelteConditionalBindingRoundTrip));
 var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: flowSvelteEngineSource,
