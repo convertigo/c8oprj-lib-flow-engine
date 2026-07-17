@@ -2136,7 +2136,9 @@
 				candidates.forEach(function (candidate) {
 					var source = candidate && (candidate.source || candidate) || {};
 					var schema = source.category === "iteration"
-						? iterationSchemas[String(source.scopeId || candidate.id || "")]
+						? source.value === "index"
+							? { type: "integer" }
+							: iterationSchemas[String(source.scopeId || candidate.id || "")]
 						: actionSchemas[String(source.actionId || candidate.id || "")];
 					var info = schemaInfo(schema, env);
 					if (!info) {

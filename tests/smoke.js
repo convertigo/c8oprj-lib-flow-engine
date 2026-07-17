@@ -288,6 +288,26 @@ assertTrue(enrichedRequestable.paths.some(function (entry) { return entry.path =
 	enrichedIteration.paths.some(function (entry) { return entry.path === "title" && entry.type === "string"; }) &&
 	enrichedIteration.schema.properties.title.type === "string",
 	"frontend binding schemas did not propagate requestable array items into the lexical iteration scope");
+enrichedLoop.children[0].propertyDefinitions.source.bindingSources.push({
+	id: "feedItems:index",
+	source: { category: "iteration", scopeId: "feedItems", value: "index" }
+});
+var enrichedBindingDocumentWithIndex = isolatedFrontendCatalogService.enrichBindingSources(enrichedBindingDocument, {
+	getFeed: requestableBindingSchema
+}, {
+	normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); },
+	schemaPaths: function (schema) { return schema.type === "integer" ? [""] : ["title"]; },
+	schemaArrayPaths: function () { return []; },
+	schemaLeafEntries: function () { return []; },
+	schemaSimpleType: function (schema) { return schema && schema.type || "unknown"; },
+	schemaAtPath: function (schema) { return schema; }
+});
+var enrichedIndex = enrichedBindingDocumentWithIndex.tree.children[0].children[0].propertyDefinitions.source.bindingSources.filter(function (candidate) {
+	return candidate.source && candidate.source.value === "index";
+})[0];
+assertTrue(enrichedIndex && enrichedIndex.schema.type === "integer" &&
+	enrichedIndex.bindings[0].path === "" && enrichedIndex.bindings[0].binding.path.length === 0,
+	"frontend binding schemas did not expose the lexical iteration index as an integer root binding");
 var fullSyncBindingDocument = JSON.parse(JSON.stringify(bindingSchemaDocument));
 var fullSyncLoop = fullSyncBindingDocument.tree.children[0];
 fullSyncLoop.props.source.source = { category: "fullsync", actionId: "rootCatalog", operation: "view" };
