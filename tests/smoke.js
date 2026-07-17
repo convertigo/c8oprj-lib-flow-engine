@@ -3526,6 +3526,40 @@ assertTrue(flowSvelteBindingRoundTrip.ok === true &&
 	String(flowSvelteBindingRoundTrip.source).indexOf('source="{') === -1,
 	"flow-svelte AST mutations should preserve all structured binding attributes across reparses: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
+var flowSvelteNaturalBindingSource = [
+	"<FlowComponent id=\"naturalBindingRoundTrip\" label=\"Natural binding round trip\">",
+	"  <Structure>",
+	"    <ForEach id=\"items\" source={{ mode: \"literal\", value: [] }} context=\"item\">",
+	"      <Children>",
+	"        <UpdateNumber id=\"quantity\" count={{ mode: \"literal\", value: 0 }} step={{ mode: \"literal\", value: 1 }} />",
+	"        <Text id=\"itemTitle\" text=\"Placeholder\" source={{ mode: \"source\", source: { category: \"iteration\", scopeId: \"items\", value: \"item\" }, path: [{ kind: \"property\", name: \"title\" }] }} />",
+	"      </Children>",
+	"      <Else />",
+	"    </ForEach>",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n");
+var flowSvelteNaturalBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteNaturalBindingSource,
+	mutation: {
+		op: "insert",
+		path: "frontAst.slots.structure.children[0].slots.children.children",
+		index: 2,
+		value: { id: "itemDescriptionNatural", kind: "text", tag: "Text", text: "Description" }
+	}
+})));
+assertTrue(flowSvelteNaturalBindingRoundTrip.ok === true &&
+	(String(flowSvelteNaturalBindingRoundTrip.source).match(/source=\{\{/g) || []).length === 2 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count={{"mode":"literal","value":0}}') !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step={{"mode":"literal","value":1}}') !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source="{') === -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count="{') === -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step="{') === -1,
+	"flow-svelte AST mutations should preserve natural object literal bindings: " +
+		JSON.stringify(flowSvelteNaturalBindingRoundTrip));
 var flowSvelteFullSyncBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
 	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),

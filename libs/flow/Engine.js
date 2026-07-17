@@ -4448,7 +4448,11 @@
 			try {
 				return JSON.parse(trimmed);
 			} catch (e) {
-				// Preserve non-JSON Svelte expressions for the renderer.
+				try {
+					return parseYamlSource(trimmed, "{}");
+				} catch (ignored) {
+					// Preserve non-literal Svelte expressions for the renderer.
+				}
 			}
 		}
 		return value;
