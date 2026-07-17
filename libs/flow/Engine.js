@@ -4018,7 +4018,13 @@
 
 	function applyOneFlowSvelteSourceMutation(request, source, mutation, sourceFile, sourcePath) {
 		mutation = mutation || {};
-		var frontAstResult = applyFrontAstSourceMutation(source, mutation, sourceFile);
+		var frontAstResult = null;
+		try {
+			frontAstResult = applyFrontAstSourceMutation(source, mutation, sourceFile);
+		} catch (frontAstError) {
+			frontendStudioLog("[Flow frontend DnD] fast FrontAst mutation failed, retrying with Svelte parser: "
+				+ String(frontAstError && frontAstError.message || frontAstError), true);
+		}
 		if (frontAstResult) {
 			return frontAstResult;
 		}
@@ -4611,7 +4617,9 @@
 	}
 
 	function frontAstSlotNode(node, name, create) {
-		var tag = frontAstSlotTag(name);
+		var tag = name === "children" && node && node.tag === "ForEach"
+			? "Each"
+			: frontAstSlotTag(name);
 		var children = node.children || [];
 		for (var i = 0; i < children.length; i++) {
 			if (children[i].tag === tag) {

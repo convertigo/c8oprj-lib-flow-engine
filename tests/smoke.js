@@ -3571,6 +3571,43 @@ assertTrue(flowSvelteConditionalBindingRoundTrip.ok === true &&
 	String(flowSvelteConditionalBindingRoundTrip.source).indexOf("test={{{") === -1,
 	"flow-svelte AST mutations should preserve structured conditional bindings across reparses: " +
 		JSON.stringify(flowSvelteConditionalBindingRoundTrip));
+var flowSvelteNestedConditionalSource = [
+	"<FlowComponent id=\"nestedConditional\" label=\"Nested conditional\">",
+	"  <Structure>",
+	"    <ForEach id=\"items\" source={{\"mode\":\"literal\",\"value\":[]}}>",
+	"      <Each>",
+	"        <If id=\"alternate\" test={index % 2 === 0}>",
+	"          <Then><Card><Children>",
+	"            <Text id=\"evenTitle\" text=\"Placeholder\" />",
+	"          </Children></Card></Then>",
+	"          <Else />",
+	"        </If>",
+	"      </Each>",
+	"      <Else />",
+	"    </ForEach>",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n");
+var flowSvelteNestedConditionalMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteNestedConditionalSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].slots.children.children[0].slots.then.children[0].slots.children.children[0].props.source",
+		value: {
+			mode: "source",
+			source: { category: "iteration", scopeId: "items", value: "item" },
+			path: [{ kind: "property", name: "title" }]
+		}
+	}
+})));
+assertTrue(flowSvelteNestedConditionalMutation.ok === true &&
+	String(flowSvelteNestedConditionalMutation.source).indexOf('id="evenTitle"') !== -1 &&
+	String(flowSvelteNestedConditionalMutation.source).indexOf('"scopeId":"items"') !== -1,
+	"flow-svelte AST mutations should resolve Each and named If slots: " +
+		JSON.stringify(flowSvelteNestedConditionalMutation));
 var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: flowSvelteEngineSource,
