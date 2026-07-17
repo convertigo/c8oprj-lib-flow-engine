@@ -3326,6 +3326,39 @@ var flowSvelteRoutesTree = JSON.parse(engine.authoringTree(JSON.stringify({
 assertTrue(flowSvelteRoutesTree.childCount === 1 &&
 	flowSvelteRoutesTree.children[0].kind === "frontendRoutes",
 	"authoring tree focusPath did not return the focused Svelte route branch");
+var flowSvelteTextNode = findNode(flowSvelteTree, function (node) {
+	if (node.kind !== "frontendWidget" || node.type !== "Text") return false;
+	var definition = node.definition ? JSON.parse(node.definition) : {};
+	return definition.id === "first";
+});
+assertTrue(flowSvelteTextNode && flowSvelteTextNode.path,
+	"authoring tree did not expose the Text node used by focused picker smoke tests");
+var flowSvelteCompactInspect = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteTextNode.path,
+	detail: "inspect",
+	maxDepth: 0
+})));
+assertTrue(JSON.stringify(flowSvelteCompactInspect).indexOf('"bindingSources"') === -1 &&
+	String(flowSvelteCompactInspect.next || "").indexOf("property") !== -1,
+	"untargeted inspect should summarize picker catalogs instead of returning every binding candidate");
+var flowSvelteSourceInspect = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteTextNode.path,
+	detail: "inspect",
+	property: "source",
+	sourceId: "readSmoke",
+	maxDepth: 0
+})));
+assertTrue(flowSvelteSourceInspect.property === "source" && flowSvelteSourceInspect.sourceId === "readSmoke" &&
+	JSON.stringify(flowSvelteSourceInspect).indexOf('"bindingSources"') === -1,
+	"property-targeted inspect did not preserve its exact picker scope");
 var flowSvelteStructureNode = findNode(flowSvelteRoutesTree, function (node) {
 	return node.kind === "frontendStructure";
 });

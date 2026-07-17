@@ -2918,7 +2918,29 @@
 		});
 	}
 
-	function inspectTreeBindings(node, definition) {
+	function compactInspectPropertyDefinition(property) {
+		property = property || {};
+		var out = {};
+		["label", "kind", "type", "required", "description", "catalogProperty"].forEach(function (key) {
+			if (property[key] !== undefined) {
+				out[key] = property[key];
+			}
+		});
+		if (property.bindingSources && property.bindingSources.length) {
+			out.bindingSourceCount = property.bindingSources.length;
+		}
+		return out;
+	}
+
+	function inspectTreePropertyDefinitions(definitions) {
+		var out = {};
+		Object.keys(definitions || {}).sort().forEach(function (name) {
+			out[name] = compactInspectPropertyDefinition(definitions[name]);
+		});
+		return out;
+	}
+
+	function inspectTreeBindings(node, definition, requestedProperty, requestedSourceId) {
 		var info = null;
 		try {
 			info = node && node.info ? JSON.parse(node.info) : null;
@@ -2931,7 +2953,20 @@
 			if (property.kind !== "binding" && property.type !== "binding") {
 				return;
 			}
-			var sources = (property.bindingSources || []).map(function (candidate) {
+			if (requestedProperty && name !== requestedProperty) {
+				return;
+			}
+			if (!requestedProperty) {
+				bindings[name] = {
+					current: definition && definition[name] !== undefined ? definition[name] : null,
+					sourceCount: (property.bindingSources || []).length
+				};
+				return;
+			}
+			var sources = (property.bindingSources || []).filter(function (candidate) {
+				if (!requestedSourceId) return true;
+				return String(candidate.id || candidate.source && (candidate.source.actionId || candidate.source.scopeId) || "") === requestedSourceId;
+			}).map(function (candidate) {
 				var out = {
 					category: candidate.category || candidate.source && candidate.source.category || "",
 					id: candidate.id || candidate.source && (candidate.source.actionId || candidate.source.scopeId) || "",
@@ -2959,7 +2994,7 @@
 		return bindings;
 	}
 
-	function compactTreeNode(node, depth, maxDepth, includeDefinition, includeInspect) {
+	function compactTreeNode(node, depth, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId) {
 		var out = {
 			name: node.name,
 			kind: node.kind,
@@ -2988,7 +3023,7 @@
 				} catch (e0) {
 				}
 				if (parsedInfo && parsedInfo.propertyDefinitions) {
-					out.propertyDefinitions = parsedInfo.propertyDefinitions;
+					out.propertyDefinitions = inspectTreePropertyDefinitions(parsedInfo.propertyDefinitions);
 				}
 				var props = inspectTreeProps(parsedDefinition);
 				if (Object.keys(props).length) {
@@ -2998,7 +3033,7 @@
 				if (slots.length) {
 					out.slots = slots;
 				}
-				var bindings = inspectTreeBindings(node, parsedDefinition);
+				var bindings = inspectTreeBindings(node, parsedDefinition, requestedProperty, requestedSourceId);
 				if (Object.keys(bindings).length) {
 					out.bindings = bindings;
 				}
@@ -3011,7 +3046,7 @@
 		out.childCount = children.length;
 		if (children.length && depth < maxDepth) {
 			out.children = children.map(function (child) {
-				return compactTreeNode(child, depth + 1, maxDepth, includeDefinition, includeInspect);
+					return compactTreeNode(child, depth + 1, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId);
 			});
 		}
 		return out;
@@ -3024,6 +3059,8 @@
 			return tree;
 		}
 		var includeInspect = detail === "inspect";
+		var requestedProperty = String(request.property || request.bindingProperty || "");
+		var requestedSourceId = String(request.sourceId || "");
 		var maxDepth = intOption(request.maxDepth, detail === "summary" ? 2 : includeInspect ? 6 : 4, 0, 20);
 		var includeDefinition = request.includeDefinition === true || String(request.includeDefinition || "") === "true";
 		var out = {
@@ -3032,9 +3069,15 @@
 			detail: detail,
 			childCount: (tree.children || []).length,
 			children: (tree.children || []).map(function (child) {
-				return compactTreeNode(child, 0, maxDepth, includeDefinition, includeInspect);
+				return compactTreeNode(child, 0, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId);
 			})
 		};
+		if (requestedProperty) {
+			out.property = requestedProperty;
+			if (requestedSourceId) out.sourceId = requestedSourceId;
+		} else if (includeInspect) {
+			out.next = "For exact binding candidates, repeat with the same focusPath, maxDepth:0 and property:<bindable property name>.";
+		}
 		["surface", "builder", "focusPath", "rootPath", "error", "warning", "warnings", "next"].forEach(function (key) {
 			if (tree[key] !== undefined) {
 				out[key] = tree[key];

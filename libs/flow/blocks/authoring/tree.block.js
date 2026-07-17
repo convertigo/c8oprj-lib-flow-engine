@@ -49,6 +49,18 @@ const _meta = {
       "type": "string",
       "description": "Optional tree path to return as the root of the response."
     },
+    "property": {
+      "label": "property",
+      "kind": "text",
+      "type": "string",
+      "description": "Optional exact bindable property whose picker candidates should be returned in inspect mode."
+    },
+    "sourceId": {
+      "label": "sourceId",
+      "kind": "text",
+      "type": "string",
+      "description": "Optional exact action, FullSync or iterator source id used to filter picker candidates."
+    },
     "rootPath": {
       "label": "rootPath",
       "kind": "text",
