@@ -4022,6 +4022,9 @@
 		try {
 			frontAstResult = applyFrontAstSourceMutation(source, mutation, sourceFile);
 		} catch (frontAstError) {
+			if (String(frontAstError && frontAstError.code || "").indexOf("FRONTEND_") === 0) {
+				throw frontAstError;
+			}
 			frontendStudioLog("[Flow frontend DnD] fast FrontAst mutation failed, retrying with Svelte parser: "
 				+ String(frontAstError && frontAstError.message || frontAstError), true);
 		}

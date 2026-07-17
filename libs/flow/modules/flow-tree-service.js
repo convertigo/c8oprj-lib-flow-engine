@@ -1679,6 +1679,9 @@
 			}
 			if (!definitions[key]) {
 				definitions[key] = known[key] || frontendPropertyDefinition(key, { type: typeof props[key] === "boolean" ? "boolean" : "string" });
+				if (!known[key]) {
+					definitions[key].inferredFromSource = true;
+				}
 			}
 		});
 		return definitions;
@@ -2051,7 +2054,7 @@
 	function frontendPropertyDefinition(key, value) {
 		value = value && typeof value === "object" ? value : {};
 		var internalActionLink = key === "clientAction" || key === "backendCall";
-		return propertyDefinition(
+		var definition = propertyDefinition(
 			value.label || key,
 			internalActionLink ? "Information" : value.category || "Base properties",
 			value.description || "",
@@ -2065,6 +2068,13 @@
 				hidden: internalActionLink || value.hidden === true
 			}
 		);
+		if (value.inferredFromSource === true) {
+			definition.inferredFromSource = true;
+		}
+		if (value.catalogProperty === true) {
+			definition.catalogProperty = true;
+		}
+		return definition;
 	}
 
 	function widgetIcon(kind) {
@@ -2972,6 +2982,14 @@
 			} catch (e) {
 			}
 			if (includeInspect === true && parsedDefinition) {
+				var parsedInfo = null;
+				try {
+					parsedInfo = node.info ? JSON.parse(node.info) : null;
+				} catch (e0) {
+				}
+				if (parsedInfo && parsedInfo.propertyDefinitions) {
+					out.propertyDefinitions = parsedInfo.propertyDefinitions;
+				}
 				var props = inspectTreeProps(parsedDefinition);
 				if (Object.keys(props).length) {
 					out.props = props;
