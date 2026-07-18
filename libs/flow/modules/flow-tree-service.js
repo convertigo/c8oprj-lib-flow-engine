@@ -401,7 +401,8 @@
 				engineSource: request && request.engineSource || "",
 				drafts: request && request.frontendSourceDrafts || {},
 				property: request && request.property || "",
-				sourceId: request && request.sourceId || ""
+				sourceId: request && request.sourceId || "",
+				includeBindings: request && request.includeBindings !== false
 			});
 			if (!described || !described.model) {
 				throw new Error("Frontend document service did not return a model for " + String(file.getAbsolutePath()));

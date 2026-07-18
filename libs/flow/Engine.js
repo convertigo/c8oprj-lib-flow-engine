@@ -3871,6 +3871,9 @@
 	}
 
 	function enrichFrontendBindingSources(document, request, projectRoot) {
+		if (request && request.includeBindings === false) {
+			return document;
+		}
 		return frontendCatalogService().enrichBindingSources(document,
 			frontendBindingActionSchemas(document, request, projectRoot), {
 				normalizeTree: normalizeTree,
@@ -3901,7 +3904,8 @@
 			String(resourceRoot.getAbsolutePath()),
 			String(projectRoot.getAbsolutePath()),
 			String(request.property || ""),
-			String(request.sourceId || "")
+			String(request.sourceId || ""),
+			String(request.includeBindings !== false)
 		].join("\n");
 		var fingerprint = sha256Hex([
 			source,
@@ -3938,6 +3942,9 @@
 			}
 			if (request.sourceId) {
 				cliArgs.push("--source-id", String(request.sourceId));
+			}
+			if (request.includeBindings === false) {
+				cliArgs.push("--without-bindings");
 			}
 			var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", cliArgs);
 			var output = frontendRunOneShot(args, resourceRoot, "Svelte front document");
