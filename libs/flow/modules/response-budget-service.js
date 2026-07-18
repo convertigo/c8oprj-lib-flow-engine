@@ -66,8 +66,9 @@
 			return decodeCursor(request.cursor, key, env) || defaultState || {};
 		}
 
-		function shouldContinue(count, resumeState) {
-			if (!enabled || Number(count || 0) < minItems) {
+		function shouldContinue(count, resumeState, workCount) {
+			if (!enabled || (Number(count || 0) < minItems &&
+					(workCount === undefined || Number(workCount || 0) < minItems))) {
 				return true;
 			}
 			if (answerBefore > 0 && env.nowMillis() >= answerBefore) {

@@ -259,7 +259,7 @@
 			var index = start;
 			for (; index < entries.length && limitedMatches.length < limit; index++) {
 				var resumeState = { index: index };
-				if (!budget.shouldContinue(limitedMatches.length, resumeState)) {
+				if (!budget.shouldContinue(limitedMatches.length, resumeState, index - start)) {
 					break;
 				}
 				var entry = entries[index];

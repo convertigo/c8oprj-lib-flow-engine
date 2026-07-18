@@ -3610,6 +3610,8 @@
 				objectSchema: objectSchema,
 				frontendBlocksForSettings: frontendBlocksForSettings,
 				frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,
+				sha256Hex: sha256Hex,
+				responseBudget: responseBudget,
 				describeFrontendDocument: describeFrontendDocument,
 				raise: raise,
 				intOption: intOption

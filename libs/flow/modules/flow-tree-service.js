@@ -4174,6 +4174,25 @@
 
 	function searchFlowRequest(request, blocks) {
 		request = request || {};
+		var budgetFlows = request.name ? [{ name: String(request.name), source: sourceForFlowRequest(request) }] :
+			visibleSearchFlows(request);
+		var budgetSignature = {
+			service: "flow.search",
+			project: currentProjectName(request),
+			revision: env.sha256Hex(JSON.stringify({
+				flows: budgetFlows.map(function (flow) { return [flow.project || "", flow.name, flow.source]; }),
+				blocks: Object.keys(blocks || {}).sort()
+			})),
+			query: String(request.query || request.q || ""),
+			kinds: request.kinds || null,
+			context: request.context || request.around || 0,
+			includeDefinition: request.includeDefinition === true,
+			includeLibrarySamples: request.includeLibrarySamples === true
+		};
+		var budget = env.responseBudget(request, { key: env.sha256Hex(JSON.stringify(budgetSignature)) });
+		if (budget.enabled || String(request.cursor || "").indexOf("rb1.") === 0) {
+			return budgetedSearchFlowRequest(request, blocks, budget, budgetFlows);
+		}
 		var needle = searchNeedle(request);
 		var kinds = searchKinds(request);
 		var matches = [];
@@ -4260,6 +4279,144 @@
 				"Use context=1 or 2 to get nearby parent/previous/children/next summaries.",
 				"Pass doc=false on repeated calls when the short tool contract is already known."
 			];
+		}
+		return out;
+	}
+
+	function budgetedSearchFlowRequest(request, blocks, budget, flows) {
+		var needle = searchNeedle(request);
+		var kinds = searchKinds(request);
+		var includeSampleMatches = kinds.sample || request.includeLibrarySamples === true;
+		flows = flows || [];
+		var definitions = {};
+		var phases = [];
+		if (includeSampleMatches) phases.push("sample");
+		if (kinds.flow) phases.push("flow");
+		if (kinds.node) phases.push("node");
+		if (kinds.block) phases.push("block");
+		if (kinds.type) phases.push("type");
+		if (kinds.schema) phases.push("schema");
+		var catalogMatches = {};
+		var schemaMatches = null;
+
+		function definitionFor(flow, index) {
+			if (!definitions[index]) {
+				definitions[index] = expandFlowDefinition(blocks, parseSource(flow.source));
+			}
+			return definitions[index];
+		}
+
+		function flowMatch(phase, flow, index) {
+			var found = [];
+			var sample = isSampleFlowName(flow.name);
+			if (phase === "node") {
+				searchFlowNodes(request, blocks, flow.name, definitionFor(flow, index), found);
+				return found;
+			}
+			var flowProject = flow.project || currentProjectName(request);
+			var flowQName = flowQNameForSearch(request, flow.name);
+			if (flowProject && flowProject !== currentProjectName(request)) {
+				flowQName = flowQNameForSearch(Object.assign({}, request, { project: flowProject }), flow.name);
+			}
+			var uses = sample ? collectFlowBlockUses(definitionFor(flow, index), blocks) : [];
+			var flowText = [flow.name, flowQName, flow.source, uses.join(" "), sample ? "sample example tutorial usage pattern" : ""].join(" ");
+			if (phase === "sample" && sample) {
+				var score = searchTokenScore(flowText, needle);
+				if (score > 0) {
+					found.push({
+						kind: "sample", score: 90 + score, project: flowProject || currentProjectName(request),
+						flow: flow.name, flowQName: flowQName, file: flow.file || "", uses: uses,
+						summary: "[sample] " + flowQName + (uses.length ? " uses " + uses.join(", ") : ""),
+						snippet: searchSnippet(flow.source, needle),
+						next: "flow-tree project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
+							", flow-test project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
+							", then copy the pattern into a new Flow"
+					});
+				}
+			} else if (phase === "flow" && !sample && searchMatches(flowText, needle)) {
+				found.push({
+					kind: "flow", score: 50, project: flowProject || currentProjectName(request), flow: flow.name,
+					flowQName: flowQName, file: flow.file || "", summary: "[flow] " + flowQName,
+					snippet: searchSnippet(flow.source, needle), next: "flow-tree name=" + flow.name
+				});
+			}
+			return found;
+		}
+
+		function matchesFor(phase, unit) {
+			if (phase === "sample" || phase === "flow" || phase === "node") {
+				return flowMatch(phase, flows[unit], unit);
+			}
+			if (phase === "block" || phase === "type") {
+				if (!catalogMatches[phase]) {
+					catalogMatches[phase] = [];
+					searchCatalogEntries(Object.assign({}, request, { kinds: [phase] }), blocks, catalogMatches[phase]);
+				}
+				return catalogMatches[phase];
+			}
+			if (!schemaMatches) {
+				schemaMatches = [];
+				searchSchemaFiles(Object.assign({}, request, { kinds: ["schema"] }), schemaMatches);
+			}
+			return schemaMatches;
+		}
+
+		function unitCount(phase) {
+			return phase === "sample" || phase === "flow" || phase === "node" ? flows.length : 1;
+		}
+
+		var state = budget.cursor({ phase: 0, unit: 0, item: 0 });
+		var phaseIndex = intOption(state.phase, 0, 0);
+		var unitIndex = intOption(state.unit, 0, 0);
+		var itemIndex = intOption(state.item, 0, 0);
+		var limit = intOption(request.limit, 50, 1, 500);
+		var page = [];
+		var workCount = 0;
+		for (; phaseIndex < phases.length; phaseIndex++, unitIndex = 0, itemIndex = 0) {
+			var phase = phases[phaseIndex];
+			for (; unitIndex < unitCount(phase); unitIndex++, itemIndex = 0) {
+				var resumeState = { phase: phaseIndex, unit: unitIndex, item: itemIndex };
+				if (!budget.shouldContinue(page.length, resumeState, workCount)) {
+					return finishBudgetedSearch(request, budget, page, true, resumeState);
+				}
+				var unitMatches = matchesFor(phase, unitIndex);
+				unitMatches.sort(function (a, b) {
+					var scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+					return scoreDiff || String(a.summary || a.name || "").localeCompare(String(b.summary || b.name || ""));
+				});
+				workCount += 1;
+				for (; itemIndex < unitMatches.length; itemIndex++) {
+					resumeState = { phase: phaseIndex, unit: unitIndex, item: itemIndex };
+					if (!budget.shouldContinue(page.length, resumeState, workCount) ||
+							!budget.tryAdd(page, unitMatches[itemIndex], resumeState)) {
+						return finishBudgetedSearch(request, budget, page, true, resumeState);
+					}
+					if (page.length >= limit) {
+						return finishBudgetedSearch(request, budget, page, true,
+							{ phase: phaseIndex, unit: unitIndex, item: itemIndex + 1 });
+					}
+				}
+			}
+		}
+		return finishBudgetedSearch(request, budget, page, false, null);
+	}
+
+	function finishBudgetedSearch(request, budget, page, hasMore, nextState) {
+		var out = budget.finish({
+			ok: true,
+			query: String(request.query || request.q || ""),
+			scope: String(request.scope || "project"),
+			project: currentProjectName(request),
+			count: page.length,
+			total: null,
+			matches: page,
+			nextCursor: null
+		}, hasMore, nextState);
+		if (request.doc !== false) {
+			out.doc = "Search Flow sidecars, nodes, catalog entries and learned schemas. Continue partial results with nextCursor.";
+		}
+		if (request.hints !== false) {
+			out.hints = ["Use focused kinds and query terms. Continue with nextCursor only when the first results are insufficient."];
 		}
 		return out;
 	}

@@ -3142,6 +3142,31 @@ print(JSON.stringify(multiTokenSearch));
 assertTrue(multiTokenSearch.matches.some(function (match) {
 	return match.flow === "RequestableBridge" && match.nodeId === "callRequestable";
 }), "search did not match Flow nodes with unordered query tokens");
+var budgetedEmptySearch = JSON.parse(engine.search(JSON.stringify({
+	project: "SmokeProject",
+	query: "definitely-no-such-flow-match",
+	kinds: ["node"],
+	answerBefore: 1,
+	minItems: 1,
+	limit: 5,
+	doc: false,
+	hints: false
+})));
+assertTrue(budgetedEmptySearch.partial === true && budgetedEmptySearch.count === 0 &&
+	String(budgetedEmptySearch.nextCursor || "").indexOf("rb1.") === 0 &&
+	budgetedEmptySearch.warnings[0].code === "PARTIAL_RESULT_TIME_BUDGET",
+	"budgeted flow search did not stop a no-match traversal after useful work");
+var resumedEmptySearch = JSON.parse(engine.search(JSON.stringify({
+	project: "SmokeProject",
+	query: "definitely-no-such-flow-match",
+	kinds: ["node"],
+	cursor: budgetedEmptySearch.nextCursor,
+	limit: 5,
+	doc: false,
+	hints: false
+})));
+assertTrue(resumedEmptySearch.ok === true,
+	"budgeted flow search did not resume its phased cursor");
 var requestableCallAnalysis = JSON.parse(engine.analyze(JSON.stringify({
 	flowSource: requestableCallSource,
 	context: {
