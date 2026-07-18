@@ -1056,6 +1056,21 @@
 		return loadEngineModule("resource-service.js");
 	}
 
+	function responseBudget(request, options) {
+		return loadEngineModule("response-budget-service.js").create(request, options, {
+			nowMillis: function () { return Packages.java.lang.System.currentTimeMillis(); },
+			utf8Length: function (text) { return new Packages.java.lang.String(String(text || "")).getBytes("UTF-8").length; },
+			base64UrlEncode: function (text) {
+				return String(Base64.getUrlEncoder().withoutPadding().encodeToString(
+					new Packages.java.lang.String(String(text || "")).getBytes("UTF-8")));
+			},
+			base64UrlDecode: function (text) {
+				return String(new Packages.java.lang.String(Base64.getUrlDecoder().decode(String(text || "")), "UTF-8"));
+			},
+			raise: raise
+		});
+	}
+
 	function resourceServiceEnv() {
 		return {
 			File: File,
@@ -1079,6 +1094,7 @@
 			searchMatches: searchMatches,
 			searchSnippet: searchSnippet,
 			sha256Hex: sha256Hex,
+			responseBudget: responseBudget,
 			applyUnifiedPatchText: applyUnifiedPatchText,
 			projectBlockDescriptorFileForResource: projectBlockDescriptorFileForResource,
 			projectBlockContractFileForResource: projectBlockContractFileForResource,
@@ -7190,7 +7206,9 @@
 			schemaSummary: schemaSummary,
 			loadTypes: loadTypes,
 			listFlowLibraries: listFlowLibraries,
-			flowProviderName: flowProviderName
+			flowProviderName: flowProviderName,
+			sha256Hex: sha256Hex,
+			responseBudget: responseBudget
 		};
 	}
 
@@ -7486,7 +7504,13 @@
 					provider: request.provider || "",
 					origin: request.origin || "",
 					limit: request.limit,
-					cursor: request.cursor
+					cursor: request.cursor,
+					answerBefore: request.answerBefore,
+					timeoutMs: request.timeoutMs,
+					maxResponseKB: request.maxResponseKB,
+					minItems: request.minItems,
+					doc: request.doc,
+					hints: request.hints
 				}));
 					try {
 						var projectConfig = projectEngineDefinitionForRequest(request).config || {};

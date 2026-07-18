@@ -240,8 +240,52 @@
 		request = request || {};
 		var needle = env.searchNeedle(request);
 		var maxFileBytes = env.intOption(request.maxFileBytes, 120000, 1000, 5000000);
+		var entries = projectResourceEntries(env);
+		var signature = {
+			service: "resource.search",
+			project: String(env.projectDir() || ""),
+			revision: env.sha256Hex(JSON.stringify(entries.map(function (entry) {
+				return [entry.path, Number(entry.file.length()), Number(entry.file.lastModified())];
+			}))),
+			query: String(request.query || request.q || ""),
+			maxFileBytes: maxFileBytes
+		};
+		var budget = env.responseBudget(request, { key: env.sha256Hex(JSON.stringify(signature)) });
+		if (budget.enabled || String(request.cursor || "").indexOf("rb1.") === 0) {
+			var state = budget.cursor({ index: 0 });
+			var start = Math.max(0, env.intOption(state.index, 0, 0));
+			var limitedMatches = [];
+			var limit = env.intOption(request.limit, 10, 1, 50);
+			var index = start;
+			for (; index < entries.length && limitedMatches.length < limit; index++) {
+				var resumeState = { index: index };
+				if (!budget.shouldContinue(limitedMatches.length, resumeState)) {
+					break;
+				}
+				var entry = entries[index];
+				if (entry.file.length() > maxFileBytes) {
+					continue;
+				}
+				var content = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+				var text = [entry.path, env.resourceKind(entry.path), env.resourceName(entry.path), content].join(" ");
+				if (!env.searchMatches(text, needle)) {
+					continue;
+				}
+				if (!budget.tryAdd(limitedMatches, resourceSearchSummary(entry, content, needle, request, env), resumeState)) {
+					break;
+				}
+			}
+			return budget.finish({
+				ok: true,
+				query: String(request.query || request.q || ""),
+				count: limitedMatches.length,
+				total: null,
+				resources: limitedMatches,
+				nextCursor: null
+			}, index < entries.length, { index: index });
+		}
 		var matches = [];
-		projectResourceEntries(env).forEach(function (entry) {
+		entries.forEach(function (entry) {
 			if (entry.file.length() > maxFileBytes) {
 				return;
 			}

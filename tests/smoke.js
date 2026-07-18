@@ -175,6 +175,26 @@ var flowSource = [
 ].join("\n");
 
 var catalog = JSON.parse(engine.catalog("{}"));
+var budgetedCatalog = JSON.parse(engine.catalog(JSON.stringify({
+	detail: "full",
+	limit: 20,
+	maxResponseKB: 1,
+	minItems: 1,
+	doc: false,
+	hints: false
+})));
+assertTrue(budgetedCatalog.partial === true && budgetedCatalog.count >= 1 &&
+	String(budgetedCatalog.nextCursor || "").indexOf("rb1.") === 0 &&
+	budgetedCatalog.warnings[0].code === "PARTIAL_RESULT_SIZE_BUDGET",
+	"catalog response budget did not stop descriptor materialization");
+var resumedCatalog = JSON.parse(engine.catalog(JSON.stringify({
+	detail: "full",
+	limit: 1,
+	cursor: budgetedCatalog.nextCursor,
+	doc: false,
+	hints: false
+})));
+assertTrue(resumedCatalog.count === 1, "catalog response cursor did not resume descriptor materialization");
 print(JSON.stringify(catalog));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "requestable.call";
@@ -903,6 +923,27 @@ var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 assertTrue(resourceSearch.resources.some(function (resource) {
 	return resource.path === "libs/flow/blocks/resource/echo.block.js";
 }), "resourceSearch did not find the project block source");
+var budgetedResourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
+	query: "resource",
+	answerBefore: 1,
+	minItems: 1,
+	limit: 10,
+	doc: false,
+	hints: false
+})));
+assertTrue(budgetedResourceSearch.partial === true && budgetedResourceSearch.count === 1 &&
+	String(budgetedResourceSearch.nextCursor || "").indexOf("rb1.") === 0 &&
+	budgetedResourceSearch.warnings[0].code === "PARTIAL_RESULT_TIME_BUDGET",
+	"resource search did not interrupt file reads at answerBefore");
+var resumedResourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
+	query: "resource",
+	cursor: budgetedResourceSearch.nextCursor,
+	limit: 10,
+	doc: false,
+	hints: false
+})));
+assertTrue(resumedResourceSearch.ok === true,
+	"resource search did not resume from its opaque scan cursor");
 var resourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 	path: "libs/flow/blocks/resource/echo.block.js"
 })));

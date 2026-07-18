@@ -402,11 +402,58 @@
 		});
 		descriptors = filterVisibleDescriptors(descriptors, options);
 		descriptors = filterCatalogDescriptors(descriptors, options);
-		var page = pagedCatalogDescriptors(descriptors, options);
+		var signature = {
+			service: "catalog",
+			revision: env.sha256Hex(JSON.stringify(descriptors.map(function (descriptor) {
+				return [descriptor.blockId, descriptor.provider, descriptor.origin, descriptor.description, descriptor.tags];
+			}))),
+			query: String(options.query || options.q || ""),
+			namespace: String(options.namespace || ""),
+			provider: String(options.provider || ""),
+			origin: String(options.origin || ""),
+			detail: String(options.detail || options.mode || "full"),
+			includePrivate: options.includePrivate === true,
+			includeInternal: options.includeInternal === true
+		};
+		var budget = env.responseBudget(options, { key: env.sha256Hex(JSON.stringify(signature)) });
+		if (!budget.enabled && String(options.cursor || "").indexOf("rb1.") !== 0) {
+			var page = pagedCatalogDescriptors(descriptors, options);
+			return {
+				blocks: page.items.map(mapper),
+				total: page.total,
+				nextCursor: page.nextCursor,
+				partial: false
+			};
+		}
+		var state = budget.cursor({ index: 0 });
+		var offset = Math.max(0, parseInt(String(state.index || "0"), 10) || 0);
+		var limit = parseInt(String(options.limit || "0"), 10);
+		if (isNaN(limit) || limit < 1) {
+			limit = descriptors.length || 1;
+		}
+		var blocksOut = [];
+		var index = offset;
+		for (; index < descriptors.length && blocksOut.length < limit; index++) {
+			var resumeState = { index: index };
+			if (!budget.shouldContinue(blocksOut.length, resumeState)) {
+				break;
+			}
+			if (!budget.tryAdd(blocksOut, mapper(descriptors[index]), resumeState)) {
+				break;
+			}
+		}
+		return budget.finish({
+			blocks: blocksOut,
+			total: descriptors.length,
+			nextCursor: null
+		}, index < descriptors.length, { index: index });
+	}
+
+	function catalogPageFields(page) {
 		return {
-			blocks: page.items.map(mapper),
-			total: page.total,
-			nextCursor: page.nextCursor
+			partial: page.partial === true,
+			warnings: page.warnings,
+			responseBudget: page.responseBudget
 		};
 	}
 
@@ -431,7 +478,7 @@
 	function summaryCatalogDefinition(blocks, options, env) {
 		var page = catalogPage(blocks, options, summaryBlockDescriptor, env);
 		var types = env.loadTypes();
-		return addCatalogDocs({
+		return addCatalogDocs(Object.assign({
 			detail: "summary",
 			count: page.blocks.length,
 			total: page.total,
@@ -440,32 +487,36 @@
 			libraryCount: env.listFlowLibraries().length,
 			typeCount: Object.keys(types).length,
 			next: "This is the short palette. Use query/namespace/provider to stay narrow, detail='signature' for typed signatures, flow-block-get for one block, detail='full' only for source-level details."
-		}, options);
+		}, catalogPageFields(page)), options);
 	}
 
 	function signatureCatalogDefinition(blocks, options, env) {
 		var page = catalogPage(blocks, options, function (descriptor) {
 			return signatureBlockDescriptor(descriptor, env);
 		}, env);
-		return addCatalogDocs({
+		return addCatalogDocs(Object.assign({
 			detail: "signature",
 			count: page.blocks.length,
 			total: page.total,
 			nextCursor: page.nextCursor,
 			blocks: page.blocks,
 			next: "Use flow-block-get for one candidate block. Use flow-search first when an executable sample may show the whole pattern."
-		}, options);
+		}, catalogPageFields(page)), options);
 	}
 
 	function compactCatalogDefinition(blocks, options, env) {
-		var fullPage = catalogPage(blocks, options, function (descriptor) { return descriptor; }, env);
 		var page = catalogPage(blocks, options, function (descriptor) {
 			return compactBlockDescriptor(descriptor, env);
 		}, env);
 		var descriptors = page.blocks;
 		var includeTypes = options.includeTypes === true || String(options.includeTypes || "") === "true";
 		var includeLibraries = options.includeLibraries === true || String(options.includeLibraries || "") === "true";
-		return addCatalogDocs({
+		var fullBlocks = includeTypes
+			? filterCatalogDescriptors(filterVisibleDescriptors(Object.keys(blocks).sort().map(function (name) {
+				return blockDescriptor(blocks[name], env);
+			}), options), options)
+			: [];
+		return addCatalogDocs(Object.assign({
 			detail: "compact",
 			count: descriptors.length,
 			total: page.total,
@@ -474,9 +525,9 @@
 			libraryCount: env.listFlowLibraries().length,
 			typeCount: Object.keys(env.loadTypes()).length,
 			libraries: includeLibraries ? env.listFlowLibraries() : undefined,
-			types: includeTypes ? catalogTypes(fullPage.blocks, env.loadTypes(), env).map(compactTypeDescriptor) : undefined,
+			types: includeTypes ? catalogTypes(fullBlocks, env.loadTypes(), env).map(compactTypeDescriptor) : undefined,
 			next: "Use flow-search for examples and flow-block-get for one block. Add includeTypes=true/includeLibraries=true only when those details are needed."
-		}, options);
+		}, catalogPageFields(page)), options);
 	}
 
 	function catalogDefinition(blocks, options, env) {
@@ -563,7 +614,7 @@
 		groups.forEach(function (group) {
 			delete group.order;
 		});
-		return addCatalogDocs({
+		return addCatalogDocs(Object.assign({
 			detail: "full",
 			count: descriptors.length,
 			total: page.total,
@@ -572,7 +623,7 @@
 			groups: groups,
 			libraries: env.listFlowLibraries(),
 			types: catalogTypes(descriptors, typeDescriptors, env)
-		}, options);
+		}, catalogPageFields(page)), options);
 	}
 
 	function inferredTypeDescriptor(name) {
