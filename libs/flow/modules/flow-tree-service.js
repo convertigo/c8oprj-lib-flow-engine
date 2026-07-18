@@ -399,7 +399,9 @@
 				projectDir: projectDir() ? String(projectDir().getAbsolutePath()) : "",
 				resourceRoot: settings && settings.resourceRoot || "",
 				engineSource: request && request.engineSource || "",
-				drafts: request && request.frontendSourceDrafts || {}
+				drafts: request && request.frontendSourceDrafts || {},
+				property: request && request.property || "",
+				sourceId: request && request.sourceId || ""
 			});
 			if (!described || !described.model) {
 				throw new Error("Frontend document service did not return a model for " + String(file.getAbsolutePath()));

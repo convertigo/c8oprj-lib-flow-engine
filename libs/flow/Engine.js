@@ -3879,6 +3879,9 @@
 				schemaLeafEntries: schemaLeafEntries,
 				schemaSimpleType: schemaSimpleType,
 				schemaAtPath: schemaAtPath
+			}, {
+				property: request && request.property || "",
+				sourceId: request && request.sourceId || ""
 			});
 	}
 
@@ -3896,7 +3899,9 @@
 		var key = [
 			String(sourceFile.getAbsolutePath()),
 			String(resourceRoot.getAbsolutePath()),
-			String(projectRoot.getAbsolutePath())
+			String(projectRoot.getAbsolutePath()),
+			String(request.property || ""),
+			String(request.sourceId || "")
 		].join("\n");
 		var fingerprint = sha256Hex([
 			source,
@@ -3920,13 +3925,21 @@
 		try {
 			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
 			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(drafts), "UTF-8");
-			var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", [
+			var cliArgs = [
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--drafts", String(draftsTemp.getAbsolutePath()),
 				"--resource-root", String(resourceRoot.getAbsolutePath()),
-				"--project-root", String(projectRoot.getAbsolutePath())
-			]);
+				"--project-root", String(projectRoot.getAbsolutePath()),
+				"--engine-model"
+			];
+			if (request.property) {
+				cliArgs.push("--property", String(request.property));
+			}
+			if (request.sourceId) {
+				cliArgs.push("--source-id", String(request.sourceId));
+			}
+			var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", cliArgs);
 			var output = frontendRunOneShot(args, resourceRoot, "Svelte front document");
 			var result = frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
 			if (!result || !result.model) {

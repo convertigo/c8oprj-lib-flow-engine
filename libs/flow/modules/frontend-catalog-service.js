@@ -2097,9 +2097,16 @@
 		});
 	}
 
-	function enrichBindingSources(document, actionSchemas, env) {
+	function enrichBindingSources(document, actionSchemas, env, options) {
 		document = env.normalizeTree(document || {});
 		actionSchemas = Object.assign({}, actionSchemas || {});
+		options = options || {};
+		var requestedProperty = String(options.property || "");
+		var requestedSourceId = String(options.sourceId || "");
+		function sourceId(candidate) {
+			var source = candidate && (candidate.source || candidate) || {};
+			return String(source.actionId || source.scopeId || candidate && candidate.id || "");
+		}
 		var iterations = {};
 		walkDocument(document, function (node) {
 			var props = node.props || {};
@@ -2128,12 +2135,18 @@
 		walkDocument(document, function (node) {
 			var definitions = node.propertyDefinitions || {};
 			Object.keys(definitions).forEach(function (name) {
+				if (requestedProperty && name !== requestedProperty) {
+					return;
+				}
 				var definition = definitions[name];
 				var candidates = definition && definition.bindingSources;
 				if (Object.prototype.toString.call(candidates) !== "[object Array]") {
 					return;
 				}
 				candidates.forEach(function (candidate) {
+					if (requestedSourceId && sourceId(candidate) !== requestedSourceId) {
+						return;
+					}
 					var source = candidate && (candidate.source || candidate) || {};
 					var schema = source.category === "iteration"
 						? source.value === "index"
