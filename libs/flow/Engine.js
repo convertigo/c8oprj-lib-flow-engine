@@ -3572,6 +3572,7 @@
 			blockCatalog: blockCatalog,
 			blockDescriptor: blockDescriptor,
 			typeDescriptor: typeDescriptor,
+			loadTypes: loadTypes,
 			catalogDefinition: catalogDefinition,
 			listFlowLibraries: listFlowLibraries,
 			normalizeGraphBlockUses: normalizeGraphBlockUses,

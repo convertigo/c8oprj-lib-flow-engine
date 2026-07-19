@@ -849,6 +849,35 @@ var helperTree = JSON.parse(engine.describeTree(JSON.stringify({
 	sourceFile: String(helperSourceFile.getAbsolutePath()),
 	detail: "full"
 })));
+
+var duplicateVirtualTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "flow",
+	flowSource: [
+		"version: 1",
+		"inputs:",
+		"  query: { type: string }",
+		"outputs:",
+		"  items: { type: array }",
+		"nodes:",
+		"  - id: same",
+		"    block: set",
+		"    props: { path: local.first, value: 1 }",
+		"  - id: same",
+		"    block: set",
+		"    props: { path: local.second, value: 2 }",
+		""
+	].join("\n"),
+	detail: "full"
+})));
+var duplicateVirtualFlow = findChild(duplicateVirtualTree, "flow");
+assertTrue(findChild(duplicateVirtualTree, "inputs") !== null && findChild(duplicateVirtualTree, "outputs") !== null,
+	"Flow tree did not expose declared Inputs and Outputs");
+assertTrue(duplicateVirtualFlow.children.length === 2 &&
+	duplicateVirtualFlow.children[0].name !== duplicateVirtualFlow.children[1].name,
+	"Flow tree reused a virtual QName when business node ids were duplicated");
+var duplicateVirtualInfo = JSON.parse(duplicateVirtualFlow.children[0].info || "{}");
+assertTrue(duplicateVirtualInfo.propertyDefinitions.value.editorClass === "flow-value-editor",
+	"Flow tree did not propagate the declared type editor to virtual properties");
 var helperFolder = findChild(helperTree, "helpers");
 assertTrue(helperFolder !== null, "Flow tree did not expose Helpers");
 var normalizeHelper = findChild(helperFolder, "helper_normalize");
@@ -3366,6 +3395,16 @@ var flowSvelteTree = JSON.parse(engine.describeTree(JSON.stringify({
 	projectDir: __flowProjectDir,
 	detail: "full"
 })));
+var flowSvelteNames = {};
+(function collectVirtualNames(node) {
+	(node.children || []).forEach(function (child) {
+		var parentPath = String(node.path || "root");
+		var key = parentPath + "." + child.name;
+		assertTrue(!flowSvelteNames[key], "Flow Svelte tree reused virtual child name " + key);
+		flowSvelteNames[key] = true;
+		collectVirtualNames(child);
+	});
+})(flowSvelteTree);
 assertTrue(findNode(flowSvelteTree, function (node) {
 	return node.path === "config.frontbuilder";
 }) === null, "engine tree exposed private frontbuilder config in the Config branch");

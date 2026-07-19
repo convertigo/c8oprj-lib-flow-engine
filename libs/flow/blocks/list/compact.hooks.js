@@ -10,7 +10,7 @@
 	return {
 		displayName: function (node) {
 			var items = prop(node, "items") || prop(node, "in") || "items";
-			return flowSummary.output(node, flowSummary.text(items + " compact"));
+			return flowSummary.output(node, flowSummary.value(items) + " compact");
 		},
 
 		analyze: function (ctx, node) {

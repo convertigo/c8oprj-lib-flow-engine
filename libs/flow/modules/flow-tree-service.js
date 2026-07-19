@@ -15,6 +15,7 @@
 		var blockCatalog = env.blockCatalog;
 		var blockDescriptor = env.blockDescriptor;
 		var typeDescriptor = env.typeDescriptor;
+		var loadTypes = env.loadTypes || function () { return {}; };
 		var catalogDefinition = env.catalogDefinition;
 		var listFlowLibraries = env.listFlowLibraries;
 		var normalizeGraphBlockUses = env.normalizeGraphBlockUses;
@@ -55,6 +56,31 @@
 		var describeFrontendDocument = env.describeFrontendDocument || function () { return null; };
 		var raise = env.raise;
 		var intOption = env.intOption;
+		var resolvedTypes;
+
+	function flowTypes() {
+		if (!resolvedTypes) {
+			resolvedTypes = loadTypes();
+		}
+		return resolvedTypes;
+	}
+
+	function resolvedPropertyDefinition(value) {
+		var definition = normalizeTree(value || {});
+		var typeName = String(definition.kind || definition.type || "");
+		var type = flowTypes()[typeName];
+		if (type) {
+			var descriptor = typeDescriptor(type);
+			var editor = descriptor && descriptor.editor;
+			if (editor && editor.component && !definition.editorClass) {
+				definition.editorClass = String(editor.component);
+			}
+			if (editor && editor.file && !definition.editorResource) {
+				definition.editorResource = String(editor.file);
+			}
+		}
+		return definition;
+	}
 
 	function nodeInfo(nodeAnalysis, catalog) {
 		var info = nodeAnalysis ? normalizeTree(nodeAnalysis) : {};
@@ -65,7 +91,7 @@
 		Object.keys(props).forEach(function (key) {
 			var descriptor = props[key];
 			propertyOrder.push(key);
-			propertyDefinitions[key] = normalizeTree(descriptor || {});
+			propertyDefinitions[key] = resolvedPropertyDefinition(descriptor);
 			if (descriptor && descriptor["default"] !== undefined) {
 				defaults[key] = descriptor["default"];
 			}
@@ -172,6 +198,15 @@
 		}
 		var folder = virtualNode(name, "schema", name, path, name, compact(schema), null, "mdi:code-json");
 		parent.children.push(folder);
+		addObjectFields(folder, schema, path);
+	}
+
+	function addFlowSchema(out, schema, path, name, label) {
+		if (!schema || typeof schema !== "object" || Object.keys(schema).length === 0) {
+			return;
+		}
+		var folder = virtualNode(name, "schema", name, path, label, compact(schema), null, "mdi:code-json");
+		out.push(folder);
 		addObjectFields(folder, schema, path);
 	}
 
@@ -393,17 +428,40 @@
 	function frontendModelDocument(request, file, settings) {
 		var source = frontendModelSource(request, file);
 		if (isFlowSvelteModel(file)) {
-			var described = describeFrontendDocument({
-				sourceFile: String(file.getAbsolutePath()),
-				source: source,
-				projectDir: projectDir() ? String(projectDir().getAbsolutePath()) : "",
-				resourceRoot: settings && settings.resourceRoot || "",
-				engineSource: request && request.engineSource || "",
-				drafts: request && request.frontendSourceDrafts || {},
-				property: request && request.property || "",
-				sourceId: request && request.sourceId || "",
-				includeBindings: request && request.includeBindings !== false
-			});
+			var described;
+			try {
+				described = describeFrontendDocument({
+					sourceFile: String(file.getAbsolutePath()),
+					source: source,
+					projectDir: projectDir() ? String(projectDir().getAbsolutePath()) : "",
+					resourceRoot: settings && settings.resourceRoot || "",
+					engineSource: request && request.engineSource || "",
+					drafts: request && request.frontendSourceDrafts || {},
+					property: request && request.property || "",
+					sourceId: request && request.sourceId || "",
+					includeBindings: request && request.includeBindings !== false
+				});
+			} catch (e) {
+				var message = String(e && e.message || e);
+				var root = /Cannot run program|ENOENT|not found/i.test(message)
+					? flowSvelteLiteComponentRoot(String(file.getAbsolutePath()), source)
+					: null;
+				if (!root) {
+					throw e;
+				}
+				described = {
+					model: {
+						version: 1,
+						app: { id: root.id, title: root.label }
+					},
+					tree: { children: [root] },
+					diagnostics: [{
+						level: "warning",
+						code: "FRONTEND_EMBEDDED_PROJECTION",
+						message: "Using the embedded Flow Svelte projection because the optional Node authoring service is unavailable."
+					}]
+				};
+			}
 			if (!described || !described.model) {
 				throw new Error("Frontend document service did not return a model for " + String(file.getAbsolutePath()));
 			}
@@ -1459,7 +1517,8 @@
 		var virtualKind = frontendAuthoringVirtualKind(node);
 		var virtualType = String(node.type || node.kind || "frontendNode");
 		var summary = String(node.label || node.name || node.id || virtualType || "Node");
-		var virtual = virtualNode("authoring_" + (node.id || safeVirtualName("node", summary)), virtualKind, virtualType,
+		var pathName = String(path || "").split(".").pop();
+		var virtual = virtualNode("authoring_" + safeVirtualName("node", pathName), virtualKind, virtualType,
 			path, summary, compact(definition), compact(info), frontendAuthoringIcon(node));
 		parent.children.push(virtual);
 		(node.children || []).forEach(function (child, index) {
@@ -1618,7 +1677,9 @@
 	function frontendAuthoringDefinition(node) {
 		var out = {};
 		Object.keys(node || {}).forEach(function (key) {
-			if (key !== "children" && key !== "propertyDefinitions") {
+			if (key !== "children" && key !== "propertyDefinitions" && key !== "props" && key !== "traits" &&
+					key !== "slots" && key !== "sourcePath" && key !== "sourceMutationPath" &&
+					key.indexOf("frontendInsert") !== 0 && key.indexOf("sourcePropertyMutation") !== 0) {
 				out[key] = node[key];
 			}
 		});
@@ -2077,7 +2138,7 @@
 		if (value.catalogProperty === true) {
 			definition.catalogProperty = true;
 		}
-		return definition;
+		return resolvedPropertyDefinition(definition);
 	}
 
 	function widgetIcon(kind) {
@@ -2198,7 +2259,8 @@
 		} catch (e) {
 			label = id;
 		}
-		return "[" + blockName + "] " + summaryText(label);
+		return "[" + blockName + "] " + summaryText(
+			label && typeof label === "object" ? JSON.stringify(normalizeTree(label)) : label);
 	}
 
 	function addNodeSlots(parent, node, nodePath, catalog, blocks, analysisById, sourceInfo, sourceNodePath) {
@@ -2260,7 +2322,7 @@
 				}
 				});
 				var nodeInformation = mergeSourceInfo(nodeInfo(nodeAnalysis, catalog), sourceInfo, sourceNodePath);
-				var nodeObject = virtualNode("node_" + id, "node", blockType, nodePath,
+				var nodeObject = virtualNode("node_" + id + "_" + index, "node", blockType, nodePath,
 					nodeSummary(block, catalog, node, id, blockType), compact(shallow), compact(nodeInformation));
 				parent.children.push(nodeObject);
 				if (node.__graphBlock && node.nodes) {
@@ -2396,6 +2458,12 @@
 		}
 		if (options.expert === true) {
 			definition.expert = true;
+		}
+		if (options.editorClass) {
+			definition.editorClass = String(options.editorClass);
+		}
+		if (options.editorResource) {
+			definition.editorResource = String(options.editorResource);
 		}
 		return definition;
 	}
@@ -3115,6 +3183,11 @@
 			}
 			addContracts(children, definition.contracts, "contracts");
 			addBindings(children, definition.bindings, "bindings");
+			var flowMeta = definition.flow || definition._flow || {};
+			addFlowSchema(children, definition.inputs || definition.input || flowMeta.inputs || flowMeta.input,
+				"inputs", "inputs", "Inputs");
+			addFlowSchema(children, definition.outputs || definition.output || flowMeta.outputs || flowMeta.output,
+				"outputs", "outputs", "Outputs");
 			addHelpers(children, definition.helpers || [], "helpers", activeBlocks, analysisById,
 				request.sourceFile || request.sourcePath || "");
 			addNodes(children, definition.nodes || [], "nodes", activeBlocks, analysisById);
