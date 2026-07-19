@@ -777,7 +777,11 @@
 					tag: "OnMount"
 				},
 				properties: {
-					id: { type: "string" }
+					id: { type: "string" },
+					once: {
+						type: "boolean",
+						description: "Run this lifecycle chain once per browser runtime."
+					}
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {

@@ -248,6 +248,14 @@ assertTrue(bindingType && bindingType.type === "object" && bindingType.editor &&
 var frontendCatalogServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/frontend-catalog-service.js"), "UTF-8"));
 var isolatedFrontendCatalogService = eval(frontendCatalogServiceSource);
+var onMountDescriptor = isolatedFrontendCatalogService.frontendCreateDescriptorsForSettings("svelte", {}, {
+	projectDir: function () { return null; }
+}).filter(function (descriptor) {
+	return descriptor.id === "frontbuilder.svelte.onMount";
+})[0];
+assertTrue(onMountDescriptor && onMountDescriptor.properties.once &&
+	onMountDescriptor.properties.once.type === "boolean",
+	"frontend catalog did not expose the persistent OnMount once property");
 var requestableBindingSchema = {
 	type: "object",
 	properties: {
