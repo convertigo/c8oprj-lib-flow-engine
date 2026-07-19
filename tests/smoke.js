@@ -214,10 +214,12 @@ assertTrue(portableTrimCatalog && portableTrimCatalog.targets.join(",") === "bac
 var portableCatalogBlocks = catalog.blocks.filter(function (block) {
 	return block.targets && block.targets.indexOf("backend") !== -1 && block.targets.indexOf("frontend") !== -1;
 });
-assertTrue(portableCatalogBlocks.length === 17 && portableCatalogBlocks.every(function (block) {
+var portableFixtureCount = JSON.parse(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "portable-axiom-fixtures.json"), "UTF-8"))).length;
+assertTrue(portableCatalogBlocks.length === portableFixtureCount && portableCatalogBlocks.every(function (block) {
 	var relativeFile = block.implementations && block.implementations.frontend && block.implementations.frontend.file;
 	return relativeFile && new java.io.File(new java.io.File(block.file).getParentFile(), relativeFile).isFile();
-}), "portable catalog blocks did not expose 17 existing browser implementation files");
+}), "portable catalog blocks did not expose every fixture-backed browser implementation file");
 assertTrue(legacyBackendCatalog.targets.join(",") === "backend" &&
 	legacyBackendCatalog.effects.join(",") === "unspecified",
 	"legacy backend blocks did not receive compatible target/effect defaults");
@@ -1315,6 +1317,53 @@ assertTrue(createdFlowBackedBlock.ok === true &&
 	createdFlowBackedBlock.block && createdFlowBackedBlock.block.blockId === "smoke.flowBacked" &&
 	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.block.js").isFile(),
 	"blockCreate did not write the canonical FlowScript block code file");
+var frontendOnlyCodeSource = [
+	"const _meta = {",
+	"  \"version\": 1,",
+	"  \"description\": \"Frontend-only portable smoke block.\",",
+	"  \"targets\": [\"frontend\"],",
+	"  \"effects\": [],",
+	"  \"implementations\": { \"frontend\": { \"runtime\": \"browser\", \"file\": \"normalize.browser.js\" } },",
+	"  \"properties\": { \"value\": { \"kind\": \"value\", \"type\": \"string\" } },",
+	"  \"outputs\": { \"out\": { \"type\": \"string\" } },",
+	"  \"mock\": true,",
+	"  \"todo\": \"Implement browser target.\",",
+	"  \"tags\": [\"mock\", \"todo\"]",
+	"}",
+	"",
+	"function normalize({ input }) { return input.value }",
+	""
+].join("\n");
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({ name: "smoke.normalize", code: frontendOnlyCodeSource }))).ok === true,
+	"blockCodeSet did not create the canonical frontend-only block contract");
+var frontendWrite = JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.normalize",
+	target: "frontend",
+	code: "function (input) { return String(input.value || '').trim() }",
+	finalize: true
+})));
+assertTrue(frontendWrite.ok === true && frontendWrite.target === "frontend" && frontendWrite.finalized === true,
+	"blockCodeSet did not write and finalize the browser implementation: " + JSON.stringify(frontendWrite));
+var frontendRead = JSON.parse(engine.blockCodeGet(JSON.stringify({ name: "smoke.normalize", target: "frontend" })));
+assertTrue(frontendRead.ok === true && frontendRead.code.indexOf("trim()") !== -1 && frontendRead.revision === frontendWrite.revision,
+	"blockCodeGet did not return browser code and its revision");
+var frontendInvalid = JSON.parse(engine.blockCodeCheck(JSON.stringify({
+	name: "smoke.normalize", target: "frontend", code: "function () { return Packages.java.lang.System }"
+})));
+assertTrue(frontendInvalid.ok === false && frontendInvalid.diagnostics[0].code === "FRONTEND_BLOCK_RUNTIME_FORBIDDEN",
+	"blockCodeCheck did not reject JVM APIs in browser code");
+var frontendPatch = JSON.parse(engine.blockCodePatch(JSON.stringify({
+	name: "smoke.normalize",
+	target: "frontend",
+	revision: frontendRead.revision,
+	code: "function (input) { return String(input.value || '').trim().toLowerCase() }"
+})));
+assertTrue(frontendPatch.ok === true && frontendPatch.oldRevision === frontendRead.revision,
+	"blockCodePatch did not update revision-checked browser code");
+var finalizedFrontendDescriptor = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/normalize.block.js"), "UTF-8"));
+assertTrue(finalizedFrontendDescriptor.indexOf('"mock": true') === -1 && finalizedFrontendDescriptor.indexOf('"mock"') === -1,
+	"finalizing a frontend-only block did not remove mock metadata");
 var missingBlockInputSource = [
 	"const _meta = {",
 	"\t\"description\": \"FlowScript block with an intentionally missing property declaration.\",",

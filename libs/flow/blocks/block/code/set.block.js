@@ -21,6 +21,26 @@ const _meta = {
       "type": "string",
       "description": "FlowScript implementation code. Use input.* for block properties and return value for the block result. An optional block name({ input }) { ... } envelope is accepted."
     },
+    "target": {
+      "label": "target",
+      "kind": "text",
+      "type": "string",
+      "default": "backend",
+      "description": "Implementation target: backend or frontend. Frontend code is one browser-compatible function expression."
+    },
+    "revision": {
+      "label": "revision",
+      "kind": "text",
+      "type": "string",
+      "description": "Optional revision returned by block.code.get for guarded frontend writes."
+    },
+    "finalize": {
+      "label": "finalize",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Remove mock metadata after writing a complete frontend-only implementation."
+    },
     "descriptor": {
       "label": "descriptor",
       "kind": "literal",
@@ -254,6 +274,9 @@ const _meta = {
 			var request = descriptorFrom(name, props);
 			request.code = String(code);
 			request.projectDir = props.projectDir;
+			request.target = props.target || "backend";
+			request.revision = props.revision;
+			request.finalize = bool(props.finalize);
 			request.dry = bool(props.dry) || bool(props.dryRun);
 			request.overwrite = bool(props.overwrite);
 			if (props.hooksSource !== undefined && props.hooksSource !== null) {

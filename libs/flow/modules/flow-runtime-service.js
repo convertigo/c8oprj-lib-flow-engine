@@ -652,7 +652,14 @@
 			ctx.blockCodeSet = function (name, args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return setProjectBlockCode(loadBlocks(), name, args);
+					args.name = name;
+					return blockCode.set(loadBlocks(), args);
+				});
+			};
+			ctx.blockCodeCheck = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return blockCode.check(loadBlocks(), args);
 				});
 			};
 			ctx.blockCodeGet = function (args) {

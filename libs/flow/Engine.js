@@ -2900,11 +2900,227 @@
 	}
 
 	function blockCodePatchRequest(blocks, request) {
+		if (blockCodeTarget(request) === "frontend") {
+			return frontendBlockCodePatchRequest(blocks, request);
+		}
 		return flowCodeService().blockCodePatchRequest(blocks, request, flowCodeServiceEnv());
 	}
 
 	function blockCodeGetRequest(blocks, request) {
+		if (blockCodeTarget(request) === "frontend") {
+			return frontendBlockCodeGetRequest(blocks, request);
+		}
 		return flowCodeService().blockCodeGetRequest(blocks, request, flowCodeServiceEnv());
+	}
+
+	function blockCodeTarget(request) {
+		request = request || {};
+		var target = String(request.target || request.implementationTarget || request.runtimeTarget || "backend").toLowerCase();
+		return target === "browser" ? "frontend" : target;
+	}
+
+	function frontendBlockCodeError(code, message, hint) {
+		return { code: code, message: message, hint: hint || "" };
+	}
+
+	function frontendBlockCodeInfo(blocks, request) {
+		request = request || {};
+		var name = String(request.name || request.block || "").trim();
+		if (!name) {
+			raise("MISSING_BLOCK_NAME", "Frontend block code requires name.");
+		}
+		// The canonical project source is authoritative for authoring. A catalog
+		// snapshot may remain hot until the outer Rhino request completes.
+		var descriptorFile = projectBlockCodeFile(name);
+		var block;
+		if (descriptorFile.isFile()) {
+			var extracted = extractFlowScriptBlockMeta(String(FileUtils.readFileToString(descriptorFile, "UTF-8")));
+			block = { origin: "project", codeFile: String(descriptorFile.getAbsolutePath()), descriptor: extracted.meta || {} };
+		} else {
+			block = getBlockSource(blocks, name, { detail: "full", includeMeta: true });
+		}
+		if (block.origin !== "project") {
+			raise("BLOCK_NOT_PROJECT_EDITABLE", "Block " + name + " is not project-local.", null,
+				"Duplicate the block into the target project before editing its browser implementation.");
+		}
+		var descriptor = normalizeTree(block.descriptor || {});
+		var targets = descriptor.targets || ["backend"];
+		var frontend = descriptor.implementations && descriptor.implementations.frontend || {};
+		if (targets.indexOf("frontend") === -1 || !frontend.file) {
+			raise("BLOCK_NOT_AVAILABLE_ON_TARGET", "Block " + name + " has no frontend implementation.", null,
+				"Create it with flow-block-mock targets:[\"frontend\"] or add a declared frontend implementation first.");
+		}
+		descriptorFile = block.codeFile ? new File(String(block.codeFile)) : descriptorFile;
+		var directory = descriptorFile.getParentFile().getCanonicalFile();
+		var file = new File(directory, String(frontend.file)).getCanonicalFile();
+		var directoryPath = String(directory.getCanonicalPath());
+		var filePath = String(file.getCanonicalPath());
+		if (filePath !== directoryPath && filePath.indexOf(directoryPath + File.separator) !== 0) {
+			raise("FRONTEND_BLOCK_FILE_OUTSIDE_PROJECT", "Frontend implementation escapes its block directory: " + frontend.file);
+		}
+		return { name: name, block: block, descriptor: descriptor, targets: targets, frontend: frontend, file: file };
+	}
+
+	function frontendBlockCodeDiagnostics(info, source) {
+		var diagnostics = [];
+		if (info.descriptor.mock === true || (info.descriptor.tags || []).indexOf("mock") !== -1) {
+			diagnostics.push({
+				severity: "warning",
+				code: "FRONTEND_BLOCK_MOCK_ACTIVE",
+				message: "Frontend block " + info.name + " is still marked as a mock.",
+				hint: "After replacing the placeholder, call code-set with target:\"frontend\", finalize:true."
+			});
+		}
+		if (/TODO:\s*replace this explicit frontend mock/i.test(String(source || ""))) {
+			diagnostics.push({
+				severity: "warning",
+				code: "FRONTEND_BLOCK_PLACEHOLDER_CODE",
+				message: "Frontend block " + info.name + " still contains generated placeholder code.",
+				hint: "Replace the TODO function before finalizing the block."
+			});
+		}
+		return diagnostics;
+	}
+
+	function validateFrontendBlockCode(info, code) {
+		code = String(code || "").trim();
+		if (!code) {
+			return { ok: false, diagnostics: [{ severity: "error", code: "MISSING_FRONTEND_BLOCK_CODE", message: "Frontend implementation code is required." }] };
+		}
+		if (/\b(?:Packages|java\.|javax\.|require\s*\(|process\.|Buffer\b)/.test(code)) {
+			return { ok: false, diagnostics: [{
+				severity: "error",
+				code: "FRONTEND_BLOCK_RUNTIME_FORBIDDEN",
+				message: "Frontend block code cannot use JVM or Node.js APIs.",
+				hint: "Use a browser-compatible function of one JSON input object."
+			}] };
+		}
+		try {
+			var implementation = evalCompiledSource("(" + code + "\n)", "frontend-block:" + info.name, sha256Hex(code));
+			if (typeof implementation !== "function") {
+				return { ok: false, diagnostics: [{ severity: "error", code: "FRONTEND_BLOCK_FUNCTION_REQUIRED", message: "Frontend implementation must evaluate to one function." }] };
+			}
+		} catch (e) {
+			return { ok: false, diagnostics: [{ severity: "error", code: "FRONTEND_BLOCK_SYNTAX_ERROR", message: String(e && e.message || e) }] };
+		}
+		return { ok: true, diagnostics: frontendBlockCodeDiagnostics(info, code) };
+	}
+
+	function finalizeFrontendBlockCode(info) {
+		if (info.targets.length !== 1 || info.targets[0] !== "frontend") {
+			return false;
+		}
+		var descriptorFile = info.block.codeFile ? new File(String(info.block.codeFile)) : projectBlockCodeFile(info.name);
+		var source = String(FileUtils.readFileToString(descriptorFile, "UTF-8"));
+		var extracted = extractFlowScriptBlockMeta(source);
+		var meta = normalizeTree(extracted.meta || {});
+		delete meta.mock;
+		delete meta.todo;
+		meta.tags = (meta.tags || []).filter(function (tag) {
+			return String(tag).toLowerCase() !== "mock" && String(tag).toLowerCase() !== "todo";
+		});
+		FileUtils.writeStringToFile(descriptorFile,
+			"const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + String(extracted.code || "").trim() + "\n", "UTF-8");
+		return true;
+	}
+
+	function frontendBlockCodeGetRequest(blocks, request) {
+		try {
+			var info = frontendBlockCodeInfo(blocks, request);
+			if (!info.file.isFile()) {
+				return { ok: false, name: info.name, target: "frontend", error: frontendBlockCodeError("FRONTEND_BLOCK_FILE_MISSING",
+					"Missing frontend implementation: " + info.frontend.file,
+					"Create it with code-set target:\"frontend\"."), warnings: [] };
+			}
+			var code = String(FileUtils.readFileToString(info.file, "UTF-8"));
+			var diagnostics = frontendBlockCodeDiagnostics(info, code);
+			return { ok: true, name: info.name, block: info.name, target: "frontend", runtime: "browser", format: "browser-function",
+				code: code, revision: sha256Hex(code), codeFile: String(info.file.getAbsolutePath()), descriptor: info.descriptor,
+				diagnostics: diagnostics, warnings: diagnostics };
+		} catch (e) {
+			return { ok: false, name: String(request && (request.name || request.block) || ""), target: "frontend",
+				error: frontendBlockCodeError(e.code || "FRONTEND_BLOCK_CODE_GET_FAILED", e.message || String(e), e.hint), warnings: [] };
+		}
+	}
+
+	function frontendBlockCodeCheckRequest(blocks, request) {
+		try {
+			var info = frontendBlockCodeInfo(blocks, request);
+			var code = request && request.code;
+			if ((code === undefined || code === null) && info.file.isFile()) code = FileUtils.readFileToString(info.file, "UTF-8");
+			var validation = validateFrontendBlockCode(info, code);
+			return { ok: validation.ok, name: info.name, block: info.name, target: "frontend", runtime: "browser",
+				revision: validation.ok ? sha256Hex(String(code)) : "", diagnostics: validation.diagnostics,
+				warnings: validation.diagnostics.filter(function (item) { return item.severity === "warning"; }) };
+		} catch (e) {
+			return { ok: false, target: "frontend", error: frontendBlockCodeError(e.code || "FRONTEND_BLOCK_CODE_CHECK_FAILED", e.message || String(e), e.hint), warnings: [] };
+		}
+	}
+
+	function frontendBlockCodeSetRequest(blocks, request) {
+		request = request || {};
+		try {
+			var info = frontendBlockCodeInfo(blocks, request);
+			var code = String(request.code || "");
+			var validation = validateFrontendBlockCode(info, code);
+			if (!validation.ok) return { ok: false, name: info.name, target: "frontend", diagnostics: validation.diagnostics, warnings: [] };
+			var expected = request.revision || request.baseRevision || request.baseHash;
+			var previous = info.file.isFile() ? String(FileUtils.readFileToString(info.file, "UTF-8")) : "";
+			var oldRevision = previous ? sha256Hex(previous) : "";
+			if (expected && String(expected) !== oldRevision) {
+				return { ok: false, name: info.name, target: "frontend", revision: oldRevision,
+					error: frontendBlockCodeError("BLOCK_CODE_REVISION_MISMATCH", "Frontend block changed since it was read.", "Call code-get again and retry with its revision."), warnings: [] };
+			}
+			var dry = request.dry === true || request.dryRun === true;
+			var finalizeRequested = request.finalize === true || String(request.finalize || "") === "true";
+			var finalized = false;
+			if (!dry) {
+				info.file.getParentFile().mkdirs();
+				FileUtils.writeStringToFile(info.file, code.replace(/\s+$/g, "") + "\n", "UTF-8");
+				if (finalizeRequested) finalized = finalizeFrontendBlockCode(info);
+				invalidateBlockCatalogCaches();
+			}
+			var warnings = validation.diagnostics.filter(function (item) { return item.severity === "warning"; });
+			if (finalized) {
+				warnings = warnings.filter(function (item) {
+					return item.code !== "FRONTEND_BLOCK_MOCK_ACTIVE" && item.code !== "FRONTEND_BLOCK_PLACEHOLDER_CODE";
+				});
+			}
+			if (finalizeRequested && !dry && !finalized) {
+				warnings.push({ severity: "warning", code: "FRONTEND_BLOCK_PARTIAL_FINALIZE",
+					message: "The block also targets another runtime, so its shared mock marker was preserved.",
+					hint: "Implement every target before removing mock:true from the canonical block contract." });
+			}
+			return { ok: true, name: info.name, block: info.name, target: "frontend", runtime: "browser", written: !dry,
+				dry: dry, finalized: finalized, oldRevision: oldRevision,
+				revision: sha256Hex(code.replace(/\s+$/g, "") + "\n"), codeFile: String(info.file.getAbsolutePath()), diagnostics: validation.diagnostics, warnings: warnings };
+		} catch (e) {
+			return { ok: false, target: "frontend", error: frontendBlockCodeError(e.code || "FRONTEND_BLOCK_CODE_SET_FAILED", e.message || String(e), e.hint), warnings: [] };
+		}
+	}
+
+	function frontendBlockCodePatchRequest(blocks, request) {
+		var current = frontendBlockCodeGetRequest(blocks, request);
+		if (!current.ok) return current;
+		var expected = request.revision || request.baseRevision || request.baseHash;
+		if (expected && String(expected) !== current.revision) {
+			return { ok: false, name: current.name, target: "frontend", revision: current.revision,
+				error: frontendBlockCodeError("BLOCK_CODE_REVISION_MISMATCH", "Frontend block changed since it was read.", "Call code-get again and regenerate the patch."), warnings: [] };
+		}
+		var code = request.code !== undefined && request.code !== null ? String(request.code)
+			: applyUnifiedPatchText(current.code, request.codepatch || request.patch || request.unifiedDiff || request.diff || "").content;
+		return frontendBlockCodeSetRequest(blocks, Object.assign({}, request, { code: code, revision: current.revision }));
+	}
+
+	function blockCodeSetRequest(blocks, request) {
+		if (blockCodeTarget(request) === "frontend") return frontendBlockCodeSetRequest(blocks, request);
+		return setProjectBlockCode(blocks, request.name || request.block, request);
+	}
+
+	function blockCodeCheckRequest(blocks, request) {
+		if (blockCodeTarget(request) === "frontend") return frontendBlockCodeCheckRequest(blocks, request);
+		return { ok: false, error: frontendBlockCodeError("BLOCK_CHECK_TARGET_REQUIRED", "Block code-check currently requires target:\"frontend\".",
+			"Backend FlowScript blocks are validated by code-set dry:true or by an executable Flow."), warnings: [] };
 	}
 
 	function flowCodeRgExtract(code, matcher, context, limit) {
@@ -2954,6 +3170,8 @@
 	function blockCodeApi() {
 		return {
 			get: blockCodeGetRequest,
+			set: blockCodeSetRequest,
+			check: blockCodeCheckRequest,
 			patch: blockCodePatchRequest,
 			rg: blockCodeRgRequest
 		};
@@ -7637,7 +7855,13 @@
 
 		blockCodeSet: function (requestJson) {
 			return projectCall("blockCodeSet", requestJson, function (request) {
-				return setProjectBlockCode(loadBlocks(), request.name || request.block, request);
+				return blockCodeSetRequest(loadBlocks(), request);
+			});
+		},
+
+		blockCodeCheck: function (requestJson) {
+			return projectCall("blockCodeCheck", requestJson, function (request) {
+				return blockCodeCheckRequest(loadBlocks(), request);
 			});
 		},
 

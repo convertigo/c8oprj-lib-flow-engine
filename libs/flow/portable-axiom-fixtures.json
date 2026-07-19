@@ -15,5 +15,15 @@
   { "block": "json.safeParse", "input": { "text": "[1,2]" }, "expected": { "ok": true, "value": [1, 2], "error": "" } },
   { "block": "json.stringify", "input": { "value": { "a": 1 }, "pretty": false }, "expected": "{\"a\":1}" },
   { "block": "json.select", "input": { "source": { "rows": [{ "name": "first" }] }, "path": "rows[0].name" }, "expected": "first" },
-  { "block": "json.items", "input": { "source": { "items": [1, null, 2] }, "path": "items", "includeScalar": true }, "expected": [1, 2] }
+  { "block": "json.items", "input": { "source": { "items": [1, null, 2] }, "path": "items", "includeScalar": true }, "expected": [1, 2] },
+  { "block": "value.toText", "input": { "value": 42 }, "expected": "42" },
+  { "block": "value.toNumber", "input": { "value": "12.5", "fallback": 0 }, "expected": 12.5 },
+  { "block": "value.toBoolean", "input": { "value": "yes" }, "expected": true },
+  { "block": "compare.equal", "input": { "left": "1", "right": 1 }, "expected": false },
+  { "block": "compare.notEqual", "input": { "left": "1", "right": 1 }, "expected": true },
+  { "block": "compare.greater", "input": { "left": 3, "right": 2 }, "expected": true },
+  { "block": "compare.less", "input": { "left": "a", "right": "b" }, "expected": true },
+  { "block": "list.first", "input": { "items": ["a", "b"] }, "expected": "a" },
+  { "block": "list.last", "input": { "items": ["a", "b"] }, "expected": "b" },
+  { "block": "list.count", "input": { "items": ["a", "b"] }, "expected": 2 }
 ]

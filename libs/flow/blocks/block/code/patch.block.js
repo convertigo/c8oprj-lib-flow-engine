@@ -22,6 +22,20 @@ const _meta = {
       "type": "string",
       "description": "Revision returned by block.code.get."
     },
+    "target": {
+      "label": "target",
+      "kind": "text",
+      "type": "string",
+      "default": "backend",
+      "description": "Implementation target: backend or frontend."
+    },
+    "finalize": {
+      "label": "finalize",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Remove mock metadata after patching a complete frontend-only implementation."
+    },
     "code": {
       "label": "code",
       "kind": "text",

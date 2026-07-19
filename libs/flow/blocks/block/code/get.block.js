@@ -15,6 +15,13 @@ const _meta = {
       "type": "string",
       "description": "Flow block name."
     },
+    "target": {
+      "label": "target",
+      "kind": "text",
+      "type": "string",
+      "default": "backend",
+      "description": "Implementation target: backend or frontend."
+    },
     "includeSources": {
       "label": "includeSources",
       "kind": "literal",
