@@ -449,17 +449,19 @@
 				if (!root) {
 					throw e;
 				}
+				var embeddedDiagnostics = flowSvelteLiteBindingDiagnostics(root);
+				embeddedDiagnostics.push({
+					level: "warning",
+					code: "FRONTEND_EMBEDDED_PROJECTION",
+					message: "Using the embedded Flow Svelte projection because the optional Node authoring service is unavailable."
+				});
 				described = {
 					model: {
 						version: 1,
 						app: { id: root.id, title: root.label }
 					},
 					tree: { children: [root] },
-					diagnostics: [{
-						level: "warning",
-						code: "FRONTEND_EMBEDDED_PROJECTION",
-						message: "Using the embedded Flow Svelte projection because the optional Node authoring service is unavailable."
-					}]
+					diagnostics: embeddedDiagnostics
 				};
 			}
 			if (!described || !described.model) {
@@ -876,6 +878,7 @@
 	function flowSvelteLiteSlotName(tag) {
 		var slots = {
 			Structure: "structure",
+			Children: "children",
 			Events: "events",
 			Actions: "actions",
 			Variables: "variables",
@@ -1029,16 +1032,148 @@
 
 	function flowSvelteLiteParseAttributes(raw) {
 		var props = {};
-		var re = /([A-Za-z_][A-Za-z0-9_:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|\{([^}]*)\}|([^\s>]+))/g;
-		var match;
-		while ((match = re.exec(String(raw || ""))) !== null) {
-			props[match[1]] = match[2] !== undefined ? match[2]
-				: match[3] !== undefined ? match[3]
-				: match[4] !== undefined ? match[4]
-				: match[5] !== undefined ? match[5]
-				: "";
+		var text = String(raw || "");
+		var i = 0;
+		while (i < text.length) {
+			while (i < text.length && /\s/.test(text.charAt(i))) i++;
+			var nameStart = i;
+			while (i < text.length && /[A-Za-z0-9_:-]/.test(text.charAt(i))) i++;
+			var name = text.substring(nameStart, i);
+			if (!name || !/^[A-Za-z_]/.test(name)) {
+				i++;
+				continue;
+			}
+			while (i < text.length && /\s/.test(text.charAt(i))) i++;
+			if (text.charAt(i) !== "=") {
+				props[name] = true;
+				continue;
+			}
+			i++;
+			while (i < text.length && /\s/.test(text.charAt(i))) i++;
+			var start = i;
+			var quote = text.charAt(i);
+			if (quote === "\"" || quote === "'") {
+				i++;
+				start = i;
+				while (i < text.length && text.charAt(i) !== quote) {
+					if (text.charAt(i) === "\\") i++;
+					i++;
+				}
+				props[name] = text.substring(start, i);
+				i++;
+				continue;
+			}
+			if (text.charAt(i) === "{") {
+				var end = flowSvelteLiteBalancedEnd(text, i);
+				var expression = text.substring(i + 1, end < 0 ? text.length : end);
+				props[name] = flowSvelteLiteExpressionValue(expression);
+				i = end < 0 ? text.length : end + 1;
+				continue;
+			}
+			while (i < text.length && !/\s/.test(text.charAt(i))) i++;
+			props[name] = text.substring(start, i);
 		}
 		return props;
+	}
+
+	function flowSvelteLiteBalancedEnd(text, start) {
+		var depth = 0;
+		var quote = "";
+		for (var i = start; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === "\\") i++;
+				else if (ch === quote) quote = "";
+				continue;
+			}
+			if (ch === "\"" || ch === "'") quote = ch;
+			else if (ch === "{") depth++;
+			else if (ch === "}" && --depth === 0) return i;
+		}
+		return -1;
+	}
+
+	function flowSvelteLiteExpressionValue(expression) {
+		var value = String(expression || "").trim();
+		if (value.charAt(0) !== "{") return value;
+		try {
+			return JSON.parse(value);
+		} catch (e) {
+			try {
+				var json = value
+					.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+					.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, function (_, content) {
+						return JSON.stringify(content.replace(/\\'/g, "'") );
+					});
+				return JSON.parse(json);
+			} catch (ignored) {
+				return value;
+			}
+		}
+	}
+
+	function flowSvelteLitePropertyDefinitions(kind) {
+		var binding = { label: "Source", kind: "binding", type: "object" };
+		if (kind === "text" || kind === "image" || kind === "table" || kind === "json" || kind === "each") {
+			return { source: binding };
+		}
+		if (kind === "if") return { test: { label: "Condition", kind: "binding", type: "object" } };
+		if (kind === "setValue") return { value: { label: "Value", kind: "binding", type: "object" } };
+		return {};
+	}
+
+	function flowSvelteLiteBindingPath(path) {
+		if (!path || Object.prototype.toString.call(path) !== "[object Array]") return false;
+		return path.every(function (step) {
+			return step && typeof step === "object" &&
+				((step.kind === "property" && typeof step.name === "string" && step.name !== "") ||
+				 (step.kind === "index" && typeof step.index === "number"));
+		});
+	}
+
+	function flowSvelteLiteIsBinding(value) {
+		if (!value || typeof value !== "object" || value.splice) return false;
+		if (value.mode === "literal") return Object.prototype.hasOwnProperty.call(value, "value");
+		if (value.mode === "expression") return typeof value.expression === "string";
+		if (value.mode !== "source" || !value.source || typeof value.source !== "object" || !flowSvelteLiteBindingPath(value.path)) return false;
+		var source = value.source;
+		if (source.category === "requestable" || source.category === "action") return typeof source.actionId === "string" && source.actionId !== "";
+		if (source.category === "fullsync") return typeof source.actionId === "string" && source.actionId !== "" && typeof source.operation === "string" && source.operation !== "";
+		return source.category === "iteration" && typeof source.scopeId === "string" && source.scopeId !== "" && (source.value === "item" || source.value === "index");
+	}
+
+	function flowSvelteLiteBindingSuggestion(value) {
+		if (!value || value.mode !== "action" || typeof value.actionId !== "string") return null;
+		var path = typeof value.path === "string" && value.path !== "" ? value.path.split(".").map(function (name) {
+			return { kind: "property", name: name };
+		}) : [];
+		return { mode: "source", source: { category: "requestable", actionId: value.actionId }, path: path };
+	}
+
+	function flowSvelteLiteBindingDiagnostics(root) {
+		var diagnostics = [];
+		function visit(node) {
+			var definitions = node && node.propertyDefinitions || {};
+			Object.keys(definitions).forEach(function (name) {
+				var definition = definitions[name] || {};
+				var value = node.props && node.props[name];
+				if ((definition.kind === "binding" || definition.type === "binding") && value !== undefined && value !== "" && !flowSvelteLiteIsBinding(value)) {
+					var diagnostic = {
+						level: "error",
+						severity: "error",
+						code: "FRONTEND_BINDING_INVALID",
+						message: "Property " + name + " on " + String(node.id || node.tag || "node") + " requires a structured FlowValueBinding.",
+						path: String(node.sourceMutationPath || "") + ".props." + name
+					};
+					var suggestion = flowSvelteLiteBindingSuggestion(value);
+					if (suggestion) diagnostic.suggestedBinding = suggestion;
+					diagnostics.push(diagnostic);
+				}
+			});
+			(node && node.children || []).forEach(visit);
+		}
+		visit(root);
+		return diagnostics;
 	}
 
 	function flowSvelteLiteParseElements(source) {
@@ -1138,6 +1273,7 @@
 			sourceMutationPath: path,
 			sourceWritable: true,
 			props: props,
+			propertyDefinitions: flowSvelteLitePropertyDefinitions(kind),
 			traits: flowSvelteLiteTraits(kind),
 			slots: slotDefinitions,
 			children: slotChildren
@@ -5404,6 +5540,10 @@
 
 
 		return {
+			embeddedFlowSvelteDocument: function (sourcePath, source) {
+				var root = flowSvelteLiteComponentRoot(sourcePath, source);
+				return { root: root, diagnostics: root ? flowSvelteLiteBindingDiagnostics(root) : [] };
+			},
 			slotDefinitions: slotDefinitions,
 			activeSlots: activeSlots,
 			toYamlSource: toYamlSource,
@@ -5423,6 +5563,10 @@
 	}
 
 	return {
+		embeddedFlowSvelteDocument: function (sourcePath, source, env) {
+			return create(env || { normalizeTree: function (value) { return value; } })
+				.embeddedFlowSvelteDocument(sourcePath, source);
+		},
 		slotDefinitions: function (catalog, env) {
 			return create(env).slotDefinitions(catalog);
 		},

@@ -57,6 +57,26 @@ assertTrue(isolatedRequestableService.runtimeSampleError({
 assertTrue(isolatedRequestableService.runtimeSampleError({ rows: [], total_rows: 0 }) === "",
 	"Requestable schema learning rejected a valid empty read response");
 
+var flowTreeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8"));
+var isolatedFlowTreeService = eval(flowTreeServiceSource);
+var embeddedInvalidBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+	'<FlowComponent id="smoke" label="Smoke">',
+	'  <Structure><PageShell id="page"><Children><ForEach id="rows" source={{ mode: "action", actionId: "load", path: "news" }} /></Children></PageShell></Structure>',
+	'</FlowComponent>'
+].join("\n"));
+assertTrue(embeddedInvalidBinding.diagnostics.length === 1 &&
+	embeddedInvalidBinding.diagnostics[0].code === "FRONTEND_BINDING_INVALID" &&
+	embeddedInvalidBinding.diagnostics[0].suggestedBinding.source.actionId === "load",
+	"Embedded Flow Svelte projection did not reject and migrate an ad hoc action binding");
+var embeddedCanonicalBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+	'<FlowComponent id="smoke" label="Smoke">',
+	'  <Structure><PageShell id="page"><Children><ForEach id="rows" source={{ mode: "source", source: { category: "requestable", actionId: "load" }, path: [{ kind: "property", name: "news" }] }} /></Children></PageShell></Structure>',
+	'</FlowComponent>'
+].join("\n"));
+assertTrue(embeddedCanonicalBinding.diagnostics.length === 0,
+	"Embedded Flow Svelte projection rejected a canonical structured binding");
+
 var flowCodeServiceFile = new java.io.File(engineDir, "modules/flow-code-service.js");
 var flowCodeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowCodeServiceFile, "UTF-8"));
 var isolatedFlowCodeService = eval(flowCodeServiceSource);
