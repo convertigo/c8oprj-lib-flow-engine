@@ -10,6 +10,12 @@ const _meta = {
     "top"
   ],
   "description": "Returns a slice of an array, typically the first N items.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": {
+    "backend": { "runtime": "rhino" },
+    "frontend": { "runtime": "browser", "operation": "list.take", "version": 1 }
+  },
   "outputs": {
     "out": {
       "type": "array",

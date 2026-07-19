@@ -153,6 +153,15 @@
 		if (descriptor.implementation) {
 			out.implementation = descriptor.implementation;
 		}
+		if (descriptor.targets && descriptor.targets.length) {
+			out.targets = descriptor.targets;
+		}
+		if (descriptor.effects) {
+			out.effects = descriptor.effects;
+		}
+		if (descriptor.implementations) {
+			out.implementations = descriptor.implementations;
+		}
 		if (descriptor["private"] === true) {
 			out["private"] = true;
 		}

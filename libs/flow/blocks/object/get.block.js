@@ -2,6 +2,12 @@ const _meta = {
   "version": 1,
   "icon": "mdi:key-arrow-right",
   "description": "Reads one value from an object by key or nested path.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": {
+    "backend": { "runtime": "rhino" },
+    "frontend": { "runtime": "browser", "operation": "object.get", "version": 1 }
+  },
   "properties": {
     "source": {
       "label": "source",

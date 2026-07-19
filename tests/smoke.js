@@ -199,6 +199,21 @@ print(JSON.stringify(catalog));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "requestable.call";
 }), "catalog did not expose requestable.call");
+var portableTrimCatalog = catalog.blocks.filter(function (block) {
+	return block.blockId === "text.trim";
+})[0];
+var legacyBackendCatalog = catalog.blocks.filter(function (block) {
+	return block.blockId === "requestable.call";
+})[0];
+assertTrue(portableTrimCatalog && portableTrimCatalog.targets.join(",") === "backend,frontend" &&
+	portableTrimCatalog.effects.length === 0 &&
+	portableTrimCatalog.implementations.backend.runtime === "rhino" &&
+	portableTrimCatalog.implementations.frontend.runtime === "browser" &&
+	portableTrimCatalog.implementations.frontend.operation === "text.trim",
+	"portable block metadata did not expose both target implementations");
+assertTrue(legacyBackendCatalog.targets.join(",") === "backend" &&
+	legacyBackendCatalog.effects.join(",") === "unspecified",
+	"legacy backend blocks did not receive compatible target/effect defaults");
 var compiledScriptsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.compiledScripts;
 assertTrue(compiledScriptsAfterCatalog.size > 0 && compiledScriptsAfterCatalog.misses > 0,
 	"compiled script cache did not compile Rhino scripts");
@@ -473,6 +488,39 @@ var referencedBlockFlowScriptSource = [
 	"}",
 	""
 ].join("\n");
+var portableTrimFlowScriptSource = [
+	"function PortableTrimSmoke({ result }) {",
+	"\tconst value = text.trim({ text: \"  portable  \" })",
+	"\tresult.value = value",
+	"\treturn result",
+	"}",
+	""
+].join("\n");
+var portableTrimValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "PortableTrimSmoke",
+	code: portableTrimFlowScriptSource,
+	target: "backend"
+})));
+assertTrue(portableTrimValidation.ok === true, "portable text.trim did not validate for backend");
+var portableTrimRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: portableTrimFlowScriptSource,
+	includeTrace: false
+})));
+assertTrue(portableTrimRun.result.value === "portable", "portable text.trim Rhino implementation returned the wrong value");
+var frontendTargetValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+	name: "BackendOnlyTargetSmoke",
+	code: [
+		"function BackendOnlyTargetSmoke({ result }) {",
+		"\tresult.value = requestable.call({ requestable: \".Get\" })",
+		"\treturn result",
+		"}",
+		""
+	].join("\n"),
+	target: "frontend"
+})));
+assertTrue(frontendTargetValidation.ok === false && frontendTargetValidation.diagnostics.some(function (diagnostic) {
+	return diagnostic.code === "BLOCK_NOT_AVAILABLE_ON_TARGET" && diagnostic.block === "requestable.call";
+}), "frontend validation did not reject a backend-only block with a structured diagnostic");
 var referencedBlockValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	name: "ReferencedBlockSmoke",
 	code: referencedBlockFlowScriptSource

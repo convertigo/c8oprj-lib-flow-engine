@@ -1471,7 +1471,8 @@
 			}
 			if (parseNaturalFlowScriptCall(rhs)) {
 				var varCall = parseNaturalFlowScriptCall(rhs);
-				if (!isFlowScriptExpressionCallName(resolveFlowScriptName(varCall.name, imports))) {
+				var resolvedCallName = resolveFlowScriptName(varCall.name, imports);
+				if ((blocks && blocks[resolvedCallName]) || !isFlowScriptExpressionCallName(resolvedCallName)) {
 					return buildNaturalFlowScriptCall(blocks, imports, locals, varName, rhs, lineNumber);
 				}
 			}

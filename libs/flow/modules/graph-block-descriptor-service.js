@@ -84,6 +84,40 @@
 		return config;
 	}
 
+	function normalizeStringList(value, fallback) {
+		if (typeof value === "string") {
+			value = value.split(",");
+		}
+		if (Object.prototype.toString.call(value) !== "[object Array]") {
+			value = fallback || [];
+		}
+		var out = [];
+		(value || []).forEach(function (item) {
+			item = String(item || "").trim().toLowerCase();
+			if (item && out.indexOf(item) === -1) {
+				out.push(item);
+			}
+		});
+		return out;
+	}
+
+	function normalizeTargets(definition) {
+		return normalizeStringList(definition.targets, ["backend"]);
+	}
+
+	function normalizeEffects(definition) {
+		return normalizeStringList(definition.effects, definition.effects === undefined ? ["unspecified"] : []);
+	}
+
+	function normalizeImplementations(definition, env) {
+		var implementations = env.normalizeTree(definition.implementations || {});
+		var targets = normalizeTargets(definition);
+		if (targets.indexOf("backend") !== -1 && !implementations.backend) {
+			implementations.backend = implementation(definition, env);
+		}
+		return implementations;
+	}
+
 	function catalog(definition, env) {
 		var props = normalizeProps(definition, env);
 		var slots = normalizeSlots(definition, env);
@@ -106,6 +140,9 @@
 			description: definition.description || "Composite Flow block implemented with child nodes.",
 			longDescription: definition.longDescription || definition.documentation || ""
 		};
+		descriptor.targets = normalizeTargets(definition);
+		descriptor.effects = normalizeEffects(definition);
+		descriptor.implementations = normalizeImplementations(definition, env);
 		if (config.file) {
 			descriptor.implementationFile = config.file;
 		}
@@ -136,6 +173,20 @@
 		definition.name = env.blockLocalName(name) || name;
 		definition.namespace = env.blockNamespace(name);
 		var config = implementation(definition, env);
+		var targets = normalizeTargets(definition);
+		var allowedTargets = { backend: true, frontend: true };
+		targets.forEach(function (target) {
+			if (!allowedTargets[target]) {
+				env.raise("INVALID_BLOCK_TARGET", "Unsupported target \"" + target + "\" for block \"" + name + "\".",
+					null, "Use targets: [\"backend\"], [\"frontend\"] or [\"backend\", \"frontend\"].");
+			}
+		});
+		var implementations = normalizeImplementations(definition, env);
+		targets.forEach(function (target) {
+			if (!implementations[target]) {
+				env.raise("MISSING_TARGET_IMPLEMENTATION", "Block \"" + name + "\" targets " + target + " without a matching implementation.");
+			}
+		});
 		if (config.runtime === "flow" && definition.nodes !== undefined) {
 			env.raise("INVALID_GRAPH_BLOCK", "Flow block \"" + name + "\" must move nodes to implementation.file.",
 				null, "Use canonical *.block.js with _meta plus a FlowScript function for editable Flow block source.");
@@ -182,6 +233,9 @@
 		normalizeSlots: normalizeSlots,
 		normalizeUses: normalizeUses,
 		implementation: implementation,
+		normalizeTargets: normalizeTargets,
+		normalizeEffects: normalizeEffects,
+		normalizeImplementations: normalizeImplementations,
 		catalog: catalog,
 		validateDefinition: validateDefinition,
 		validateSource: validateSource,

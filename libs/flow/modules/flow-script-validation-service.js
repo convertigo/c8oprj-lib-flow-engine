@@ -97,9 +97,10 @@
 		});
 	}
 
-	function validateDefinition(blocks, definition, env) {
+	function validateDefinition(blocks, definition, env, target) {
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = [];
+		target = String(target || "backend").trim().toLowerCase() || "backend";
 		function walk(nodes) {
 			(nodes || []).forEach(function (node) {
 				var name = env.blockName(node);
@@ -152,6 +153,19 @@
 					});
 				} else {
 					var catalog = env.blockCatalog(block);
+					var targets = catalog.targets || ["backend"];
+					if (targets.indexOf(target) === -1) {
+						diagnostics.push({
+							severity: "error",
+							code: "BLOCK_NOT_AVAILABLE_ON_TARGET",
+							line: line,
+							block: name,
+							target: target,
+							availableTargets: targets,
+							message: "Flow block " + name + " is not available on target " + target + ".",
+							next: "Choose a block exposing target " + target + " or move this operation behind an explicit target boundary."
+						});
+					}
 					var props = catalog.props || {};
 					var acceptsAdditionalProperties = catalog.dynamicProperties === true || !!catalog.additionalProperties;
 					var slotMap = {};
@@ -602,7 +616,7 @@
 		}
 		var definition = env.parseFlowScript(blocks, code);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
-		var diagnostics = [].concat(definition.__flowScriptDiagnostics || [], validateDefinition(blocks, definition, env));
+		var diagnostics = [].concat(definition.__flowScriptDiagnostics || [], validateDefinition(blocks, definition, env, request.target || "backend"));
 		inputContractDiagnostics(definition, request).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
