@@ -1,0 +1,19 @@
+[
+  { "block": "text.trim", "input": { "text": "  Flow  " }, "expected": "Flow" },
+  { "block": "text.lines", "input": { "text": " a\r\n\r\n b ", "trim": true, "skipEmpty": true }, "expected": ["a", "b"] },
+  { "block": "list.take", "input": { "items": [0, 1, 2, 3], "offset": 1, "count": 2 }, "expected": [1, 2] },
+  { "block": "list.compact", "input": { "items": [null, "", "a", ["b", null]], "flatten": true, "skipEmptyString": true }, "expected": ["a", "b"] },
+  { "block": "list.pluck", "input": { "items": [{ "meta": { "name": "a" } }, {}, { "meta": { "name": "b" } }], "path": "meta.name", "skipMissing": true }, "expected": ["a", "b"] },
+  { "block": "list.search", "input": { "items": [{ "name": "Alpha" }, { "name": "Beta" }, "alphabet"], "query": "alpha", "limit": 2 }, "expected": [{ "name": "Alpha" }, "alphabet"] },
+  { "block": "object.get", "input": { "source": { "a": { "b": 3 } }, "key": "a.b", "defaultValue": 0 }, "expected": 3 },
+  { "block": "object.keys", "input": { "source": { "a": 1, "b": 2 } }, "expected": ["a", "b"] },
+  { "block": "object.values", "input": { "source": { "a": 1, "b": 2 } }, "expected": [1, 2] },
+  { "block": "object.firstEntry", "input": { "source": { "a": 1, "b": 2 } }, "expected": { "key": "a", "value": 1 } },
+  { "block": "object.merge", "input": { "target": { "a": 1, "b": 1 }, "source": { "b": 2, "c": 3 } }, "expected": { "a": 1, "b": 2, "c": 3 } },
+  { "block": "object.pick", "input": { "source": { "a": 1, "nested": { "b": 2 } }, "keys": ["a", "nested.b"] }, "expected": { "a": 1, "b": 2 } },
+  { "block": "json.parse", "input": { "text": "{\"a\":1}" }, "expected": { "a": 1 } },
+  { "block": "json.safeParse", "input": { "text": "[1,2]" }, "expected": { "ok": true, "value": [1, 2], "error": "" } },
+  { "block": "json.stringify", "input": { "value": { "a": 1 }, "pretty": false }, "expected": "{\"a\":1}" },
+  { "block": "json.select", "input": { "source": { "rows": [{ "name": "first" }] }, "path": "rows[0].name" }, "expected": "first" },
+  { "block": "json.items", "input": { "source": { "items": [1, null, 2] }, "path": "items", "includeScalar": true }, "expected": [1, 2] }
+]

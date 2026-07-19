@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:select-search",
   "description": "Reads a nested value from a JSON object.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "select.browser.js" } },
   "properties": {
     "source": {
       "label": "source object",

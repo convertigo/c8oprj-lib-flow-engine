@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:merge",
   "description": "Creates a shallow object merge.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "merge.browser.js" } },
   "properties": {
     "target": {
       "label": "target",

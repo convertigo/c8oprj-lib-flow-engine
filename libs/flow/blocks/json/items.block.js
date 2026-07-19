@@ -1,6 +1,9 @@
 const _meta = {
   "version": 1,
   "description": "Returns a normalized array from a JSON value, using source.items when present or the source value as one item.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "items.browser.js" } },
   "icon": "mdi:code-json",
   "properties": {
     "source": {

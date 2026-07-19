@@ -1,6 +1,9 @@
 const _meta = {
   "version": 1,
   "description": "Parses JSON text without throwing and returns a structured parse result.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "safeParse.browser.js" } },
   "icon": "mdi:code-json",
   "properties": {
     "text": {

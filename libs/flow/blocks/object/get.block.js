@@ -6,7 +6,7 @@ const _meta = {
   "effects": [],
   "implementations": {
     "backend": { "runtime": "rhino" },
-    "frontend": { "runtime": "browser", "operation": "object.get", "version": 1 }
+    "frontend": { "runtime": "browser", "file": "get.browser.js", "version": 1 }
   },
   "properties": {
     "source": {

@@ -1,0 +1,4 @@
+function (input) {
+  var source = input.source
+  return source && typeof source === "object" ? Object.keys(source) : []
+}

@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-bulleted-type",
   "description": "Extracts one field from each item of an array.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "pluck.browser.js" } },
   "longDescription": "Use this when you need names, ids or another field from an array of objects. It is the low-code equivalent of items.map(item => item.path).",
   "properties": {
     "items": {

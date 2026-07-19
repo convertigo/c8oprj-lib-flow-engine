@@ -1,6 +1,9 @@
 const _meta = {
   "version": 1,
   "description": "Builds a clean array from values by skipping null, undefined and empty strings, with optional one-level flattening.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "compact.browser.js" } },
   "icon": "mdi:format-list-checks",
   "properties": {
     "items": {

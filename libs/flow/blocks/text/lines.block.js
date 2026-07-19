@@ -1,6 +1,9 @@
 const _meta = {
   "version": 1,
   "description": "Splits text into clean lines.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "lines.browser.js" } },
   "icon": "mdi:format-list-text",
   "properties": {
     "text": {

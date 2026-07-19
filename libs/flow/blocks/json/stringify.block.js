@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:code-json",
   "description": "Serializes a native value as JSON text.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "stringify.browser.js" } },
   "properties": {
     "value": {
       "label": "value",

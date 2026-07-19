@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-bulleted-square",
   "description": "Returns the first object entry as { key, value }.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "firstEntry.browser.js" } },
   "properties": {
     "source": {
       "label": "source",

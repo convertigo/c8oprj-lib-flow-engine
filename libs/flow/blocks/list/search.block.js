@@ -1,6 +1,9 @@
 const _meta = {
   "version": 1,
   "description": "Keeps array items whose text representation contains a query, with optional limit.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "search.browser.js" } },
   "icon": "mdi:text-search",
   "properties": {
     "items": {

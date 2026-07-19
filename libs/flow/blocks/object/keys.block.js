@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:key-chain",
   "description": "Returns the keys of an object as an array of strings.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "keys.browser.js" } },
   "properties": {
     "source": {
       "label": "source",

@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-bulleted-square",
   "description": "Returns the values of an object as an array.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "values.browser.js" } },
   "properties": {
     "source": {
       "label": "source",

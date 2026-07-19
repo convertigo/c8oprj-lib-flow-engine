@@ -14,7 +14,7 @@ const _meta = {
   "effects": [],
   "implementations": {
     "backend": { "runtime": "rhino" },
-    "frontend": { "runtime": "browser", "operation": "list.take", "version": 1 }
+    "frontend": { "runtime": "browser", "file": "take.browser.js", "version": 1 }
   },
   "outputs": {
     "out": {

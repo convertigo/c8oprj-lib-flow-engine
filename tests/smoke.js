@@ -209,8 +209,15 @@ assertTrue(portableTrimCatalog && portableTrimCatalog.targets.join(",") === "bac
 	portableTrimCatalog.effects.length === 0 &&
 	portableTrimCatalog.implementations.backend.runtime === "rhino" &&
 	portableTrimCatalog.implementations.frontend.runtime === "browser" &&
-	portableTrimCatalog.implementations.frontend.operation === "text.trim",
+	portableTrimCatalog.implementations.frontend.file === "trim.browser.js",
 	"portable block metadata did not expose both target implementations");
+var portableCatalogBlocks = catalog.blocks.filter(function (block) {
+	return block.targets && block.targets.indexOf("backend") !== -1 && block.targets.indexOf("frontend") !== -1;
+});
+assertTrue(portableCatalogBlocks.length === 17 && portableCatalogBlocks.every(function (block) {
+	var relativeFile = block.implementations && block.implementations.frontend && block.implementations.frontend.file;
+	return relativeFile && new java.io.File(new java.io.File(block.file).getParentFile(), relativeFile).isFile();
+}), "portable catalog blocks did not expose 17 existing browser implementation files");
 assertTrue(legacyBackendCatalog.targets.join(",") === "backend" &&
 	legacyBackendCatalog.effects.join(",") === "unspecified",
 	"legacy backend blocks did not receive compatible target/effect defaults");
@@ -507,6 +514,28 @@ var portableTrimRun = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 assertTrue(portableTrimRun.result.value === "portable", "portable text.trim Rhino implementation returned the wrong value");
+var portableFixtureFile = new java.io.File(engineDir, "portable-axiom-fixtures.json");
+var portableFixtures = JSON.parse(String(Packages.org.apache.commons.io.FileUtils.readFileToString(portableFixtureFile, "UTF-8")));
+portableFixtures.forEach(function (fixture, index) {
+	var variable = "portable" + index;
+	var source = [
+		"function PortableFixture" + index + "({ result }) {",
+		"\tconst " + variable + " = " + fixture.block + "(" + JSON.stringify(fixture.input) + ")",
+		"\tresult.value = " + variable,
+		"\treturn result",
+		"}",
+		""
+	].join("\n");
+	var validation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
+		name: "PortableFixture" + index,
+		code: source,
+		target: "backend"
+	})));
+	assertTrue(validation.ok === true, "portable fixture did not validate: " + fixture.block + " " + JSON.stringify(validation.diagnostics));
+	var run = JSON.parse(engine.run(JSON.stringify({ flowSource: source, includeTrace: false })));
+	assertTrue(run.ok === true && JSON.stringify(run.result.value) === JSON.stringify(fixture.expected),
+		"portable Rhino fixture mismatch for " + fixture.block + ": " + JSON.stringify(run));
+});
 var frontendTargetValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	name: "BackendOnlyTargetSmoke",
 	code: [

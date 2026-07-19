@@ -2,6 +2,9 @@ const _meta = {
   "version": 1,
   "icon": "mdi:select-group",
   "description": "Builds an object from selected fields.",
+  "targets": ["backend", "frontend"],
+  "effects": [],
+  "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "pick.browser.js" } },
   "properties": {
     "source": {
       "label": "source",
