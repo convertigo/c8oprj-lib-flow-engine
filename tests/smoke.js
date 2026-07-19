@@ -3499,6 +3499,8 @@ var flowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 assertTrue(flowSvelteAuthoringTree.childCount === 1 &&
 	flowSvelteAuthoringTree.children[0].kind === "frontendBuilder",
 	"authoring tree did not focus the Svelte builder by default");
+assertTrue(Object.prototype.toString.call(flowSvelteAuthoringTree.diagnostics) === "[object Array]",
+	"authoring tree did not preserve frontend document diagnostics");
 var flowSvelteRoutesNode = findNode(flowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendRoutes";
 });

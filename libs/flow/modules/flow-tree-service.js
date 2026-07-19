@@ -543,6 +543,7 @@
 		try {
 			var document = frontendModelDocument(request, modelFile, settings);
 			var model = normalizeTree(document.model);
+			builder.diagnostics = document.diagnostics || [];
 			builder.definition = compact(Object.assign(definition, {
 				appId: model.app && model.app.id || "",
 				title: model.app && model.app.title || "",
@@ -3149,7 +3150,7 @@
 		} else if (includeInspect) {
 			out.next = "For exact binding candidates, repeat with the same focusPath, maxDepth:0 and property:<bindable property name>.";
 		}
-		["surface", "builder", "focusPath", "rootPath", "error", "warning", "warnings", "next"].forEach(function (key) {
+		["surface", "builder", "focusPath", "rootPath", "diagnostics", "error", "warning", "warnings", "next"].forEach(function (key) {
 			if (tree[key] !== undefined) {
 				out[key] = tree[key];
 			}
@@ -3298,6 +3299,7 @@
 			surface: surface,
 			builder: builder,
 			focusPath: focusPath,
+			diagnostics: focus && focus.diagnostics || [],
 			children: children
 		}, request);
 	}
