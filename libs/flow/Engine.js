@@ -4475,13 +4475,17 @@
 		if (normalized === "" || normalized === null || normalized === undefined) {
 			return normalized;
 		}
-		if (!frontAstIsFlowValueBinding(normalized)) {
-			var error = new Error("Property " + name + " requires a structured FlowValueBinding. Use the binding or mutation returned by the picker; string paths are migration input only.");
+		if (!frontAstIsFlowValueBinding(normalized) && !frontAstIsBindingReference(normalized)) {
+			var error = new Error("Property " + name + " requires an intuitive @reference or structured FlowValueBinding. Use @action.path, @item.path, or the binding returned by the picker.");
 			error.code = "FRONTEND_BINDING_REQUIRED";
 			error.hint = "Select a schema-backed picker candidate and pass its mutation unchanged.";
 			throw error;
 		}
 		return normalized;
+	}
+
+	function frontAstIsBindingReference(value) {
+		return typeof value === "string" && /^@[A-Za-z_$][A-Za-z0-9_$]*(?:(?:\.[A-Za-z_$][A-Za-z0-9_$]*)|(?:\[\d+\]))*$/.test(value.trim());
 	}
 
 	function frontAstBindingValue(value) {
@@ -4520,8 +4524,11 @@
 			return typeof source.actionId === "string" && source.actionId !== ""
 				&& typeof source.operation === "string" && source.operation !== "";
 		}
-		return source.category === "iteration" && typeof source.scopeId === "string" && source.scopeId !== ""
-			&& (source.value === "item" || source.value === "index");
+		if (source.category === "iteration") {
+			return typeof source.scopeId === "string" && source.scopeId !== ""
+				&& (source.value === "item" || source.value === "index");
+		}
+		return source.category === "event" && source.value === "event";
 	}
 
 	function frontAstBindingPath(path) {

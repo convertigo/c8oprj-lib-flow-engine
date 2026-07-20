@@ -1139,7 +1139,12 @@
 		var source = value.source;
 		if (source.category === "requestable" || source.category === "action") return typeof source.actionId === "string" && source.actionId !== "";
 		if (source.category === "fullsync") return typeof source.actionId === "string" && source.actionId !== "" && typeof source.operation === "string" && source.operation !== "";
-		return source.category === "iteration" && typeof source.scopeId === "string" && source.scopeId !== "" && (source.value === "item" || source.value === "index");
+		if (source.category === "iteration") return typeof source.scopeId === "string" && source.scopeId !== "" && (source.value === "item" || source.value === "index");
+		return source.category === "event" && source.value === "event";
+	}
+
+	function flowSvelteLiteIsBindingReference(value) {
+		return typeof value === "string" && /^@[A-Za-z_$][A-Za-z0-9_$]*(?:(?:\.[A-Za-z_$][A-Za-z0-9_$]*)|(?:\[\d+\]))*$/.test(value.trim());
 	}
 
 	function flowSvelteLiteBindingSuggestion(value) {
@@ -1150,29 +1155,71 @@
 		return { mode: "source", source: { category: "requestable", actionId: value.actionId }, path: path };
 	}
 
+	function flowSvelteLiteBindingReferenceSuggestion(value) {
+		if (!value || typeof value !== "object") return null;
+		var root = value.mode === "action" ? value.actionId : value.mode === "context" ? value.context : "";
+		if (typeof root !== "string" || !root) return null;
+		var suffix = typeof value.path === "string" && value.path ? "." + value.path : "";
+		return "@" + root + suffix;
+	}
+
 	function flowSvelteLiteBindingDiagnostics(root) {
 		var diagnostics = [];
-		function visit(node) {
+		var actionIds = {};
+		function collectActions(node) {
+			var kind = String(node && node.props && node.props.kind || "");
+			if (kind === "callSequence" || kind === "setValue" || /^fullSync(?:Get|View|Sync|Reset)$/.test(kind)) {
+				var id = String(node.props.target || node.props.id || node.id || "");
+				if (id) actionIds[id] = true;
+				if (node.props.id) actionIds[String(node.props.id)] = true;
+			}
+			(node && node.children || []).forEach(collectActions);
+		}
+		collectActions(root);
+		function referenceVisible(value, scopes) {
+			if (!flowSvelteLiteIsBindingReference(value)) return false;
+			var firstMatch = String(value).substring(1).match(/^[A-Za-z_$][A-Za-z0-9_$]*/);
+			var first = firstMatch ? firstMatch[0] : "";
+			if (first === "event" || actionIds[first]) return true;
+			return (scopes || []).some(function (scope) {
+				return first === scope.id || first === scope.item || first === scope.index;
+			});
+		}
+		function visit(node, scopes) {
 			var definitions = node && node.propertyDefinitions || {};
 			Object.keys(definitions).forEach(function (name) {
 				var definition = definitions[name] || {};
 				var value = node.props && node.props[name];
-				if ((definition.kind === "binding" || definition.type === "binding") && value !== undefined && value !== "" && !flowSvelteLiteIsBinding(value)) {
+				if ((definition.kind === "binding" || definition.type === "binding") && value !== undefined && value !== "" &&
+						!flowSvelteLiteIsBinding(value) && !referenceVisible(value, scopes)) {
+					var intuitive = flowSvelteLiteIsBindingReference(value);
 					var diagnostic = {
 						level: "error",
 						severity: "error",
-						code: "FRONTEND_BINDING_INVALID",
-						message: "Property " + name + " on " + String(node.id || node.tag || "node") + " requires a structured FlowValueBinding.",
+						code: intuitive ? "FRONTEND_BINDING_REFERENCE_UNKNOWN" : "FRONTEND_BINDING_INVALID",
+						message: intuitive
+							? "Binding reference " + String(value) + " cannot be resolved from the actions or lexical scopes visible here."
+							: "Property " + name + " on " + String(node.id || node.tag || "node") + " requires an intuitive @reference or structured FlowValueBinding.",
 						path: String(node.sourceMutationPath || "") + ".props." + name
 					};
 					var suggestion = flowSvelteLiteBindingSuggestion(value);
 					if (suggestion) diagnostic.suggestedBinding = suggestion;
+					var referenceSuggestion = flowSvelteLiteBindingReferenceSuggestion(value);
+					if (referenceSuggestion) diagnostic.suggestedReference = referenceSuggestion;
 					diagnostics.push(diagnostic);
 				}
 			});
-			(node && node.children || []).forEach(visit);
+			var nextScopes = scopes || [];
+			if (node && node.props && node.props.kind === "each") {
+				nextScopes = nextScopes.concat({
+					id: String(node.id || ""),
+					item: String(node.props.context || "item"),
+					index: String(node.props.index || "index")
+				});
+			}
+			(node && node.children || []).forEach(function (child) { visit(child, nextScopes); });
 		}
-		visit(root);
+		visit(root, []);
 		return diagnostics;
 	}
 

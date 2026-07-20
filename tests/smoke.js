@@ -67,7 +67,8 @@ var embeddedInvalidBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument(
 ].join("\n"));
 assertTrue(embeddedInvalidBinding.diagnostics.length === 1 &&
 	embeddedInvalidBinding.diagnostics[0].code === "FRONTEND_BINDING_INVALID" &&
-	embeddedInvalidBinding.diagnostics[0].suggestedBinding.source.actionId === "load",
+	embeddedInvalidBinding.diagnostics[0].suggestedBinding.source.actionId === "load" &&
+	embeddedInvalidBinding.diagnostics[0].suggestedReference === "@load.news",
 	"Embedded Flow Svelte projection did not reject and migrate an ad hoc action binding");
 var embeddedCanonicalBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
 	'<FlowComponent id="smoke" label="Smoke">',
@@ -76,6 +77,23 @@ var embeddedCanonicalBinding = isolatedFlowTreeService.embeddedFlowSvelteDocumen
 ].join("\n"));
 assertTrue(embeddedCanonicalBinding.diagnostics.length === 0,
 	"Embedded Flow Svelte projection rejected a canonical structured binding");
+var embeddedIntuitiveBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+	'<FlowComponent id="smoke" label="Smoke">',
+	'  <Structure><CallSequence id="load" requestable=".Load" /><ForEach id="rows" source="@load.news" context="row"><Children>',
+	'    <Text id="title" source="@row.title" />',
+	'  </Children></ForEach></Structure>',
+	'</FlowComponent>'
+].join("\n"));
+assertTrue(embeddedIntuitiveBinding.diagnostics.length === 0,
+	"Embedded Flow Svelte projection rejected intuitive action or lexical bindings");
+var embeddedUnknownBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+	'<FlowComponent id="smoke" label="Smoke">',
+	'  <Structure><Text id="title" source="@missing.title" /></Structure>',
+	'</FlowComponent>'
+].join("\n"));
+assertTrue(embeddedUnknownBinding.diagnostics.length === 1 &&
+	embeddedUnknownBinding.diagnostics[0].code === "FRONTEND_BINDING_REFERENCE_UNKNOWN",
+	"Embedded Flow Svelte projection did not reject an unknown intuitive binding reference");
 
 var flowCodeServiceFile = new java.io.File(engineDir, "modules/flow-code-service.js");
 var flowCodeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowCodeServiceFile, "UTF-8"));
@@ -3820,6 +3838,19 @@ assertTrue(flowSvelteBindingRoundTrip.ok === true &&
 	String(flowSvelteBindingRoundTrip.source).indexOf('source="{') === -1,
 	"flow-svelte AST mutations should preserve all structured binding attributes across reparses: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
+var flowSvelteIntuitiveBindingMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteBindingRoundTripSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].props.source",
+		value: "@loadItems.items"
+	}
+})));
+assertTrue(flowSvelteIntuitiveBindingMutation.ok === true &&
+	String(flowSvelteIntuitiveBindingMutation.source).indexOf('source="@loadItems.items"') !== -1,
+	"flow-svelte AST mutation did not accept an intuitive binding reference");
 var flowSvelteNaturalBindingSource = [
 	"<FlowComponent id=\"naturalBindingRoundTrip\" label=\"Natural binding round trip\">",
 	"  <Structure>",
