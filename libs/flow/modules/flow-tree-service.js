@@ -3874,6 +3874,32 @@
 		return normalizeTree(insert || {});
 	}
 
+	function descriptorPropertyContract(properties) {
+		var out = {};
+		Object.keys(properties || {}).sort().forEach(function (name) {
+			var definition = properties[name] || {};
+			var kind = String(definition.kind || definition.type || "text");
+			var item = {
+				kind: kind,
+				type: String(definition.type || kind || "unknown"),
+				intents: kind === "binding" || String(definition.type || "") === "binding"
+					? ["literal", "expression", "source"]
+					: ["literal"]
+			};
+			if (definition.default !== undefined) {
+				item.default = normalizeTree(definition.default);
+			}
+			if (Object.prototype.toString.call(definition["enum"]) === "[object Array]" && definition["enum"].length <= 16) {
+				item["enum"] = normalizeTree(definition["enum"]);
+			}
+			if (definition.required === true) {
+				item.required = true;
+			}
+			out[name] = item;
+		});
+		return out;
+	}
+
 	function descriptorItem(descriptor, target) {
 		var out = {};
 		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace",
@@ -3886,6 +3912,10 @@
 		out.slots = descriptor.slots || {};
 		out.targetKinds = descriptor.targetKinds || [];
 		out.acceptedPositions = descriptor.acceptedPositions || [];
+		var properties = descriptorPropertyContract(descriptor.properties);
+		if (Object.keys(properties).length) {
+			out.properties = properties;
+		}
 		if (target) {
 			out.targetSlot = {
 				id: target.id,
@@ -4160,6 +4190,29 @@
 			}
 		}
 		return result;
+	}
+
+	function authoringContractRequest(request) {
+		request = request || {};
+		var engine = authoringEngineDefinition(request);
+		var descriptors = authoringDescriptors(request, engine);
+		return {
+			ok: true,
+			target: "authoring.contract",
+			surface: String(request.surface || "frontend"),
+			builder: authoringBuilderName(request, engine),
+			items: descriptors.map(function (descriptor) {
+				var insert = descriptor.insert || {};
+				return {
+					id: String(descriptor.id || ""),
+					tag: String(descriptor.tag || insert.tag || ""),
+					label: String(descriptor.label || descriptor.name || descriptor.localName || ""),
+					category: String(descriptor.category || ""),
+					properties: descriptorPropertyContract(descriptor.properties),
+					slots: descriptor.slots || {}
+				};
+			})
+		};
 	}
 
 	function authoringMutateRequest(request, blocks) {
@@ -5659,6 +5712,7 @@
 			toYamlSource: toYamlSource,
 			describeTreeRequest: describeTreeRequest,
 			authoringTreeRequest: authoringTreeRequest,
+			authoringContractRequest: authoringContractRequest,
 			authoringPaletteRequest: authoringPaletteRequest,
 			authoringMutateRequest: authoringMutateRequest,
 			searchFlowRequest: searchFlowRequest,
@@ -5691,6 +5745,9 @@
 		},
 		authoringTreeRequest: function (request, blocks, env) {
 			return create(env).authoringTreeRequest(request, blocks);
+		},
+		authoringContractRequest: function (request, env) {
+			return create(env).authoringContractRequest(request);
 		},
 		authoringPaletteRequest: function (request, blocks, env) {
 			return create(env).authoringPaletteRequest(request, blocks);

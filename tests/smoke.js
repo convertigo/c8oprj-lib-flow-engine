@@ -3687,8 +3687,21 @@ var flowSvelteMultiQueryPalette = JSON.parse(engine.authoringPalette(JSON.string
 	query: "Text Card"
 })));
 assertTrue(flowSvelteMultiQueryPalette.ok === true &&
-	flowSvelteMultiQueryPalette.items.some(function (item) { return item.id === "project.text"; }),
+	flowSvelteMultiQueryPalette.items.some(function (item) {
+		return item.id === "project.text" && item.properties && item.properties.text &&
+			item.properties.text.type === "string" && item.properties.text.intents[0] === "literal";
+	}),
 	"authoring palette should match useful tokens from a multi-intent frontend query");
+var flowSvelteContract = JSON.parse(engine.authoringContract(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir
+})));
+assertTrue(flowSvelteContract.ok === true && flowSvelteContract.items.some(function (item) {
+	return item.id === "project.text" && item.properties && item.properties.text &&
+		item.properties.text.type === "string" && item.properties.text.intents[0] === "literal";
+}), "authoring contract should expose canonical properties without building a tree");
 var flowSvelteForEachPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",

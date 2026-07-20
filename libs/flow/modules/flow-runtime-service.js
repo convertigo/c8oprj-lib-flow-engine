@@ -56,6 +56,7 @@
 		var describeTreeRequest = env.describeTreeRequest;
 		var applyMutationRequest = env.applyMutationRequest;
 		var authoringTreeRequest = env.authoringTreeRequest || describeTreeRequest;
+		var authoringContractRequest = env.authoringContractRequest || function () { return { ok: true, items: [] }; };
 		var authoringPaletteRequest = env.authoringPaletteRequest || describeTreeRequest;
 		var authoringMutateRequest = env.authoringMutateRequest || applyMutationRequest;
 		var contextMenuRequest = env.contextMenuRequest || function () { return { ok: true, items: [] }; };
@@ -489,6 +490,12 @@
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
 					return authoringTreeRequest(args, loadBlocks());
+				});
+			};
+			ctx.authoringContractSource = function (args) {
+				args = args || {};
+				return withProjectDir(args.projectDir, function () {
+					return authoringContractRequest(args);
 				});
 			};
 			ctx.authoringPaletteSource = function (args) {

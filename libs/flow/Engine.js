@@ -3524,6 +3524,7 @@
 			describeTreeRequest: describeTreeRequest,
 			applyMutationRequest: applyMutationRequest,
 			authoringTreeRequest: authoringTreeRequest,
+			authoringContractRequest: authoringContractRequest,
 			authoringPaletteRequest: authoringPaletteRequest,
 			authoringMutateRequest: authoringMutateRequest,
 			contextMenuRequest: contextMenuRequest,
@@ -3880,6 +3881,10 @@
 
 	function authoringTreeRequest(request, blocks) {
 		return flowTreeService().authoringTreeRequest(request || {}, blocks, flowTreeServiceEnv());
+	}
+
+	function authoringContractRequest(request) {
+		return flowTreeService().authoringContractRequest(request || {}, flowTreeServiceEnv());
 	}
 
 	function authoringPaletteRequest(request, blocks) {
@@ -6579,7 +6584,7 @@
 			}
 			return out;
 		});
-		return {
+		var response = {
 			ok: ok,
 			title: "Svelte frontbuilder",
 			message: ok ? "Svelte frontbuilder action completed: " + action + "." : "Svelte frontbuilder action failed: " + action + ".",
@@ -6597,6 +6602,18 @@
 				steps: compactSteps
 			}
 		};
+		if (ok && action === "build") {
+			var builtUrl = frontendBuiltUrl(request);
+			response.openUrl = builtUrl;
+			response.acceptance = {
+				strategy: "single-playwright-call",
+				tool: "browser_run_code",
+				path: builtUrl ? String(new Packages.java.net.URI(builtUrl).getPath()) : "",
+				checks: ["primary workflow", "expected content counts", "broken images", "console and page errors", "desktop and mobile overflow"],
+				next: "Run one aggregate browser acceptance call. Use focused browser diagnostics only when one returned check fails."
+			};
+		}
+		return response;
 	}
 
 	function frontendProjectName(request) {
@@ -7377,7 +7394,13 @@
 				title: "Svelte frontbuilder",
 				message: builtUrl ? "Opening built production frontend." : "Unable to resolve built production URL.",
 				openUrl: builtUrl,
-				browser: builtUrl ? frontendStudioBrowser(request, builtUrl, "Svelte production frontend", "frontbuilder.svelte.prod") : null
+				browser: builtUrl ? frontendStudioBrowser(request, builtUrl, "Svelte production frontend", "frontbuilder.svelte.prod") : null,
+				acceptance: builtUrl ? {
+					strategy: "single-playwright-call",
+					tool: "browser_run_code",
+					path: String(new Packages.java.net.URI(builtUrl).getPath()),
+					next: "Run one aggregate browser acceptance call; do not explore a passing UI with separate browser tools."
+				} : null
 			};
 		}
 		if (id === "frontbuilder.svelte.dev.sync") {
@@ -7784,6 +7807,12 @@
 		authoringTree: function (requestJson) {
 			return projectCall("authoringTree", requestJson, function (request) {
 				return authoringTreeRequest(request, loadBlocks());
+			});
+		},
+
+		authoringContract: function (requestJson) {
+			return projectCall("authoringContract", requestJson, function (request) {
+				return authoringContractRequest(request);
 			});
 		},
 
