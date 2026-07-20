@@ -33,7 +33,7 @@
 	(function () {
 		if (customElements.get("flow-binding-editor")) return;
 
-		var categories = ["requestable", "action", "iteration"];
+		var categories = ["requestable", "action", "fullsync", "iteration", "event"];
 
 		function esc(value) {
 			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
@@ -114,7 +114,9 @@
 		function sourceRef(category, id, previous) {
 			var out = { category: category };
 			if (category === "requestable" || category === "action") out.actionId = id;
+			else if (category === "fullsync") { out.actionId = id; out.operation = previous && previous.operation || "get"; }
 			else if (category === "iteration") { out.scopeId = id; out.value = previous && previous.value || "item"; }
+			else if (category === "event") out.value = "event";
 			else if (category === "component") { out.instanceId = id; out.value = previous && previous.value || "props"; }
 			else if (category === "form") { out.formId = id; out.value = previous && previous.value || "values"; }
 			else if (category === "local") out.ownerId = id;
@@ -212,7 +214,9 @@
 					var selected = sourceId(entry.source || entry) === sourceId(self._binding.source) && String(entry.category || entry.source && entry.source.category) === currentCategory;
 					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(entry.label || entry.id || sourceId(entry.source || entry)) + '</option>';
 				}).join("");
-				this.shadowRoot.querySelector("[data-source-id]").value = sourceId(this._binding.source);
+				var sourceIdInput = this.shadowRoot.querySelector("[data-source-id]");
+				sourceIdInput.value = sourceId(this._binding.source);
+				sourceIdInput.disabled = currentCategory === "event";
 				var selectedSource = available.find(function (entry) { return sourceId(entry.source || entry) === sourceId(self._binding.source); });
 				var context = selectedSource && selectedSource.context || this._state.context || {};
 				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };

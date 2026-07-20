@@ -929,11 +929,13 @@
 					tag: "CallSequence",
 					target: "",
 					requestable: ".Sequence",
+					marker: ""
 				},
 				properties: {
 					id: { type: "string" },
 					target: { type: "string" },
-					requestable: { type: "requestable", kind: "requestable" }
+					requestable: { type: "requestable", kind: "requestable" },
+					marker: { type: "string", kind: "text", description: "Optional stable source marker appended to the requestable, as in NGX." }
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {

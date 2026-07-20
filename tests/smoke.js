@@ -86,6 +86,31 @@ var embeddedIntuitiveBinding = isolatedFlowTreeService.embeddedFlowSvelteDocumen
 ].join("\n"));
 assertTrue(embeddedIntuitiveBinding.diagnostics.length === 0,
 	"Embedded Flow Svelte projection rejected intuitive action or lexical bindings");
+var embeddedLiteralBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+	'<FlowComponent id="smoke" label="Smoke">',
+	'  <Structure><ForEach id="rows" source={[{id: "p1"}]} context="item"><Children><Text id="title" source="Static" /></Children></ForEach></Structure>',
+	'</FlowComponent>'
+].join("\n"));
+assertTrue(embeddedLiteralBinding.diagnostics.length === 0,
+	"Embedded Flow Svelte projection rejected literal binding attributes");
+var embeddedActionExpression = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+	'<FlowComponent id="smoke" label="Smoke">',
+	'  <Structure><CallSequence id="load" requestable=".Load"><Variables><Variable name="id" value={item.id} /></Variables></CallSequence></Structure>',
+	'</FlowComponent>'
+].join("\n"));
+assertTrue(embeddedActionExpression.diagnostics.length === 1 &&
+	embeddedActionExpression.diagnostics[0].code === "FRONTEND_ACTION_EXPRESSION_NOT_PORTABLE" &&
+	embeddedActionExpression.diagnostics[0].suggestedReference === "@item.id",
+	"Embedded Flow Svelte projection did not reject a client action expression with a source correction");
+var embeddedDynamicMarker = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+	'<FlowComponent id="smoke" label="Smoke">',
+	'  <Structure><CallSequence id="load" requestable=".Load" marker={item.id} /></Structure>',
+	'</FlowComponent>'
+].join("\n"));
+assertTrue(embeddedDynamicMarker.diagnostics.length === 1 &&
+	embeddedDynamicMarker.diagnostics[0].code === "FRONTEND_CALLSEQUENCE_MARKER_STATIC_REQUIRED" &&
+	embeddedDynamicMarker.diagnostics[0].fix.value === "load",
+	"Embedded Flow Svelte projection did not reject a dynamic CallSequence marker with a literal correction");
 var embeddedUnknownBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
 	'<FlowComponent id="smoke" label="Smoke">',
 	'  <Structure><Text id="title" source="@missing.title" /></Structure>',
@@ -310,14 +335,21 @@ assertTrue(bindingType && bindingType.type === "object" && bindingType.editor &&
 var frontendCatalogServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/frontend-catalog-service.js"), "UTF-8"));
 var isolatedFrontendCatalogService = eval(frontendCatalogServiceSource);
-var onMountDescriptor = isolatedFrontendCatalogService.frontendCreateDescriptorsForSettings("svelte", {}, {
+var frontendDescriptors = isolatedFrontendCatalogService.frontendCreateDescriptorsForSettings("svelte", {}, {
 	projectDir: function () { return null; }
-}).filter(function (descriptor) {
+});
+var onMountDescriptor = frontendDescriptors.filter(function (descriptor) {
 	return descriptor.id === "frontbuilder.svelte.onMount";
 })[0];
 assertTrue(onMountDescriptor && onMountDescriptor.properties.once &&
 	onMountDescriptor.properties.once.type === "boolean",
 	"frontend catalog did not expose the persistent OnMount once property");
+var callSequenceDescriptor = frontendDescriptors.filter(function (descriptor) {
+	return descriptor.id === "frontbuilder.svelte.callSequence";
+})[0];
+assertTrue(callSequenceDescriptor && callSequenceDescriptor.properties.marker &&
+	callSequenceDescriptor.insert.marker === "",
+	"frontend catalog did not expose the NGX-compatible CallSequence marker");
 var requestableBindingSchema = {
 	type: "object",
 	properties: {
@@ -2076,6 +2108,9 @@ assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-text-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-config-overrides-editor") !== -1,
 	"propertyEditor did not embed core standalone editors");
+assertTrue(propertyEditor.html.indexOf('"fullsync"') !== -1 &&
+	propertyEditor.html.indexOf('"event"') !== -1,
+	"binding editor did not expose FullSync and event source modes");
 assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
 	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
 	"propertyEditor did not expose generic type editor host API");

@@ -6007,7 +6007,9 @@
 			},
 			callSequence: {
 				id: { label: "Id", category: "Base properties", type: "string" },
-				requestable: { label: "Requestable", category: "Action", kind: "requestable", type: "requestable" }
+				target: { label: "Result target", category: "Action", type: "string" },
+				requestable: { label: "Requestable", category: "Action", kind: "requestable", type: "requestable" },
+				marker: { label: "Marker", category: "Action", kind: "text", type: "string", description: "Optional stable source marker appended to the requestable, as in NGX." }
 			},
 			setValue: {
 				id: { label: "Id", category: "Base properties", type: "string" },

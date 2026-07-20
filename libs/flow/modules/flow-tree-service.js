@@ -1095,21 +1095,43 @@
 
 	function flowSvelteLiteExpressionValue(expression) {
 		var value = String(expression || "").trim();
-		if (value.charAt(0) !== "{") return value;
-		try {
-			return JSON.parse(value);
-		} catch (e) {
+		if (value === "true") return true;
+		if (value === "false") return false;
+		if (value === "null") return null;
+		if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
+		if (value.charAt(0) === "{" || value.charAt(0) === "[") {
 			try {
-				var json = value
-					.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g, '$1"$2"$3')
-					.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, function (_, content) {
-						return JSON.stringify(content.replace(/\\'/g, "'") );
-					});
-				return JSON.parse(json);
-			} catch (ignored) {
-				return value;
+				return JSON.parse(value);
+			} catch (e) {
+				try {
+					var json = value
+						.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+						.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, function (_, content) {
+							return JSON.stringify(content.replace(/\\'/g, "'") );
+						});
+					return JSON.parse(json);
+				} catch (ignored) {}
 			}
 		}
+		return { __flowSvelteExpression: value };
+	}
+
+	function flowSvelteLiteNormalizeAttributeModes(props, definitions) {
+		Object.keys(props || {}).forEach(function (name) {
+			var raw = props[name];
+			var definition = definitions && definitions[name] || {};
+			var binding = definition.kind === "binding" || definition.type === "binding";
+			var expression = raw && typeof raw === "object" && typeof raw.__flowSvelteExpression === "string";
+			if (expression) {
+				props[name] = binding
+					? { mode: "expression", expression: raw.__flowSvelteExpression }
+					: name === "marker" ? raw : raw.__flowSvelteExpression;
+				return;
+			}
+			if (!binding || raw === "" || raw === null || raw === undefined || flowSvelteLiteIsBinding(raw) || flowSvelteLiteIsBindingReference(raw)) return;
+			if (raw && typeof raw === "object" && (raw.mode === "action" || raw.mode === "context")) return;
+			props[name] = { mode: "literal", value: raw };
+		});
 	}
 
 	function flowSvelteLitePropertyDefinitions(kind) {
@@ -1119,6 +1141,16 @@
 		}
 		if (kind === "if") return { test: { label: "Condition", kind: "binding", type: "object" } };
 		if (kind === "setValue") return { value: { label: "Value", kind: "binding", type: "object" } };
+		if (kind === "variable") return {
+			name: { label: "Name", kind: "text", type: "string" },
+			value: { label: "Value", kind: "binding", type: "object" }
+		};
+		if (kind === "callSequence") return {
+			id: { label: "Id", kind: "text", type: "string" },
+			target: { label: "Result target", kind: "text", type: "string" },
+			requestable: { label: "Requestable", kind: "requestable", type: "requestable" },
+			marker: { label: "Marker", kind: "text", type: "string" }
+		};
 		return {};
 	}
 
@@ -1209,6 +1241,35 @@
 					diagnostics.push(diagnostic);
 				}
 			});
+			var kind = String(node && node.props && node.props.kind || "");
+			if (kind === "callSequence" && node.props.marker && typeof node.props.marker === "object" &&
+					typeof node.props.marker.__flowSvelteExpression === "string") {
+				var marker = String(node.props.id || node.id || "callSequence");
+				diagnostics.push({
+					severity: "error",
+					code: "FRONTEND_CALLSEQUENCE_MARKER_STATIC_REQUIRED",
+					message: "CallSequence marker is a stable source identity and cannot be a browser expression.",
+					path: String(node.sourceMutationPath || "") + ".props.marker",
+					suggestedValue: marker,
+					fix: { op: "replace", path: String(node.sourceMutationPath || "") + ".props.marker", value: marker }
+				});
+			}
+			if (kind === "variable" && node.props.value && node.props.value.mode === "expression") {
+				var expression = String(node.props.value.expression || "");
+				var suggestedReference = /^[A-Za-z_$][A-Za-z0-9_$]*(?:(?:\.[A-Za-z_$][A-Za-z0-9_$]*)|(?:\[\d+\]))*$/.test(expression)
+					? "@" + expression : "";
+				var variableDiagnostic = {
+					severity: "error",
+					code: "FRONTEND_ACTION_EXPRESSION_NOT_PORTABLE",
+					message: "Client action parameters do not execute free browser expressions. Use a literal, a schema-backed source, or a dual-target Flow block.",
+					path: String(node.sourceMutationPath || "") + ".props.value"
+				};
+				if (suggestedReference) {
+					variableDiagnostic.suggestedReference = suggestedReference;
+					variableDiagnostic.fix = { op: "replace", path: variableDiagnostic.path, value: suggestedReference };
+				}
+				diagnostics.push(variableDiagnostic);
+			}
 			var nextScopes = scopes || [];
 			if (node && node.props && node.props.kind === "each") {
 				nextScopes = nextScopes.concat({
@@ -1275,6 +1336,8 @@
 		}
 		var props = normalizeTree(element.attrs || {});
 		var kind = flowSvelteLiteTagKind(element.tag, props);
+		var propertyDefinitions = flowSvelteLitePropertyDefinitions(kind);
+		flowSvelteLiteNormalizeAttributeModes(props, propertyDefinitions);
 		var direct = [];
 		var slots = {};
 		(element.children || []).forEach(function (child) {
@@ -1320,7 +1383,7 @@
 			sourceMutationPath: path,
 			sourceWritable: true,
 			props: props,
-			propertyDefinitions: flowSvelteLitePropertyDefinitions(kind),
+			propertyDefinitions: propertyDefinitions,
 			traits: flowSvelteLiteTraits(kind),
 			slots: slotDefinitions,
 			children: slotChildren
