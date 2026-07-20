@@ -6858,6 +6858,27 @@
 				return String(candidate.getAbsolutePath());
 			}
 		}
+		if (/^(node|npm|npx)$/.test(String(name))) {
+			var ProcessUtils = Packages.com.twinsoft.convertigo.engine.util.ProcessUtils;
+			var windows = Packages.com.twinsoft.convertigo.engine.Engine.isWindows();
+			var version = String(ProcessUtils.getDefaultNodeVersion());
+			var expectedDir = ProcessUtils.getDefaultNodeDir();
+			var expectedBin = windows || expectedDir && expectedDir.getName() === "bin" ? expectedDir : new File(expectedDir, "bin");
+			var executableName = String(name) + (windows ? name === "node" ? ".exe" : ".cmd" : "");
+			var expected = new File(expectedBin, executableName);
+			if (!expected.isFile()) {
+				frontendStudioLog("[Svelte frontbuilder] Installing managed Node.js " + version + " in the Convertigo workspace.");
+			}
+			var nodeDir = ProcessUtils.getNodeDir(version);
+			var managed = new File(nodeDir, executableName);
+			if (managed.isFile()) {
+				return String(managed.getAbsolutePath());
+			}
+			var error = new Error("Managed Node.js " + version + " did not provide " + executableName + ".");
+			error.code = "FRONTBUILDER_NODE_INSTALL_FAILED";
+			error.hint = "Check Convertigo workspace permissions and access to nodejs.org.";
+			throw error;
+		}
 		return name;
 	}
 
