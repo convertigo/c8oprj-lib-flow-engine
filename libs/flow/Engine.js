@@ -6610,6 +6610,7 @@
 				tool: "browser_run_code",
 				path: builtUrl ? String(new Packages.java.net.URI(builtUrl).getPath()) : "",
 				checks: ["primary workflow", "expected content counts", "broken images", "console and page errors", "desktop and mobile overflow"],
+				selectorRule: "Flow ids are authoring identities, not guaranteed DOM ids. Prefer roles, visible text, images and rendered semantic selectors.",
 				next: "Run one aggregate browser acceptance call. Use focused browser diagnostics only when one returned check fails."
 			};
 		}
@@ -7399,6 +7400,7 @@
 					strategy: "single-playwright-call",
 					tool: "browser_run_code",
 					path: String(new Packages.java.net.URI(builtUrl).getPath()),
+					selectorRule: "Flow ids are authoring identities, not guaranteed DOM ids. Prefer roles, visible text, images and rendered semantic selectors.",
 					next: "Run one aggregate browser acceptance call; do not explore a passing UI with separate browser tools."
 				} : null
 			};
