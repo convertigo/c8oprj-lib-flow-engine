@@ -4652,12 +4652,19 @@
 			return null;
 		}
 		var tag = match[1];
-		var attrs = frontAstParseAttributes(trimmed.substring(match[0].length));
-		return { tag: tag, attrs: attrs, children: [], selfClosing: selfClosing };
+		var parsedAttributes = frontAstParseAttributes(trimmed.substring(match[0].length));
+		return {
+			tag: tag,
+			attrs: parsedAttributes.values,
+			attrSyntax: parsedAttributes.syntax,
+			children: [],
+			selfClosing: selfClosing
+		};
 	}
 
 	function frontAstParseAttributes(text) {
 		var attrs = {};
+		var syntax = {};
 		var i = 0;
 		text = String(text || "");
 		while (i < text.length) {
@@ -4677,6 +4684,7 @@
 			}
 			if (text.charAt(i) !== "=") {
 				attrs[name] = true;
+				syntax[name] = "boolean";
 				continue;
 			}
 			i++;
@@ -4692,10 +4700,12 @@
 					i++;
 				}
 				attrs[name] = text.substring(valueStart, i).replace(/\\"/g, "\"").replace(/\\'/g, "'");
+				syntax[name] = "quoted";
 				i++;
 			} else if (ch === "{") {
 				var end = frontAstExpressionEnd(text, i);
 				attrs[name] = frontAstParseAttributeExpression(text.substring(i + 1, end));
+				syntax[name] = "expression";
 				i = end + 1;
 			} else {
 				var bareStart = i;
@@ -4703,9 +4713,10 @@
 					i++;
 				}
 				attrs[name] = text.substring(bareStart, i);
+				syntax[name] = "bare";
 			}
 		}
-		return attrs;
+		return { values: attrs, syntax: syntax };
 	}
 
 	function frontAstParseAttributeExpression(value) {
@@ -5059,7 +5070,7 @@
 
 	function frontAstRenderNode(node, level) {
 		var pad = new Array(level + 1).join("  ");
-		var attrs = frontAstRenderAttributes(node.tag, node.attrs || {});
+		var attrs = frontAstRenderAttributes(node.tag, node.attrs || {}, node.attrSyntax || {});
 		var children = node.children || [];
 		if (!children.length) {
 			return pad + "<" + node.tag + (attrs ? " " + attrs : "") + " />";
@@ -5073,7 +5084,7 @@
 			+ "\n" + pad + "</" + node.tag + ">";
 	}
 
-	function frontAstRenderAttributes(tag, attrs) {
+	function frontAstRenderAttributes(tag, attrs, syntax) {
 		var names = [];
 		var order = frontAstPropOrder(tag, attrs);
 		for (var i = 0; i < order.length; i++) {
@@ -5094,12 +5105,12 @@
 		}
 		var rendered = [];
 		for (var j = 0; j < names.length; j++) {
-			rendered.push(names[j] + "=" + frontAstRenderAttributeValue(names[j], attrs[names[j]]));
+			rendered.push(names[j] + "=" + frontAstRenderAttributeValue(names[j], attrs[names[j]], syntax[names[j]]));
 		}
 		return rendered.join(" ");
 	}
 
-	function frontAstRenderAttributeValue(name, value) {
+	function frontAstRenderAttributeValue(name, value, syntax) {
 		if (value && typeof value === "object") {
 			return "{" + JSON.stringify(value) + "}";
 		}
@@ -5107,6 +5118,14 @@
 			return "{" + JSON.stringify(value) + "}";
 		}
 		var text = String(value);
+		// Intuitive source bindings are always authored as strings, even when replacing
+		// a property that previously held a Svelte expression.
+		if (syntax === "quoted" || /^@[A-Za-z_$][A-Za-z0-9_$.-]*(?:\[[^\]]+\])?$/.test(text)) {
+			return JSON.stringify(text);
+		}
+		if (syntax === "expression") {
+			return "{" + text + "}";
+		}
 		var trimmed = text.replace(/^\s+|\s+$/g, "");
 		if ((name === "test" || name === "condition" || name === "expression" || name === "value")
 				&& /^-?\d+(?:\.\d+)?$|^true$|^false$/.test(trimmed)) {

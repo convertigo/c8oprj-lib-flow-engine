@@ -3912,6 +3912,33 @@ var flowSvelteIntuitiveBindingMutation = JSON.parse(engine.applySourceMutation(J
 assertTrue(flowSvelteIntuitiveBindingMutation.ok === true &&
 	String(flowSvelteIntuitiveBindingMutation.source).indexOf('source="@loadItems.items"') !== -1,
 	"flow-svelte AST mutation did not accept an intuitive binding reference");
+var flowSvelteSyntaxIntentSource = [
+	"<FlowComponent id=\"syntaxIntent\" label=\"Syntax intent\">",
+	"  <Structure>",
+	"    <If id=\"ready\" test=\"@catalog.rows\">",
+	"      <Then><Header id=\"header\" sticky={true} /><UpdateList id=\"trim\" count={itemIndex + 1} /></Then>",
+	"    </If>",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n");
+var flowSvelteSyntaxIntentRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteSyntaxIntentSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].props.outputSchema",
+		value: { type: "object", properties: { rows: { type: "array" } } }
+	}
+})));
+assertTrue(flowSvelteSyntaxIntentRoundTrip.ok === true &&
+	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('test="@catalog.rows"') !== -1 &&
+	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('sticky={true}') !== -1 &&
+	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('count={itemIndex + 1}') !== -1 &&
+	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('test={@catalog.rows}') === -1,
+	"flow-svelte AST mutations should preserve quoted, literal and expression attribute intent: " +
+		JSON.stringify(flowSvelteSyntaxIntentRoundTrip));
 var flowSvelteNaturalBindingSource = [
 	"<FlowComponent id=\"naturalBindingRoundTrip\" label=\"Natural binding round trip\">",
 	"  <Structure>",
