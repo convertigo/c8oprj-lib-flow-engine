@@ -3673,6 +3673,19 @@ var flowSvelteSourceInspect = JSON.parse(engine.authoringTree(JSON.stringify({
 assertTrue(flowSvelteSourceInspect.property === "source" && flowSvelteSourceInspect.sourceId === "readSmoke" &&
 	JSON.stringify(flowSvelteSourceInspect).indexOf('"bindingSources"') === -1,
 	"property-targeted inspect did not preserve its exact picker scope");
+var flowSvelteInternalInspect = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteTextNode.path,
+	detail: "inspect",
+	includeDefinition: true,
+	internalDeep: true,
+	maxDepth: 0
+})));
+assertTrue(/^frontAst\./.test(String(flowSvelteInternalInspect.children[0].sourceMutationPath || "")),
+	"internal authoring inspection did not expose the focused source mutation path");
 var flowSvelteStructureNode = findNode(flowSvelteRoutesTree, function (node) {
 	return node.kind === "frontendStructure";
 });

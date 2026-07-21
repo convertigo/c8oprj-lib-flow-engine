@@ -3312,7 +3312,7 @@
 		return bindings;
 	}
 
-	function compactTreeNode(node, depth, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId) {
+	function compactTreeNode(node, depth, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId, includeInternalMutation) {
 		var out = {
 			name: node.name,
 			kind: node.kind,
@@ -3321,6 +3321,7 @@
 			summary: node.summary
 		};
 		var parsedDefinition = null;
+		var parsedInfo = null;
 		if (node.definition) {
 			try {
 				parsedDefinition = JSON.parse(node.definition);
@@ -3335,7 +3336,6 @@
 			} catch (e) {
 			}
 			if (includeInspect === true && parsedDefinition) {
-				var parsedInfo = null;
 				try {
 					parsedInfo = node.info ? JSON.parse(node.info) : null;
 				} catch (e0) {
@@ -3359,12 +3359,21 @@
 			if (includeDefinition === true) {
 				out.definition = node.definition;
 			}
+			if (includeInternalMutation === true) {
+				if (!parsedInfo) {
+					try { parsedInfo = node.info ? JSON.parse(node.info) : null; } catch (e1) {}
+				}
+				if (parsedInfo) {
+					out.sourceMutationPath = parsedInfo.frontendModelPath || parsedInfo.sourceMutationPath || "";
+					out.sourcePropertyMutationPaths = parsedInfo.sourcePropertyMutationPaths || {};
+				}
+			}
 		}
 		var children = node.children || [];
 		out.childCount = children.length;
 		if (children.length && depth < maxDepth) {
 			out.children = children.map(function (child) {
-					return compactTreeNode(child, depth + 1, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId);
+					return compactTreeNode(child, depth + 1, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId, includeInternalMutation);
 			});
 		}
 		return out;
@@ -3379,15 +3388,17 @@
 		var includeInspect = detail === "inspect";
 		var requestedProperty = String(request.property || request.bindingProperty || "");
 		var requestedSourceId = String(request.sourceId || "");
-		var maxDepth = intOption(request.maxDepth, detail === "summary" ? 2 : includeInspect ? 6 : 4, 0, 20);
+		var maxDepthLimit = request.internalDeep === true ? 64 : 20;
+		var maxDepth = intOption(request.maxDepth, detail === "summary" ? 2 : includeInspect ? 6 : 4, 0, maxDepthLimit);
 		var includeDefinition = request.includeDefinition === true || String(request.includeDefinition || "") === "true";
+		var includeInternalMutation = request.internalDeep === true;
 		var out = {
 			ok: tree.ok,
 			target: tree.target,
 			detail: detail,
 			childCount: (tree.children || []).length,
 			children: (tree.children || []).map(function (child) {
-				return compactTreeNode(child, 0, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId);
+				return compactTreeNode(child, 0, maxDepth, includeDefinition, includeInspect, requestedProperty, requestedSourceId, includeInternalMutation);
 			})
 		};
 		if (requestedProperty) {
