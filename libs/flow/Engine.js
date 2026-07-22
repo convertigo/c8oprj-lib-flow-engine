@@ -6649,7 +6649,11 @@
 		if (!project) {
 			return "";
 		}
-		return "http://localhost:18080/convertigo/projects/" + encodeURIComponent(project) + "/" + buildOutput + "/index.html";
+		var EnginePropertiesManager = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager;
+		var PropertyName = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName;
+		var baseUrl = String(EnginePropertiesManager.getProperty(PropertyName.APPLICATION_SERVER_CONVERTIGO_URL) || "");
+		baseUrl = baseUrl.replace(/\/+$/, "");
+		return baseUrl + "/projects/" + encodeURIComponent(project) + "/" + buildOutput + "/index.html";
 	}
 
 	function frontendDevKey(request, info) {
