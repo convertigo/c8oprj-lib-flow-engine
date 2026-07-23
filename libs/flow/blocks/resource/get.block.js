@@ -1,7 +1,8 @@
 const _meta = {
   "version": 1,
-  "private": true,
+  "private": false,
   "icon": "mdi:file-code-outline",
+  "tags": ["resource", "project", "file", "read"],
   "description": "Reads a project-local Flow source resource.",
   "properties": {
     "path": {
@@ -28,17 +29,27 @@ const _meta = {
       "type": "boolean",
       "description": "Allow returning a resource larger than maxBytes."
     },
-    "projectDir": {
-      "label": "projectDir",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override."
-    },
     "out": {
       "label": "out",
       "kind": "path",
       "mode": "write",
       "description": "Scope path receiving the resource content and metadata."
+    }
+  },
+  "outputs": {
+    "out": {
+      "type": "object",
+      "properties": {
+        "ok": { "type": "boolean" },
+        "content": { "type": "string" },
+        "truncated": { "type": "boolean" },
+        "contentLength": { "type": "integer" },
+        "returnedLength": { "type": "integer" },
+        "path": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "hash": { "type": "string" },
+        "hint": { "type": "string" }
+      }
     }
   },
   "runtime": "rhino",
@@ -55,7 +66,7 @@ const _meta = {
 	function argsFrom(ctx, props) {
 		var args = {};
 		Object.keys(props || {}).forEach(function (key) {
-			if (key !== "out") {
+				if (key !== "out" && key !== "projectDir") {
 				args[key] = typeof props[key] === "string" ? ctx.template(props[key]) : props[key];
 			}
 		});

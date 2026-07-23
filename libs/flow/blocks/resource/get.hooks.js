@@ -21,7 +21,20 @@
 		analyze: function (ctx, node) {
 			var out = ctx.props(node).out;
 			if (out) {
-				ctx.addPath(out);
+				ctx.addSchema(out, {
+					type: "object",
+					properties: {
+						ok: { type: "boolean" },
+						content: { type: "string" },
+						truncated: { type: "boolean" },
+						contentLength: { type: "integer" },
+						returnedLength: { type: "integer" },
+						path: { type: "string" },
+						mimeType: { type: "string" },
+						hash: { type: "string" },
+						hint: { type: "string" }
+					}
+				});
 			}
 		}
 	};

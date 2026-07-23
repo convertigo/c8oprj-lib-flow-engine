@@ -1194,6 +1194,13 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(resourceGetRun.result.resource.content.indexOf("patched ok") !== -1,
 	"resource.get block did not read project Flow resources");
+var publicResourceGet = JSON.parse(engine.blockGet(JSON.stringify({ name: "resource.get" })));
+assertTrue(catalog.blocks.some(function (block) {
+	return block.blockId === "resource.get" && block.private === false;
+}) && publicResourceGet.block.outputs.out.leafPaths.some(function (leaf) {
+	return leaf.path === "content" && leaf.type === "string";
+}) && !publicResourceGet.block.properties.projectDir,
+	"resource.get should be a discoverable typed fixture reader");
 var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
 		"version: 1",

@@ -121,8 +121,8 @@
 			delta += applyHunkLines(lines, parts, position, hunkLines, env);
 		}
 		if (hunks === 0) {
-			env.raise("INVALID_PATCH", "Unified patch does not contain any @@ hunk.",
-				null, "Send a real unified diff with an @@ header, or pass the full replacement source in the code argument instead of codepatch.");
+			env.raise("INVALID_PATCH", "Unified patch requires numbered @@ -old,count +new,count @@ hunk headers.",
+				null, "Send a git-style unified diff without *** Begin Patch wrappers or bare @@ headers, or pass the full replacement source in the code argument instead of codepatch.");
 		}
 		parts.lines = lines;
 		return {
