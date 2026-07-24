@@ -3643,6 +3643,28 @@ var leanFlowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify
 assertTrue(findNode(leanFlowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendBlockCatalog" || node.path === "catalog";
 }) === null, "lean authoring tree should omit frontend and Flow catalogs");
+var flowSvelteOpenBuilt = JSON.parse(engine.contextAction(JSON.stringify({
+	project: "AstSmoke",
+	projectDir: __flowProjectDir,
+	engineSource: flowSvelteEngineSource,
+	actionId: "frontbuilder.svelte.openBuilt",
+	targetObject: {
+		kind: "frontendBuilder",
+		type: "svelte",
+		project: "AstSmoke"
+	}
+})));
+var flowSvelteAcceptance = flowSvelteOpenBuilt.acceptance;
+assertTrue(flowSvelteOpenBuilt.ok === true && flowSvelteAcceptance,
+	"open built should expose frontend acceptance: " + JSON.stringify(flowSvelteOpenBuilt));
+assertTrue(flowSvelteAcceptance.strategy === "safe-playwright-plan",
+	"frontend acceptance should use the safe Playwright plan");
+assertTrue(flowSvelteAcceptance.calls.length === 7,
+	"frontend acceptance should contain seven bounded calls");
+assertTrue(flowSvelteAcceptance.calls[0].tool === "browser_navigate" &&
+	flowSvelteAcceptance.calls[2].tool === "browser_evaluate" &&
+	flowSvelteAcceptance.calls[6].tool === "browser_close",
+	"frontend acceptance should navigate, probe and close the browser");
 var authoringTreeCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",

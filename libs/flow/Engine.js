@@ -6559,6 +6559,52 @@
 		};
 	}
 
+	function frontendAcceptanceProbe() {
+		return [
+			"() => {",
+			"  const visible = (element) => {",
+			"    const rect = element.getBoundingClientRect();",
+			"    const style = getComputedStyle(element);",
+			"    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';",
+			"  };",
+			"  const buttons = [...document.querySelectorAll('button')].filter(visible);",
+			"  const images = [...document.querySelectorAll('img')].filter(visible);",
+			"  return {",
+			"    url: location.href,",
+			"    title: document.title,",
+			"    viewport: [innerWidth, innerHeight],",
+			"    visibleButtons: buttons.length,",
+			"    buttonLabels: buttons.slice(0, 30).map((button) => (button.textContent || '').trim()),",
+			"    visibleImages: images.length,",
+			"    brokenImages: images.filter((image) => image.naturalWidth === 0).slice(0, 20).map((image) => ({ alt: image.alt, src: image.currentSrc || image.src })),",
+			"    horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,",
+			"    pendingText: /initializ|synchron|optimis|loading|chargement/i.test(document.body.innerText),",
+			"    bodyText: document.body.innerText.slice(0, 500)",
+			"  };",
+			"}"
+		].join("\n");
+	}
+
+	function frontendAcceptancePlan(url) {
+		var probe = frontendAcceptanceProbe();
+		return {
+			strategy: "safe-playwright-plan",
+			path: url ? String(new Packages.java.net.URI(url).getPath()) : "",
+			calls: [
+				{ tool: "browser_navigate", arguments: { url: url } },
+				{ tool: "browser_resize", arguments: { width: 1280, height: 720 } },
+				{ tool: "browser_evaluate", arguments: { function: probe } },
+				{ tool: "browser_resize", arguments: { width: 390, height: 844 } },
+				{ tool: "browser_evaluate", arguments: { function: probe } },
+				{ tool: "browser_console_messages", arguments: { level: "error", all: true } },
+				{ tool: "browser_close", arguments: {} }
+			],
+			checks: ["expected visible content", "broken images", "pending startup state", "console and page errors", "desktop and mobile overflow"],
+			selectorRule: "Flow ids are authoring identities, not guaranteed DOM ids. Prefer roles, visible text, images and rendered semantic selectors.",
+			next: "Execute calls unchanged and in order. Add one focused interaction only when a required business workflow is not covered by these probes."
+		};
+	}
+
 	function frontendRunAction(request, blocks, action) {
 		var info = frontbuilderSettingsForRequest(request);
 		var modelPath = frontendModelPath(request, info);
@@ -6653,14 +6699,7 @@
 		if (ok && action === "build") {
 			var builtUrl = frontendBuiltUrl(request);
 			response.openUrl = builtUrl;
-			response.acceptance = {
-				strategy: "single-playwright-call",
-				tool: "browser_run_code",
-				path: builtUrl ? String(new Packages.java.net.URI(builtUrl).getPath()) : "",
-				checks: ["primary workflow", "expected content counts", "broken images", "console and page errors", "desktop and mobile overflow"],
-				selectorRule: "Flow ids are authoring identities, not guaranteed DOM ids. Prefer roles, visible text, images and rendered semantic selectors.",
-				next: "Run one aggregate browser acceptance call. Use focused browser diagnostics only when one returned check fails."
-			};
+			response.acceptance = builtUrl ? frontendAcceptancePlan(builtUrl) : null;
 		}
 		return response;
 	}
@@ -6680,7 +6719,9 @@
 		}
 		var EnginePropertiesManager = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager;
 		var PropertyName = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName;
-		var baseUrl = String(EnginePropertiesManager.getProperty(PropertyName.APPLICATION_SERVER_CONVERTIGO_URL) || "");
+		var baseUrl = typeof EnginePropertiesManager.getProperty === "function"
+			? String(EnginePropertiesManager.getProperty(PropertyName.APPLICATION_SERVER_CONVERTIGO_URL) || "")
+			: "";
 		baseUrl = baseUrl.replace(/\/+$/, "");
 		return baseUrl + "/projects/" + encodeURIComponent(project) + "/" + buildOutput + "/index.html";
 	}
@@ -7448,13 +7489,7 @@
 				message: builtUrl ? "Opening built production frontend." : "Unable to resolve built production URL.",
 				openUrl: builtUrl,
 				browser: builtUrl ? frontendStudioBrowser(request, builtUrl, "Svelte production frontend", "frontbuilder.svelte.prod") : null,
-				acceptance: builtUrl ? {
-					strategy: "single-playwright-call",
-					tool: "browser_run_code",
-					path: String(new Packages.java.net.URI(builtUrl).getPath()),
-					selectorRule: "Flow ids are authoring identities, not guaranteed DOM ids. Prefer roles, visible text, images and rendered semantic selectors.",
-					next: "Run one aggregate browser acceptance call; do not explore a passing UI with separate browser tools."
-				} : null
+				acceptance: builtUrl ? frontendAcceptancePlan(builtUrl) : null
 			};
 		}
 		if (id === "frontbuilder.svelte.dev.sync") {
