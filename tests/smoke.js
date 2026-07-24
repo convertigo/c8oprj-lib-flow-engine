@@ -3630,6 +3630,18 @@ assertTrue(flowSvelteAuthoringTree.childCount === 1 &&
 	"authoring tree did not focus the Svelte builder by default");
 assertTrue(Object.prototype.toString.call(flowSvelteAuthoringTree.diagnostics) === "[object Array]",
 	"authoring tree did not preserve frontend document diagnostics");
+var authoringTreeCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "compact",
+	maxDepth: 2
+})));
+var authoringTreeCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+assertTrue(authoringTreeCacheAfterRepeat.hits > authoringTreeCacheBeforeRepeat.hits,
+	"repeated authoring tree reads should reuse the shared tree snapshot");
 var flowSvelteRoutesNode = findNode(flowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendRoutes";
 });

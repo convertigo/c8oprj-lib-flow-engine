@@ -3880,7 +3880,34 @@
 	}
 
 	function authoringTreeRequest(request, blocks) {
-		return flowTreeService().authoringTreeRequest(request || {}, blocks, flowTreeServiceEnv());
+		request = request || {};
+		var cache = runtimeState.caches.treeSnapshots;
+		var fingerprintRequest = Object.assign({}, request, { target: "engine" });
+		var key = "authoring\n" + JSON.stringify({
+			project: projectDir() ? canonicalPath(projectDir()) : "",
+			surface: String(request.surface || "frontend"),
+			builder: String(request.builder || ""),
+			focusPath: String(request.focusPath || request.rootPath || request.path || ""),
+			detail: String(request.detail || request.mode || "full"),
+			maxDepth: request.maxDepth === undefined ? "" : String(request.maxDepth),
+			property: String(request.property || ""),
+			sourceId: String(request.sourceId || ""),
+			internalDeep: request.internalDeep === true,
+			includeChildren: request.includeChildren !== false,
+			includeDefinition: request.includeDefinition === true,
+			includeProperties: request.includeProperties === true,
+			includeSource: request.includeSource === true,
+			includeAnalysis: request.includeAnalysis === true,
+			includeSchema: request.includeSchema === true || request.schema === true,
+			includePrivate: request.includePrivate !== false
+		});
+		var fingerprint = describeTreeFingerprint(fingerprintRequest);
+		var cached = readRuntimeMapCache(cache, key, fingerprint);
+		if (cached) {
+			return normalizeTree(cached);
+		}
+		var tree = flowTreeService().authoringTreeRequest(request, blocks, flowTreeServiceEnv());
+		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow authoring tree snapshots"));
 	}
 
 	function authoringContractRequest(request) {
