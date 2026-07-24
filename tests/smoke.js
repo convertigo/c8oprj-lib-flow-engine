@@ -3,6 +3,11 @@ var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var __flowEngineDir = String(new java.io.File(engineDir).getAbsolutePath());
 var projectDirFile = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-smoke-project");
+var persistentFrontendCacheDir = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"),
+	"convertigo-flow-cache/frontend-documents-v1");
+if (persistentFrontendCacheDir.isDirectory()) {
+	Packages.org.apache.commons.io.FileUtils.deleteDirectory(persistentFrontendCacheDir);
+}
 if (projectDirFile.isDirectory()) {
 	Packages.org.apache.commons.io.FileUtils.deleteDirectory(projectDirFile);
 }
@@ -3643,6 +3648,21 @@ var leanFlowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify
 assertTrue(findNode(leanFlowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendBlockCatalog" || node.path === "catalog";
 }) === null, "lean authoring tree should omit frontend and Flow catalogs");
+var engineAfterFrontendRestart = eval(source);
+var persistentFrontendTree = JSON.parse(engineAfterFrontendRestart.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "compact",
+	maxDepth: 2,
+	includeFrontendCatalog: false,
+	includeFlowCatalog: false
+})));
+var persistentFrontendCacheInfo = JSON.parse(engineAfterFrontendRestart.cacheInfo()).caches.persistentFrontendDocuments;
+assertTrue(persistentFrontendTree.childCount === leanFlowSvelteAuthoringTree.childCount &&
+	persistentFrontendCacheInfo.hits > 0 && persistentFrontendCacheInfo.errors === 0,
+	"a new Flow runtime should reuse the persistent frontend document cache");
 var flowSvelteOpenBuilt = JSON.parse(engine.contextAction(JSON.stringify({
 	project: "AstSmoke",
 	projectDir: __flowProjectDir,
@@ -3665,6 +3685,9 @@ assertTrue(flowSvelteAcceptance.calls[0].tool === "browser_navigate" &&
 	flowSvelteAcceptance.calls[2].tool === "browser_evaluate" &&
 	flowSvelteAcceptance.calls[6].tool === "browser_close",
 	"frontend acceptance should navigate, probe and close the browser");
+assertTrue(String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("async () =>") === 0 &&
+	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("deadline = startedAt + 15000") > 0,
+	"frontend acceptance should wait for a bounded stable browser state");
 var authoringTreeCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",

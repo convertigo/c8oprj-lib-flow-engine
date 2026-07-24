@@ -37,6 +37,13 @@
 		frontendDevServers: {},
 		blockArtifactCompilerFingerprint: null,
 		flowPlanCompilerFingerprint: null,
+		persistentFrontendDocuments: {
+			hits: 0,
+			misses: 0,
+			writes: 0,
+			errors: 0,
+			pruned: false
+		},
 		caches: {
 			blocks: createRuntimeMapCacheState(),
 			coreBlocks: createRuntimeMapCacheState(),
@@ -701,7 +708,8 @@
 			globalScope: globalScope,
 			resetModuleCaches: resetRuntimeModuleCaches,
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
-			clearCompiledScriptCache: clearCompiledScriptCache
+			clearCompiledScriptCache: clearCompiledScriptCache,
+			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments
 		};
 	}
 
@@ -4181,11 +4189,16 @@
 		var fingerprint = sha256Hex([
 			source,
 			JSON.stringify(drafts || {}),
-			frontendRouteSourcesFingerprint(sourceFile)
+			frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot)
 		].join("\n"));
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (cached) {
 			return enrichFrontendBindingSources(cached, request, projectRoot);
+		}
+		var persistent = readPersistentFrontendDocument(key, fingerprint);
+		if (persistent) {
+			var cachedPersistent = writeRuntimeMapCache(cache, key, fingerprint, persistent, "Svelte front documents");
+			return enrichFrontendBindingSources(cachedPersistent, request, projectRoot);
 		}
 		var normalizedSourcePath = String(sourceFile.getCanonicalPath()).replace(/\\/g, "/");
 		var local = normalizedSourcePath.indexOf("/src/routes/") >= 0
@@ -4227,6 +4240,7 @@
 				throw error;
 			}
 			var cachedResult = writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents");
+			writePersistentFrontendDocument(key, fingerprint, cachedResult);
 			return enrichFrontendBindingSources(cachedResult, request, projectRoot);
 		} finally {
 			try {
@@ -4240,32 +4254,182 @@
 		}
 	}
 
-	function frontendRouteSourcesFingerprint(sourceFile) {
-		var routeRoot = sourceFile && sourceFile.getParentFile();
-		while (routeRoot && String(routeRoot.getName()) !== "routes") {
-			routeRoot = routeRoot.getParentFile();
+	function frontendDocumentCacheDir() {
+		return new File(Packages.java.lang.System.getProperty("java.io.tmpdir"),
+			"convertigo-flow-cache/frontend-documents-v1");
+	}
+
+	function secureFrontendDocumentCacheDir(directory) {
+		if (!directory.isDirectory()) {
+			directory.mkdirs();
 		}
-		if (!routeRoot || !routeRoot.isDirectory()) {
-			return "";
+		try {
+			directory.setReadable(false, false);
+			directory.setWritable(false, false);
+			directory.setExecutable(false, false);
+			directory.setReadable(true, true);
+			directory.setWritable(true, true);
+			directory.setExecutable(true, true);
+		} catch (e) {
 		}
-		var entries = [];
-		function visit(directory, prefix) {
-			var files = directory.listFiles();
-			if (!files) {
-				return;
+		return directory;
+	}
+
+	function persistentFrontendDocumentFile(key, fingerprint) {
+		return new File(secureFrontendDocumentCacheDir(frontendDocumentCacheDir()),
+			sha256Hex(String(key) + "\n" + String(fingerprint)) + ".json");
+	}
+
+	function readPersistentFrontendDocument(key, fingerprint) {
+		var stats = runtimeState.persistentFrontendDocuments;
+		var file = persistentFrontendDocumentFile(key, fingerprint);
+		if (!file.isFile()) {
+			stats.misses++;
+			return null;
+		}
+		try {
+			var envelope = JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+			if (!envelope || envelope.version !== 1 || envelope.fingerprint !== fingerprint || !envelope.result) {
+				throw new Error("Invalid persistent frontend document cache entry.");
 			}
-			Arrays.asList(files).toArray().forEach(function (file) {
-				var relative = prefix ? prefix + "/" + file.getName() : String(file.getName());
-				if (file.isDirectory()) {
-					visit(file, relative);
-				} else if (relative === ".flow-route.json" || /(^|\/)\.flow-route\.json$/.test(relative) || /\.(flow\.)?svelte$/.test(relative)) {
-					entries.push(relative + "\n" + String(FileUtils.readFileToString(file, "UTF-8")));
-				}
-			});
+			stats.hits++;
+			file.setLastModified(new Date().getTime());
+			return envelope.result;
+		} catch (e) {
+			stats.errors++;
+			stats.misses++;
+			try {
+				file["delete"]();
+			} catch (ignored) {
+			}
+			return null;
 		}
-		visit(routeRoot, "");
-		entries.sort();
+	}
+
+	function prunePersistentFrontendDocuments() {
+		var stats = runtimeState.persistentFrontendDocuments;
+		if (stats.pruned) {
+			return;
+		}
+		stats.pruned = true;
+		var directory = frontendDocumentCacheDir();
+		var files = directory.isDirectory() ? directory.listFiles() : null;
+		if (!files || files.length <= 256) {
+			return;
+		}
+		var entries = Arrays.asList(files).toArray().filter(function (file) {
+			return file.isFile() && String(file.getName()).endsWith(".json");
+		}).sort(function (left, right) {
+			return Number(left.lastModified()) - Number(right.lastModified());
+		});
+		for (var i = 0; i < entries.length - 256; i++) {
+			try {
+				entries[i]["delete"]();
+			} catch (ignored) {
+			}
+		}
+	}
+
+	function writePersistentFrontendDocument(key, fingerprint, result) {
+		var stats = runtimeState.persistentFrontendDocuments;
+		var file = persistentFrontendDocumentFile(key, fingerprint);
+		var temporary = null;
+		try {
+			prunePersistentFrontendDocuments();
+			temporary = File.createTempFile("frontend-document-", ".json", file.getParentFile());
+			FileUtils.writeStringToFile(temporary, JSON.stringify({
+				version: 1,
+				fingerprint: fingerprint,
+				result: result
+			}), "UTF-8");
+			temporary.setReadable(false, false);
+			temporary.setWritable(false, false);
+			temporary.setReadable(true, true);
+			temporary.setWritable(true, true);
+			if (!temporary.renameTo(file)) {
+				FileUtils.copyFile(temporary, file);
+				temporary["delete"]();
+			}
+			file.setReadable(false, false);
+			file.setWritable(false, false);
+			file.setReadable(true, true);
+			file.setWritable(true, true);
+			stats.writes++;
+		} catch (e) {
+			stats.errors++;
+			if (temporary) {
+				try {
+					temporary["delete"]();
+				} catch (ignored) {
+				}
+			}
+		}
+	}
+
+	function frontendFingerprintFiles(root, suffixes, entries, visited) {
+		if (!root || !root.exists()) {
+			return;
+		}
+		var canonical = canonicalPath(root);
+		var visitKey = canonical + "|" + suffixes.join(",");
+		if (visited[visitKey]) {
+			return;
+		}
+		visited[visitKey] = true;
+		if (root.isFile()) {
+			var name = String(root.getName());
+			if (suffixes.some(function (suffix) { return name.endsWith(suffix); })) {
+				entries.push(canonical + "\n" + sha256Hex(String(FileUtils.readFileToString(root, "UTF-8"))));
+			}
+			return;
+		}
+		var files = root.listFiles();
+		if (!files) {
+			return;
+		}
+		Arrays.asList(files).toArray().sort(function (left, right) {
+			return String(left.getName()).localeCompare(String(right.getName()));
+		}).forEach(function (file) {
+			frontendFingerprintFiles(file, suffixes, entries, visited);
+		});
+	}
+
+	function frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot) {
+		var entries = [];
+		var visited = {};
+		var sourceRoot = sourceFile && sourceFile.getParentFile();
+		while (sourceRoot && String(sourceRoot.getName()) !== "src") {
+			sourceRoot = sourceRoot.getParentFile();
+		}
+		[
+			{ root: sourceRoot, suffixes: [".flow.svelte", ".flow-route.json"] },
+			{ root: new File(resourceRoot, "components"), suffixes: [".svelte"] },
+			{ root: new File(resourceRoot, "ui"), suffixes: [".uiblock.json"] },
+			{ root: new File(resourceRoot, "src-builder"), suffixes: [".ts"] },
+			{ root: new File(resourceRoot, "package.json"), suffixes: ["package.json"] },
+			{ root: new File(resourceRoot, "package-lock.json"), suffixes: ["package-lock.json"] },
+			{ root: new File(engineDir(), "blocks"), suffixes: [".block.js", ".browser.js"] },
+			{ root: new File(projectRoot, "libs/flow/blocks"), suffixes: [".block.js", ".browser.js"] },
+			{ root: new File(projectRoot, "libs/flow/frontbuilder/svelte/components"), suffixes: [".svelte"] }
+		].forEach(function (target) {
+			frontendFingerprintFiles(target.root, target.suffixes, entries, visited);
+		});
 		return sha256Hex(entries.join("\n"));
+	}
+
+	function clearPersistentFrontendDocuments() {
+		var directory = frontendDocumentCacheDir();
+		try {
+			if (directory.isDirectory()) {
+				FileUtils.deleteDirectory(directory);
+			}
+		} catch (e) {
+			runtimeState.persistentFrontendDocuments.errors++;
+		}
+		runtimeState.persistentFrontendDocuments.hits = 0;
+		runtimeState.persistentFrontendDocuments.misses = 0;
+		runtimeState.persistentFrontendDocuments.writes = 0;
+		runtimeState.persistentFrontendDocuments.pruned = false;
 	}
 
 	function applyFlowSvelteSourceMutationRequest(request) {
@@ -6561,18 +6725,39 @@
 
 	function frontendAcceptanceProbe() {
 		return [
-			"() => {",
+			"async () => {",
+			"  const startedAt = Date.now();",
+			"  const deadline = startedAt + 15000;",
+			"  const sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay));",
 			"  const visible = (element) => {",
 			"    const rect = element.getBoundingClientRect();",
 			"    const style = getComputedStyle(element);",
 			"    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';",
 			"  };",
+			"  let previousState = '';",
+			"  let stableSince = startedAt;",
+			"  while (Date.now() < deadline) {",
+			"    const state = [",
+			"      document.body.innerText,",
+			"      document.querySelectorAll('button').length,",
+			"      [...document.images].filter((image) => image.complete).length",
+			"    ].join('|');",
+			"    if (state !== previousState) {",
+			"      previousState = state;",
+			"      stableSince = Date.now();",
+			"    }",
+			"    if (Date.now() - startedAt >= 750 && Date.now() - stableSince >= 1000) break;",
+			"    await sleep(200);",
+			"  }",
 			"  const buttons = [...document.querySelectorAll('button')].filter(visible);",
 			"  const images = [...document.querySelectorAll('img')].filter(visible);",
+			"  const waitedMs = Date.now() - startedAt;",
 			"  return {",
 			"    url: location.href,",
 			"    title: document.title,",
 			"    viewport: [innerWidth, innerHeight],",
+			"    waitedMs,",
+			"    timedOut: Date.now() >= deadline,",
 			"    visibleButtons: buttons.length,",
 			"    buttonLabels: buttons.slice(0, 30).map((button) => (button.textContent || '').trim()),",
 			"    visibleImages: images.length,",

@@ -61,6 +61,13 @@
 				compiledScripts: env.compiledScriptCacheInfo ? env.compiledScriptCacheInfo() : { name: "compiledScripts", size: 0 },
 				propertyEditor: cacheSummary("propertyEditor", caches.propertyEditor, env),
 				treeSnapshots: cacheSummary("treeSnapshots", caches.treeSnapshots, env),
+				frontendDocuments: cacheSummary("frontendDocuments", caches.frontendDocuments, env),
+				persistentFrontendDocuments: {
+					hits: Number(env.runtimeState.persistentFrontendDocuments.hits || 0),
+					misses: Number(env.runtimeState.persistentFrontendDocuments.misses || 0),
+					writes: Number(env.runtimeState.persistentFrontendDocuments.writes || 0),
+					errors: Number(env.runtimeState.persistentFrontendDocuments.errors || 0)
+				},
 				expressions: cacheSummary("expressions", caches.expressionTokens, env)
 			}
 		};
@@ -79,7 +86,9 @@
 		env.cacheUtils.clearMap(caches.engineModules);
 		env.cacheUtils.clearValue(caches.propertyEditor);
 		env.cacheUtils.clearMap(caches.treeSnapshots);
+		env.cacheUtils.clearMap(caches.frontendDocuments);
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
+		env.clearPersistentFrontendDocuments();
 		env.resetModuleCaches();
 		return info(env);
 	}
