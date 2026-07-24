@@ -66,7 +66,7 @@ const _meta = {
 	function argsFrom(ctx, props) {
 		var args = {};
 		Object.keys(props || {}).forEach(function (key) {
-				if (key !== "out" && key !== "projectDir") {
+				if (key !== "out") {
 				args[key] = typeof props[key] === "string" ? ctx.template(props[key]) : props[key];
 			}
 		});

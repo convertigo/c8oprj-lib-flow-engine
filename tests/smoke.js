@@ -1199,6 +1199,25 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(resourceGetRun.result.resource.content.indexOf("patched ok") !== -1,
 	"resource.get block did not read project Flow resources");
+var alternateResourceProject = new java.io.File(__flowProjectDir, ".resource-target");
+var alternateResourceFile = new java.io.File(alternateResourceProject, "libs/flow/resources/target.txt");
+alternateResourceFile.getParentFile().mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(alternateResourceFile, "target project resource", "UTF-8");
+var targetedResourceGetRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: readTargetResource",
+		"    block: resource.get",
+		"    projectDir: " + JSON.stringify(String(alternateResourceProject.getAbsolutePath())),
+		"    path: libs/flow/resources/target.txt",
+		"    out: result.resource",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(targetedResourceGetRun.result.resource.content === "target project resource",
+	"resource.get block did not preserve the MCP-resolved target projectDir");
 var publicResourceGet = JSON.parse(engine.blockGet(JSON.stringify({ name: "resource.get" })));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "resource.get" && block.private === false;
