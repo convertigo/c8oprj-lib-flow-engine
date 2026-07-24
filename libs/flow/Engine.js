@@ -35,6 +35,13 @@
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
 		frontendDevServers: {},
+		frontendDocumentServers: {},
+		frontendDocumentServerStats: {
+			starts: 0,
+			reuses: 0,
+			fallbacks: 0,
+			errors: 0
+		},
 		blockArtifactCompilerFingerprint: null,
 		flowPlanCompilerFingerprint: null,
 		persistentFrontendDocuments: {
@@ -709,7 +716,8 @@
 			resetModuleCaches: resetRuntimeModuleCaches,
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
 			clearCompiledScriptCache: clearCompiledScriptCache,
-			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments
+			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
+			clearFrontendDocumentServers: clearFrontendDocumentServers
 		};
 	}
 
@@ -4230,9 +4238,7 @@
 			if (request.includeBindings === false) {
 				cliArgs.push("--without-bindings");
 			}
-			var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", cliArgs);
-			var output = frontendRunOneShot(args, resourceRoot, "Svelte front document");
-			var result = frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
+			var result = frontendDescribeDocument(resourceRoot, cliArgs);
 			if (!result || !result.model) {
 				var error = new Error("Svelte front document did not return a valid model.");
 				error.code = "FRONTEND_DOCUMENT_INVALID_RESULT";
@@ -6363,7 +6369,7 @@
 		return fileForProjectPath(projectRoot, "libs/flow/frontbuilder/svelte");
 	}
 
-	function frontendRunOneShot(args, cwd, label) {
+	function frontendProcessBuilder(args, cwd) {
 		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
 		pb.directory(cwd);
 		pb.redirectErrorStream(true);
@@ -6375,6 +6381,11 @@
 		if (executableParent) {
 			env.put("PATH", String(executableParent.getAbsolutePath()) + File.pathSeparator + String(Packages.java.lang.System.getenv("PATH") || ""));
 		}
+		return pb;
+	}
+
+	function frontendRunOneShot(args, cwd, label) {
+		var pb = frontendProcessBuilder(args, cwd);
 		frontendStudioLog("[" + label + "] > " + args.join(" "));
 		var process = pb.start();
 		var output = frontendReadProcessOutput(process.getInputStream(), label);
@@ -6386,6 +6397,122 @@
 			throw error;
 		}
 		return output;
+	}
+
+	function stopFrontendDocumentServer(server) {
+		if (!server) {
+			return;
+		}
+		try {
+			server.writer.close();
+		} catch (ignored1) {
+		}
+		try {
+			server.reader.close();
+		} catch (ignored2) {
+		}
+		try {
+			var descendants = server.process.descendants().iterator();
+			while (descendants.hasNext()) {
+				descendants.next().destroyForcibly();
+			}
+			server.process.destroyForcibly();
+		} catch (ignored3) {
+		}
+	}
+
+	function clearFrontendDocumentServers() {
+		Object.keys(runtimeState.frontendDocumentServers).forEach(function (key) {
+			stopFrontendDocumentServer(runtimeState.frontendDocumentServers[key]);
+		});
+		runtimeState.frontendDocumentServers = {};
+	}
+
+	function startFrontendDocumentServer(resourceRoot) {
+		var toolRoot = frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
+		var key = canonicalPath(toolRoot);
+		var existing = runtimeState.frontendDocumentServers[key];
+		if (existing && existing.process.isAlive()) {
+			runtimeState.frontendDocumentServerStats.reuses++;
+			return existing;
+		}
+		if (existing) {
+			stopFrontendDocumentServer(existing);
+		}
+		var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
+		frontendStudioLog("[Svelte front document server] > " + args.join(" "));
+		var process = frontendProcessBuilder(args, toolRoot).start();
+		var server = {
+			process: process,
+			writer: new Packages.java.io.BufferedWriter(new Packages.java.io.OutputStreamWriter(process.getOutputStream(), "UTF-8")),
+			reader: new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(process.getInputStream(), "UTF-8")),
+			lock: new Packages.java.util.concurrent.locks.ReentrantLock(),
+			sequence: 0
+		};
+		runtimeState.frontendDocumentServers[key] = server;
+		runtimeState.frontendDocumentServerStats.starts++;
+		return server;
+	}
+
+	function frontendRunDocumentServer(resourceRoot, cliArgs) {
+		var server = startFrontendDocumentServer(resourceRoot);
+		server.lock.lock();
+		try {
+			var id = runtimeState.id + "-" + (++server.sequence);
+			server.writer.write(JSON.stringify({ id: id, args: cliArgs }));
+			server.writer.newLine();
+			server.writer.flush();
+			var deadline = new Date().getTime() + 30000;
+			while (new Date().getTime() < deadline) {
+				if (server.reader.ready()) {
+					var line = server.reader.readLine();
+					if (line === null) {
+						break;
+					}
+					line = String(line);
+					if (line.indexOf("__C8O_FRONT_DOCUMENT__") !== 0) {
+						frontendStudioLog("[Svelte front document server] " + line);
+						continue;
+					}
+					var response = JSON.parse(line.substring("__C8O_FRONT_DOCUMENT__".length));
+					if (String(response.id || "") !== id) {
+						continue;
+					}
+					if (response.error) {
+						var responseError = new Error(String(response.error));
+						responseError.frontendDocumentResponse = true;
+						throw responseError;
+					}
+					if (!response.result || !response.result.model) {
+						throw new Error("Svelte front document server returned an invalid model.");
+					}
+					return response.result;
+				}
+				if (!server.process.isAlive()) {
+					break;
+				}
+				Packages.java.lang.Thread.sleep(20);
+			}
+			throw new Error("Svelte front document server did not answer within 30 seconds.");
+		} finally {
+			server.lock.unlock();
+		}
+	}
+
+	function frontendDescribeDocument(resourceRoot, cliArgs) {
+		try {
+			return frontendRunDocumentServer(resourceRoot, cliArgs);
+		} catch (e) {
+			runtimeState.frontendDocumentServerStats.errors++;
+			if (e && e.frontendDocumentResponse === true) {
+				throw e;
+			}
+			clearFrontendDocumentServers();
+			runtimeState.frontendDocumentServerStats.fallbacks++;
+			var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", cliArgs);
+			var output = frontendRunOneShot(args, resourceRoot, "Svelte front document");
+			return frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
+		}
 	}
 
 	function frontendReadProcessOutput(stream, label) {

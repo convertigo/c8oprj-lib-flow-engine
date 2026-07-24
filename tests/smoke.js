@@ -3648,6 +3648,10 @@ var leanFlowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify
 assertTrue(findNode(leanFlowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendBlockCatalog" || node.path === "catalog";
 }) === null, "lean authoring tree should omit frontend and Flow catalogs");
+var frontendDocumentServerInfo = JSON.parse(engine.cacheInfo()).caches.frontendDocumentServer;
+assertTrue(frontendDocumentServerInfo.starts === 1 && frontendDocumentServerInfo.active === 1 &&
+	frontendDocumentServerInfo.fallbacks === 0 && frontendDocumentServerInfo.errors === 0,
+	"frontend document parsing should use one healthy persistent Node worker");
 var engineAfterFrontendRestart = eval(source);
 var persistentFrontendTree = JSON.parse(engineAfterFrontendRestart.authoringTree(JSON.stringify({
 	surface: "frontend",

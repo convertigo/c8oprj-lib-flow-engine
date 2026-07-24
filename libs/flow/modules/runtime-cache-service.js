@@ -68,6 +68,13 @@
 					writes: Number(env.runtimeState.persistentFrontendDocuments.writes || 0),
 					errors: Number(env.runtimeState.persistentFrontendDocuments.errors || 0)
 				},
+				frontendDocumentServer: {
+					starts: Number(env.runtimeState.frontendDocumentServerStats.starts || 0),
+					reuses: Number(env.runtimeState.frontendDocumentServerStats.reuses || 0),
+					fallbacks: Number(env.runtimeState.frontendDocumentServerStats.fallbacks || 0),
+					errors: Number(env.runtimeState.frontendDocumentServerStats.errors || 0),
+					active: Object.keys(env.runtimeState.frontendDocumentServers).length
+				},
 				expressions: cacheSummary("expressions", caches.expressionTokens, env)
 			}
 		};
@@ -88,6 +95,7 @@
 		env.cacheUtils.clearMap(caches.treeSnapshots);
 		env.cacheUtils.clearMap(caches.frontendDocuments);
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
+		env.clearFrontendDocumentServers();
 		env.clearPersistentFrontendDocuments();
 		env.resetModuleCaches();
 		return info(env);
