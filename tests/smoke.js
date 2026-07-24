@@ -1774,6 +1774,24 @@ var xmlParseRun = JSON.parse(engine.run(JSON.stringify({
 assertTrue(xmlParseRun.result.title === "One" &&
 	xmlParseRun.result.imageUrl === "https://example.test/one.png",
 	"xml.parse did not expose the expected Convertigo XML-to-JSON shape");
+var xmlParseEnvelopeRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: parseEnvelope",
+		"    block: xml.parse",
+		"    text:",
+		"      content: \"<rss />\"",
+		"      path: libs/flow/resources/feed.xml",
+		"    out: local.feed",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(xmlParseEnvelopeRun.ok === false &&
+	JSON.stringify(xmlParseEnvelopeRun).indexOf("xml.parse expects raw XML text") !== -1 &&
+	JSON.stringify(xmlParseEnvelopeRun).indexOf("asset.read") !== -1,
+	"xml.parse did not reject a resource envelope with an actionable asset.read hint");
 var innerLeakCodeSource = [
 	"const _meta = {",
 	"\t\"description\": \"Inner Flow block whose result scope must stay private to the block.\",",
@@ -3690,8 +3708,10 @@ assertTrue(flowSvelteAcceptance.calls[0].tool === "browser_navigate" &&
 	flowSvelteAcceptance.calls[6].tool === "browser_close",
 	"frontend acceptance should navigate, probe and close the browser");
 assertTrue(String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("async () =>") === 0 &&
-	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("deadline = startedAt + 15000") > 0,
-	"frontend acceptance should wait for a bounded stable browser state");
+	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("deadline = startedAt + 15000") > 0 &&
+	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("if (!pendingText") > 0 &&
+	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("terminalReached: !pendingText") > 0,
+	"frontend acceptance should wait for a bounded stable terminal browser state");
 var authoringTreeCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
@@ -3704,6 +3724,27 @@ JSON.parse(engine.authoringTree(JSON.stringify({
 var authoringTreeCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 assertTrue(authoringTreeCacheAfterRepeat.hits > authoringTreeCacheBeforeRepeat.hits,
 	"repeated authoring tree reads should reuse the shared tree snapshot");
+var nestedRouteDir = new java.io.File(flowSvelteRoutesDir, "detail");
+nestedRouteDir.mkdirs();
+var nestedRouteFile = new java.io.File(nestedRouteDir, "+page.flow.svelte");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(nestedRouteFile, [
+	"<FlowComponent id=\"detail\" label=\"Detail\">",
+	"  <Structure><Text id=\"detailTitle\" text=\"Detail\" /></Structure>",
+	"</FlowComponent>",
+	""
+].join("\n"), "UTF-8");
+var authoringTreeCacheBeforeRouteChange = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "compact",
+	maxDepth: 2
+})));
+var authoringTreeCacheAfterRouteChange = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+assertTrue(authoringTreeCacheAfterRouteChange.misses > authoringTreeCacheBeforeRouteChange.misses,
+	"changing a sibling Svelte route should invalidate the shared authoring tree snapshot");
 var flowSvelteRoutesNode = findNode(flowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendRoutes";
 });

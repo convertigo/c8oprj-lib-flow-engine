@@ -3764,8 +3764,12 @@
 				}
 				var draft = frontendDraftForFile(request, file);
 				var componentDir = new File(file.getParentFile(), "components");
+				var sourceRoot = file.getParentFile();
+				while (sourceRoot && String(sourceRoot.getName()) !== "src") {
+					sourceRoot = sourceRoot.getParentFile();
+				}
 				var drafts = frontendSourceDrafts(request);
-				var basePath = String(file.getParentFile().getCanonicalPath());
+				var basePath = String((sourceRoot || file.getParentFile()).getCanonicalPath());
 				var draftParts = [];
 				Object.keys(drafts).sort().forEach(function (key) {
 					try {
@@ -3781,6 +3785,7 @@
 					entry.name,
 					canonicalPath(file),
 					draft !== null ? "draft:" + sha256Hex(draft) : file.isFile() ? fileFingerprint(file) : "missing",
+					sourceRoot && sourceRoot.isDirectory() ? directoryFingerprint(sourceRoot) : "",
 					componentDir.isDirectory() ? directoryFingerprint(componentDir) : "",
 					draftParts.join("|")
 				].join(":");
@@ -6861,8 +6866,13 @@
 			"    const style = getComputedStyle(element);",
 			"    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';",
 			"  };",
+			"  const pending = () => {",
+			"    const text = document.body.innerText;",
+			"    return /initializ|synchron|\\bsync(?:ing)?\\b|optimis|loading|chargement/i.test(text) || /\\b(?:active|change|changed|pending)\\s+\\d+\\/\\d+\\b/i.test(text);",
+			"  };",
 			"  let previousState = '';",
 			"  let stableSince = startedAt;",
+			"  let pendingText = true;",
 			"  while (Date.now() < deadline) {",
 			"    const state = [",
 			"      document.body.innerText,",
@@ -6873,7 +6883,8 @@
 			"      previousState = state;",
 			"      stableSince = Date.now();",
 			"    }",
-			"    if (Date.now() - startedAt >= 750 && Date.now() - stableSince >= 1000) break;",
+			"    pendingText = pending();",
+			"    if (!pendingText && Date.now() - startedAt >= 750 && Date.now() - stableSince >= 1000) break;",
 			"    await sleep(200);",
 			"  }",
 			"  const buttons = [...document.querySelectorAll('button')].filter(visible);",
@@ -6885,12 +6896,13 @@
 			"    viewport: [innerWidth, innerHeight],",
 			"    waitedMs,",
 			"    timedOut: Date.now() >= deadline,",
+			"    terminalReached: !pendingText,",
 			"    visibleButtons: buttons.length,",
 			"    buttonLabels: buttons.slice(0, 30).map((button) => (button.textContent || '').trim()),",
 			"    visibleImages: images.length,",
 			"    brokenImages: images.filter((image) => image.naturalWidth === 0).slice(0, 20).map((image) => ({ alt: image.alt, src: image.currentSrc || image.src })),",
 			"    horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,",
-			"    pendingText: /initializ|synchron|optimis|loading|chargement/i.test(document.body.innerText),",
+			"    pendingText,",
 			"    bodyText: document.body.innerText.slice(0, 500)",
 			"  };",
 			"}"

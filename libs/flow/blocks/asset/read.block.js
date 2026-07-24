@@ -5,7 +5,7 @@ const _meta = {
     "resource"
   ],
   "description": "Reads a project-local Flow asset as text.",
-  "longDescription": "Use assets for templates, snippets, guides or fixtures stored under libs/flow/resources. The block returns the text content so it can be rendered, written or returned by a Flow.",
+  "longDescription": "Use assets for templates, snippets, guides or fixtures stored under libs/flow/resources. Flow code passes the project-relative libs/flow/resources/... path and receives raw text. Frontend rendered assets instead use resources/... URLs; MCP flow-resource-get returns an inspection envelope whose content field is the text.",
   "properties": {
     "path": {
       "label": "path",

@@ -1,7 +1,8 @@
 const _meta = {
   "version": 1,
   "icon": "mdi:xml",
-  "description": "Parses XML text into the Convertigo JSON shape.",
+  "description": "Parses raw XML text into the Convertigo JSON shape.",
+  "longDescription": "Pass the text returned by asset.read or the content field of a resource envelope. This block rejects resource metadata objects so path and content mistakes fail explicitly.",
   "properties": {
     "text": {
       "label": "text",
@@ -122,6 +123,9 @@ const _meta = {
 			var text = ctx.template(props.text);
 			if (text === undefined || text === null || text === "") {
 				return {};
+			}
+			if (typeof text === "object") {
+				throw new Error("xml.parse expects raw XML text, not a resource object. Use asset.read({ path: \"libs/flow/resources/...\" }) in Flow code, or pass resource.get(...).content.");
 			}
 			return documentValue(parseXml(text));
 		}

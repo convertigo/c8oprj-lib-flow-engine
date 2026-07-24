@@ -920,7 +920,7 @@
 		if (/^on[A-Z]/.test(kind)) {
 			return "frontendEventBlock";
 		}
-		if (kind === "callSequence" || kind === "setValue" || /^fullSync(?:Get|View|Sync)$/.test(kind)) {
+		if (flowSvelteLiteActionKind(kind)) {
 			return "frontendActionBlock";
 		}
 		if (kind === "variable") {
@@ -932,6 +932,14 @@
 		return kind;
 	}
 
+	function flowSvelteLiteActionKind(kind) {
+		return [
+			"callSequence", "portableBlock", "runAxiom",
+			"fullSyncGet", "fullSyncView", "fullSyncSync", "fullSyncReset",
+			"setValue", "updateList", "updateNumber", "navigate", "goBack"
+		].indexOf(String(kind || "")) !== -1;
+	}
+
 	function flowSvelteLiteTraits(kind) {
 		if (kind === "if" || kind === "each" || kind === "await") {
 			return ["ui.directive", "ui.container"];
@@ -939,7 +947,7 @@
 		if (/^on[A-Z]/.test(kind)) {
 			return ["ui.event", "ui.container"];
 		}
-		if (kind === "callSequence" || kind === "setValue" || /^fullSync(?:Get|View|Sync)$/.test(kind)) {
+		if (flowSvelteLiteActionKind(kind)) {
 			return ["ui.action"];
 		}
 		if (kind === "variable") {
@@ -1256,21 +1264,27 @@
 					fix: { op: "replace", path: String(node.sourceMutationPath || "") + ".props.marker", value: marker }
 				});
 			}
-			if (kind === "variable" && node.props.value && node.props.value.mode === "expression") {
-				var expression = String(node.props.value.expression || "");
-				var suggestedReference = /^[A-Za-z_$][A-Za-z0-9_$]*(?:(?:\.[A-Za-z_$][A-Za-z0-9_$]*)|(?:\[\d+\]))*$/.test(expression)
-					? "@" + expression : "";
-				var variableDiagnostic = {
-					severity: "error",
-					code: "FRONTEND_ACTION_EXPRESSION_NOT_PORTABLE",
-					message: "Client action parameters do not execute free browser expressions. Use a literal, a schema-backed source, or a dual-target Flow block.",
-					path: String(node.sourceMutationPath || "") + ".props.value"
-				};
-				if (suggestedReference) {
-					variableDiagnostic.suggestedReference = suggestedReference;
-					variableDiagnostic.fix = { op: "replace", path: variableDiagnostic.path, value: suggestedReference };
-				}
-				diagnostics.push(variableDiagnostic);
+			var actionTraits = node.traits || [];
+			if (actionTraits.indexOf("ui.action") !== -1 || actionTraits.indexOf("ui.action.variable") !== -1) {
+				Object.keys(node.props || {}).forEach(function (property) {
+					var value = node.props[property];
+					if (property === "marker" || !value || typeof value !== "object" || value.mode !== "expression") return;
+					var expression = String(value.expression || "").trim();
+					var suggestedReference = /^[A-Za-z_$][A-Za-z0-9_$]*(?:(?:\.[A-Za-z_$][A-Za-z0-9_$]*)|(?:\[\d+\]))*$/.test(expression)
+						? "@" + expression : "";
+					var propertyPath = String(node.sourceMutationPath || "") + ".props." + property;
+					var actionDiagnostic = {
+						severity: "error",
+						code: "FRONTEND_ACTION_EXPRESSION_NOT_PORTABLE",
+						message: "Client action property " + property + " does not execute free browser expressions. Use a literal, a schema-backed source, or a dual-target Flow block.",
+						path: propertyPath
+					};
+					if (suggestedReference) {
+						actionDiagnostic.suggestedReference = suggestedReference;
+						actionDiagnostic.fix = { op: "replace", path: propertyPath, value: suggestedReference };
+					}
+					diagnostics.push(actionDiagnostic);
+				});
 			}
 			var nextScopes = scopes || [];
 			if (node && node.props && node.props.kind === "each") {
