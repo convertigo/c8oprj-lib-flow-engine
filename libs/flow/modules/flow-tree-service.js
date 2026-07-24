@@ -533,7 +533,9 @@
 				}), compact(sourceObjectInfo(sourceInfo, frontendSourcePropertyDefinitions(),
 					["sourceRelativePath", "sourceWritable", "sourceDirty"])), "mdi:file-code-outline"));
 		}
-		var catalogNode = addFrontendBlockCatalog(builder, name, settings, path, request);
+		var catalogNode = request.includeFrontendCatalog === false
+			? null
+			: addFrontendBlockCatalog(builder, name, settings, path, request);
 		if (!settings.modelPath) {
 			return;
 		}
@@ -3457,10 +3459,12 @@
 			addBindings(children, engine.bindings, "bindings");
 			addConfig(children, engine.config, "config", engine.configVisibility, request);
 			addFrontendModels(children, engine.config, "frontends", request);
-			addFragments(children, blocks);
-			addCatalog(children, blocks, {
-				includePrivate: request.includePrivate !== false
-			});
+			if (request.includeFlowCatalog !== false) {
+				addFragments(children, blocks);
+				addCatalog(children, blocks, {
+					includePrivate: request.includePrivate !== false
+				});
+			}
 		} else {
 			raise("UNKNOWN_TREE_TARGET", "Unknown Flow tree target: " + target);
 		}

@@ -3899,7 +3899,9 @@
 			includeSource: request.includeSource === true,
 			includeAnalysis: request.includeAnalysis === true,
 			includeSchema: request.includeSchema === true || request.schema === true,
-			includePrivate: request.includePrivate !== false
+			includePrivate: request.includePrivate !== false,
+			includeFrontendCatalog: request.includeFrontendCatalog !== false,
+			includeFlowCatalog: request.includeFlowCatalog !== false
 		});
 		var fingerprint = describeTreeFingerprint(fingerprintRequest);
 		var cached = readRuntimeMapCache(cache, key, fingerprint);

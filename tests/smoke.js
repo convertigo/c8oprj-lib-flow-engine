@@ -3630,6 +3630,19 @@ assertTrue(flowSvelteAuthoringTree.childCount === 1 &&
 	"authoring tree did not focus the Svelte builder by default");
 assertTrue(Object.prototype.toString.call(flowSvelteAuthoringTree.diagnostics) === "[object Array]",
 	"authoring tree did not preserve frontend document diagnostics");
+var leanFlowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "compact",
+	maxDepth: 2,
+	includeFrontendCatalog: false,
+	includeFlowCatalog: false
+})));
+assertTrue(findNode(leanFlowSvelteAuthoringTree, function (node) {
+	return node.kind === "frontendBlockCatalog" || node.path === "catalog";
+}) === null, "lean authoring tree should omit frontend and Flow catalogs");
 var authoringTreeCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
