@@ -877,12 +877,27 @@
 					id: "navigate",
 					kind: "navigate",
 					tag: "Navigate",
-					to: "/",
+					page: "home",
 					replace: false
+				},
+				slots: {
+					params: {
+						label: "Parameters",
+						accepts: ["ui.action.variable"]
+					},
+					query: {
+						label: "Query",
+						accepts: ["ui.action.variable"]
+					}
 				},
 				properties: {
 					id: { type: "string" },
-					to: { type: "string", kind: "text" },
+					page: { type: "string", kind: "text" },
+					to: {
+						type: "binding",
+						kind: "binding",
+						description: "Expert fallback route. Prefer page with Parameters and Query."
+					},
 					replace: { type: "boolean", kind: "boolean" }
 				}
 			}),
@@ -2154,11 +2169,11 @@
 						return;
 					}
 					var source = candidate && (candidate.source || candidate) || {};
-					var schema = source.category === "iteration"
+					var schema = candidate && candidate.schema || (source.category === "iteration"
 						? source.value === "index"
 							? { type: "integer" }
 							: iterationSchemas[String(source.scopeId || candidate.id || "")]
-						: actionSchemas[String(source.actionId || candidate.id || "")];
+						: actionSchemas[String(source.actionId || candidate.id || "")]);
 					var info = schemaInfo(schema, env);
 					if (!info) {
 						return;
