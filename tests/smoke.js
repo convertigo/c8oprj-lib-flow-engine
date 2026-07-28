@@ -1,4 +1,4 @@
-var engineDir = arguments.length > 0 ? arguments[0] : "libs/flow";
+var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
 var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var __flowEngineDir = String(new java.io.File(engineDir).getAbsolutePath());
