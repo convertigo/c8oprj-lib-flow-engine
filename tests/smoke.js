@@ -14,6 +14,14 @@ if (projectDirFile.isDirectory()) {
 projectDirFile.mkdirs();
 var __flowProjectDir = String(projectDirFile.getAbsolutePath());
 var engine = eval(source);
+var smokeVerbose = java.lang.Boolean.getBoolean("flow.smoke.verbose") ||
+	String(java.lang.System.getenv("FLOW_SMOKE_VERBOSE") || "").toLowerCase() === "true";
+
+function debugPrint(value) {
+	if (smokeVerbose) {
+		print(value);
+	}
+}
 
 function assertTrue(condition, message) {
 	if (!condition) {
@@ -263,7 +271,7 @@ var resumedCatalog = JSON.parse(engine.catalog(JSON.stringify({
 	hints: false
 })));
 assertTrue(resumedCatalog.count === 1, "catalog response cursor did not resume descriptor materialization");
-print(JSON.stringify(catalog));
+debugPrint(JSON.stringify(catalog));
 assertTrue(catalog.blocks.some(function (block) {
 	return block.blockId === "requestable.call";
 }), "catalog did not expose requestable.call");
@@ -2243,9 +2251,9 @@ assertTrue(propertyEditor.html.indexOf("syncSimpleExpression") !== -1 &&
 	"expression editor did not expose segmented Simple editing with imported path highlights");
 assertTrue(propertyEditor.html.indexOf("data-picker-format") === -1,
 	"propertyEditor still exposes the confusing path/template picker format selector");
-print(engine.analyze(JSON.stringify({ flowSource: flowSource })));
+debugPrint(engine.analyze(JSON.stringify({ flowSource: flowSource })));
 var describedFlowTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", flowSource: flowSource })));
-print(JSON.stringify(describedFlowTree));
+debugPrint(JSON.stringify(describedFlowTree));
 assertTrue(describedFlowTree.children[0].name === "flow" &&
 	describedFlowTree.children[0].children[2].type === "forEach",
 	"describeTree(flow) did not expose flow nodes");
@@ -2257,7 +2265,7 @@ var simpleLoopContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["current"],
 	detail: "normal"
 })));
-print(JSON.stringify(simpleLoopContext));
+debugPrint(JSON.stringify(simpleLoopContext));
 assertTrue(simpleLoopContext.ok === true &&
 	simpleLoopContext.scopes.current.paths.length === 1 &&
 	simpleLoopContext.scopes.current.paths[0].path === "current" &&
@@ -2365,7 +2373,7 @@ var mutatedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 		}
 	}
 })));
-print(JSON.stringify(mutatedFlow));
+debugPrint(JSON.stringify(mutatedFlow));
 assertTrue(mutatedFlow.ok === true && mutatedFlow.analysis.writes.indexOf("result.mutated") !== -1,
 	"applyMutation(flow) did not append and analyze a node");
 var mutatedFlowRun = JSON.parse(engine.run(JSON.stringify({ flowSource: mutatedFlow.source })));
@@ -2380,7 +2388,7 @@ var semanticMutatedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 		value: "Hello semantic mutation"
 	}
 })));
-print(JSON.stringify(semanticMutatedFlow));
+debugPrint(JSON.stringify(semanticMutatedFlow));
 var semanticMutatedRun = JSON.parse(engine.run(JSON.stringify({ flowSource: semanticMutatedFlow.source })));
 assertTrue(semanticMutatedRun.result.message === "Hello semantic mutation",
 	"applyMutation(flow) did not replace a node property by nodeId");
@@ -2398,11 +2406,11 @@ var semanticInsertedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 		}
 	}
 })));
-print(JSON.stringify(semanticInsertedFlow));
+debugPrint(JSON.stringify(semanticInsertedFlow));
 assertTrue(semanticInsertedFlow.ok === true &&
 	semanticInsertedFlow.analysis.writes.indexOf("result.afterMessage") !== -1,
 	"applyMutation(flow) did not insert a node after nodeId");
-print(engine.run(JSON.stringify({ flowSource: flowSource })));
+debugPrint(engine.run(JSON.stringify({ flowSource: flowSource })));
 var staticSchemaFlowSource = [
 	"version: 1",
 	"nodes:",
@@ -2645,7 +2653,7 @@ var implicitReturnFlowSource = [
 	""
 ].join("\n");
 var implicitReturnRun = JSON.parse(engine.run(JSON.stringify({ flowSource: implicitReturnFlowSource })));
-print(JSON.stringify(implicitReturnRun));
+debugPrint(JSON.stringify(implicitReturnRun));
 assertTrue(implicitReturnRun.result.message === "implicit result", "Flow did not return result implicitly");
 
 var templatedValueFlowSource = [
@@ -2663,7 +2671,7 @@ var templatedValueRun = JSON.parse(engine.run(JSON.stringify({
 		append: "Flow"
 	}
 })));
-print(JSON.stringify(templatedValueRun));
+debugPrint(JSON.stringify(templatedValueRun));
 assertTrue(templatedValueRun.result.message === "Hello Flow", "Flow did not template string literal values");
 
 var explicitReturnFlowSource = [
@@ -2683,7 +2691,7 @@ var explicitReturnFlowSource = [
 	""
 ].join("\n");
 var explicitReturnRun = JSON.parse(engine.run(JSON.stringify({ flowSource: explicitReturnFlowSource })));
-print(JSON.stringify(explicitReturnRun));
+debugPrint(JSON.stringify(explicitReturnRun));
 assertTrue(explicitReturnRun.result.message === "before return", "Flow did not stop after return");
 
 var throwFlowSource = [
@@ -2699,7 +2707,7 @@ var throwFlowSource = [
 	""
 ].join("\n");
 var throwRun = JSON.parse(engine.run(JSON.stringify({ flowSource: throwFlowSource })));
-print(JSON.stringify(throwRun));
+debugPrint(JSON.stringify(throwRun));
 assertTrue(throwRun.ok === false && throwRun.error.code === "WEATHER_ALERT_ERROR",
 	"Flow throw did not produce a structured error");
 
@@ -2752,7 +2760,7 @@ var weatherFlowSource = [
 	"    value: \"{{ result }}\"",
 	""
 ].join("\n");
-print(engine.analyze(JSON.stringify({ flowSource: weatherFlowSource })));
+debugPrint(engine.analyze(JSON.stringify({ flowSource: weatherFlowSource })));
 var notifyContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: weatherFlowSource,
 	node: "notify",
@@ -2760,7 +2768,7 @@ var notifyContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["local", "result"],
 	detail: "normal"
 })));
-print(JSON.stringify(notifyContext));
+debugPrint(JSON.stringify(notifyContext));
 assertTrue(notifyContext.ok === true &&
 	notifyContext.scopes.local.paths.some(function (entry) { return entry.path === "local.metropoles"; }) &&
 	notifyContext.scopes.result.paths.some(function (entry) { return entry.path === "result.hotCities"; }) &&
@@ -2774,7 +2782,7 @@ var keepHotCityContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["current"],
 	detail: "normal"
 })));
-print(JSON.stringify(keepHotCityContext));
+debugPrint(JSON.stringify(keepHotCityContext));
 assertTrue(keepHotCityContext.ok === true &&
 	keepHotCityContext.scopes.current.paths.length === 1 &&
 	keepHotCityContext.scopes.current.paths[0].producer &&
@@ -2787,12 +2795,12 @@ var compactContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["local"],
 	detail: "compact"
 })));
-print(JSON.stringify(compactContext));
+debugPrint(JSON.stringify(compactContext));
 assertTrue(Object.keys(compactContext.scopes).join(",") === "local" &&
 	compactContext.scopes.local.indexOf("local.weather") !== -1,
 	"Flow compact context did not filter scopes");
-print(engine.run(JSON.stringify({ flowSource: weatherFlowSource })));
-print(engine.run(JSON.stringify({
+debugPrint(engine.run(JSON.stringify({ flowSource: weatherFlowSource })));
+debugPrint(engine.run(JSON.stringify({
 	flowSource: weatherFlowSource,
 	config: {
 		weatherUrl: fixtureUrl,
@@ -2822,7 +2830,7 @@ var learnedContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["local"],
 	detail: "compact"
 })));
-print(JSON.stringify(learnedContext));
+debugPrint(JSON.stringify(learnedContext));
 assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles[0].city") !== -1,
 	"Flow context did not expose learned HTTP JSON item schema paths");
 assertTrue(learnedContext.scopes.local.indexOf("local.weather.body.metropoles.city") === -1,
@@ -2836,7 +2844,7 @@ var learnedLoopContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["current"],
 	detail: "compact"
 })));
-print(JSON.stringify(learnedLoopContext));
+debugPrint(JSON.stringify(learnedLoopContext));
 assertTrue(learnedLoopContext.scopes.current.indexOf("current.city") !== -1 &&
 	learnedLoopContext.scopes.current.indexOf("current.temperature") !== -1,
 	"Flow context did not expose iterated item fields from a learned array schema");
@@ -2844,7 +2852,7 @@ var schemaReset = JSON.parse(engine.schemaReset(JSON.stringify({
 	flowName: schemaFlowName,
 	node: "fetchWeather"
 })));
-print(JSON.stringify(schemaReset));
+debugPrint(JSON.stringify(schemaReset));
 assertTrue(schemaReset.ok === true && schemaReset.deleted === true && !schemaFile.isFile(),
 	"Flow schema reset did not delete the learned node schema");
 
@@ -2892,7 +2900,7 @@ var compactWeatherFlowSource = [
 ].join("\n");
 
 var compactWeatherAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: compactWeatherFlowSource })));
-print(JSON.stringify(compactWeatherAnalysis));
+debugPrint(JSON.stringify(compactWeatherAnalysis));
 assertTrue(compactWeatherAnalysis.writes.indexOf("local.hotMetropoles") !== -1,
 	"Compact weather analysis did not report list.filter output");
 
@@ -2904,7 +2912,7 @@ var compactWeatherRun = JSON.parse(engine.run(JSON.stringify({
 		threshold: 35
 	}
 })));
-print(JSON.stringify(compactWeatherRun));
+debugPrint(JSON.stringify(compactWeatherRun));
 assertTrue(compactWeatherRun.result.hotCities.join(",") === "Marseille,Paris",
 	"Compact weather flow did not filter, sort and map hot cities");
 
@@ -2957,7 +2965,7 @@ var listSchemaPropagationFlowSource = [
 	""
 ].join("\n");
 var listSchemaAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
-print(JSON.stringify(listSchemaAnalysis));
+debugPrint(JSON.stringify(listSchemaAnalysis));
 function analysisNode(analysis, id) {
 	for (var i = 0; i < (analysis.nodes || []).length; i++) {
 		if (analysis.nodes[i].id === id) {
@@ -2999,7 +3007,7 @@ assertTrue(pluckAgeOutput && pluckAgeOutput.type === "integer",
 assertTrue(countSortedOutput && countSortedOutput.schema && countSortedOutput.schema.type === "integer",
 	"list length expression did not infer an integer node output schema");
 var listSchemaOutput = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
-print(JSON.stringify(listSchemaOutput));
+debugPrint(JSON.stringify(listSchemaOutput));
 assertTrue(listSchemaOutput.schema.properties.names.type === "array" &&
 	listSchemaOutput.schema.properties.names.items.type === "string",
 	"list.map did not derive array item schema from current.* selection");
@@ -3125,7 +3133,7 @@ var configUsePickerFlowSource = [
 var configUsePickerAnalysis = JSON.parse(engine.analyze(JSON.stringify({
 	flowSource: configUsePickerFlowSource
 })));
-print(JSON.stringify(configUsePickerAnalysis));
+debugPrint(JSON.stringify(configUsePickerAnalysis));
 assertTrue(configUsePickerAnalysis.writes.indexOf("local.adults") !== -1 &&
 	configUsePickerAnalysis.writes.indexOf("result.adults") !== -1,
 	"config.use analysis did not visit nodes in the then slot");
@@ -3138,7 +3146,7 @@ var configUsePickerContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["config", "current"],
 	detail: "normal"
 })));
-print(JSON.stringify(configUsePickerContext));
+debugPrint(JSON.stringify(configUsePickerContext));
 function contextEntries(context, scope) {
 	return context.scopes && context.scopes[scope] && context.scopes[scope].paths || [];
 }
@@ -3225,7 +3233,7 @@ var standardDataFlowSource = [
 	""
 ].join("\n");
 var standardDataRun = JSON.parse(engine.run(JSON.stringify({ flowSource: standardDataFlowSource })));
-print(JSON.stringify(standardDataRun));
+debugPrint(JSON.stringify(standardDataRun));
 assertTrue(standardDataRun.result.payload.city === "Paris" &&
 	standardDataRun.result.payload.temperature === 38 &&
 	standardDataRun.result.payload.alert === true &&
@@ -3265,7 +3273,7 @@ var inputRun = JSON.parse(engine.run(JSON.stringify({
 		message: "from body"
 	}
 })));
-print(JSON.stringify(inputRun));
+debugPrint(JSON.stringify(inputRun));
 assertTrue(inputRun.result.city === "Paris" &&
 	inputRun.result.tags.join(",") === "hot,capital" &&
 	inputRun.result.message === "from body",
@@ -3302,7 +3310,7 @@ var writerFlowSource = [
 	""
 ].join("\n");
 var writerRun = JSON.parse(engine.run(JSON.stringify({ flowSource: writerFlowSource })));
-print(JSON.stringify(writerRun));
+debugPrint(JSON.stringify(writerRun));
 var writerText = String(Packages.org.apache.commons.io.FileUtils.readFileToString(writerFile, "UTF-8")).replace(/\r\n/g, "\n");
 assertTrue(writerRun.ok === true &&
 	writerText === "Alpha\nBeta\n" &&
@@ -3329,7 +3337,7 @@ var forbiddenHandleResultFlowSource = [
 	""
 ].join("\n");
 var forbiddenHandleResultRun = JSON.parse(engine.run(JSON.stringify({ flowSource: forbiddenHandleResultFlowSource })));
-print(JSON.stringify(forbiddenHandleResultRun));
+debugPrint(JSON.stringify(forbiddenHandleResultRun));
 assertTrue(forbiddenHandleResultRun.ok === false &&
 	forbiddenHandleResultRun.error.code === "RUNTIME_HANDLE_IN_RESULT",
 	"Runtime handles should be rejected from result payloads");
@@ -3358,7 +3366,7 @@ var readerFlowSource = [
 	""
 ].join("\n");
 var readerRun = JSON.parse(engine.run(JSON.stringify({ flowSource: readerFlowSource })));
-print(JSON.stringify(readerRun));
+debugPrint(JSON.stringify(readerRun));
 assertTrue(readerRun.ok === true &&
 	readerRun.result.lines.join(",") === "Alpha,Beta" &&
 	readerRun.result.readStats.count === 2 &&
@@ -3375,7 +3383,7 @@ var readerContext = JSON.parse(engine.context(JSON.stringify({
 	include: ["current"],
 	detail: "normal"
 })));
-print(JSON.stringify(readerContext));
+debugPrint(JSON.stringify(readerContext));
 assertTrue(readerContext.ok === true &&
 	readerContext.scopes.current.paths.length === 1 &&
 	readerContext.scopes.current.paths[0].path === "current" &&
@@ -3402,7 +3410,7 @@ var readLineFlowSource = [
 	""
 ].join("\n");
 var readLineRun = JSON.parse(engine.run(JSON.stringify({ flowSource: readLineFlowSource })));
-print(JSON.stringify(readLineRun));
+debugPrint(JSON.stringify(readLineRun));
 assertTrue(readLineRun.ok === true &&
 	readLineRun.result.first === "Alpha" &&
 	readLineRun.result.firstEof === false &&
@@ -3432,7 +3440,7 @@ var namedSearch = JSON.parse(engine.search(JSON.stringify({
 	kinds: ["node"],
 	context: 1
 })));
-print(JSON.stringify(namedSearch));
+debugPrint(JSON.stringify(namedSearch));
 assertTrue(namedSearch.ok === true &&
 	namedSearch.matches[0].flowQName === "SmokeProject.NamedGreeting" &&
 	namedSearch.matches[0].nodeId === "setMessage" &&
@@ -3445,7 +3453,7 @@ var catalogSearch = JSON.parse(engine.search(JSON.stringify({
 	doc: false,
 	hints: false
 })));
-print(JSON.stringify(catalogSearch));
+debugPrint(JSON.stringify(catalogSearch));
 assertTrue(catalogSearch.matches.some(function (match) {
 	return match.kind === "block" && match.name === "requestable.call";
 }) && catalogSearch.matches.some(function (match) {
@@ -3471,7 +3479,7 @@ var multiTokenSearch = JSON.parse(engine.search(JSON.stringify({
 	doc: false,
 	hints: false
 })));
-print(JSON.stringify(multiTokenSearch));
+debugPrint(JSON.stringify(multiTokenSearch));
 assertTrue(multiTokenSearch.matches.some(function (match) {
 	return match.flow === "RequestableBridge" && match.nodeId === "callRequestable";
 }), "search did not match Flow nodes with unordered query tokens");
@@ -3506,7 +3514,7 @@ var requestableCallAnalysis = JSON.parse(engine.analyze(JSON.stringify({
 		project: "SmokeProject"
 	}
 })));
-print(JSON.stringify(requestableCallAnalysis));
+debugPrint(JSON.stringify(requestableCallAnalysis));
 assertTrue(requestableCallAnalysis.writes.indexOf("local.response") !== -1,
 	"requestable.call did not expose its output path during analysis");
 var contractDefaultImplementationSource = [
@@ -4361,7 +4369,7 @@ var describedEngineTree = JSON.parse(engine.describeTree(JSON.stringify({
 		""
 	].join("\n")
 })));
-print(JSON.stringify(describedEngineTree));
+debugPrint(JSON.stringify(describedEngineTree));
 assertTrue(describedEngineTree.children[0].kind === "engine" &&
 	describedEngineTree.children.some(function (child) { return child.name === "catalog"; }),
 	"describeTree(engine) did not expose engine metadata and catalog");
@@ -4395,7 +4403,7 @@ var mutatedEngine = JSON.parse(engine.applyMutation(JSON.stringify({
 		value: "F"
 	}
 })));
-print(JSON.stringify(mutatedEngine));
+debugPrint(JSON.stringify(mutatedEngine));
 assertTrue(mutatedEngine.ok === true &&
 	mutatedEngine.children.some(function (child) {
 		return child.name === "config" && child.definition.indexOf('"unit":"F"') !== -1;
@@ -4428,7 +4436,7 @@ var contractFlowSource = [
 	""
 ].join("\n");
 var contractDefaultRun = JSON.parse(engine.run(JSON.stringify({ flowSource: contractFlowSource })));
-print(JSON.stringify(contractDefaultRun));
+debugPrint(JSON.stringify(contractDefaultRun));
 assertTrue(contractDefaultRun.result.weather.temperature === 42 &&
 	contractDefaultRun.result.weather.provider === "DefaultMock",
 	"Contract use did not run defaultImplementation");
@@ -4441,7 +4449,7 @@ var contractOverrideRun = JSON.parse(engine.run(JSON.stringify({
 		}
 	}
 })));
-print(JSON.stringify(contractOverrideRun));
+debugPrint(JSON.stringify(contractOverrideRun));
 assertTrue(contractOverrideRun.result.weather.temperature === 20 &&
 	contractOverrideRun.result.weather.provider === "OverrideMock",
 	"Contract use did not honor config binding override");
@@ -4464,7 +4472,9 @@ var projectBindingFlowSource = [
 	""
 ].join("\n");
 var projectBindingRun = JSON.parse(engine.run(JSON.stringify({ flowSource: projectBindingFlowSource })));
-print(JSON.stringify(projectBindingRun));
+debugPrint(JSON.stringify(projectBindingRun));
 assertTrue(projectBindingRun.result.weather.temperature === 12 &&
 	projectBindingRun.result.weather.provider === "ProjectEngineMock",
 	"Contract use did not honor project FlowEngine binding");
+
+print("lib_flow_engine smoke tests passed");
