@@ -4423,7 +4423,7 @@
 		if (root.isFile()) {
 			var name = String(root.getName());
 			if (suffixes.some(function (suffix) { return name.endsWith(suffix); })) {
-				entries.push(canonical + "\n" + sha256Hex(String(FileUtils.readFileToString(root, "UTF-8"))));
+				entries.push(canonical + "\n" + root.lastModified() + "\n" + root.length());
 			}
 			return;
 		}
@@ -4441,6 +4441,7 @@
 	function frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot) {
 		var entries = [];
 		var visited = {};
+		var toolRoot = frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
 		var sourceRoot = sourceFile && sourceFile.getParentFile();
 		while (sourceRoot && String(sourceRoot.getName()) !== "src") {
 			sourceRoot = sourceRoot.getParentFile();
@@ -4449,9 +4450,11 @@
 			{ root: sourceRoot, suffixes: [".flow.svelte", ".flow-route.json"] },
 			{ root: new File(resourceRoot, "components"), suffixes: [".svelte"] },
 			{ root: new File(resourceRoot, "ui"), suffixes: [".uiblock.json"] },
-			{ root: new File(resourceRoot, "src-builder"), suffixes: [".ts"] },
-			{ root: new File(resourceRoot, "package.json"), suffixes: ["package.json"] },
-			{ root: new File(resourceRoot, "package-lock.json"), suffixes: ["package-lock.json"] },
+			{ root: new File(toolRoot, "components"), suffixes: [".svelte"] },
+			{ root: new File(toolRoot, "ui"), suffixes: [".uiblock.json"] },
+			{ root: new File(toolRoot, "src-builder"), suffixes: [".ts"] },
+			{ root: new File(toolRoot, "package.json"), suffixes: ["package.json"] },
+			{ root: new File(toolRoot, "package-lock.json"), suffixes: ["package-lock.json"] },
 			{ root: new File(engineDir(), "blocks"), suffixes: [".block.js", ".browser.js"] },
 			{ root: new File(projectRoot, "libs/flow/blocks"), suffixes: [".block.js", ".browser.js"] },
 			{ root: new File(projectRoot, "libs/flow/frontbuilder/svelte/components"), suffixes: [".svelte"] }
@@ -6862,7 +6865,64 @@
 		throw error;
 	}
 
+	function frontendAppDependencyFingerprint(generatedRoot, npm) {
+		var entries = ["npm\n" + String(npm || "")];
+		["package.json", "package-lock.json"].forEach(function (name) {
+			var file = new File(generatedRoot, name);
+			if (file.isFile()) {
+				entries.push(name + "\n" + sha256Hex(String(FileUtils.readFileToString(file, "UTF-8"))));
+			}
+		});
+		return entries.length > 1 ? sha256Hex(entries.join("\n")) : "";
+	}
+
+	function frontendAppInstallStamp(generatedRoot) {
+		return new File(generatedRoot, ".flow-svelte-install.json");
+	}
+
+	function frontendAppInstallReusable(generatedRoot, fingerprint) {
+		if (!fingerprint || !new File(generatedRoot, "node_modules").isDirectory()) {
+			return false;
+		}
+		var stamp = frontendAppInstallStamp(generatedRoot);
+		if (!stamp.isFile()) {
+			return false;
+		}
+		try {
+			var value = JSON.parse(String(FileUtils.readFileToString(stamp, "UTF-8")));
+			return value && value.version === 1 && value.fingerprint === fingerprint;
+		} catch (ignored) {
+			return false;
+		}
+	}
+
+	function writeFrontendAppInstallStamp(generatedRoot, fingerprint) {
+		if (!fingerprint) {
+			return;
+		}
+		FileUtils.writeStringToFile(frontendAppInstallStamp(generatedRoot), JSON.stringify({
+			version: 1,
+			fingerprint: fingerprint
+		}), "UTF-8");
+	}
+
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
+		var dependencyFingerprint = stepAction === "installApp"
+			? frontendAppDependencyFingerprint(generatedRoot, npm)
+			: "";
+		if (stepAction === "installApp" && frontendAppInstallReusable(generatedRoot, dependencyFingerprint)) {
+			frontendStudioLog("[Svelte frontbuilder] Reusing installed application dependencies.");
+			return {
+				action: stepAction,
+				command: "",
+				cwd: String(generatedRoot.getAbsolutePath()),
+				exitCode: 0,
+				stdout: "",
+				stderr: "",
+				ok: true,
+				skipped: true
+				};
+			}
 		var cwd = stepAction === "installApp" || stepAction === "check" || stepAction === "build"
 			? generatedRoot
 			: resourceRoot;
@@ -6881,6 +6941,9 @@
 		var output = frontendReadProcessOutput(process.getInputStream(), "Svelte frontbuilder");
 		var exitCode = process.waitFor();
 		frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
+		if (stepAction === "installApp" && exitCode === 0) {
+			writeFrontendAppInstallStamp(generatedRoot, frontendAppDependencyFingerprint(generatedRoot, npm));
+		}
 		return {
 			action: stepAction,
 			command: args.join(" "),
@@ -6888,7 +6951,8 @@
 			exitCode: exitCode,
 			stdout: output,
 			stderr: "",
-			ok: exitCode === 0
+			ok: exitCode === 0,
+			skipped: false
 		};
 	}
 
@@ -7042,7 +7106,8 @@
 			var out = {
 				action: step.action || "",
 				ok: step.ok !== false,
-				exitCode: step.exitCode
+				exitCode: step.exitCode,
+				skipped: step.skipped === true
 			};
 			if (step.ok === false && step.stdout) {
 				out.stdout = String(step.stdout).substring(0, 4000);
