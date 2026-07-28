@@ -3619,6 +3619,10 @@ var flowSvelteComponentDir = new java.io.File(flowSvelteModelDir, "src/lib/compo
 flowSvelteComponentDir.mkdirs();
 flowSvelteRoutesDir.mkdirs();
 var flowSveltePageFile = new java.io.File(flowSvelteRoutesDir, "+page.flow.svelte");
+var flowSvelteLayoutFile = new java.io.File(flowSvelteRoutesDir, "+layout.flow.svelte");
+var nestedRouteDir = new java.io.File(flowSvelteRoutesDir, "(shop)/products/[id=integer]");
+nestedRouteDir.mkdirs();
+var nestedRouteFile = new java.io.File(nestedRouteDir, "+page.flow.svelte");
 var flowSvelteComponentFile = new java.io.File(flowSvelteComponentDir, "SmokePanel.flow.svelte");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"<script module>",
@@ -3633,6 +3637,21 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"  <Structure>",
 	"    <SmokePanel id=\"smokePanel1\" />",
 	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n"), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSvelteLayoutFile, [
+	"<FlowComponent id=\"shell\" label=\"Store shell\">",
+	"  <Structure><Text id=\"shellTitle\" text=\"Store\" /></Structure>",
+	"</FlowComponent>",
+	""
+].join("\n"), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(nestedRouteFile, [
+	"<script module>",
+	"  export const _flow = { page: { id: \"product\", title: \"Product detail\" } };",
+	"</script>",
+	"<FlowComponent id=\"product\" label=\"Product detail\">",
+	"  <Structure><Text id=\"productTitle\" text=\"Original product\" /></Structure>",
 	"</FlowComponent>",
 	""
 ].join("\n"), "UTF-8");
@@ -3682,6 +3701,40 @@ assertTrue(findNode(flowSvelteTree, function (node) {
 assertTrue(findNode(flowSvelteTree, function (node) {
 	return node.kind === "frontendBuilder" && node.type === "svelte";
 }) !== null, "engine tree did not expose the Svelte builder in the dedicated Frontends branch");
+var flowSvelteRootPage = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendPage" && nodeInfoObject(node).sourcePath === String(flowSveltePageFile.getAbsolutePath());
+});
+var flowSvelteRootLayout = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendRouteLayout" && nodeInfoObject(node).sourcePath === String(flowSvelteLayoutFile.getAbsolutePath());
+});
+var flowSvelteNestedPage = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendPage" && nodeInfoObject(node).sourcePath === String(nestedRouteFile.getAbsolutePath());
+});
+var flowSvelteRouteGroup = findNode(flowSvelteTree, function (node) {
+	var definition = node && node.definition ? JSON.parse(node.definition) : {};
+	return node.kind === "frontendRouteGroup" && definition.segment === "(shop)" && definition.pathless === true;
+});
+var flowSvelteTypedParam = findNode(flowSvelteTree, function (node) {
+	var definition = node && node.definition ? JSON.parse(node.definition) : {};
+	return node.kind === "frontendRouteSegment" && definition.param === "id" && definition.matcher === "integer";
+});
+assertTrue(flowSvelteRootPage !== null && flowSvelteRootLayout !== null && flowSvelteNestedPage !== null,
+	"engine tree did not project every Flow Svelte page and layout below the configured source root");
+assertTrue(flowSvelteRouteGroup !== null && flowSvelteTypedParam !== null,
+	"engine tree did not preserve SvelteKit route groups and typed parameters");
+assertTrue(nodeInfoObject(flowSvelteRootPage).sourceMutationPath === "frontAst" &&
+	nodeInfoObject(flowSvelteRootLayout).sourceMutationPath === "frontAst" &&
+	nodeInfoObject(flowSvelteNestedPage).sourceMutationPath === "frontAst",
+	"projected Flow Svelte pages and layouts did not expose their own source mutation target");
+var initialProjectedRouteSourceCount = 0;
+(function countProjectedRouteSources(node) {
+	if (node.kind === "frontendPage" || node.kind === "frontendRouteLayout") {
+		initialProjectedRouteSourceCount++;
+	}
+	(node.children || []).forEach(countProjectedRouteSources);
+})(flowSvelteTree);
+assertTrue(initialProjectedRouteSourceCount === 3,
+	"engine tree projected an unstable number of Flow Svelte page/layout sources: " + initialProjectedRouteSourceCount);
 var flowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -3767,16 +3820,41 @@ JSON.parse(engine.authoringTree(JSON.stringify({
 var authoringTreeCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 assertTrue(authoringTreeCacheAfterRepeat.hits > authoringTreeCacheBeforeRepeat.hits,
 	"repeated authoring tree reads should reuse the shared tree snapshot");
-var nestedRouteDir = new java.io.File(flowSvelteRoutesDir, "detail");
-nestedRouteDir.mkdirs();
-var nestedRouteFile = new java.io.File(nestedRouteDir, "+page.flow.svelte");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(nestedRouteFile, [
-	"<FlowComponent id=\"detail\" label=\"Detail\">",
-	"  <Structure><Text id=\"detailTitle\" text=\"Detail\" /></Structure>",
+	"<script module>",
+	"  export const _flow = { page: { id: \"product\", title: \"Updated product detail\" } };",
+	"</script>",
+	"<FlowComponent id=\"product\" label=\"Updated product detail\">",
+	"  <Structure><Text id=\"productTitle\" text=\"Updated product\" /></Structure>",
 	"</FlowComponent>",
 	""
 ].join("\n"), "UTF-8");
 var authoringTreeCacheBeforeRouteChange = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+var flowSvelteTreeAfterRouteChange = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "full"
+})));
+var updatedNestedPage = findNode(flowSvelteTreeAfterRouteChange, function (node) {
+	return node.kind === "frontendPage" && nodeInfoObject(node).sourcePath === String(nestedRouteFile.getAbsolutePath());
+});
+var updatedNestedTitle = findNode(updatedNestedPage, function (node) {
+	return node.type === "Text" && node.summary === "Updated product";
+});
+var staleNestedTitle = findNode(updatedNestedPage, function (node) {
+	return node.type === "Text" && node.summary === "Original product";
+});
+var projectedRouteSourceCountAfterChange = 0;
+(function countProjectedRouteSourcesAfterChange(node) {
+	if (node.kind === "frontendPage" || node.kind === "frontendRouteLayout") {
+		projectedRouteSourceCountAfterChange++;
+	}
+	(node.children || []).forEach(countProjectedRouteSourcesAfterChange);
+})(flowSvelteTreeAfterRouteChange);
+assertTrue(updatedNestedPage !== null && updatedNestedTitle !== null && staleNestedTitle === null &&
+	projectedRouteSourceCountAfterChange === initialProjectedRouteSourceCount,
+	"Flow Svelte route reprojection retained stale content or changed route source counts");
 JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",

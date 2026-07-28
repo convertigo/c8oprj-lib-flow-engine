@@ -1748,6 +1748,17 @@
 		return node;
 	}
 
+	function normalizeFrontendRouteSourceNode(node, sourceFile) {
+		if (!node || !sourceFile || !sourceFile.isFile() || !String(sourceFile.getName()).endsWith(".flow.svelte")) {
+			return node;
+		}
+		var kind = String(node.kind || "");
+		if ((kind === "frontendPage" || kind === "frontendRouteLayout") && !node.sourceMutationPath) {
+			node.sourceMutationPath = "frontAst";
+		}
+		return node;
+	}
+
 	function frontendAuthoringPathSegment(node, index) {
 		node = node || {};
 		var base = safeVirtualName("node", node.id || node.type || node.kind || index);
@@ -1759,6 +1770,7 @@
 		var sourceFile = frontendNodeSourceFile(node, modelFile);
 		normalizeFrontendFlowSvelteRootNode(node, sourceFile);
 		normalizeFrontendComponentInstanceNode(node);
+		normalizeFrontendRouteSourceNode(node, sourceFile);
 		var mutationPath = String(node.sourceMutationPath || "");
 		var insertMutationPath = frontendNodeInsertMutationPath(node);
 		var definitions = frontendAuthoringPropertyDefinitions(node);
