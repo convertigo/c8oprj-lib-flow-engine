@@ -6810,7 +6810,9 @@
 			if (!isFlowSvelte || draftEntries.length === 0) {
 				return {
 					file: modelPath,
-					cleanup: null
+					cleanup: null,
+					effectiveSourceRoot: null,
+					sourceIdentityRoot: null
 				};
 			}
 		}
@@ -6829,14 +6831,18 @@
 			frontendWriteExtraDraftEntries(draftEntries, sourceBaseDir, overlayDir);
 			return {
 				file: new File(overlayDir, frontendRelativePath(sourceBaseDir, modelPath)).getCanonicalFile(),
-				cleanup: overlayDir
+				cleanup: overlayDir,
+				effectiveSourceRoot: overlayDir,
+				sourceIdentityRoot: sourceBaseDir
 			};
 		}
 		var draftFile = new File(draftDir, sha256Hex(String(modelPath.getCanonicalPath())).substring(0, 16) + ".front.json");
 		frontendWriteFile(draftFile, draft);
 		return {
 			file: draftFile.getCanonicalFile(),
-			cleanup: draftFile
+			cleanup: draftFile,
+			effectiveSourceRoot: null,
+			sourceIdentityRoot: null
 		};
 	}
 
@@ -7067,6 +7073,10 @@
 			FRONTBUILDER_BUILD_OUTPUT: buildOutput,
 			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
 		};
+		if (effective.effectiveSourceRoot && effective.sourceIdentityRoot) {
+			envValues.FRONTBUILDER_EFFECTIVE_SOURCE_ROOT = String(effective.effectiveSourceRoot.getAbsolutePath());
+			envValues.FRONTBUILDER_SOURCE_IDENTITY_ROOT = String(effective.sourceIdentityRoot.getAbsolutePath());
+		}
 		var actions = action === "install"
 			? ["installBuilder", "generate", "installApp"]
 			: action === "check" || action === "build"
