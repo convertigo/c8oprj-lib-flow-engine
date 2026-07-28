@@ -59,13 +59,36 @@
 				"FlowScript is a Flow block DSL, not JavaScript function calling. Every Flow block accepts exactly one object parameter. Use " + signature + ". Signature keys use key for required values, key? for optional values, and key??default when a default exists.");
 		}
 
+		function normalizeObjectLiteralWhitespace(text) {
+			text = String(text || "");
+			var quote = "";
+			var out = "";
+			for (var i = 0; i < text.length; i++) {
+				var ch = text.charAt(i);
+				if (quote) {
+					out += ch;
+					if (ch === "\\" && i + 1 < text.length) {
+						out += text.charAt(++i);
+					} else if (ch === quote) {
+						quote = "";
+					}
+				} else if (ch === "\"" || ch === "'" || ch === "`") {
+					quote = ch;
+					out += ch;
+				} else {
+					out += ch === "\t" ? "  " : ch;
+				}
+			}
+			return out;
+		}
+
 		function parseFlowScriptArgs(text, lineNumber) {
 			text = String(text || "").trim();
 			if (text === "") {
 				return {};
 			}
 			try {
-				return env.normalizeTree(env.parseYamlSource(text, "{}"));
+				return env.normalizeTree(env.parseYamlSource(normalizeObjectLiteralWhitespace(text), "{}"));
 			} catch (e) {
 				var error = new Error("Invalid FlowScript argument object at line " + lineNumber + ": " + e.message);
 				error.code = "FLOWSCRIPT_INVALID_ARGUMENTS";
