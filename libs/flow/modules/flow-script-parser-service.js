@@ -249,13 +249,19 @@
 		function flowScriptStatements(code) {
 			var out = [];
 			var pending = null;
+			var disabledNext = false;
 			String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").forEach(function (raw, index) {
+				if (!pending && raw.trim() === "// @flow-disabled") {
+					disabledNext = true;
+					return;
+				}
 				var line = stripFlowScriptComment(raw).trim();
 				if (line === "") {
 					return;
 				}
 				if (!pending && (line.match(/^(flow|function)\s+/) || line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/))) {
-					out.push({ line: index + 1, text: line });
+					out.push({ line: index + 1, text: line, disabled: disabledNext });
+					disabledNext = false;
 					return;
 				}
 				if (pending) {
@@ -273,7 +279,8 @@
 					}
 					return;
 				}
-				pending = { line: index + 1, text: line };
+				pending = { line: index + 1, text: line, disabled: disabledNext };
+				disabledNext = false;
 				if (flowScriptStatementComplete(pending.text)) {
 					out.push(pending);
 					pending = null;
@@ -1877,6 +1884,13 @@
 			for (var i = 0; i < statements.length; i++) {
 				var lineNumber = statements[i].line;
 				var line = statements[i].text;
+				var disabled = statements[i].disabled === true;
+				var addStatementNode = function (node) {
+					if (disabled) {
+						node.disabled = true;
+					}
+					addFlowScriptNode(stack[stack.length - 1], node);
+				};
 				if (line === "") {
 					continue;
 				}
@@ -1893,7 +1907,7 @@
 					var varName = env.safeIdentifier(declaration[1]);
 					var nodes = buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, declaration[2], lineNumber);
 					nodes.forEach(function (node) {
-						addFlowScriptNode(stack[stack.length - 1], node);
+						addStatementNode(node);
 					});
 					locals[varName] = true;
 					continue;
@@ -1901,7 +1915,7 @@
 				var scopeAssignment = line.match(/^((?:local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*)\s*=\s*([\s\S]+)$/);
 				if (scopeAssignment) {
 					buildNaturalScopeAssignment(blocks, imports, locals, scopeAssignment[1], scopeAssignment[2], lineNumber).forEach(function (node) {
-						addFlowScriptNode(stack[stack.length - 1], node);
+						addStatementNode(node);
 					});
 					if (scopeAssignment[1].indexOf("local.") === 0) {
 						var assignedLocal = scopeAssignment[1].substring("local.".length).split(/[.\[]/)[0];
@@ -1913,7 +1927,7 @@
 				}
 				if (line.match(/^return(?:\s|;|$)/)) {
 					buildNaturalFlowScriptReturn(line, locals, lineNumber, stack.length > 1).forEach(function (node) {
-						addFlowScriptNode(stack[stack.length - 1], node);
+						addStatementNode(node);
 					});
 					continue;
 				}
@@ -1939,7 +1953,7 @@
 						condition: flowScriptExpressionFromToken(ifMatch[1], locals, lineNumber),
 						__flowScriptLine: lineNumber
 					};
-					addFlowScriptNode(stack[stack.length - 1], ifNode);
+					addStatementNode(ifNode);
 					if (ifMatch[2]) {
 						stack.push({ root: ifNode, slot: "then" });
 					}
@@ -1957,7 +1971,7 @@
 					: parseFlowScriptArgs(callArgs, lineNumber);
 				node.block = block;
 				node.__flowScriptLine = lineNumber;
-				addFlowScriptNode(stack[stack.length - 1], node);
+				addStatementNode(node);
 				trackFlowScriptNodeWrites(locals, node);
 				if (match[3]) {
 					var slot = block === "if" ? "then" : block === "json.object" ? "fields" : "nodes";

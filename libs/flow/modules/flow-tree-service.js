@@ -5077,6 +5077,19 @@
 			});
 			return;
 		}
+		if (op === "setEnabled") {
+			var enabledParts = resolveMutationValueParts(root, mutation, blocks);
+			var enabledNode = valueAt(root, enabledParts);
+			if (!enabledNode || typeof enabledNode !== "object" || Object.prototype.toString.call(enabledNode) === "[object Array]") {
+				raise("INVALID_MUTATION_TARGET", "setEnabled must target one Flow node.");
+			}
+			if (mutation.enabled === false) {
+				enabledNode.disabled = true;
+			} else {
+				delete enabledNode.disabled;
+			}
+			return;
+		}
 
 		var parts = (op === "insert" || op === "append" || op === "move" || op === "copy")
 			? resolveMutationArrayParts(root, mutation, blocks)

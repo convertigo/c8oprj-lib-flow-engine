@@ -2392,6 +2392,56 @@ debugPrint(JSON.stringify(semanticMutatedFlow));
 var semanticMutatedRun = JSON.parse(engine.run(JSON.stringify({ flowSource: semanticMutatedFlow.source })));
 assertTrue(semanticMutatedRun.result.message === "Hello semantic mutation",
 	"applyMutation(flow) did not replace a node property by nodeId");
+var disabledFlow = JSON.parse(engine.applyMutation(JSON.stringify({
+	target: "flow",
+	flowSource: flowSource,
+	mutation: {
+		op: "setEnabled",
+		nodeId: "setMessage",
+		enabled: false
+	}
+})));
+assertTrue(disabledFlow.source.indexOf("// @flow-disabled") !== -1,
+	"setEnabled(false) did not preserve the disabled state in FlowScript");
+var disabledFlowRun = JSON.parse(engine.run(JSON.stringify({ flowSource: disabledFlow.source })));
+assertTrue(disabledFlowRun.result.message === undefined,
+	"disabled Flow node still executed");
+var enabledFlow = JSON.parse(engine.applyMutation(JSON.stringify({
+	target: "flow",
+	flowSource: disabledFlow.source,
+	mutation: {
+		op: "setEnabled",
+		path: "/nodes/3",
+		enabled: true
+	}
+})));
+assertTrue(enabledFlow.source.indexOf("// @flow-disabled") === -1 &&
+	JSON.parse(engine.run(JSON.stringify({ flowSource: enabledFlow.source }))).result.message === "Hello Flow",
+	"setEnabled(true) did not restore the Flow node");
+var disabledIfSource = [
+	"function DisabledIf({ input, config, result }) {",
+	"  // @flow-disabled",
+	"  if (true) {",
+	"    result.hidden = true",
+	"  }",
+	"  result.visible = true",
+	"  return result",
+	"}",
+	""
+].join("\n");
+var disabledIfRun = JSON.parse(engine.run(JSON.stringify({ flowSource: disabledIfSource })));
+assertTrue(disabledIfRun.result.hidden === undefined && disabledIfRun.result.visible === true,
+	"FlowScript disabled marker did not skip a structured node");
+var disableMenu = JSON.parse(engine.contextMenu(JSON.stringify({
+	targetObject: {
+		kind: "node",
+		definition: { id: "setMessage", block: "set" }
+	}
+})));
+assertTrue(disableMenu.items.some(function (item) {
+	return item.id === "flow.node.disable" && item.placement === "root" &&
+		item.payload.mutation.op === "setEnabled" && item.payload.mutation.enabled === false;
+}), "Flow context menu did not expose the shared disable mutation");
 var semanticInsertedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 	target: "flow",
 	flowSource: flowSource,

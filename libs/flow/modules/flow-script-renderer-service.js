@@ -134,7 +134,7 @@
 	function flowScriptArgKeys(node, slotNames) {
 		var skip = {
 			block: true, props: true, nodes: true, then: true, "else": true, fields: true,
-			__fragment: true, __graphBlock: true, __flowScriptLine: true
+			disabled: true, __fragment: true, __graphBlock: true, __flowScriptLine: true
 		};
 		(slotNames || []).forEach(function (slot) {
 			skip[slot] = true;
@@ -261,6 +261,9 @@
 		locals = locals || {};
 		var indent = new Array(depth + 1).join("  ");
 		(nodes || []).forEach(function (node) {
+			if (node && node.disabled === true) {
+				lines.push(indent + "// @flow-disabled");
+			}
 			var defaultSlot = defaultFlowScriptSlot(blocks, node, env);
 			var renderedChildren = defaultSlot && Object.prototype.toString.call(node[defaultSlot]) === "[object Array]" && node[defaultSlot].length > 0;
 			var line = flowScriptCallLine(blocks, node, indent, locals, env);

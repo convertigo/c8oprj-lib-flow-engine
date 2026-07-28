@@ -7814,6 +7814,20 @@
 		var hasFlow = String(request.flowName || "").trim() !== "";
 		var isFlowSchemaTarget = hasFlow && (targetKind === "flow" || targetKind === "folder" && targetType === "flow");
 		var items = [];
+		var toggle = contextNodeToggle(target);
+		if (toggle) {
+			items.push(contextMenuItem(
+				toggle.enabled ? "flow.node.disable" : "flow.node.enable",
+				toggle.enabled ? "Disable" : "Enable",
+				toggle.enabled ? "Skip this Flow node as if it was absent." : "Restore this Flow node.",
+				"",
+				{ mutation: toggle.mutation },
+				"",
+				"",
+				true,
+				"root"
+			));
+		}
 		if (isFlowSchemaTarget) {
 			var output = outputSchemaRequest(Object.assign({}, request, {
 				source: "effective",
@@ -7858,7 +7872,7 @@
 		};
 	}
 
-	function contextMenuItem(id, label, description, group, payload, confirm, icon, enabled) {
+	function contextMenuItem(id, label, description, group, payload, confirm, icon, enabled, placement) {
 		return {
 			id: id,
 			label: label,
@@ -7867,7 +7881,53 @@
 			enabled: enabled !== false,
 			payload: payload || {},
 			confirm: confirm || "",
-			icon: icon || ""
+			icon: icon || "",
+			placement: placement || ""
+		};
+	}
+
+	function contextNodeToggle(target) {
+		var kind = String(target && target.kind || "");
+		var definition = target && target.definition && typeof target.definition === "object" ? target.definition : {};
+		var info = target && target.info && typeof target.info === "object" ? target.info : {};
+		var mutationPath = String(info.sourceMutationPath || definition.sourceMutationPath || "");
+		var writable = info.sourceWritable !== undefined ? info.sourceWritable : definition.sourceWritable;
+		var backendNode = kind === "node";
+		var frontendNode = kind.indexOf("frontend") === 0
+			&& kind !== "frontendBuilder"
+			&& kind !== "frontendSource"
+			&& kind !== "frontendRoutes"
+			&& kind !== "frontendPage"
+			&& kind !== "frontendLayout"
+			&& kind !== "frontendStructure"
+			&& kind !== "frontendSlot"
+			&& kind !== "frontendEvents"
+			&& kind !== "frontendActionVariables"
+			&& kind !== "frontendColumns"
+			&& kind !== "frontendDataBindings"
+			&& kind !== "frontendComponent"
+			&& writable !== false
+			&& mutationPath.indexOf("frontAst.") === 0;
+		if (!backendNode && !frontendNode) {
+			return null;
+		}
+		var disabled = definition.disabled === true;
+		var mutation = {
+			op: "setEnabled",
+			enabled: disabled
+		};
+		if (mutationPath) {
+			mutation.path = mutationPath;
+		} else {
+			var nodeId = String(definition.id || target.nodeId || "");
+			if (!nodeId) {
+				return null;
+			}
+			mutation.nodeId = nodeId;
+		}
+		return {
+			enabled: !disabled,
+			mutation: mutation
 		};
 	}
 
@@ -7875,6 +7935,22 @@
 		var action = request.action || {};
 		var id = String(action.id || request.actionId || "");
 		var payload = action.payload || {};
+		if (id === "flow.node.disable" || id === "flow.node.enable") {
+			var mutation = payload.mutation || {};
+			if (String(mutation.op || "") !== "setEnabled") {
+				return failure("contextAction", {
+					code: "INVALID_CONTEXT_ACTION",
+					message: "Flow node enable/disable requires a setEnabled mutation."
+				});
+			}
+			return {
+				ok: true,
+				title: id === "flow.node.disable" ? "Disable Flow node" : "Enable Flow node",
+				message: id === "flow.node.disable" ? "Flow node disabled." : "Flow node enabled.",
+				mutation: mutation,
+				refresh: true
+			};
+		}
 		if (id === "flow.outputSchema.inspect") {
 			var output = outputSchemaRequest(Object.assign({}, request, payload, {
 				source: payload.source || "effective"
