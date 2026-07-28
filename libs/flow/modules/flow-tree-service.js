@@ -555,7 +555,7 @@
 				dirty: frontendModelDirty(request, modelFile)
 			}));
 			if (document.tree && document.tree.children) {
-				addFrontendAuthoringTree(builder, document.tree, path + ".authoring", modelFile);
+				addFrontendAuthoringTree(builder, document.tree, path, modelFile);
 				if (catalogNode) {
 					addFrontendAuthoringCatalogMirror(catalogNode, document.tree, path + ".catalog.authoring", modelFile);
 				}
@@ -1761,8 +1761,14 @@
 
 	function frontendAuthoringPathSegment(node, index) {
 		node = node || {};
-		var base = safeVirtualName("node", node.id || node.type || node.kind || index);
-		return base + "_" + index;
+		var stableId = node.props && node.props.id;
+		if (stableId === undefined || stableId === null || String(stableId) === "") {
+			stableId = node.id;
+		}
+		if (stableId !== undefined && stableId !== null && String(stableId) !== "") {
+			return safeVirtualName("node", stableId);
+		}
+		return safeVirtualName("node", node.type || node.kind || "node") + "_" + index;
 	}
 
 	function addFrontendAuthoringNode(parent, node, path, modelFile) {

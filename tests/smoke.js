@@ -3918,8 +3918,8 @@ assertTrue(authoringTreeCacheAfterRouteChange.misses > authoringTreeCacheBeforeR
 var flowSvelteRoutesNode = findNode(flowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendRoutes";
 });
-assertTrue(flowSvelteRoutesNode !== null && flowSvelteRoutesNode.path,
-	"authoring tree did not expose a stable Svelte routes focus path");
+assertTrue(flowSvelteRoutesNode !== null && flowSvelteRoutesNode.path === "frontends.svelte.routes",
+	"authoring tree did not expose the canonical Svelte routes focus path");
 var flowSvelteRoutesTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -3932,6 +3932,13 @@ var flowSvelteRoutesTree = JSON.parse(engine.authoringTree(JSON.stringify({
 assertTrue(flowSvelteRoutesTree.childCount === 1 &&
 	flowSvelteRoutesTree.children[0].kind === "frontendRoutes",
 	"authoring tree focusPath did not return the focused Svelte route branch");
+var flowSveltePageNode = findNode(flowSvelteRoutesTree, function (node) {
+	return node.kind === "frontendPage" && node.path === "frontends.svelte.routes.home";
+});
+assertTrue(flowSveltePageNode !== null &&
+	flowSveltePageNode.path === "frontends.svelte.routes.home",
+	"authoring tree did not expose a stable index-free Svelte page focus path: " +
+		(flowSveltePageNode && flowSveltePageNode.path));
 var flowSvelteTextNode = findNode(flowSvelteTree, function (node) {
 	if (node.kind !== "frontendWidget" || node.type !== "Text") return false;
 	var definition = node.definition ? JSON.parse(node.definition) : {};
