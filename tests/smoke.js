@@ -3680,7 +3680,9 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"",
 	"<FlowComponent id=\"home\" label=\"Ast smoke\">",
 	"  <Structure>",
-	"    <SmokePanel id=\"smokePanel1\" />",
+	"    <PageShell id=\"pageShell\">",
+	"      <Children><SmokePanel id=\"smokePanel1\" /></Children>",
+	"    </PageShell>",
 	"  </Structure>",
 	"</FlowComponent>",
 	""
@@ -3797,6 +3799,9 @@ assertTrue(flowSvelteAuthoringTree.childCount === 1 &&
 	"authoring tree did not focus the Svelte builder by default");
 assertTrue(Object.prototype.toString.call(flowSvelteAuthoringTree.diagnostics) === "[object Array]",
 	"authoring tree did not preserve frontend document diagnostics");
+assertTrue(!flowSvelteAuthoringTree.diagnostics.some(function (diagnostic) {
+	return diagnostic && diagnostic.code === "FRONTEND_BLOCK_UNKNOWN" && diagnostic.tag === "PageShell";
+}), "frontend validation treated the consumer model directory as the provider resource root");
 var leanFlowSvelteAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",

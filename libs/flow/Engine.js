@@ -6400,16 +6400,17 @@
 			if (!fallback) {
 				fallback = root;
 			}
-			if (root && root.isDirectory()) {
+			if (root && root.isDirectory() &&
+				new File(root, "src-builder/frontDocumentCli.ts").isFile()) {
 				return root;
 			}
 		}
 		if (fallback) {
-			return frontendSvelteToolRoot(fallback, "package.json");
+			return frontendSvelteToolRoot(fallback, "src-builder/frontDocumentCli.ts");
 		}
 		return frontendSvelteToolRoot(
 			fileForProjectPath(projectRoot, "libs/flow/frontbuilder/svelte"),
-			"package.json"
+			"src-builder/frontDocumentCli.ts"
 		);
 	}
 
