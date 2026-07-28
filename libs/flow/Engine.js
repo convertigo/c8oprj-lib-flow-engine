@@ -7602,7 +7602,7 @@
 
 	function frontendStudioBrowser(request, url, title, kind) {
 		var projectName = frontendProjectName(request) || "project";
-		return {
+		var browser = {
 			id: "flow.frontend:" + projectName + ":" + String(kind || "preview"),
 			title: String(title || "Flow frontend"),
 			project: projectName,
@@ -7610,6 +7610,12 @@
 			tooltip: String(url || ""),
 			kind: String(kind || "preview")
 		};
+		if (browser.kind === "frontbuilder.svelte.dev") {
+			browser.authoring = {
+				protocol: "convertigo.flow.authoring.v1"
+			};
+		}
+		return browser;
 	}
 
 	function frontendStartDev(request, blocks) {
