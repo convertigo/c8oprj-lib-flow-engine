@@ -3,7 +3,7 @@
 		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
 		.layout { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.9fr); gap: 10px; min-height: 360px; }
 		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
-		textarea { min-height: 180px; resize: vertical; }
+		textarea { min-height: 300px; resize: vertical; white-space: pre; overflow: auto; }
 		.modebar, .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 		.modebar button.active { background: #0d9ac2; border-color: #2bb8df; color: white; }
 		.simple { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
@@ -29,6 +29,7 @@
 				<button data-mode="custom">Custom</button>
 			</div>
 			<div class="toolbar">
+				<button class="secondary" data-action="format-json">Format JSON</button>
 				<button class="secondary" data-action="nullish">??</button>
 				<button class="secondary" data-insert=" && ">&&</button>
 				<button class="secondary" data-insert=" || ">||</button>
@@ -154,7 +155,18 @@
 
 		function canUseSimpleExpression(value) {
 			value = String(value || "");
-			return value.indexOf("\n") === -1 && value.length <= 200;
+			var trimmed = value.trim();
+			var structured = trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[";
+			return !structured && value.indexOf("\n") === -1 && value.length <= 200;
+		}
+
+		function formattedJsonExpression(value) {
+			try {
+				var parsed = JSON.parse(String(value || ""));
+				return parsed && typeof parsed === "object" ? JSON.stringify(parsed, null, 2) : null;
+			} catch (e) {
+				return null;
+			}
 		}
 
 		function renderPicker(context, importedPaths, activePath) {
@@ -204,7 +216,8 @@
 						this._state.context = response.context;
 					}
 				}
-				this._value = this._state.value == null ? "" : String(this._state.value);
+				var sourceValue = this._state.value == null ? "" : String(this._state.value);
+				this._value = formattedJsonExpression(sourceValue) || sourceValue;
 				this._mode = canUseSimpleExpression(this._value) ? "simple" : "custom";
 				this._simpleSelection = { start: this._value.length, end: this._value.length };
 				this.render();
@@ -237,6 +250,10 @@
 						return;
 					}
 					var action = event.target && event.target.getAttribute && event.target.getAttribute("data-action");
+					if (action === "format-json") {
+						this.formatJson();
+						return;
+					}
 					if (action === "nullish") {
 						this.insertNullishFallback();
 						return;
@@ -294,6 +311,22 @@
 					return;
 				}
 				this.insert(text);
+			}
+
+			formatJson() {
+				var formatted = formattedJsonExpression(this.value);
+				if (!formatted) {
+					this.validate();
+					return;
+				}
+				this._value = formatted;
+				this._mode = "custom";
+				this.render();
+				var textarea = this.shadowRoot.querySelector("textarea");
+				if (textarea) {
+					textarea.focus();
+				}
+				this.emit();
 			}
 
 			insertNullishFallback() {

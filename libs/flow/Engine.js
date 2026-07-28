@@ -1215,6 +1215,7 @@
 			FileUtils: FileUtils,
 			engineDir: engineDir,
 			projectDir: projectDir,
+			projectNameForRoot: projectNameForRoot,
 			projectLibDir: projectLibDir,
 			engineLibDir: engineLibDir,
 			canonicalPath: canonicalPath,
@@ -1276,6 +1277,7 @@
 			readRuntimeCache: readRuntimeMapCache,
 			writeRuntimeCache: writeRuntimeMapCache,
 			flowProviderName: flowProviderName,
+			projectNameForRoot: projectNameForRoot,
 			projectRootForName: loadedProjectRootForName,
 			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
 			loadGraphBlockFile: loadGraphBlockFile,
@@ -1963,6 +1965,7 @@
 			listProjectFlows: listProjectFlows,
 			projectDir: projectDir,
 			currentProjectName: currentProjectName,
+			projectNameForRoot: projectNameForRoot,
 			canonicalPath: canonicalPath,
 			flowProjectRootFromFlowDir: flowProjectRootFromFlowDir,
 			engineDir: engineDir,
@@ -1987,7 +1990,7 @@
 		request = request || {};
 		var projectName = currentProjectName(request);
 		if (!projectName && dir) {
-			projectName = String(dir.getName());
+			projectName = projectNameForRoot(dir);
 		}
 		if (!projectName || !name) {
 			return {
@@ -3285,6 +3288,30 @@
 		return "";
 	}
 
+	function projectNameForRoot(root) {
+		if (!root) {
+			return "";
+		}
+		root = new File(root);
+		var current = projectDir();
+		var requested = currentProjectName(activeRequest);
+		if (requested && current && canonicalPath(root) === canonicalPath(current)) {
+			return requested;
+		}
+		try {
+			var descriptor = new File(root, "c8oProject.yaml");
+			if (descriptor.isFile()) {
+				var source = String(FileUtils.readFileToString(descriptor, "UTF-8"));
+				var match = source.match(/^\s*\u2193([A-Za-z0-9_.-]+)\s+\[core\.Project\]\s*:/m);
+				if (match) {
+					return String(match[1]);
+				}
+			}
+		} catch (e) {
+		}
+		return String(root.getName() || "");
+	}
+
 	function requestableService() {
 		return loadEngineModule("requestable-service.js");
 	}
@@ -3310,6 +3337,7 @@
 			objectPathParts: objectPathParts,
 			flowScriptPath: scopePathUtils().flowScriptPath,
 			currentProjectName: currentProjectName,
+			projectNameForRoot: projectNameForRoot,
 			flowCodeError: flowCodeError,
 			raise: raise,
 			context: typeof context === "undefined" ? null : context
@@ -3698,6 +3726,7 @@
 			Arrays: Arrays,
 			engineDir: engineDir,
 			projectDir: projectDir,
+			projectNameForRoot: projectNameForRoot,
 			canonicalPath: canonicalPath,
 			directoryFingerprint: directoryFingerprint,
 			resourceRelativePath: resourceRelativePath,
@@ -3804,6 +3833,7 @@
 			yamlMapper: yamlMapper,
 			engineDir: engineDir,
 			projectDir: projectDir,
+			projectNameForRoot: projectNameForRoot,
 			resourceRelativePath: resourceRelativePath,
 			resolveBlockIcon: resolveBlockIcon,
 			normalizeTree: normalizeTree,
@@ -4125,7 +4155,7 @@
 				calls[String(call.id)] = call;
 			}
 		});
-		var projectName = currentProjectName(request) || projectRoot && String(projectRoot.getName()) || "";
+		var projectName = currentProjectName(request) || projectNameForRoot(projectRoot);
 		var schemas = {};
 		function setActionSchema(action, schema) {
 			var normalized = normalizeTree(schema);
@@ -4189,12 +4219,14 @@
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
+		var projectName = currentProjectName(request) || projectNameForRoot(projectRoot);
 		var drafts = frontendSourceDrafts(request);
 		var cache = runtimeState.caches.frontendDocuments;
 		var key = [
 			String(sourceFile.getAbsolutePath()),
 			String(resourceRoot.getAbsolutePath()),
 			String(projectRoot.getAbsolutePath()),
+			projectName,
 			String(request.property || ""),
 			String(request.sourceId || ""),
 			String(request.includeBindings !== false)
@@ -4232,6 +4264,7 @@
 				"--drafts", String(draftsTemp.getAbsolutePath()),
 				"--resource-root", String(resourceRoot.getAbsolutePath()),
 				"--project-root", String(projectRoot.getAbsolutePath()),
+				"--project-name", projectName,
 				"--engine-model"
 			];
 			if (request.property) {
@@ -6369,9 +6402,12 @@
 			}
 		}
 		if (fallback) {
-			return fallback;
+			return frontendSvelteToolRoot(fallback, "package.json");
 		}
-		return fileForProjectPath(projectRoot, "libs/flow/frontbuilder/svelte");
+		return frontendSvelteToolRoot(
+			fileForProjectPath(projectRoot, "libs/flow/frontbuilder/svelte"),
+			"package.json"
+		);
 	}
 
 	function frontendProcessBuilder(args, cwd) {
@@ -6800,13 +6836,14 @@
 		};
 	}
 
-	function frontendRunCommandFor(action, npm, resourceRoot, projectRoot, modelPath, generatedRoot, generationMode) {
+	function frontendRunCommandFor(action, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode) {
 		if (action === "installBuilder") {
 			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "install"];
 		}
 		if (action === "generate") {
 			return frontendTsxCommand(resourceRoot, "src-builder/cli.ts", [
 				"--project-root", String(projectRoot.getAbsolutePath()),
+				"--project-name", String(projectName || ""),
 				"--model", String(modelPath.getAbsolutePath()),
 				"--mode", generationMode
 			]);
@@ -6825,11 +6862,11 @@
 		throw error;
 	}
 
-	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, modelPath, generatedRoot, generationMode, envValues) {
+	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
 		var cwd = stepAction === "installApp" || stepAction === "check" || stepAction === "build"
 			? generatedRoot
 			: resourceRoot;
-		var args = frontendRunCommandFor(stepAction, npm, resourceRoot, projectRoot, modelPath, generatedRoot, generationMode);
+		var args = frontendRunCommandFor(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode);
 		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
 		pb.directory(cwd);
 		pb.redirectErrorStream(true);
@@ -6943,14 +6980,24 @@
 		var draftCount = frontendDraftCount(request);
 		var settings = info.settings || {};
 		var projectRoot = frontendProjectRootFile(request);
+		var projectName = frontendProjectName(request);
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var generatedRoot = frontendGeneratedRootFile(request, info);
+		if (!resourceRoot || !resourceRoot.isDirectory() || !new File(resourceRoot, "package.json").isFile()) {
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_RESOURCE_ROOT_NOT_FOUND",
+				message: "The Svelte frontbuilder resources are unavailable.",
+				hint: "Load the lib_flow_frontbuilder_svelte project or fix the private frontbuilder resourceRoot configuration.",
+				resourceRoot: resourceRoot ? String(resourceRoot.getAbsolutePath()) : ""
+			});
+		}
 		var generationMode = "incremental";
 		var sourceRoot = String(settings.privateDir || "_private/svelte");
 		var buildOutput = String(settings.buildOutput || "DisplayObjects/mobile");
 		var npm = frontendExecutable("npm");
 		var envValues = {
 			FRONTBUILDER_PROJECT_ROOT: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
+			FRONTBUILDER_PROJECT_NAME: projectName,
 			FRONTBUILDER_SOURCE_ROOT: sourceRoot,
 			FRONTBUILDER_BUILD_OUTPUT: buildOutput,
 			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
@@ -6964,7 +7011,7 @@
 		var ok = true;
 		try {
 			for (var i = 0; i < actions.length; i++) {
-				var step = frontendRunStep(actions[i], npm, resourceRoot, projectRoot, effective.file, generatedRoot, generationMode, envValues);
+				var step = frontendRunStep(actions[i], npm, resourceRoot, projectRoot, projectName, effective.file, generatedRoot, generationMode, envValues);
 				steps.push(step);
 				if (step.ok === false) {
 					ok = false;
@@ -7010,6 +7057,7 @@
 			details: {
 				action: action,
 				projectRoot: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
+				projectName: projectName,
 				resourceRoot: resourceRoot ? String(resourceRoot.getAbsolutePath()) : "",
 				modelPath: modelPath ? String(modelPath.getAbsolutePath()) : "",
 				effectiveModelPath: effective.file ? String(effective.file.getAbsolutePath()) : "",
@@ -7031,7 +7079,8 @@
 	function frontendProjectName(request) {
 		var target = request.targetObject || {};
 		var root = request.root || {};
-		return String(target.project || root.project || currentProjectName(request) || "");
+		return String(target.project || root.project || currentProjectName(request)
+			|| projectNameForRoot(frontendProjectRootFile(request)) || "");
 	}
 
 	function frontendBuiltUrl(request) {

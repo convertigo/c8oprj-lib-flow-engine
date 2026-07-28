@@ -1,8 +1,8 @@
 const _meta = {
   "version": 1,
   "icon": "mdi:xml",
-  "description": "Parses raw XML text into the Convertigo JSON shape.",
-  "longDescription": "Pass the text returned by asset.read or the content field of a resource envelope. This block rejects resource metadata objects so path and content mistakes fail explicitly.",
+  "description": "Parses raw XML text into the Convertigo JSON shape; XML attributes are exposed under attr (for example enclosure.attr.url).",
+  "longDescription": "Pass the text returned by asset.read or the content field of a resource envelope. Element attributes are grouped under attr, for example <enclosure url=\"...\"> becomes enclosure.attr.url. This block rejects resource metadata objects so path and content mistakes fail explicitly.",
   "properties": {
     "text": {
       "label": "text",
@@ -127,7 +127,11 @@ const _meta = {
 			if (typeof text === "object") {
 				throw new Error("xml.parse expects raw XML text, not a resource object. Use asset.read({ path: \"libs/flow/resources/...\" }) in Flow code, or pass resource.get(...).content.");
 			}
-			return documentValue(parseXml(text));
+			var parsed = documentValue(parseXml(text));
+			if (props.out && ctx.learnOutputSchema) {
+				ctx.learnOutputSchema(node, "out", props.out, parsed);
+			}
+			return parsed;
 		}
 	};
 }())

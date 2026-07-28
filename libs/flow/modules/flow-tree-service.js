@@ -630,7 +630,9 @@
 
 	function currentFrontendProjectProvider() {
 		var dir = projectDir ? projectDir() : null;
-		return dir ? String(dir.getName()) : "project";
+		return dir && typeof env.projectNameForRoot === "function"
+			? String(env.projectNameForRoot(dir) || "project")
+			: dir ? String(dir.getName()) : "project";
 	}
 
 	function frontendCatalogProvider(block) {

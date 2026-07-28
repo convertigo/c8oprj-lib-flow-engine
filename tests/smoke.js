@@ -1767,32 +1767,52 @@ var httpInputUrlRun = JSON.parse(engine.run(JSON.stringify({
 assertTrue(httpInputUrlRun.result.text === "Flow HTTP input URL smoke",
 	"http.get shortcut lost the caller input scope inside a FlowScript block");
 var xmlParseCatalog = JSON.parse(engine.catalog(JSON.stringify({ q: "xml.parse" })));
-assertTrue(xmlParseCatalog.blocks.some(function (block) {
+var xmlParseCatalogBlock = xmlParseCatalog.blocks.filter(function (block) {
 	return block.blockId === "xml.parse" && block.namespace === "xml" && block.origin === "core";
-}), "catalog did not expose xml.parse");
-var xmlParseRun = JSON.parse(engine.run(JSON.stringify({
-	flowSource: [
+})[0];
+assertTrue(!!xmlParseCatalogBlock, "catalog did not expose xml.parse");
+assertTrue(String(xmlParseCatalogBlock.description || "").indexOf("enclosure.attr.url") !== -1,
+	"xml.parse compact catalog description did not document the XML attribute shape");
+var xmlParseSchemaFlowName = "XmlParseSchemaLearn";
+var xmlParseSchemaFile = new java.io.File(projectDirFile,
+	"libs/flow/schemas/" + xmlParseSchemaFlowName + "/parseFeed.out.schema.json");
+var xmlParseFlowSource = [
 		"version: 1",
 		"nodes:",
 		"  - id: parseFeed",
 		"    block: xml.parse",
 		"    text: \"<rss><channel><item><title>One</title><enclosure url=\\\"https://example.test/one.png\\\" /></item><item><title>Two</title></item></channel></rss>\"",
 		"    out: local.feed",
-		"  - id: firstTitle",
+		"  - id: selectItems",
 		"    block: set",
-		"    path: result.title",
-		"    value: \"{{ local.feed.rss.channel.item[0].title }}\"",
-		"  - id: firstImage",
-		"    block: set",
-		"    path: result.imageUrl",
-		"    value: \"{{ local.feed.rss.channel.item[0].enclosure.attr.url }}\"",
+		"    path: local.items",
+		"    value: \"{{ local.feed.rss.channel.item }}\"",
+		"  - id: mapImages",
+		"    block: list.map",
+		"    items: local.items",
+		"    select: current.enclosure.attr.url",
+		"    out: result.imageUrls",
 		""
-	].join("\n"),
+	].join("\n");
+assertTrue(!xmlParseSchemaFile.isFile(), "Learned XML schema should not exist before the first named run");
+var xmlParseRun = JSON.parse(engine.run(JSON.stringify({
+	flowName: xmlParseSchemaFlowName,
+	flowSource: xmlParseFlowSource,
 	includeTrace: false
 })));
-assertTrue(xmlParseRun.result.title === "One" &&
-	xmlParseRun.result.imageUrl === "https://example.test/one.png",
+assertTrue(xmlParseRun.result.imageUrls[0] === "https://example.test/one.png" &&
+	xmlParseSchemaFile.isFile(),
 	"xml.parse did not expose the expected Convertigo XML-to-JSON shape");
+var xmlParseMapContext = JSON.parse(engine.context(JSON.stringify({
+	flowName: xmlParseSchemaFlowName,
+	flowSource: xmlParseFlowSource,
+	node: "mapImages",
+	property: "select",
+	include: ["current"],
+	detail: "compact"
+})));
+assertTrue(xmlParseMapContext.scopes.current.indexOf("current.enclosure.attr.url") !== -1,
+	"list.map current picker did not expose fields from the learned xml.parse schema");
 var xmlParseEnvelopeRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: [
 		"version: 1",
@@ -2188,6 +2208,9 @@ assertTrue(propertyEditor.html.indexOf("details.scopeGroup") !== -1 &&
 assertTrue(propertyEditor.html.indexOf("syncSimpleExpression") !== -1 &&
 	propertyEditor.html.indexOf("pathMatches(value, context)") !== -1 &&
 	propertyEditor.html.indexOf("replaceSimpleSelection(path)") !== -1 &&
+	propertyEditor.html.indexOf("data-action=\"format-json\"") !== -1 &&
+	propertyEditor.html.indexOf("formattedJsonExpression(sourceValue)") !== -1 &&
+	propertyEditor.html.indexOf("formatJson()") !== -1 &&
 	propertyEditor.html.indexOf("data-action=\"nullish\"") !== -1 &&
 	propertyEditorCompactHtml.indexOf("insertNullishFallback()") !== -1 &&
 	propertyEditor.html.indexOf("data-simple=\"expression\"") !== -1 &&
@@ -3560,7 +3583,7 @@ var authoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	detail: "full"
 })));
 var authoringProvider = findNode(authoringTree, function (node) {
-	return node.type === "frontendBlockProvider" && node.summary === String(projectDirFile.getName());
+	return node.type === "frontendBlockProvider" && node.summary === "SmokeProject";
 });
 assertTrue(authoringProvider !== null, "authoring-tree did not expose the current project as a frontend catalog provider");
 var authoringTextBlock = findNode(authoringProvider, function (node) {
@@ -3688,7 +3711,8 @@ assertTrue(findNode(leanFlowSvelteAuthoringTree, function (node) {
 var frontendDocumentServerInfo = JSON.parse(engine.cacheInfo()).caches.frontendDocumentServer;
 assertTrue(frontendDocumentServerInfo.starts === 1 && frontendDocumentServerInfo.active === 1 &&
 	frontendDocumentServerInfo.fallbacks === 0 && frontendDocumentServerInfo.errors === 0,
-	"frontend document parsing should use one healthy persistent Node worker");
+	"frontend document parsing should use one healthy persistent Node worker: " +
+	JSON.stringify(frontendDocumentServerInfo));
 var engineAfterFrontendRestart = eval(source);
 var persistentFrontendTree = JSON.parse(engineAfterFrontendRestart.authoringTree(JSON.stringify({
 	surface: "frontend",

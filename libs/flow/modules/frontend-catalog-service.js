@@ -102,7 +102,9 @@
 
 	function currentProjectProvider(env) {
 		var projectRoot = env.projectDir && env.projectDir();
-		return projectRoot ? String(projectRoot.getName()) : "project";
+		return projectRoot && typeof env.projectNameForRoot === "function"
+			? String(env.projectNameForRoot(projectRoot) || "project")
+			: projectRoot ? String(projectRoot.getName()) : "project";
 	}
 
 	function projectProviderForResourceRoot(root, env) {
@@ -119,7 +121,10 @@
 		if (!projectPath) {
 			return "";
 		}
-		return String(new env.File(projectPath).getName());
+		var projectRoot = new env.File(projectPath);
+		return typeof env.projectNameForRoot === "function"
+			? String(env.projectNameForRoot(projectRoot) || "")
+			: String(projectRoot.getName());
 	}
 
 	function rootProvider(root, projectFrontendRoot, builderName, settings, env) {

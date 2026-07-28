@@ -25,8 +25,10 @@
 		return origin === "core" ? new env.File(env.engineDir(), "blocks") : env.projectBlocksDir();
 	}
 
-	function projectNameFromRoot(projectRoot) {
-		return projectRoot ? String(projectRoot.getName() || "") : "";
+	function projectNameFromRoot(projectRoot, env) {
+		return projectRoot && typeof env.projectNameForRoot === "function"
+			? String(env.projectNameForRoot(projectRoot) || "")
+			: projectRoot ? String(projectRoot.getName() || "") : "";
 	}
 
 	function projectRootCandidate(parent, name, env) {
@@ -67,7 +69,7 @@
 		}
 		var source = String(env.FileUtils.readFileToString(descriptor, "UTF-8"));
 		var parent = projectRoot.getParentFile();
-		var currentName = projectNameFromRoot(projectRoot);
+		var currentName = projectNameFromRoot(projectRoot, env);
 		var engineName = env.flowProviderName(env.engineDir(), "lib_flow_engine");
 		var seen = {};
 		var matcher = /projectName:\s*([A-Za-z0-9_.-]+)/g;
@@ -214,7 +216,7 @@
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
 			referencedProjectRoots(env).forEach(function (root) {
 				var refBlocksDir = referencedBlocksDir(root, env);
-				reserveBlockDir(blocks, refBlocksDir, "reference", projectNameFromRoot(root), env, refBlocksDir);
+				reserveBlockDir(blocks, refBlocksDir, "reference", projectNameFromRoot(root, env), env, refBlocksDir);
 			});
 			reserveBlockDir(blocks, localBlocksDir, "project",
 				env.flowProviderName(new env.File(env.projectDir(), "libs/flow"), "project"), env);

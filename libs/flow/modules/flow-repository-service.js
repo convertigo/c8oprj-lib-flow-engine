@@ -19,12 +19,19 @@
 		var listProjectFlows = env.listProjectFlows;
 		var projectDir = env.projectDir;
 		var currentProjectName = env.currentProjectName;
+		var projectNameForRoot = env.projectNameForRoot;
 		var canonicalPath = env.canonicalPath;
 		var flowProjectRootFromFlowDir = env.flowProjectRootFromFlowDir;
 		var engineDir = env.engineDir;
 		var flowProviderName = env.flowProviderName;
 		var flowCodeFileName = env.flowCodeFileName;
 		var syncProjectFlowInputs = env.syncProjectFlowInputs;
+
+		function canonicalProjectName(root) {
+			return root && typeof projectNameForRoot === "function"
+				? String(projectNameForRoot(root) || "")
+				: root ? String(new File(root).getName() || "") : "";
+		}
 
 		function inputDefinitionsFromDefinition(definition) {
 			definition = definition || {};
@@ -147,7 +154,7 @@
 				var source = sourceFromFlowScript(loadBlocks(), name, raw).source;
 				return {
 					name: name,
-					project: projectName || (root ? String(root.getName()) : ""),
+					project: projectName || canonicalProjectName(root),
 					origin: origin || "project",
 					format: entry.format,
 					file: String(file.getAbsolutePath()),
@@ -162,7 +169,7 @@
 		function visibleSearchFlows(request) {
 			var flows = [];
 			var currentRoot = projectDir();
-			var currentProject = currentProjectName(request) || (currentRoot ? String(new File(currentRoot).getName()) : "");
+			var currentProject = currentProjectName(request) || canonicalProjectName(currentRoot);
 			var blocks = loadBlocks();
 			listProjectFlows().flows.forEach(function (flow) {
 				var current = getProjectFlow(flow.name, blocks);

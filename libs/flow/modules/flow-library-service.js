@@ -3,7 +3,9 @@
 		try {
 			var dir = new env.File(flowDir);
 			var project = dir.getParentFile() ? dir.getParentFile().getParentFile() : null;
-			var name = project ? String(project.getName() || "") : "";
+			var name = project && typeof env.projectNameForRoot === "function"
+				? String(env.projectNameForRoot(project) || "")
+				: project ? String(project.getName() || "") : "";
 			return name || fallback || "unknown";
 		} catch (e) {
 			return fallback || "unknown";

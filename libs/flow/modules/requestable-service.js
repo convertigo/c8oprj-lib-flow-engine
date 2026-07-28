@@ -131,7 +131,10 @@
 		if (!root || !target || !target.project || !target.connector || !target.requestable) {
 			return null;
 		}
-		if (String(new env.File(root).getName()) !== String(target.project)) {
+		var projectName = typeof env.projectNameForRoot === "function"
+			? String(env.projectNameForRoot(root) || "")
+			: String(new env.File(root).getName());
+		if (projectName !== String(target.project)) {
 			return null;
 		}
 		var file = new env.File(root, "xsd/internal/" + target.connector + "/" + target.requestable + ".xsd");
