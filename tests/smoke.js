@@ -3619,6 +3619,18 @@ var authoringProvider = findNode(authoringTree, function (node) {
 	return node.type === "frontendBlockProvider" && node.summary === "SmokeProject";
 });
 assertTrue(authoringProvider !== null, "authoring-tree did not expose the current project as a frontend catalog provider");
+var crossProjectAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	project: "lib_flow_mcp",
+	projectDir: __flowProjectDir,
+	engineSource: frontendEngineSource,
+	detail: "full"
+})));
+assertTrue(findNode(crossProjectAuthoringTree, function (node) {
+	return node.type === "frontendBlockProvider" && node.summary === "SmokeProject";
+}) !== null, "authoring-tree leaked the MCP host project identity into the targeted project catalog");
+assertTrue(findNode(crossProjectAuthoringTree, function (node) {
+	return node.type === "frontendBlockProvider" && node.summary === "lib_flow_mcp";
+}) === null, "authoring-tree exposed the MCP host project as the targeted project provider");
 var authoringTextBlock = findNode(authoringProvider, function (node) {
 	return node.kind === "frontendBlock" && node.type === "project.text";
 });

@@ -3293,11 +3293,6 @@
 			return "";
 		}
 		root = new File(root);
-		var current = projectDir();
-		var requested = currentProjectName(activeRequest);
-		if (requested && current && canonicalPath(root) === canonicalPath(current)) {
-			return requested;
-		}
 		try {
 			var descriptor = new File(root, "c8oProject.yaml");
 			if (descriptor.isFile()) {
@@ -3308,6 +3303,11 @@
 				}
 			}
 		} catch (e) {
+		}
+		var current = projectDir();
+		var requested = currentProjectName(activeRequest);
+		if (requested && current && canonicalPath(root) === canonicalPath(current)) {
+			return requested;
 		}
 		return String(root.getName() || "");
 	}
