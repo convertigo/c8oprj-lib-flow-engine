@@ -1259,6 +1259,31 @@ var docResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 })));
 assertTrue(docResourceGet.content.indexOf("Flow documentation resource.") !== -1,
 	"resourceGet did not read project Flow documentation resources");
+var publicResourcesDir = new java.io.File(projectDirFile, "resources/fixtures");
+publicResourcesDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(publicResourcesDir, "catalog.xml"), "<catalog><item id=\"42\" /></catalog>", "UTF-8");
+var publicResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
+	path: "resources/fixtures/catalog.xml"
+})));
+assertTrue(publicResourceGet.kind === "publicResource" &&
+	publicResourceGet.uri === "flow://public/fixtures/catalog" &&
+	publicResourceGet.content.indexOf("item id=\"42\"") !== -1,
+	"resourceGet did not expose one canonical textual resource shared with the frontend");
+var publicAssetRead = JSON.parse(engine.run(JSON.stringify({
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: readPublicAsset",
+		"    block: asset.read",
+		"    path: resources/fixtures/catalog.xml",
+		"    out: result.content",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(publicAssetRead.result.content.indexOf("<catalog>") === 0,
+	"asset.read did not read a textual resource from the frontend-visible resources directory");
 var flowEngineConfigFile = new java.io.File(projectDirFile, "libs/flow/engine.yaml");
 flowEngineConfigFile.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowEngineConfigFile, [

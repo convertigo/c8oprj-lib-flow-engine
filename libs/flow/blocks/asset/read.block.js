@@ -5,14 +5,14 @@ const _meta = {
     "resource"
   ],
   "description": "Reads a project-local Flow asset as text.",
-  "longDescription": "Use assets for templates, snippets, guides or fixtures stored under libs/flow/resources. Flow code passes the project-relative libs/flow/resources/... path and receives raw text. Frontend rendered assets instead use resources/... URLs; MCP flow-resource-get returns an inspection envelope whose content field is the text.",
+  "longDescription": "Use libs/flow/resources for backend-only templates, snippets, guides or fixtures. Use resources for textual assets shared with the generated frontend, so one canonical file can be read by Flow and served to the browser. Flow code passes the project-relative path and receives raw text. MCP flow-resource-get returns an inspection envelope whose content field is the text.",
   "properties": {
     "path": {
       "label": "path",
       "kind": "text",
       "type": "string",
       "default": "libs/flow/resources/asset.txt",
-      "description": "Project-local asset path under libs/flow/resources."
+      "description": "Project-local textual asset under libs/flow/resources or resources."
     },
     "out": {
       "label": "out",

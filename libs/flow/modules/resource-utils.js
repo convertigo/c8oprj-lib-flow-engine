@@ -42,6 +42,9 @@
 		if (String(path).indexOf("libs/flow/resources/") === 0) {
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
 		}
+		if (String(path).indexOf("resources/") === 0) {
+			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
+		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
 			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte") || String(path).endsWith(".uiblock.json");
 		}
@@ -75,6 +78,9 @@
 		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
 			return String(path).endsWith(".uiblock.json") ? "frontendBlock" : "frontendModel";
+		}
+		if (String(path).indexOf("resources/") === 0) {
+			return "publicResource";
 		}
 		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
 			return "typeEditor";
@@ -131,9 +137,13 @@
 	}
 
 	function uri(path) {
-		var prefix = "libs/flow/resources/";
 		var text = String(path || "");
-		if (text.indexOf(prefix) !== 0) {
+		var prefix = "libs/flow/resources/";
+		var uriPrefix = "flow://";
+		if (text.indexOf("resources/") === 0) {
+			prefix = "resources/";
+			uriPrefix = "flow://public/";
+		} else if (text.indexOf(prefix) !== 0) {
 			return "";
 		}
 		text = text.substring(prefix.length);
@@ -141,7 +151,7 @@
 		if (dot > 0) {
 			text = text.substring(0, dot);
 		}
-		return "flow://" + text;
+		return uriPrefix + text;
 	}
 
 	function markdownBody(content) {
