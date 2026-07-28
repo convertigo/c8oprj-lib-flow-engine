@@ -3631,6 +3631,16 @@ assertTrue(findNode(crossProjectAuthoringTree, function (node) {
 assertTrue(findNode(crossProjectAuthoringTree, function (node) {
 	return node.type === "frontendBlockProvider" && node.summary === "lib_flow_mcp";
 }) === null, "authoring-tree exposed the MCP host project as the targeted project provider");
+var crossProjectOpenBuilt = JSON.parse(engine.contextAction(JSON.stringify({
+	project: "lib_flow_mcp",
+	projectDir: __flowProjectDir,
+	engineSource: frontendEngineSource,
+	actionId: "frontbuilder.svelte.openBuilt"
+})));
+assertTrue(crossProjectOpenBuilt.ok === true &&
+	crossProjectOpenBuilt.browser && crossProjectOpenBuilt.browser.project === "SmokeProject" &&
+	String(crossProjectOpenBuilt.openUrl || "").indexOf("/projects/SmokeProject/") !== -1,
+	"frontend actions leaked the MCP host identity instead of the targeted project descriptor");
 var authoringTextBlock = findNode(authoringProvider, function (node) {
 	return node.kind === "frontendBlock" && node.type === "project.text";
 });

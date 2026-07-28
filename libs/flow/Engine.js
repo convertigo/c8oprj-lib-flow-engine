@@ -4155,7 +4155,7 @@
 				calls[String(call.id)] = call;
 			}
 		});
-		var projectName = currentProjectName(request) || projectNameForRoot(projectRoot);
+		var projectName = projectNameForRoot(projectRoot) || currentProjectName(request);
 		var schemas = {};
 		function setActionSchema(action, schema) {
 			var normalized = normalizeTree(schema);
@@ -4219,7 +4219,7 @@
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
-		var projectName = currentProjectName(request) || projectNameForRoot(projectRoot);
+		var projectName = projectNameForRoot(projectRoot) || currentProjectName(request);
 		var drafts = frontendSourceDrafts(request);
 		var cache = runtimeState.caches.frontendDocuments;
 		var key = [
@@ -7145,8 +7145,9 @@
 	function frontendProjectName(request) {
 		var target = request.targetObject || {};
 		var root = request.root || {};
-		return String(target.project || root.project || currentProjectName(request)
-			|| projectNameForRoot(frontendProjectRootFile(request)) || "");
+		return String(target.project || root.project
+			|| projectNameForRoot(frontendProjectRootFile(request))
+			|| currentProjectName(request) || "");
 	}
 
 	function frontendBuiltUrl(request) {
