@@ -3701,14 +3701,18 @@ assertTrue(findNode(flowSvelteTree, function (node) {
 assertTrue(findNode(flowSvelteTree, function (node) {
 	return node.kind === "frontendBuilder" && node.type === "svelte";
 }) !== null, "engine tree did not expose the Svelte builder in the dedicated Frontends branch");
+function sameCanonicalPath(left, right) {
+	return String(new java.io.File(String(left)).getCanonicalPath()) ===
+		String(new java.io.File(String(right)).getCanonicalPath());
+}
 var flowSvelteRootPage = findNode(flowSvelteTree, function (node) {
-	return node.kind === "frontendPage" && nodeInfoObject(node).sourcePath === String(flowSveltePageFile.getAbsolutePath());
+	return node.kind === "frontendPage" && sameCanonicalPath(nodeInfoObject(node).sourcePath, flowSveltePageFile);
 });
 var flowSvelteRootLayout = findNode(flowSvelteTree, function (node) {
-	return node.kind === "frontendRouteLayout" && nodeInfoObject(node).sourcePath === String(flowSvelteLayoutFile.getAbsolutePath());
+	return node.kind === "frontendRouteLayout" && sameCanonicalPath(nodeInfoObject(node).sourcePath, flowSvelteLayoutFile);
 });
 var flowSvelteNestedPage = findNode(flowSvelteTree, function (node) {
-	return node.kind === "frontendPage" && nodeInfoObject(node).sourcePath === String(nestedRouteFile.getAbsolutePath());
+	return node.kind === "frontendPage" && sameCanonicalPath(nodeInfoObject(node).sourcePath, nestedRouteFile);
 });
 var flowSvelteRouteGroup = findNode(flowSvelteTree, function (node) {
 	var definition = node && node.definition ? JSON.parse(node.definition) : {};
@@ -3837,7 +3841,7 @@ var flowSvelteTreeAfterRouteChange = JSON.parse(engine.describeTree(JSON.stringi
 	detail: "full"
 })));
 var updatedNestedPage = findNode(flowSvelteTreeAfterRouteChange, function (node) {
-	return node.kind === "frontendPage" && nodeInfoObject(node).sourcePath === String(nestedRouteFile.getAbsolutePath());
+	return node.kind === "frontendPage" && sameCanonicalPath(nodeInfoObject(node).sourcePath, nestedRouteFile);
 });
 var updatedNestedTitle = findNode(updatedNestedPage, function (node) {
 	return node.type === "Text" && node.summary === "Updated product";
