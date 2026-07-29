@@ -3947,6 +3947,7 @@
 			includeChildren: request.includeChildren !== false,
 			includeDefinition: request.includeDefinition === true,
 			includeProperties: request.includeProperties === true,
+			includeBindings: request.includeBindings !== false,
 			includeSource: request.includeSource === true,
 			includeAnalysis: request.includeAnalysis === true,
 			includeSchema: request.includeSchema === true || request.schema === true,
@@ -3994,6 +3995,7 @@
 			String(request.includeChildren === false ? "no-children" : "children"),
 			String(request.includeDefinition === true),
 			String(request.includeProperties === true),
+			String(request.includeBindings === false ? "no-bindings" : "bindings"),
 			String(request.includeSource === true),
 			String(request.includeAnalysis === true),
 			String(request.includeSchema === true || request.schema === true),
@@ -4238,10 +4240,12 @@
 		].join("\n"));
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (cached) {
+			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
 			return enrichFrontendBindingSources(cached, request, projectRoot);
 		}
 		var persistent = readPersistentFrontendDocument(key, fingerprint);
 		if (persistent) {
+			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
 			var cachedPersistent = writeRuntimeMapCache(cache, key, fingerprint, persistent, "Svelte front documents");
 			return enrichFrontendBindingSources(cachedPersistent, request, projectRoot);
 		}
@@ -4295,6 +4299,23 @@
 				draftsTemp["delete"]();
 			} catch (e2) {
 			}
+		}
+	}
+
+	function prewarmFrontendDocumentServer(request, resourceRoot, sourceFile) {
+		if (!request || request.prewarmFrontendDocumentServer !== true || !sourceFile) {
+			return;
+		}
+		var normalizedSourcePath = String(sourceFile.getAbsolutePath()).replace(/\\/g, "/");
+		if (normalizedSourcePath.indexOf("/src/routes/") < 0) {
+			return;
+		}
+		try {
+			startFrontendDocumentServer(resourceRoot);
+		} catch (e) {
+			runtimeState.frontendDocumentServerStats.errors++;
+			frontendStudioLog("[Svelte front document server] Unable to prewarm: "
+				+ String(e && e.message || e), true);
 		}
 	}
 
@@ -4513,6 +4534,38 @@
 			out.target = results[0] && results[0].target || "flowSvelte";
 			if (results[0] && results[0].debug) {
 				out.debug = results[0].debug;
+			}
+		}
+		if (request.authoringRootPath) {
+			try {
+				var projectionDrafts = Object.assign({}, frontendSourceDrafts(request));
+				projectionDrafts[String(sourceFile.getCanonicalPath())] = source;
+				var projectionRequest = Object.assign({}, request, {
+					sourceFile: String(sourceFile.getAbsolutePath()),
+					sourcePath: String(sourceFile.getAbsolutePath()),
+					source: source,
+					sourceDrafts: projectionDrafts,
+					frontendSourceDrafts: projectionDrafts,
+					includeBindings: false
+				});
+				var projectedDocument = describeFrontendDocument(projectionRequest);
+				out.authoringTree = flowTreeService().authoringSourceTreeRequest({
+					sourceFile: String(sourceFile.getAbsolutePath()),
+					sourcePath: String(sourceFile.getAbsolutePath()),
+					authoringRootPath: String(request.authoringRootPath),
+					document: projectedDocument,
+					documentTree: projectedDocument && projectedDocument.tree
+				}, flowTreeServiceEnv());
+			} catch (projectionError) {
+				out.authoringTree = {
+					ok: false,
+					target: "authoringSource",
+					children: [],
+					error: {
+						code: "AUTHORING_SOURCE_PROJECTION_FAILED",
+						message: String(projectionError && projectionError.message || projectionError)
+					}
+				};
 			}
 		}
 		return out;

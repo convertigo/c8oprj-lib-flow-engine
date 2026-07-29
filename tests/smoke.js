@@ -3934,6 +3934,28 @@ JSON.parse(engine.authoringTree(JSON.stringify({
 var authoringTreeCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 assertTrue(authoringTreeCacheAfterRepeat.hits > authoringTreeCacheBeforeRepeat.hits,
 	"repeated authoring tree reads should reuse the shared tree snapshot");
+var bindingVariantCacheBefore = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "compact",
+	maxDepth: 7,
+	includeBindings: false
+})));
+JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "compact",
+	maxDepth: 7,
+	includeBindings: true
+})));
+var bindingVariantCacheAfter = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+assertTrue(bindingVariantCacheAfter.misses >= bindingVariantCacheBefore.misses + 2,
+	"authoring tree cache should distinguish lightweight and binding-aware projections");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(nestedRouteFile, [
 	"<script module>",
 	"  export const _flow = { page: { id: \"product\", title: \"Updated product detail\" } };",
@@ -4152,6 +4174,9 @@ var flowSvelteMove = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
 	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
 	source: flowSvelteMoveSource,
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	authoringRootPath: smokePanelRoot.path,
 	mutation: {
 		op: "move",
 		from: "frontAst.slots.structure.children[2]",
@@ -4162,6 +4187,76 @@ var flowSvelteMove = JSON.parse(engine.applySourceMutation(JSON.stringify({
 })));
 assertTrue(flowSvelteMove.ok === true && String(flowSvelteMove.source).indexOf("id=\"last\"") < String(flowSvelteMove.source).indexOf("id=\"guard\""),
 	"flow-svelte AST move did not reorder siblings");
+assertTrue(flowSvelteMove.authoringTree && flowSvelteMove.authoringTree.ok === true &&
+	flowSvelteMove.authoringTree.children && flowSvelteMove.authoringTree.children.length === 1 &&
+	flowSvelteMove.authoringTree.children[0].path === smokePanelRoot.path &&
+	findNode(flowSvelteMove.authoringTree, function (node) {
+		return node.summary === "Last";
+	}) !== null,
+	"flow-svelte source mutation did not return the updated document projection");
+var flowSvelteMoveDrafts = {};
+flowSvelteMoveDrafts[String(flowSvelteComponentFile.getCanonicalPath())] = flowSvelteMove.source;
+var flowSvelteMoveFreshTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "full",
+	includeBindings: false,
+	frontendSourceDrafts: flowSvelteMoveDrafts
+})));
+var flowSvelteMoveFreshRoot = findNode(flowSvelteMoveFreshTree, function (node) {
+	return node.path === smokePanelRoot.path;
+});
+function authoringShape(node) {
+	return {
+		path: node && node.path,
+		kind: node && node.kind,
+		type: node && node.type,
+		summary: node && node.summary,
+		children: (node && node.children || []).map(authoringShape)
+	};
+}
+var flowSvelteMoveProjectedShape = JSON.stringify(authoringShape(flowSvelteMove.authoringTree.children[0]));
+var flowSvelteMoveFreshShape = JSON.stringify(authoringShape(flowSvelteMoveFreshRoot));
+assertTrue(flowSvelteMoveFreshRoot !== null &&
+	flowSvelteMoveProjectedShape === flowSvelteMoveFreshShape,
+	"incremental Flow Svelte projection diverged from the full authoring tree: projected=" +
+		flowSvelteMoveProjectedShape + " fresh=" + flowSvelteMoveFreshShape);
+var flowSvelteLayoutSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowSvelteLayoutFile, "UTF-8"));
+var flowSvelteLayoutMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteLayoutFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteLayoutFile.getAbsolutePath()),
+	source: flowSvelteLayoutSource,
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	authoringRootPath: flowSvelteRootLayout.path,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].props.text",
+		value: "Updated store"
+	}
+})));
+var flowSvelteLayoutDrafts = {};
+flowSvelteLayoutDrafts[String(flowSvelteLayoutFile.getCanonicalPath())] = flowSvelteLayoutMutation.source;
+var flowSvelteLayoutFreshTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	detail: "full",
+	includeBindings: false,
+	frontendSourceDrafts: flowSvelteLayoutDrafts
+})));
+var flowSvelteLayoutFreshRoot = findNode(flowSvelteLayoutFreshTree, function (node) {
+	return node.path === flowSvelteRootLayout.path;
+});
+assertTrue(flowSvelteLayoutMutation.authoringTree && flowSvelteLayoutMutation.authoringTree.ok === true &&
+	flowSvelteLayoutMutation.authoringTree.children.length === 1 &&
+	JSON.stringify(authoringShape(flowSvelteLayoutMutation.authoringTree.children[0])) ===
+		JSON.stringify(authoringShape(flowSvelteLayoutFreshRoot)),
+	"incremental Flow Svelte route projection diverged from the full authoring tree: projected=" +
+		JSON.stringify(authoringShape(flowSvelteLayoutMutation.authoringTree.children[0])) + " fresh=" +
+		JSON.stringify(authoringShape(flowSvelteLayoutFreshRoot)) + " response=" +
+		JSON.stringify(flowSvelteLayoutMutation.authoringTree));
 var flowSvelteImplicitProps = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
 	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),

@@ -3532,6 +3532,78 @@
 		}), blocks);
 	}
 
+	function authoringSourceTreeRequest(request) {
+		request = request || {};
+		var sourcePath = String(request.sourceFile || request.sourcePath || "");
+		var rootPath = String(request.authoringRootPath || request.rootPath || "frontAst");
+		var document = request.document || {};
+		var documentTree = request.documentTree || request.tree || document.tree || {};
+		var routeRoots = rootPath.indexOf(".routes.") >= 0
+			? request.pageNodes || document.pageNodes || documentTree.pageNodes || []
+			: [];
+		var roots = routeRoots.length ? routeRoots : documentTree.children || [];
+		var routeProjection = rootPath.indexOf(".routes.") >= 0;
+		var root = !routeProjection && roots.length === 1 ? roots[0] : null;
+		if (routeProjection) {
+			var candidates = [];
+			var normalizedSourcePath = sourcePath.replace(/\\/g, "/");
+			(function collect(nodes) {
+				(nodes || []).forEach(function (node) {
+					var kind = String(node && node.kind || "");
+					var nodeSourcePath = String(node && node.sourcePath || "").replace(/\\/g, "/");
+					var score = 0;
+					if (kind === "frontendPage" || kind === "frontendRouteLayout") {
+						score += 100;
+					}
+					if (nodeSourcePath && nodeSourcePath === normalizedSourcePath) {
+						score += 50;
+					}
+					if (String(node && node.sourceMutationPath || "") === "frontAst") {
+						score += 25;
+					}
+					if (score >= 100) {
+						candidates.push({ node: node, score: score });
+					}
+					collect(node && node.children);
+				});
+			})(roots);
+			candidates.sort(function (left, right) {
+				return right.score - left.score;
+			});
+			root = candidates.length ? candidates[0].node : null;
+		}
+		if (!root) {
+			return {
+				ok: false,
+				target: "authoringSource",
+				sourcePath: sourcePath,
+				rootPath: rootPath,
+				children: [],
+				error: {
+					code: "AUTHORING_SOURCE_ROOT_NOT_FOUND",
+					message: "The Flow Svelte authoring document must expose exactly one source root."
+				}
+			};
+		}
+		var sourceFile = sourcePath ? new File(sourcePath) : null;
+		var projected = { children: [] };
+		root = normalizeTree(root);
+		if (root.kind === "frontendComponent" && root.type === "flow-svelte-ui-block"
+				&& root.children && root.children.length === 1
+				&& root.children[0].kind === "frontendComponent"
+				&& String(root.children[0].sourceMutationPath || "") === "frontAst") {
+			root.children = root.children[0].children || [];
+		}
+		addFrontendAuthoringNode(projected, root, rootPath, sourceFile);
+		return {
+			ok: true,
+			target: "authoringSource",
+			sourcePath: sourcePath,
+			rootPath: rootPath,
+			children: projected.children
+		};
+	}
+
 	function authoringBuilderName(request, engine) {
 		var builder = String(request && request.builder || "");
 		if (builder) {
@@ -5774,6 +5846,7 @@
 			toYamlSource: toYamlSource,
 			describeTreeRequest: describeTreeRequest,
 			authoringTreeRequest: authoringTreeRequest,
+			authoringSourceTreeRequest: authoringSourceTreeRequest,
 			authoringContractRequest: authoringContractRequest,
 			authoringPaletteRequest: authoringPaletteRequest,
 			authoringMutateRequest: authoringMutateRequest,
@@ -5807,6 +5880,9 @@
 		},
 		authoringTreeRequest: function (request, blocks, env) {
 			return create(env).authoringTreeRequest(request, blocks);
+		},
+		authoringSourceTreeRequest: function (request, env) {
+			return create(env).authoringSourceTreeRequest(request);
 		},
 		authoringContractRequest: function (request, env) {
 			return create(env).authoringContractRequest(request);
