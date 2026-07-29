@@ -8,7 +8,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/engine.yaml, libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,xml,yaml,yml}, resources/**/*.{md,txt,json,xml,yaml,yml}, libs/flow/frontbuilder/**/*.{flow.svelte,front.json,uiblock.json}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Allowed paths: libs/flow/engine.yaml, libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,xml,yaml,yml}, resources/**/*.{md,txt,json,xml,yaml,yml}, libs/flow/frontbuilder/**/*.{flow.svelte,front.json,uiblock.json,app.flow.css}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);

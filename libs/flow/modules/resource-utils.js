@@ -46,7 +46,8 @@
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
-			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte") || String(path).endsWith(".uiblock.json");
+			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte")
+				|| String(path).endsWith("/app.flow.css") || String(path).endsWith(".uiblock.json");
 		}
 		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
 			return ["html", "css", "js"].indexOf(ext) !== -1;
@@ -77,7 +78,8 @@
 			return "library";
 		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
-			return String(path).endsWith(".uiblock.json") ? "frontendBlock" : "frontendModel";
+			return String(path).endsWith(".uiblock.json") ? "frontendBlock"
+				: String(path).endsWith("/app.flow.css") ? "frontendStyle" : "frontendModel";
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return "publicResource";
@@ -97,7 +99,7 @@
 		if (slash >= 0) {
 			filename = filename.substring(slash + 1);
 		}
-		[".fragment.yaml", ".block.js", ".hooks.js", ".type.yaml", ".flow.svelte", ".front.json", ".uiblock.json", ".js"].some(function (suffix) {
+		[".fragment.yaml", ".block.js", ".hooks.js", ".type.yaml", ".flow.svelte", ".flow.css", ".front.json", ".uiblock.json", ".js"].some(function (suffix) {
 			if (filename.endsWith(suffix)) {
 				filename = filename.substring(0, filename.length - suffix.length);
 				return true;

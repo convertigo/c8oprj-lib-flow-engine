@@ -29,6 +29,13 @@ const _meta = {
       "default": "svelte",
       "description": "Frontend builder name."
     },
+    "wait": {
+      "label": "wait",
+      "kind": "literal",
+      "type": "boolean",
+      "default": true,
+      "description": "For dev.start, set false to install and start Vite in the background."
+    },
     "projectDir": {
       "label": "projectDir",
       "kind": "text",

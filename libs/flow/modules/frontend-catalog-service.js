@@ -100,6 +100,26 @@
 		return arrayCopy(value, fallback);
 	}
 
+	function withCommonUiProperties(descriptor) {
+		var traits = descriptor && arrayCopy(descriptor.traits, []);
+		if (!descriptor || descriptor.kind !== "widget" ||
+				traits.indexOf("ui.block") < 0 ||
+				descriptor.insert && descriptor.insert.kind === "pageContent") {
+			return descriptor;
+		}
+		descriptor.properties = Object.assign({
+			"class": {
+				label: "Class",
+				category: "Base properties",
+				kind: "text",
+				type: "string",
+				"default": "",
+				description: "Application CSS class names."
+			}
+		}, descriptor.properties || {});
+		return descriptor;
+	}
+
 	function currentProjectProvider(env) {
 		var projectRoot = env.projectDir && env.projectDir();
 		return projectRoot && typeof env.projectNameForRoot === "function"
@@ -786,6 +806,47 @@
 					once: {
 						type: "boolean",
 						description: "Run this lifecycle chain once per browser runtime."
+					}
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.interval",
+				label: "Interval",
+				category: "Svelte / Lifecycle",
+				kind: "frontendEventDefinition",
+				icon: "mdi:timer-outline",
+				traits: ["ui.block", "ui.event", "ui.container"],
+				slots: {
+					actions: {
+						label: "Actions",
+						accepts: ["ui.action"]
+					}
+				},
+				targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
+				acceptedPositions: ["inside"],
+				description: "Runs explicit client actions at a fixed interval while the component is mounted.",
+				insert: {
+					id: "interval",
+					kind: "interval",
+					tag: "Interval",
+					milliseconds: 1000,
+					immediate: true
+				},
+				properties: {
+					id: { type: "string" },
+					milliseconds: {
+						label: "Milliseconds",
+						type: "number",
+						kind: "number",
+						"default": 1000,
+						description: "Delay between action runs."
+					},
+					immediate: {
+						label: "Run immediately",
+						type: "boolean",
+						kind: "boolean",
+						"default": true,
+						description: "Run once when the component mounts before starting the timer."
 					}
 				}
 			}),
@@ -1739,6 +1800,7 @@
 			if (!descriptor) {
 				return;
 			}
+			descriptor = withCommonUiProperties(descriptor);
 			var id = String(descriptor.id || "");
 			if (id && seen[id]) {
 				return;
