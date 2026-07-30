@@ -355,8 +355,35 @@ var onMountDescriptor = frontendDescriptors.filter(function (descriptor) {
 	return descriptor.id === "frontbuilder.svelte.onMount";
 })[0];
 assertTrue(onMountDescriptor && onMountDescriptor.properties.once &&
-	onMountDescriptor.properties.once.type === "boolean",
+	onMountDescriptor.properties.once.type === "boolean" &&
+	onMountDescriptor.targetKinds.indexOf("frontendEvents") !== -1,
 	"frontend catalog did not expose the persistent OnMount once property");
+[
+	"frontbuilder.svelte.onDestroy",
+	"frontbuilder.svelte.effect",
+	"frontbuilder.svelte.preEffect",
+	"frontbuilder.svelte.interval",
+	"frontbuilder.svelte.timeout"
+].forEach(function (id) {
+	var descriptor = frontendDescriptors.filter(function (candidate) {
+		return candidate.id === id;
+	})[0];
+	assertTrue(descriptor && descriptor.kind === "frontendEventBlockDefinition" &&
+		descriptor.targetKinds.indexOf("frontendEvents") !== -1,
+		"frontend catalog did not align lifecycle descriptor " + id);
+});
+[
+	"frontbuilder.svelte.state",
+	"frontbuilder.svelte.derived",
+	"frontbuilder.svelte.derivedBy"
+].forEach(function (id) {
+	var descriptor = frontendDescriptors.filter(function (candidate) {
+		return candidate.id === id;
+	})[0];
+	assertTrue(descriptor && descriptor.kind === "frontendActionVariableDefinition" &&
+		descriptor.targetKinds.indexOf("frontendActionVariables") !== -1,
+		"frontend catalog did not align reactive variable descriptor " + id);
+});
 var callSequenceDescriptor = frontendDescriptors.filter(function (descriptor) {
 	return descriptor.id === "frontbuilder.svelte.callSequence";
 })[0];
@@ -1455,6 +1482,7 @@ var frontendOnlyCodeSource = [
 	"const _meta = {",
 	"  \"version\": 1,",
 	"  \"description\": \"Frontend-only portable smoke block.\",",
+	"  \"longDescription\": \"Generated Flow mock. It keeps high-level FlowScript executable while the real block implementation is still missing.\",",
 	"  \"targets\": [\"frontend\"],",
 	"  \"effects\": [],",
 	"  \"implementations\": { \"frontend\": { \"runtime\": \"browser\", \"file\": \"normalize.browser.js\" } },",
@@ -1496,8 +1524,10 @@ assertTrue(frontendPatch.ok === true && frontendPatch.oldRevision === frontendRe
 	"blockCodePatch did not update revision-checked browser code");
 var finalizedFrontendDescriptor = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/normalize.block.js"), "UTF-8"));
-assertTrue(finalizedFrontendDescriptor.indexOf('"mock": true') === -1 && finalizedFrontendDescriptor.indexOf('"mock"') === -1,
-	"finalizing a frontend-only block did not remove mock metadata");
+assertTrue(finalizedFrontendDescriptor.indexOf('"mock": true') === -1 &&
+	finalizedFrontendDescriptor.indexOf('"mock"') === -1 &&
+	finalizedFrontendDescriptor.indexOf("Generated Flow mock") === -1,
+	"finalizing a frontend-only block did not remove generated mock metadata");
 var missingBlockInputSource = [
 	"const _meta = {",
 	"\t\"description\": \"FlowScript block with an intentionally missing property declaration.\",",
@@ -2211,8 +2241,12 @@ assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-config-overrides-editor") !== -1,
 	"propertyEditor did not embed core standalone editors");
 assertTrue(propertyEditor.html.indexOf('"fullsync"') !== -1 &&
-	propertyEditor.html.indexOf('"event"') !== -1,
-	"binding editor did not expose FullSync and event source modes");
+	propertyEditor.html.indexOf('"event"') !== -1 &&
+	propertyEditor.html.indexOf('"local"') !== -1 &&
+	propertyEditor.html.indexOf('"route"') !== -1 &&
+	propertyEditor.html.indexOf("source.name || source.ownerId || source.scopeId") !== -1 &&
+	propertyEditor.html.indexOf('this.flowHost.request("bindingSources"') !== -1,
+	"binding editor did not expose canonical FullSync, event, local and route source modes");
 assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
 	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
 	"propertyEditor did not expose generic type editor host API");
@@ -3700,6 +3734,19 @@ var authoringUiBlocks = findNode(authoringProvider, function (node) {
 	return node.type === "frontendBlocks";
 });
 assertTrue(authoringUiBlocks !== null, "authoring-tree did not expose the project UI blocks folder");
+assertTrue(findNode(authoringProvider, function (node) {
+	if (node.type !== "frontendBlockNamespace") return false;
+	var definition = node.definition ? JSON.parse(node.definition) : {};
+	return Number(definition.count || 0) === 0;
+}) === null, "authoring-tree exposed an empty frontend block namespace");
+var authoringActionBlocks = findNode(authoringProvider, function (node) {
+	return node.type === "frontendActionBlocks" && findNode(node, function (candidate) {
+		return candidate.type === "flow.block.smoke.normalize";
+	}) !== null;
+});
+assertTrue(authoringActionBlocks !== null && findNode(authoringActionBlocks, function (node) {
+	return node.type === "flow.block.smoke.normalize";
+}) !== null, "authoring-tree did not expose a project frontend Flow block under Svelte Action blocks");
 var createFrontendPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	engineSource: frontendEngineSource,
 	focusPath: authoringUiBlocks.path
@@ -3739,9 +3786,22 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"</script>",
 	"",
 	"<FlowComponent id=\"home\" label=\"Ast smoke\">",
+	"  <Variables>",
+	"    <Variable name=\"localMessage\" type=\"string\" value=\"Ready\" />",
+	"  </Variables>",
+	"  <Events>",
+	"    <Interval id=\"ticker\" milliseconds={1000} immediate={true}>",
+	"      <Actions>",
+	"        <SetValue id=\"refreshLocal\" target=\"local.localMessage\" value=\"Tick\" />",
+	"      </Actions>",
+	"    </Interval>",
+	"  </Events>",
 	"  <Structure>",
 	"    <PageShell id=\"pageShell\">",
-	"      <Children><SmokePanel id=\"smokePanel1\" /></Children>",
+	"      <Children>",
+	"        <Text id=\"localText\" text={{\"mode\":\"source\",\"source\":{\"category\":\"local\",\"name\":\"localMessage\"},\"path\":[]}} />",
+	"        <SmokePanel id=\"smokePanel1\" />",
+	"      </Children>",
 	"    </PageShell>",
 	"  </Structure>",
 	"</FlowComponent>",
@@ -3831,6 +3891,13 @@ var flowSvelteTypedParam = findNode(flowSvelteTree, function (node) {
 });
 assertTrue(flowSvelteRootPage !== null && flowSvelteRootLayout !== null && flowSvelteNestedPage !== null,
 	"engine tree did not project every Flow Svelte page and layout below the configured source root");
+assertTrue(findNode(flowSvelteRootPage, function (node) {
+	return node.kind === "frontendActionVariables" && node.summary === "Variables";
+}) !== null && findNode(flowSvelteRootPage, function (node) {
+	return node.kind === "frontendEvents" && node.summary === "Events";
+}) !== null && findNode(flowSvelteRootPage, function (node) {
+	return node.kind === "frontendStructure" && node.summary === "Structure";
+}) !== null, "Flow Svelte root did not expose separate Variables, Events and Structure slots");
 assertTrue(flowSvelteRouteGroup !== null && flowSvelteTypedParam !== null,
 	"engine tree did not preserve SvelteKit route groups and typed parameters");
 assertTrue(nodeInfoObject(flowSvelteRootPage).sourceMutationPath === "frontAst" &&
@@ -3919,6 +3986,8 @@ assertTrue(flowSvelteAcceptance.calls[0].tool === "browser_navigate" &&
 	"frontend acceptance should navigate, probe and close the browser");
 assertTrue(String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("async () =>") === 0 &&
 	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("deadline = startedAt + 15000") > 0 &&
+	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("document.body.innerText,") === -1 &&
+	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("stableSince >= 500") > 0 &&
 	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("if (!pendingText") > 0 &&
 	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("terminalReached: !pendingText") > 0,
 	"frontend acceptance should wait for a bounded stable terminal browser state");
@@ -4033,6 +4102,36 @@ var flowSvelteTextNode = findNode(flowSvelteTree, function (node) {
 });
 assertTrue(flowSvelteTextNode && flowSvelteTextNode.path,
 	"authoring tree did not expose the Text node used by focused picker smoke tests");
+var flowSvelteLocalTextNode = findNode(flowSvelteTree, function (node) {
+	if (node.kind !== "frontendWidget" || node.type !== "Text") return false;
+	var definition = node.definition ? JSON.parse(node.definition) : {};
+	return definition.id === "localText";
+});
+assertTrue(flowSvelteLocalTextNode && flowSvelteLocalTextNode.path,
+	"authoring tree did not expose the locally-bound Text node");
+var flowSvelteLocalTextDefinition = JSON.parse(flowSvelteLocalTextNode.definition);
+assertTrue(flowSvelteLocalTextDefinition.text && flowSvelteLocalTextDefinition.kind === undefined &&
+	flowSvelteLocalTextDefinition.tag === undefined && flowSvelteLocalTextDefinition.type === undefined &&
+	flowSvelteLocalTextDefinition.descriptorId === undefined && flowSvelteLocalTextDefinition.icon === undefined,
+	"authoring tree leaked technical frontend metadata into editable properties");
+var flowSvelteLocalBindingTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteLocalTextNode.path,
+	detail: "full",
+	includeBindings: true,
+	includeFrontendCatalog: false,
+	includeFlowCatalog: false,
+	property: "text"
+})));
+var flowSvelteLocalBindingInfo = JSON.parse(flowSvelteLocalBindingTree.children[0].info);
+var flowSvelteLocalBindingSources = flowSvelteLocalBindingInfo.propertyDefinitions.text.bindingSources || [];
+assertTrue(flowSvelteLocalBindingSources.some(function (candidate) {
+	return candidate.category === "local" && candidate.source &&
+		candidate.source.category === "local" && candidate.source.name === "localMessage";
+}), "targeted authoring tree did not expose the page local variable to the binding picker");
 var flowSvelteCompactInspect = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -4077,6 +4176,86 @@ var flowSvelteStructureNode = findNode(flowSvelteRoutesTree, function (node) {
 });
 assertTrue(flowSvelteStructureNode !== null && flowSvelteStructureNode.path,
 	"authoring tree did not expose a Svelte structure focus path");
+var flowSvelteTicker = findNode(flowSvelteTree, function (node) {
+	var definition = node && node.definition ? JSON.parse(node.definition) : {};
+	return node.kind === "frontendEventBlock" && definition.id === "ticker";
+});
+assertTrue(flowSvelteTicker !== null && flowSvelteTicker.path &&
+	findNode(flowSvelteTicker, function (node) {
+		var definition = node && node.definition ? JSON.parse(node.definition) : {};
+		return node.kind === "frontendActionBlock" && definition.id === "refreshLocal";
+	}) !== null &&
+	!flowSvelteTicker.children.some(function (node) {
+		return node.kind === "frontendSlot" && node.type === "actions";
+	}), "authoring tree did not flatten the sole lifecycle Actions slot");
+var flowSveltePageShell = findNode(flowSvelteTree, function (node) {
+	var definition = node && node.definition ? JSON.parse(node.definition) : {};
+	return definition.id === "pageShell";
+});
+assertTrue(flowSveltePageShell !== null &&
+	findNode(flowSveltePageShell, function (node) {
+		var definition = node && node.definition ? JSON.parse(node.definition) : {};
+		return definition.id === "smokePanel1";
+	}) !== null &&
+	!flowSveltePageShell.children.some(function (node) {
+		return node.kind === "frontendSnippetBlock" || node.kind === "frontendSlot";
+	}), "authoring tree did not flatten the sole visual Children slot: " + JSON.stringify(flowSveltePageShell));
+var flowSvelteEventsNode = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendEvents";
+});
+var flowSvelteLifecyclePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteEventsNode.path
+})));
+[
+	"frontbuilder.svelte.onMount",
+	"frontbuilder.svelte.onDestroy",
+	"frontbuilder.svelte.effect",
+	"frontbuilder.svelte.preEffect",
+	"frontbuilder.svelte.interval",
+	"frontbuilder.svelte.timeout"
+	].forEach(function (id) {
+		var item = flowSvelteLifecyclePalette.items.filter(function (candidate) {
+			return candidate.id === id;
+		})[0];
+		assertTrue(item && item.iconFile16 && item.iconFile32,
+			"authoring palette did not expose a resolved lifecycle icon for " + id + " below Events");
+	});
+var flowSvelteVariablesNode = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendActionVariables" && node.type === "variables";
+});
+var flowSvelteVariablesPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteVariablesNode.path
+})));
+[
+	"frontbuilder.svelte.state",
+	"frontbuilder.svelte.derived",
+	"frontbuilder.svelte.derivedBy"
+].forEach(function (id) {
+	assertTrue(flowSvelteVariablesPalette.items.some(function (item) {
+		return item.id === id;
+	}), "authoring palette did not expose reactive variable item " + id + " below Variables");
+});
+var flowSveltePortablePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteTicker.path,
+	query: "Normalize"
+})));
+assertTrue(flowSveltePortablePalette.ok === true &&
+	flowSveltePortablePalette.items.some(function (item) {
+		return item.id === "flow.block.smoke.normalize" &&
+			item.insert && item.insert.block === "smoke.normalize";
+	}), "authoring palette did not expose the canonical frontend Flow block in a lifecycle Actions slot");
 var flowSvelteMultiQueryPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",

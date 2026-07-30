@@ -34,7 +34,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": true,
-      "description": "For dev.start, set false to install and start Vite in the background."
+      "description": "For dev.start, set false to generate the starter app and install its dependencies while authoring continues."
     },
     "projectDir": {
       "label": "projectDir",

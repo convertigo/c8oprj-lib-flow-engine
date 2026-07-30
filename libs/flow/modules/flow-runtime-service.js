@@ -70,6 +70,7 @@
 		var flowNameFor = env.flowNameFor;
 		var resetSchemaRequest = env.resetSchemaRequest;
 		var resources = env.resources;
+		var notifySourceMutation = env.notifySourceMutation || function () { return { ok: true }; };
 		var mergedContext = env.mergedContext;
 		var catalogDefinition = env.catalogDefinition;
 		var getBlockSource = env.getBlockSource;
@@ -590,6 +591,10 @@
 				return withProjectDir(args.projectDir, function () {
 					return resources.remove(args);
 				});
+			};
+			ctx.notifySourceMutation = function (args) {
+				args = args || {};
+				return notifySourceMutation(args);
 			};
 			ctx.runFlowSource = function (flowSource, config, options) {
 				options = options || {};

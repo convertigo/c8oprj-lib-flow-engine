@@ -107,16 +107,22 @@
 				descriptor.insert && descriptor.insert.kind === "pageContent") {
 			return descriptor;
 		}
+		var properties = Object.assign({}, descriptor.properties || {});
+		if (properties.id && typeof properties.id === "object") {
+			properties.id = Object.assign({}, properties.id, {
+				hidden: true
+			});
+		}
 		descriptor.properties = Object.assign({
 			"class": {
-				label: "Class",
+				label: "Classes",
 				category: "Base properties",
 				kind: "text",
 				type: "string",
 				"default": "",
-				description: "Application CSS class names."
+				description: "Application CSS class names separated by spaces."
 			}
-		}, descriptor.properties || {});
+		}, properties);
 		return descriptor;
 	}
 
@@ -784,16 +790,16 @@
 				id: "frontbuilder.svelte.onMount",
 				label: "OnMount",
 				category: "Svelte / Lifecycle",
-				kind: "frontendEventDefinition",
+				kind: "frontendEventBlockDefinition",
 				icon: "mdi:play-circle-outline",
-				traits: ["ui.block", "ui.event", "ui.container"],
+				traits: ["ui.lifecycle", "ui.container"],
 				slots: {
 					actions: {
 						label: "Actions",
 						accepts: ["ui.action"]
 					}
 				},
-				targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
+				targetKinds: ["frontendEvents"],
 				acceptedPositions: ["inside"],
 				description: "Runs explicit client actions when the page or component mounts.",
 				insert: {
@@ -810,19 +816,94 @@
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.interval",
-				label: "Interval",
+				id: "frontbuilder.svelte.onDestroy",
+				label: "OnDestroy",
 				category: "Svelte / Lifecycle",
-				kind: "frontendEventDefinition",
-				icon: "mdi:timer-outline",
-				traits: ["ui.block", "ui.event", "ui.container"],
+				kind: "frontendEventBlockDefinition",
+				icon: "mdi:stop-circle-outline",
+				traits: ["ui.lifecycle", "ui.container"],
 				slots: {
 					actions: {
 						label: "Actions",
-						accepts: ["ui.action"]
+						accepts: ["ui.action", "ui.lifecycle"]
 					}
 				},
-				targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
+				targetKinds: ["frontendEvents"],
+				acceptedPositions: ["inside"],
+				description: "Runs explicit client actions before the page or component is destroyed.",
+				insert: {
+					id: "onDestroy",
+					kind: "onDestroy",
+					tag: "OnDestroy"
+				},
+				properties: {
+					id: { type: "string" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.effect",
+				label: "Effect",
+				category: "Svelte / Lifecycle",
+				kind: "frontendEventBlockDefinition",
+				icon: "mdi:creation-outline",
+				traits: ["ui.lifecycle", "ui.container"],
+				slots: {
+					actions: {
+						label: "Actions",
+						accepts: ["ui.action", "ui.lifecycle"]
+					}
+				},
+				targetKinds: ["frontendEvents"],
+				acceptedPositions: ["inside"],
+				description: "Runs explicit side effects reactively when their dependencies change.",
+				insert: {
+					id: "effect",
+					kind: "effect",
+					tag: "Effect"
+				},
+				properties: {
+					id: { type: "string" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.preEffect",
+				label: "PreEffect",
+				category: "Svelte / Lifecycle",
+				kind: "frontendEventBlockDefinition",
+				icon: "mdi:creation-outline",
+				traits: ["ui.lifecycle", "ui.container"],
+				slots: {
+					actions: {
+						label: "Actions",
+						accepts: ["ui.action", "ui.lifecycle"]
+					}
+				},
+				targetKinds: ["frontendEvents"],
+				acceptedPositions: ["inside"],
+				description: "Runs explicit side effects before Svelte updates the DOM.",
+				insert: {
+					id: "preEffect",
+					kind: "preEffect",
+					tag: "PreEffect"
+				},
+				properties: {
+					id: { type: "string" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.interval",
+				label: "Interval",
+				category: "Svelte / Lifecycle",
+				kind: "frontendEventBlockDefinition",
+				icon: "mdi:timer-outline",
+				traits: ["ui.lifecycle", "ui.container"],
+				slots: {
+					actions: {
+						label: "Actions",
+						accepts: ["ui.action", "ui.lifecycle"]
+					}
+				},
+				targetKinds: ["frontendEvents", "frontendEventBlock"],
 				acceptedPositions: ["inside"],
 				description: "Runs explicit client actions at a fixed interval while the component is mounted.",
 				insert: {
@@ -842,11 +923,44 @@
 						description: "Delay between action runs."
 					},
 					immediate: {
-						label: "Run immediately",
+						label: "Execute once on mount",
 						type: "boolean",
 						kind: "boolean",
 						"default": true,
-						description: "Run once when the component mounts before starting the timer."
+						description: "Execute the actions once when the component mounts, before the first timed execution."
+					}
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.timeout",
+				label: "Timeout",
+				category: "Svelte / Lifecycle",
+				kind: "frontendEventBlockDefinition",
+				icon: "mdi:timer-sand",
+				traits: ["ui.lifecycle", "ui.container"],
+				slots: {
+					actions: {
+						label: "Actions",
+						accepts: ["ui.action"]
+					}
+				},
+				targetKinds: ["frontendEvents", "frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Runs explicit client actions once after a delay and clears the timer on teardown.",
+				insert: {
+					id: "timeout",
+					kind: "timeout",
+					tag: "Timeout",
+					milliseconds: 1000
+				},
+				properties: {
+					id: { type: "string" },
+					milliseconds: {
+						label: "Milliseconds",
+						type: "number",
+						kind: "number",
+						"default": 1000,
+						description: "Delay before the action runs."
 					}
 				}
 			}),
@@ -1300,6 +1414,84 @@
 						value: { type: "binding", kind: "binding" }
 					}
 				}),
+				frontendAuthoringDescriptor(builderName, settings, {
+					id: "frontbuilder.svelte.state",
+					label: "State",
+					category: "Svelte / Variables",
+					kind: "frontendActionVariableDefinition",
+					icon: "mdi:variable",
+					traits: ["ui.local.variable"],
+					targetKinds: ["frontendActionVariables"],
+					acceptedPositions: ["inside"],
+					description: "Declares writable page or component state backed by the Svelte state rune.",
+					insert: {
+						id: "state",
+						kind: "state",
+						tag: "State",
+						type: "string",
+						value: ""
+					},
+					properties: {
+						id: { type: "string" },
+						type: {
+							type: "string",
+							enum: ["unknown", "string", "number", "integer", "boolean", "object", "array"]
+						},
+						value: { type: "binding", kind: "binding" }
+					}
+				}),
+				frontendAuthoringDescriptor(builderName, settings, {
+					id: "frontbuilder.svelte.derived",
+					label: "Derived",
+					category: "Svelte / Variables",
+					kind: "frontendActionVariableDefinition",
+					icon: "mdi:function-variant",
+					traits: ["ui.local.variable"],
+					targetKinds: ["frontendActionVariables"],
+					acceptedPositions: ["inside"],
+					description: "Declares a value derived from one reactive expression.",
+					insert: {
+						id: "derived",
+						kind: "derived",
+						tag: "Derived",
+						type: "string",
+						value: "local.state"
+					},
+					properties: {
+						id: { type: "string" },
+						type: {
+							type: "string",
+							enum: ["unknown", "string", "number", "integer", "boolean", "object", "array"]
+						},
+						value: { label: "Expression", type: "expression", kind: "expression" }
+					}
+				}),
+				frontendAuthoringDescriptor(builderName, settings, {
+					id: "frontbuilder.svelte.derivedBy",
+					label: "DerivedBy",
+					category: "Svelte / Variables",
+					kind: "frontendActionVariableDefinition",
+					icon: "mdi:function",
+					traits: ["ui.local.variable"],
+					targetKinds: ["frontendActionVariables"],
+					acceptedPositions: ["inside"],
+					description: "Declares a value computed by a reactive calculation block.",
+					insert: {
+						id: "derivedBy",
+						kind: "derivedBy",
+						tag: "DerivedBy",
+						type: "string",
+						calculation: "return local.state;"
+					},
+					properties: {
+						id: { type: "string" },
+						type: {
+							type: "string",
+							enum: ["unknown", "string", "number", "integer", "boolean", "object", "array"]
+						},
+						calculation: { label: "Calculation", type: "string", kind: "code" }
+					}
+				}),
 			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.column",
 				label: "Column",
@@ -1324,7 +1516,7 @@
 					value: { type: "string", kind: "path" }
 				}
 			})
-			]));
+				]));
 		}
 
 	function frontendSourceDefinitionDescriptors(builderName, settings) {
@@ -2193,7 +2385,7 @@
 		var requestedSourceId = String(options.sourceId || "");
 		function sourceId(candidate) {
 			var source = candidate && (candidate.source || candidate) || {};
-			return String(source.actionId || source.scopeId || candidate && candidate.id || "");
+			return String(candidate && candidate.id || source.actionId || source.scopeId || "");
 		}
 		var iterations = {};
 		walkDocument(document, function (node) {

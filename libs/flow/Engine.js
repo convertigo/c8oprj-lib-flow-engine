@@ -1194,6 +1194,29 @@
 		return resourceService().remove(request, resourceServiceEnv());
 	}
 
+	function notifySourceMutation(request) {
+		request = request || {};
+		var Bridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
+		var notified = false;
+		try {
+			if (typeof Bridge.notifySourceMutation === "function") {
+				Bridge.notifySourceMutation(
+					String(request.projectDir || ""),
+					String(request.path || request.sourcePath || "")
+				);
+				notified = true;
+			}
+		} catch (ignored) {
+			// Older runtimes still accept the source write; Studio refresh becomes available after rebuild.
+		}
+		return {
+			ok: true,
+			notified: notified,
+			projectDir: String(request.projectDir || ""),
+			sourcePath: String(request.path || request.sourcePath || "")
+		};
+	}
+
 	function resourceApi() {
 		return {
 			search: resourceSearchRequest,
@@ -3035,6 +3058,9 @@
 		var meta = normalizeTree(extracted.meta || {});
 		delete meta.mock;
 		delete meta.todo;
+		if (/^Generated Flow mock\./i.test(String(meta.longDescription || ""))) {
+			delete meta.longDescription;
+		}
 		meta.tags = (meta.tags || []).filter(function (tag) {
 			return String(tag).toLowerCase() !== "mock" && String(tag).toLowerCase() !== "todo";
 		});
@@ -3100,10 +3126,12 @@
 				invalidateBlockCatalogCaches();
 			}
 			var warnings = validation.diagnostics.filter(function (item) { return item.severity === "warning"; });
+			var diagnostics = validation.diagnostics;
 			if (finalized) {
-				warnings = warnings.filter(function (item) {
+				diagnostics = diagnostics.filter(function (item) {
 					return item.code !== "FRONTEND_BLOCK_MOCK_ACTIVE" && item.code !== "FRONTEND_BLOCK_PLACEHOLDER_CODE";
 				});
+				warnings = diagnostics.filter(function (item) { return item.severity === "warning"; });
 			}
 			if (finalizeRequested && !dry && !finalized) {
 				warnings.push({ severity: "warning", code: "FRONTEND_BLOCK_PARTIAL_FINALIZE",
@@ -3112,7 +3140,7 @@
 			}
 			return { ok: true, name: info.name, block: info.name, target: "frontend", runtime: "browser", written: !dry,
 				dry: dry, finalized: finalized, oldRevision: oldRevision,
-				revision: sha256Hex(code.replace(/\s+$/g, "") + "\n"), codeFile: String(info.file.getAbsolutePath()), diagnostics: validation.diagnostics, warnings: warnings };
+				revision: sha256Hex(code.replace(/\s+$/g, "") + "\n"), codeFile: String(info.file.getAbsolutePath()), diagnostics: diagnostics, warnings: warnings };
 		} catch (e) {
 			return { ok: false, target: "frontend", error: frontendBlockCodeError(e.code || "FRONTEND_BLOCK_CODE_SET_FAILED", e.message || String(e), e.hint), warnings: [] };
 		}
@@ -3580,6 +3608,7 @@
 			flowNameFor: flowNameFor,
 			resetSchemaRequest: resetSchemaRequest,
 			resources: resourceApi(),
+			notifySourceMutation: notifySourceMutation,
 			mergedContext: mergedContext,
 			catalogDefinition: catalogDefinition,
 			getBlockSource: getBlockSource,
@@ -3964,8 +3993,8 @@
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow authoring tree snapshots"));
 	}
 
-	function authoringContractRequest(request) {
-		return flowTreeService().authoringContractRequest(request || {}, flowTreeServiceEnv());
+	function authoringContractRequest(request, blocks) {
+		return flowTreeService().authoringContractRequest(request || {}, blocks, flowTreeServiceEnv());
 	}
 
 	function authoringPaletteRequest(request, blocks) {
@@ -4773,7 +4802,10 @@
 		if (normalized === "" || normalized === null || normalized === undefined) {
 			return normalized;
 		}
-		if (!frontAstIsFlowValueBinding(normalized) && !frontAstIsBindingReference(normalized)) {
+			if (definition.allowLiteral === true && typeof normalized === "string" && !frontAstIsBindingReference(normalized)) {
+				return normalized;
+			}
+			if (!frontAstIsFlowValueBinding(normalized) && !frontAstIsBindingReference(normalized)) {
 			var error = new Error("Property " + name + " requires an intuitive @reference or structured FlowValueBinding. Use @action.path, @item.path, or the binding returned by the picker.");
 			error.code = "FRONTEND_BINDING_REQUIRED";
 			error.hint = "Select a schema-backed picker candidate and pass its mutation unchanged.";
@@ -4818,15 +4850,22 @@
 		if (source.category === "requestable" || source.category === "action") {
 			return typeof source.actionId === "string" && source.actionId !== "";
 		}
-		if (source.category === "fullsync") {
-			return typeof source.actionId === "string" && source.actionId !== ""
-				&& typeof source.operation === "string" && source.operation !== "";
-		}
-		if (source.category === "iteration") {
-			return typeof source.scopeId === "string" && source.scopeId !== ""
-				&& (source.value === "item" || source.value === "index");
-		}
-		return source.category === "event" && source.value === "event";
+			if (source.category === "fullsync") {
+				return typeof source.actionId === "string" && source.actionId !== ""
+					&& typeof source.operation === "string" && source.operation !== "";
+			}
+			if (source.category === "local") {
+				return typeof source.name === "string" && source.name !== ""
+					&& typeof source.scopeId === "string" && source.scopeId !== "";
+			}
+			if (source.category === "iteration") {
+				return typeof source.scopeId === "string" && source.scopeId !== ""
+					&& (source.value === "item" || source.value === "index");
+			}
+			if (source.category === "event") {
+				return source.value === "event";
+			}
+			return source.category === "route" && source.value === "route";
 	}
 
 	function frontAstBindingPath(path) {
@@ -5749,6 +5788,12 @@
 	function frontAstRootNodeModel(root, sourceFile, projectRoot) {
 		var id = String(root.attrs && root.attrs.id || "component");
 		var label = String(root.attrs && (root.attrs.label || root.attrs.title) || frontAstTitle(id));
+		var variablesPath = "frontAst.slots.variables.children";
+		var eventsPath = "frontAst.slots.events.children";
+		var variables = frontAstSlotModel(root, "variables", "frontAst", sourceFile, projectRoot);
+		var events = frontAstSlotModel(root, "events", "frontAst", sourceFile, projectRoot);
+		variables.slots.variables.accepts = ["ui.local.variable"];
+		events.slots.events.accepts = ["ui.lifecycle"];
 		return {
 			id: id,
 			kind: "frontendComponent",
@@ -5766,12 +5811,22 @@
 				label: { label: "Label", category: "Base properties", kind: "text", type: "string" }
 			},
 			slots: {
+				variables: frontAstRootSlotDefinition("variables", variablesPath, ["ui.local.variable"]),
+				events: frontAstRootSlotDefinition("events", eventsPath, ["ui.lifecycle"]),
 				structure: frontAstSlotDefinition("structure", "frontAst.slots.structure.children", true)
 			},
 			children: [
+				variables,
+				events,
 				frontAstSlotModel(root, "structure", "frontAst", sourceFile, projectRoot)
 			]
 		};
+	}
+
+	function frontAstRootSlotDefinition(name, path, accepts) {
+		var definition = frontAstSlotDefinition(name, path, true);
+		definition.accepts = accepts;
+		return definition;
 	}
 
 	function frontAstSlotModel(parent, slotName, parentPath, sourceFile, projectRoot) {
@@ -6290,16 +6345,18 @@
 		var definitions = {
 			text: {
 				id: { label: "Id", kind: "text", type: "string" },
-				text: { label: "Text", kind: "text", type: "string" },
-				source: { label: "Source", kind: "binding", type: "object" }
+				text: { label: "Text", kind: "binding", type: "binding", allowLiteral: true },
+				source: { label: "Source", kind: "binding", type: "binding", hidden: true }
 			},
 			image: {
 				id: { label: "Id", kind: "text", type: "string" },
-				source: { label: "Source", kind: "binding", type: "object" }
+				src: { label: "Source", kind: "binding", type: "binding", allowLiteral: true },
+				source: { label: "Source", kind: "binding", type: "binding", hidden: true }
 			},
 			button: {
 				id: { label: "Id", kind: "text", type: "string" },
-				label: { label: "Label", kind: "text", type: "string" }
+				label: { label: "Label", kind: "binding", type: "binding", allowLiteral: true },
+				source: { label: "Source", kind: "binding", type: "binding", hidden: true }
 			},
 			status: {
 				id: { label: "Id", kind: "text", type: "string" },
@@ -7047,16 +7104,21 @@
 			"  let pendingText = true;",
 			"  while (Date.now() < deadline) {",
 			"    const state = [",
-			"      document.body.innerText,",
+			"      document.readyState,",
+			"      location.href,",
+			"      document.querySelectorAll('*').length,",
 			"      document.querySelectorAll('button').length,",
-			"      [...document.images].filter((image) => image.complete).length",
+			"      document.images.length,",
+			"      [...document.images].filter((image) => image.complete).length,",
+			"      document.documentElement.scrollWidth,",
+			"      document.documentElement.scrollHeight",
 			"    ].join('|');",
 			"    if (state !== previousState) {",
 			"      previousState = state;",
 			"      stableSince = Date.now();",
 			"    }",
 			"    pendingText = pending();",
-			"    if (!pendingText && Date.now() - startedAt >= 750 && Date.now() - stableSince >= 1000) break;",
+			"    if (!pendingText && Date.now() - startedAt >= 750 && Date.now() - stableSince >= 500) break;",
 			"    await sleep(200);",
 			"  }",
 			"  const buttons = [...document.querySelectorAll('button')].filter(visible);",
@@ -7298,8 +7360,11 @@
 		if (!entry) {
 			return false;
 		}
-		if (entry.status === "starting" && entry.setupThread
-				&& typeof entry.setupThread.isAlive === "function" && entry.setupThread.isAlive()) {
+		if (entry.status === "prepared") {
+			return true;
+		}
+		if (entry.status === "starting" && entry.setupProcess
+				&& typeof entry.setupProcess.isAlive === "function" && entry.setupProcess.isAlive()) {
 			return true;
 		}
 		if (entry.process && typeof entry.process.isAlive === "function" && entry.process.isAlive()) {
@@ -7318,6 +7383,9 @@
 		}
 		try {
 			var entry = JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+			if (!entry.status && (entry.url || entry.port)) {
+				entry.status = "running";
+			}
 			entry.stateFile = String(file.getAbsolutePath());
 			entry.detected = "stateFile";
 			return entry;
@@ -7374,7 +7442,14 @@
 			projectRoot: entry.projectRoot || "",
 			generatedRoot: entry.generatedRoot || "",
 			logFile: entry.logFile || "",
-			startedAt: entry.startedAt || new Date().toISOString()
+			startedAt: entry.startedAt || new Date().toISOString(),
+			status: entry.status || "running",
+			setupLogFile: entry.setupLogFile || "",
+			setupRoot: entry.setupRoot
+				? String(entry.setupRoot.getAbsolutePath ? entry.setupRoot.getAbsolutePath() : entry.setupRoot)
+				: "",
+			setupFingerprint: entry.setupFingerprint || "",
+			setupKind: entry.setupKind || ""
 		};
 		frontendWriteFile(file, JSON.stringify(state, null, 2) + "\n");
 		entry.stateFile = String(file.getAbsolutePath());
@@ -7422,6 +7497,9 @@
 	function frontendDevEntry(request, info) {
 		var key = frontendDevKey(request, info);
 		var entry = runtimeState.frontendDevServers[key];
+		if (entry && entry.status === "starting") {
+			frontendFinishPreparation(entry, false);
+		}
 		if (entry && entry.status === "failed") {
 			return entry;
 		}
@@ -7434,6 +7512,9 @@
 			return entry;
 		}
 		entry = frontendReadDevState(request, info);
+		if (entry && entry.status === "starting") {
+			frontendFinishPreparation(entry, false);
+		}
 		if (entry && frontendDevAlive(entry)) {
 			runtimeState.frontendDevServers[key] = entry;
 			return entry;
@@ -7464,6 +7545,7 @@
 			pid: entry.pid || 0,
 			stateFile: entry.stateFile || "",
 			status: entry.status || "running",
+			setupKind: entry.setupKind || "",
 			error: entry.error || null
 		};
 	}
@@ -7701,6 +7783,17 @@
 		return browser;
 	}
 
+	function frontendNotifyStudioBrowser(request, browser) {
+		if (!browser || String(request && request.origin || "") !== "mcp") {
+			return;
+		}
+		try {
+			Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge.notifyStudioBrowser(JSON.stringify(browser));
+		} catch (e) {
+			frontendStudioLog("[Svelte dev] Unable to notify the Studio browser: " + String(e), true);
+		}
+	}
+
 	function frontendLaunchVite(request, info) {
 		var settings = info.settings || {};
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "");
@@ -7789,20 +7882,150 @@
 		var entry = launched.entry;
 		runtimeState.frontendDevServers[frontendDevKey(request, info)] = entry;
 		frontendWriteDevState(request, info, entry);
+		var browser = frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
+		frontendNotifyStudioBrowser(request, browser);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
 			message: "Svelte dev mode started.",
 			openUrl: entry.url,
-			browser: frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev"),
+			browser: browser,
 			details: frontendDevDetails(entry)
 		};
+	}
+
+	function frontendActivatePreparedDev(request, info, entry) {
+		if (!entry || entry.cancelled === true || entry.status !== "prepared" || entry.activationStarted === true) {
+			return null;
+		}
+		var key = frontendDevKey(request, info);
+		if (runtimeState.frontendDevServers[key] !== entry) {
+			return null;
+		}
+		entry.activationStarted = true;
+		var launched = frontendLaunchVite(request, info);
+		if (launched.ok === false) {
+			entry.status = "failed";
+			entry.error = {
+				message: launched.message || "Svelte dev mode failed to start after dependency preparation.",
+				details: launched.details || {}
+			};
+			frontendWriteDevState(request, info, entry);
+			return launched;
+		}
+		var active = launched.entry;
+		runtimeState.frontendDevServers[key] = active;
+		frontendWriteDevState(request, info, active);
+		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
+		frontendNotifyStudioBrowser(request, browser);
+		frontendStudioLog("[Svelte dev] App dependencies are ready; Vite and the Studio viewer started automatically.");
+		return {
+			ok: true,
+			entry: active,
+			browser: browser
+		};
+	}
+
+	function frontendStartDevActivationWatcher(request, info, entry) {
+		if (!entry || entry.setupKind !== "app" || entry.status === "failed") {
+			return;
+		}
+		var Runnable = Packages.java.lang.Runnable;
+		var Thread = Packages.java.lang.Thread;
+		var thread = new Thread(new Runnable({
+			run: function () {
+				try {
+					if (entry.status === "starting") {
+						frontendFinishPreparation(entry, true);
+					}
+					frontendActivatePreparedDev(request, info, entry);
+				} catch (e) {
+					entry.status = "failed";
+					entry.error = {
+						message: String(e && (e.message || e) || "Automatic Svelte dev activation failed.")
+					};
+					frontendWriteDevState(request, info, entry);
+					frontendStudioLog("[Svelte dev] Automatic activation failed: " + entry.error.message, true);
+				}
+			}
+		}), "Flow Svelte dev activation");
+		thread.setDaemon(true);
+		thread.start();
+		entry.activationThread = thread;
+	}
+
+	function frontendStartDependencyPreparation(entry, args, cwd, envValues, setupRoot, fingerprint, kind) {
+		var setupLogFile = new File(entry.generatedRoot || String(setupRoot.getAbsolutePath()), kind + "-install.log");
+		setupLogFile.getParentFile().mkdirs();
+		entry.setupLogFile = String(setupLogFile.getAbsolutePath());
+		entry.setupRoot = setupRoot;
+		entry.setupFingerprint = fingerprint;
+		entry.setupKind = kind;
+		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
+		pb.directory(cwd);
+		pb.redirectErrorStream(true);
+		pb.redirectOutput(setupLogFile);
+		var env = pb.environment();
+		env.remove("npm_config_prefix");
+		env.remove("NPM_CONFIG_PREFIX");
+		Object.keys(envValues || {}).forEach(function (name) {
+			env.put(String(name), String(envValues[name]));
+		});
+		frontendStudioLog("[Svelte frontbuilder] > " + args.join(" "));
+		entry.setupProcess = pb.start();
+		entry.pid = Number(entry.setupProcess.pid());
+		entry.status = "starting";
+	}
+
+	function frontendPrepareGeneratedApp(request, blocks, info, entry, npm, resourceRoot, projectRoot, generatedRoot, envValues) {
+		var generated = frontendRunAction(request, blocks, "generate");
+		if (generated.ok === false) {
+			entry.status = "failed";
+			entry.error = {
+				message: generated.message || "Unable to generate the initial Svelte application.",
+				details: generated.details || {}
+			};
+			return;
+		}
+		var fingerprint = frontendDependencyFingerprint(generatedRoot, npm);
+		if (frontendDependencyInstallReusable(generatedRoot, fingerprint, "app")) {
+			entry.status = "prepared";
+			entry.setupKind = "app";
+			frontendStudioLog("[Svelte dev] Reusing installed app dependencies; automatic Vite startup is ready.");
+			return;
+		}
+		var args = frontendRunCommandFor(
+			"installApp",
+			npm,
+			resourceRoot,
+			projectRoot,
+			frontendProjectName(request),
+			null,
+			generatedRoot,
+			"incremental"
+		);
+		frontendStartDependencyPreparation(entry, args, generatedRoot, envValues, generatedRoot, fingerprint, "app");
+		frontendStudioLog("[Svelte dev] App dependencies are being installed while authoring continues.");
 	}
 
 	function frontendStartDevBackground(request, blocks, info) {
 		var key = frontendDevKey(request, info);
 		var projectRoot = frontendProjectRootFile(request);
 		var generatedRoot = frontendGeneratedRootFile(request, info);
+		var resourceRoot = frontendSvelteResourceRoot(request);
+		if (!resourceRoot || !resourceRoot.isDirectory() || !new File(resourceRoot, "package.json").isFile()) {
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_RESOURCE_ROOT_NOT_FOUND",
+				message: "The Svelte frontbuilder resources are unavailable.",
+				hint: "Load the lib_flow_frontbuilder_svelte project or fix the private frontbuilder resourceRoot configuration.",
+				resourceRoot: resourceRoot ? String(resourceRoot.getAbsolutePath()) : ""
+			});
+		}
+		var npm = frontendExecutable("npm");
+		var envValues = {
+			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
+		};
+		var fingerprint = frontendDependencyFingerprint(resourceRoot, npm);
 		var entry = {
 			url: "",
 			port: 0,
@@ -7810,69 +8033,109 @@
 			projectRoot: projectRoot ? String(projectRoot.getAbsolutePath()) : "",
 			generatedRoot: generatedRoot ? String(generatedRoot.getAbsolutePath()) : "",
 			logFile: generatedRoot ? String(new File(generatedRoot, "vite-dev.log").getAbsolutePath()) : "",
+			setupLogFile: "",
 			startedAt: new Date().toISOString(),
 			status: "starting",
 			cancelled: false
 		};
-		var backgroundRequest = JSON.parse(JSON.stringify(request || {}));
-		var backgroundInfo = JSON.parse(JSON.stringify(info || {}));
-		var Runnable = Packages.java.lang.Runnable;
-		var Thread = Packages.java.lang.Thread;
-		var thread = new Thread(new Runnable({
-			run: function () {
-				try {
-					var install = frontendRunAction(backgroundRequest, null, "install");
-					if (entry.cancelled === true) {
-						entry.status = "stopped";
-						return;
-					}
-					if (install.ok === false) {
-						entry.status = "failed";
-						entry.error = install.error || install.details || { message: install.message || "Dependency installation failed." };
-						frontendStudioLog("[Svelte dev] Background setup failed: " + String(install.message || "dependency installation failed"), true);
-						return;
-					}
-					if (entry.cancelled === true) {
-						entry.status = "stopped";
-						return;
-					}
-					var launched = frontendLaunchVite(backgroundRequest, backgroundInfo);
-					if (launched.ok === false) {
-						entry.status = "failed";
-						entry.error = launched.error || launched.details || { message: launched.message || "Vite start failed." };
-						frontendStudioLog("[Svelte dev] Background start failed: " + String(launched.message || "Vite start failed"), true);
-						return;
-					}
-					if (entry.cancelled === true) {
-						frontendDestroyDevProcess(launched.entry);
-						entry.status = "stopped";
-						return;
-					}
-					Object.keys(launched.entry).forEach(function (name) {
-						entry[name] = launched.entry[name];
-					});
-					entry.status = "running";
-					runtimeState.frontendDevServers[key] = entry;
-					frontendWriteDevState(backgroundRequest, backgroundInfo, entry);
-					frontendStudioLog("[Svelte dev] Background setup completed: " + entry.url);
-				} catch (e) {
-					entry.status = "failed";
-					entry.error = { message: String(e && (e.message || e) || "Background setup failed.") };
-					frontendStudioLog("[Svelte dev] Background setup failed: " + entry.error.message, true);
-				}
+		if (frontendDependencyInstallReusable(resourceRoot, fingerprint, "builder")) {
+			frontendStudioLog("[Svelte dev] Reusing installed builder dependencies.");
+			try {
+				frontendPrepareGeneratedApp(request, blocks, info, entry, npm, resourceRoot, projectRoot, generatedRoot, envValues);
+			} catch (e) {
+				entry.status = "failed";
+				entry.error = { message: String(e && (e.message || e) || "Background app setup failed.") };
+				frontendStudioLog("[Svelte dev] Background app setup failed: " + entry.error.message, true);
 			}
-		}), "Flow Svelte dev setup");
-		thread.setDaemon(true);
-		entry.setupThread = thread;
+		} else {
+			try {
+				var args = frontendRunCommandFor(
+					"installBuilder",
+					npm,
+					resourceRoot,
+					projectRoot,
+					"",
+					null,
+					generatedRoot,
+					"incremental"
+				);
+				frontendStartDependencyPreparation(entry, args, resourceRoot, envValues, resourceRoot, fingerprint, "builder");
+			} catch (e) {
+				entry.status = "failed";
+				entry.error = { message: String(e && (e.message || e) || "Background builder setup failed.") };
+				frontendStudioLog("[Svelte dev] Background builder setup failed: " + entry.error.message, true);
+			}
+		}
 		runtimeState.frontendDevServers[key] = entry;
-		thread.start();
+		frontendWriteDevState(request, info, entry);
+		frontendStartDevActivationWatcher(request, info, entry);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
-			message: "Svelte dev mode is starting in the background.",
-			pending: true,
+			message: entry.status === "prepared"
+				? "Svelte app dependencies are ready; Vite and the Studio viewer are starting automatically."
+				: entry.setupKind === "app"
+					? "Svelte app dependencies are being prepared; Vite and the Studio viewer will open automatically."
+					: "Svelte builder dependencies are being prepared in the background.",
+			pending: entry.status !== "failed",
 			details: frontendDevDetails(entry)
 		};
+	}
+
+	function frontendFinishPreparation(entry, wait) {
+		if (!entry || entry.status !== "starting") {
+			return;
+		}
+		var process = entry.setupProcess;
+		if (!process) {
+			if (frontendProcessAlive(entry.pid)) {
+				if (!wait) {
+					return;
+				}
+				try {
+					var optional = Packages.java.lang.ProcessHandle.of(Packages.java.lang.Long.valueOf(String(entry.pid)));
+					if (optional && optional.isPresent()) {
+						optional.get().onExit().get();
+					}
+				} catch (_ignorePreparationWait) {
+				}
+			}
+			entry.status = "prepared";
+			return;
+		}
+		try {
+			if (!wait && process.isAlive()) {
+				return;
+			}
+			var exitCode = wait ? process.waitFor() : process.exitValue();
+			if (entry.cancelled === true) {
+				entry.status = "stopped";
+			} else if (exitCode === 0) {
+				entry.setupFingerprint = frontendDependencyFingerprint(entry.setupRoot, frontendExecutable("npm"))
+					|| entry.setupFingerprint;
+				writeFrontendDependencyInstallStamp(entry.setupRoot, entry.setupFingerprint, entry.setupKind || "builder");
+				entry.status = "prepared";
+				frontendStudioLog("[Svelte dev] " + (entry.setupKind === "app" ? "App" : "Builder") +
+					" dependencies are ready." + (entry.setupKind === "app"
+						? " Starting Vite and the Studio viewer automatically."
+						: " Final application setup remains pending."));
+			} else {
+				entry.status = "failed";
+				entry.error = {
+					message: (entry.setupKind === "app" ? "App" : "Builder") +
+						" dependency installation failed with exit code " + exitCode + ".",
+					logTail: frontendLogTail(new File(entry.setupLogFile), 60)
+				};
+				frontendStudioLog("[Svelte dev] Background builder setup failed.", true);
+			}
+		} catch (e) {
+			entry.status = "failed";
+			entry.error = { message: String(e && (e.message || e) || "Frontend preparation was interrupted.") };
+		}
+	}
+
+	function frontendWaitForPreparation(entry) {
+		frontendFinishPreparation(entry, true);
 	}
 
 	function frontendStartDev(request, blocks) {
@@ -7885,13 +8148,21 @@
 		}
 		if (existing) {
 			var starting = existing.status === "starting";
+			var prepared = existing.status === "prepared";
+			if (prepared && frontendDevWaitRequested(request)) {
+				return frontendStartDevNow(request, blocks, info);
+			}
 			return {
 				ok: true,
 				title: "Svelte dev mode",
-				message: starting ? "Svelte dev mode is still starting." : "Svelte dev mode is already running.",
-				pending: starting,
-				openUrl: starting ? "" : existing.url,
-				browser: starting ? null : frontendStudioBrowser(request, existing.url, "Svelte dev mode", "frontbuilder.svelte.dev"),
+				message: starting
+					? "Svelte " + (existing.setupKind === "app" ? "app" : "builder") + " dependencies are still being prepared."
+					: prepared
+						? "Svelte app dependencies are ready; call dev.sync after authoring."
+						: "Svelte dev mode is already running.",
+				pending: starting || prepared,
+				openUrl: starting || prepared ? "" : existing.url,
+				browser: starting || prepared ? null : frontendStudioBrowser(request, existing.url, "Svelte dev mode", "frontbuilder.svelte.dev"),
 				details: frontendDevDetails(existing)
 			};
 		}
@@ -7907,10 +8178,10 @@
 		}
 		entry.cancelled = true;
 		try {
-			if (entry.setupThread && typeof entry.setupThread.interrupt === "function") {
-				entry.setupThread.interrupt();
+			if (entry.setupProcess && typeof entry.setupProcess.destroy === "function") {
+				entry.setupProcess.destroy();
 			}
-		} catch (_ignoreSetupInterrupt) {
+		} catch (_ignoreSetupDestroy) {
 		}
 		try {
 			if (entry.process && typeof entry.process.destroy === "function") {
@@ -7977,14 +8248,7 @@
 			};
 		}
 		if (entry.status === "starting") {
-			return {
-				ok: true,
-				title: "Svelte dev mode",
-				message: "Svelte dev mode is still starting; generated source will be synchronized by the initial setup.",
-				pending: true,
-				generated: false,
-				details: frontendDevDetails(entry)
-			};
+			frontendWaitForPreparation(entry);
 		}
 		if (entry.status === "failed") {
 			return {
@@ -7994,6 +8258,28 @@
 				generated: false,
 				details: frontendDevDetails(entry)
 			};
+		}
+		if (entry.status === "prepared") {
+			if (entry.activationStarted === true) {
+				return {
+					ok: true,
+						title: "Svelte dev mode",
+						message: "Svelte dev mode is opening automatically.",
+						pending: true,
+						generated: false,
+						details: frontendDevDetails(entry)
+					};
+			}
+			entry.activationStarted = true;
+			var started = frontendStartDevNow(request, blocks, info);
+			if (started.ok === false) {
+				entry.activationStarted = false;
+			}
+			started.generated = started.ok !== false;
+			started.message = started.ok === false
+				? "Svelte dev mode failed to start after builder preparation."
+				: "Svelte dev mode started from the final authored source.";
+			return started;
 		}
 		var generated = frontendRunAction(request, blocks, "generate");
 		generated.title = "Svelte dev mode";
@@ -8024,6 +8310,15 @@
 				details: frontendDevDetails(entry)
 			};
 		}
+		if (entry.status === "prepared") {
+			return {
+				ok: true,
+				title: "Svelte dev mode",
+				message: "Svelte builder dependencies are ready; call dev.sync to generate and open the final application.",
+				pending: true,
+				details: frontendDevDetails(entry)
+			};
+		}
 		if (entry.status === "failed") {
 			return {
 				ok: false,
@@ -8032,12 +8327,14 @@
 				details: frontendDevDetails(entry)
 			};
 		}
+		var browser = frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
+		frontendNotifyStudioBrowser(request, browser);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
 			message: "Opening Svelte dev mode.",
 			openUrl: entry.url,
-			browser: frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev"),
+			browser: browser,
 			details: frontendDevDetails(entry)
 		};
 	}
@@ -8658,7 +8955,7 @@
 
 		authoringContract: function (requestJson) {
 			return projectCall("authoringContract", requestJson, function (request) {
-				return authoringContractRequest(request);
+				return authoringContractRequest(request, loadBlocks());
 			});
 		},
 

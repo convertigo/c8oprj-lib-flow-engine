@@ -33,7 +33,7 @@
 	(function () {
 		if (customElements.get("flow-binding-editor")) return;
 
-		var categories = ["requestable", "action", "fullsync", "iteration", "event"];
+		var categories = ["local", "requestable", "action", "fullsync", "iteration", "event", "route"];
 
 		function esc(value) {
 			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
@@ -108,6 +108,12 @@
 		}
 
 		function sourceId(source) {
+			if (source && source.category === "local") {
+				return String(source.name || source.ownerId || source.scopeId || "");
+			}
+			if (source && source.category === "route") {
+				return String(source.value || "route");
+			}
 			return String(source && (source.actionId || source.scopeId || source.instanceId || source.formId || source.ownerId || source.name || source.path) || "");
 		}
 
@@ -119,14 +125,20 @@
 			else if (category === "event") out.value = "event";
 			else if (category === "component") { out.instanceId = id; out.value = previous && previous.value || "props"; }
 			else if (category === "form") { out.formId = id; out.value = previous && previous.value || "values"; }
-			else if (category === "local") out.ownerId = id;
+			else if (category === "local") { out.name = id; out.scopeId = previous && previous.scopeId || ""; }
+			else if (category === "route") out.value = previous && previous.value || "route";
 			else if (category === "icon") { out.provider = previous && previous.provider || "mdi"; out.name = id; }
 			else if (category === "asset") { out.project = previous && previous.project || ""; out.path = id; }
 			return out;
 		}
 
 		customElements.define("flow-binding-editor", class extends HTMLElement {
-			constructor() { super(); this._state = {}; this._binding = normalize(""); }
+			constructor() {
+				super();
+				this._state = {};
+				this._binding = normalize("");
+				this._sourcesKey = "";
+			}
 
 			connectedCallback() {
 				if (!this.shadowRoot) {
@@ -142,10 +154,24 @@
 			setState(state) {
 				this._state = state || {};
 				this._binding = normalize(this._state.value);
+				this.loadSources();
 				this.render();
 			}
 
 			get value() { return JSON.stringify(this._binding); }
+
+			loadSources() {
+				if (sources(this._state).length || !this.flowHost || !this.flowHost.request) return;
+				var key = String(this._state.virtualPath || "") + "/" + String(this._state.property || "");
+				if (key === this._sourcesKey) return;
+				this._sourcesKey = key;
+				var response = this.flowHost.request("bindingSources", {
+					property: this._state.property || ""
+				}) || {};
+				if (response.ok !== false && Array.isArray(response.bindingSources)) {
+					this._state.bindingSources = response.bindingSources;
+				}
+			}
 
 			handleEvent(event) {
 				var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
@@ -212,7 +238,8 @@
 				var sourceSelect = this.shadowRoot.querySelector("[data-source]");
 				sourceSelect.innerHTML = '<option value="">Custom source</option>' + available.map(function (entry, index) {
 					var selected = sourceId(entry.source || entry) === sourceId(self._binding.source) && String(entry.category || entry.source && entry.source.category) === currentCategory;
-					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(entry.label || entry.id || sourceId(entry.source || entry)) + '</option>';
+					var type = entry.schema && entry.schema.type ? " " + entry.schema.type : "";
+					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc((entry.label || entry.id || sourceId(entry.source || entry)) + type) + '</option>';
 				}).join("");
 				var sourceIdInput = this.shadowRoot.querySelector("[data-source-id]");
 				sourceIdInput.value = sourceId(this._binding.source);

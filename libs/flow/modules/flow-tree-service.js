@@ -497,17 +497,17 @@
 		return source;
 	}
 
-	function addFrontendModels(out, config, path, request) {
+	function addFrontendModels(out, config, path, request, blocks) {
 		var builders = frontbuilderSettings(config);
 		var folder = virtualNode("frontends", "folder", "frontends", path,
 			"Frontends", compact({ count: builders.length }), null, "mdi:monitor-dashboard");
 		out.push(folder);
 		builders.forEach(function (entry) {
-			addFrontendBuilder(folder, entry.name, entry.settings, path + "." + safeVirtualName("builder", entry.name), request);
+			addFrontendBuilder(folder, entry.name, entry.settings, path + "." + safeVirtualName("builder", entry.name), request, blocks);
 		});
 	}
 
-	function addFrontendBuilder(parent, name, settings, path, request) {
+	function addFrontendBuilder(parent, name, settings, path, request, blocks) {
 		settings = settings || {};
 		var modelFile = frontendModelFile(settings.modelPath);
 		var definition = {
@@ -535,7 +535,7 @@
 		}
 		var catalogNode = request.includeFrontendCatalog === false
 			? null
-			: addFrontendBlockCatalog(builder, name, settings, path, request);
+			: addFrontendBlockCatalog(builder, name, settings, path, request, blocks);
 		if (!settings.modelPath) {
 			return;
 		}
@@ -590,8 +590,9 @@
 		};
 	}
 
-	function addFrontendBlockCatalog(parent, name, settings, path, request) {
-		var blocks = frontendBlocksForSettings(name, settings) || [];
+	function addFrontendBlockCatalog(parent, name, settings, path, request, flowBlocks) {
+		var blocks = (frontendBlocksForSettings(name, settings) || [])
+			.concat(frontendPortableBlockDescriptors(flowBlocks));
 		var createDescriptors = frontendCreateDescriptorsForSettings(name, settings) || [];
 		if (blocks.length === 0 && createDescriptors.length === 0) {
 			return null;
@@ -643,6 +644,136 @@
 		return String(block && block.namespace || "_root") || "_root";
 	}
 
+	function frontendPortableBlockDescriptors(blocks) {
+		var out = [];
+		var seen = {};
+		Object.keys(blocks || {}).sort().forEach(function (name) {
+			var block = blocks[name];
+			if (!block) {
+				return;
+			}
+			var descriptor;
+			try {
+				descriptor = normalizeTree(blockDescriptor(block) || {});
+			} catch (e) {
+				return;
+			}
+			var targets = frontendArray(descriptor.targets);
+			var frontend = descriptor.implementations && descriptor.implementations.frontend || {};
+			var blockId = String(descriptor.blockId || name || "");
+			if (!blockId || targets.indexOf("frontend") < 0 || !frontend.file ||
+					descriptor.visibility === "private" || seen[blockId]) {
+				return;
+			}
+			seen[blockId] = true;
+			var properties = {};
+			var insert = {
+				id: String(descriptor.localName || blockId.split(".").pop() || "result"),
+				kind: "portableBlock",
+				tag: frontendPortableBlockTag(blockId),
+				block: blockId,
+				target: String(descriptor.localName || blockId.split(".").pop() || "result") + "Result"
+			};
+			Object.keys(descriptor.props || {}).forEach(function (propertyName) {
+				var definition = normalizeTree(descriptor.props[propertyName] || {});
+				if (definition.mode === "write" ||
+						definition.kind === "path" && definition.mode !== "read") {
+					return;
+				}
+				properties[propertyName] = Object.assign({}, definition, {
+					kind: "binding",
+					type: String(definition.type || "unknown")
+				});
+				if (definition["default"] !== undefined) {
+					insert[propertyName] = {
+						mode: "literal",
+						value: definition["default"]
+					};
+				}
+			});
+			var implementationFile = frontendPortableImplementationFile(descriptor);
+			out.push({
+				id: "flow.block." + blockId,
+				name: descriptor.localName || titleFromCamel(blockId.split(".").pop()),
+				localName: descriptor.localName || blockId.split(".").pop(),
+				namespace: descriptor.namespace || blockId.split(".").slice(0, -1).join("."),
+				label: descriptor.label || titleFromCamel(descriptor.localName || blockId.split(".").pop()),
+				category: "Flow / " + titleFromCamel(descriptor.namespace || blockId.split(".")[0] || "Blocks"),
+				kind: "frontendActionBlockDefinition",
+				tag: insert.tag,
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				traits: ["ui.action"],
+				slots: {},
+				description: descriptor.description || "",
+				icon: descriptor.icon || "mdi:puzzle-plus-outline",
+				insert: insert,
+				defaults: insert,
+				properties: Object.assign({
+					id: { label: "Id", type: "string" },
+					target: { label: "Result target", type: "string" }
+				}, properties),
+				implementation: {
+					block: blockId,
+					file: implementationFile
+				},
+				implementations: {
+					frontend: {
+						runtime: String(frontend.runtime || "browser"),
+						kind: "flow-svelte-authoring",
+						block: blockId,
+						file: implementationFile
+					}
+				},
+				provider: descriptor.provider || descriptor.origin || "project",
+				visibility: descriptor.visibility || "public",
+				file: implementationFile,
+				sourcePath: implementationFile,
+				targets: targets,
+				effects: descriptor.effects || [],
+				resultSchema: frontendPortableResultSchema(descriptor.outputs || descriptor.output || {})
+			});
+		});
+		return out;
+	}
+
+	function frontendPortableBlockTag(blockId) {
+		return String(blockId || "").split(/[^A-Za-z0-9]+/).filter(function (part) {
+			return !!part;
+		}).map(function (part) {
+			return part.charAt(0).toUpperCase() + part.substring(1);
+		}).join("") || "FlowBlock";
+	}
+
+	function frontendPortableImplementationFile(descriptor) {
+		var frontend = descriptor && descriptor.implementations && descriptor.implementations.frontend || {};
+		if (!descriptor || !descriptor.file || !frontend.file) {
+			return "";
+		}
+		try {
+			return String(new File(new File(String(descriptor.file)).getParentFile(), String(frontend.file))
+				.getCanonicalPath());
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function frontendPortableResultSchema(outputs) {
+		outputs = normalizeTree(outputs || {});
+		var names = Object.keys(outputs);
+		if (names.length === 1 && names[0] === "out") {
+			return normalizeTree(outputs.out || {});
+		}
+		var properties = {};
+		names.forEach(function (name) {
+			properties[name] = normalizeTree(outputs[name] || {});
+		});
+		return {
+			type: "object",
+			properties: properties
+		};
+	}
+
 	function addFrontendProviderCatalog(parent, name, projectProvider, provider, blocks, path, settings, request) {
 		var writable = provider === projectProvider;
 		var definition = {
@@ -662,9 +793,6 @@
 			}
 			namespaces[namespace].push(block);
 		});
-		if (writable && !namespaces.project) {
-			namespaces.project = [];
-		}
 		Object.keys(namespaces).sort(function (a, b) {
 			if (a === "project") {
 				return -1;
@@ -708,7 +836,8 @@
 
 	function frontendActionBlock(block) {
 		var kind = String(block && block.kind || "");
-		return kind === "frontendClientActionDefinition"
+		return kind === "frontendActionBlockDefinition"
+			|| kind === "frontendClientActionDefinition"
 			|| kind === "frontendBackendCallDefinition"
 			|| kind === "frontendSharedActionDefinition"
 			|| kind === "frontendClientActionSourceDefinition";
@@ -1148,7 +1277,26 @@
 
 	function flowSvelteLitePropertyDefinitions(kind) {
 		var binding = { label: "Source", kind: "binding", type: "object" };
-		if (kind === "text" || kind === "image" || kind === "table" || kind === "json" || kind === "each") {
+		var legacyBinding = { label: "Source", kind: "binding", type: "object", hidden: true };
+		if (kind === "text") {
+			return {
+				text: { label: "Text", kind: "binding", type: "binding" },
+				source: legacyBinding
+			};
+		}
+		if (kind === "image") {
+			return {
+				src: { label: "Source URL", kind: "binding", type: "binding" },
+				source: legacyBinding
+			};
+		}
+		if (kind === "button") {
+			return {
+				label: { label: "Label", kind: "binding", type: "binding" },
+				source: legacyBinding
+			};
+		}
+		if (kind === "table" || kind === "json" || kind === "each") {
 			return { source: binding };
 		}
 		if (kind === "if") return { test: { label: "Condition", kind: "binding", type: "object" } };
@@ -1183,8 +1331,11 @@
 		var source = value.source;
 		if (source.category === "requestable" || source.category === "action") return typeof source.actionId === "string" && source.actionId !== "";
 		if (source.category === "fullsync") return typeof source.actionId === "string" && source.actionId !== "" && typeof source.operation === "string" && source.operation !== "";
+		if (source.category === "local") return typeof source.name === "string" && source.name !== ""
+			&& typeof source.scopeId === "string" && source.scopeId !== "";
 		if (source.category === "iteration") return typeof source.scopeId === "string" && source.scopeId !== "" && (source.value === "item" || source.value === "index");
-		return source.category === "event" && source.value === "event";
+		if (source.category === "event") return source.value === "event";
+		return source.category === "route" && source.value === "route";
 	}
 
 	function flowSvelteLiteIsBindingReference(value) {
@@ -1771,6 +1922,28 @@
 		return safeVirtualName("node", node.type || node.kind || "node") + "_" + index;
 	}
 
+	function frontendProjectedChildren(node, path) {
+		var children = node && node.children || [];
+		if (children.length !== 1) {
+			return {
+				children: children,
+				path: path
+			};
+		}
+		var slot = children[0] || {};
+		var kind = String(slot.kind || "");
+		if (kind !== "frontendSlot" && kind !== "frontendSnippetBlock") {
+			return {
+				children: children,
+				path: path
+			};
+		}
+		return {
+			children: slot.children || [],
+			path: path + "." + frontendAuthoringPathSegment(slot, 0)
+		};
+	}
+
 	function addFrontendAuthoringNode(parent, node, path, modelFile) {
 		node = node || {};
 		var sourceFile = frontendNodeSourceFile(node, modelFile);
@@ -1804,8 +1977,9 @@
 		var virtual = virtualNode("authoring_" + safeVirtualName("node", pathName), virtualKind, virtualType,
 			path, summary, compact(definition), compact(info), frontendAuthoringIcon(node));
 		parent.children.push(virtual);
-		(node.children || []).forEach(function (child, index) {
-			addFrontendAuthoringNode(virtual, child, path + "." + frontendAuthoringPathSegment(child, index), sourceFile || modelFile);
+		var projected = frontendProjectedChildren(node, path);
+		projected.children.forEach(function (child, index) {
+			addFrontendAuthoringNode(virtual, child, projected.path + "." + frontendAuthoringPathSegment(child, index), sourceFile || modelFile);
 		});
 	}
 
@@ -1959,16 +2133,25 @@
 
 	function frontendAuthoringDefinition(node) {
 		var out = {};
+		var internal = {
+			category: true,
+			descriptorId: true,
+			icon: true,
+			kind: true,
+			label: true,
+			tag: true,
+			type: true
+		};
 		Object.keys(node || {}).forEach(function (key) {
 			if (key !== "children" && key !== "propertyDefinitions" && key !== "props" && key !== "traits" &&
 					key !== "slots" && key !== "sourcePath" && key !== "sourceMutationPath" &&
-					key.indexOf("frontendInsert") !== 0 && key.indexOf("sourcePropertyMutation") !== 0) {
+					!internal[key] && key.indexOf("frontendInsert") !== 0 && key.indexOf("sourcePropertyMutation") !== 0) {
 				out[key] = node[key];
 			}
 		});
 		var props = node && node.props || {};
 		Object.keys(props).forEach(function (key) {
-			if (out[key] === undefined) {
+			if (key !== "kind" && key !== "tag" && out[key] === undefined) {
 				out[key] = props[key];
 			}
 		});
@@ -1977,9 +2160,10 @@
 
 	function frontendAuthoringPropertyDefinitions(node) {
 		var extra = node && node.propertyDefinitions || {};
+		var visualNode = String(node && node.kind || "") === "frontendWidget";
 		var definitions = {
-			id: propertyDefinition("Id", "Base properties", "Low-code object id.", { readOnly: true }),
-			kind: propertyDefinition("Kind", "Base properties", "Low-code object kind.", { readOnly: true }),
+			id: propertyDefinition("Id", "Information", "Generated low-code object id.", { readOnly: true, hidden: visualNode }),
+			kind: propertyDefinition("Kind", "Information", "Low-code object kind.", { readOnly: true, hidden: true }),
 			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative source path.", { readOnly: true }),
 			sourceWritable: propertyDefinition("Writable", "Information", "Whether this source can be edited.", { readOnly: true }),
 			traits: propertyDefinition("Traits", "Authoring", "Low-code authoring traits exposed by this node.", { readOnly: true, hidden: true }),
@@ -1987,8 +2171,8 @@
 			sourcePropertyMutationPaths: propertyDefinition("Property mutation paths", "Information", "Internal per-property source mutation paths.", { readOnly: true, hidden: true })
 		};
 		var known = {
-			type: propertyDefinition("Type", "Base properties", "Source or AST node type.", { readOnly: true }),
-			tag: propertyDefinition("Tag", "Base properties", "Svelte component or HTML tag.", { readOnly: true }),
+			type: propertyDefinition("Type", "Information", "Source or AST node type.", { readOnly: true, hidden: true }),
+			tag: propertyDefinition("Tag", "Information", "Svelte component or HTML tag.", { readOnly: true, hidden: true }),
 			role: propertyDefinition("Role", "Routing", "Route file or library role.", { readOnly: true }),
 			segment: propertyDefinition("Segment", "Routing", "SvelteKit route segment directory.", { readOnly: true }),
 			pathless: propertyDefinition("Pathless", "Routing", "Whether this route segment contributes to the URL path.", { readOnly: true }),
@@ -2949,11 +3133,44 @@
 			return;
 		}
 		var jsFile = block && block.__flowImplementationFile ? block.__flowImplementationFile : descriptor.implementationFile || descriptor.file;
-		var jsSource = sourceDefinitionForFile(jsFile, "javascript");
+		var frontendFile = frontendImplementationFile(block, descriptor);
+		var targets = normalizeTree(block && block.__blockDefinition || descriptor).targets || [];
+		if (frontendFile && targets.length === 1 && String(targets[0]) === "frontend") {
+			addJavascriptImplementationNode(parent, frontendFile, path + ".implementation", "implementation", "Implementation");
+			return;
+		}
+		addJavascriptImplementationNode(parent, jsFile,
+			frontendFile ? path + ".backendImplementation" : path + ".implementation",
+			frontendFile ? "backendImplementation" : "implementation",
+			frontendFile ? "Backend implementation" : "Implementation");
+		if (frontendFile) {
+			addJavascriptImplementationNode(parent, frontendFile,
+				path + ".frontendImplementation", "frontendImplementation", "Frontend implementation");
+		}
+	}
+
+	function frontendImplementationFile(block, descriptor) {
+		var definition = normalizeTree(block && block.__blockDefinition || {});
+		var implementations = definition.implementations || descriptor.implementations || {};
+		var frontend = implementations.frontend || {};
+		if (!frontend.file || !descriptor.file) {
+			return "";
+		}
+		try {
+			var descriptorFile = new File(String(descriptor.file)).getCanonicalFile();
+			var frontendFile = new File(descriptorFile.getParentFile(), String(frontend.file)).getCanonicalFile();
+			return frontendFile.isFile() ? String(frontendFile.getAbsolutePath()) : "";
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function addJavascriptImplementationNode(parent, file, path, id, label) {
+		var jsSource = sourceDefinitionForFile(file, "javascript");
 		var jsSourceInfo = sourceObjectInfo(jsSource, sourcePropertyDefinitions(),
 			["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"]);
-		parent.children.push(virtualNode("implementation", "blockImplementation", "javascript",
-			path + ".implementation", "Implementation",
+		parent.children.push(virtualNode(id, "blockImplementation", "javascript",
+			path, label,
 			compact(jsSource), compact(jsSourceInfo), "mdi:language-javascript"));
 	}
 
@@ -3289,6 +3506,9 @@
 	function inspectTreePropertyDefinitions(definitions) {
 		var out = {};
 		Object.keys(definitions || {}).sort().forEach(function (name) {
+			if (definitions[name] && definitions[name].hidden === true) {
+				return;
+			}
 			out[name] = compactInspectPropertyDefinition(definitions[name]);
 		});
 		return out;
@@ -3304,6 +3524,9 @@
 		var bindings = {};
 		Object.keys(definitions).sort().forEach(function (name) {
 			var property = definitions[name] || {};
+			if (property.hidden === true) {
+				return;
+			}
 			if (property.kind !== "binding" && property.type !== "binding") {
 				return;
 			}
@@ -3492,7 +3715,7 @@
 			addEngineMetadata(children, engine, "engine");
 			addBindings(children, engine.bindings, "bindings");
 			addConfig(children, engine.config, "config", engine.configVisibility, request);
-			addFrontendModels(children, engine.config, "frontends", request);
+			addFrontendModels(children, engine.config, "frontends", request, blocks);
 			if (request.includeFlowCatalog !== false) {
 				addFragments(children, blocks);
 				addCatalog(children, blocks, {
@@ -3671,7 +3894,7 @@
 		}, request);
 	}
 
-	function authoringDescriptors(request, engine) {
+	function authoringDescriptors(request, engine, blocks) {
 		request = request || {};
 		var surface = String(request.surface || "frontend");
 		if (surface !== "frontend") {
@@ -3684,16 +3907,25 @@
 			descriptors = descriptors.concat(frontendCreateDescriptorsForSettings(builder || "svelte", {
 				target: "svelte5"
 			}) || []);
-			return descriptors;
+		} else {
+			entries.forEach(function (entry) {
+				if (builder && entry.name !== builder) {
+					return;
+				}
+				descriptors = descriptors.concat(frontendBlocksForSettings(entry.name, entry.settings) || []);
+				descriptors = descriptors.concat(frontendCreateDescriptorsForSettings(entry.name, entry.settings) || []);
+			});
 		}
-		entries.forEach(function (entry) {
-			if (builder && entry.name !== builder) {
-				return;
+		descriptors = descriptors.concat(frontendPortableBlockDescriptors(blocks));
+		var seen = {};
+		return descriptors.filter(function (descriptor) {
+			var id = String(descriptor && descriptor.id || "");
+			if (!id || seen[id]) {
+				return false;
 			}
-			descriptors = descriptors.concat(frontendBlocksForSettings(entry.name, entry.settings) || []);
-			descriptors = descriptors.concat(frontendCreateDescriptorsForSettings(entry.name, entry.settings) || []);
+			seen[id] = true;
+			return true;
 		});
-		return descriptors;
 	}
 
 	function findTreeNode(root, path) {
@@ -4024,11 +4256,20 @@
 	function descriptorItem(descriptor, target) {
 		var out = {};
 		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace",
+			"iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32",
 			"sourceBacked", "descriptorKind", "sourceWritable"].forEach(function (key) {
 			if (descriptor[key] !== undefined && descriptor[key] !== null && descriptor[key] !== "") {
 				out[key] = descriptor[key];
 			}
 		});
+		if (out.icon && !out.iconFile && !out.iconFile16 && !out.iconFile32) {
+			var resolvedIcon = virtualIcon(out.icon);
+			["iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"].forEach(function (key) {
+				if (resolvedIcon[key] !== undefined && resolvedIcon[key] !== null && String(resolvedIcon[key]) !== "") {
+					out[key] = resolvedIcon[key];
+				}
+			});
+		}
 		out.traits = frontendArray(descriptor.traits);
 		out.slots = descriptor.slots || {};
 		out.targetKinds = descriptor.targetKinds || [];
@@ -4247,7 +4488,7 @@
 		request = request || {};
 		var engine = authoringEngineDefinition(request);
 		var tree = authoringEngineTree(Object.assign({}, request, { definition: engine }), blocks);
-		var descriptors = authoringDescriptors(request, engine);
+		var descriptors = authoringDescriptors(request, engine, blocks);
 		var focusPath = String(request.focusPath || request.path || "");
 		if (!focusPath) {
 			var builderNode = findAuthoringBuilderNode(tree, authoringBuilderName(request, engine));
@@ -4313,10 +4554,10 @@
 		return result;
 	}
 
-	function authoringContractRequest(request) {
+	function authoringContractRequest(request, blocks) {
 		request = request || {};
 		var engine = authoringEngineDefinition(request);
-		var descriptors = authoringDescriptors(request, engine);
+		var descriptors = authoringDescriptors(request, engine, blocks);
 		return {
 			ok: true,
 			target: "authoring.contract",
@@ -5884,8 +6125,8 @@
 		authoringSourceTreeRequest: function (request, env) {
 			return create(env).authoringSourceTreeRequest(request);
 		},
-		authoringContractRequest: function (request, env) {
-			return create(env).authoringContractRequest(request);
+		authoringContractRequest: function (request, blocks, env) {
+			return create(env).authoringContractRequest(request, blocks);
 		},
 		authoringPaletteRequest: function (request, blocks, env) {
 			return create(env).authoringPaletteRequest(request, blocks);
