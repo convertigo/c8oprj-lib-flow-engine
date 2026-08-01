@@ -31,7 +31,11 @@
 			: projectRoot ? String(projectRoot.getName() || "") : "";
 	}
 
-	function projectRootCandidate(parent, name, env) {
+	function referencedContentDir(root, relativePath, env) {
+		return new env.File(root, String(relativePath || "libs/flow/blocks"));
+	}
+
+	function projectRootCandidate(parent, name, relativePath, env) {
 		var slug = String(name || "").replace(/_/g, "-");
 		var candidates = [
 			new env.File(parent, name),
@@ -41,14 +45,14 @@
 		];
 		for (var i = 0; i < candidates.length; i++) {
 			var root = candidates[i];
-			if (referencedBlocksDir(root, env).isDirectory()) {
+			if (referencedContentDir(root, relativePath, env).isDirectory()) {
 				return root;
 			}
 		}
 		if (typeof env.projectRootForName === "function") {
 			try {
 				var loadedRoot = env.projectRootForName(name);
-				if (loadedRoot && referencedBlocksDir(loadedRoot, env).isDirectory()) {
+				if (loadedRoot && referencedContentDir(loadedRoot, relativePath, env).isDirectory()) {
 					return loadedRoot;
 				}
 			} catch (e) {
@@ -57,9 +61,9 @@
 		return null;
 	}
 
-	function referencedProjectRoots(env) {
+	function referencedProjectRoots(env, relativePath, explicitProjectRoot) {
 		var roots = [];
-		var projectRoot = env.projectDir();
+		var projectRoot = explicitProjectRoot || env.projectDir();
 		if (!projectRoot) {
 			return roots;
 		}
@@ -80,7 +84,7 @@
 				continue;
 			}
 			seen[name] = true;
-			var root = projectRootCandidate(parent, name, env);
+			var root = projectRootCandidate(parent, name, relativePath, env);
 			if (root) {
 				roots.push(root);
 			}
@@ -133,7 +137,7 @@
 		var key = coreKey.slice();
 		var localBlocksDir = env.projectBlocksDir();
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
-			referencedProjectRoots(env).forEach(function (root) {
+			referencedProjectRoots(env, "libs/flow/blocks").forEach(function (root) {
 				var refBlocksDir = referencedBlocksDir(root, env);
 				key.push("reference", env.canonicalPath(root), env.directoryFingerprint(refBlocksDir));
 			});
@@ -214,7 +218,7 @@
 		var coreBlocksDir = new env.File(env.engineDir(), "blocks");
 		var localBlocksDir = env.projectBlocksDir();
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
-			referencedProjectRoots(env).forEach(function (root) {
+			referencedProjectRoots(env, "libs/flow/blocks").forEach(function (root) {
 				var refBlocksDir = referencedBlocksDir(root, env);
 				reserveBlockDir(blocks, refBlocksDir, "reference", projectNameFromRoot(root, env), env, refBlocksDir);
 			});
@@ -300,6 +304,7 @@
 
 	return {
 		blockIdFromDescriptorFile: blockIdFromDescriptorFile,
+		referencedProjectRoots: referencedProjectRoots,
 		loadBlockDir: loadBlockDir,
 		reserveBlockDir: reserveBlockDir,
 		blocksCacheKey: blocksCacheKey,

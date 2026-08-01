@@ -186,7 +186,8 @@
 					else if (child === "expression") this._binding.expression = String(event.detail && event.detail.value || "");
 					else if (child === "literal") {
 						var value = event.detail && event.detail.value;
-						try { this._binding.value = JSON.parse(value); } catch (e) { this._binding.value = value; }
+						if (event.detail && event.detail.textLiteral) this._binding.value = String(value || "");
+						else try { this._binding.value = JSON.parse(value); } catch (e) { this._binding.value = value; }
 					}
 					this.emit(); return;
 				}
@@ -223,7 +224,13 @@
 				this.shadowRoot.querySelectorAll("[data-panel]").forEach(function (panel) { panel.classList.toggle("hidden", panel.getAttribute("data-panel") !== mode); });
 				if (mode === "literal") {
 					var literal = this.shadowRoot.querySelector('[data-child="literal"]');
-					if (literal && literal.setState) literal.setState(Object.assign({}, this._state, { value: JSON.stringify(this._binding.value) }));
+					var literalValue = typeof this._binding.value === "string"
+						? this._binding.value
+						: JSON.stringify(this._binding.value);
+					if (literal && literal.setState) literal.setState(Object.assign({}, this._state, {
+						value: literalValue,
+						textLiteral: typeof this._binding.value === "string"
+					}));
 					return;
 				}
 				if (mode === "expression") {

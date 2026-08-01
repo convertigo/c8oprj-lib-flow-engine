@@ -496,7 +496,7 @@
 			ctx.authoringContractSource = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return authoringContractRequest(args);
+					return authoringContractRequest(args, loadBlocks());
 				});
 			};
 			ctx.authoringPaletteSource = function (args) {

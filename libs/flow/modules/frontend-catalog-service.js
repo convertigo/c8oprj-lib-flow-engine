@@ -195,6 +195,33 @@
 		return files;
 	}
 
+	function sourceForFile(file, env) {
+		return typeof env.sourceForFile === "function"
+			? String(env.sourceForFile(file))
+			: String(env.FileUtils.readFileToString(file, "UTF-8"));
+	}
+
+	function addDraftFiles(dir, env, out, accept) {
+		if (!dir || typeof env.draftFilesUnder !== "function") {
+			return;
+		}
+		var seen = {};
+		out.forEach(function (file) {
+			seen[canonicalPath(file)] = true;
+		});
+		env.draftFilesUnder(dir).forEach(function (file) {
+			var path = canonicalPath(file);
+			if (!path || seen[path] || !accept(String(file.getName()))) {
+				return;
+			}
+			seen[path] = true;
+			out.push(file);
+		});
+		out.sort(function (left, right) {
+			return canonicalPath(left).localeCompare(canonicalPath(right));
+		});
+	}
+
 	function collectUiBlockFiles(dir, env, out) {
 		sortedFiles(dir, env).forEach(function (file) {
 			if (file.isDirectory()) {
@@ -204,6 +231,9 @@
 			if (file.isFile() && String(file.getName()).endsWith(".uiblock.json")) {
 				out.push(file);
 			}
+		});
+		addDraftFiles(dir, env, out, function (name) {
+			return name.endsWith(".uiblock.json");
 		});
 	}
 
@@ -222,6 +252,10 @@
 				out.push(file);
 			}
 		});
+		addDraftFiles(dir, env, out, function (name) {
+			return (name.endsWith(".flow.svelte") || name.endsWith(".svelte")) &&
+				!name.endsWith(".svelte.js") && !name.endsWith(".svelte.ts");
+		});
 	}
 
 	function collectSvelteActionFiles(dir, env, out) {
@@ -237,6 +271,9 @@
 			if (name.endsWith(".svelte.js") || name.endsWith(".svelte.ts")) {
 				out.push(file);
 			}
+		});
+		addDraftFiles(dir, env, out, function (name) {
+			return name.endsWith(".svelte.js") || name.endsWith(".svelte.ts");
 		});
 	}
 
@@ -418,6 +455,10 @@
 		if (!id) {
 			id = "svelte." + componentName.charAt(0).toLowerCase() + componentName.substring(1);
 		}
+		var source = sourceMetadataForFile(file, builderName, env, providerHint);
+		if (source.sourceOrigin === "library" && id.indexOf("project.") === 0 && source.provider) {
+			id = source.provider + "." + id.substring("project.".length);
+		}
 		var nameParts = frontendNameParts(id, componentName);
 		var label = raw.label || raw.name || componentName;
 		if (!insert.kind) {
@@ -430,7 +471,6 @@
 			insert.id = insert.kind;
 		}
 		var properties = raw.properties || raw.props || {};
-		var source = sourceMetadataForFile(file, builderName, env, providerHint);
 		var descriptor = {
 			id: id,
 			name: raw.name || label,
@@ -1974,6 +2014,12 @@
 			roots.push(file);
 		}
 		add(projectFrontendRootForSettings(builderName, settings, env));
+		if (env && typeof env.referencedProjectRoots === "function") {
+			var relativeRoot = "libs/flow/frontbuilder/" + safePathSegment(builderName || "svelte");
+			env.referencedProjectRoots(relativeRoot).forEach(function (projectRoot) {
+				add(new env.File(projectRoot, relativeRoot));
+			});
+		}
 		add(resourceRootForSettings(settings, env));
 		var projectRoot = env.projectDir();
 		if (projectRoot) {
@@ -2012,7 +2058,7 @@
 				collectSvelteActionFiles(new env.File(root, "actions"), env, actionFiles);
 				componentFiles.forEach(function (file) {
 					try {
-						var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
+						var source = sourceForFile(file, env);
 						addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint));
 					} catch (e) {
 						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
@@ -2042,7 +2088,7 @@
 				});
 				actionFiles.forEach(function (file) {
 					try {
-						var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
+						var source = sourceForFile(file, env);
 						addDescriptor(normalizeSvelteAction(svelteMeta(source), file, name, settings, env, providerHint));
 					} catch (e) {
 						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
@@ -2072,7 +2118,7 @@
 				});
 				uiFiles.forEach(function (file) {
 					try {
-						var raw = JSON.parse(String(env.FileUtils.readFileToString(file, "UTF-8")));
+						var raw = JSON.parse(sourceForFile(file, env));
 						addDescriptor(normalizeUiBlock(raw, file, name, settings, env, providerHint));
 					} catch (e) {
 						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
@@ -2102,13 +2148,13 @@
 			});
 		});
 		var modelComponentsDir = modelComponentsDirForSettings(settings, env);
-		if (modelComponentsDir && modelComponentsDir.isDirectory()) {
+		if (modelComponentsDir) {
 			var providerHint = projectProviderForResourceRoot(modelComponentsDir, env) || currentProjectProvider(env);
 			var componentFiles = [];
 			collectSvelteComponentFiles(modelComponentsDir, env, componentFiles);
 			componentFiles.forEach(function (file) {
 				try {
-					var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
+					var source = sourceForFile(file, env);
 					addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint));
 				} catch (e) {
 					var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
@@ -2189,6 +2235,9 @@
 				var modelComponentsDir = modelComponentsDirForSettings(entry.settings, env);
 				parts.push(modelComponentsDir && modelComponentsDir.exists() ? env.directoryFingerprint(modelComponentsDir) : "");
 			});
+		if (typeof env.sourceDraftsFingerprint === "function") {
+			parts.push(String(env.sourceDraftsFingerprint() || ""));
+		}
 		return parts.join("\n");
 	}
 

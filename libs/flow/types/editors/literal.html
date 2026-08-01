@@ -29,6 +29,7 @@
 			constructor() {
 				super();
 				this._value = "";
+				this._textLiteral = false;
 			}
 
 			connectedCallback() {
@@ -43,6 +44,7 @@
 
 			setState(state) {
 				this._value = state && state.value != null ? String(state.value) : "";
+				this._textLiteral = !!(state && state.textLiteral);
 				this.render();
 				this.emit();
 			}
@@ -62,6 +64,7 @@
 					var value = event.target && event.target.getAttribute && event.target.getAttribute("data-value");
 					if (value !== null && value !== undefined) {
 						this._value = value;
+						this._textLiteral = false;
 						this.render();
 						this.emit();
 						return;
@@ -75,6 +78,7 @@
 			format() {
 				try {
 					this._value = JSON.stringify(JSON.parse(this.value), null, 2);
+					this._textLiteral = false;
 					this.render();
 					this.emit();
 				} catch (e) {
@@ -93,6 +97,11 @@
 					status.classList.remove("error");
 					return;
 				}
+				if (this._textLiteral) {
+					status.textContent = "Text literal";
+					status.classList.remove("error");
+					return;
+				}
 				try {
 					JSON.parse(value);
 					status.textContent = "Valid JSON literal";
@@ -106,7 +115,7 @@
 			emit() {
 				this.dispatchEvent(new CustomEvent("flow-value", {
 					bubbles: true,
-					detail: { value: this.value }
+					detail: { value: this.value, textLiteral: this._textLiteral }
 				}));
 			}
 

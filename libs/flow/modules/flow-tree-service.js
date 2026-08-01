@@ -439,6 +439,7 @@
 					drafts: request && request.frontendSourceDrafts || {},
 					property: request && request.property || "",
 					sourceId: request && request.sourceId || "",
+					sourceTree: request && request.sourceTree === true,
 					includeBindings: request && request.includeBindings !== false
 				});
 			} catch (e) {
@@ -1096,12 +1097,36 @@
 		return ["ui.block"];
 	}
 
+	function flowSvelteLiteValueLabel(value) {
+		if (value === undefined || value === null) {
+			return "";
+		}
+		if (typeof value !== "object") {
+			return String(value);
+		}
+		if (value.mode === "literal") {
+			return value.value !== null && typeof value.value !== "object" ? String(value.value) : "";
+		}
+		if (value.mode === "expression") {
+			return String(value.expression || "");
+		}
+		if (value.mode === "source" && value.source) {
+			var source = value.source;
+			var base = source.name || source.actionId || source.scopeId || source.value || source.category || "source";
+			var path = (value.path || []).map(function (segment) {
+				return segment && segment.kind === "index" ? "[" + segment.index + "]" : "." + String(segment && segment.name || "");
+			}).join("");
+			return "@" + String(source.category || "source") + "." + String(base) + path;
+		}
+		return "";
+	}
+
 	function flowSvelteLiteLabel(kind, tag, props) {
 		if (kind === "text") {
-			return String(props.text || "Text");
+			return flowSvelteLiteValueLabel(props.text) || "Text";
 		}
 		if (kind === "button") {
-			return String(props.label || "Button");
+			return flowSvelteLiteValueLabel(props.label) || "Button";
 		}
 		if (kind === "callSequence") {
 			return String(props.requestable || "CallSequence");
@@ -1537,6 +1562,7 @@
 			slotChildren.push(flowSvelteLiteSlot(name, path, slots[name], sourcePath));
 			slotDefinitions[name] = flowSvelteLiteSlotDefinition(name, path + ".slots." + name + ".children");
 		});
+		var sourceExplicitId = props.id !== undefined && props.id !== null && String(props.id) !== "";
 		var id = String(props.id || props.name || kind || "node");
 		props.kind = kind;
 		if (props.id === undefined && !(/^on[A-Z]/.test(kind) || kind === "variable" || kind === "column" || kind === "dataBinding")) {
@@ -1545,6 +1571,7 @@
 		return {
 			id: id,
 			kind: flowSvelteLiteTreeKind(kind),
+			sourceExplicitId: sourceExplicitId,
 			type: String(element.tag || kind),
 			tag: String(element.tag || ""),
 			label: flowSvelteLiteLabel(kind, element.tag, props),
@@ -1620,8 +1647,13 @@
 			return true;
 		}
 		try {
-			var source = frontendModelSource(request, sourceFile);
-			var frontAstRoot = flowSvelteLiteComponentRoot(String(sourceFile.getAbsolutePath()), source);
+			var sourceRequest = Object.assign({}, request || {}, {
+				sourceTree: true,
+				includeBindings: false
+			});
+			var document = frontendModelDocument(sourceRequest, sourceFile, settings);
+			var roots = document && document.tree && document.tree.children || [];
+			var frontAstRoot = roots.length ? roots[0] : null;
 			if (!frontAstRoot) {
 				return false;
 			}
@@ -1913,7 +1945,9 @@
 	function frontendAuthoringPathSegment(node, index) {
 		node = node || {};
 		var stableId = node.props && node.props.id;
-		if (stableId === undefined || stableId === null || String(stableId) === "") {
+		if (node.sourceExplicitId === false) {
+			stableId = null;
+		} else if (stableId === undefined || stableId === null || String(stableId) === "") {
 			stableId = node.id;
 		}
 		if (stableId !== undefined && stableId !== null && String(stableId) !== "") {
@@ -1990,6 +2024,9 @@
 		info.sourcePath = String(node.sourcePath);
 		if (node.sourceRelativePath) {
 			info.sourceRelativePath = String(node.sourceRelativePath);
+		}
+		if (node.sourcePropertyMutationPaths && typeof node.sourcePropertyMutationPaths === "object") {
+			info.sourcePropertyMutationPaths = normalizeTree(node.sourcePropertyMutationPaths);
 		}
 		return info;
 	}
@@ -2139,6 +2176,7 @@
 			icon: true,
 			kind: true,
 			label: true,
+			sourceExplicitId: true,
 			tag: true,
 			type: true
 		};

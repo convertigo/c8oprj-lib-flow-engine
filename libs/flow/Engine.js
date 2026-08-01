@@ -1381,6 +1381,14 @@
 		return catalogLoaderService().loadTypes(catalogLoaderEnv());
 	}
 
+	function referencedProjectRoots(relativePath, explicitProjectRoot) {
+		return catalogLoaderService().referencedProjectRoots(
+			catalogLoaderEnv(),
+			relativePath,
+			explicitProjectRoot || projectDir()
+		);
+	}
+
 	function projectBlockDescriptorFile(name) {
 		var dir = projectBlocksDir();
 		if (!dir) {
@@ -3762,6 +3770,14 @@
 			resolveBlockIcon: resolveBlockIcon,
 			normalizeTree: normalizeTree,
 			projectRootForName: loadedProjectRootForName,
+			referencedProjectRoots: referencedProjectRoots,
+			sourceForFile: sourceForFile,
+			draftFilesUnder: function (baseDir) {
+				return frontendDraftEntriesUnder(activeRequest, baseDir).map(function (entry) {
+					return entry.file;
+				});
+			},
+			sourceDraftsFingerprint: sourceDraftsFingerprint,
 			raise: raise
 		};
 	}
@@ -4260,7 +4276,8 @@
 			projectName,
 			String(request.property || ""),
 			String(request.sourceId || ""),
-			String(request.includeBindings !== false)
+			String(request.includeBindings !== false),
+			String(request.sourceTree === true)
 		].join("\n");
 		var fingerprint = sha256Hex([
 			source,
@@ -4279,7 +4296,7 @@
 			return enrichFrontendBindingSources(cachedPersistent, request, projectRoot);
 		}
 		var normalizedSourcePath = String(sourceFile.getCanonicalPath()).replace(/\\/g, "/");
-		var local = normalizedSourcePath.indexOf("/src/routes/") >= 0
+		var local = request.sourceTree === true || normalizedSourcePath.indexOf("/src/routes/") >= 0
 			? null
 			: describeFrontAstDocument(source, request, sourceFile, projectRoot);
 		if (local) {
@@ -4300,6 +4317,9 @@
 				"--project-name", projectName,
 				"--engine-model"
 			];
+			frontendReferenceCliArgs(projectRoot, resourceRoot).forEach(function (arg) {
+				cliArgs.push(arg);
+			});
 			if (request.property) {
 				cliArgs.push("--property", String(request.property));
 			}
@@ -4308,6 +4328,9 @@
 			}
 			if (request.includeBindings === false) {
 				cliArgs.push("--without-bindings");
+			}
+			if (request.sourceTree === true) {
+				cliArgs.push("--source-tree");
 			}
 			var result = frontendDescribeDocument(resourceRoot, cliArgs);
 			if (!result || !result.model) {
@@ -4488,6 +4511,37 @@
 		});
 	}
 
+	function frontendResourceProjectRoot(resourceRoot) {
+		if (!resourceRoot) {
+			return null;
+		}
+		var root = resourceRoot;
+		while (root && String(root.getName()) !== "libs") {
+			root = root.getParentFile();
+		}
+		return root && root.getParentFile();
+	}
+
+	function frontendReferenceRoots(projectRoot, resourceRoot) {
+		var resourceProjectRoot = frontendResourceProjectRoot(resourceRoot);
+		var resourceProjectName = resourceProjectRoot
+			? String(projectNameForRoot(resourceProjectRoot) || "")
+			: "";
+		return referencedProjectRoots("libs/flow/frontbuilder/svelte", projectRoot || projectDir())
+			.filter(function (root) {
+				return !resourceProjectName || String(projectNameForRoot(root) || "") !== resourceProjectName;
+			});
+	}
+
+	function frontendReferenceCliArgs(projectRoot, resourceRoot) {
+		var args = [];
+		frontendReferenceRoots(projectRoot, resourceRoot).forEach(function (root) {
+			args.push("--reference-root", String(root.getAbsolutePath()));
+			args.push("--reference-project", String(projectNameForRoot(root)) + "=" + String(root.getAbsolutePath()));
+		});
+		return args;
+	}
+
 	function frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot) {
 		var entries = [];
 		var visited = {};
@@ -4510,6 +4564,12 @@
 			{ root: new File(projectRoot, "libs/flow/frontbuilder/svelte/components"), suffixes: [".svelte"] }
 		].forEach(function (target) {
 			frontendFingerprintFiles(target.root, target.suffixes, entries, visited);
+		});
+		frontendReferenceRoots(projectRoot, resourceRoot).forEach(function (root) {
+			frontendFingerprintFiles(new File(root, "libs/flow/blocks"),
+				[".block.js", ".browser.js"], entries, visited);
+			frontendFingerprintFiles(new File(root, "libs/flow/frontbuilder/svelte/components"),
+				[".flow.svelte", ".svelte"], entries, visited);
 		});
 		return sha256Hex(entries.join("\n"));
 	}
@@ -4679,6 +4739,8 @@
 			if (frontAstIsNode(target) && path.indexOf(".props") < 0) {
 				path += ".props";
 			}
+		} else if (op === "replace" || op === "merge") {
+			path = frontAstNormalizePropertyPath(root, path);
 		}
 		var debug = {
 			op: op,
@@ -4767,6 +4829,28 @@
 		return Object.keys(value).every(function (key) {
 			return structural[key] !== true;
 		});
+	}
+
+	function frontAstNormalizePropertyPath(root, path) {
+		path = String(path || "");
+		if (path.indexOf(".props.") >= 0) {
+			return path;
+		}
+		var match = /^(.*)\.([^.[\]]+)$/.exec(path);
+		if (!match) {
+			return path;
+		}
+		var node = frontAstValueAtPath(root, match[1], false);
+		if (!frontAstIsNode(node)) {
+			return path;
+		}
+		var name = match[2];
+		var definitions = frontAstPropertyDefinitions(frontAstCanonicalKind(node.tag));
+		if (!Object.prototype.hasOwnProperty.call(node.attrs || {}, name)
+				&& !Object.prototype.hasOwnProperty.call(definitions || {}, name)) {
+			return path;
+		}
+		return match[1] + ".props." + name;
 	}
 
 	function frontAstValidateBindingMutation(root, path, value) {
@@ -6871,10 +6955,18 @@
 			Arrays.asList(listed).toArray().forEach(function (file) {
 				if (file.isDirectory()) {
 					frontendCopyFlowSvelteOverlay(file, new File(overlayDir, file.getName()), request);
-				} else if (file.isFile() && String(file.getName()).endsWith(".flow.svelte")) {
+				} else if (file.isFile()) {
 					var draft = frontendDraftForFile(request, file);
-					var content = draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
-					frontendWriteFile(new File(overlayDir, file.getName()), content);
+					var target = new File(overlayDir, file.getName());
+					if (draft === null) {
+						var parent = target.getParentFile();
+						if (parent) {
+							parent.mkdirs();
+						}
+						FileUtils.copyFile(file, target);
+					} else {
+						frontendWriteFile(target, draft);
+					}
 				}
 			});
 		}
@@ -6961,12 +7053,16 @@
 			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "install"];
 		}
 		if (action === "generate") {
-			return frontendTsxCommand(resourceRoot, "src-builder/cli.ts", [
+			var generateArgs = [
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--project-name", String(projectName || ""),
 				"--model", String(modelPath.getAbsolutePath()),
 				"--mode", generationMode
-			]);
+			];
+			frontendReferenceCliArgs(projectRoot, resourceRoot).forEach(function (arg) {
+				generateArgs.push(arg);
+			});
+			return frontendTsxCommand(resourceRoot, "src-builder/cli.ts", generateArgs);
 		}
 		if (action === "installApp") {
 			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "install"];
@@ -7199,6 +7295,12 @@
 			FRONTBUILDER_BUILD_OUTPUT: buildOutput,
 			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
 		};
+		var draftsTemp = null;
+		if (draftCount > 0) {
+			draftsTemp = File.createTempFile("c8o-frontbuilder-drafts-", ".json");
+			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(frontendSourceDrafts(request)), "UTF-8");
+			envValues.FRONTBUILDER_DRAFTS_FILE = String(draftsTemp.getAbsolutePath());
+		}
 		if (effective.effectiveSourceRoot && effective.sourceIdentityRoot) {
 			envValues.FRONTBUILDER_EFFECTIVE_SOURCE_ROOT = String(effective.effectiveSourceRoot.getAbsolutePath());
 			envValues.FRONTBUILDER_SOURCE_IDENTITY_ROOT = String(effective.sourceIdentityRoot.getAbsolutePath());
@@ -7229,6 +7331,9 @@
 			});
 		} finally {
 			try {
+				if (draftsTemp) {
+					draftsTemp["delete"]();
+				}
 				if (effective.cleanup) {
 					if (effective.cleanup.isDirectory()) {
 						FileUtils.deleteDirectory(effective.cleanup);
@@ -7767,13 +7872,16 @@
 
 	function frontendStudioBrowser(request, url, title, kind) {
 		var projectName = frontendProjectName(request) || "project";
+		var browserKind = String(kind || "preview");
 		var browser = {
-			id: "flow.frontend:" + projectName + ":" + String(kind || "preview"),
-			title: String(title || "Flow frontend"),
+			id: "flow.frontend:" + projectName + ":" + browserKind,
+			title: browserKind === "frontbuilder.svelte.dev"
+				? projectName + " Frontend"
+				: String(title || "Flow frontend"),
 			project: projectName,
 			url: String(url || ""),
 			tooltip: String(url || ""),
-			kind: String(kind || "preview")
+			kind: browserKind
 		};
 		if (browser.kind === "frontbuilder.svelte.dev") {
 			browser.authoring = {

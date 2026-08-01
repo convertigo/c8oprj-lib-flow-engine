@@ -132,6 +132,29 @@ var embeddedUnknownBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument(
 assertTrue(embeddedUnknownBinding.diagnostics.length === 1 &&
 	embeddedUnknownBinding.diagnostics[0].code === "FRONTEND_BINDING_REFERENCE_UNKNOWN",
 	"Embedded Flow Svelte projection did not reject an unknown intuitive binding reference");
+var embeddedStructuredLabels = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/Shared.flow.svelte", [
+	'<FlowComponent id="shared" label="Shared">',
+	'  <Structure>',
+	'    <Text text={{ mode: "literal", value: "Chronomètre" }} />',
+	'    <Text text={{ mode: "source", source: { category: "local", name: "clock", scopeId: "shared" }, path: [{ kind: "property", name: "display" }] }} />',
+	'    <Button label={{ mode: "literal", value: "Start" }} />',
+	'    <Button label={{ mode: "literal", value: "Stop" }} />',
+	'  </Structure>',
+	'</FlowComponent>'
+].join("\n"));
+var embeddedLabelNodes = [];
+(function collectEmbeddedLabelNodes(node) {
+	if (node && (node.type === "Text" || node.type === "Button")) {
+		embeddedLabelNodes.push(node);
+	}
+	(node && node.children || []).forEach(collectEmbeddedLabelNodes);
+})(embeddedStructuredLabels.root);
+var embeddedLabels = embeddedLabelNodes.map(function (node) { return node.label; }).join("|");
+assertTrue(embeddedLabels ===
+	"Chronomètre|@local.clock.display|Start|Stop" &&
+	embeddedLabelNodes.every(function (node) { return node.sourceExplicitId === false; }),
+	"Embedded Flow Svelte fallback exposed structured values as object labels or stable ids: " +
+	embeddedLabels + " / explicit=" + embeddedLabelNodes.map(function (node) { return node.sourceExplicitId; }).join("|"));
 
 var flowCodeServiceFile = new java.io.File(engineDir, "modules/flow-code-service.js");
 var flowCodeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowCodeServiceFile, "UTF-8"));
@@ -577,6 +600,13 @@ if (referencedProjectDir.isDirectory()) {
 }
 var referencedBlocksDir = new java.io.File(referencedProjectDir, "libs/flow/blocks/process");
 referencedBlocksDir.mkdirs();
+var referencedComponentsDir = new java.io.File(referencedProjectDir, "libs/flow/frontbuilder/svelte/components");
+referencedComponentsDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(referencedProjectDir, "c8oProject.yaml"),
+	"↓lib_flow_process [core.Project]:\n",
+	"UTF-8"
+);
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(projectDirFile, "c8oProject.yaml"), [
 	"↓SmokeProject [core.Project]:",
 	"  ↓lib_flow_process_reference [references.ProjectSchemaReference]:",
@@ -599,6 +629,23 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(refe
 	"}",
 	""
 ].join("\n"), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(referencedComponentsDir, "SharedBadge.flow.svelte"),
+	[
+		"<script module>",
+		"  export const _meta = {",
+		"    id: \"project.sharedBadge\",",
+		"    label: \"Shared badge\",",
+		"    tag: \"SharedBadge\",",
+		"    category: \"Project / UI blocks\",",
+		"    insert: { kind: \"sharedBadge\", tag: \"SharedBadge\" }",
+		"  };",
+		"</script>",
+		"<FlowComponent id=\"sharedBadge\"><Structure><Text text=\"Shared\" /></Structure></FlowComponent>",
+		""
+	].join("\n"),
+	"UTF-8"
+);
 var referencedBlockFlowScriptSource = [
 	"function ReferencedBlockSmoke({ input, result }) {",
 	"\tvar value = process.echo({ value: \"reference-ok\" })",
@@ -3664,6 +3711,22 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 var frontendRoot = new java.io.File(projectDirFile, "libs/flow/frontbuilder/svelte");
 var frontendUiDir = new java.io.File(frontendRoot, "ui/project");
 frontendUiDir.mkdirs();
+var frontendComponentsDir = new java.io.File(frontendRoot, "components");
+frontendComponentsDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(frontendComponentsDir, "SharedControls.flow.svelte"), [
+	"<script module>",
+	"  export const _meta = { id: \"SmokeProject.sharedControls\", label: \"Shared controls\", tag: \"SharedControls\" };",
+	"</script>",
+	"<FlowComponent id=\"sharedControls\" label=\"Shared controls\">",
+	"  <Structure>",
+	"    <Text text={{ mode: \"literal\", value: \"Chronomètre\" }} />",
+	"    <Text text={{ mode: \"source\", source: { category: \"local\", name: \"clock\", scopeId: \"sharedControls\" }, path: [{ kind: \"property\", name: \"display\" }] }} />",
+	"    <Button label={{ mode: \"literal\", value: \"Start\" }} />",
+	"    <Button label={{ mode: \"literal\", value: \"Stop\" }} />",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n"), "UTF-8");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(frontendUiDir, "Text.uiblock.json"), JSON.stringify({
 	id: "project.text",
 	label: "Text",
@@ -3703,6 +3766,14 @@ var authoringProvider = findNode(authoringTree, function (node) {
 	return node.type === "frontendBlockProvider" && node.summary === "SmokeProject";
 });
 assertTrue(authoringProvider !== null, "authoring-tree did not expose the current project as a frontend catalog provider");
+var referencedAuthoringProvider = findNode(authoringTree, function (node) {
+	return node.type === "frontendBlockProvider" && node.summary === "lib_flow_process";
+});
+assertTrue(referencedAuthoringProvider !== null &&
+	findNode(referencedAuthoringProvider, function (node) {
+		return node.summary === "Shared badge";
+	}) !== null,
+	"authoring-tree did not expose a referenced project's shared Svelte component");
 var crossProjectAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	project: "lib_flow_mcp",
 	projectDir: __flowProjectDir,
@@ -3730,6 +3801,24 @@ var authoringTextBlock = findNode(authoringProvider, function (node) {
 });
 assertTrue(authoringTextBlock !== null && authoringTextBlock.info.indexOf("\"sourceWritable\":true") !== -1,
 	"authoring-tree did not expose project Text as a writable source-backed frontend UI block");
+var sharedControlsBlock = findNode(authoringProvider, function (node) {
+	return node.kind === "frontendBlock" && node.type === "SmokeProject.sharedControls";
+});
+var sharedControlLeaves = [];
+(function collectSharedControlLeaves(node) {
+	if (node && (node.type === "Text" || node.type === "Button")) {
+		sharedControlLeaves.push(node);
+	}
+	(node && node.children || []).forEach(collectSharedControlLeaves);
+})(sharedControlsBlock);
+var sharedControlPaths = {};
+sharedControlLeaves.forEach(function (node) { sharedControlPaths[node.path] = true; });
+assertTrue(sharedControlsBlock !== null &&
+	sharedControlLeaves.map(function (node) { return node.summary; }).join("|") ===
+		"Chronomètre|@local.clock.display|Start|Stop" &&
+	Object.keys(sharedControlPaths).length === 4,
+	"reusable Flow Svelte catalog projection lost structured labels or sibling identities: " +
+		JSON.stringify(sharedControlLeaves.map(function (node) { return { summary: node.summary, path: node.path }; })));
 var authoringUiBlocks = findNode(authoringProvider, function (node) {
 	return node.type === "frontendBlocks";
 });
@@ -3800,6 +3889,10 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"    <PageShell id=\"pageShell\">",
 	"      <Children>",
 	"        <Text id=\"localText\" text={{\"mode\":\"source\",\"source\":{\"category\":\"local\",\"name\":\"localMessage\"},\"path\":[]}} />",
+	"        <Button label=\"Start\" />",
+	"        <Button label=\"Step\" />",
+	"        <Button label=\"Stop\" />",
+	"        <Button label=\"Reset\" />",
 	"        <SmokePanel id=\"smokePanel1\" />",
 	"      </Children>",
 	"    </PageShell>",
@@ -3904,6 +3997,13 @@ assertTrue(nodeInfoObject(flowSvelteRootPage).sourceMutationPath === "frontAst" 
 	nodeInfoObject(flowSvelteRootLayout).sourceMutationPath === "frontAst" &&
 	nodeInfoObject(flowSvelteNestedPage).sourceMutationPath === "frontAst",
 	"projected Flow Svelte pages and layouts did not expose their own source mutation target");
+var flowSvelteLocalText = findNode(flowSvelteRootPage, function (node) {
+	var definition = node && node.definition ? JSON.parse(node.definition) : {};
+	return definition.id === "localText";
+});
+assertTrue(flowSvelteLocalText !== null &&
+	/\.props\.text$/.test(String(nodeInfoObject(flowSvelteLocalText).sourcePropertyMutationPaths.text || "")),
+	"projected Flow Svelte properties did not preserve their FrontAst mutation paths");
 var initialProjectedRouteSourceCount = 0;
 (function countProjectedRouteSources(node) {
 	if (node.kind === "frontendPage" || node.kind === "frontendRouteLayout") {
@@ -4114,6 +4214,21 @@ assertTrue(flowSvelteLocalTextDefinition.text && flowSvelteLocalTextDefinition.k
 	flowSvelteLocalTextDefinition.tag === undefined && flowSvelteLocalTextDefinition.type === undefined &&
 	flowSvelteLocalTextDefinition.descriptorId === undefined && flowSvelteLocalTextDefinition.icon === undefined,
 	"authoring tree leaked technical frontend metadata into editable properties");
+var flowSvelteAnonymousButtons = [];
+(function collectAnonymousButtons(node) {
+	if (node.kind === "frontendWidget" && node.type === "Button") {
+		flowSvelteAnonymousButtons.push(node);
+	}
+	(node.children || []).forEach(collectAnonymousButtons);
+})(flowSvelteRootPage);
+var flowSvelteAnonymousButtonPaths = {};
+flowSvelteAnonymousButtons.forEach(function (node) {
+	flowSvelteAnonymousButtonPaths[node.path] = true;
+});
+assertTrue(flowSvelteAnonymousButtons.length === 4 &&
+	Object.keys(flowSvelteAnonymousButtonPaths).length === 4,
+	"anonymous sibling widgets did not receive distinct virtual authoring paths: " +
+		JSON.stringify(flowSvelteAnonymousButtons.map(function (node) { return node.path; })));
 var flowSvelteLocalBindingTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -4340,14 +4455,19 @@ var smokePanelRouteRef = findNode(flowSvelteTree, function (node) {
 	return node.type === "SmokePanel" && node.summary === "smokePanel1";
 });
 var smokeIf = findNode(flowSvelteTree, function (node) {
-	return node.kind === "frontendDirectiveBlock" && node.summary === "If";
+	return node.kind === "frontendDirectiveBlock" && node.summary === "If" &&
+		sameCanonicalPath(nodeInfoObject(node).sourcePath, flowSvelteComponentFile);
 });
 assertTrue(nodeInfoObject(smokePanelRoot).frontendInsertMutationPath === "frontAst.slots.structure.children",
 	"flow-svelte component root did not expose the AST structure insert path");
 assertTrue(smokePanelRouteRef !== null,
 	"flow-svelte canonical route page did not expose the referenced component instance");
 assertTrue(nodeInfoObject(smokeIf).frontendInsertMutationPath === "frontAst.slots.structure.children[1].slots.then.children",
-	"flow-svelte directive did not expose its default AST insert slot");
+	"flow-svelte directive did not expose its default AST insert slot: " + JSON.stringify({
+		path: smokeIf && smokeIf.path,
+		definition: smokeIf && smokeIf.definition,
+		info: nodeInfoObject(smokeIf)
+	}));
 var flowSvelteMoveSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowSvelteComponentFile, "UTF-8"));
 var flowSvelteMove = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -4451,6 +4571,21 @@ assertTrue(flowSvelteImplicitProps.ok === true &&
 	flowSvelteImplicitProps.debug.path === "frontAst.slots.structure.children[0].props" &&
 	String(flowSvelteImplicitProps.source).indexOf("text=\"Edited without explicit props\"") !== -1,
 	"flow-svelte AST property mutation without .props was not normalized to node attributes");
+var flowSvelteImplicitScalarProp = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteMoveSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].text",
+		value: "Edited scalar without explicit props"
+	}
+})));
+assertTrue(flowSvelteImplicitScalarProp.ok === true &&
+	flowSvelteImplicitScalarProp.debug.propertyPathNormalized === true &&
+	flowSvelteImplicitScalarProp.debug.path === "frontAst.slots.structure.children[0].props.text" &&
+	String(flowSvelteImplicitScalarProp.source).indexOf("text=\"Edited scalar without explicit props\"") !== -1,
+	"flow-svelte scalar property mutation without .props was not normalized to node attributes");
 var flowSvelteReplaceNode = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
 	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
