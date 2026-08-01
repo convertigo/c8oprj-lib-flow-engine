@@ -2846,6 +2846,27 @@ var fixtureUrl = new java.io.File(new java.io.File(engineDir).getParentFile().ge
 var weatherUrl = new java.lang.String(fixtureUrl);
 var apiKey = new java.lang.String("demo-key");
 var threshold = new java.lang.String("35");
+var httpHeadersFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: fetchFixture",
+	"    block: http.get",
+	"    url: \"{{ config.url }}\"",
+	"    out: local.response",
+	"  - id: exposeHeaders",
+	"    block: set",
+	"    path: result.headers",
+	"    value: \"{{ local.response.headers }}\"",
+	""
+].join("\n");
+var httpHeadersRun = JSON.parse(engine.run(JSON.stringify({
+	flowSource: httpHeadersFlowSource,
+	config: { url: fixtureUrl }
+})));
+assertTrue(httpHeadersRun.result.headers &&
+	typeof httpHeadersRun.result.headers["content-type"] === "string" &&
+	httpHeadersRun.result.headers["content-type"].length > 0,
+	"HTTP response did not expose normalized response headers");
 var weatherFlowSource = [
 	"version: 1",
 	"nodes:",

@@ -12,6 +12,9 @@ const _meta = {
         "contentType": {
           "type": "string"
         },
+        "headers": {
+          "type": "object"
+        },
         "body": {
           "type": "unknown"
         },
@@ -65,7 +68,7 @@ const _meta = {
       "kind": "path",
       "mode": "write",
       "default": "local.response",
-      "description": "Scope path receiving status, contentType, body and text."
+      "description": "Scope path receiving status, contentType, headers, body and text."
     }
   },
   "runtime": "rhino",
@@ -93,6 +96,37 @@ const _meta = {
 	var StandardCharsets = Packages.java.nio.charset.StandardCharsets;
 
 	var javaHttpClient;
+
+	function putHeader(headers, name, value) {
+		var key = String(name || "").toLowerCase();
+		if (!key) {
+			return;
+		}
+		var text = String(value === undefined || value === null ? "" : value);
+		headers[key] = headers[key] ? headers[key] + ", " + text : text;
+	}
+
+	function apacheHeaders(response) {
+		var headers = {};
+		var values = response && response.getAllHeaders ? response.getAllHeaders() : [];
+		for (var i = 0; i < values.length; i++) {
+			putHeader(headers, values[i].getName(), values[i].getValue());
+		}
+		return headers;
+	}
+
+	function javaHeaders(response) {
+		var headers = {};
+		var entries = response.headers().map().entrySet().iterator();
+		while (entries.hasNext()) {
+			var entry = entries.next();
+			var values = entry.getValue().iterator();
+			while (values.hasNext()) {
+				putHeader(headers, entry.getKey(), values.next());
+			}
+		}
+		return headers;
+	}
 
 	function appendQuery(url, query) {
 		if (!query) {
@@ -150,12 +184,13 @@ const _meta = {
 		return {
 			status: status,
 			contentType: contentType,
+			headers: apacheHeaders(response),
 			body: body,
 			text: text
 		};
 	}
 
-	function responseObject(status, contentType, text) {
+	function responseObject(status, contentType, headers, text) {
 		var body = text;
 		var trimmed = text.trim();
 		if (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
@@ -164,6 +199,7 @@ const _meta = {
 		return {
 			status: status,
 			contentType: contentType,
+			headers: headers || {},
 			body: body,
 			text: text
 		};
@@ -190,11 +226,11 @@ const _meta = {
 		}
 		var file = new File(URI.create(String(url)));
 		if (!file.isFile()) {
-			return responseObject(404, "", "");
+			return responseObject(404, "", {}, "");
 		}
 		var contentType = String(Files.probeContentType(file.toPath()) || "");
 		var text = method === "HEAD" ? "" : String(FileUtils.readFileToString(file, "UTF-8"));
-		return responseObject(200, contentType, text);
+		return responseObject(200, contentType, contentType ? { "content-type": contentType } : {}, text);
 	}
 
 	function runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs) {
@@ -214,7 +250,7 @@ const _meta = {
 		}
 		var response = javaClient(connectTimeoutMs).send(builder.build(), JavaHttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 		var contentType = String(response.headers().firstValue("content-type").orElse(""));
-		return responseObject(response.statusCode(), contentType, String(response.body()));
+		return responseObject(response.statusCode(), contentType, javaHeaders(response), String(response.body()));
 	}
 
 	function runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs) {

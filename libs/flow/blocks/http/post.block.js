@@ -18,6 +18,9 @@ const _meta = {
         "contentType": {
           "type": "string"
         },
+        "headers": {
+          "type": "object"
+        },
         "body": {
           "type": "unknown"
         },
@@ -53,7 +56,7 @@ const _meta = {
       "kind": "path",
       "mode": "write",
       "default": "local.response",
-      "description": "Scope path receiving status, contentType, body and text."
+      "description": "Scope path receiving status, contentType, headers, body and text."
     }
   },
   "runtime": "rhino",
