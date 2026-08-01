@@ -3384,6 +3384,14 @@
 		return requestableService().outputSchema(target, requestableServiceEnv());
 	}
 
+	function requestableInputContract(target, request) {
+		request = Object.assign({}, request || activeRequest || {});
+		if (!currentProjectName(request)) {
+			request.project = projectNameForRoot(projectDir());
+		}
+		return requestableService().inputContract(request, target, requestableServiceEnv());
+	}
+
 	function requestableTargetQName(target) {
 		return requestableService().targetQName(target);
 	}
@@ -3924,6 +3932,7 @@
 			schemaSimpleType: schemaSimpleType,
 			schemaSummary: schemaSummary,
 				objectSchema: objectSchema,
+				requestableInputContract: requestableInputContract,
 				frontendBlocksForSettings: frontendBlocksForSettings,
 				frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,
 				sha256Hex: sha256Hex,

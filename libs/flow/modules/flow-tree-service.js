@@ -51,6 +51,7 @@
 		var schemaSimpleType = env.schemaSimpleType;
 		var schemaSummary = env.schemaSummary;
 		var objectSchema = env.objectSchema;
+		var requestableInputContract = env.requestableInputContract || function () { return null; };
 		var frontendBlocksForSettings = env.frontendBlocksForSettings || function () { return []; };
 		var frontendCreateDescriptorsForSettings = env.frontendCreateDescriptorsForSettings || function () { return []; };
 		var describeFrontendDocument = env.describeFrontendDocument || function () { return null; };
@@ -468,6 +469,13 @@
 			if (!described || !described.model) {
 				throw new Error("Frontend document service did not return a model for " + String(file.getAbsolutePath()));
 			}
+			var contractDiagnostics = [];
+			(described.tree && described.tree.children || []).forEach(function (root) {
+				flowSvelteCallContractDiagnostics(root, request).forEach(function (diagnostic) {
+					contractDiagnostics.push(diagnostic);
+				});
+			});
+			described.diagnostics = mergeFrontendDiagnostics(described.diagnostics, contractDiagnostics);
 			return normalizeTree(described);
 		}
 		return {
@@ -1381,6 +1389,135 @@
 		if (typeof root !== "string" || !root) return null;
 		var suffix = typeof value.path === "string" && value.path ? "." + value.path : "";
 		return "@" + root + suffix;
+	}
+
+	function editDistance(left, right) {
+		left = String(left || "").toLowerCase();
+		right = String(right || "").toLowerCase();
+		var previous = [];
+		for (var j = 0; j <= right.length; j++) {
+			previous[j] = j;
+		}
+		for (var i = 1; i <= left.length; i++) {
+			var current = [i];
+			for (j = 1; j <= right.length; j++) {
+				current[j] = Math.min(
+					current[j - 1] + 1,
+					previous[j] + 1,
+					previous[j - 1] + (left.charAt(i - 1) === right.charAt(j - 1) ? 0 : 1)
+				);
+			}
+			previous = current;
+		}
+		return previous[right.length];
+	}
+
+	function nearestNames(name, validNames) {
+		return (validNames || []).map(function (candidate) {
+			return { name: candidate, distance: editDistance(name, candidate) };
+		}).sort(function (left, right) {
+			return left.distance - right.distance || left.name.localeCompare(right.name);
+		});
+	}
+
+	function flowSvelteCallVariables(node) {
+		var variables = [];
+		(node && node.children || []).forEach(function (child) {
+			if (String(child && child.kind || "") !== "frontendActionVariables" &&
+					String(child && child.type || "") !== "variables" && String(child && child.id || "") !== "variables") {
+				return;
+			}
+			(child.children || []).forEach(function (variable) {
+				var kind = String(variable && variable.props && variable.props.kind || "");
+				if (kind === "variable" || String(variable && variable.type || "") === "Variable" ||
+						String(variable && variable.tag || "") === "Variable") {
+					variables.push(variable);
+				}
+			});
+		});
+		return variables;
+	}
+
+	function flowSvelteUnknownCallVariableDiagnostic(variable, requestable, validNames) {
+		var name = String(variable && variable.props && variable.props.name || "");
+		var ranked = nearestNames(name, validNames);
+		var nearest = ranked.slice(0, 3).map(function (entry) { return entry.name; });
+		var correction = "";
+		if (validNames.length === 1) {
+			correction = validNames[0];
+		} else if (ranked.length && ranked[0].distance <= Math.max(1, Math.floor(Math.max(name.length, ranked[0].name.length) / 3)) &&
+				(!ranked[1] || ranked[0].distance < ranked[1].distance)) {
+			correction = ranked[0].name;
+		}
+		var variablePath = String(variable && variable.sourceMutationPath || "");
+		var namePath = variablePath + ".props.name";
+		var accepted = validNames.length ? validNames.join(", ") : "none";
+		var diagnostic = {
+			level: "error",
+			severity: "error",
+			code: "FRONTEND_CALLSEQUENCE_VARIABLE_UNKNOWN",
+			message: "Unknown CallSequence variable " + JSON.stringify(name) + " for " + requestable + ". Accepted inputs: " + accepted + ".",
+			path: namePath,
+			requestable: requestable,
+			variable: name,
+			validVariables: validNames,
+			nearestValidNames: nearest
+		};
+		if (correction) {
+			diagnostic.suggestedName = correction;
+			diagnostic.fix = { op: "replace", path: namePath, value: correction };
+			diagnostic.next = "Replace <Variable name=" + JSON.stringify(name) + "> with <Variable name=" +
+				JSON.stringify(correction) + "> and rerun frontend code-check.";
+		} else if (!validNames.length) {
+			diagnostic.fix = { op: "remove", path: variablePath };
+			diagnostic.next = "Remove <Variable name=" + JSON.stringify(name) + "> and rerun frontend code-check.";
+		} else {
+			diagnostic.next = "Rename <Variable name=" + JSON.stringify(name) + "> to one of: " + nearest.join(", ") +
+				"; then rerun frontend code-check.";
+		}
+		return diagnostic;
+	}
+
+	function flowSvelteCallContractDiagnostics(root, request) {
+		var diagnostics = [];
+		function visit(node) {
+			var kind = String(node && node.props && node.props.kind || "");
+			if (kind === "callSequence" && typeof node.props.requestable === "string" && node.props.requestable.trim()) {
+				var requestable = node.props.requestable.trim();
+				var contract = null;
+				try {
+					contract = requestableInputContract(requestable, request || {});
+				} catch (_unavailableContract) {
+				}
+				var schema = contract && contract.schema ? contract.schema : contract;
+				if (schema && schema.properties && typeof schema.properties === "object" &&
+						Object.prototype.toString.call(schema.properties) !== "[object Array]") {
+					var validNames = Object.keys(schema.properties).sort();
+					flowSvelteCallVariables(node).forEach(function (variable) {
+						var name = String(variable && variable.props && variable.props.name || "");
+						if (name && !Object.prototype.hasOwnProperty.call(schema.properties, name)) {
+							diagnostics.push(flowSvelteUnknownCallVariableDiagnostic(variable, requestable, validNames));
+						}
+					});
+				}
+			}
+			(node && node.children || []).forEach(visit);
+		}
+		visit(root);
+		return diagnostics;
+	}
+
+	function mergeFrontendDiagnostics(existing, additions) {
+		var out = (existing || []).slice(0);
+		(additions || []).forEach(function (diagnostic) {
+			var duplicate = out.some(function (item) {
+				return item && diagnostic && item.code === diagnostic.code && item.path === diagnostic.path;
+			});
+			if (!duplicate) {
+				out.push(diagnostic);
+			}
+		});
+		return out;
 	}
 
 	function flowSvelteLiteBindingDiagnostics(root) {
@@ -6118,7 +6255,8 @@
 		return {
 			embeddedFlowSvelteDocument: function (sourcePath, source) {
 				var root = flowSvelteLiteComponentRoot(sourcePath, source);
-				return { root: root, diagnostics: root ? flowSvelteLiteBindingDiagnostics(root) : [] };
+				return { root: root, diagnostics: root ? mergeFrontendDiagnostics(
+					flowSvelteLiteBindingDiagnostics(root), flowSvelteCallContractDiagnostics(root, {})) : [] };
 			},
 			slotDefinitions: slotDefinitions,
 			activeSlots: activeSlots,

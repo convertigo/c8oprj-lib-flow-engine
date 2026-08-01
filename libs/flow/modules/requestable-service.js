@@ -217,6 +217,133 @@
 		}
 	}
 
+	function listItems(values) {
+		if (values === null || values === undefined) {
+			return null;
+		}
+		if (Object.prototype.toString.call(values) === "[object Array]") {
+			return values.slice(0);
+		}
+		if (typeof values.size === "function" && typeof values.get === "function") {
+			var out = [];
+			for (var i = 0; i < Number(values.size()); i++) {
+				out.push(values.get(i));
+			}
+			return out;
+		}
+		return null;
+	}
+
+	function booleanValue(value) {
+		return value === true || String(value).toLowerCase() === "true";
+	}
+
+	function variableSchema(variable) {
+		var schema = null;
+		try {
+			schema = xsdScalarType(variable && variable.getSchemaType ? variable.getSchemaType() : "");
+		} catch (_ignoreSchemaType) {
+		}
+		if (!schema) {
+			try {
+				var affectation = variable && variable.getTypeAffectation ? variable.getTypeAffectation() : null;
+				schema = xsdScalarType(affectation && affectation.getLocalPart ? affectation.getLocalPart() : "");
+			} catch (_ignoreTypeAffectation) {
+			}
+		}
+		schema = schema || { type: "string" };
+		try {
+			if (variable && variable.isMultiValued && booleanValue(variable.isMultiValued())) {
+				schema = { type: "array", items: schema };
+			}
+		} catch (_ignoreMultiValued) {
+		}
+		try {
+			var description = variable && variable.getDescription ? String(variable.getDescription() || "").trim() : "";
+			if (description) {
+				schema.description = description;
+			}
+		} catch (_ignoreDescription) {
+		}
+		return schema;
+	}
+
+	function inputSchemaForVariables(variables) {
+		var items = listItems(variables);
+		if (items === null) {
+			return null;
+		}
+		var properties = {};
+		var required = [];
+		items.forEach(function (variable) {
+			var name = "";
+			try {
+				name = variable && variable.getName ? String(variable.getName() || "").trim() : "";
+			} catch (_ignoreName) {
+			}
+			if (!name) {
+				return;
+			}
+			properties[name] = variableSchema(variable);
+			try {
+				if (variable.isRequired && booleanValue(variable.isRequired())) {
+					required.push(name);
+				}
+			} catch (_ignoreRequired) {
+			}
+		});
+		var schema = {
+			type: "object",
+			properties: properties,
+			additionalProperties: false
+		};
+		if (required.length) {
+			schema.required = required;
+		}
+		return schema;
+	}
+
+	function requestableByQName(qname, env) {
+		if (env && typeof env.requestableByQName === "function") {
+			return env.requestableByQName(qname);
+		}
+		return Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager
+			.getDatabaseObjectByQName(qname);
+	}
+
+	function inputContract(request, targetText, env) {
+		request = request || {};
+		var target = resolveTarget(request, targetText, env);
+		if (!target || !target.project || !target.requestable) {
+			return null;
+		}
+		try {
+			var dbo = requestableByQName(targetQName(target), env);
+			if (!dbo || String(dbo.getProject().getName()) !== String(target.project)) {
+				return null;
+			}
+			if (target.connector) {
+				try {
+					if (String(dbo.getConnector().getName()) !== String(target.connector)) {
+						return null;
+					}
+				} catch (_missingConnector) {
+					return null;
+				}
+			}
+			if (typeof dbo.getVariables !== "function") {
+				return null;
+			}
+			var schema = inputSchemaForVariables(dbo.getVariables());
+			return schema ? {
+				target: targetPublic(target, env.currentProjectName(request)),
+				schema: schema
+			} : null;
+		} catch (_unavailableContract) {
+			return null;
+		}
+	}
+
 	function targetQName(target) {
 		target = target || {};
 		return target.project + "." + (target.connector ? target.connector + "." : "") + target.requestable;
@@ -369,8 +496,7 @@
 		var candidates = targetCandidates(request, targetText, env);
 		for (var i = 0; i < candidates.length; i++) {
 			try {
-				var dbo = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager
-					.getDatabaseObjectByQName(targetQName(candidates[i]));
+				var dbo = requestableByQName(targetQName(candidates[i]), env);
 				if (!dbo) {
 					continue;
 				}
@@ -580,6 +706,8 @@
 
 	return {
 		outputSchema: outputSchema,
+		inputContract: inputContract,
+		inputSchemaForVariables: inputSchemaForVariables,
 		targetQName: targetQName,
 		targetPublic: targetPublic,
 		list: list,
