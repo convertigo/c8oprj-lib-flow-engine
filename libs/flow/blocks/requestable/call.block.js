@@ -180,7 +180,7 @@ const _meta = {
 		var request = requestFromTarget(target);
 		putInput(request, input);
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();
-		return unwrapDocument(JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true))));
+		return unwrapDocument(JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true, true))));
 	}
 
 	function unwrapDocument(value) {
