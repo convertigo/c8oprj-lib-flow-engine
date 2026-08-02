@@ -6680,7 +6680,6 @@
 
 	function startFrontendDocumentServer(resourceRoot) {
 		var toolRoot = frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
-		ensureFrontendDocumentDependencies(toolRoot);
 		var key = canonicalPath(toolRoot);
 		var existing = runtimeState.frontendDocumentServers[key];
 		if (existing && existing.process.isAlive()) {
@@ -6690,6 +6689,7 @@
 		if (existing) {
 			stopFrontendDocumentServer(existing);
 		}
+		ensureFrontendDocumentDependencies(toolRoot);
 		var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
 		frontendStudioLog("[Svelte front document server] > " + args.join(" "));
 		var process = frontendProcessBuilder(args, toolRoot).start();
