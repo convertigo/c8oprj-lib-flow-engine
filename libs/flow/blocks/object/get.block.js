@@ -18,10 +18,10 @@ const _meta = {
     },
     "key": {
       "label": "key",
-      "kind": "expression",
+      "kind": "value",
       "type": "string",
-      "default": "local.key",
-      "description": "Key or path to read. Use a literal string such as EUR or a dynamic expression such as current.code."
+      "default": "{{ local.key }}",
+      "description": "Literal key or dotted path to read. Quote arbitrary keys such as display name or x-y; use a source such as current.code for a dynamic key."
     },
     "defaultValue": {
       "label": "default",
@@ -70,6 +70,10 @@ const _meta = {
 		var text = String(value).trim();
 		if (text === "") {
 			return "";
+		}
+		if (text.indexOf("{{") !== -1) {
+			var rendered = ctx.template(text);
+			return rendered === undefined || rendered === null ? "" : String(rendered);
 		}
 		if (!looksDynamic(text)) {
 			return text;

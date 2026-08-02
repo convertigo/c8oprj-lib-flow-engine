@@ -12,10 +12,15 @@
 		}
 		if (text.indexOf("{{") !== -1 ||
 				/^(input|config|local|result|current|request|trace)(\.|\[|$)/.test(text) ||
-				/[()?:+\-*\/<>!=&|]/.test(text)) {
+				/[()?:+*\/<>!=&|]/.test(text)) {
 			return null;
 		}
 		return text;
+	}
+
+	function directPropertySchema(sourceSchema, key) {
+		var properties = sourceSchema && sourceSchema.properties || {};
+		return Object.prototype.hasOwnProperty.call(properties, key) ? properties[key] : null;
 	}
 
 	function mergeValueSchemas(ctx, sourceSchema) {
@@ -72,13 +77,15 @@
 			var source = props.source;
 			var key = staticKey(props.key);
 			var fallback = defaultSchema(ctx, props);
+			var sourceSchema = ctx.schemaForExpression(source);
 			if (key && ctx.schemaForPath) {
-				var selected = ctx.schemaForPath(String(source || "") + "." + key);
+				var selected = directPropertySchema(sourceSchema, key) ||
+					ctx.schemaForPath(String(source || "") + "." + key);
 				if (addBestSchema(ctx, props.out, selected, fallback)) {
 					return;
 				}
 			}
-			var mapSchema = mergeValueSchemas(ctx, ctx.schemaForExpression(source));
+			var mapSchema = mergeValueSchemas(ctx, sourceSchema);
 			addBestSchema(ctx, props.out, mapSchema, fallback);
 		}
 	};
