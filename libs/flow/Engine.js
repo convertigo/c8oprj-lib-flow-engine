@@ -7353,11 +7353,7 @@
 			envValues.FRONTBUILDER_EFFECTIVE_SOURCE_ROOT = String(effective.effectiveSourceRoot.getAbsolutePath());
 			envValues.FRONTBUILDER_SOURCE_IDENTITY_ROOT = String(effective.sourceIdentityRoot.getAbsolutePath());
 		}
-		var actions = action === "install"
-			? ["installBuilder", "generate", "installApp"]
-			: action === "check" || action === "build"
-				? ["generate", "installApp", action]
-				: [action];
+		var actions = frontendActionSteps(action);
 		var steps = [];
 		var ok = true;
 		try {
@@ -7429,6 +7425,19 @@
 			response.acceptance = builtUrl ? frontendAcceptancePlan(builtUrl) : null;
 		}
 		return response;
+	}
+
+	function frontendActionSteps(action) {
+		if (action === "install") {
+			return ["installBuilder", "generate", "installApp"];
+		}
+		if (action === "generate") {
+			return ["installBuilder", "generate"];
+		}
+		if (action === "check" || action === "build") {
+			return ["installBuilder", "generate", "installApp", action];
+		}
+		return [action];
 	}
 
 	function frontendProjectName(request) {
