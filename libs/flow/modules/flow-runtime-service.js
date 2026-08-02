@@ -6,6 +6,7 @@
 		var raise = env.raise;
 		var nodePath = env.nodePath;
 		var normalizeTree = env.normalizeTree;
+		var parseYamlSource = env.parseYamlSource;
 		var expandFlowDefinition = env.expandFlowDefinition;
 		var blocksWithFlowHelpers = env.blocksWithFlowHelpers;
 		var parseSource = env.parseSource;
@@ -414,6 +415,9 @@
 			};
 			ctx.input = function (props, fallback) {
 				return inputValue(ctx, props || {}, fallback);
+			};
+			ctx.parseYaml = function (text) {
+				return parseYamlSource(text, "null\n");
 			};
 			ctx.isHandle = isRuntimeHandle;
 			ctx.handleSummary = runtimeHandleSummary;

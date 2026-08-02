@@ -166,6 +166,7 @@ The current catalog includes low-level composable blocks for:
 
 - HTTP: `http.get`, `http.request`;
 - JSON/object data: `json.select`, `json.push`, `json.parse`, `json.stringify`,
+  `yaml.parse`,
   `object.pick`, `object.merge`;
 - lists: `list.filter`, `list.map`, `list.sort`;
 - control flow: `if`, `forEach`, `use`, `return`, `throw`;

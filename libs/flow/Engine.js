@@ -3568,6 +3568,7 @@
 			raise: raise,
 			nodePath: nodePath,
 			normalizeTree: normalizeTree,
+			parseYamlSource: parseYamlSource,
 			expandFlowDefinition: expandFlowDefinition,
 			blocksWithFlowHelpers: blocksWithFlowHelpers,
 			materializeFlowScriptBlock: materializeFlowScriptBlock,
