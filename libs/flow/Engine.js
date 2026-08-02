@@ -31,6 +31,7 @@
 	var flowNodeUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
+	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
@@ -6679,6 +6680,7 @@
 
 	function startFrontendDocumentServer(resourceRoot) {
 		var toolRoot = frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
+		ensureFrontendDocumentDependencies(toolRoot);
 		var key = canonicalPath(toolRoot);
 		var existing = runtimeState.frontendDocumentServers[key];
 		if (existing && existing.process.isAlive()) {
@@ -7119,6 +7121,40 @@
 			return value && value.version === 1 && value.fingerprint === fingerprint;
 		} catch (ignored) {
 			return false;
+		}
+	}
+
+	function ensureFrontendDocumentDependencies(resourceRoot) {
+		var npm = frontendExecutable("npm");
+		var fingerprint = frontendDependencyFingerprint(resourceRoot, npm);
+		if (frontendDependencyInstallReusable(resourceRoot, fingerprint, "builder")) {
+			return;
+		}
+		frontendBuilderDependencyLock.lock();
+		try {
+			fingerprint = frontendDependencyFingerprint(resourceRoot, npm);
+			if (frontendDependencyInstallReusable(resourceRoot, fingerprint, "builder")) {
+				return;
+			}
+			var result = frontendRunStep(
+				"installBuilder",
+				npm,
+				resourceRoot,
+				resourceRoot,
+				"",
+				resourceRoot,
+				resourceRoot,
+				"authoring",
+				{}
+			);
+			if (!result.ok) {
+				var error = new Error("Unable to install Svelte authoring dependencies.\n" + String(result.stdout || ""));
+				error.code = "FRONTEND_BUILDER_INSTALL_FAILED";
+				error.hint = "Check npm access and workspace permissions, then retry the authoring operation.";
+				throw error;
+			}
+		} finally {
+			frontendBuilderDependencyLock.unlock();
 		}
 	}
 
