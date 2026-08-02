@@ -673,6 +673,7 @@
 			"beforeinput",
 			"click",
 			"change",
+			"close",
 			"dblclick",
 			"contextmenu",
 			"focusin",
