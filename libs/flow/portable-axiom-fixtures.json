@@ -1,5 +1,6 @@
 [
   { "block": "text.trim", "input": { "text": "  Flow  " }, "expected": "Flow" },
+  { "block": "text.replace", "input": { "text": "Flow Flow", "search": "Flow", "replacement": "Block" }, "expected": "Block Block" },
   { "block": "text.lines", "input": { "text": " a\r\n\r\n b ", "trim": true, "skipEmpty": true }, "expected": ["a", "b"] },
   { "block": "list.take", "input": { "items": [0, 1, 2, 3], "offset": 1, "count": 2 }, "expected": [1, 2] },
   { "block": "list.compact", "input": { "items": [null, "", "a", ["b", null]], "flatten": true, "skipEmptyString": true }, "expected": ["a", "b"] },
