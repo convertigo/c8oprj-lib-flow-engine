@@ -42,6 +42,7 @@ const _meta = {
 (function () {
 	var HashMap = Packages.java.util.HashMap;
 	var InternalRequester = Packages.com.twinsoft.convertigo.engine.requesters.InternalRequester;
+	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
 	var XMLUtils = Packages.com.twinsoft.convertigo.engine.util.XMLUtils;
 
 	function prop(node, key) {
@@ -139,6 +140,9 @@ const _meta = {
 					candidate.kind = "sequence";
 					delete candidate.connector;
 					candidate.sequence = candidate.requestable;
+					if (className === "com.twinsoft.convertigo.beans.flow.Flow") {
+						candidate.flow = dbo;
+					}
 					return candidate;
 				}
 			} catch (e) {
@@ -173,9 +177,50 @@ const _meta = {
 		return request;
 	}
 
+	function engineQName(value) {
+		var name = String(value === undefined || value === null ? "" : value).trim();
+		return name || String(FlowEngineBridge.DEFAULT_ENGINE_QNAME);
+	}
+
+	function projectEngineQName(project) {
+		var flowEngine = project && project.getFlowEngine ? project.getFlowEngine() : null;
+		return engineQName(flowEngine && flowEngine.getEngineQName ? flowEngine.getEngineQName() : "");
+	}
+
+	function canRunFlowDirect(ctx, target) {
+		return !!(target && target.flow && ctx.runFlowSource && ctx.request &&
+			engineQName(ctx.request.engineQName) === projectEngineQName(target.flow.getProject()));
+	}
+
+	function runFlowDirect(ctx, target, input) {
+		var project = target.flow.getProject();
+		var execution = ctx.runFlowSource(String(target.flow.getFlowSource()), {}, {
+			project: target.project,
+			projectDir: String(project.getDirPath()),
+			input: input || {},
+			context: {
+				project: target.project,
+				sequence: target.requestable
+			},
+			includeTrace: false
+		});
+		if (execution && execution.ok === true) {
+			return execution.result;
+		}
+		return {
+			error: execution && execution.error ? execution.error : {
+				code: "FLOW_REQUESTABLE_FAILED",
+				message: "The called Flow did not return a result."
+			}
+		};
+	}
+
 	function runInternal(ctx, target, input) {
 		if (!target || !target.project || !target.requestable) {
 			ctx.raise("INVALID_REQUESTABLE_TARGET", "Invalid requestable target.");
+		}
+		if (canRunFlowDirect(ctx, target)) {
+			return runFlowDirect(ctx, target, input);
 		}
 		var request = requestFromTarget(target);
 		putInput(request, input);
