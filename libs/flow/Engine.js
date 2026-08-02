@@ -7145,7 +7145,9 @@
 				resourceRoot,
 				resourceRoot,
 				"authoring",
-				{}
+				{
+					PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
+				}
 			);
 			if (!result.ok) {
 				var error = new Error("Unable to install Svelte authoring dependencies.\n" + String(result.stdout || ""));
