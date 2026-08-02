@@ -409,6 +409,10 @@
 			splitFlowScriptTopLevel(body, ",").forEach(function (part) {
 				var pair = splitFlowScriptTopLevel(part, ":");
 				if (pair.length < 2) {
+					var shorthand = String(part || "").trim();
+					if (shorthand.match(/^[A-Za-z_$][\w$]*$/)) {
+						tokens[shorthand] = shorthand;
+					}
 					return;
 				}
 				var key = unquoteFlowScriptString(pair.shift().trim());

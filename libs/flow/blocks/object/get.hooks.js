@@ -30,6 +30,32 @@
 		return schema;
 	}
 
+	function isWeakSchema(schema) {
+		if (!schema) {
+			return true;
+		}
+		var type = String(schema.type || (schema.properties ? "object" : ""));
+		if (type === "unknown" || type === "null" || type === "") {
+			return true;
+		}
+		return type === "object" && Object.keys(schema.properties || {}).length === 0 && !schema.additionalProperties;
+	}
+
+	function defaultSchema(ctx, props) {
+		return props.defaultValue === undefined || !ctx.schemaForValue
+			? null
+			: ctx.schemaForValue(props.defaultValue);
+	}
+
+	function addBestSchema(ctx, out, sourceSchema, fallbackSchema) {
+		var schema = isWeakSchema(sourceSchema) && fallbackSchema ? fallbackSchema : sourceSchema || fallbackSchema;
+		if (schema) {
+			ctx.addSchema(out, schema);
+			return true;
+		}
+		return false;
+	}
+
 	return {
 		displayName: function (node) {
 			var source = flowSummary.prop(node, "source") || "object";
@@ -45,17 +71,15 @@
 			}
 			var source = props.source;
 			var key = staticKey(props.key);
+			var fallback = defaultSchema(ctx, props);
 			if (key && ctx.schemaForPath) {
 				var selected = ctx.schemaForPath(String(source || "") + "." + key);
-				if (selected) {
-					ctx.addSchema(props.out, selected);
+				if (addBestSchema(ctx, props.out, selected, fallback)) {
 					return;
 				}
 			}
 			var mapSchema = mergeValueSchemas(ctx, ctx.schemaForExpression(source));
-			if (mapSchema) {
-				ctx.addSchema(props.out, mapSchema);
-			}
+			addBestSchema(ctx, props.out, mapSchema, fallback);
 		}
 	};
 }())
