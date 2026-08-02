@@ -27,6 +27,7 @@
   { "block": "list.first", "input": { "items": ["a", "b"] }, "expected": "a" },
   { "block": "list.last", "input": { "items": ["a", "b"] }, "expected": "b" },
   { "block": "list.count", "input": { "items": ["a", "b"] }, "expected": 2 },
+  { "block": "list.sum", "input": { "items": [2, "3.5", null, "invalid", -1] }, "expected": 4.5 },
   { "block": "duration.format", "input": { "milliseconds": 75432, "showHours": false, "fractionDigits": 1 }, "expected": "01:15.4" },
   { "block": "number.add", "input": { "left": 12.5, "right": 7.5 }, "expected": 20 },
   { "block": "number.subtract", "input": { "left": 20, "right": 7.5 }, "expected": 12.5 },
