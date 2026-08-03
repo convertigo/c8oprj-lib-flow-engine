@@ -112,8 +112,31 @@ var failed = implementation.run(failedContext, {
 assertTrue(failed.error.code === "CHILD_FAILED" && internalRequests === 0,
 	"same-engine Flow failure did not remain a regular requestable error envelope");
 
+function assertCacheControlUsesRegularPath(input, controlName) {
+	var before = internalRequests;
+	var controlContext = runContext("lib_flow_engine.Engine", { ok: true, result: {} });
+	var regularPath = false;
+	try {
+		implementation.run(controlContext, {
+			props: { requestable: "ChildProject.Child", input: input }
+		});
+	} catch (e) {
+		regularPath = String(e && e.message || e).indexOf("REGULAR_REQUEST_PATH") !== -1;
+	}
+	assertTrue(regularPath && internalRequests === before + 1 && controlContext.calls.length === 0,
+		controlName + " did not preserve the regular Convertigo requestable boundary");
+}
+
+assertCacheControlUsesRegularPath({
+	__responseExpiryDate: "absolute,86400"
+}, "__responseExpiryDate");
+assertCacheControlUsesRegularPath({
+	__nocache: true
+}, "__nocache");
+
 targetEngineQName = "another_engine.Engine";
 var externalContext = runContext("lib_flow_engine.Engine", { ok: true, result: {} });
+var beforeExternal = internalRequests;
 var regularPath = false;
 var regularError = "";
 try {
@@ -122,7 +145,7 @@ try {
 	regularError = String(e && e.message || e);
 	regularPath = regularError.indexOf("REGULAR_REQUEST_PATH") !== -1;
 }
-assertTrue(regularPath && internalRequests === 1 && externalContext.calls.length === 0,
+assertTrue(regularPath && internalRequests === beforeExternal + 1 && externalContext.calls.length === 0,
 	"different-engine Flow call did not preserve the regular Convertigo requestable path: " +
 	regularError + " / requests=" + internalRequests + " / direct=" + externalContext.calls.length);
 

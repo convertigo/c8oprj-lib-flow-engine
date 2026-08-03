@@ -23,7 +23,7 @@ const _meta = {
       "label": "input",
       "kind": "template",
       "type": "object",
-      "description": "Input variables passed to the requestable."
+      "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary."
     },
     "out": {
       "label": "out",
@@ -187,8 +187,17 @@ const _meta = {
 		return engineQName(flowEngine && flowEngine.getEngineQName ? flowEngine.getEngineQName() : "");
 	}
 
-	function canRunFlowDirect(ctx, target) {
+	function hasOwn(input, key) {
+		return !!(input && Object.prototype.hasOwnProperty.call(input, key));
+	}
+
+	function requiresRegularRequestBoundary(input) {
+		return hasOwn(input, "__responseExpiryDate") || hasOwn(input, "__nocache");
+	}
+
+	function canRunFlowDirect(ctx, target, input) {
 		return !!(target && target.flow && ctx.runFlowSource && ctx.request &&
+			!requiresRegularRequestBoundary(input) &&
 			engineQName(ctx.request.engineQName) === projectEngineQName(target.flow.getProject()));
 	}
 
@@ -219,7 +228,7 @@ const _meta = {
 		if (!target || !target.project || !target.requestable) {
 			ctx.raise("INVALID_REQUESTABLE_TARGET", "Invalid requestable target.");
 		}
-		if (canRunFlowDirect(ctx, target)) {
+		if (canRunFlowDirect(ctx, target, input)) {
 			return runFlowDirect(ctx, target, input);
 		}
 		var request = requestFromTarget(target);
