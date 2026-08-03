@@ -4436,6 +4436,34 @@ assertTrue(flowSvelteForEachInsert && flowSvelteForEachInsert.source &&
 	flowSvelteForEachInsert.source.mode === "literal" &&
 	Object.prototype.toString.call(flowSvelteForEachInsert.source.value) === "[object Array]",
 	"authoring palette ForEach should insert a structured literal binding");
+var flowSvelteDataRenderPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteStructureNode.path,
+	query: "DataRender"
+})));
+var flowSvelteDataRender = null;
+flowSvelteDataRenderPalette.items.some(function (item) {
+	if (item.id === "frontbuilder.svelte.dataRender") {
+		flowSvelteDataRender = item;
+		return true;
+	}
+	return false;
+});
+assertTrue(flowSvelteDataRender && flowSvelteDataRender.slots &&
+	flowSvelteDataRender.slots.data &&
+	flowSvelteDataRender.slots.render &&
+	flowSvelteDataRender.slots.failure &&
+	flowSvelteDataRender.insert &&
+	flowSvelteDataRender.insert.placeholderCounts &&
+	Object.prototype.toString.call(flowSvelteDataRender.insert.placeholderCounts) === "[object Object]",
+	"authoring palette should expose DataRender with Data, Render and Failure slots");
+assertTrue(flowSvelteContract.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.callSequence" && item.properties &&
+		item.properties.outputSchema && item.properties.outputSchema.kind === "literal";
+}), "authoring contract should expose the explicit CallSequence output schema used by DataRender");
 var configVisibilityEngineSource = [
 	"version: 1",
 	"configVisibility:",
