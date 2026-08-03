@@ -3769,6 +3769,35 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(fron
 		}
 	}
 }, null, 2), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(frontendUiDir, "DataRender.uiblock.json"), JSON.stringify({
+	id: "frontbuilder.svelte.dataRender",
+	label: "DataRender",
+	category: "Svelte / Directives",
+	kind: "frontendDirectiveBlockDefinition",
+	icon: "mdi:loading",
+	description: "Renders one visual tree with schema-derived null placeholders while its requestable loads.",
+	targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
+	acceptedPositions: ["inside"],
+	traits: ["ui.directive", "ui.container"],
+	slots: {
+		data: { label: "Data", accepts: ["ui.data.binding"] },
+		render: { label: "Render", accepts: ["ui.block", "ui.directive"] },
+		failure: { label: "Failure", accepts: ["ui.block", "ui.directive"] }
+	},
+	insert: {
+		id: "dataRender",
+		kind: "dataRender",
+		tag: "DataRender",
+		actionId: "",
+		placeholderCounts: {}
+	},
+	properties: {
+		id: { type: "string" },
+		actionId: { label: "Loading action", category: "Data", type: "string" },
+		placeholderCounts: { label: "Placeholder counts", category: "Data", kind: "literal", type: "object" },
+		class: { label: "CSS class", category: "Styling", type: "string" }
+	}
+}, null, 2), "UTF-8");
 var frontendEngineSource = [
 	"version: 1",
 	"config:",
@@ -4357,8 +4386,8 @@ var flowSvelteLifecyclePalette = JSON.parse(engine.authoringPalette(JSON.stringi
 		var item = flowSvelteLifecyclePalette.items.filter(function (candidate) {
 			return candidate.id === id;
 		})[0];
-		assertTrue(item && item.iconFile16 && item.iconFile32,
-			"authoring palette did not expose a resolved lifecycle icon for " + id + " below Events");
+		assertTrue(item && item.iconSvg && (item.iconFile16 && item.iconFile32 || item.iconify),
+			"authoring palette did not expose a resolved lifecycle icon source for " + id + " below Events");
 	});
 var flowSvelteVariablesNode = findNode(flowSvelteTree, function (node) {
 	return node.kind === "frontendActionVariables" && node.type === "variables";
@@ -4456,10 +4485,14 @@ assertTrue(flowSvelteDataRender && flowSvelteDataRender.slots &&
 	flowSvelteDataRender.slots.data &&
 	flowSvelteDataRender.slots.render &&
 	flowSvelteDataRender.slots.failure &&
+	flowSvelteDataRender.sourceBacked === true &&
+	flowSvelteDataRender.descriptorKind === "source" &&
+	flowSvelteDataRender.properties.actionId.type === "string" &&
+	flowSvelteDataRender.properties.placeholderCounts.kind === "literal" &&
 	flowSvelteDataRender.insert &&
 	flowSvelteDataRender.insert.placeholderCounts &&
 	Object.prototype.toString.call(flowSvelteDataRender.insert.placeholderCounts) === "[object Object]",
-	"authoring palette should expose DataRender with Data, Render and Failure slots");
+	"authoring palette should expose the frontbuilder-contributed DataRender contract");
 assertTrue(flowSvelteContract.items.some(function (item) {
 	return item.id === "frontbuilder.svelte.callSequence" && item.properties &&
 		item.properties.outputSchema && item.properties.outputSchema.kind === "literal";

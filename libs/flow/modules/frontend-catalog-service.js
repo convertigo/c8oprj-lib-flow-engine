@@ -1435,44 +1435,6 @@
 				}
 				}),
 				frontendAuthoringDescriptor(builderName, settings, {
-					id: "frontbuilder.svelte.dataRender",
-					label: "DataRender",
-					category: "Svelte / Directives",
-					kind: "frontendDirectiveBlockDefinition",
-					icon: "mdi:loading",
-					traits: ["ui.directive", "ui.container"],
-					slots: {
-						data: {
-							label: "Data",
-							accepts: ["ui.data.binding"]
-						},
-						render: {
-							label: "Render",
-							accepts: ["ui.block", "ui.directive"]
-						},
-						failure: {
-							label: "Failure",
-							accepts: ["ui.block", "ui.directive"]
-						}
-					},
-					targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
-					acceptedPositions: ["inside"],
-					description: "Renders one visual tree with schema-derived null data while its action loads, then replaces it with the resolved data or the Failure slot.",
-					insert: {
-						id: "dataRender",
-						kind: "dataRender",
-						tag: "DataRender",
-						actionId: "",
-						placeholderCounts: {}
-					},
-					properties: {
-						id: { type: "string" },
-						actionId: { type: "string" },
-						placeholderCounts: { type: "object", kind: "literal" },
-						class: { type: "string" }
-					}
-				}),
-				frontendAuthoringDescriptor(builderName, settings, {
 					id: "frontbuilder.svelte.variable",
 					label: "Variable",
 					category: "Svelte / Actions",
