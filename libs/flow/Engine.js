@@ -7440,6 +7440,17 @@
 		return [action];
 	}
 
+	function frontendActionStepPerformed(response, action) {
+		var steps = response && response.details && response.details.steps || [];
+		for (var i = 0; i < steps.length; i++) {
+			if (String(steps[i].action || "") === String(action || "")
+					&& steps[i].ok !== false && steps[i].skipped !== true) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	function frontendProjectName(request) {
 		var target = request.targetObject || {};
 		var root = request.root || {};
@@ -7481,6 +7492,20 @@
 	function frontendDevStateFile(request, info) {
 		var generatedRoot = frontendGeneratedRootFile(request, info);
 		return generatedRoot ? new File(generatedRoot, ".flow-svelte-dev.json") : null;
+	}
+
+	function frontendPositiveEnvironmentNumber(name, fallback) {
+		var value = Number(String(JavaSystem.getenv(String(name)) || ""));
+		return isFinite(value) && value > 0 ? value : Number(fallback);
+	}
+
+	function frontendDevIdlePolicy() {
+		return {
+			firstViewerTimeoutMs: frontendPositiveEnvironmentNumber(
+				"FLOW_SVELTE_DEV_FIRST_CLIENT_TIMEOUT_MS", 15 * 60 * 1000),
+			noViewerTimeoutMs: frontendPositiveEnvironmentNumber(
+				"FLOW_SVELTE_DEV_IDLE_TIMEOUT_MS", 2 * 60 * 1000)
+		};
 	}
 
 	function frontendConnects(host, port, timeoutMs) {
@@ -7611,7 +7636,8 @@
 				? String(entry.setupRoot.getAbsolutePath ? entry.setupRoot.getAbsolutePath() : entry.setupRoot)
 				: "",
 			setupFingerprint: entry.setupFingerprint || "",
-			setupKind: entry.setupKind || ""
+			setupKind: entry.setupKind || "",
+			idlePolicy: entry.idlePolicy || null
 		};
 		frontendWriteFile(file, JSON.stringify(state, null, 2) + "\n");
 		entry.stateFile = String(file.getAbsolutePath());
@@ -7707,6 +7733,7 @@
 			pid: entry.pid || 0,
 			stateFile: entry.stateFile || "",
 			status: entry.status || "running",
+			idlePolicy: entry.idlePolicy || null,
 			setupKind: entry.setupKind || "",
 			error: entry.error || null
 		};
@@ -7899,6 +7926,44 @@
 		return thread;
 	}
 
+	function frontendStartDevExitWatcher(request, info, entry) {
+		if (!entry || !entry.process || typeof entry.process.waitFor !== "function") {
+			return;
+		}
+		var Runnable = Packages.java.lang.Runnable;
+		var Thread = Packages.java.lang.Thread;
+		var thread = new Thread(new Runnable({
+			run: function () {
+				var exitCode = null;
+				try {
+					exitCode = Number(entry.process.waitFor());
+				} catch (_ignoreDevWait) {
+				}
+				entry.status = entry.cancelled === true ? "stopped" : "exited";
+				try {
+					var key = frontendDevKey(request, info);
+					var current = runtimeState.frontendDevServers[key];
+					if (current === entry || (current && entry.pid && Number(current.pid) === Number(entry.pid))) {
+						delete runtimeState.frontendDevServers[key];
+					}
+					var persisted = frontendReadDevState(request, info);
+					if (persisted && entry.pid && Number(persisted.pid) === Number(entry.pid)) {
+						frontendDeleteDevState(request, info);
+					}
+				} catch (e) {
+					frontendStudioLog("[Svelte dev] Unable to clean stopped dev state: " + String(e), true);
+				}
+				if (entry.cancelled !== true) {
+					frontendStudioLog("[Svelte dev] Vite stopped" +
+						(exitCode === null ? "." : " with exit code " + exitCode + "."));
+				}
+			}
+		}), "Flow Svelte dev exit");
+		thread.setDaemon(true);
+		thread.start();
+		entry.exitThread = thread;
+	}
+
 	function frontendWaitForPort(host, port, process, timeoutMs) {
 		var InetSocketAddress = Packages.java.net.InetSocketAddress;
 		var Socket = Packages.java.net.Socket;
@@ -8020,6 +8085,7 @@
 			logFile: String(logFile.getAbsolutePath()),
 			startedAt: new Date().toISOString(),
 			status: "running",
+			idlePolicy: frontendDevIdlePolicy(),
 			logPump: logPump,
 			process: process
 		};
@@ -8047,6 +8113,7 @@
 		var entry = launched.entry;
 		runtimeState.frontendDevServers[frontendDevKey(request, info)] = entry;
 		frontendWriteDevState(request, info, entry);
+		frontendStartDevExitWatcher(request, info, entry);
 		var browser = frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		return {
@@ -8081,6 +8148,7 @@
 		var active = launched.entry;
 		runtimeState.frontendDevServers[key] = active;
 		frontendWriteDevState(request, info, active);
+		frontendStartDevExitWatcher(request, info, active);
 		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		frontendStudioLog("[Svelte dev] App dependencies are ready; Vite and the Studio viewer started automatically.");
@@ -8375,6 +8443,28 @@
 		}
 	}
 
+	function frontendRestartDev(request, info, entry) {
+		var key = frontendDevKey(request, info);
+		frontendDestroyDevProcess(entry);
+		var launched = frontendLaunchVite(request, info);
+		if (launched.ok === false) {
+			delete runtimeState.frontendDevServers[key];
+			frontendDeleteDevState(request, info);
+			return launched;
+		}
+		var active = launched.entry;
+		runtimeState.frontendDevServers[key] = active;
+		frontendWriteDevState(request, info, active);
+		frontendStartDevExitWatcher(request, info, active);
+		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
+		frontendNotifyStudioBrowser(request, browser);
+		return {
+			ok: true,
+			entry: active,
+			browser: browser
+		};
+	}
+
 	function frontendStopDev(request) {
 		var info = frontbuilderSettingsForRequest(request);
 		var key = frontendDevKey(request, info);
@@ -8446,13 +8536,30 @@
 				: "Svelte dev mode started from the final authored source.";
 			return started;
 		}
-		var generated = frontendRunAction(request, blocks, "generate");
+		var generated = frontendRunAction(request, blocks, "install");
+		var dependenciesInstalled = generated.ok !== false
+			&& frontendActionStepPerformed(generated, "installApp");
+		if (dependenciesInstalled) {
+			var restarted = frontendRestartDev(request, info, entry);
+			if (restarted.ok === false) {
+				restarted.title = "Svelte dev mode";
+				restarted.generated = true;
+				restarted.message = "Svelte dependencies were installed, but dev mode failed to restart.";
+				return restarted;
+			}
+			entry = restarted.entry;
+			generated.openUrl = entry.url;
+			generated.browser = restarted.browser;
+		}
 		generated.title = "Svelte dev mode";
 		generated.generated = generated.ok !== false;
 		generated.dev = frontendDevDetails(entry);
+		generated.dependenciesInstalled = dependenciesInstalled;
 		generated.message = generated.ok === false
 			? "Svelte dev source update failed."
-			: "Svelte dev source updated.";
+			: dependenciesInstalled
+				? "Svelte dev source updated; dependencies installed and dev mode restarted."
+				: "Svelte dev source updated.";
 		return generated;
 	}
 

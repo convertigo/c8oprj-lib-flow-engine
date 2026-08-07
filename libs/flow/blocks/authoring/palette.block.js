@@ -24,6 +24,12 @@ const _meta = {
       "type": "string",
       "description": "Virtual tree path of the focused node."
     },
+    "parentPath": {
+      "label": "parentPath",
+      "kind": "text",
+      "type": "string",
+      "description": "Qualified parent path returned by the authoring tree. MCP clients should prefer this over project plus focusPath."
+    },
     "position": {
       "label": "position",
       "kind": "text",
