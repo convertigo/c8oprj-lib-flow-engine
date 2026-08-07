@@ -7494,6 +7494,11 @@
 		return generatedRoot ? new File(generatedRoot, ".flow-svelte-dev.json") : null;
 	}
 
+	function frontendDevViewersFile(request, info) {
+		var generatedRoot = frontendGeneratedRootFile(request, info);
+		return generatedRoot ? new File(generatedRoot, ".flow-svelte-viewers.json") : null;
+	}
+
 	function frontendPositiveEnvironmentNumber(name, fallback) {
 		var value = Number(String(JavaSystem.getenv(String(name)) || ""));
 		return isFinite(value) && value > 0 ? value : Number(fallback);
@@ -7504,8 +7509,20 @@
 			firstViewerTimeoutMs: frontendPositiveEnvironmentNumber(
 				"FLOW_SVELTE_DEV_FIRST_CLIENT_TIMEOUT_MS", 15 * 60 * 1000),
 			noViewerTimeoutMs: frontendPositiveEnvironmentNumber(
-				"FLOW_SVELTE_DEV_IDLE_TIMEOUT_MS", 2 * 60 * 1000)
+				"FLOW_SVELTE_DEV_IDLE_TIMEOUT_MS", 2 * 60 * 1000),
+			viewerStaleMs: frontendPositiveEnvironmentNumber(
+				"FLOW_SVELTE_DEV_VIEWER_STALE_MS", 90 * 1000),
+			pollMs: frontendPositiveEnvironmentNumber(
+				"FLOW_SVELTE_DEV_IDLE_POLL_MS", 1000)
 		};
+	}
+
+	function frontendDevLifecycle() {
+		return loadEngineModule("frontend-dev-lifecycle.js");
+	}
+
+	function frontendDevTerminal(entry) {
+		return entry && /^(?:stopped|exited)$/.test(String(entry.status || ""));
 	}
 
 	function frontendConnects(host, port, timeoutMs) {
@@ -7545,6 +7562,9 @@
 
 	function frontendDevAlive(entry) {
 		if (!entry) {
+			return false;
+		}
+		if (frontendDevTerminal(entry)) {
 			return false;
 		}
 		if (entry.status === "prepared") {
@@ -7637,7 +7657,19 @@
 				: "",
 			setupFingerprint: entry.setupFingerprint || "",
 			setupKind: entry.setupKind || "",
-			idlePolicy: entry.idlePolicy || null
+			idlePolicy: entry.idlePolicy || null,
+			dependencyFingerprint: entry.dependencyFingerprint || "",
+			restartCount: Number(entry.restartCount || 0),
+			previousPid: Number(entry.previousPid || 0),
+			viewerCount: Number(entry.viewerCount || 0),
+			viewerIds: entry.viewerIds || [],
+			firstViewerAt: entry.firstViewerAt || "",
+			lastViewerAt: entry.lastViewerAt || "",
+			lastViewerGoneAt: entry.lastViewerGoneAt || "",
+			lastViewerTransitionAt: entry.lastViewerTransitionAt || "",
+			lastTransitionAt: entry.lastTransitionAt || entry.startedAt || "",
+			stoppedAt: entry.stoppedAt || "",
+			stopReason: entry.stopReason || ""
 		};
 		frontendWriteFile(file, JSON.stringify(state, null, 2) + "\n");
 		entry.stateFile = String(file.getAbsolutePath());
@@ -7650,6 +7682,29 @@
 				file["delete"]();
 			} catch (e) {
 			}
+		}
+	}
+
+	function frontendDeleteDevViewers(request, info) {
+		var file = frontendDevViewersFile(request, info);
+		if (file && file.isFile()) {
+			try {
+				file["delete"]();
+			} catch (e) {
+			}
+		}
+	}
+
+	function frontendReadDevViewers(request, info) {
+		var file = frontendDevViewersFile(request, info);
+		if (!file || !file.isFile()) {
+			return { viewers: [] };
+		}
+		try {
+			var state = JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+			return state && Array.isArray(state.viewers) ? state : { viewers: [] };
+		} catch (e) {
+			return null;
 		}
 	}
 
@@ -7693,30 +7748,43 @@
 		}
 		if (entry && !frontendDevAlive(entry)) {
 			delete runtimeState.frontendDevServers[key];
-			frontendDeleteDevState(request, info);
+			if (!frontendDevTerminal(entry)) {
+				frontendDeleteDevState(request, info);
+			}
 			entry = null;
 		}
 		if (entry) {
+			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
 		}
 		entry = frontendReadDevState(request, info);
+		if (frontendDevTerminal(entry)) {
+			return null;
+		}
 		if (entry && entry.status === "starting") {
 			frontendFinishPreparation(entry, false);
 		}
 		if (entry && frontendDevAlive(entry)) {
 			runtimeState.frontendDevServers[key] = entry;
+			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
 		}
-		if (entry) {
+		if (entry && !frontendDevTerminal(entry)) {
 			frontendDeleteDevState(request, info);
 		}
 		entry = frontendReadDevLogState(request, info);
 		if (entry && frontendDevAlive(entry)) {
 			runtimeState.frontendDevServers[key] = entry;
 			frontendWriteDevState(request, info, entry);
+			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
 		}
 		return null;
+	}
+
+	function frontendLastDevDetails(request, info) {
+		var state = frontendReadDevState(request, info);
+		return frontendDevTerminal(state) ? frontendDevDetails(state) : {};
 	}
 
 	function frontendDevDetails(entry) {
@@ -7734,6 +7802,18 @@
 			stateFile: entry.stateFile || "",
 			status: entry.status || "running",
 			idlePolicy: entry.idlePolicy || null,
+			dependencyFingerprint: entry.dependencyFingerprint || "",
+			restartCount: Number(entry.restartCount || 0),
+			previousPid: Number(entry.previousPid || 0),
+			viewerCount: Number(entry.viewerCount || 0),
+			viewerIds: entry.viewerIds || [],
+			firstViewerAt: entry.firstViewerAt || "",
+			lastViewerAt: entry.lastViewerAt || "",
+			lastViewerGoneAt: entry.lastViewerGoneAt || "",
+			lastViewerTransitionAt: entry.lastViewerTransitionAt || "",
+			lastTransitionAt: entry.lastTransitionAt || "",
+			stoppedAt: entry.stoppedAt || "",
+			stopReason: entry.stopReason || "",
 			setupKind: entry.setupKind || "",
 			error: entry.error || null
 		};
@@ -7926,6 +8006,90 @@
 		return thread;
 	}
 
+	function frontendFinalizeDevState(request, info, entry, status, reason) {
+		if (!entry) {
+			return;
+		}
+		var now = new Date().toISOString();
+		entry.status = String(status || "stopped");
+		entry.stopReason = String(reason || entry.stopReason || "");
+		entry.stoppedAt = entry.stoppedAt || now;
+		entry.lastTransitionAt = now;
+		frontendWriteDevState(request, info, entry);
+	}
+
+	function frontendStartDevIdleWatcher(request, info, entry) {
+		if (!entry || entry.idleThreadStarted === true || frontendDevTerminal(entry)
+				|| !/^(?:running|starting)$/.test(String(entry.status || "running"))) {
+			return;
+		}
+		entry.idlePolicy = entry.idlePolicy || frontendDevIdlePolicy();
+		entry.idleThreadStarted = true;
+		var Runnable = Packages.java.lang.Runnable;
+		var Thread = Packages.java.lang.Thread;
+		var thread = new Thread(new Runnable({
+			run: function () {
+				try {
+					while (entry.cancelled !== true && !frontendDevTerminal(entry)) {
+						var key = frontendDevKey(request, info);
+						var current = runtimeState.frontendDevServers[key];
+						if (current && current !== entry
+								&& (!entry.pid || Number(current.pid || 0) !== Number(entry.pid))) {
+							return;
+						}
+						if (!frontendDevAlive(entry)) {
+							if (!current || current === entry) {
+								delete runtimeState.frontendDevServers[key];
+								var stoppedState = frontendReadDevState(request, info);
+								if (stoppedState && entry.pid
+										&& Number(stoppedState.pid || 0) === Number(entry.pid)) {
+									if (!frontendDevTerminal(stoppedState)) {
+										var stoppedReason = String(stoppedState.stopReason || "");
+										var requestedStop = String(stoppedState.status || "") === "stopping"
+											|| stoppedReason !== "" && stoppedReason !== "process-exited";
+										frontendFinalizeDevState(request, info, stoppedState,
+											requestedStop ? "stopped" : "exited",
+											stoppedReason || (requestedStop ? "manual" : "process-exited"));
+									}
+									frontendDeleteDevViewers(request, info);
+								}
+							}
+							return;
+						}
+						var viewerState = frontendReadDevViewers(request, info);
+						if (viewerState !== null) {
+							var decision = frontendDevLifecycle().update(entry, viewerState,
+								Number(new Date().getTime()));
+							if (decision.changed) {
+								frontendWriteDevState(request, info, entry);
+							}
+							if (decision.stopReason) {
+								entry.stopReason = decision.stopReason;
+								entry.status = "stopping";
+								entry.lastTransitionAt = new Date().toISOString();
+								frontendWriteDevState(request, info, entry);
+								frontendStudioLog("[Svelte dev] Stopping idle Vite server: " + decision.stopReason + ".");
+								frontendDestroyDevProcess(entry, decision.stopReason);
+								if (runtimeState.frontendDevServers[key] === entry) {
+									delete runtimeState.frontendDevServers[key];
+								}
+								frontendFinalizeDevState(request, info, entry, "stopped", decision.stopReason);
+								frontendDeleteDevViewers(request, info);
+								return;
+							}
+						}
+						Thread.sleep(Number(entry.idlePolicy.pollMs || 1000));
+					}
+				} catch (e) {
+					frontendStudioLog("[Svelte dev] Idle watcher stopped: " + String(e), true);
+				}
+			}
+		}), "Flow Svelte dev idle");
+		thread.setDaemon(true);
+		thread.start();
+		entry.idleThread = thread;
+	}
+
 	function frontendStartDevExitWatcher(request, info, entry) {
 		if (!entry || !entry.process || typeof entry.process.waitFor !== "function") {
 			return;
@@ -7939,16 +8103,29 @@
 					exitCode = Number(entry.process.waitFor());
 				} catch (_ignoreDevWait) {
 				}
-				entry.status = entry.cancelled === true ? "stopped" : "exited";
 				try {
 					var key = frontendDevKey(request, info);
 					var current = runtimeState.frontendDevServers[key];
-					if (current === entry || (current && entry.pid && Number(current.pid) === Number(entry.pid))) {
+					var persisted = frontendReadDevState(request, info);
+					var currentMatches = current === entry
+						|| (current && entry.pid && Number(current.pid) === Number(entry.pid));
+					if (currentMatches) {
 						delete runtimeState.frontendDevServers[key];
 					}
-					var persisted = frontendReadDevState(request, info);
-					if (persisted && entry.pid && Number(persisted.pid) === Number(entry.pid)) {
-						frontendDeleteDevState(request, info);
+					var persistedMatches = persisted && entry.pid
+						&& Number(persisted.pid || 0) === Number(entry.pid);
+					if (persistedMatches) {
+						var finalEntry = Object.assign({}, entry, persisted);
+						var persistedReason = String(persisted.stopReason || "");
+						var requestedStop = entry.cancelled === true
+							|| String(persisted.status || "") === "stopping"
+							|| String(persisted.status || "") === "stopped"
+							|| persistedReason !== "" && persistedReason !== "process-exited";
+						frontendFinalizeDevState(request, info, finalEntry,
+							requestedStop ? "stopped" : "exited",
+							persistedReason || entry.stopReason
+								|| (requestedStop ? "manual" : "process-exited"));
+						frontendDeleteDevViewers(request, info);
 					}
 				} catch (e) {
 					frontendStudioLog("[Svelte dev] Unable to clean stopped dev state: " + String(e), true);
@@ -8041,6 +8218,7 @@
 			});
 		}
 		var npm = frontendExecutable("npm");
+		frontendDeleteDevViewers(request, info);
 		var port = freePort();
 		var url = "http://localhost:" + port + "/";
 		var logFile = new File(generatedRoot, "vite-dev.log");
@@ -8076,6 +8254,7 @@
 				}
 			});
 		}
+		var startedAt = new Date().toISOString();
 		var entry = {
 			url: url,
 			port: port,
@@ -8083,9 +8262,14 @@
 			projectRoot: String(projectRoot.getAbsolutePath()),
 			generatedRoot: String(generatedRoot.getAbsolutePath()),
 			logFile: String(logFile.getAbsolutePath()),
-			startedAt: new Date().toISOString(),
+			startedAt: startedAt,
 			status: "running",
 			idlePolicy: frontendDevIdlePolicy(),
+			dependencyFingerprint: frontendDependencyFingerprint(generatedRoot, npm),
+			restartCount: 0,
+			viewerCount: 0,
+			viewerIds: [],
+			lastTransitionAt: startedAt,
 			logPump: logPump,
 			process: process
 		};
@@ -8114,6 +8298,7 @@
 		runtimeState.frontendDevServers[frontendDevKey(request, info)] = entry;
 		frontendWriteDevState(request, info, entry);
 		frontendStartDevExitWatcher(request, info, entry);
+		frontendStartDevIdleWatcher(request, info, entry);
 		var browser = frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		return {
@@ -8149,6 +8334,7 @@
 		runtimeState.frontendDevServers[key] = active;
 		frontendWriteDevState(request, info, active);
 		frontendStartDevExitWatcher(request, info, active);
+		frontendStartDevIdleWatcher(request, info, active);
 		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		frontendStudioLog("[Svelte dev] App dependencies are ready; Vite and the Studio viewer started automatically.");
@@ -8405,11 +8591,12 @@
 		return frontendStartDevNow(request, blocks, info);
 	}
 
-	function frontendDestroyDevProcess(entry) {
+	function frontendDestroyDevProcess(entry, reason) {
 		if (!entry) {
 			return;
 		}
 		entry.cancelled = true;
+		entry.stopReason = String(reason || entry.stopReason || "manual");
 		try {
 			if (entry.setupProcess && typeof entry.setupProcess.destroy === "function") {
 				entry.setupProcess.destroy();
@@ -8445,7 +8632,9 @@
 
 	function frontendRestartDev(request, info, entry) {
 		var key = frontendDevKey(request, info);
-		frontendDestroyDevProcess(entry);
+		var restartCount = Number(entry && entry.restartCount || 0) + 1;
+		var previousPid = Number(entry && entry.pid || 0);
+		frontendDestroyDevProcess(entry, "dependencies-changed");
 		var launched = frontendLaunchVite(request, info);
 		if (launched.ok === false) {
 			delete runtimeState.frontendDevServers[key];
@@ -8453,9 +8642,12 @@
 			return launched;
 		}
 		var active = launched.entry;
+		active.restartCount = restartCount;
+		active.previousPid = previousPid;
 		runtimeState.frontendDevServers[key] = active;
 		frontendWriteDevState(request, info, active);
 		frontendStartDevExitWatcher(request, info, active);
+		frontendStartDevIdleWatcher(request, info, active);
 		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		return {
@@ -8473,16 +8665,19 @@
 			return {
 				ok: true,
 				title: "Svelte dev mode",
-				message: "Svelte dev mode is not running."
+				message: "Svelte dev mode is not running.",
+				details: frontendLastDevDetails(request, info)
 			};
 		}
-		frontendDestroyDevProcess(entry);
+		frontendDestroyDevProcess(entry, "manual");
 		delete runtimeState.frontendDevServers[key];
-		frontendDeleteDevState(request, info);
+		frontendFinalizeDevState(request, info, entry, "stopped", "manual");
+		frontendDeleteDevViewers(request, info);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
-			message: "Svelte dev mode stopped."
+			message: "Svelte dev mode stopped.",
+			details: frontendDevDetails(entry)
 		};
 	}
 
@@ -8491,6 +8686,7 @@
 		var entry = frontendDevEntry(request, info);
 		if (!entry) {
 			var sourcePath = String((request.action && request.action.payload && request.action.payload.sourcePath) || request.sourcePath || request.sourceFile || "");
+			var lastDetails = frontendLastDevDetails(request, info);
 			return {
 				ok: true,
 				title: "Svelte dev mode",
@@ -8498,7 +8694,8 @@
 				generated: false,
 				details: {
 					sourcePath: sourcePath,
-					draftCount: frontendDraftCount(request)
+					draftCount: frontendDraftCount(request),
+					lastDev: lastDetails
 				}
 			};
 		}
@@ -8570,7 +8767,8 @@
 			return {
 				ok: false,
 				title: "Svelte dev mode",
-				message: "Svelte dev mode is not running."
+				message: "Svelte dev mode is not running.",
+				details: frontendLastDevDetails(request, info)
 			};
 		}
 		if (entry.status === "starting") {

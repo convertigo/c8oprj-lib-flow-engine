@@ -70,6 +70,37 @@ assertTrue(isolatedRequestableService.runtimeSampleError({
 assertTrue(isolatedRequestableService.runtimeSampleError({ rows: [], total_rows: 0 }) === "",
 	"Requestable schema learning rejected a valid empty read response");
 
+var frontendDevLifecycleSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/frontend-dev-lifecycle.js"), "UTF-8"));
+var isolatedFrontendDevLifecycle = eval(frontendDevLifecycleSource);
+var lifecycleStartedAt = 1000000;
+var firstViewerEntry = {
+	startedAt: new Date(lifecycleStartedAt).toISOString(),
+	idlePolicy: { firstViewerTimeoutMs: 100, noViewerTimeoutMs: 50, viewerStaleMs: 40 }
+};
+assertTrue(isolatedFrontendDevLifecycle.update(firstViewerEntry, { viewers: [] }, lifecycleStartedAt + 99).stopReason === "",
+	"Frontend dev lifecycle stopped before the first-viewer timeout");
+assertTrue(isolatedFrontendDevLifecycle.update(firstViewerEntry, { viewers: [] }, lifecycleStartedAt + 100).stopReason === "first-viewer-timeout",
+	"Frontend dev lifecycle did not stop at the first-viewer timeout");
+var idleViewerEntry = {
+	startedAt: new Date(lifecycleStartedAt).toISOString(),
+	idlePolicy: { firstViewerTimeoutMs: 100, noViewerTimeoutMs: 50, viewerStaleMs: 40 }
+};
+var viewerSeen = isolatedFrontendDevLifecycle.update(idleViewerEntry, {
+	viewers: [{ id: "viewer-a", lastSeen: lifecycleStartedAt + 10 }]
+}, lifecycleStartedAt + 10);
+assertTrue(viewerSeen.stopReason === "" && idleViewerEntry.viewerCount === 1 && idleViewerEntry.firstViewerAt,
+	"Frontend dev lifecycle did not record the first active viewer");
+var viewerGone = isolatedFrontendDevLifecycle.update(idleViewerEntry, { viewers: [] }, lifecycleStartedAt + 20);
+assertTrue(viewerGone.stopReason === "" && idleViewerEntry.viewerCount === 0 && idleViewerEntry.lastViewerGoneAt,
+	"Frontend dev lifecycle did not record the transition to zero viewers");
+assertTrue(isolatedFrontendDevLifecycle.update(idleViewerEntry, { viewers: [] }, lifecycleStartedAt + 70).stopReason === "no-viewer-timeout",
+	"Frontend dev lifecycle did not stop after the no-viewer timeout");
+assertTrue(isolatedFrontendDevLifecycle.summarize({
+	viewers: [{ id: "stale", lastSeen: lifecycleStartedAt + 10 }]
+}, lifecycleStartedAt + 51, 40).viewerCount === 0,
+	"Frontend dev lifecycle kept a stale viewer alive");
+
 var flowTreeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8"));
 var isolatedFlowTreeService = eval(flowTreeServiceSource);
