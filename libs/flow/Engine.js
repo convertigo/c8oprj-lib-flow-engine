@@ -7475,6 +7475,75 @@
 		return baseUrl + "/projects/" + encodeURIComponent(project) + "/" + buildOutput + "/index.html";
 	}
 
+	function frontendDevProxyService() {
+		return loadEngineModule("frontend-dev-proxy.js");
+	}
+
+	function frontendPublicBaseUrl(request) {
+		var baseUrl = String(request && request.publicBaseUrl || "").trim();
+		if (baseUrl) {
+			return baseUrl;
+		}
+		try {
+			var EnginePropertiesManager = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager;
+			var PropertyName = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName;
+			return String(EnginePropertiesManager.getProperty(PropertyName.APPLICATION_SERVER_CONVERTIGO_URL) || "");
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function frontendRegisterDevProxy(request, port) {
+		var manager = Packages.com.twinsoft.convertigo.engine.Engine.theApp.reverseProxyManager;
+		var ticket = String(manager.registerLoopbackHttp(Number(port)));
+		var plan = frontendDevProxyService().plan(frontendPublicBaseUrl(request), ticket, Number(port));
+		if (!plan) {
+			manager.removeReverseProxyHttp(ticket);
+			return null;
+		}
+		return plan;
+	}
+
+	function frontendEnsureDevProxy(request, entry) {
+		if (!entry || !entry.port || !entry.proxyKey) {
+			return false;
+		}
+		try {
+			var manager = Packages.com.twinsoft.convertigo.engine.Engine.theApp.reverseProxyManager;
+			if (manager.getHttpHost(String(entry.proxyKey)) === null
+					&& !manager.restoreLoopbackHttp(String(entry.proxyKey), Number(entry.port))) {
+				return false;
+			}
+			var plan = frontendDevProxyService().plan(
+				frontendPublicBaseUrl(request) || entry.publicBaseUrl, entry.proxyKey, Number(entry.port));
+			if (!plan) {
+				return false;
+			}
+			entry.url = plan.publicUrl;
+			entry.localUrl = plan.localUrl;
+			entry.publicBaseUrl = plan.publicBaseUrl;
+			entry.proxyPath = plan.viteBase;
+			entry.proxyActive = true;
+			return true;
+		} catch (e) {
+			frontendStudioLog("[Svelte dev] Unable to restore the public dev route: " + String(e), true);
+			return false;
+		}
+	}
+
+	function frontendUnregisterDevProxy(entry) {
+		if (!entry || !entry.proxyKey || entry.proxyActive === false) {
+			return;
+		}
+		try {
+			Packages.com.twinsoft.convertigo.engine.Engine.theApp.reverseProxyManager
+				.removeReverseProxyHttp(String(entry.proxyKey));
+		} catch (e) {
+			frontendStudioLog("[Svelte dev] Unable to remove the public dev route: " + String(e), true);
+		}
+		entry.proxyActive = false;
+	}
+
 	function frontendDevKey(request, info) {
 		return String(request.projectDir || "") + "|" + String(info.name || "svelte");
 	}
@@ -7642,8 +7711,14 @@
 		if (!file || !entry) {
 			return;
 		}
+		var proxyState = frontendDevProxyService().stateFields(entry);
 		var state = {
 			url: entry.url || "",
+			localUrl: proxyState.localUrl,
+			publicBaseUrl: proxyState.publicBaseUrl,
+			proxyKey: proxyState.proxyKey,
+			proxyPath: proxyState.proxyPath,
+			proxyActive: proxyState.proxyActive,
 			port: entry.port || 0,
 			pid: entry.pid || 0,
 			projectRoot: entry.projectRoot || "",
@@ -7747,15 +7822,25 @@
 			return entry;
 		}
 		if (entry && !frontendDevAlive(entry)) {
+			frontendUnregisterDevProxy(entry);
 			delete runtimeState.frontendDevServers[key];
 			if (!frontendDevTerminal(entry)) {
 				frontendDeleteDevState(request, info);
 			}
 			entry = null;
 		}
-		if (entry) {
+		if (entry && /^(?:starting|prepared)$/.test(String(entry.status || ""))) {
+			return entry;
+		}
+		if (entry && frontendEnsureDevProxy(request, entry)) {
 			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
+		}
+		if (entry) {
+			frontendDestroyDevProcess(entry, "proxy-route-unavailable");
+			delete runtimeState.frontendDevServers[key];
+			frontendDeleteDevState(request, info);
+			return null;
 		}
 		entry = frontendReadDevState(request, info);
 		if (frontendDevTerminal(entry)) {
@@ -7764,7 +7849,11 @@
 		if (entry && entry.status === "starting") {
 			frontendFinishPreparation(entry, false);
 		}
-		if (entry && frontendDevAlive(entry)) {
+		if (entry && /^(?:starting|prepared)$/.test(String(entry.status || ""))) {
+			runtimeState.frontendDevServers[key] = entry;
+			return entry;
+		}
+		if (entry && frontendDevAlive(entry) && frontendEnsureDevProxy(request, entry)) {
 			runtimeState.frontendDevServers[key] = entry;
 			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
@@ -7773,11 +7862,14 @@
 			frontendDeleteDevState(request, info);
 		}
 		entry = frontendReadDevLogState(request, info);
-		if (entry && frontendDevAlive(entry)) {
+		if (entry && frontendDevAlive(entry) && frontendEnsureDevProxy(request, entry)) {
 			runtimeState.frontendDevServers[key] = entry;
 			frontendWriteDevState(request, info, entry);
 			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
+		}
+		if (entry && frontendDevAlive(entry)) {
+			frontendDestroyDevProcess(entry, "proxy-route-unavailable");
 		}
 		return null;
 	}
@@ -7793,6 +7885,9 @@
 		}
 		return {
 			url: entry.url,
+			localUrl: entry.localUrl || "",
+			proxyPath: entry.proxyPath || "",
+			proxyActive: entry.proxyActive === true,
 			port: entry.port,
 			projectRoot: entry.projectRoot,
 			generatedRoot: entry.generatedRoot,
@@ -8104,6 +8199,7 @@
 				} catch (_ignoreDevWait) {
 				}
 				try {
+					frontendUnregisterDevProxy(entry);
 					var key = frontendDevKey(request, info);
 					var current = runtimeState.frontendDevServers[key];
 					var persisted = frontendReadDevState(request, info);
@@ -8116,6 +8212,7 @@
 						&& Number(persisted.pid || 0) === Number(entry.pid);
 					if (persistedMatches) {
 						var finalEntry = Object.assign({}, entry, persisted);
+						finalEntry.proxyActive = false;
 						var persistedReason = String(persisted.stopReason || "");
 						var requestedStop = entry.cancelled === true
 							|| String(persisted.status || "") === "stopping"
@@ -8220,7 +8317,14 @@
 		var npm = frontendExecutable("npm");
 		frontendDeleteDevViewers(request, info);
 		var port = freePort();
-		var url = "http://localhost:" + port + "/";
+		var proxy = frontendRegisterDevProxy(request, port);
+		if (!proxy) {
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_DEV_PUBLIC_ROUTE_UNAVAILABLE",
+				message: "Unable to create a public same-origin route for Svelte dev mode."
+			});
+		}
+		var url = proxy.publicUrl;
 		var logFile = new File(generatedRoot, "vite-dev.log");
 		try {
 			FileUtils.writeStringToFile(logFile, "", "UTF-8");
@@ -8233,14 +8337,27 @@
 		pb.directory(generatedRoot);
 		pb.redirectErrorStream(true);
 		pb.environment().put("PATH", frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || ""));
-		frontendStudioLog("[Svelte dev] > " + npm + " --prefix " + generatedRoot.getAbsolutePath() + " exec -- vite --host 127.0.0.1 --port " + port + " --strictPort");
-		var process = pb.start();
+		pb.environment().put("FLOW_SVELTE_DEV_BASE", String(proxy.viteBase));
+		frontendStudioLog("[Svelte dev] > " + npm + " --prefix " + generatedRoot.getAbsolutePath() + " exec -- vite --host 127.0.0.1 --port " + port + " --strictPort (public gateway base enabled)");
+		var process;
+		try {
+			process = pb.start();
+		} catch (startError) {
+			Packages.com.twinsoft.convertigo.engine.Engine.theApp.reverseProxyManager
+				.removeReverseProxyHttp(String(proxy.ticket));
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_DEV_START_FAILED",
+				message: "Unable to launch Svelte dev mode: " + String(startError)
+			});
+		}
 		var logPump = frontendStartLogPump(process, logFile, "Svelte dev");
 		if (!frontendWaitForPort("127.0.0.1", port, process, 20000)) {
 			try {
 				process.destroy();
 			} catch (e) {
 			}
+			Packages.com.twinsoft.convertigo.engine.Engine.theApp.reverseProxyManager
+				.removeReverseProxyHttp(String(proxy.ticket));
 			var tail = frontendLogTail(logFile, 80);
 			return failure("frontbuilder", {
 				code: "FRONTBUILDER_DEV_START_FAILED",
@@ -8257,6 +8374,11 @@
 		var startedAt = new Date().toISOString();
 		var entry = {
 			url: url,
+			localUrl: proxy.localUrl,
+			publicBaseUrl: proxy.publicBaseUrl,
+			proxyKey: proxy.ticket,
+			proxyPath: proxy.viteBase,
+			proxyActive: true,
 			port: port,
 			pid: typeof process.pid === "function" ? Number(process.pid()) : 0,
 			projectRoot: String(projectRoot.getAbsolutePath()),
@@ -8597,6 +8719,7 @@
 		}
 		entry.cancelled = true;
 		entry.stopReason = String(reason || entry.stopReason || "manual");
+		frontendUnregisterDevProxy(entry);
 		try {
 			if (entry.setupProcess && typeof entry.setupProcess.destroy === "function") {
 				entry.setupProcess.destroy();
