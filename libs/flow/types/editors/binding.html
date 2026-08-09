@@ -11,6 +11,13 @@
 		.path { margin-top: 10px; }
 		.hint { color: #9da7af; margin-top: 6px; line-height: 1.35; }
 		.hidden { display: none; }
+		@media (max-width: 640px) {
+			.modes { flex-wrap: wrap; }
+			.modes button { flex: 1 1 auto; min-height: 44px; }
+			.source { grid-template-columns: minmax(0, 1fr); }
+			input, select { min-height: 44px; font-size: 16px; }
+			.path { min-width: 0; }
+		}
 	</style>
 	<div class="modes">
 		<button type="button" data-mode="literal">Literal</button>

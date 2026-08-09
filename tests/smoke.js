@@ -2309,6 +2309,8 @@ assertTrue(propertyEditor.ok === true && propertyEditor.html.indexOf("receiveFro
 assertTrue(propertyEditor.html.indexOf("flow-requestable-editor") !== -1 &&
 	propertyEditor.html.indexOf("relativeQName(qname, currentProject)") !== -1,
 	"propertyEditor did not embed standalone requestable editor");
+assertTrue((propertyEditor.html.match(/@media \(max-width: 640px\)/g) || []).length >= 9,
+	"propertyEditor did not embed responsive rules for the core Flow picker editors");
 assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-binding-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-template-editor") !== -1 &&

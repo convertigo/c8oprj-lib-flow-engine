@@ -12,6 +12,11 @@
 		button.selected { border-color: #48d8ff; background: #0b7592; color: white; box-shadow: inset 3px 0 0 #8eeaff; font-weight: 700; }
 		.type { color: #85c8ff; }
 		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
+		@media (max-width: 640px) {
+			.layout, .editor { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+			button { min-height: 40px; }
+			input, select, textarea { min-height: 44px; font-size: 16px; }
+		}
 	</style>
 	<div class="layout">
 		<div>

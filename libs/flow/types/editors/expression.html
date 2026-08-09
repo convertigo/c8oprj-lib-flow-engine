@@ -21,6 +21,11 @@
 		.type { color: #85c8ff; }
 		.status, .empty { color: #9da7af; margin-top: 6px; line-height: 1.35; }
 		.status.error { color: #ffb4a8; }
+		@media (max-width: 640px) {
+			.layout { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+			button { min-height: 40px; }
+			input, textarea { font-size: 16px; }
+		}
 	</style>
 	<div class="layout">
 		<div>

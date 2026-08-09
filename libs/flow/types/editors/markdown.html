@@ -7,6 +7,10 @@
 		.preview h1, .preview h2, .preview h3 { margin: 0 0 8px; font-size: 14px; }
 		.preview p { margin: 0 0 8px; }
 		.preview code { background: #111417; border: 1px solid #343b42; border-radius: 3px; padding: 1px 3px; }
+		@media (max-width: 640px) {
+			.grid { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+			textarea { min-height: 12rem; font-size: 16px; }
+		}
 	</style>
 	<div class="grid">
 		<textarea part="input" spellcheck="true"></textarea>
