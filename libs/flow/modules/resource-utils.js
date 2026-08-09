@@ -40,6 +40,13 @@
 			return ext === "js";
 		}
 		if (String(path).indexOf("libs/flow/resources/") === 0) {
+			if ([
+				"libs/flow/resources/property-editor.css",
+				"libs/flow/resources/property-editor.html",
+				"libs/flow/resources/property-editor.js"
+			].indexOf(String(path)) !== -1) {
+				return true;
+			}
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("resources/") === 0) {
@@ -80,6 +87,9 @@
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
 			return String(path).endsWith(".uiblock.json") ? "frontendBlock"
 				: String(path).endsWith("/app.flow.css") ? "frontendStyle" : "frontendModel";
+		}
+		if (/^libs\/flow\/resources\/property-editor\.(?:css|html|js)$/.test(String(path))) {
+			return "propertyEditorHost";
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return "publicResource";

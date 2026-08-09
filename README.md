@@ -552,6 +552,7 @@ libs/flow/blocks/**/*.block.js
 libs/flow/fragments/**/*.fragment.yaml
 libs/flow/lib/**/*.js
 libs/flow/resources/**/*.{md,txt,json,yaml,yml}
+libs/flow/resources/property-editor.{css,html,js}
 libs/flow/types/**/*.type.yaml
 libs/flow/types/**/*.js
 libs/flow/types/editors/**/*.{html,css,js}

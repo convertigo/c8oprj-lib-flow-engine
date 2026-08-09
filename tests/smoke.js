@@ -1372,6 +1372,30 @@ var docResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
 })));
 assertTrue(docResourceGet.content.indexOf("Flow documentation resource.") !== -1,
 	"resourceGet did not read project Flow documentation resources");
+var propertyEditorHostDir = new java.io.File(projectDirFile, "libs/flow/resources");
+propertyEditorHostDir.mkdirs();
+var propertyEditorHostFile = new java.io.File(propertyEditorHostDir, "property-editor.css");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	propertyEditorHostFile, ":root { --flow-editor-bg: canvas; }\n", "UTF-8");
+var propertyEditorHostGet = JSON.parse(engine.resourceGet(JSON.stringify({
+	path: "libs/flow/resources/property-editor.css"
+})));
+assertTrue(propertyEditorHostGet.kind === "propertyEditorHost" &&
+	propertyEditorHostGet.content.indexOf("--flow-editor-bg") !== -1,
+	"resourceGet did not expose the canonical property editor host assets");
+var propertyEditorHostPatch = JSON.parse(engine.resourcePatch(JSON.stringify({
+	path: "libs/flow/resources/property-editor.css",
+	baseHash: propertyEditorHostGet.hash,
+	patch: [
+		"--- a/libs/flow/resources/property-editor.css",
+		"+++ b/libs/flow/resources/property-editor.css",
+		"@@ -1 +1 @@",
+		"-:root { --flow-editor-bg: canvas; }",
+		"+:root { --flow-editor-bg: light-dark(white, black); }"
+	].join("\n")
+})));
+assertTrue(propertyEditorHostPatch.ok === true && propertyEditorHostPatch.changed === true,
+	"resourcePatch did not patch the canonical property editor host assets");
 var publicResourcesDir = new java.io.File(projectDirFile, "resources/fixtures");
 publicResourcesDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
