@@ -118,6 +118,36 @@ assertTrue(frontendDestroyProcessSource.indexOf("var listenerPid = frontendPidFo
 	frontendDestroyProcessSource.indexOf("frontendDestroyProcessHandle(listenerPid)") >= 0,
 	"Frontend dev cleanup should stop a recovered Vite listener by port");
 
+var frontendDevProxySource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/frontend-dev-proxy.js"), "UTF-8"));
+var isolatedFrontendDevProxy = eval(frontendDevProxySource);
+var devProxyTicket = "a.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+var devProxyPlan = isolatedFrontendDevProxy.plan(
+	"https://convertigo.goodnet.work/convertigo/", devProxyTicket, 5174);
+assertTrue(devProxyPlan.publicUrl ===
+	"https://convertigo.goodnet.work/convertigo/gw/" + devProxyTicket + "/" &&
+	devProxyPlan.viteBase === "/convertigo/gw/" + devProxyTicket + "/" &&
+	devProxyPlan.localUrl === "http://127.0.0.1:5174/",
+	"Frontend dev proxy did not keep the public URL on the MCP origin");
+assertTrue(isolatedFrontendDevProxy.plan("javascript:alert(1)", devProxyTicket, 5174) === null &&
+	isolatedFrontendDevProxy.plan("https://convertigo.goodnet.work/convertigo", "bad/ticket", 5174) === null &&
+	isolatedFrontendDevProxy.plan("https://convertigo.goodnet.work/convertigo", devProxyTicket, 70000) === null,
+	"Frontend dev proxy accepted an unsafe origin, route ticket or loopback port");
+var devProxyState = isolatedFrontendDevProxy.stateFields({
+	localUrl: devProxyPlan.localUrl,
+	publicBaseUrl: devProxyPlan.publicBaseUrl,
+	proxyKey: devProxyPlan.ticket,
+	proxyPath: devProxyPlan.viteBase,
+	proxyActive: true,
+	process: { shouldNotSerialize: true }
+});
+assertTrue(devProxyState.localUrl === "http://127.0.0.1:5174/" &&
+	devProxyState.publicBaseUrl === "https://convertigo.goodnet.work/convertigo" &&
+	devProxyState.proxyKey === devProxyTicket &&
+	devProxyState.proxyPath === "/convertigo/gw/" + devProxyTicket + "/" &&
+	devProxyState.proxyActive === true && !devProxyState.process,
+	"Frontend dev proxy state did not preserve the restart-safe public route fields");
+
 var flowTreeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8"));
 var isolatedFlowTreeService = eval(flowTreeServiceSource);
