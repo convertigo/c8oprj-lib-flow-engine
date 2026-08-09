@@ -1,17 +1,17 @@
 <template id="flow-icon-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		.toolbar { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(160px, .75fr); gap: 8px; margin-bottom: 8px; }
-		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		input { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		.list { max-height: 320px; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
-		button { border: 1px solid #39424a; background: #22282e; color: #d7e1e7; border-radius: 4px; padding: 6px; font-size: 11px; cursor: pointer; overflow: hidden; }
-		button.active { background: #0d5268; border-color: #2bb8df; color: #fff; }
-		.icon { height: 32px; display: grid; place-items: center; margin-bottom: 4px; color: #14a7cf; }
+		button { border: 1px solid var(--flow-editor-control-border); background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); border-radius: 4px; padding: 6px; font-size: 11px; cursor: pointer; overflow: hidden; }
+		button.active { background: var(--flow-editor-selection-bg); border-color: var(--flow-editor-accent); color: #fff; }
+		.icon { height: 32px; display: grid; place-items: center; margin-bottom: 4px; color: var(--flow-editor-icon); }
 		.icon img { max-width: 28px; max-height: 28px; display: block; }
-		.glyph { font-size: 22px; line-height: 1; color: #14a7cf; }
+		.glyph { font-size: 22px; line-height: 1; color: var(--flow-editor-icon); }
 		.name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-		.meta { color: #9da7af; margin-top: 6px; }
-		button.link { border: 0; background: transparent; color: #7bd8ff; padding: 0; font: inherit; text-align: left; }
+		.meta { color: var(--flow-editor-text-muted); margin-top: 6px; }
+		button.link { border: 0; background: transparent; color: var(--flow-editor-link); padding: 0; font: inherit; text-align: left; }
 		button.link:hover { text-decoration: underline; }
 		@media (max-width: 640px) {
 			.toolbar { grid-template-columns: minmax(0, 1fr); }

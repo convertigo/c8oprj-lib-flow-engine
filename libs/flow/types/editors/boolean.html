@@ -1,9 +1,9 @@
 <template id="flow-boolean-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-		input { width: 16px; height: 16px; accent-color: #14a7cf; }
-		.value { color: #85c8ff; font-family: ui-monospace, monospace; }
+		input { width: 16px; height: 16px; accent-color: var(--flow-editor-icon); }
+		.value { color: var(--flow-editor-info); font-family: ui-monospace, monospace; }
 	</style>
 	<label>
 		<input part="input" type="checkbox">

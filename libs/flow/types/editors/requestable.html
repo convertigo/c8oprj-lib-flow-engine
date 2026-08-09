@@ -1,18 +1,18 @@
 <template id="flow-requestable-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		.layout { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 0.9fr); gap: 10px; min-height: 320px; }
-		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
-		.tree { overflow: auto; max-height: 420px; border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
-		.type { color: #85c8ff; font-weight: 400; }
+		input { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		.tree { overflow: auto; max-height: 420px; border: 1px solid var(--flow-editor-border); border-radius: 4px; padding: 8px; background: var(--flow-editor-surface); }
+		.type { color: var(--flow-editor-info); font-weight: 400; }
 		details { margin: 4px 0; }
-		summary { cursor: pointer; color: #dce7ed; font-weight: 600; }
-		.children { margin-left: 12px; padding-left: 8px; border-left: 1px solid #343b42; }
-		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-		button:hover { border-color: #2786a8; color: white; }
-		button.selected { border-color: #48d8ff; background: #0b7592; color: white; box-shadow: inset 3px 0 0 #8eeaff; font-weight: 700; }
-		.empty { color: #9da7af; padding: 8px; }
-		.hint { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
+		summary { cursor: pointer; color: var(--flow-editor-summary-text); font-weight: 600; }
+		.children { margin-left: 12px; padding-left: 8px; border-left: 1px solid var(--flow-editor-border); }
+		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid var(--flow-editor-control-border); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+		button:hover { border-color: var(--flow-editor-accent-border); color: white; }
+		button.selected { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; box-shadow: inset 3px 0 0 var(--flow-editor-selection-edge); font-weight: 700; }
+		.empty { color: var(--flow-editor-text-muted); padding: 8px; }
+		.hint { color: var(--flow-editor-text-muted); margin: 6px 0 0; line-height: 1.35; }
 		@media (max-width: 640px) {
 			.layout { grid-template-columns: minmax(0, 1fr); min-height: 0; }
 			input { min-height: 44px; font-size: 16px; }

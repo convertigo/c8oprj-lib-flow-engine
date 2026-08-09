@@ -1,9 +1,9 @@
 <template id="flow-text-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
-		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		textarea { min-height: 120px; resize: vertical; }
-		.hint { color: #9da7af; margin-top: 6px; }
+		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; }
 	</style>
 	<div part="container"></div>
 	<div class="hint">Plain text, no expression evaluation.</div>

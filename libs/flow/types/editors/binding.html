@@ -1,15 +1,15 @@
 <template id="flow-binding-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		.modes { display: flex; gap: 4px; margin-bottom: 10px; }
-		button { border: 1px solid #48525c; border-radius: 4px; background: #22282e; color: #d7e1e7; padding: 6px 10px; cursor: pointer; }
-		button.active { border-color: #48d8ff; background: #0b7592; color: white; font-weight: 700; }
+		button { border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 6px 10px; cursor: pointer; }
+		button.active { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; font-weight: 700; }
 		.source { display: grid; grid-template-columns: 110px minmax(180px, 0.7fr) minmax(260px, 1.3fr); gap: 8px; align-items: end; }
 		.field { display: grid; gap: 4px; }
-		label { color: #c8d2d9; font-weight: 700; }
-		input, select { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		label { color: var(--flow-editor-label); font-weight: 700; }
+		input, select { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		.path { margin-top: 10px; }
-		.hint { color: #9da7af; margin-top: 6px; line-height: 1.35; }
+		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; line-height: 1.35; }
 		.hidden { display: none; }
 		@media (max-width: 640px) {
 			.modes { flex-wrap: wrap; }

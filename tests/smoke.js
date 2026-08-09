@@ -2311,6 +2311,13 @@ assertTrue(propertyEditor.html.indexOf("flow-requestable-editor") !== -1 &&
 	"propertyEditor did not embed standalone requestable editor");
 assertTrue((propertyEditor.html.match(/@media \(max-width: 640px\)/g) || []).length >= 9,
 	"propertyEditor did not embed responsive rules for the core Flow picker editors");
+assertTrue(propertyEditor.html.indexOf("--flow-editor-bg") !== -1 &&
+	propertyEditor.html.indexOf("light-dark(") !== -1 &&
+	propertyEditor.html.indexOf("window.flowSetTheme") !== -1 &&
+	propertyEditor.html.indexOf("document.documentElement.style.colorScheme") !== -1,
+	"propertyEditor did not expose the shared light/dark theme contract");
+assertTrue(propertyEditor.html.indexOf(":host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }") === -1,
+	"propertyEditor still embeds hard-coded dark text in Flow type editors");
 assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-binding-editor") !== -1 &&
 	propertyEditor.html.indexOf("flow-template-editor") !== -1 &&

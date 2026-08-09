@@ -1,17 +1,17 @@
 <template id="flow-selector-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		.layout { display: grid; grid-template-columns: minmax(250px, 0.9fr) minmax(300px, 1fr); gap: 10px; min-height: 360px; }
-		.panel { border: 1px solid #343b42; border-radius: 4px; background: #171a1d; overflow: auto; max-height: 420px; padding: 8px; }
+		.panel { border: 1px solid var(--flow-editor-border); border-radius: 4px; background: var(--flow-editor-surface); overflow: auto; max-height: 420px; padding: 8px; }
 		.editor { margin-top: 8px; display: grid; grid-template-columns: 82px 1fr; gap: 6px 8px; align-items: center; }
-		label { color: #c8d2d9; font-weight: 700; }
-		input { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
-		.group { font-weight: 700; margin: 8px 0 6px; color: #f2f6f8; }
-		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid #39424a; border-radius: 4px; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-		button:hover { border-color: #2786a8; color: white; }
-		button.selected { border-color: #48d8ff; background: #0b7592; color: white; box-shadow: inset 3px 0 0 #8eeaff; font-weight: 700; }
-		.type { color: #85c8ff; }
-		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
+		label { color: var(--flow-editor-label); font-weight: 700; }
+		input { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		.group { font-weight: 700; margin: 8px 0 6px; color: var(--flow-editor-text-strong); }
+		button { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border: 1px solid var(--flow-editor-control-border); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+		button:hover { border-color: var(--flow-editor-accent-border); color: white; }
+		button.selected { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; box-shadow: inset 3px 0 0 var(--flow-editor-selection-edge); font-weight: 700; }
+		.type { color: var(--flow-editor-info); }
+		.hint, .empty { color: var(--flow-editor-text-muted); margin: 6px 0 0; line-height: 1.35; }
 		@media (max-width: 640px) {
 			.layout, .editor { grid-template-columns: minmax(0, 1fr); min-height: 0; }
 			button { min-height: 40px; }

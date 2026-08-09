@@ -2,11 +2,54 @@
   color-scheme: dark light;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
+  --flow-editor-bg: light-dark(#f6f8fa, #1f2327);
+  --flow-editor-surface: light-dark(#ffffff, #171a1d);
+  --flow-editor-input-bg: light-dark(#ffffff, #111417);
+  --flow-editor-control-bg: light-dark(#f0f3f6, #22282e);
+  --flow-editor-secondary-bg: light-dark(#eaeef2, #262c31);
+  --flow-editor-imported-bg: light-dark(#1a7f37, #17313a);
+  --flow-editor-danger-bg: light-dark(#ffebe9, #452326);
+  --flow-editor-border: light-dark(#d0d7de, #343b42);
+  --flow-editor-divider: light-dark(#d0d7de, #3a4148);
+  --flow-editor-control-border: light-dark(#afb8c1, #39424a);
+  --flow-editor-border-strong: light-dark(#8c959f, #48525c);
+  --flow-editor-secondary-border: light-dark(#8c959f, #4b555f);
+  --flow-editor-danger-border: light-dark(#ff8182, #8a3a42);
+  --flow-editor-imported-border: light-dark(#2da44e, #217f9c);
+  --flow-editor-text: light-dark(#24292f, #e9eef2);
+  --flow-editor-text-strong: light-dark(#1f2328, #f2f6f8);
+  --flow-editor-control-text: light-dark(#24292f, #d7e1e7);
+  --flow-editor-secondary-text: light-dark(#24292f, #d8e0e5);
+  --flow-editor-summary-text: light-dark(#24292f, #dce7ed);
+  --flow-editor-label: light-dark(#3d444d, #c8d2d9);
+  --flow-editor-text-muted: light-dark(#59636e, #9da7af);
+  --flow-editor-kind-text: light-dark(#59636e, #8fa1ad);
+  --flow-editor-readonly-text: light-dark(#0550ae, #b8dff4);
+  --flow-editor-info: light-dark(#0550ae, #85c8ff);
+  --flow-editor-link: light-dark(#0969da, #7bd8ff);
+  --flow-editor-icon: light-dark(#0969da, #14a7cf);
+  --flow-editor-accent: light-dark(#0969da, #2bb8df);
+  --flow-editor-accent-border: light-dark(#0969da, #2786a8);
+  --flow-editor-primary-bg: light-dark(#0969da, #12647e);
+  --flow-editor-primary-active: light-dark(#0550ae, #0d9ac2);
+  --flow-editor-selection-bg: light-dark(#0550ae, #0d5268);
+  --flow-editor-selection-bg-strong: light-dark(#0969da, #0b7592);
+  --flow-editor-selection-border: light-dark(#54aeff, #48d8ff);
+  --flow-editor-selection-edge: light-dark(#80ccff, #8eeaff);
+  --flow-editor-imported-edge: light-dark(#56d364, #51d5ef);
+  --flow-editor-danger-text: light-dark(#cf222e, #ffb4a8);
+  --flow-editor-success-text: light-dark(#1a7f37, #8fe38f);
+}
+:root[data-flow-theme="light"] {
+  color-scheme: light;
+}
+:root[data-flow-theme="dark"] {
+  color-scheme: dark;
 }
 body {
   margin: 0;
-  background: #1f2327;
-  color: #e9eef2;
+  background: var(--flow-editor-bg);
+  color: var(--flow-editor-text);
 }
 .wrap {
   display: grid;
@@ -21,24 +64,24 @@ body {
   padding: 12px;
 }
 .side {
-  border-left: 1px solid #3a4148;
+  border-left: 1px solid var(--flow-editor-divider);
   overflow: auto;
   padding: 10px;
-  background: #171a1d;
+  background: var(--flow-editor-surface);
 }
 h1 {
   font-size: 14px;
   margin: 0 0 4px;
 }
 .sub {
-  color: #9da7af;
+  color: var(--flow-editor-text-muted);
   margin-bottom: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .field {
-  border-top: 1px solid #343b42;
+  border-top: 1px solid var(--flow-editor-border);
   padding: 10px 0;
 }
 .field:first-of-type {
@@ -53,10 +96,10 @@ label {
 }
 .kind {
   font-weight: 400;
-  color: #8fa1ad;
+  color: var(--flow-editor-kind-text);
 }
 .desc {
-  color: #9da7af;
+  color: var(--flow-editor-text-muted);
   margin: 0 0 6px;
   line-height: 1.35;
 }
@@ -65,9 +108,9 @@ textarea,
 select {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid #48525c;
-  background: #111417;
-  color: #f2f6f8;
+  border: 1px solid var(--flow-editor-border-strong);
+  background: var(--flow-editor-input-bg);
+  color: var(--flow-editor-text-strong);
   border-radius: 4px;
   padding: 6px;
   font:
@@ -94,8 +137,8 @@ textarea {
   margin: 6px 0;
 }
 .modebar button.active {
-  background: #0d9ac2;
-  border-color: #2bb8df;
+  background: var(--flow-editor-primary-active);
+  border-color: var(--flow-editor-accent);
 }
 .simple {
   display: grid;
@@ -110,12 +153,12 @@ textarea {
 .simpleLabel {
   display: block;
   margin-bottom: 3px;
-  color: #9da7af;
+  color: var(--flow-editor-text-muted);
   font-weight: 600;
 }
 .simple input[readonly] {
-  background: #171a1d;
-  color: #b8dff4;
+  background: var(--flow-editor-surface);
+  color: var(--flow-editor-readonly-text);
 }
 .hidden {
   display: none !important;
@@ -126,16 +169,16 @@ textarea {
 .copybar select {
   width: auto;
   min-width: 90px;
-  border: 1px solid #48525c;
-  background: #111417;
-  color: #f2f6f8;
+  border: 1px solid var(--flow-editor-border-strong);
+  background: var(--flow-editor-input-bg);
+  color: var(--flow-editor-text-strong);
   border-radius: 4px;
   padding: 5px;
   font-size: 12px;
 }
 button {
-  border: 1px solid #2786a8;
-  background: #12647e;
+  border: 1px solid var(--flow-editor-accent-border);
+  background: var(--flow-editor-primary-bg);
   color: white;
   border-radius: 4px;
   padding: 4px 8px;
@@ -143,9 +186,9 @@ button {
   cursor: pointer;
 }
 button.secondary {
-  background: #262c31;
-  border-color: #4b555f;
-  color: #d8e0e5;
+  background: var(--flow-editor-secondary-bg);
+  border-color: var(--flow-editor-secondary-border);
+  color: var(--flow-editor-secondary-text);
 }
 .path {
   display: block;
@@ -153,9 +196,9 @@ button.secondary {
   text-align: left;
   margin: 0 0 4px;
   padding: 4px 6px;
-  border-color: #39424a;
-  background: #22282e;
-  color: #d7e1e7;
+  border-color: var(--flow-editor-control-border);
+  background: var(--flow-editor-control-bg);
+  color: var(--flow-editor-control-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -165,51 +208,51 @@ button.secondary {
   box-sizing: border-box;
   overflow: auto;
   padding: 0 10px 10px;
-  background: #1f2327;
+  background: var(--flow-editor-bg);
 }
 .pickerHeader {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: #1f2327;
+  background: var(--flow-editor-bg);
   padding: 10px 0 8px;
-  border-bottom: 1px solid #343b42;
+  border-bottom: 1px solid var(--flow-editor-border);
 }
 .type {
-  color: #85c8ff;
+  color: var(--flow-editor-info);
 }
 .empty,
 .error {
   padding: 16px;
-  color: #9da7af;
+  color: var(--flow-editor-text-muted);
 }
 .error {
-  color: #ffb4a8;
+  color: var(--flow-editor-danger-text);
 }
 .scopeTitle {
   font-weight: 700;
   margin: 8px 0 6px;
-  color: #f2f6f8;
+  color: var(--flow-editor-text-strong);
 }
 details.scopeGroup {
   margin: 6px 0;
 }
 details.scopeGroup > summary {
   cursor: pointer;
-  color: #dce7ed;
+  color: var(--flow-editor-summary-text);
   font-weight: 700;
-  background: #1f2327;
+  background: var(--flow-editor-bg);
   padding: 4px 0;
 }
 .tree {
   margin-left: 12px;
   padding-left: 8px;
-  border-left: 1px solid #343b42;
+  border-left: 1px solid var(--flow-editor-border);
 }
 .target {
-  border: 1px solid #343b42;
+  border: 1px solid var(--flow-editor-border);
   border-radius: 4px;
-  background: #171a1d;
+  background: var(--flow-editor-surface);
   padding: 8px;
   margin: 8px 0;
 }
@@ -224,14 +267,14 @@ details.scopeGroup > summary {
   justify-content: space-between;
   align-items: center;
   text-align: left;
-  background: #22282e;
-  border-color: #39424a;
-  color: #d7e1e7;
+  background: var(--flow-editor-control-bg);
+  border-color: var(--flow-editor-control-border);
+  color: var(--flow-editor-control-text);
   overflow: hidden;
 }
 .prop.active {
-  background: #0d5268;
-  border-color: #2bb8df;
+  background: var(--flow-editor-selection-bg);
+  border-color: var(--flow-editor-accent);
   color: white;
 }
 .prop span:first-child {
@@ -247,6 +290,6 @@ details.scopeGroup > summary {
   margin-top: 6px;
 }
 .applied {
-  color: #8fe38f;
+  color: var(--flow-editor-success-text);
   margin: 6px 0 0;
 }

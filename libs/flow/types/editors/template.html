@@ -1,21 +1,21 @@
 <template id="flow-template-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		.layout { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.9fr); gap: 10px; min-height: 360px; }
-		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		textarea { min-height: 180px; resize: vertical; }
 		.modebar { display: flex; gap: 6px; margin-bottom: 8px; }
-		.modebar button.active { background: #0d9ac2; border-color: #2bb8df; color: white; }
+		.modebar button.active { background: var(--flow-editor-primary-active); border-color: var(--flow-editor-accent); color: white; }
 		.simple { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 6px; margin-bottom: 8px; }
 		.hidden { display: none !important; }
-		.picker { overflow: auto; max-height: 420px; border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
+		.picker { overflow: auto; max-height: 420px; border: 1px solid var(--flow-editor-border); border-radius: 4px; padding: 8px; background: var(--flow-editor-surface); }
 		details.scopeGroup { margin: 6px 0; }
-		details.scopeGroup > summary { cursor: pointer; font-weight: 700; padding: 4px 0; color: #f2f6f8; }
-		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
-		.path { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border-color: #39424a; background: #22282e; color: #d7e1e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-		.path:hover { border-color: #2786a8; color: white; }
-		.type { color: #85c8ff; }
-		.hint, .empty { color: #9da7af; margin: 6px 0 0; line-height: 1.35; }
+		details.scopeGroup > summary { cursor: pointer; font-weight: 700; padding: 4px 0; color: var(--flow-editor-text-strong); }
+		button { border: 1px solid var(--flow-editor-accent-border); background: var(--flow-editor-primary-bg); color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+		.path { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 4px 6px; border-color: var(--flow-editor-control-border); background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.path:hover { border-color: var(--flow-editor-accent-border); color: white; }
+		.type { color: var(--flow-editor-info); }
+		.hint, .empty { color: var(--flow-editor-text-muted); margin: 6px 0 0; line-height: 1.35; }
 		@media (max-width: 640px) {
 			.layout, .simple { grid-template-columns: minmax(0, 1fr); min-height: 0; }
 			.modebar { flex-wrap: wrap; }

@@ -8,6 +8,15 @@
     pickerOriginal = "",
     pickerLastTarget = "",
     pickerUpdatingEditor = false;
+  function applyTheme(value) {
+    var theme = value === "light" || value === "dark" ? value : "";
+    if (theme) {
+      document.documentElement.setAttribute("data-flow-theme", theme);
+    } else {
+      document.documentElement.removeAttribute("data-flow-theme");
+    }
+    document.documentElement.style.colorScheme = theme || "light dark";
+  }
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>\"']/g, function (c) {
       return {
@@ -935,7 +944,9 @@
       return;
     }
   });
+  window.flowSetTheme = applyTheme;
   window.receiveFromJava = function (message) {
+    applyTheme(message && message.theme);
     if (!state || !message || state.virtualPath !== message.virtualPath) {
       pickerValue = "";
       pickerTarget = "";

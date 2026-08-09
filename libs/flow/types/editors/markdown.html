@@ -1,12 +1,12 @@
 <template id="flow-markdown-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		.grid { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(200px, .8fr); gap: 10px; min-height: 260px; }
-		textarea { box-sizing: border-box; width: 100%; min-height: 260px; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 8px; font: 12px ui-monospace, monospace; resize: vertical; }
-		.preview { border: 1px solid #343b42; border-radius: 4px; padding: 8px; overflow: auto; background: #171a1d; line-height: 1.45; }
+		textarea { box-sizing: border-box; width: 100%; min-height: 260px; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 8px; font: 12px ui-monospace, monospace; resize: vertical; }
+		.preview { border: 1px solid var(--flow-editor-border); border-radius: 4px; padding: 8px; overflow: auto; background: var(--flow-editor-surface); line-height: 1.45; }
 		.preview h1, .preview h2, .preview h3 { margin: 0 0 8px; font-size: 14px; }
 		.preview p { margin: 0 0 8px; }
-		.preview code { background: #111417; border: 1px solid #343b42; border-radius: 3px; padding: 1px 3px; }
+		.preview code { background: var(--flow-editor-input-bg); border: 1px solid var(--flow-editor-border); border-radius: 3px; padding: 1px 3px; }
 		@media (max-width: 640px) {
 			.grid { grid-template-columns: minmax(0, 1fr); min-height: 0; }
 			textarea { min-height: 12rem; font-size: 16px; }

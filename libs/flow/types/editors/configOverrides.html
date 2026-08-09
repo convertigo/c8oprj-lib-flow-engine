@@ -1,17 +1,17 @@
 <template id="flow-config-overrides-editor-template">
 	<style>
-		:host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }
+		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
 		.toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
 		.rows { display: grid; gap: 8px; }
-		.row { border: 1px solid #343b42; border-radius: 4px; padding: 8px; background: #171a1d; }
+		.row { border: 1px solid var(--flow-editor-border); border-radius: 4px; padding: 8px; background: var(--flow-editor-surface); }
 		.head { display: grid; grid-template-columns: minmax(120px, 0.5fr) auto; gap: 6px; align-items: center; margin-bottom: 6px; }
-		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid #48525c; background: #111417; color: #f2f6f8; border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		input, textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		textarea { min-height: 96px; resize: vertical; }
-		button { border: 1px solid #2786a8; background: #12647e; color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
-		button.secondary { background: #262c31; border-color: #4b555f; color: #d8e0e5; }
-		button.danger { background: #452326; border-color: #8a3a42; }
-		.hint, .status { color: #9da7af; line-height: 1.35; margin-top: 6px; }
-		.status.error { color: #ffb4a8; }
+		button { border: 1px solid var(--flow-editor-accent-border); background: var(--flow-editor-primary-bg); color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+		button.secondary { background: var(--flow-editor-secondary-bg); border-color: var(--flow-editor-secondary-border); color: var(--flow-editor-secondary-text); }
+		button.danger { background: var(--flow-editor-danger-bg); border-color: var(--flow-editor-danger-border); }
+		.hint, .status { color: var(--flow-editor-text-muted); line-height: 1.35; margin-top: 6px; }
+		.status.error { color: var(--flow-editor-danger-text); }
 	</style>
 	<div class="toolbar">
 		<button data-add="true">Add branch</button>
