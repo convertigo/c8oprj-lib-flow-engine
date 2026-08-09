@@ -7172,7 +7172,12 @@
 		}), "UTF-8");
 	}
 
+	function frontendDurationMs(startedAt) {
+		return Math.max(0, Math.round(Number(JavaSystem.nanoTime() - startedAt) / 1000000));
+	}
+
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
+		var startedAt = JavaSystem.nanoTime();
 		var installRoot = stepAction === "installBuilder"
 			? resourceRoot
 			: stepAction === "installApp" ? generatedRoot : null;
@@ -7188,9 +7193,10 @@
 				stdout: "",
 				stderr: "",
 				ok: true,
-				skipped: true
-				};
-			}
+				skipped: true,
+				durationMs: frontendDurationMs(startedAt)
+			};
+		}
 		var cwd = stepAction === "installApp" || stepAction === "check" || stepAction === "build"
 			? generatedRoot
 			: resourceRoot;
@@ -7224,7 +7230,8 @@
 			stdout: output,
 			stderr: "",
 			ok: exitCode === 0,
-			skipped: false
+			skipped: false,
+			durationMs: frontendDurationMs(startedAt)
 		};
 	}
 
@@ -7308,6 +7315,7 @@
 	}
 
 	function frontendRunAction(request, blocks, action) {
+		var actionStartedAt = JavaSystem.nanoTime();
 		var info = frontbuilderSettingsForRequest(request);
 		var modelPath = frontendModelPath(request, info);
 		if (!modelPath || !modelPath.isFile()) {
@@ -7356,9 +7364,13 @@
 		var actions = frontendActionSteps(action);
 		var steps = [];
 		var ok = true;
+		var currentStepAction = "";
+		var currentStepStartedAt = 0;
 		try {
 			for (var i = 0; i < actions.length; i++) {
-				var step = frontendRunStep(actions[i], npm, resourceRoot, projectRoot, projectName, effective.file, generatedRoot, generationMode, envValues);
+				currentStepAction = actions[i];
+				currentStepStartedAt = JavaSystem.nanoTime();
+				var step = frontendRunStep(currentStepAction, npm, resourceRoot, projectRoot, projectName, effective.file, generatedRoot, generationMode, envValues);
 				steps.push(step);
 				if (step.ok === false) {
 					ok = false;
@@ -7368,10 +7380,11 @@
 		} catch (e) {
 			ok = false;
 			steps.push({
-				action: action,
+				action: currentStepAction || action,
 				ok: false,
 				exitCode: -1,
-				stdout: String(e && (e.message || e) || "")
+				stdout: String(e && (e.message || e) || ""),
+				durationMs: frontendDurationMs(currentStepStartedAt || actionStartedAt)
 			});
 		} finally {
 			try {
@@ -7393,7 +7406,8 @@
 				action: step.action || "",
 				ok: step.ok !== false,
 				exitCode: step.exitCode,
-				skipped: step.skipped === true
+				skipped: step.skipped === true,
+				durationMs: Number(step.durationMs || 0)
 			};
 			if (step.ok === false && step.stdout) {
 				out.stdout = String(step.stdout).substring(0, 4000);
@@ -7416,7 +7430,8 @@
 				draftCount: draftCount,
 				sourceRoot: sourceRoot,
 				buildOutput: buildOutput,
-				steps: compactSteps
+				steps: compactSteps,
+				durationMs: frontendDurationMs(actionStartedAt)
 			}
 		};
 		if (ok && action === "build") {
@@ -8409,12 +8424,28 @@
 	}
 
 	function frontendStartDevNow(request, blocks, info) {
+		var startedAt = JavaSystem.nanoTime();
 		var install = frontendRunAction(request, blocks, "install");
 		if (install.ok === false) {
 			return install;
 		}
+		var steps = install.details && install.details.steps
+			? install.details.steps.slice()
+			: [];
+		var launchStartedAt = JavaSystem.nanoTime();
 		var launched = frontendLaunchVite(request, info);
+		steps.push({
+			action: "startVite",
+			ok: launched.ok !== false,
+			exitCode: launched.ok === false ? -1 : 0,
+			skipped: false,
+			durationMs: frontendDurationMs(launchStartedAt)
+		});
 		if (launched.ok === false) {
+			launched.details = Object.assign({}, launched.details || {}, {
+				steps: steps,
+				durationMs: frontendDurationMs(startedAt)
+			});
 			return launched;
 		}
 		var entry = launched.entry;
@@ -8424,13 +8455,16 @@
 		frontendStartDevIdleWatcher(request, info, entry);
 		var browser = frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
+		var details = frontendDevDetails(entry);
+		details.steps = steps;
+		details.durationMs = frontendDurationMs(startedAt);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
 			message: "Svelte dev mode started.",
 			openUrl: entry.url,
 			browser: browser,
-			details: frontendDevDetails(entry)
+			details: details
 		};
 	}
 

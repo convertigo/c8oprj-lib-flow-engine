@@ -118,6 +118,29 @@ assertTrue(frontendDestroyProcessSource.indexOf("var listenerPid = frontendPidFo
 	frontendDestroyProcessSource.indexOf("frontendDestroyProcessHandle(listenerPid)") >= 0,
 	"Frontend dev cleanup should stop a recovered Vite listener by port");
 
+var frontendRunStepSource = source.substring(
+	source.indexOf("\tfunction frontendRunStep("),
+	source.indexOf("\n\tfunction frontendAcceptanceProbe(")
+);
+assertTrue(frontendRunStepSource.indexOf("var startedAt = JavaSystem.nanoTime()") >= 0 &&
+	frontendRunStepSource.indexOf("durationMs: frontendDurationMs(startedAt)") >= 0,
+	"Frontend builder steps should report their duration, including cache hits");
+var frontendRunActionSource = source.substring(
+	source.indexOf("\tfunction frontendRunAction("),
+	source.indexOf("\n\tfunction frontendActionSteps(")
+);
+assertTrue(frontendRunActionSource.indexOf("durationMs: Number(step.durationMs || 0)") >= 0 &&
+	frontendRunActionSource.indexOf("durationMs: frontendDurationMs(actionStartedAt)") >= 0,
+	"Frontend builder responses should expose step and total durations");
+var frontendStartDevNowSource = source.substring(
+	source.indexOf("\tfunction frontendStartDevNow("),
+	source.indexOf("\n\tfunction frontendActivatePreparedDev(")
+);
+assertTrue(frontendStartDevNowSource.indexOf('action: "startVite"') >= 0 &&
+	frontendStartDevNowSource.indexOf("details.steps = steps") >= 0 &&
+	frontendStartDevNowSource.indexOf("details.durationMs = frontendDurationMs(startedAt)") >= 0,
+	"Svelte dev start should return preparation and Vite timings to its caller");
+
 var frontendDevProxySource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/frontend-dev-proxy.js"), "UTF-8"));
 var isolatedFrontendDevProxy = eval(frontendDevProxySource);
