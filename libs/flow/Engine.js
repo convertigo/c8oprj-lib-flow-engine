@@ -8255,10 +8255,11 @@
 			});
 		}
 		var startedAt = new Date().toISOString();
+		var processPid = typeof process.pid === "function" ? Number(process.pid()) : 0;
 		var entry = {
 			url: url,
 			port: port,
-			pid: typeof process.pid === "function" ? Number(process.pid()) : 0,
+			pid: frontendPidForPort(port) || processPid,
 			projectRoot: String(projectRoot.getAbsolutePath()),
 			generatedRoot: String(generatedRoot.getAbsolutePath()),
 			logFile: String(logFile.getAbsolutePath()),
@@ -8591,42 +8592,58 @@
 		return frontendStartDevNow(request, blocks, info);
 	}
 
+	function frontendDestroyJavaProcess(process) {
+		if (!process) {
+			return;
+		}
+		try {
+			var descendants = process.descendants().iterator();
+			while (descendants.hasNext()) {
+				descendants.next().destroyForcibly();
+			}
+		} catch (_ignoreDevDescendants) {
+		}
+		try {
+			process.destroyForcibly();
+		} catch (_ignoreDevProcessForce) {
+			try {
+				process.destroy();
+			} catch (_ignoreDevProcess) {
+			}
+		}
+	}
+
+	function frontendDestroyProcessHandle(pid) {
+		if (!pid) {
+			return;
+		}
+		try {
+			var optional = Packages.java.lang.ProcessHandle.of(Packages.java.lang.Long.valueOf(String(pid)));
+			if (!optional || !optional.isPresent()) {
+				return;
+			}
+			var handle = optional.get();
+			var descendants = handle.descendants().iterator();
+			while (descendants.hasNext()) {
+				descendants.next().destroyForcibly();
+			}
+			handle.destroyForcibly();
+		} catch (_ignoreDevHandle) {
+		}
+	}
+
 	function frontendDestroyDevProcess(entry, reason) {
 		if (!entry) {
 			return;
 		}
 		entry.cancelled = true;
 		entry.stopReason = String(reason || entry.stopReason || "manual");
-		try {
-			if (entry.setupProcess && typeof entry.setupProcess.destroy === "function") {
-				entry.setupProcess.destroy();
-			}
-		} catch (_ignoreSetupDestroy) {
-		}
-		try {
-			if (entry.process && typeof entry.process.destroy === "function") {
-				entry.process.destroy();
-			}
-		} catch (e) {
-		}
-		try {
-			if (entry.pid) {
-				var optional = Packages.java.lang.ProcessHandle.of(Packages.java.lang.Long.valueOf(String(entry.pid)));
-				if (optional && optional.isPresent()) {
-					var handle = optional.get();
-					var Consumer = Packages.java.util.function.Consumer;
-					handle.descendants().forEach(new Consumer({
-						accept: function (child) {
-							try {
-								child.destroy();
-							} catch (e) {
-							}
-						}
-					}));
-					handle.destroy();
-				}
-			}
-		} catch (e2) {
+		var listenerPid = frontendPidForPort(entry.port);
+		frontendDestroyJavaProcess(entry.setupProcess);
+		frontendDestroyJavaProcess(entry.process);
+		frontendDestroyProcessHandle(listenerPid);
+		if (Number(entry.pid || 0) !== Number(listenerPid || 0)) {
+			frontendDestroyProcessHandle(entry.pid);
 		}
 	}
 

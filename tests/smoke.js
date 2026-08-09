@@ -100,6 +100,23 @@ assertTrue(isolatedFrontendDevLifecycle.summarize({
 	viewers: [{ id: "stale", lastSeen: lifecycleStartedAt + 10 }]
 }, lifecycleStartedAt + 51, 40).viewerCount === 0,
 	"Frontend dev lifecycle kept a stale viewer alive");
+var frontendLaunchViteSource = source.substring(
+	source.indexOf("\tfunction frontendLaunchVite("),
+	source.indexOf("\n\tfunction frontendDevWaitRequested(")
+);
+assertTrue(frontendLaunchViteSource.indexOf("pid: frontendPidForPort(port) || processPid") >= 0,
+	"Frontend dev state should track the real Vite listener instead of the npm wrapper");
+var frontendDestroyProcessSource = source.substring(
+	source.indexOf("\tfunction frontendDestroyJavaProcess("),
+	source.indexOf("\n\tfunction frontendRestartDev(")
+);
+assertTrue(frontendDestroyProcessSource.indexOf("process.descendants().iterator()") >= 0 &&
+	frontendDestroyProcessSource.indexOf("descendants.next().destroyForcibly()") <
+		frontendDestroyProcessSource.indexOf("process.destroyForcibly()"),
+	"Frontend dev cleanup should destroy descendants before their wrapper process");
+assertTrue(frontendDestroyProcessSource.indexOf("var listenerPid = frontendPidForPort(entry.port)") >= 0 &&
+	frontendDestroyProcessSource.indexOf("frontendDestroyProcessHandle(listenerPid)") >= 0,
+	"Frontend dev cleanup should stop a recovered Vite listener by port");
 
 var flowTreeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8"));
