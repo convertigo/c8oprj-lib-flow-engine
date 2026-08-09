@@ -1,0 +1,12 @@
+version: 1
+name: "color"
+label: "Color"
+icon: "mdi:palette-outline"
+type: "string"
+description: "CSS color value with a native picker and an exact text fallback."
+editor:
+  label: "Color picker"
+  kind: "webcomponent"
+  component: "flow-color-editor"
+  file: "editors/color.html"
+  icon: "mdi:application-brackets-outline"

@@ -4187,7 +4187,7 @@
 		if (sourcePath.endsWith(".block.js")) {
 			return applyBlockCodeSourceMutationRequest(request, blocks);
 		}
-		if (!sourcePath.endsWith(".flow.svelte")) {
+		if (!sourcePath.endsWith(".flow.svelte") && !sourcePath.endsWith(".flow.css")) {
 			return applyMutationRequest(request, blocks);
 		}
 		return applyFlowSvelteSourceMutationRequest(request);
@@ -4196,7 +4196,7 @@
 	function frontendRequestSourceFile(request, mustExist) {
 		var sourcePath = String(request && (request.sourceFile || request.sourcePath) || "");
 		if (!sourcePath) {
-			raise("MISSING_FRONTEND_SOURCE", "A Flow Svelte source path is required.");
+			raise("MISSING_FRONTEND_SOURCE", "A Flow Svelte or Flow CSS source path is required.");
 		}
 		var sourceFile = new File(sourcePath);
 		if (sourceFile.isAbsolute()) {
@@ -4562,7 +4562,7 @@
 			sourceRoot = sourceRoot.getParentFile();
 		}
 		[
-			{ root: sourceRoot, suffixes: [".flow.svelte", ".flow-route.json"] },
+			{ root: sourceRoot, suffixes: [".flow.svelte", ".flow.css", ".flow-route.json"] },
 			{ root: new File(resourceRoot, "components"), suffixes: [".svelte"] },
 			{ root: new File(resourceRoot, "ui"), suffixes: [".uiblock.json"] },
 			{ root: new File(toolRoot, "components"), suffixes: [".svelte"] },
@@ -4608,7 +4608,7 @@
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		if (mutations.length === 0) {
-			raise("MISSING_FRONTEND_MUTATION", "Svelte frontend source mutation requires mutation or mutations.");
+			raise("MISSING_FRONTEND_MUTATION", "Frontend source mutation requires mutation or mutations.");
 		}
 		var results = [];
 		for (var i = 0; i < mutations.length; i++) {
@@ -4640,14 +4640,26 @@
 			try {
 				var projectionDrafts = Object.assign({}, frontendSourceDrafts(request));
 				projectionDrafts[String(sourceFile.getCanonicalPath())] = source;
+				var projectionSourceFile = sourceFile;
+				if (String(sourceFile.getName()).endsWith(".flow.css")) {
+					var projectionInfo = frontbuilderSettingsForRequest(request);
+					var configuredModel = frontendModelPath(request, projectionInfo);
+					if (configuredModel && configuredModel.isFile()) {
+						projectionSourceFile = configuredModel.getCanonicalFile();
+					}
+				}
 				var projectionRequest = Object.assign({}, request, {
-					sourceFile: String(sourceFile.getAbsolutePath()),
-					sourcePath: String(sourceFile.getAbsolutePath()),
-					source: source,
+					sourceFile: String(projectionSourceFile.getAbsolutePath()),
+					sourcePath: String(projectionSourceFile.getAbsolutePath()),
 					sourceDrafts: projectionDrafts,
 					frontendSourceDrafts: projectionDrafts,
 					includeBindings: false
 				});
+				if (projectionSourceFile !== sourceFile) {
+					delete projectionRequest.source;
+				} else {
+					projectionRequest.source = source;
+				}
 				var projectedDocument = describeFrontendDocument(projectionRequest);
 				out.authoringTree = flowTreeService().authoringSourceTreeRequest({
 					sourceFile: String(sourceFile.getAbsolutePath()),

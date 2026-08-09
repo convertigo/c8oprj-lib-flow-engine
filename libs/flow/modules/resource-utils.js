@@ -54,7 +54,7 @@
 		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
 			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte")
-				|| String(path).endsWith("/app.flow.css") || String(path).endsWith(".uiblock.json");
+				|| String(path).endsWith(".flow.css") || String(path).endsWith(".uiblock.json");
 		}
 		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
 			return ["html", "css", "js"].indexOf(ext) !== -1;
@@ -86,7 +86,7 @@
 		}
 		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
 			return String(path).endsWith(".uiblock.json") ? "frontendBlock"
-				: String(path).endsWith("/app.flow.css") ? "frontendStyle" : "frontendModel";
+				: String(path).endsWith(".flow.css") ? "frontendStyle" : "frontendModel";
 		}
 		if (/^libs\/flow\/resources\/property-editor\.(?:css|html|js)$/.test(String(path))) {
 			return "propertyEditorHost";

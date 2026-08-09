@@ -695,6 +695,9 @@ var typeListApi = JSON.parse(engine.types("{}"));
 assertTrue(typeListApi.ok === true && typeListApi.types.some(function (type) {
 	return type.name === "requestable";
 }), "types API did not expose core property types");
+assertTrue(typeListApi.types.some(function (type) {
+	return type.name === "color" && type.editor && String(type.editor.file).indexOf("color.html") !== -1;
+}), "types API did not expose the CSS color property editor");
 var referencedProjectDir = new java.io.File(projectDirFile.getParentFile(), "c8oprj-lib-flow-process");
 if (referencedProjectDir.isDirectory()) {
 	Packages.org.apache.commons.io.FileUtils.deleteDirectory(referencedProjectDir);
@@ -1289,6 +1292,21 @@ assertTrue(createdResourceBlockGet.format === "blockjs" &&
 	createdResourceBlockGet.code.indexOf("Resource smoke block.") !== -1 &&
 	createdResourceBlockGet.implementationSource.indexOf("return \"ok\"") !== -1,
 	"blockGet did not expose canonical block code sources");
+var themeResourceFile = new java.io.File(projectDirFile,
+	"libs/flow/frontbuilder/svelte/model/Smoke/src/theme.flow.css");
+themeResourceFile.getParentFile().mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(themeResourceFile, [
+	"@layer flow.theme {",
+	"  :root { --flow-color-primary: #075985; }",
+	"}",
+	""
+].join("\n"), "UTF-8");
+var themeResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
+	path: "libs/flow/frontbuilder/svelte/model/Smoke/src/theme.flow.css"
+})));
+assertTrue(themeResourceGet.kind === "frontendStyle" &&
+	themeResourceGet.content.indexOf("--flow-color-primary") !== -1,
+	"resourceGet did not expose generic source-backed *.flow.css files");
 var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	query: "Resource smoke",
 	doc: false,
