@@ -858,9 +858,15 @@ var naturalRunRepeat = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 var flowPlanCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.flowPlans;
+var flowSnapshotStatsAfterRepeat = JSON.parse(engine.cacheInfo()).caches.flowSnapshots;
 assertTrue(naturalRunRepeat.result.first === "b" && naturalRunRepeat.result.encoded === "[\"a\",\"b\"]" &&
 	flowPlanCacheAfterRepeat.hits > flowPlanCacheBeforeRepeat.hits,
 	"repeated Flow execution did not reuse its compiled plan");
+assertTrue(flowSnapshotStatsAfterRepeat.compiles > 0 &&
+	flowSnapshotStatsAfterRepeat.hydrations === flowSnapshotStatsAfterRepeat.compiles &&
+	flowSnapshotStatsAfterRepeat.payloadBytes >= flowSnapshotStatsAfterRepeat.maxPayloadBytes &&
+	flowSnapshotStatsAfterRepeat.maxPayloadBytes > 0,
+	"Flow execution snapshot compilation and hydration were not observable");
 assertTrue(naturalRun.result.first === "b" && naturalRun.result.encoded === "[\"a\",\"b\"]",
 	"natural FlowScript syntax did not execute correctly");
 var earlyReturnFlowScriptSource = [

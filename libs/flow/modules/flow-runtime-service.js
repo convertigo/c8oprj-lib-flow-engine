@@ -16,6 +16,8 @@
 		var writeRuntimeBoundedCache = env.writeRuntimeBoundedCache;
 		var flowPlanCache = env.flowPlanCache;
 		var flowPlanCompilerFingerprint = env.flowPlanCompilerFingerprint;
+		var flowSnapshotService = env.flowSnapshotService;
+		var flowSnapshotStats = env.flowSnapshotStats || {};
 		var sourceForWriteRequest = env.sourceForWriteRequest;
 		var loadProjectEngineDefinition = env.loadProjectEngineDefinition;
 		var runtimeHandles = env.runtimeHandles;
@@ -243,6 +245,48 @@
 			return "";
 		}
 
+		function addSnapshotDuration(name, started) {
+			flowSnapshotStats[name] = Number(flowSnapshotStats[name] || 0) + profileDuration(started);
+		}
+
+		function compileFlowSnapshot(request, blocks, identity, compilerFingerprint) {
+			if (!flowSnapshotService) {
+				raise("FLOW_SNAPSHOT_SERVICE_UNAVAILABLE", "Flow execution snapshot service is unavailable.");
+			}
+			var sourceStarted = nanoTime();
+			var source = sourceForFlowRequest(request, blocks);
+			addSnapshotDuration("sourceMs", sourceStarted);
+			var parseStarted = nanoTime();
+			var parsedDefinition = parseSource(source);
+			addSnapshotDuration("parseMs", parseStarted);
+			var createStarted = nanoTime();
+			var compiled = flowSnapshotService.create({
+				flowQName: request.flowQName || request.name || request.flowName || "Flow",
+				sourceHash: sha256Hex(source),
+				compilerFingerprint: compilerFingerprint,
+				definition: parsedDefinition
+			}, {
+				blockName: blockName
+			});
+			addSnapshotDuration("createMs", createStarted);
+			flowSnapshotStats.compiles = Number(flowSnapshotStats.compiles || 0) + 1;
+			flowSnapshotStats.payloadBytes = Number(flowSnapshotStats.payloadBytes || 0) + Number(compiled.payloadBytes || 0);
+			flowSnapshotStats.maxPayloadBytes = Math.max(Number(flowSnapshotStats.maxPayloadBytes || 0), Number(compiled.payloadBytes || 0));
+			return compiled;
+		}
+
+		function hydrateFlowSnapshot(compiled, blocks) {
+			var started = nanoTime();
+			var plan = flowSnapshotService.hydrate(compiled, blocks, {
+				blocksWithFlowHelpers: blocksWithFlowHelpers,
+				materializeDefinitionBlocks: materializeDefinitionBlocks,
+				expandFlowDefinition: expandFlowDefinition
+			});
+			addSnapshotDuration("hydrateMs", started);
+			flowSnapshotStats.hydrations = Number(flowSnapshotStats.hydrations || 0) + 1;
+			return plan;
+		}
+
 		function compileFlowPlan(request, blocks) {
 			var identity = flowPlanIdentity(request);
 			var cacheKey = "";
@@ -254,14 +298,8 @@
 					return cached;
 				}
 			}
-			var parsedDefinition = parseSource(sourceForFlowRequest(request, blocks));
-			var activeBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, parsedDefinition) : blocks;
-			materializeDefinitionBlocks(activeBlocks, parsedDefinition);
-			var plan = {
-				definition: expandFlowDefinition(activeBlocks, parsedDefinition),
-				blocks: activeBlocks,
-				catalog: blocks
-			};
+			var compiled = compileFlowSnapshot(request, blocks, identity, compilerFingerprint);
+			var plan = hydrateFlowSnapshot(compiled, blocks);
 			if (cacheKey && writeRuntimeBoundedCache) {
 				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint, plan, "compiled Flow plans");
 			}
@@ -893,6 +931,8 @@
 			executeNodes: executeNodes,
 			runFlowRequest: runFlowRequest,
 			compileFlowPlan: compileFlowPlan,
+			compileFlowSnapshot: compileFlowSnapshot,
+			hydrateFlowSnapshot: hydrateFlowSnapshot,
 			createRunContext: createRunContext
 		};
 	}
@@ -934,6 +974,16 @@
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
 			return serviceFor(env).compileFlowPlan.apply(null, args);
+		},
+		compileFlowSnapshot: function () {
+			var args = Array.prototype.slice.call(arguments);
+			var env = args.pop();
+			return serviceFor(env).compileFlowSnapshot.apply(null, args);
+		},
+		hydrateFlowSnapshot: function () {
+			var args = Array.prototype.slice.call(arguments);
+			var env = args.pop();
+			return serviceFor(env).hydrateFlowSnapshot.apply(null, args);
 		},
 		createRunContext: function () {
 			var args = Array.prototype.slice.call(arguments);

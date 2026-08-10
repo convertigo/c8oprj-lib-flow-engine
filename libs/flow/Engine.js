@@ -47,6 +47,16 @@
 		},
 		blockArtifactCompilerFingerprint: null,
 		flowPlanCompilerFingerprint: null,
+		flowSnapshotStats: {
+			compiles: 0,
+			hydrations: 0,
+			sourceMs: 0,
+			parseMs: 0,
+			createMs: 0,
+			hydrateMs: 0,
+			payloadBytes: 0,
+			maxPayloadBytes: 0
+		},
 		persistentFrontendDocuments: {
 			hits: 0,
 			misses: 0,
@@ -721,6 +731,7 @@
 			globalScope: globalScope,
 			resetModuleCaches: resetRuntimeModuleCaches,
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
+			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
 			clearFrontendDocumentServers: clearFrontendDocumentServers
@@ -765,6 +776,8 @@
 			return runtimeState.flowPlanCompilerFingerprint;
 		}
 		runtimeState.flowPlanCompilerFingerprint = [
+			"flow-execution-snapshot-service.js",
+			"flow-runtime-service.js",
 			"flow-script-parser-service.js",
 			"flow-repository-service.js",
 			"flow-source-service.js"
@@ -3569,6 +3582,10 @@
 		return loadEngineModule("flow-runtime-service.js");
 	}
 
+	function flowExecutionSnapshotService() {
+		return loadEngineModule("flow-execution-snapshot-service.js");
+	}
+
 	function flowRuntimeServiceEnv() {
 		if (flowRuntimeServiceEnvInstance) {
 			return flowRuntimeServiceEnvInstance;
@@ -3592,6 +3609,8 @@
 			writeRuntimeBoundedCache: writeRuntimeBoundedMapCache,
 			flowPlanCache: runtimeState.caches.flowPlans,
 			flowPlanCompilerFingerprint: flowPlanCompilerFingerprint,
+			flowSnapshotService: flowExecutionSnapshotService(),
+			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
 			runtimeHandles: runtimeHandleApi(),

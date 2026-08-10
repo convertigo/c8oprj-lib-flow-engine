@@ -34,6 +34,21 @@
 		return env.cacheUtils.summary(name, cache);
 	}
 
+	function flowSnapshotInfo(env) {
+		var stats = env.flowSnapshotStats || {};
+		return {
+			name: "flowSnapshots",
+			compiles: Number(stats.compiles || 0),
+			hydrations: Number(stats.hydrations || 0),
+			sourceMs: Number(stats.sourceMs || 0),
+			parseMs: Number(stats.parseMs || 0),
+			createMs: Number(stats.createMs || 0),
+			hydrateMs: Number(stats.hydrateMs || 0),
+			payloadBytes: Number(stats.payloadBytes || 0),
+			maxPayloadBytes: Number(stats.maxPayloadBytes || 0)
+		};
+	}
+
 	function info(env) {
 		var activeProjectDir = env.projectDir();
 		var activeProjectPath = activeProjectDir ? env.canonicalPath(activeProjectDir) : "";
@@ -55,6 +70,7 @@
 				blockCatalogHeads: cacheSummary("blockCatalogHeads", caches.blockCatalogHeads, env),
 				types: cacheSummary("types", caches.types, env),
 				flowPlans: cacheSummary("flowPlans", caches.flowPlans, env),
+				flowSnapshots: flowSnapshotInfo(env),
 				configDefinitions: cacheSummary("configDefinitions", caches.configDefinitions, env),
 				libraries: cacheSummary("libraries", caches.libraries, env),
 				engineModules: cacheSummary("engineModules", caches.engineModules, env),
@@ -97,6 +113,9 @@
 		env.cacheUtils.clearMap(caches.frontendDocuments);
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
 		env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
+		Object.keys(env.flowSnapshotStats || {}).forEach(function (key) {
+			env.flowSnapshotStats[key] = 0;
+		});
 		env.clearFrontendDocumentServers();
 		env.clearPersistentFrontendDocuments();
 		env.resetModuleCaches();
