@@ -53,5 +53,8 @@ now = 60000;
 assert.strictEqual(catalogLoader.loadBlocks(env, true), sentinel);
 assert.strictEqual(fingerprintCalls, 1, "the fallback probe must still run after the hot window expires");
 assert.strictEqual(env.blockCatalogHeadCache.misses, 1);
+assert.strictEqual(sentinel.__flowCatalogFingerprint, "engine\n/engine\ncore\nfingerprint");
+assert.strictEqual(Object.keys(sentinel).includes("__flowCatalogFingerprint"), false,
+	"the execution fingerprint must not appear as a Flow block");
 
 console.log("catalog-loader-hot-cache tests passed");

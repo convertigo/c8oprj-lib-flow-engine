@@ -19,6 +19,7 @@
 		var flowSnapshotService = env.flowSnapshotService;
 		var flowSnapshotStats = env.flowSnapshotStats || {};
 		var isFlowScriptSource = env.isFlowScriptSource || function () { return false; };
+		var flowSnapshotCatalogFingerprint = env.flowSnapshotCatalogFingerprint || function () { return ""; };
 		var sharedFlowSnapshotKey = env.sharedFlowSnapshotKey || function () { return ""; };
 		var sharedFlowSnapshotGet = env.sharedFlowSnapshotGet || function () { return null; };
 		var sharedFlowSnapshotPut = env.sharedFlowSnapshotPut || function () { return false; };
@@ -252,16 +253,21 @@
 			return "";
 		}
 
-		function sharedFlowSnapshotIdentity(request) {
+		function sharedFlowSnapshotIdentity(request, blocks) {
 			if (!request) {
 				return "";
 			}
 			if (request.definition !== undefined && request.definition !== null) {
 				return "definition\n" + JSON.stringify(request.definition);
 			}
-			if (request.flowSource !== undefined && request.flowSource !== null && String(request.flowSource).trim() !== "" &&
-				!isFlowScriptSource(request.flowSource)) {
-				return "source\n" + String(request.flowSource);
+			if (request.flowSource !== undefined && request.flowSource !== null && String(request.flowSource).trim() !== "") {
+				if (!isFlowScriptSource(request.flowSource)) {
+					return "source\n" + String(request.flowSource);
+				}
+				var catalogFingerprint = flowSnapshotCatalogFingerprint(blocks);
+				return catalogFingerprint
+					? "flowscript\n" + String(request.flowSource) + "\ncatalog\n" + catalogFingerprint
+					: "";
 			}
 			return "";
 		}
@@ -308,8 +314,8 @@
 			return plan;
 		}
 
-		function readSharedFlowSnapshot(request, compilerFingerprint) {
-			var identity = sharedFlowSnapshotIdentity(request);
+		function readSharedFlowSnapshot(request, blocks, compilerFingerprint) {
+			var identity = sharedFlowSnapshotIdentity(request, blocks);
 			if (!identity) {
 				flowSnapshotStats.sharedSkips = Number(flowSnapshotStats.sharedSkips || 0) + 1;
 				return { key: "", owner: false, snapshot: null };
@@ -377,7 +383,7 @@
 					return cached;
 				}
 			}
-			var shared = readSharedFlowSnapshot(request, compilerFingerprint);
+			var shared = readSharedFlowSnapshot(request, blocks, compilerFingerprint);
 			var compiled;
 			try {
 				compiled = shared.snapshot || compileFlowSnapshot(request, blocks, identity, compilerFingerprint);

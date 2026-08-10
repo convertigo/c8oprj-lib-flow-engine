@@ -13,6 +13,15 @@ const shared = new Map();
 const loading = new Set();
 let clock = 0;
 
+function testHash(value) {
+	let hash = 2166136261;
+	for (const character of String(value)) {
+		hash ^= character.charCodeAt(0);
+		hash = Math.imul(hash, 16777619);
+	}
+	return `hash:${hash >>> 0}`;
+}
+
 function catalog(label) {
 	let calls = 0;
 	return {
@@ -25,7 +34,7 @@ function catalog(label) {
 	};
 }
 
-function environment(stats) {
+function environment(stats, catalogFingerprint = "catalog-1") {
 	return {
 		blockName: (node) => node?.block || "",
 		raise(code, message) {
@@ -37,7 +46,7 @@ function environment(stats) {
 			? { version: 1, nodes: [{ block: "demo.counter" }] }
 			: JSON.parse(source),
 		sourceForFlowRequest: (request) => request.flowSource,
-		sha256Hex: (value) => `hash:${value.length}`,
+		sha256Hex: testHash,
 		flowPlanCompilerFingerprint: () => "compiler-1",
 		flowSnapshotService: snapshotService,
 		flowSnapshotStats: stats,
@@ -51,6 +60,7 @@ function environment(stats) {
 			close: () => {}
 		},
 		isFlowScriptSource: (source) => String(source).startsWith("function "),
+		flowSnapshotCatalogFingerprint: () => catalogFingerprint,
 		sharedFlowSnapshotKey: (identityHash, compiler, qname) => `${qname}:${identityHash}:${compiler}`,
 		sharedFlowSnapshotGet: (key) => shared.get(key) || null,
 		sharedFlowSnapshotClaim(key) {
@@ -94,12 +104,23 @@ assert.notStrictEqual(first.blocks["demo.counter"].run, second.blocks["demo.coun
 	"the shared snapshot leaked a runtime-local function");
 
 const flowScriptStats = {};
-runtime.compileFlowPlan({ flowQName: "Sample.Script", flowSource: "function Script() {}" }, catalog("script"), environment(flowScriptStats));
+runtime.compileFlowPlan({ flowQName: "Sample.Script", flowSource: "function Script() {}" }, catalog("script"), environment(flowScriptStats, ""));
 assert.strictEqual(flowScriptStats.sharedSkips, 1, "FlowScript depending on a live block catalog entered the shared cache");
 assert.strictEqual(flowScriptStats.compiles, 1);
 
+const firstFlowScriptStats = {};
+const changedCatalogStats = {};
+runtime.compileFlowPlan({ flowQName: "Sample.ScriptCatalog", flowSource: "function ScriptCatalog() {}" },
+	catalog("catalog-one"), environment(firstFlowScriptStats, "catalog-1"));
+runtime.compileFlowPlan({ flowQName: "Sample.ScriptCatalog", flowSource: "function ScriptCatalog() {}" },
+	catalog("catalog-two"), environment(changedCatalogStats, "catalog-2"));
+assert.strictEqual(firstFlowScriptStats.sharedWrites, 1);
+assert.strictEqual(changedCatalogStats.compiles, 1,
+	"a FlowScript snapshot was reused after its block catalog fingerprint changed");
+assert.strictEqual(changedCatalogStats.sharedWrites, 1);
+
 const badSource = JSON.stringify({ version: 1, nodes: [{ block: "demo.counter", id: "recovered" }] });
-const badIdentityHash = `hash:${`source\n${badSource}`.length}`;
+const badIdentityHash = testHash(`source\n${badSource}`);
 const badKey = `Sample.Bad:${badIdentityHash}:compiler-1`;
 shared.set(badKey, "not-json");
 const recoveryStats = {};

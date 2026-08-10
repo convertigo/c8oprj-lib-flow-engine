@@ -45,6 +45,7 @@
 				close: function () {}
 			},
 			isFlowScriptSource: function () { return false; },
+			flowSnapshotCatalogFingerprint: function () { return "catalog-1"; },
 			sharedFlowSnapshotKey: function (identityHash, compiler, qname) {
 				return qname + ":" + identityHash + ":" + compiler;
 			},

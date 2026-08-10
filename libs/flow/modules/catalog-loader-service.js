@@ -204,6 +204,23 @@
 		return blocks;
 	}
 
+	function attachCatalogFingerprint(blocks, fingerprint) {
+		if (!blocks || !fingerprint) {
+			return blocks;
+		}
+		try {
+			Object.defineProperty(blocks, "__flowCatalogFingerprint", {
+				value: String(fingerprint),
+				enumerable: false,
+				configurable: false,
+				writable: false
+			});
+		} catch (e) {
+			// A cached catalog from an older runtime remains usable but is not globally shareable.
+		}
+		return blocks;
+	}
+
 	function loadCoreBlocks(env, coreKey) {
 		var cached = env.readRuntimeCache(env.coreBlockCache, coreKey, coreKey);
 		if (cached) {
@@ -244,11 +261,11 @@
 		var key = identity.key;
 		var cached = env.readRuntimeCache(env.blockCache, key, key);
 		if (cached) {
-			return writeHotBlockCatalog(env, cached);
+			return writeHotBlockCatalog(env, attachCatalogFingerprint(cached, key));
 		}
-		return writeHotBlockCatalog(env, env.writeRuntimeCache(env.blockCache, key, key,
+		return writeHotBlockCatalog(env, attachCatalogFingerprint(env.writeRuntimeCache(env.blockCache, key, key,
 			loadBlocksUncached(env, identity.coreKey),
-			"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project")));
+			"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project")), key));
 	}
 
 	function loadTypeDescriptorFile(types, file, origin, env) {

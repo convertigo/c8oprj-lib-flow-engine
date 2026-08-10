@@ -3621,6 +3621,12 @@
 		}
 	}
 
+	function flowSnapshotCatalogFingerprint(blocks) {
+		return blocks && blocks.__flowCatalogFingerprint
+			? String(blocks.__flowCatalogFingerprint)
+			: "";
+	}
+
 	function sharedFlowSnapshotGet(key) {
 		var bridge = flowSnapshotBridge();
 		if (!bridge || !key) {
@@ -3721,6 +3727,7 @@
 			flowSnapshotService: flowExecutionSnapshotService(),
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			isFlowScriptSource: isFlowScriptSource,
+			flowSnapshotCatalogFingerprint: flowSnapshotCatalogFingerprint,
 			sharedFlowSnapshotKey: sharedFlowSnapshotKey,
 			sharedFlowSnapshotGet: sharedFlowSnapshotGet,
 			sharedFlowSnapshotPut: sharedFlowSnapshotPut,
