@@ -18,6 +18,13 @@
 		var flowPlanCompilerFingerprint = env.flowPlanCompilerFingerprint;
 		var flowSnapshotService = env.flowSnapshotService;
 		var flowSnapshotStats = env.flowSnapshotStats || {};
+		var isFlowScriptSource = env.isFlowScriptSource || function () { return false; };
+		var sharedFlowSnapshotKey = env.sharedFlowSnapshotKey || function () { return ""; };
+		var sharedFlowSnapshotGet = env.sharedFlowSnapshotGet || function () { return null; };
+		var sharedFlowSnapshotPut = env.sharedFlowSnapshotPut || function () { return false; };
+		var sharedFlowSnapshotClaim = env.sharedFlowSnapshotClaim || function () { return false; };
+		var sharedFlowSnapshotAwait = env.sharedFlowSnapshotAwait || function () { return null; };
+		var sharedFlowSnapshotAbort = env.sharedFlowSnapshotAbort || function () {};
 		var sourceForWriteRequest = env.sourceForWriteRequest;
 		var loadProjectEngineDefinition = env.loadProjectEngineDefinition;
 		var runtimeHandles = env.runtimeHandles;
@@ -245,6 +252,20 @@
 			return "";
 		}
 
+		function sharedFlowSnapshotIdentity(request) {
+			if (!request) {
+				return "";
+			}
+			if (request.definition !== undefined && request.definition !== null) {
+				return "definition\n" + JSON.stringify(request.definition);
+			}
+			if (request.flowSource !== undefined && request.flowSource !== null && String(request.flowSource).trim() !== "" &&
+				!isFlowScriptSource(request.flowSource)) {
+				return "source\n" + String(request.flowSource);
+			}
+			return "";
+		}
+
 		function addSnapshotDuration(name, started) {
 			flowSnapshotStats[name] = Number(flowSnapshotStats[name] || 0) + profileDuration(started);
 		}
@@ -287,6 +308,64 @@
 			return plan;
 		}
 
+		function readSharedFlowSnapshot(request, compilerFingerprint) {
+			var identity = sharedFlowSnapshotIdentity(request);
+			if (!identity) {
+				flowSnapshotStats.sharedSkips = Number(flowSnapshotStats.sharedSkips || 0) + 1;
+				return { key: "", owner: false, snapshot: null };
+			}
+			var flowQName = request.flowQName || request.name || request.flowName || "Flow";
+			var key = sharedFlowSnapshotKey(sha256Hex(identity), compilerFingerprint, flowQName);
+			if (!key) {
+				flowSnapshotStats.sharedSkips = Number(flowSnapshotStats.sharedSkips || 0) + 1;
+				return { key: "", owner: false, snapshot: null };
+			}
+			var payload = sharedFlowSnapshotGet(key);
+			if (!payload) {
+				flowSnapshotStats.sharedMisses = Number(flowSnapshotStats.sharedMisses || 0) + 1;
+				if (sharedFlowSnapshotClaim(key)) {
+					return { key: key, owner: true, snapshot: null };
+				}
+				payload = sharedFlowSnapshotAwait(key);
+				if (!payload && sharedFlowSnapshotClaim(key)) {
+					return { key: key, owner: true, snapshot: null };
+				}
+				if (!payload) {
+					flowSnapshotStats.sharedSkips = Number(flowSnapshotStats.sharedSkips || 0) + 1;
+					return { key: "", owner: false, snapshot: null };
+				}
+			}
+			var started = nanoTime();
+			try {
+				var compiled = flowSnapshotService.deserialize(payload);
+				addSnapshotDuration("sharedDeserializeMs", started);
+				flowSnapshotStats.sharedHits = Number(flowSnapshotStats.sharedHits || 0) + 1;
+				return { key: key, owner: false, snapshot: compiled };
+			} catch (e) {
+				addSnapshotDuration("sharedDeserializeMs", started);
+				flowSnapshotStats.sharedErrors = Number(flowSnapshotStats.sharedErrors || 0) + 1;
+				sharedFlowSnapshotAbort(key);
+				return { key: key, owner: sharedFlowSnapshotClaim(key), snapshot: null };
+			}
+		}
+
+		function publishSharedFlowSnapshot(key, compiled, owner) {
+			if (!key || !compiled || owner !== true) {
+				return;
+			}
+			try {
+				if (sharedFlowSnapshotPut(key, flowSnapshotService.serialize(compiled))) {
+					flowSnapshotStats.sharedWrites = Number(flowSnapshotStats.sharedWrites || 0) + 1;
+				} else {
+					sharedFlowSnapshotAbort(key);
+					flowSnapshotStats.sharedErrors = Number(flowSnapshotStats.sharedErrors || 0) + 1;
+				}
+			} catch (e) {
+				sharedFlowSnapshotAbort(key);
+				flowSnapshotStats.sharedErrors = Number(flowSnapshotStats.sharedErrors || 0) + 1;
+			}
+		}
+
 		function compileFlowPlan(request, blocks) {
 			var identity = flowPlanIdentity(request);
 			var cacheKey = "";
@@ -298,7 +377,19 @@
 					return cached;
 				}
 			}
-			var compiled = compileFlowSnapshot(request, blocks, identity, compilerFingerprint);
+			var shared = readSharedFlowSnapshot(request, compilerFingerprint);
+			var compiled;
+			try {
+				compiled = shared.snapshot || compileFlowSnapshot(request, blocks, identity, compilerFingerprint);
+				if (!shared.snapshot) {
+					publishSharedFlowSnapshot(shared.key, compiled, shared.owner);
+				}
+			} catch (e) {
+				if (shared.owner) {
+					sharedFlowSnapshotAbort(shared.key);
+				}
+				throw e;
+			}
 			var plan = hydrateFlowSnapshot(compiled, blocks);
 			if (cacheKey && writeRuntimeBoundedCache) {
 				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint, plan, "compiled Flow plans");

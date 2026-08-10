@@ -144,7 +144,7 @@
 			invalid("Flow execution snapshot is not valid JSON.", "$");
 		}
 		validate(raw);
-		return create(raw, env);
+		return deepFreeze(raw);
 	}
 
 	function hydrate(snapshot, blocks, env) {

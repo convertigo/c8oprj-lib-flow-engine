@@ -45,7 +45,14 @@
 			createMs: Number(stats.createMs || 0),
 			hydrateMs: Number(stats.hydrateMs || 0),
 			payloadBytes: Number(stats.payloadBytes || 0),
-			maxPayloadBytes: Number(stats.maxPayloadBytes || 0)
+			maxPayloadBytes: Number(stats.maxPayloadBytes || 0),
+			sharedHits: Number(stats.sharedHits || 0),
+			sharedMisses: Number(stats.sharedMisses || 0),
+			sharedWrites: Number(stats.sharedWrites || 0),
+			sharedErrors: Number(stats.sharedErrors || 0),
+			sharedSkips: Number(stats.sharedSkips || 0),
+			sharedDeserializeMs: Number(stats.sharedDeserializeMs || 0),
+			sharedCache: typeof env.sharedFlowSnapshotInfo === "function" ? env.sharedFlowSnapshotInfo() : { available: false }
 		};
 	}
 

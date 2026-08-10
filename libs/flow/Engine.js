@@ -55,7 +55,13 @@
 			createMs: 0,
 			hydrateMs: 0,
 			payloadBytes: 0,
-			maxPayloadBytes: 0
+			maxPayloadBytes: 0,
+			sharedHits: 0,
+			sharedMisses: 0,
+			sharedWrites: 0,
+			sharedErrors: 0,
+			sharedSkips: 0,
+			sharedDeserializeMs: 0
 		},
 		persistentFrontendDocuments: {
 			hits: 0,
@@ -732,6 +738,7 @@
 			resetModuleCaches: resetRuntimeModuleCaches,
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
+			sharedFlowSnapshotInfo: sharedFlowSnapshotInfo,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
 			clearFrontendDocumentServers: clearFrontendDocumentServers
@@ -3586,6 +3593,108 @@
 		return loadEngineModule("flow-execution-snapshot-service.js");
 	}
 
+	function flowSnapshotBridge() {
+		try {
+			return Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function sharedFlowSnapshotKey(identityHash, compilerFingerprint, flowQName) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !identityHash) {
+			return "";
+		}
+		try {
+			return [
+				"flow-execution-snapshot-v1",
+				String(bridge.cacheGeneration()),
+				canonicalPath(engineDir()),
+				projectDir() ? canonicalPath(projectDir()) : "",
+				String(flowQName || "Flow"),
+				String(identityHash),
+				String(compilerFingerprint || "")
+			].join("\n");
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function sharedFlowSnapshotGet(key) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !key) {
+			return null;
+		}
+		try {
+			var value = bridge.getFlowExecutionSnapshot(String(key));
+			return value === null || value === undefined ? null : String(value);
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function sharedFlowSnapshotPut(key, payload) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !key || !payload) {
+			return false;
+		}
+		try {
+			return bridge.putFlowExecutionSnapshot(String(key), String(payload)) === true;
+		} catch (e) {
+			return false;
+		}
+	}
+
+	function sharedFlowSnapshotClaim(key) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !key) {
+			return false;
+		}
+		try {
+			return bridge.claimFlowExecutionSnapshot(String(key)) === true;
+		} catch (e) {
+			return false;
+		}
+	}
+
+	function sharedFlowSnapshotAwait(key) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !key) {
+			return null;
+		}
+		try {
+			var value = bridge.awaitFlowExecutionSnapshot(String(key), 30000);
+			return value === null || value === undefined ? null : String(value);
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function sharedFlowSnapshotAbort(key) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !key) {
+			return;
+		}
+		try {
+			bridge.abortFlowExecutionSnapshot(String(key));
+		} catch (e) {
+			// Older bridges do not expose shared execution snapshots.
+		}
+	}
+
+	function sharedFlowSnapshotInfo() {
+		var bridge = flowSnapshotBridge();
+		if (!bridge) {
+			return { available: false };
+		}
+		try {
+			return JSON.parse(String(bridge.flowExecutionSnapshotCacheInfo()));
+		} catch (e) {
+			return { available: false };
+		}
+	}
+
 	function flowRuntimeServiceEnv() {
 		if (flowRuntimeServiceEnvInstance) {
 			return flowRuntimeServiceEnvInstance;
@@ -3611,6 +3720,13 @@
 			flowPlanCompilerFingerprint: flowPlanCompilerFingerprint,
 			flowSnapshotService: flowExecutionSnapshotService(),
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
+			isFlowScriptSource: isFlowScriptSource,
+			sharedFlowSnapshotKey: sharedFlowSnapshotKey,
+			sharedFlowSnapshotGet: sharedFlowSnapshotGet,
+			sharedFlowSnapshotPut: sharedFlowSnapshotPut,
+			sharedFlowSnapshotClaim: sharedFlowSnapshotClaim,
+			sharedFlowSnapshotAwait: sharedFlowSnapshotAwait,
+			sharedFlowSnapshotAbort: sharedFlowSnapshotAbort,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
 			runtimeHandles: runtimeHandleApi(),
