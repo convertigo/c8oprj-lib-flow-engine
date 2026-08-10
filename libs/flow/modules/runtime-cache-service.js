@@ -52,6 +52,10 @@
 			sharedErrors: Number(stats.sharedErrors || 0),
 			sharedSkips: Number(stats.sharedSkips || 0),
 			sharedDeserializeMs: Number(stats.sharedDeserializeMs || 0),
+			machineHits: Number(stats.machineHits || 0),
+			machineMisses: Number(stats.machineMisses || 0),
+			machineStores: Number(stats.machineStores || 0),
+			machineErrors: Number(stats.machineErrors || 0),
 			sharedCache: typeof env.sharedFlowSnapshotInfo === "function" ? env.sharedFlowSnapshotInfo() : { available: false }
 		};
 	}

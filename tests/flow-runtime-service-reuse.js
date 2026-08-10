@@ -168,4 +168,37 @@ assert.deepStrictEqual(preparedFlowWrites, [{ out: "result.flow", value: 10 }]);
 assert.strictEqual(preparedFlowRunnerBuilds, 1,
 	"Flow composite runner should be prepared exactly once with the plan");
 
+let sharedRunnerBuilds = 0;
+const sharedNode = { block: "shared", props: { out: "result.shared", value: 7 } };
+Object.defineProperty(sharedNode, "__flowMachineNodeIndex", {
+	value: 0, enumerable: false, writable: false, configurable: false,
+});
+Object.freeze(sharedNode.props);
+Object.freeze(sharedNode);
+const sharedBlock = {
+	__flowOrigin: "core",
+	prepareNode(_node, helpers) {
+		sharedRunnerBuilds += 1;
+		const value = helpers.props.value;
+		return () => value;
+	},
+	run: () => { throw new Error("shared machine prepared runner was not used"); },
+};
+const sharedPlan = runtime.prepareExecutionPlan({
+	definition: { nodes: [sharedNode] },
+	blocks: { shared: sharedBlock },
+	machineImage: true,
+}, preparedEnv);
+assert.strictEqual(sharedNode.__flowRuntimeNode, undefined,
+	"a runtime descriptor was attached to an immutable machine node");
+assert.strictEqual(typeof sharedPlan.preparedNodes[0].execute, "function");
+const sharedWrites = [];
+const sharedCtx = runtime.createRunContext({}, sharedPlan.definition, sharedPlan.blocks, {}, sharedPlan, preparedEnv);
+sharedCtx.write = (out, value) => sharedWrites.push({ out, value });
+sharedCtx.trace = () => {};
+assert.strictEqual(runtime.executeNode(sharedCtx, sharedNode, preparedEnv), 7);
+assert.deepStrictEqual(sharedWrites, [{ out: "result.shared", value: 7 }]);
+assert.strictEqual(sharedRunnerBuilds, 1,
+	"the immutable machine node rebuilt its runtime runner on the hot path");
+
 console.log("flow runtime service reuse tests passed");

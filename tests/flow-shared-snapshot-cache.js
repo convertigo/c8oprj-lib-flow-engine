@@ -11,7 +11,35 @@ const runtime = load("flow-runtime-service.js");
 const snapshotService = load("flow-execution-snapshot-service.js");
 const shared = new Map();
 const loading = new Set();
+const machines = new Map();
 let clock = 0;
+
+function machineImage(payload) {
+	const definition = JSON.parse(payload);
+	let index = 0;
+	function visitNodes(value) {
+		if (!value || typeof value !== "object") return;
+		if (Array.isArray(value)) {
+			value.forEach(visitNodes);
+			return;
+		}
+		if (value.block || value.type) {
+			Object.defineProperty(value, "__flowMachineNodeIndex", {
+				value: index++, enumerable: false, writable: false, configurable: false,
+			});
+		}
+		Object.keys(value).forEach((key) => {
+			if (key !== "props") visitNodes(value[key]);
+		});
+	}
+	function freeze(value) {
+		if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+		Object.keys(value).forEach((key) => freeze(value[key]));
+		return Object.freeze(value);
+	}
+	visitNodes(definition.nodes || []);
+	return freeze(definition);
+}
 
 function testHash(value) {
 	let hash = 2166136261;
@@ -78,6 +106,11 @@ function environment(stats, catalogFingerprint = "catalog-1") {
 			loading.delete(key);
 			return true;
 		},
+		sharedFlowMachineImageGet: (key) => machines.get(key) || null,
+		sharedFlowMachineImagePut(key, payload) {
+			if (!machines.has(key)) machines.set(key, machineImage(payload));
+			return machines.get(key);
+		},
 		blocksWithFlowHelpers: (blocks) => blocks,
 		materializeFlowScriptBlock: (blocks, name) => blocks[name],
 		expandFlowDefinition: (_blocks, definition) => JSON.parse(JSON.stringify(definition)),
@@ -96,10 +129,21 @@ assert.strictEqual(firstStats.sharedMisses, 1);
 assert.strictEqual(firstStats.sharedWrites, 1);
 assert.strictEqual(firstStats.hydrations, 1);
 assert.strictEqual(secondStats.compiles || 0, 0, "the second runtime compiled a shared neutral snapshot again");
-assert.strictEqual(secondStats.sharedHits, 1);
-assert.strictEqual(secondStats.hydrations, 1);
-assert.strictEqual(first.blocks["demo.counter"].run(), "first:1");
-assert.strictEqual(second.blocks["demo.counter"].run(), "second:1");
+assert.strictEqual(firstStats.machineMisses, 1);
+assert.strictEqual(firstStats.machineStores, 1);
+assert.strictEqual(secondStats.machineHits, 1);
+assert.strictEqual(secondStats.sharedHits || 0, 0,
+	"a machine image hit still deserialized the neutral snapshot");
+assert.strictEqual(secondStats.hydrations || 0, 0,
+	"a machine image hit still hydrated a private definition");
+assert.strictEqual(first.definition, second.definition,
+	"the two runtimes did not receive the same immutable definition");
+assert(Object.isFrozen(first.definition));
+assert(Object.isFrozen(first.definition.nodes[0]));
+assert.strictEqual(first.definition.nodes[0].__flowRuntimeNode, undefined,
+	"runtime state was attached to the shared machine node");
+assert.strictEqual(first.preparedNodes[0].execute({ stopped: false, traceEnabled: false }), "first:1");
+assert.strictEqual(second.preparedNodes[0].execute({ stopped: false, traceEnabled: false }), "second:1");
 assert.notStrictEqual(first.blocks["demo.counter"].run, second.blocks["demo.counter"].run,
 	"the shared snapshot leaked a runtime-local function");
 

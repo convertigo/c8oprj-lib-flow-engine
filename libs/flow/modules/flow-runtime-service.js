@@ -26,6 +26,8 @@
 		var sharedFlowSnapshotClaim = env.sharedFlowSnapshotClaim || function () { return false; };
 		var sharedFlowSnapshotAwait = env.sharedFlowSnapshotAwait || function () { return null; };
 		var sharedFlowSnapshotAbort = env.sharedFlowSnapshotAbort || function () {};
+		var sharedFlowMachineImageGet = env.sharedFlowMachineImageGet || function () { return null; };
+		var sharedFlowMachineImagePut = env.sharedFlowMachineImagePut || function () { return null; };
 		var sourceForWriteRequest = env.sourceForWriteRequest;
 		var loadProjectEngineDefinition = env.loadProjectEngineDefinition;
 		var runtimeHandles = env.runtimeHandles;
@@ -164,6 +166,22 @@
 				String(block.__blockImplementationRuntime || "") === "flow");
 		}
 
+		function machineNodeIndex(node) {
+			if (!node || node.__flowMachineNodeIndex === undefined || node.__flowMachineNodeIndex === null) {
+				return -1;
+			}
+			var index = Number(node.__flowMachineNodeIndex);
+			return isFinite(index) && index >= 0 ? Math.floor(index) : -1;
+		}
+
+		function preparedNodeFor(ctx, node) {
+			var index = machineNodeIndex(node);
+			if (index >= 0 && ctx && ctx.preparedNodes && ctx.preparedNodes[index]) {
+				return ctx.preparedNodes[index];
+			}
+			return node && node.__flowRuntimeNode;
+		}
+
 		function prepareNodeRunner(block, node, props) {
 			var trustedRuntime = String(block && block.__flowOrigin || "") === "core" ||
 				String(block && block.__blockImplementationRuntime || "") === "flow";
@@ -204,13 +222,13 @@
 			};
 		}
 
-		function installPreparedNode(node, blocks, seenGraphBlocks) {
+		function installPreparedNode(node, blocks, seenGraphBlocks, preparedNodes) {
 			if (!node || typeof node !== "object") {
 				return;
 			}
 			if (Object.prototype.toString.call(node) === "[object Array]") {
 				for (var i = 0; i < node.length; i++) {
-					installPreparedNode(node[i], blocks, seenGraphBlocks);
+					installPreparedNode(node[i], blocks, seenGraphBlocks, preparedNodes);
 				}
 				return;
 			}
@@ -234,32 +252,38 @@
 						run: preparedRunner
 					};
 				preparedNode.execute = prepareNodeExecutor(node, block, name, preparedNode.out, preparedWriter, preparedRunner);
-				Object.defineProperty(node, "__flowRuntimeNode", {
-					value: preparedNode,
-					enumerable: false,
-					configurable: true
-				});
+				var index = machineNodeIndex(node);
+				if (index >= 0 && preparedNodes) {
+					preparedNodes[index] = preparedNode;
+				} else {
+					Object.defineProperty(node, "__flowRuntimeNode", {
+						value: preparedNode,
+						enumerable: false,
+						configurable: true
+					});
+				}
 			}
 			Object.keys(node).forEach(function (key) {
 				if (key !== "props") {
-					installPreparedNode(node[key], blocks, seenGraphBlocks);
+					installPreparedNode(node[key], blocks, seenGraphBlocks, preparedNodes);
 				}
 			});
 			if (block && block.__graphDefinition && !seenGraphBlocks[name]) {
 				seenGraphBlocks[name] = true;
-				installPreparedNode(block.__graphDefinition.nodes || [], blocks, seenGraphBlocks);
+				installPreparedNode(block.__graphDefinition.nodes || [], blocks, seenGraphBlocks, preparedNodes);
 			}
 		}
 
 		function prepareExecutionPlan(plan) {
 			if (plan && plan.definition && plan.blocks) {
-				installPreparedNode(plan.definition.nodes || [], plan.blocks, {});
+				plan.preparedNodes = plan.machineImage === true ? [] : null;
+				installPreparedNode(plan.definition.nodes || [], plan.blocks, {}, plan.preparedNodes);
 			}
 			return plan;
 		}
 
 		function executeNode(ctx, node) {
-			var direct = node && node.__flowRuntimeNode;
+			var direct = preparedNodeFor(ctx, node);
 			if (!ctx.profile && direct && direct.catalog === ctx.blocks && direct.execute) {
 				return direct.execute(ctx);
 			}
@@ -271,7 +295,7 @@
 			profileCount(ctx, "executeNodeCalls");
 			try {
 				var resolveStarted = profiled ? nanoTime() : 0;
-				var prepared = node.__flowRuntimeNode;
+				var prepared = preparedNodeFor(ctx, node);
 				var preparedHit = prepared && prepared.catalog === ctx.blocks;
 				var name = preparedHit ? prepared.name : blockName(node);
 				var block = preparedHit ? prepared.block : runtimeBlock(ctx.blocks, name);
@@ -487,7 +511,17 @@
 			});
 			addSnapshotDuration("hydrateMs", started);
 			flowSnapshotStats.hydrations = Number(flowSnapshotStats.hydrations || 0) + 1;
-			return prepareExecutionPlan(plan);
+			return plan;
+		}
+
+		function flowMachineImageKey(request, blocks, compilerFingerprint) {
+			var identity = sharedFlowSnapshotIdentity(request, blocks);
+			if (!identity) {
+				return "";
+			}
+			var flowQName = request.flowQName || request.name || request.flowName || "Flow";
+			var snapshotKey = sharedFlowSnapshotKey(sha256Hex(identity), compilerFingerprint, flowQName);
+			return snapshotKey ? snapshotKey + "\nflow-machine-image-v1" : "";
 		}
 
 		function readSharedFlowSnapshot(request, blocks, compilerFingerprint) {
@@ -559,6 +593,27 @@
 					return cached;
 				}
 			}
+			var machineKey = flowMachineImageKey(request, blocks, compilerFingerprint);
+			if (machineKey) {
+				var sharedDefinition = sharedFlowMachineImageGet(machineKey);
+				if (sharedDefinition) {
+					flowSnapshotStats.machineHits = Number(flowSnapshotStats.machineHits || 0) + 1;
+					var machineBlocks = blocksWithFlowHelpers(blocks, sharedDefinition);
+					materializeDefinitionBlocks(machineBlocks, sharedDefinition);
+					var machinePlan = prepareExecutionPlan({
+						definition: sharedDefinition,
+						blocks: machineBlocks,
+						catalog: blocks,
+						machineImage: true
+					});
+					if (cacheKey && writeRuntimeBoundedCache) {
+						return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint,
+							machinePlan, "compiled Flow plans");
+					}
+					return machinePlan;
+				}
+				flowSnapshotStats.machineMisses = Number(flowSnapshotStats.machineMisses || 0) + 1;
+			}
 			var shared = readSharedFlowSnapshot(request, blocks, compilerFingerprint);
 			var compiled;
 			try {
@@ -573,6 +628,21 @@
 				throw e;
 			}
 			var plan = hydrateFlowSnapshot(compiled, blocks);
+			if (machineKey) {
+				try {
+					var image = sharedFlowMachineImagePut(machineKey, JSON.stringify(plan.definition));
+					if (image) {
+						plan.definition = image;
+						plan.machineImage = true;
+						flowSnapshotStats.machineStores = Number(flowSnapshotStats.machineStores || 0) + 1;
+					} else {
+						flowSnapshotStats.machineErrors = Number(flowSnapshotStats.machineErrors || 0) + 1;
+					}
+				} catch (e) {
+					flowSnapshotStats.machineErrors = Number(flowSnapshotStats.machineErrors || 0) + 1;
+				}
+			}
+			plan = prepareExecutionPlan(plan);
 			if (cacheKey && writeRuntimeBoundedCache) {
 				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint, plan, "compiled Flow plans");
 			}
@@ -612,7 +682,7 @@
 			var projectEngine = loadProjectEngineDefinition();
 			var configMs = request.profile === true ? profileDuration(configStarted) : 0;
 			var contextStarted = request.profile === true ? nanoTime() : 0;
-			var ctx = createRunContext(request, definition, activeBlocks, projectEngine);
+			var ctx = createRunContext(request, definition, activeBlocks, projectEngine, plan);
 			if (request.profile === true) {
 				ctx.profile = {
 					loadBlocksMs: Number(request.loadBlocksMs || 0),
@@ -667,7 +737,7 @@
 			}
 		}
 
-		function createRunContext(request, definition, blocks, projectEngine) {
+		function createRunContext(request, definition, blocks, projectEngine, plan) {
 			var requestScope = normalizeTree(request.context || {});
 			var projectName = currentProjectName(request);
 			if (projectName) {
@@ -683,6 +753,7 @@
 				definition: definition,
 				engine: projectEngine || {},
 				blocks: blocks,
+				preparedNodes: plan && plan.preparedNodes || null,
 				returned: undefined,
 				stopped: false,
 				handles: {},
@@ -703,7 +774,7 @@
 				}
 			};
 			ctx.props = function (node) {
-				var prepared = node && node.__flowRuntimeNode;
+				var prepared = preparedNodeFor(ctx, node);
 				if (prepared && prepared.catalog === ctx.blocks && prepared.props) {
 					profileCount(ctx, "preparedPropsHits");
 					return prepared.props;

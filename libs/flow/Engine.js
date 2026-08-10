@@ -3761,6 +3761,32 @@
 		}
 	}
 
+	function sharedFlowMachineImageGet(key) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !key) {
+			return null;
+		}
+		try {
+			var image = bridge.getFlowMachineImage(String(key));
+			return image === null || image === undefined ? null : image;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function sharedFlowMachineImagePut(key, payload) {
+		var bridge = flowSnapshotBridge();
+		if (!bridge || !key || !payload) {
+			return null;
+		}
+		try {
+			var image = bridge.putFlowMachineImage(String(key), String(payload));
+			return image === null || image === undefined ? null : image;
+		} catch (e) {
+			return null;
+		}
+	}
+
 	function flowRuntimeServiceEnv() {
 		if (flowRuntimeServiceEnvInstance) {
 			return flowRuntimeServiceEnvInstance;
@@ -3794,6 +3820,8 @@
 			sharedFlowSnapshotClaim: sharedFlowSnapshotClaim,
 			sharedFlowSnapshotAwait: sharedFlowSnapshotAwait,
 			sharedFlowSnapshotAbort: sharedFlowSnapshotAbort,
+			sharedFlowMachineImageGet: sharedFlowMachineImageGet,
+			sharedFlowMachineImagePut: sharedFlowMachineImagePut,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
 			runtimeHandles: runtimeHandleApi(),
@@ -3891,8 +3919,8 @@
 		return flowRuntimeService().compileFlowPlan(request, blocks, flowRuntimeServiceEnv());
 	}
 
-	function createRunContext(request, definition, blocks, projectEngine) {
-		return flowRuntimeService().createRunContext(request, definition, blocks, projectEngine, flowRuntimeServiceEnv());
+	function createRunContext(request, definition, blocks, projectEngine, plan) {
+		return flowRuntimeService().createRunContext(request, definition, blocks, projectEngine, plan, flowRuntimeServiceEnv());
 	}
 
 	function flowAnalysisService() {
