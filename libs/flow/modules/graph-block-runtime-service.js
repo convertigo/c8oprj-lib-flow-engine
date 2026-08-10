@@ -16,6 +16,7 @@
 		var renderTemplateTree = env.renderTemplateTree;
 		var readScopePath = env.readScopePath;
 		var graphBlockStackLabel = env.graphBlockStackLabel;
+		var compileTemplateTree = env.compileTemplateTree;
 		var nanoTime = env.nanoTime || function () { return 0; };
 
 	function profileDuration(started) {
@@ -201,19 +202,80 @@
 		return ctx.template(ctx.literal(value));
 	}
 
-	function resolveGraphBlockProps(ctx, node, catalog) {
-		var raw = ctx.props(node);
+	function compileGraphBlockProp(descriptor, value) {
+		descriptor = descriptor || {};
+		var kind = descriptor.kind || descriptor.type || "";
+		var mode = descriptor.mode || "";
+		if (value === undefined && descriptor["default"] !== undefined) {
+			value = descriptor["default"];
+		}
+		if (kind === "template" || kind === "value" || kind === "") {
+			if (typeof compileTemplateTree === "function") {
+				return compileTemplateTree(value);
+			}
+			return function (ctx) { return resolveGraphBlockProp(ctx, descriptor, value); };
+		}
+		if (kind === "expression") {
+			return value && typeof value === "object"
+				? function (ctx) { return ctx.literal(value); }
+				: function (ctx) { return ctx.expr(value); };
+		}
+		if (kind === "literal" || kind === "text" || kind === "schema" || kind === "secret") {
+			return function (ctx) { return ctx.literal(value); };
+		}
+		if (kind === "path" && mode === "write") {
+			return function () { return value; };
+		}
+		return typeof compileTemplateTree === "function"
+			? compileTemplateTree(value)
+			: function (ctx) { return resolveGraphBlockProp(ctx, descriptor, value); };
+	}
+
+	function compileGraphBlockProps(node, catalog) {
+		var raw = ctxPropsForCompile(node);
 		var descriptors = catalog.props || {};
-		var props = {};
+		var fields = [];
 		Object.keys(descriptors).forEach(function (key) {
-			props[key] = resolveGraphBlockProp(ctx, descriptors[key], raw[key]);
+			fields.push({ key: key, resolve: compileGraphBlockProp(descriptors[key], raw[key]) });
 		});
 		Object.keys(raw).forEach(function (key) {
-			if (props[key] === undefined) {
-				props[key] = raw[key];
+			if (descriptors[key] === undefined) {
+				fields.push({ key: key, resolve: function () { return raw[key]; } });
 			}
 		});
-		return props;
+		return function (ctx) {
+			var props = {};
+			for (var i = 0; i < fields.length; i++) {
+				props[fields[i].key] = fields[i].resolve(ctx);
+			}
+			return props;
+		};
+	}
+
+	function ctxPropsForCompile(node) {
+		var prepared = node && node.__flowRuntimeNode;
+		return prepared && prepared.props ? prepared.props : nodeProps(node);
+	}
+
+	function resolveGraphBlockProps(ctx, node, catalog) {
+		var prepared = node && node.__flowRuntimeNode;
+		if (prepared && prepared.graphPropsCatalog === catalog && prepared.graphPropsResolver) {
+			if (ctx.profile) {
+				var hits = ctx.profile.hotPath || (ctx.profile.hotPath = {});
+				hits.graphBlockPreparedPropsHits = Number(hits.graphBlockPreparedPropsHits || 0) + 1;
+			}
+			return prepared.graphPropsResolver(ctx);
+		}
+		var resolver = compileGraphBlockProps(node, catalog);
+		if (prepared) {
+			prepared.graphPropsCatalog = catalog;
+			prepared.graphPropsResolver = resolver;
+		}
+		if (ctx.profile) {
+			var misses = ctx.profile.hotPath || (ctx.profile.hotPath = {});
+			misses.graphBlockPreparedPropsMisses = Number(misses.graphBlockPreparedPropsMisses || 0) + 1;
+		}
+		return resolver(ctx);
 	}
 
 	function runGraphBlock(ctx, node, block) {

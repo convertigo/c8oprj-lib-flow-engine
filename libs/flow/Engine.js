@@ -512,6 +512,10 @@
 		return expressionUtils().compile(source, expressionUtilsEnv());
 	}
 
+	function compileTemplateTree(value) {
+		return expressionUtils().compileTemplate(value, expressionUtilsEnv());
+	}
+
 	function inputValue(ctx, props, fallback) {
 		if (props.value !== undefined) {
 			return renderTemplateTree(ctx, literalValue(props.value));
@@ -1567,6 +1571,7 @@
 			renderTemplateTree: renderTemplateTree,
 			readScopePath: readScopePath,
 			graphBlockStackLabel: graphBlockStackLabel,
+			compileTemplateTree: compileTemplateTree,
 			nanoTime: function () { return JavaSystem.nanoTime(); }
 		};
 	}

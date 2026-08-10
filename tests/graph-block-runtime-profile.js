@@ -7,6 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/graph-
 const graphRuntime = vm.runInNewContext(source, {});
 let clock = 0;
 let catalogCalls = 0;
+let templateCompiles = 0;
 
 const definition = {
 	name: "profiled",
@@ -47,12 +48,17 @@ const env = {
 	renderTemplateTree: (_ctx, value) => value,
 	readScopePath: () => undefined,
 	graphBlockStackLabel: (stack) => stack.join(" > "),
+	compileTemplateTree(value) {
+		templateCompiles += 1;
+		const match = typeof value === "string" && value.match(/^\{\{\s*local\.([A-Za-z_$][\w$]*)\s*\}\}$/);
+		return match ? (ctx) => ctx.scopes.local[match[1]] : () => value;
+	},
 	nanoTime: () => ++clock * 1000000,
 };
 
 const block = graphRuntime.graphBlockFromDefinition(definition, file, "project", "project", env);
 const originalInput = { outer: true };
-const originalLocal = { kept: true };
+const originalLocal = { kept: true, value: 42 };
 const originalResult = { outer: true };
 const ctx = {
 	profile: { hotPath: {} },
@@ -77,14 +83,24 @@ const ctx = {
 	},
 };
 
-const result = block.run(ctx, { block: "demo.profiled", props: { value: 42 } });
+const node = { block: "demo.profiled", props: { value: "{{ local.value }}" } };
+Object.defineProperty(node, "__flowRuntimeNode", {
+	value: { props: Object.freeze({ value: "{{ local.value }}" }) },
+	enumerable: false,
+});
+const result = block.run(ctx, node);
 assert.strictEqual(result.value, 42);
+originalLocal.value = 43;
+assert.strictEqual(block.run(ctx, node).value, 43);
 assert.strictEqual(ctx.scopes.input, originalInput);
 assert.strictEqual(ctx.scopes.local, originalLocal);
 assert.strictEqual(ctx.scopes.result, originalResult);
 assert.strictEqual(ctx.graphBlockStack.length, 0);
-assert.strictEqual(ctx.profile.hotPath.graphBlockCalls, 1);
+assert.strictEqual(ctx.profile.hotPath.graphBlockCalls, 2);
 assert.strictEqual(catalogCalls, 0, "runtime graph execution rebuilt an immutable block catalog");
+assert.strictEqual(templateCompiles, 1, "graph properties were recompiled on the hot path");
+assert.strictEqual(ctx.profile.hotPath.graphBlockPreparedPropsMisses, 1);
+assert.strictEqual(ctx.profile.hotPath.graphBlockPreparedPropsHits, 1);
 assert.ok(ctx.profile.hotPath.graphBlockCatalogMs > 0);
 assert.ok(ctx.profile.hotPath.graphBlockResolvePropsMs > 0);
 assert.ok(ctx.profile.hotPath.graphBlockFrameEnterMs > 0);

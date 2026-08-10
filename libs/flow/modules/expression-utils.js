@@ -655,6 +655,7 @@
 		isSimpleScopePath: isSimpleScopePath,
 		readSimpleScopePath: readSimpleScopePath,
 		compile: compile,
+		compileTemplate: compileTree,
 		expressionFunctions: expressionFunctions,
 		tokenize: tokenize,
 		evaluate: evaluate

@@ -85,6 +85,19 @@ assert(compiled(context({ name: "  Flow  " })) === "Flow ready",
 assert(compiled(context({ name: "  Runtime  " })) === "Runtime ready",
 	"compiled method expression captured the first context");
 
+const compiledTemplate = expressions.compileTemplate({
+	name: "{{ input.name }}",
+	label: "Hello {{ input.name }}",
+}, env);
+const firstTemplate = compiledTemplate(context({ name: "Flow" }));
+const secondTemplate = compiledTemplate(context({ name: "Runtime" }));
+assert(firstTemplate.name === "Flow" && firstTemplate.label === "Hello Flow",
+	"compiled template returned the wrong first value");
+assert(secondTemplate.name === "Runtime" && secondTemplate.label === "Hello Runtime",
+	"compiled template captured the first context");
+assert(firstTemplate !== secondTemplate,
+	"compiled structured template reused mutable output between requests");
+
 assert(expressions.evaluate(context({ value: null, fallback: "ok" }),
 	"input.value ?? input.fallback", env) === "ok", "compiled nullish expression changed semantics");
 
