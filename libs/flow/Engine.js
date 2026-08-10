@@ -32,6 +32,7 @@
 	var expressionUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
+	var flowRuntimeServiceEnvInstance = null;
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
@@ -701,6 +702,7 @@
 		expressionUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
+		flowRuntimeServiceEnvInstance = null;
 		clearCompiledScriptCache();
 	}
 
@@ -3568,7 +3570,10 @@
 	}
 
 	function flowRuntimeServiceEnv() {
-		return {
+		if (flowRuntimeServiceEnvInstance) {
+			return flowRuntimeServiceEnvInstance;
+		}
+		flowRuntimeServiceEnvInstance = {
 			File: File,
 			blockName: blockName,
 			nodeProps: nodeProps,
@@ -3654,9 +3659,12 @@
 			flowCode: flowCodeApi(),
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
-			context: typeof context === "undefined" ? null : context,
+			currentConvertigoContext: function () {
+				return typeof context === "undefined" ? null : context;
+			},
 			nanoTime: function () { return Number(JavaSystem.nanoTime()); }
 		};
+		return flowRuntimeServiceEnvInstance;
 	}
 
 	function executeNode(ctx, node) {

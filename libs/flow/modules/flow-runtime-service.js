@@ -93,7 +93,7 @@
 		var flowCode = env.flowCode;
 		var requestables = env.requestables;
 		var throwFlowError = env.throwFlowError;
-		var liveContext = env.context;
+		var currentConvertigoContext = env.currentConvertigoContext || function () { return env.context; };
 		var nanoTime = env.nanoTime || function () { return 0; };
 		var materializeFlowScriptBlock = env.materializeFlowScriptBlock || function (blocks, name) {
 			return blocks && blocks[name];
@@ -114,12 +114,19 @@
 			});
 		}
 
+		function runtimeBlock(blocks, name) {
+			var block = blocks && blocks[name];
+			return block && block.__flowScriptPlaceholder === true
+				? materializeFlowScriptBlock(blocks, name)
+				: block;
+		}
+
 		function executeNode(ctx, node) {
 			if (ctx.stopped || !node || node.disabled) {
 				return undefined;
 			}
 			var name = blockName(node);
-			var block = materializeFlowScriptBlock(ctx.blocks, name);
+			var block = runtimeBlock(ctx.blocks, name);
 			if (!block) {
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 			}
@@ -144,7 +151,7 @@
 			if (!name) {
 				raise("MISSING_BLOCK_NAME", "ctx.callBlock requires a block name.");
 			}
-			var block = materializeFlowScriptBlock(ctx.blocks, name);
+			var block = runtimeBlock(ctx.blocks, name);
 			if (!block) {
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, null, "Use flow-catalog or blockList to list supported blocks.");
 			}
@@ -161,6 +168,7 @@
 			if (!node.id) {
 				node.id = "call:" + name;
 			}
+			var nodeProperties = nodeProps(node);
 			var previousInput = ctx.scopes.input;
 			var previousProps = ctx.scopes.props;
 			var previousLocal = ctx.scopes.local;
@@ -168,7 +176,7 @@
 			var previousReturned = ctx.returned;
 			var previousStopped = ctx.stopped;
 			var previousTraceEnabled = ctx.traceEnabled;
-			ctx.scopes.props = nodeProps(node);
+			ctx.scopes.props = nodeProperties;
 			ctx.scopes.input = ctx.scopes.props;
 			ctx.scopes.local = {};
 			ctx.returned = undefined;
@@ -178,7 +186,6 @@
 			}
 			var started = ctx.profile ? nanoTime() : 0;
 			try {
-				var nodeProperties = nodeProps(node);
 				var result = block.run(ctx, node);
 				if (ctx.returned !== undefined) {
 					result = ctx.returned;
@@ -431,6 +438,7 @@
 				return closeRuntimeHandle(ctx, handle);
 			};
 			ctx.convertigoContext = function () {
+				var liveContext = currentConvertigoContext();
 				if (liveContext === null || liveContext === undefined) {
 					raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
 				}
@@ -889,36 +897,48 @@
 		};
 	}
 
+	var cachedEnv = null;
+	var cachedService = null;
+
+	function serviceFor(env) {
+		if (cachedEnv !== env || !cachedService) {
+			cachedEnv = env;
+			cachedService = create(env);
+		}
+		return cachedService;
+	}
+
 	return {
+		create: create,
 		executeNode: function () {
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
-			return create(env).executeNode.apply(null, args);
+			return serviceFor(env).executeNode.apply(null, args);
 		},
 		callBlock: function () {
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
-			return create(env).callBlock.apply(null, args);
+			return serviceFor(env).callBlock.apply(null, args);
 		},
 		executeNodes: function () {
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
-			return create(env).executeNodes.apply(null, args);
+			return serviceFor(env).executeNodes.apply(null, args);
 		},
 		runFlowRequest: function () {
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
-			return create(env).runFlowRequest.apply(null, args);
+			return serviceFor(env).runFlowRequest.apply(null, args);
 		},
 		compileFlowPlan: function () {
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
-			return create(env).compileFlowPlan.apply(null, args);
+			return serviceFor(env).compileFlowPlan.apply(null, args);
 		},
 		createRunContext: function () {
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
-			return create(env).createRunContext.apply(null, args);
+			return serviceFor(env).createRunContext.apply(null, args);
 		}
 	};
 }())
