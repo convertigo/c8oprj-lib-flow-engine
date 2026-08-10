@@ -165,7 +165,9 @@
 		}
 
 		function prepareNodeRunner(block, node, props) {
-			if (!block || String(block.__flowOrigin || "") !== "core" ||
+			var trustedRuntime = String(block && block.__flowOrigin || "") === "core" ||
+				String(block && block.__blockImplementationRuntime || "") === "flow";
+			if (!block || !trustedRuntime ||
 					typeof block.prepareNode !== "function" || !props) {
 				return null;
 			}

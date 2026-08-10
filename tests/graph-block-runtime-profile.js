@@ -108,4 +108,16 @@ assert.ok(ctx.profile.hotPath.graphBlockExecuteMs > 0);
 assert.ok(ctx.profile.hotPath.graphBlockFrameRestoreMs > 0);
 assert.ok(ctx.profile.hotPath.graphBlockTotalMs > 0);
 
+const preparedRunner = block.prepareNode(node, { props: node.__flowRuntimeNode.props });
+originalLocal.value = 44;
+assert.strictEqual(preparedRunner(ctx).value, 44);
+originalLocal.value = 45;
+assert.strictEqual(preparedRunner(ctx).value, 45);
+assert.strictEqual(templateCompiles, 2, "prepared graph properties were rebuilt after plan preparation");
+assert.strictEqual(ctx.profile.hotPath.graphBlockPreparedRunnerHits, 2);
+assert.strictEqual(ctx.scopes.input, originalInput);
+assert.strictEqual(ctx.scopes.local, originalLocal);
+assert.strictEqual(ctx.scopes.result, originalResult);
+assert.strictEqual(ctx.graphBlockStack.length, 0);
+
 console.log("graph block runtime profile tests passed");

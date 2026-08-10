@@ -143,4 +143,29 @@ assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 
 assert.strictEqual(preparedRunnerBuilds, 1,
 	"prepared runner was rebuilt on the hot path");
 
+let preparedFlowRunnerBuilds = 0;
+const preparedFlowNode = { block: "prepared.flow", props: { out: "result.flow" } };
+const preparedFlowBlock = {
+	__flowOrigin: "project",
+	__blockImplementationRuntime: "flow",
+	prepareNode() {
+		preparedFlowRunnerBuilds += 1;
+		return (ctx) => ctx.scopes.input.answer + 1;
+	},
+	run: () => { throw new Error("prepared Flow runner was not used"); },
+};
+runtime.prepareExecutionPlan({
+	definition: { nodes: [preparedFlowNode] },
+	blocks: { "prepared.flow": preparedFlowBlock },
+}, preparedEnv);
+const preparedFlowWrites = [];
+const preparedFlowCtx = runtime.createRunContext({}, {}, preparedFlowNode.__flowRuntimeNode.catalog, {}, preparedEnv);
+preparedFlowCtx.scopes.input.answer = 9;
+preparedFlowCtx.write = (out, value) => preparedFlowWrites.push({ out, value });
+preparedFlowCtx.trace = () => {};
+assert.strictEqual(runtime.executeNode(preparedFlowCtx, preparedFlowNode, preparedEnv), 10);
+assert.deepStrictEqual(preparedFlowWrites, [{ out: "result.flow", value: 10 }]);
+assert.strictEqual(preparedFlowRunnerBuilds, 1,
+	"Flow composite runner should be prepared exactly once with the plan");
+
 console.log("flow runtime service reuse tests passed");

@@ -231,8 +231,8 @@
 			: function (ctx) { return resolveGraphBlockProp(ctx, descriptor, value); };
 	}
 
-	function compileGraphBlockProps(node, catalog) {
-		var raw = ctxPropsForCompile(node);
+	function compileGraphBlockProps(node, catalog, preparedProps) {
+		var raw = preparedProps || ctxPropsForCompile(node);
 		var descriptors = catalog.props || {};
 		var fields = [];
 		Object.keys(descriptors).forEach(function (key) {
@@ -278,14 +278,24 @@
 		return resolver(ctx);
 	}
 
-	function runGraphBlock(ctx, node, block) {
+	function prepareGraphBlock(node, block, props) {
+		var catalog = block.__graphRuntimeCatalog || blockCatalog(block);
+		return {
+			catalog: catalog,
+			graphName: String(block && block.name || blockName(node) || ""),
+			nodes: block.__graphDefinition.nodes || [],
+			resolveProps: compileGraphBlockProps(node, catalog, props)
+		};
+	}
+
+	function runGraphBlock(ctx, node, block, prepared) {
 		var profiled = !!ctx.profile;
 		var totalStarted = profiled ? nanoTime() : 0;
 		profileCount(ctx, "graphBlockCalls");
 		var catalogStarted = profiled ? nanoTime() : 0;
-		var catalog = block.__graphRuntimeCatalog || blockCatalog(block);
+		var catalog = prepared ? prepared.catalog : (block.__graphRuntimeCatalog || blockCatalog(block));
 		profileAdd(ctx, "graphBlockCatalogMs", catalogStarted);
-		var graphName = String(block && block.name || blockName(node) || "");
+		var graphName = prepared ? prepared.graphName : String(block && block.name || blockName(node) || "");
 		ctx.graphBlockStack = ctx.graphBlockStack || [];
 		var maxDepth = Number(ctx.maxGraphBlockDepth || 128);
 		if (ctx.graphBlockStack.length >= maxDepth) {
@@ -306,7 +316,13 @@
 			ctx.graphBlockStack.push(graphName);
 		}
 		var propsStarted = profiled ? nanoTime() : 0;
-		var resolvedProps = resolveGraphBlockProps(ctx, node, catalog);
+		var resolvedProps;
+		if (prepared) {
+			profileCount(ctx, "graphBlockPreparedRunnerHits");
+			resolvedProps = prepared.resolveProps(ctx);
+		} else {
+			resolvedProps = resolveGraphBlockProps(ctx, node, catalog);
+		}
 		profileAdd(ctx, "graphBlockResolvePropsMs", propsStarted);
 		var frameStarted = profiled ? nanoTime() : 0;
 		ctx.scopes.props = resolvedProps;
@@ -319,7 +335,7 @@
 		try {
 			var executeStarted = profiled ? nanoTime() : 0;
 			try {
-				var result = ctx.runNodes(block.__graphDefinition.nodes || []);
+				var result = ctx.runNodes(prepared ? prepared.nodes : (block.__graphDefinition.nodes || []));
 				if (ctx.returned !== undefined) {
 					result = ctx.returned;
 				} else if (ctx.scopes.result && Object.keys(ctx.scopes.result).length > 0) {
@@ -420,6 +436,13 @@
 		if (rhino && typeof rhino.script.prepareNode === "function") {
 			block.prepareNode = function (node, helpers) {
 				return rhino.script.prepareNode(node, helpers);
+			};
+		} else if (flow) {
+			block.prepareNode = function (node, helpers) {
+				var prepared = prepareGraphBlock(node, block, helpers && helpers.props);
+				return function (ctx) {
+					return runGraphBlock(ctx, node, block, prepared);
+				};
 			};
 		}
 		block.__flowOrigin = origin;
