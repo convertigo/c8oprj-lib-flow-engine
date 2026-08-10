@@ -35,6 +35,10 @@
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
 	var flowRuntimeServiceEnvInstance = null;
+	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
+	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
+	// so both deliberately remain local to an Engine runtime.
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
@@ -259,6 +263,19 @@
 			return eval(source);
 		}
 		return script.exec(cx, compiledScriptScope(cx));
+	}
+
+	function sharedEngineModule(name, source, sourceName, fingerprint) {
+		if (sharedEngineModuleNames.indexOf("|" + String(name || "") + "|") === -1) {
+			return null;
+		}
+		try {
+			return Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge.sharedFlowModule(
+				String(source || ""), String(sourceName || "flow-module"), String(fingerprint || ""));
+		} catch (e) {
+			// A previous bridge or a rejected module must retain the proven runtime-local path.
+			return null;
+		}
 	}
 
 	function parseYamlSource(source, fallback) {
@@ -677,12 +694,20 @@
 			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
 		}
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var module = evalCompiledSource(source, canonicalPath(file), file.lastModified() + ":" + file.length());
+		var sourceName = canonicalPath(file);
+		var fingerprint = file.lastModified() + ":" + file.length();
+		var module = sharedEngineModule(name, source, sourceName, fingerprint);
+		var shared = !!module;
+		if (!module) {
+			module = evalCompiledSource(source, sourceName, fingerprint);
+		}
 		if (!module || typeof module !== "object") {
 			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
 				null, "A Flow engine module must evaluate to an object.");
 		}
-		module.__flowFile = String(file.getAbsolutePath());
+		if (!shared) {
+			module.__flowFile = String(file.getAbsolutePath());
+		}
 		return module;
 	}
 
@@ -841,12 +866,18 @@
 			return cached;
 		}
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var module = evalCompiledSource(source, key, fingerprint);
+		var module = sharedEngineModule(name, source, key, fingerprint);
+		var shared = !!module;
+		if (!module) {
+			module = evalCompiledSource(source, key, fingerprint);
+		}
 		if (!module || typeof module !== "object") {
 			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
 				null, "A Flow engine module must evaluate to an object.");
 		}
-		module.__flowFile = String(file.getAbsolutePath());
+		if (!shared) {
+			module.__flowFile = String(file.getAbsolutePath());
+		}
 		return writeRuntimeMapCache(cache, key, fingerprint, module, "Flow engine modules");
 	}
 
