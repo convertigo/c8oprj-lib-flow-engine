@@ -147,6 +147,58 @@
 				: block;
 		}
 
+		function nodeOut(node) {
+			if (!node || typeof node !== "object") {
+				return undefined;
+			}
+			if (node.out !== undefined) {
+				return node.out;
+			}
+			return node.props && node.props.out !== undefined ? node.props.out : undefined;
+		}
+
+		function installPreparedNode(node, blocks, seenGraphBlocks) {
+			if (!node || typeof node !== "object") {
+				return;
+			}
+			if (Object.prototype.toString.call(node) === "[object Array]") {
+				for (var i = 0; i < node.length; i++) {
+					installPreparedNode(node[i], blocks, seenGraphBlocks);
+				}
+				return;
+			}
+			var name = blockName(node);
+			var block = name ? runtimeBlock(blocks, name) : null;
+			if (name) {
+				Object.defineProperty(node, "__flowRuntimeNode", {
+					value: {
+						catalog: blocks,
+						name: name,
+						block: block,
+						out: nodeOut(node)
+					},
+					enumerable: false,
+					configurable: true
+				});
+			}
+			Object.keys(node).forEach(function (key) {
+				if (key !== "props") {
+					installPreparedNode(node[key], blocks, seenGraphBlocks);
+				}
+			});
+			if (block && block.__graphDefinition && !seenGraphBlocks[name]) {
+				seenGraphBlocks[name] = true;
+				installPreparedNode(block.__graphDefinition.nodes || [], blocks, seenGraphBlocks);
+			}
+		}
+
+		function prepareExecutionPlan(plan) {
+			if (plan && plan.definition && plan.blocks) {
+				installPreparedNode(plan.definition.nodes || [], plan.blocks, {});
+			}
+			return plan;
+		}
+
 		function executeNode(ctx, node) {
 			if (ctx.stopped || !node || node.disabled) {
 				return undefined;
@@ -156,14 +208,17 @@
 			profileCount(ctx, "executeNodeCalls");
 			try {
 				var resolveStarted = profiled ? nanoTime() : 0;
-				var name = blockName(node);
-				var block = runtimeBlock(ctx.blocks, name);
+				var prepared = node.__flowRuntimeNode;
+				var preparedHit = prepared && prepared.catalog === ctx.blocks;
+				var name = preparedHit ? prepared.name : blockName(node);
+				var block = preparedHit ? prepared.block : runtimeBlock(ctx.blocks, name);
+				profileCount(ctx, preparedHit ? "preparedNodeHits" : "preparedNodeMisses");
 				profileAdd(ctx, "executeNodeResolveMs", resolveStarted);
 				if (!block) {
 					raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 				}
 				var propsStarted = profiled ? nanoTime() : 0;
-				var props = nodeProps(node);
+				var out = preparedHit ? prepared.out : nodeProps(node).out;
 				profileAdd(ctx, "executeNodePropsMs", propsStarted);
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
@@ -174,8 +229,8 @@
 					profileAdd(ctx, "executeNodeRunMs", runStarted);
 				}
 				var commitStarted = profiled ? nanoTime() : 0;
-				if (props.out && result !== undefined) {
-					ctx.write(props.out, result);
+				if (out && result !== undefined) {
+					ctx.write(out, result);
 				}
 				ctx.trace(node, name, result);
 				profileAdd(ctx, "executeNodeCommitMs", commitStarted);
@@ -363,7 +418,7 @@
 			});
 			addSnapshotDuration("hydrateMs", started);
 			flowSnapshotStats.hydrations = Number(flowSnapshotStats.hydrations || 0) + 1;
-			return plan;
+			return prepareExecutionPlan(plan);
 		}
 
 		function readSharedFlowSnapshot(request, blocks, compilerFingerprint) {
@@ -1083,7 +1138,8 @@
 			compileFlowPlan: compileFlowPlan,
 			compileFlowSnapshot: compileFlowSnapshot,
 			hydrateFlowSnapshot: hydrateFlowSnapshot,
-			createRunContext: createRunContext
+			createRunContext: createRunContext,
+			prepareExecutionPlan: prepareExecutionPlan
 		};
 	}
 
@@ -1139,6 +1195,11 @@
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
 			return serviceFor(env).createRunContext.apply(null, args);
+		},
+		prepareExecutionPlan: function () {
+			var args = Array.prototype.slice.call(arguments);
+			var env = args.pop();
+			return serviceFor(env).prepareExecutionPlan.apply(null, args);
 		}
 	};
 }())

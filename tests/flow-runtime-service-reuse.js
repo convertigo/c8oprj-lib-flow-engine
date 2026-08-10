@@ -86,4 +86,31 @@ assert.ok(second.profile.hotPath.executeNodeCommitMs > 0);
 assert.ok(second.profile.hotPath.executeNodeTotalMs > 0);
 assert.strictEqual(second.profile.blocks.length, 2);
 
+let preparedNodePropsCalls = 0;
+const preparedEnv = Object.assign({}, env, {
+	nodeProps(node) {
+		preparedNodePropsCalls += 1;
+		return Object.assign({}, node.props || {});
+	},
+});
+const preparedBlock = { run: () => 42 };
+const preparedNode = { block: "prepared", props: { out: "result.answer" } };
+runtime.prepareExecutionPlan({
+	definition: { nodes: [preparedNode] },
+	blocks: { prepared: preparedBlock },
+}, preparedEnv);
+assert.strictEqual(Object.prototype.propertyIsEnumerable.call(preparedNode, "__flowRuntimeNode"), false);
+assert.strictEqual(JSON.stringify(preparedNode).includes("__flowRuntimeNode"), false);
+const preparedWrites = [];
+const preparedCtx = {
+	stopped: false,
+	blocks: preparedNode.__flowRuntimeNode.catalog,
+	write: (out, value) => preparedWrites.push({ out, value }),
+	trace: () => {},
+};
+assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 42);
+assert.deepStrictEqual(preparedWrites, [{ out: "result.answer", value: 42 }]);
+assert.strictEqual(preparedNodePropsCalls, 0,
+	"prepared dispatch rebuilt node properties on the hot path");
+
 console.log("flow runtime service reuse tests passed");
