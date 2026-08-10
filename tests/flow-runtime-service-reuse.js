@@ -15,6 +15,7 @@ class FakeFile {
 let blockNameReads = 0;
 let materializeCalls = 0;
 let liveContext = { request: "first" };
+let clock = 0;
 const env = {
 	File: FakeFile,
 	nodeProps: (node) => Object.assign({}, node.props || node || {}),
@@ -36,6 +37,7 @@ const env = {
 		close: () => {},
 	},
 	currentConvertigoContext: () => liveContext,
+	nanoTime: () => ++clock * 1000000,
 	materializeFlowScriptBlock(blocks, name) {
 		materializeCalls += 1;
 		return blocks[name].materialized;
@@ -65,6 +67,7 @@ let traceCalls = 0;
 const concrete = { run: () => "concrete" };
 second.blocks = { concrete };
 second.trace = () => { traceCalls += 1; };
+second.profile = { blocks: [], hotPath: {} };
 assert.strictEqual(runtime.executeNode(second, { block: "concrete" }, env), "concrete");
 assert.strictEqual(materializeCalls, 0,
 	"a concrete block prepared by the Flow plan should bypass the dynamic loader");
@@ -75,5 +78,12 @@ assert.strictEqual(runtime.executeNode(second, { block: "lazy" }, env), "materia
 assert.strictEqual(materializeCalls, 1,
 	"a dynamic placeholder should still be materialized before execution");
 assert.strictEqual(traceCalls, 2);
+assert.strictEqual(second.profile.hotPath.executeNodeCalls, 2);
+assert.ok(second.profile.hotPath.executeNodeResolveMs > 0);
+assert.ok(second.profile.hotPath.executeNodePropsMs > 0);
+assert.ok(second.profile.hotPath.executeNodeRunMs > 0);
+assert.ok(second.profile.hotPath.executeNodeCommitMs > 0);
+assert.ok(second.profile.hotPath.executeNodeTotalMs > 0);
+assert.strictEqual(second.profile.blocks.length, 2);
 
 console.log("flow runtime service reuse tests passed");

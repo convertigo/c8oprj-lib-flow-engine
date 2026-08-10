@@ -1566,7 +1566,8 @@
 			summaryText: summaryText,
 			renderTemplateTree: renderTemplateTree,
 			readScopePath: readScopePath,
-			graphBlockStackLabel: graphBlockStackLabel
+			graphBlockStackLabel: graphBlockStackLabel,
+			nanoTime: function () { return JavaSystem.nanoTime(); }
 		};
 	}
 

@@ -16,6 +16,27 @@
 		var renderTemplateTree = env.renderTemplateTree;
 		var readScopePath = env.readScopePath;
 		var graphBlockStackLabel = env.graphBlockStackLabel;
+		var nanoTime = env.nanoTime || function () { return 0; };
+
+	function profileDuration(started) {
+		return Number(nanoTime() - started) / 1000000;
+	}
+
+	function profileCount(ctx, name) {
+		if (!ctx || !ctx.profile) {
+			return;
+		}
+		var hotPath = ctx.profile.hotPath || (ctx.profile.hotPath = {});
+		hotPath[name] = Number(hotPath[name] || 0) + 1;
+	}
+
+	function profileAdd(ctx, name, started) {
+		if (!ctx || !ctx.profile) {
+			return;
+		}
+		var hotPath = ctx.profile.hotPath || (ctx.profile.hotPath = {});
+		hotPath[name] = Number(hotPath[name] || 0) + profileDuration(started);
+	}
 
 	function blockImplementationFile(definition, file, config) {
 		config = config || blockImplementation(definition);
@@ -196,6 +217,9 @@
 	}
 
 	function runGraphBlock(ctx, node, block) {
+		var profiled = !!ctx.profile;
+		var totalStarted = profiled ? nanoTime() : 0;
+		profileCount(ctx, "graphBlockCalls");
 		var catalog = blockCatalog(block);
 		var graphName = String(block && block.name || blockName(node) || "");
 		ctx.graphBlockStack = ctx.graphBlockStack || [];
@@ -217,21 +241,32 @@
 		if (graphName) {
 			ctx.graphBlockStack.push(graphName);
 		}
-		ctx.scopes.props = resolveGraphBlockProps(ctx, node, catalog);
+		var propsStarted = profiled ? nanoTime() : 0;
+		var resolvedProps = resolveGraphBlockProps(ctx, node, catalog);
+		profileAdd(ctx, "graphBlockResolvePropsMs", propsStarted);
+		var frameStarted = profiled ? nanoTime() : 0;
+		ctx.scopes.props = resolvedProps;
 		ctx.scopes.input = ctx.scopes.props;
 		ctx.scopes.local = {};
 		ctx.scopes.result = {};
 		ctx.returned = undefined;
 		ctx.stopped = false;
+		profileAdd(ctx, "graphBlockFrameEnterMs", frameStarted);
 		try {
-			var result = ctx.runNodes(block.__graphDefinition.nodes || []);
-			if (ctx.returned !== undefined) {
-				result = ctx.returned;
-			} else if (ctx.scopes.result && Object.keys(ctx.scopes.result).length > 0) {
-				result = ctx.scopes.result;
+			var executeStarted = profiled ? nanoTime() : 0;
+			try {
+				var result = ctx.runNodes(block.__graphDefinition.nodes || []);
+				if (ctx.returned !== undefined) {
+					result = ctx.returned;
+				} else if (ctx.scopes.result && Object.keys(ctx.scopes.result).length > 0) {
+					result = ctx.scopes.result;
+				}
+				return result;
+			} finally {
+				profileAdd(ctx, "graphBlockExecuteMs", executeStarted);
 			}
-			return result;
 		} finally {
+			var restoreStarted = profiled ? nanoTime() : 0;
 			ctx.scopes.input = previousInput;
 			ctx.scopes.props = previousProps;
 			ctx.scopes.local = previousLocal;
@@ -242,6 +277,8 @@
 			if (graphName) {
 				ctx.graphBlockStack.pop();
 			}
+			profileAdd(ctx, "graphBlockFrameRestoreMs", restoreStarted);
+			profileAdd(ctx, "graphBlockTotalMs", totalStarted);
 		}
 	}
 

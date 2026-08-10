@@ -113,6 +113,22 @@
 			return Number(nanoTime() - started) / 1000000;
 		}
 
+		function profileCount(ctx, name) {
+			if (!ctx || !ctx.profile) {
+				return;
+			}
+			var hotPath = ctx.profile.hotPath || (ctx.profile.hotPath = {});
+			hotPath[name] = Number(hotPath[name] || 0) + 1;
+		}
+
+		function profileAdd(ctx, name, started) {
+			if (!ctx || !ctx.profile) {
+				return;
+			}
+			var hotPath = ctx.profile.hotPath || (ctx.profile.hotPath = {});
+			hotPath[name] = Number(hotPath[name] || 0) + profileDuration(started);
+		}
+
 		function recordProfile(ctx, kind, name, started) {
 			if (!ctx || !ctx.profile) {
 				return;
@@ -135,24 +151,38 @@
 			if (ctx.stopped || !node || node.disabled) {
 				return undefined;
 			}
-			var name = blockName(node);
-			var block = runtimeBlock(ctx.blocks, name);
-			if (!block) {
-				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
-			}
-			var props = nodeProps(node);
-			var started = ctx.profile ? nanoTime() : 0;
-			var result;
+			var profiled = !!ctx.profile;
+			var totalStarted = profiled ? nanoTime() : 0;
+			profileCount(ctx, "executeNodeCalls");
 			try {
-				result = block.run(ctx, node);
+				var resolveStarted = profiled ? nanoTime() : 0;
+				var name = blockName(node);
+				var block = runtimeBlock(ctx.blocks, name);
+				profileAdd(ctx, "executeNodeResolveMs", resolveStarted);
+				if (!block) {
+					raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
+				}
+				var propsStarted = profiled ? nanoTime() : 0;
+				var props = nodeProps(node);
+				profileAdd(ctx, "executeNodePropsMs", propsStarted);
+				var runStarted = profiled ? nanoTime() : 0;
+				var result;
+				try {
+					result = block.run(ctx, node);
+				} finally {
+					recordProfile(ctx, "node", name, runStarted);
+					profileAdd(ctx, "executeNodeRunMs", runStarted);
+				}
+				var commitStarted = profiled ? nanoTime() : 0;
+				if (props.out && result !== undefined) {
+					ctx.write(props.out, result);
+				}
+				ctx.trace(node, name, result);
+				profileAdd(ctx, "executeNodeCommitMs", commitStarted);
+				return result;
 			} finally {
-				recordProfile(ctx, "node", name, started);
+				profileAdd(ctx, "executeNodeTotalMs", totalStarted);
 			}
-			if (props.out && result !== undefined) {
-				ctx.write(props.out, result);
-			}
-			ctx.trace(node, name, result);
-			return result;
 		}
 
 		function callBlock(ctx, name, props, options) {
@@ -161,13 +191,19 @@
 			if (!name) {
 				raise("MISSING_BLOCK_NAME", "ctx.callBlock requires a block name.");
 			}
+			var profiled = !!ctx.profile;
+			var totalStarted = profiled ? nanoTime() : 0;
+			profileCount(ctx, "callBlockCalls");
+			var resolveStarted = profiled ? nanoTime() : 0;
 			var block = runtimeBlock(ctx.blocks, name);
+			profileAdd(ctx, "callBlockResolveMs", resolveStarted);
 			if (!block) {
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, null, "Use flow-catalog or blockList to list supported blocks.");
 			}
 			if (typeof block.run !== "function") {
 				raise("INVALID_BLOCK", "Flow block has no runnable implementation: " + name);
 			}
+			var normalizeStarted = profiled ? nanoTime() : 0;
 			var node = {
 				block: name,
 				props: normalizeTree(props || {})
@@ -178,7 +214,11 @@
 			if (!node.id) {
 				node.id = "call:" + name;
 			}
+			profileAdd(ctx, "callBlockNormalizeMs", normalizeStarted);
+			var propsStarted = profiled ? nanoTime() : 0;
 			var nodeProperties = nodeProps(node);
+			profileAdd(ctx, "callBlockPropsMs", propsStarted);
+			var frameStarted = profiled ? nanoTime() : 0;
 			var previousInput = ctx.scopes.input;
 			var previousProps = ctx.scopes.props;
 			var previousLocal = ctx.scopes.local;
@@ -194,9 +234,17 @@
 			if (options.trace === false) {
 				ctx.traceEnabled = false;
 			}
-			var started = ctx.profile ? nanoTime() : 0;
+			profileAdd(ctx, "callBlockFrameEnterMs", frameStarted);
+			var started = profiled ? nanoTime() : 0;
 			try {
-				var result = block.run(ctx, node);
+				var runStarted = profiled ? nanoTime() : 0;
+				var result;
+				try {
+					result = block.run(ctx, node);
+				} finally {
+					profileAdd(ctx, "callBlockRunMs", runStarted);
+				}
+				var commitStarted = profiled ? nanoTime() : 0;
 				if (ctx.returned !== undefined) {
 					result = ctx.returned;
 				}
@@ -206,9 +254,11 @@
 				if (options.trace !== false) {
 					ctx.trace(node, name, result);
 				}
+				profileAdd(ctx, "callBlockCommitMs", commitStarted);
 				return result;
 			} finally {
 				recordProfile(ctx, "call", name, started);
+				var restoreStarted = profiled ? nanoTime() : 0;
 				ctx.scopes.input = previousInput;
 				ctx.scopes.props = previousProps;
 				ctx.scopes.local = previousLocal;
@@ -216,6 +266,8 @@
 				ctx.returned = previousReturned;
 				ctx.stopped = previousStopped;
 				ctx.traceEnabled = previousTraceEnabled;
+				profileAdd(ctx, "callBlockFrameRestoreMs", restoreStarted);
+				profileAdd(ctx, "callBlockTotalMs", totalStarted);
 			}
 		}
 
@@ -443,7 +495,8 @@
 					compilePlanMs: compileMs,
 					loadConfigMs: configMs,
 					createContextMs: profileDuration(contextStarted),
-					blocks: []
+					blocks: [],
+					hotPath: {}
 				};
 			}
 			try {
