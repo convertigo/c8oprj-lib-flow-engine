@@ -6,8 +6,7 @@
 
 	function isSimpleScopePath(value, env) {
 		var text = String(value || "");
-		return env.isScopePath(text) &&
-			/^(request|input|config|local|result|trace|current)(?:\.[A-Za-z_$][\w$]*|\.\d+)*$/.test(text);
+		return /^(request|input|config|local|result|trace|current)(?:\.[A-Za-z_$][\w$]*|\.\d+)*$/.test(text);
 	}
 
 	function simplePathPartsFor(ctx, source) {
@@ -643,9 +642,6 @@
 			}
 			if (typeof source !== "string") {
 				return literalValue(source, env);
-			}
-			if (isSimpleScopePath(source, env)) {
-				return readSimpleScopePath(ctx, source);
 			}
 			return expressionProgramFor(ctx, source, env)(ctx);
 	}
