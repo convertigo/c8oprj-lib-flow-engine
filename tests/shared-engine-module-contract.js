@@ -13,6 +13,8 @@ const moduleNames = fs.readdirSync(modulesDir).filter((name) => name.endsWith(".
 const stateful = new Set(["flow-code-service.js", "flow-runtime-service.js"]);
 const auditedClosureDeclarations = {
 	"catalog-loader-service.js": ["var DEFAULT_HOT_CATALOG_PROBE_INTERVAL_MS = 60000;"],
+	// Shared function-only prototype. Object.freeze prevents descriptors from becoming module state.
+	"block-file-loader-service.js": ["var placeholderPrototype = Object.freeze({"],
 	"flow-execution-snapshot-service.js": [
 		'var FORMAT = "convertigo.flow.execution-snapshot";',
 		"var VERSION = 1;"

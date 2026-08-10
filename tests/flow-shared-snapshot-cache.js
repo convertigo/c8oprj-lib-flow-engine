@@ -121,8 +121,10 @@ function environment(stats, catalogFingerprint = "catalog-1") {
 const source = JSON.stringify({ version: 1, nodes: [{ block: "demo.counter" }] });
 const firstStats = {};
 const secondStats = {};
-const first = runtime.compileFlowPlan({ flowQName: "Sample.Counter", flowSource: source }, catalog("first"), environment(firstStats));
-const second = runtime.compileFlowPlan({ flowQName: "Sample.Counter", flowSource: source }, catalog("second"), environment(secondStats));
+const firstEnv = environment(firstStats);
+const secondEnv = environment(secondStats);
+const first = runtime.compileFlowPlan({ flowQName: "Sample.Counter", flowSource: source }, catalog("first"), firstEnv);
+const second = runtime.compileFlowPlan({ flowQName: "Sample.Counter", flowSource: source }, catalog("second"), secondEnv);
 
 assert.strictEqual(firstStats.compiles, 1);
 assert.strictEqual(firstStats.sharedMisses, 1);
@@ -142,8 +144,22 @@ assert(Object.isFrozen(first.definition));
 assert(Object.isFrozen(first.definition.nodes[0]));
 assert.strictEqual(first.definition.nodes[0].__flowRuntimeNode, undefined,
 	"runtime state was attached to the shared machine node");
-assert.strictEqual(first.preparedNodes[0].execute({ stopped: false, traceEnabled: false }), "first:1");
-assert.strictEqual(second.preparedNodes[0].execute({ stopped: false, traceEnabled: false }), "second:1");
+const firstCtx = {
+	stopped: false, traceEnabled: false, blocks: first.blocks,
+	preparedNodes: first.preparedNodes, preparation: first.preparation,
+	write: () => {}, trace: () => {},
+};
+const secondCtx = {
+	stopped: false, traceEnabled: false, blocks: second.blocks,
+	preparedNodes: second.preparedNodes, preparation: second.preparation,
+	write: () => {}, trace: () => {},
+};
+assert.strictEqual(first.preparedNodes[0], undefined);
+assert.strictEqual(second.preparedNodes[0], undefined);
+assert.strictEqual(runtime.executeNode(firstCtx, first.definition.nodes[0], firstEnv), "first:1");
+assert.strictEqual(runtime.executeNode(secondCtx, second.definition.nodes[0], secondEnv), "second:1");
+assert.strictEqual(typeof first.preparedNodes[0].execute, "function");
+assert.strictEqual(typeof second.preparedNodes[0].execute, "function");
 assert.notStrictEqual(first.blocks["demo.counter"].run, second.blocks["demo.counter"].run,
 	"the shared snapshot leaked a runtime-local function");
 

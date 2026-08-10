@@ -139,15 +139,17 @@ runtime.prepareExecutionPlan({
 	definition: { nodes: [preparedNode] },
 	blocks: { prepared: preparedBlock },
 }, preparedEnv);
-assert.strictEqual(Object.prototype.propertyIsEnumerable.call(preparedNode, "__flowRuntimeNode"), false);
-assert.strictEqual(JSON.stringify(preparedNode).includes("__flowRuntimeNode"), false);
-assert.strictEqual(typeof preparedNode.__flowRuntimeNode.execute, "function");
+assert.strictEqual(preparedNode.__flowRuntimeNode, undefined,
+	"plan compilation should not prepare a node before it is reached");
 const preparedWrites = [];
-const preparedCtx = runtime.createRunContext({}, {}, preparedNode.__flowRuntimeNode.catalog, {}, preparedEnv);
+const preparedCtx = runtime.createRunContext({}, {}, { prepared: preparedBlock }, {}, null, preparedEnv);
 preparedCtx.scopes.input.answer = 42;
 preparedCtx.write = (out, value) => preparedWrites.push({ out, value });
 preparedCtx.trace = () => {};
 assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 42);
+assert.strictEqual(Object.prototype.propertyIsEnumerable.call(preparedNode, "__flowRuntimeNode"), false);
+assert.strictEqual(JSON.stringify(preparedNode).includes("__flowRuntimeNode"), false);
+assert.strictEqual(typeof preparedNode.__flowRuntimeNode.execute, "function");
 assert.deepStrictEqual(preparedWrites, [{ out: "result.answer", value: 42 }]);
 assert.strictEqual(preparedNodePropsCalls, 1,
 	"prepared dispatch rebuilt node properties on the hot path");
@@ -176,8 +178,9 @@ runtime.prepareExecutionPlan({
 	definition: { nodes: [preparedFlowNode] },
 	blocks: { "prepared.flow": preparedFlowBlock },
 }, preparedEnv);
+assert.strictEqual(preparedFlowNode.__flowRuntimeNode, undefined);
 const preparedFlowWrites = [];
-const preparedFlowCtx = runtime.createRunContext({}, {}, preparedFlowNode.__flowRuntimeNode.catalog, {}, preparedEnv);
+const preparedFlowCtx = runtime.createRunContext({}, {}, { "prepared.flow": preparedFlowBlock }, {}, null, preparedEnv);
 preparedFlowCtx.scopes.input.answer = 9;
 preparedFlowCtx.write = (out, value) => preparedFlowWrites.push({ out, value });
 preparedFlowCtx.trace = () => {};
@@ -209,12 +212,14 @@ const sharedPlan = runtime.prepareExecutionPlan({
 }, preparedEnv);
 assert.strictEqual(sharedNode.__flowRuntimeNode, undefined,
 	"a runtime descriptor was attached to an immutable machine node");
-assert.strictEqual(typeof sharedPlan.preparedNodes[0].execute, "function");
+assert.strictEqual(sharedPlan.preparedNodes[0], undefined,
+	"an immutable machine runner was prepared before its node was reached");
 const sharedWrites = [];
 const sharedCtx = runtime.createRunContext({}, sharedPlan.definition, sharedPlan.blocks, {}, sharedPlan, preparedEnv);
 sharedCtx.write = (out, value) => sharedWrites.push({ out, value });
 sharedCtx.trace = () => {};
 assert.strictEqual(runtime.executeNode(sharedCtx, sharedNode, preparedEnv), 7);
+assert.strictEqual(typeof sharedPlan.preparedNodes[0].execute, "function");
 assert.deepStrictEqual(sharedWrites, [{ out: "result.shared", value: 7 }]);
 assert.strictEqual(sharedRunnerBuilds, 1,
 	"the immutable machine node rebuilt its runtime runner on the hot path");

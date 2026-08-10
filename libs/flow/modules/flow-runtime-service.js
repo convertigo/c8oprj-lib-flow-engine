@@ -244,6 +244,17 @@
 			return node && node.__flowRuntimeNode;
 		}
 
+		function preparationStats(ctx) {
+			var stats = ctx && ctx.preparation || {};
+			return {
+				mode: String(stats.mode || ""),
+				preparedNodes: Number(stats.preparedNodes || 0),
+				preparedRunners: Number(stats.preparedRunners || 0),
+				preparedWriters: Number(stats.preparedWriters || 0),
+				materializedBlocks: Number(stats.materializedBlocks || 0)
+			};
+		}
+
 		runContextPrototype.props = function (node) {
 			var prepared = preparedNodeFor(this, node);
 			if (prepared && prepared.catalog === this.blocks && prepared.props) {
@@ -382,19 +393,21 @@
 			};
 		}
 
-		function installPreparedNode(node, blocks, seenGraphBlocks, preparedNodes) {
+		function installPreparedNode(node, blocks, preparedNodes, preparation) {
 			if (!node || typeof node !== "object") {
-				return;
-			}
-			if (Object.prototype.toString.call(node) === "[object Array]") {
-				for (var i = 0; i < node.length; i++) {
-					installPreparedNode(node[i], blocks, seenGraphBlocks, preparedNodes);
-				}
-				return;
+				return null;
 			}
 			var name = blockName(node);
+			if (!name) {
+				return null;
+			}
+			var candidate = preparedNodeFor({ preparedNodes: preparedNodes }, node);
+			if (candidate && candidate.catalog === blocks) {
+				return candidate;
+			}
+			var placeholder = blocks && blocks[name] && blocks[name].__flowScriptPlaceholder === true;
 			var block = name ? runtimeBlock(blocks, name) : null;
-			if (name) {
+			if (block) {
 				var reusableProps = canReuseNodeProps(block) ? nodeProps(node) : null;
 				if (reusableProps && typeof Object.freeze === "function") {
 					Object.freeze(reusableProps);
@@ -422,33 +435,53 @@
 						configurable: true
 					});
 				}
-			}
-			Object.keys(node).forEach(function (key) {
-				if (key !== "props") {
-					installPreparedNode(node[key], blocks, seenGraphBlocks, preparedNodes);
+				if (preparation) {
+					preparation.preparedNodes = Number(preparation.preparedNodes || 0) + 1;
+					if (preparedRunner) {
+						preparation.preparedRunners = Number(preparation.preparedRunners || 0) + 1;
+					}
+					if (preparedWriter) {
+						preparation.preparedWriters = Number(preparation.preparedWriters || 0) + 1;
+					}
+					if (placeholder) {
+						preparation.materializedBlocks = Number(preparation.materializedBlocks || 0) + 1;
+					}
 				}
-			});
-			if (block && block.__graphDefinition && !seenGraphBlocks[name]) {
-				seenGraphBlocks[name] = true;
-				installPreparedNode(block.__graphDefinition.nodes || [], blocks, seenGraphBlocks, preparedNodes);
+				return preparedNode;
 			}
+			return null;
 		}
 
 		function prepareExecutionPlan(plan) {
 			if (plan && plan.definition && plan.blocks) {
 				plan.preparedNodes = plan.machineImage === true ? [] : null;
-				installPreparedNode(plan.definition.nodes || [], plan.blocks, {}, plan.preparedNodes);
+				plan.preparation = {
+					mode: "lazy",
+					preparedNodes: 0,
+					preparedRunners: 0,
+					preparedWriters: 0,
+					materializedBlocks: 0
+				};
 			}
 			return plan;
 		}
 
+		function ensurePreparedNode(ctx, node) {
+			var prepared = preparedNodeFor(ctx, node);
+			return prepared && prepared.catalog === ctx.blocks
+				? prepared
+				: installPreparedNode(node, ctx.blocks, ctx.preparedNodes, ctx.preparation);
+		}
+
 		function executeNode(ctx, node) {
-			var direct = preparedNodeFor(ctx, node);
-			if (!ctx.profile && direct && direct.catalog === ctx.blocks && direct.execute) {
-				return direct.execute(ctx);
-			}
 			if (ctx.stopped || !node || node.disabled) {
 				return undefined;
+			}
+			var prepareStarted = ctx.profile ? nanoTime() : 0;
+			var direct = ensurePreparedNode(ctx, node);
+			profileAdd(ctx, "executeNodePrepareMs", prepareStarted);
+			if (!ctx.profile && direct && direct.catalog === ctx.blocks && direct.execute) {
+				return direct.execute(ctx);
 			}
 			var profiled = !!ctx.profile;
 			var totalStarted = profiled ? nanoTime() : 0;
@@ -666,7 +699,6 @@
 			var started = nanoTime();
 			var plan = flowSnapshotService.hydrate(compiled, blocks, {
 				blocksWithFlowHelpers: blocksWithFlowHelpers,
-				materializeDefinitionBlocks: materializeDefinitionBlocks,
 				expandFlowDefinition: expandFlowDefinition
 			});
 			addSnapshotDuration("hydrateMs", started);
@@ -759,7 +791,6 @@
 				if (sharedDefinition) {
 					flowSnapshotStats.machineHits = Number(flowSnapshotStats.machineHits || 0) + 1;
 					var machineBlocks = blocksWithFlowHelpers(blocks, sharedDefinition);
-					materializeDefinitionBlocks(machineBlocks, sharedDefinition);
 					var machinePlan = prepareExecutionPlan({
 						definition: sharedDefinition,
 						blocks: machineBlocks,
@@ -809,28 +840,6 @@
 			return plan;
 		}
 
-		function materializeDefinitionBlocks(blocks, definition) {
-			function visit(value) {
-				if (!value || typeof value !== "object") {
-					return;
-				}
-				if (Object.prototype.toString.call(value) === "[object Array]") {
-					value.forEach(visit);
-					return;
-				}
-				var name = blockName(value);
-				if (name) {
-					materializeFlowScriptBlock(blocks, name, "rhino");
-				}
-				Object.keys(value).forEach(function (key) {
-					if (key !== "props") {
-						visit(value[key]);
-					}
-				});
-			}
-			visit(definition && definition.nodes || []);
-		}
-
 		function runFlowRequest(request, blocks) {
 			var runStarted = request.profile === true ? nanoTime() : 0;
 			var compileStarted = request.profile === true ? nanoTime() : 0;
@@ -850,6 +859,7 @@
 					loadConfigMs: configMs,
 					createContextMs: profileDuration(contextStarted),
 					frameBefore: contextFrameStats(ctx),
+					preparationBefore: preparationStats(ctx),
 					blocks: [],
 					hotPath: {}
 				};
@@ -890,6 +900,7 @@
 				}
 				if (ctx.profile) {
 					ctx.profile.frameAfter = contextFrameStats(ctx);
+					ctx.profile.preparationAfter = preparationStats(ctx);
 					ctx.profile.runFlowRequestMs = profileDuration(runStarted);
 					out.profile = ctx.profile;
 				}
@@ -916,6 +927,7 @@
 				engine: projectEngine || {},
 				blocks: blocks,
 				preparedNodes: plan && plan.preparedNodes || null,
+				preparation: plan && plan.preparation || null,
 				libraries: {},
 				returned: undefined,
 				stopped: false,

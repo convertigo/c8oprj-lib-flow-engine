@@ -1947,6 +1947,10 @@
 	}
 
 	function getBlockSource(blocks, name, args) {
+		// Source inspection is an explicit request for one block. Keep catalog loading
+		// descriptor-only, but materialize this block so canonical code and runtime
+		// sources remain available to block-get/code-get authoring calls.
+		materializeFlowScriptBlock(blocks, String(name || ""));
 		return blockSourceService().getSource(blocks, name, args, blockSourceEnv());
 	}
 

@@ -14,27 +14,62 @@
 		}
 	}
 
-	function placeholder(blocks, name, descriptorFactory, file, origin, provider, blocksDir, env) {
-		var descriptor = null;
-		var block = null;
-		function getDescriptor() {
-			if (!descriptor) {
-				descriptor = descriptorFactory();
-				block.__blockDefinition = descriptor;
-				block["private"] = descriptor["private"] === true;
-				block.visibility = descriptor.visibility || "";
-			}
-			return descriptor;
+	function placeholderDescriptor(block) {
+		if (!block.__blockDefinition) {
+			var env = block.__flowLoaderEnv;
+			var code = sourceForFile(block.__flowFileObject, env);
+			var extracted = env.extractFlowScriptBlockMeta(code);
+			var meta = Object.assign({}, env.flowScriptBlockMetaFromRequest(block.name, {}), env.normalizeTree(extracted.meta || {}));
+			var runtime = env.blockCodeRuntimeFromMeta(meta);
+			var descriptor = runtime === "rhino"
+				? env.flowScriptBlockDescriptorFromMeta(block.name, meta, "", code)
+				: env.flowScriptBlockDescriptorFromMeta(block.name, meta, { version: 1, nodes: [] }, code);
+			block.__blockDefinition = descriptor;
+			block["private"] = descriptor["private"] === true;
+			block.visibility = descriptor.visibility || "";
 		}
-		function materialize(targetBlocks) {
-			targetBlocks = targetBlocks || blocks;
-			return loadFlowScriptBlockFile(targetBlocks, file, origin, provider, blocksDir, env);
+		return block.__blockDefinition;
+	}
+
+	function materializePlaceholder(block, targetBlocks) {
+		targetBlocks = targetBlocks || block.__flowBlocks;
+		return loadFlowScriptBlockFile(targetBlocks, block.__flowFileObject, block.__flowOrigin,
+			block.__flowProvider, block.__flowBlocksDir, block.__flowLoaderEnv);
+	}
+
+	function delegatePlaceholder(block, method, ctx, node) {
+		var materialized = materializePlaceholder(block, ctx && ctx.blocks);
+		return typeof materialized[method] === "function" ? materialized[method](ctx, node) : undefined;
+	}
+
+	var placeholderPrototype = Object.freeze({
+		materialize: function (targetBlocks) {
+			return materializePlaceholder(this, targetBlocks);
+		},
+		implementationRuntime: function () {
+			var implementation = placeholderDescriptor(this).implementation || {};
+			return String(implementation.runtime || "");
+		},
+		catalog: function () {
+			return this.__flowLoaderEnv.normalizeTree(this.__flowLoaderEnv.graphBlockCatalog(placeholderDescriptor(this)));
+		},
+		displayName: function (node) {
+			var block = materializePlaceholder(this);
+			return typeof block.displayName === "function" ? block.displayName(node) : String(this.name);
+		},
+		analyze: function (ctx, node) {
+			return delegatePlaceholder(this, "analyze", ctx, node);
+		},
+		analyzeShallow: function (ctx, node) {
+			return delegatePlaceholder(this, "analyzeShallow", ctx, node);
+		},
+		run: function (ctx, node) {
+			return delegatePlaceholder(this, "run", ctx, node);
 		}
-		function delegate(method, ctx, node) {
-			var block = materialize(ctx && ctx.blocks);
-			return typeof block[method] === "function" ? block[method](ctx, node) : undefined;
-		}
-		block = {
+	});
+
+	function placeholder(blocks, name, file, origin, provider, blocksDir, env) {
+		var block = Object.assign(Object.create(placeholderPrototype), {
 			name: String(name),
 			"private": false,
 			visibility: "",
@@ -43,29 +78,14 @@
 			__flowOrigin: origin,
 			__flowProvider: provider || origin || "unknown",
 			__flowFile: String(file.getAbsolutePath()),
-			__flowFormat: "flowscript-block",
-			materialize: materialize,
-			implementationRuntime: function () {
-				var implementation = getDescriptor().implementation || {};
-				return String(implementation.runtime || "");
-			},
-			catalog: function () {
-				return env.normalizeTree(env.graphBlockCatalog(getDescriptor()));
-			},
-			displayName: function (node) {
-				var block = materialize(blocks);
-				return typeof block.displayName === "function" ? block.displayName(node) : String(name);
-			},
-			analyze: function (ctx, node) {
-				return delegate("analyze", ctx, node);
-			},
-			analyzeShallow: function (ctx, node) {
-				return delegate("analyzeShallow", ctx, node);
-			},
-			run: function (ctx, node) {
-				return delegate("run", ctx, node);
-			}
-		};
+			__flowFormat: "flowscript-block"
+		});
+		Object.defineProperties(block, {
+			__flowBlocks: { value: blocks, enumerable: false },
+			__flowFileObject: { value: file, enumerable: false },
+			__flowBlocksDir: { value: blocksDir, enumerable: false },
+			__flowLoaderEnv: { value: env, enumerable: false }
+		});
 		return block;
 	}
 
@@ -126,15 +146,7 @@
 			return installArtifact(blocks, name, cached, env);
 		}
 		ensureNotDuplicate(blocks, name, "Rename the project block or remove the duplicate.", env);
-		blocks[name] = placeholder(blocks, name, function () {
-			var code = sourceForFile(file, env);
-			var extracted = env.extractFlowScriptBlockMeta(code);
-			var meta = Object.assign({}, env.flowScriptBlockMetaFromRequest(name, {}), env.normalizeTree(extracted.meta || {}));
-			var runtime = env.blockCodeRuntimeFromMeta(meta);
-			return runtime === "rhino"
-				? env.flowScriptBlockDescriptorFromMeta(name, meta, "", code)
-				: env.flowScriptBlockDescriptorFromMeta(name, meta, { version: 1, nodes: [] }, code);
-		}, file, origin, provider, blocksDir, env);
+		blocks[name] = placeholder(blocks, name, file, origin, provider, blocksDir, env);
 		return blocks[name];
 	}
 
