@@ -75,7 +75,8 @@
 					errors: Number(env.runtimeState.frontendDocumentServerStats.errors || 0),
 					active: Object.keys(env.runtimeState.frontendDocumentServers).length
 				},
-				expressions: cacheSummary("expressions", caches.expressionTokens, env)
+				expressions: cacheSummary("expressions", caches.expressionTokens, env),
+				expressionPrograms: cacheSummary("expressionPrograms", caches.expressionPrograms, env)
 			}
 		};
 	}
@@ -95,6 +96,7 @@
 		env.cacheUtils.clearMap(caches.treeSnapshots);
 		env.cacheUtils.clearMap(caches.frontendDocuments);
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
+		env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
 		env.clearFrontendDocumentServers();
 		env.clearPersistentFrontendDocuments();
 		env.resetModuleCaches();

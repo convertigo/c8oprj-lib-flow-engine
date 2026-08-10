@@ -29,6 +29,7 @@
 	var cacheUtilsModule = null;
 	var fingerprintUtilsModule = null;
 	var flowNodeUtilsModule = null;
+	var expressionUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
@@ -65,7 +66,8 @@
 			propertyEditor: createRuntimeCacheState(),
 			treeSnapshots: createRuntimeMapCacheState(),
 			frontendDocuments: createRuntimeMapCacheState(),
-			expressionTokens: createRuntimeBoundedMapCacheState(4096)
+			expressionTokens: createRuntimeBoundedMapCacheState(4096),
+			expressionPrograms: createRuntimeBoundedMapCacheState(4096)
 		}
 	};
 
@@ -696,6 +698,7 @@
 		cacheUtilsModule = null;
 		fingerprintUtilsModule = null;
 		flowNodeUtilsModule = null;
+		expressionUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
 		clearCompiledScriptCache();
@@ -817,7 +820,10 @@
 	}
 
 	function expressionUtils() {
-		return loadEngineModule("expression-utils.js");
+		if (!expressionUtilsModule) {
+			expressionUtilsModule = loadEngineModule("expression-utils.js");
+		}
+		return expressionUtilsModule;
 	}
 
 	function expressionUtilsEnv() {
@@ -829,6 +835,7 @@
 			runtimeHandleSummary: runtimeHandleSummary,
 			cacheUtils: cacheUtils(),
 			expressionTokenCache: runtimeState.caches.expressionTokens,
+			expressionProgramCache: runtimeState.caches.expressionPrograms,
 			sanitizeRuntimeValue: sanitizeRuntimeValue
 		};
 	}

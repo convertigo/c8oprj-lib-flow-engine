@@ -140,7 +140,10 @@
 		if (typeof value === "string" && isSimpleScopePath(value, env)) {
 			return function (ctx) { return readSimpleScopePath(ctx, value); };
 		}
-		return function (ctx) { return evaluate(ctx, value, env); };
+		if (typeof value === "string") {
+			return expressionProgramFor(null, value, env);
+		}
+		return function () { return literalValue(value, env); };
 	}
 
 	function literalValue(value, env) {
@@ -205,6 +208,29 @@
 			cache[key] = tokenize(key, env);
 		}
 		return cache[key];
+	}
+
+	function expressionProgramFor(ctx, source, env) {
+		var key = String(source || "");
+		if (env.cacheUtils && env.expressionProgramCache) {
+			var cached = env.cacheUtils.readBoundedMap(env.expressionProgramCache, key, key);
+			if (cached) {
+				return cached;
+			}
+			return env.cacheUtils.writeBoundedMap(env.expressionProgramCache, key, key,
+				compileExpressionProgram(ctx, key, env), "Flow expression programs");
+		}
+		if (ctx) {
+			var cache = ctx.__flowExpressionProgramCache;
+			if (!cache) {
+				cache = ctx.__flowExpressionProgramCache = {};
+			}
+			if (!cache[key]) {
+				cache[key] = compileExpressionProgram(ctx, key, env);
+			}
+			return cache[key];
+		}
+		return compileExpressionProgram(null, key, env);
 	}
 
 	function unknownFunctionHint(name) {
@@ -391,22 +417,13 @@
 		return tokens;
 	}
 
-		function evaluate(ctx, source, env) {
-			if (source === undefined || source === null) {
-				return literalValue(source, env);
-			}
-			if (isStructuredValue(source)) {
-				return renderTree(ctx, source, env);
-			}
-			if (typeof source !== "string") {
-				return literalValue(source, env);
-			}
-			if (isSimpleScopePath(source, env)) {
-				return readSimpleScopePath(ctx, source);
-			}
-			var tokens = tokensFor(ctx, source, env);
+	function compileExpressionProgram(ctx, source, env) {
+		var tokens = tokensFor(ctx || {}, source, env);
 		var position = 0;
 		var fns = expressionFunctions(env);
+		function constant(value) {
+			return function () { return value; };
+		}
 		function peek(value) {
 			var token = tokens[position];
 			return value === undefined ? token : token.value === value;
@@ -420,14 +437,17 @@
 		function binary(next, operators, fn) {
 			var left = next();
 			while (operators.indexOf(peek().value) !== -1) {
-				var op = consume().value;
-				left = fn(left, op, next());
+				left = (function (leftProgram, op, rightProgram) {
+					return function (runCtx) {
+						return fn(leftProgram(runCtx), op, rightProgram(runCtx));
+					};
+				}(left, consume().value, next()));
 			}
 			return left;
 		}
-			function parseExpression() {
-				return parseTernary();
-			}
+		function parseExpression() {
+			return parseTernary();
+		}
 		function parseTernary() {
 			var condition = parseNullish();
 			if (peek("?")) {
@@ -435,7 +455,12 @@
 				var whenTrue = parseExpression();
 				consume(":");
 				var whenFalse = parseExpression();
-				return condition ? whenTrue : whenFalse;
+				return function (runCtx) {
+					var conditionValue = condition(runCtx);
+					var trueValue = whenTrue(runCtx);
+					var falseValue = whenFalse(runCtx);
+					return conditionValue ? trueValue : falseValue;
+				};
 			}
 			return condition;
 		}
@@ -459,13 +484,13 @@
 				return op === "!=" || op === "!==" ? left != right : left == right;
 			});
 		}
-			function parseComparison() {
-				return binary(parseAdd, [">", ">=", "<", "<="], function (left, op, right) {
-					left = comparableValue(left);
-					right = comparableValue(right);
-					if (op === ">") {
-						return left > right;
-					}
+		function parseComparison() {
+			return binary(parseAdd, [">", ">=", "<", "<="], function (left, op, right) {
+				left = comparableValue(left);
+				right = comparableValue(right);
+				if (op === ">") {
+					return left > right;
+				}
 				if (op === ">=") {
 					return left >= right;
 				}
@@ -488,11 +513,13 @@
 		function parseUnary() {
 			if (peek("!")) {
 				consume("!");
-				return !parseUnary();
+				var notValue = parseUnary();
+				return function (runCtx) { return !notValue(runCtx); };
 			}
 			if (peek("-")) {
 				consume("-");
-				return -Number(parseUnary());
+				var negativeValue = parseUnary();
+				return function (runCtx) { return -Number(negativeValue(runCtx)); };
 			}
 			return parsePrimary();
 		}
@@ -510,42 +537,50 @@
 			} while (true);
 			return args;
 		}
-		function expressionMethodCall(name, args) {
+		function runArgs(programs, runCtx) {
+			var args = [];
+			for (var i = 0; i < programs.length; i++) {
+				args.push(programs[i](runCtx));
+			}
+			return args;
+		}
+		function methodProgram(name, args) {
 			var index = String(name || "").lastIndexOf(".");
 			if (index === -1) {
-				return { handled: false };
+				return null;
 			}
 			var receiverPath = name.substring(0, index);
 			var method = name.substring(index + 1);
-			if (!env.isScopePath(receiverPath)) {
-				return { handled: false };
+			if (!env.isScopePath(receiverPath) ||
+					["trim", "toLowerCase", "toUpperCase", "includes", "startsWith", "endsWith"].indexOf(method) === -1) {
+				return null;
 			}
-			var receiver = ctx.read(receiverPath);
-			if (method === "trim") {
-				return { handled: true, value: fns.trim(receiver) };
-			}
-			if (method === "toLowerCase") {
-				return { handled: true, value: fns.lower(receiver) };
-			}
-			if (method === "toUpperCase") {
-				return { handled: true, value: fns.upper(receiver) };
-			}
-			if (method === "includes") {
-				return { handled: true, value: fns.contains(receiver, args[0]) };
-			}
-			if (method === "startsWith") {
-				return { handled: true, value: fns.startsWith(receiver, args[0]) };
-			}
-			if (method === "endsWith") {
-				return { handled: true, value: fns.endsWith(receiver, args[0]) };
-			}
-			return { handled: false };
+			return function (runCtx) {
+				var receiver = runCtx.read(receiverPath);
+				var values = runArgs(args, runCtx);
+				if (method === "trim") {
+					return fns.trim(receiver);
+				}
+				if (method === "toLowerCase") {
+					return fns.lower(receiver);
+				}
+				if (method === "toUpperCase") {
+					return fns.upper(receiver);
+				}
+				if (method === "includes") {
+					return fns.contains(receiver, values[0]);
+				}
+				if (method === "startsWith") {
+					return fns.startsWith(receiver, values[0]);
+				}
+				return fns.endsWith(receiver, values[0]);
+			};
 		}
 		function parsePrimary() {
 			var token = peek();
 			if (token.type === "number" || token.type === "string") {
 				consume();
-				return token.value;
+				return constant(token.value);
 			}
 			if (token.type === "id") {
 				var name = consume().value;
@@ -553,30 +588,35 @@
 					consume("(");
 					var args = parseArgs();
 					consume(")");
-					if (!fns[name]) {
-						var methodCall = expressionMethodCall(name, args);
-						if (methodCall.handled) {
-							return methodCall.value;
-						}
-						env.raise("INVALID_EXPRESSION", "Unknown expression function: " + name, null, unknownFunctionHint(name));
+					if (fns[name]) {
+						return function (runCtx) {
+							return fns[name].apply(null, runArgs(args, runCtx));
+						};
 					}
-					return fns[name].apply(null, args);
+					var method = methodProgram(name, args);
+					if (method) {
+						return method;
+					}
+					env.raise("INVALID_EXPRESSION", "Unknown expression function: " + name, null, unknownFunctionHint(name));
 				}
 				if (name === "true") {
-					return true;
+					return constant(true);
 				}
 				if (name === "false") {
-					return false;
+					return constant(false);
 				}
 				if (name === "null") {
-					return null;
+					return constant(null);
 				}
 				if (name === "undefined") {
-					return undefined;
+					return constant(undefined);
 				}
-					if (env.isScopePath(name)) {
-						return isSimpleScopePath(name, env) ? readSimpleScopePath(ctx, name) : ctx.read(name);
+				if (env.isScopePath(name)) {
+					if (isSimpleScopePath(name, env)) {
+						return function (runCtx) { return readSimpleScopePath(runCtx, name); };
 					}
+					return function (runCtx) { return runCtx.read(name); };
+				}
 				env.raise("INVALID_EXPRESSION", "Unknown expression identifier: " + name, null, unknownIdentifierHint(name));
 			}
 			if (peek("(")) {
@@ -587,11 +627,27 @@
 			}
 			env.raise("INVALID_EXPRESSION", "Invalid expression near: " + token.value);
 		}
-		var result = parseExpression();
+		var program = parseExpression();
 		if (peek().type !== "eof") {
 			env.raise("INVALID_EXPRESSION", "Unexpected token in expression: " + peek().value);
 		}
-		return result;
+		return program;
+	}
+
+	function evaluate(ctx, source, env) {
+			if (source === undefined || source === null) {
+				return literalValue(source, env);
+			}
+			if (isStructuredValue(source)) {
+				return renderTree(ctx, source, env);
+			}
+			if (typeof source !== "string") {
+				return literalValue(source, env);
+			}
+			if (isSimpleScopePath(source, env)) {
+				return readSimpleScopePath(ctx, source);
+			}
+			return expressionProgramFor(ctx, source, env)(ctx);
 	}
 
 	return {
