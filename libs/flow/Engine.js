@@ -24,7 +24,9 @@
 	var compiledScriptStats = {
 		hits: 0,
 		misses: 0,
-		evictions: 0
+		evictions: 0,
+		sharedHits: 0,
+		sharedFallbacks: 0
 	};
 	var cacheUtilsModule = null;
 	var fingerprintUtilsModule = null;
@@ -166,7 +168,9 @@
 			limit: compiledScriptCacheLimit,
 			hits: compiledScriptStats.hits,
 			misses: compiledScriptStats.misses,
-			evictions: compiledScriptStats.evictions
+			evictions: compiledScriptStats.evictions,
+			sharedHits: compiledScriptStats.sharedHits,
+			sharedFallbacks: compiledScriptStats.sharedFallbacks
 		};
 	}
 
@@ -223,7 +227,14 @@
 				break;
 			}
 		}
-		cached = cx.compileString(source, String(sourceName || "flow-script"), 1, null);
+		try {
+			cached = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge.compileFlowScript(
+				String(source), String(sourceName || "flow-script"), String(fingerprint || ""));
+			compiledScriptStats.sharedHits++;
+		} catch (e) {
+			compiledScriptStats.sharedFallbacks++;
+			cached = cx.compileString(source, String(sourceName || "flow-script"), 1, null);
+		}
 		compiledScriptCache[key] = {
 			script: cached,
 			usedAt: ++compiledScriptCacheClock
