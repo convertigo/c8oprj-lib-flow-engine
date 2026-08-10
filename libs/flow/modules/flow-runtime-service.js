@@ -181,6 +181,25 @@
 			return runner || null;
 		}
 
+		function prepareNodeExecutor(node, block, name, out, runner) {
+			if (!block) {
+				return null;
+			}
+			return function (ctx) {
+				if (ctx.stopped || node.disabled) {
+					return undefined;
+				}
+				var result = runner ? runner(ctx, node) : block.run(ctx, node);
+				if (out && result !== undefined) {
+					ctx.write(out, result);
+				}
+				if (ctx.traceEnabled !== false) {
+					ctx.trace(node, name, result);
+				}
+				return result;
+			};
+		}
+
 		function installPreparedNode(node, blocks, seenGraphBlocks) {
 			if (!node || typeof node !== "object") {
 				return;
@@ -199,15 +218,17 @@
 					Object.freeze(reusableProps);
 				}
 				var preparedRunner = prepareNodeRunner(block, node, reusableProps);
-				Object.defineProperty(node, "__flowRuntimeNode", {
-					value: {
+				var preparedNode = {
 						catalog: blocks,
 						name: name,
 						block: block,
 						out: reusableProps ? reusableProps.out : nodeOut(node),
 						props: reusableProps,
 						run: preparedRunner
-					},
+					};
+				preparedNode.execute = prepareNodeExecutor(node, block, name, preparedNode.out, preparedRunner);
+				Object.defineProperty(node, "__flowRuntimeNode", {
+					value: preparedNode,
 					enumerable: false,
 					configurable: true
 				});
@@ -231,6 +252,10 @@
 		}
 
 		function executeNode(ctx, node) {
+			var direct = node && node.__flowRuntimeNode;
+			if (!ctx.profile && direct && direct.catalog === ctx.blocks && direct.execute) {
+				return direct.execute(ctx);
+			}
 			if (ctx.stopped || !node || node.disabled) {
 				return undefined;
 			}

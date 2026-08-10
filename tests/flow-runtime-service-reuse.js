@@ -120,6 +120,7 @@ runtime.prepareExecutionPlan({
 }, preparedEnv);
 assert.strictEqual(Object.prototype.propertyIsEnumerable.call(preparedNode, "__flowRuntimeNode"), false);
 assert.strictEqual(JSON.stringify(preparedNode).includes("__flowRuntimeNode"), false);
+assert.strictEqual(typeof preparedNode.__flowRuntimeNode.execute, "function");
 const preparedWrites = [];
 const preparedCtx = runtime.createRunContext({}, {}, preparedNode.__flowRuntimeNode.catalog, {}, preparedEnv);
 preparedCtx.scopes.input.answer = 42;
