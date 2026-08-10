@@ -1,4 +1,6 @@
 (function () {
+	var DEFAULT_HOT_CATALOG_PROBE_INTERVAL_MS = 60000;
+
 	function blockIdFromDescriptorFile(file, blocksDir, env) {
 		var relative = env.resourceRelativePath(blocksDir, file);
 		if (!relative || !String(relative).endsWith(".block.js")) {
@@ -174,7 +176,10 @@
 		}
 		var entry = cache.entries[blockCatalogHeadKey(env)];
 		var now = env.currentTimeMillis ? env.currentTimeMillis() : new Date().getTime();
-		var interval = Math.max(0, Number(env.blockCatalogProbeIntervalMs || 0));
+		var configuredInterval = env.blockCatalogProbeIntervalMs;
+		var interval = Math.max(0, Number(configuredInterval === undefined || configuredInterval === null
+			? DEFAULT_HOT_CATALOG_PROBE_INTERVAL_MS
+			: configuredInterval));
 		if (entry && now - Number(entry.checkedAt || 0) < interval) {
 			cache.hits++;
 			return entry.value;

@@ -1313,7 +1313,6 @@
 			coreBlockCache: runtimeState.caches.coreBlocks,
 			blockCatalogHeadCache: runtimeState.caches.blockCatalogHeads,
 			currentTimeMillis: function () { return new Date().getTime(); },
-			blockCatalogProbeIntervalMs: 1000,
 			typeCache: runtimeState.caches.types
 		};
 	}
