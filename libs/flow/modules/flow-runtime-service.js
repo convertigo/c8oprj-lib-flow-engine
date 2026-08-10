@@ -112,9 +112,71 @@
 		var materializeFlowScriptBlock = env.materializeFlowScriptBlock || function (blocks, name) {
 			return blocks && blocks[name];
 		};
+		var runContextPrototype = {};
+		var coldContextMethodNames = [
+			"cacheInfo", "cacheClear", "withProjectDir", "analyzeFlowSource", "contextFlowSource",
+			"searchFlow", "describeTreeSource", "applyMutationSource", "authoringTreeSource",
+			"authoringContractSource", "authoringPaletteSource", "authoringMutateSource",
+			"contextMenuSource", "contextActionSource", "outputSchemaSource", "nodeOutputSchemaSource",
+			"schemaForOutput", "learnOutputSchema", "schemaReset", "resourceSearch", "resourceList",
+			"resourceGet", "resourcePatch", "resourceDelete", "notifySourceMutation", "runFlowSource",
+			"blockList", "blockGet", "blockCreate", "blockDuplicate", "blockEdit", "blockCodeSet",
+			"blockCodeCheck", "blockCodeGet", "blockCodePatch", "blockCodeRg", "typeList", "typeGet",
+			"typeCreate", "blockTest", "flowList", "flowGet", "flowSet", "flowTest", "flowSourceGet",
+			"flowSourceValidate", "flowSourcePatch", "flowCodeGet", "flowCodeStatus", "flowCodeDiscard",
+			"flowCodeSet", "flowCodePatch", "flowCodeCheck", "flowCodeRg", "flowCodeRun",
+			"flowCodeAnalyze", "flowCodePromote", "requestableList", "requestableSchema"
+		];
+
+		function defineColdContextMethod(name) {
+			Object.defineProperty(runContextPrototype, name, {
+				configurable: true,
+				enumerable: false,
+				get: function () {
+					var installer = this.__installColdContextMethods;
+					if (typeof installer === "function") {
+						installer.call(this);
+					}
+					var descriptor = Object.getOwnPropertyDescriptor(this, name);
+					return descriptor ? descriptor.value : undefined;
+				},
+				set: function (value) {
+					Object.defineProperty(this, name, {
+						value: value,
+						writable: true,
+						enumerable: true,
+						configurable: true
+					});
+				}
+			});
+		}
+
+		coldContextMethodNames.forEach(defineColdContextMethod);
 
 		function profileDuration(started) {
 			return Number(nanoTime() - started) / 1000000;
+		}
+
+		function contextFrameStats(ctx) {
+			var ownFunctionCount = 0;
+			Object.keys(ctx || {}).forEach(function (name) {
+				if (typeof ctx[name] === "function") {
+					ownFunctionCount += 1;
+				}
+			});
+			var sharedMethodCount = 0;
+			Object.getOwnPropertyNames(runContextPrototype).forEach(function (name) {
+				var descriptor = Object.getOwnPropertyDescriptor(runContextPrototype, name);
+				if (descriptor && typeof descriptor.value === "function") {
+					sharedMethodCount += 1;
+				}
+			});
+			return {
+				ownFunctionCount: ownFunctionCount,
+				sharedMethodCount: sharedMethodCount,
+				lazyMethodCount: coldContextMethodNames.length,
+				coldMethodsInstalled: !Object.prototype.hasOwnProperty.call(ctx, "__installColdContextMethods")
+			};
 		}
 
 		function profileCount(ctx, name) {
@@ -181,6 +243,104 @@
 			}
 			return node && node.__flowRuntimeNode;
 		}
+
+		runContextPrototype.props = function (node) {
+			var prepared = preparedNodeFor(this, node);
+			if (prepared && prepared.catalog === this.blocks && prepared.props) {
+				profileCount(this, "preparedPropsHits");
+				return prepared.props;
+			}
+			profileCount(this, "preparedPropsMisses");
+			return nodeProps(node);
+		};
+		runContextPrototype.read = function (path) {
+			return readScopePath(this.scopes, path);
+		};
+		runContextPrototype.readObjectPath = readObjectPath;
+		runContextPrototype.write = function (path, value) {
+			return writeScopePath(this.scopes, path, value);
+		};
+		runContextPrototype.value = function (value) {
+			return evaluateExpression(this, value);
+		};
+		runContextPrototype.expr = runContextPrototype.value;
+		runContextPrototype.compileExpr = function (value) {
+			var ctx = this;
+			var compiled = compileExpression(value);
+			return function () { return compiled(ctx); };
+		};
+		runContextPrototype.path = function (path) {
+			return this.read(path);
+		};
+		runContextPrototype.literal = function (value) {
+			return literalValue(value);
+		};
+		runContextPrototype.render = function (template) {
+			return renderTemplate(template, this);
+		};
+		runContextPrototype.template = function (value) {
+			return renderTemplateTree(this, value);
+		};
+		runContextPrototype.input = function (props, fallback) {
+			return inputValue(this, props || {}, fallback);
+		};
+		runContextPrototype.parseYaml = function (text) {
+			return parseYamlSource(text, "null\n");
+		};
+		runContextPrototype.isHandle = isRuntimeHandle;
+		runContextPrototype.handleSummary = runtimeHandleSummary;
+		runContextPrototype.createHandle = function (type, value, options) {
+			return createRuntimeHandle(this, type, value, options);
+		};
+		runContextPrototype.handleValue = function (handle, expectedType) {
+			return runtimeHandleValue(handle, expectedType);
+		};
+		runContextPrototype.closeHandle = function (handle) {
+			return closeRuntimeHandle(this, handle);
+		};
+		runContextPrototype.convertigoContext = function () {
+			var liveContext = currentConvertigoContext();
+			if (liveContext === null || liveContext === undefined) {
+				raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
+			}
+			return liveContext;
+		};
+		runContextPrototype.runNodes = function (nodes) {
+			return executeNodes(this, nodes);
+		};
+		runContextPrototype.callBlock = function (name, props, options) {
+			return callBlock(this, name, props, options);
+		};
+		runContextPrototype.catalog = function () {
+			return catalogDefinition(this.blocks);
+		};
+		runContextPrototype.lib = function (name) {
+			name = safeFilePart(name);
+			if (!this.libraries[name]) {
+				this.libraries[name] = loadFlowLibrary(name);
+			}
+			return this.libraries[name];
+		};
+		runContextPrototype.returnValue = function (value) {
+			assertNoRuntimeHandle(value, "result");
+			this.returned = value;
+			this.stopped = true;
+			return value;
+		};
+		runContextPrototype.throwFlow = function (options, node) {
+			return throwFlowError(options, node);
+		};
+		runContextPrototype.trace = function (node, name, result) {
+			if (!this.traceEnabled) {
+				return;
+			}
+			this.scopes.trace.nodes.push({
+				id: nodePath(node),
+				block: name,
+				result: snapshot(result)
+			});
+		};
+		runContextPrototype.raise = raise;
 
 		function prepareNodeRunner(block, node, props) {
 			var trustedRuntime = String(block && block.__flowOrigin || "") === "core" ||
@@ -689,6 +849,7 @@
 					compilePlanMs: compileMs,
 					loadConfigMs: configMs,
 					createContextMs: profileDuration(contextStarted),
+					frameBefore: contextFrameStats(ctx),
 					blocks: [],
 					hotPath: {}
 				};
@@ -728,6 +889,7 @@
 					out.trace = snapshot(ctx.scopes.trace);
 				}
 				if (ctx.profile) {
+					ctx.profile.frameAfter = contextFrameStats(ctx);
 					ctx.profile.runFlowRequestMs = profileDuration(runStarted);
 					out.profile = ctx.profile;
 				}
@@ -746,14 +908,15 @@
 			requestScope.engineDir = canonicalPath(engineDir());
 			requestScope.engineProjectDir = canonicalPath(new File(engineDir(), "../.."));
 			var currentProjectDir = projectDir();
-			var libraries = {};
 			requestScope.projectDir = currentProjectDir ? canonicalPath(currentProjectDir) : "";
-			var ctx = {
+			var ctx = Object.create(runContextPrototype);
+			Object.assign(ctx, {
 				request: request,
 				definition: definition,
 				engine: projectEngine || {},
 				blocks: blocks,
 				preparedNodes: plan && plan.preparedNodes || null,
+				libraries: {},
 				returned: undefined,
 				stopped: false,
 				handles: {},
@@ -772,85 +935,9 @@
 					current: null,
 					props: {}
 				}
-			};
-			ctx.props = function (node) {
-				var prepared = preparedNodeFor(ctx, node);
-				if (prepared && prepared.catalog === ctx.blocks && prepared.props) {
-					profileCount(ctx, "preparedPropsHits");
-					return prepared.props;
-				}
-				profileCount(ctx, "preparedPropsMisses");
-				return nodeProps(node);
-			};
-			ctx.read = function (path) {
-				return readScopePath(ctx.scopes, path);
-			};
-			ctx.readObjectPath = readObjectPath;
-			ctx.write = function (path, value) {
-				return writeScopePath(ctx.scopes, path, value);
-			};
-			ctx.value = function (value) {
-				return evaluateExpression(ctx, value);
-			};
-			ctx.expr = function (value) {
-				return evaluateExpression(ctx, value);
-			};
-			ctx.compileExpr = function (value) {
-				var compiled = compileExpression(value);
-				return function () { return compiled(ctx); };
-			};
-			ctx.path = function (path) {
-				return ctx.read(path);
-			};
-			ctx.literal = function (value) {
-				return literalValue(value);
-			};
-			ctx.render = function (template) {
-				return renderTemplate(template, ctx);
-			};
-			ctx.template = function (value) {
-				return renderTemplateTree(ctx, value);
-			};
-			ctx.input = function (props, fallback) {
-				return inputValue(ctx, props || {}, fallback);
-			};
-			ctx.parseYaml = function (text) {
-				return parseYamlSource(text, "null\n");
-			};
-			ctx.isHandle = isRuntimeHandle;
-			ctx.handleSummary = runtimeHandleSummary;
-			ctx.createHandle = function (type, value, options) {
-				return createRuntimeHandle(ctx, type, value, options);
-			};
-			ctx.handleValue = function (handle, expectedType) {
-				return runtimeHandleValue(handle, expectedType);
-			};
-			ctx.closeHandle = function (handle) {
-				return closeRuntimeHandle(ctx, handle);
-			};
-			ctx.convertigoContext = function () {
-				var liveContext = currentConvertigoContext();
-				if (liveContext === null || liveContext === undefined) {
-					raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
-				}
-				return liveContext;
-			};
-			ctx.runNodes = function (nodes) {
-				return executeNodes(ctx, nodes);
-			};
-			ctx.callBlock = function (name, props, options) {
-				return callBlock(ctx, name, props, options);
-			};
-			ctx.catalog = function () {
-				return catalogDefinition(blocks);
-			};
-			ctx.lib = function (name) {
-				name = safeFilePart(name);
-				if (!libraries[name]) {
-					libraries[name] = loadFlowLibrary(name);
-				}
-				return libraries[name];
-			};
+			});
+			ctx.__installColdContextMethods = function () {
+				delete ctx.__installColdContextMethods;
 			ctx.cacheInfo = function () {
 				return cacheInfoRequest();
 			};
@@ -1255,26 +1342,7 @@
 					return requestables.schema(args);
 				});
 			};
-			ctx.returnValue = function (value) {
-				assertNoRuntimeHandle(value, "result");
-				ctx.returned = value;
-				ctx.stopped = true;
-				return value;
 			};
-			ctx.throwFlow = function (options, node) {
-				return throwFlowError(options, node);
-			};
-			ctx.trace = function (node, name, result) {
-				if (!ctx.traceEnabled) {
-					return;
-				}
-				ctx.scopes.trace.nodes.push({
-					id: nodePath(node),
-					block: name,
-					result: snapshot(result)
-				});
-			};
-			ctx.raise = raise;
 			return ctx;
 		}
 

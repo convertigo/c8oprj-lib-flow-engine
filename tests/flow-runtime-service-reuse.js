@@ -63,6 +63,24 @@ assert.strictEqual(first.convertigoContext(), liveContext,
 assert.strictEqual(blockNameReads, 1,
 	"the runtime service factory should read a stable environment only once");
 
+for (const name of ["props", "read", "write", "expr", "template", "runNodes", "callBlock", "trace"]) {
+	assert.strictEqual(first[name], second[name], `${name} should be shared by all request frames`);
+	assert.strictEqual(Object.prototype.hasOwnProperty.call(first, name), false,
+		`${name} should not allocate an own request closure`);
+}
+assert.deepStrictEqual(
+	Object.keys(first).filter((name) => typeof first[name] === "function"),
+	["__installColdContextMethods"],
+	"the best-case request frame should allocate only one lazy capability installer"
+);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), false);
+assert.strictEqual(typeof first.flowCodeGet, "function");
+assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), true,
+	"the authoring capability should materialize only when first requested");
+assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "__installColdContextMethods"), false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(second, "flowCodeGet"), false,
+	"materializing cold capabilities in one frame must not affect another frame");
+
 let traceCalls = 0;
 const concrete = { run: () => "concrete" };
 second.blocks = { concrete };
