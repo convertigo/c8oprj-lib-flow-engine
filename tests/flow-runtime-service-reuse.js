@@ -99,6 +99,9 @@ const preparedEnv = Object.assign({}, env, {
 	compileTemplateTree(value) {
 		return () => value;
 	},
+	compileWriteScopePath(path) {
+		return (ctx, value) => ctx.write(path, value);
+	},
 	literalValue(value) {
 		return value;
 	},

@@ -476,6 +476,13 @@
 		return scopePathUtils().writeScopePath(scopes, path, value, scopePathEnv());
 	}
 
+	function compileWriteScopePath(path) {
+		var write = scopePathUtils().compileWriteScopePath(path, scopePathEnv());
+		return function (ctx, value) {
+			return write(ctx.scopes, value);
+		};
+	}
+
 	function isStructuredValue(value) {
 		return expressionUtils().isStructuredValue(value);
 	}
@@ -3755,6 +3762,7 @@
 			readScopePath: readScopePath,
 			readObjectPath: readObjectPath,
 			writeScopePath: writeScopePath,
+			compileWriteScopePath: compileWriteScopePath,
 			evaluateExpression: evaluateExpression,
 			compileExpression: compileExpression,
 			compileTemplateTree: compileTemplateTree,

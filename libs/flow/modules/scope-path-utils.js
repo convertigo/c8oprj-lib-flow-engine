@@ -122,6 +122,29 @@
 		return value;
 	}
 
+	function compileWriteScopePath(path, env) {
+		var parts = String(path || "").split(".");
+		if (parts.length === 0 || env.scopeNames.indexOf(parts[0]) === -1) {
+			env.raise("INVALID_SCOPE_PATH", "Invalid scope path: " + path);
+		}
+		var writesResult = parts[0] === "result";
+		return function (scopes, value) {
+			if (writesResult) {
+				env.assertNoRuntimeHandle(value, "result");
+			}
+			var current = scopes[parts[0]];
+			for (var i = 1; i < parts.length - 1; i++) {
+				var part = parts[i];
+				if (current[part] === undefined || current[part] === null) {
+					current[part] = {};
+				}
+				current = current[part];
+			}
+			current[parts[parts.length - 1]] = value;
+			return value;
+		};
+	}
+
 	function joinPath(base, leaf) {
 		base = String(base || "");
 		leaf = String(leaf || "");
@@ -154,6 +177,7 @@
 		readObjectPath: readObjectPath,
 		readScopePath: readScopePath,
 		writeScopePath: writeScopePath,
+		compileWriteScopePath: compileWriteScopePath,
 		joinPath: joinPath,
 		flowScriptPath: flowScriptPath
 	};

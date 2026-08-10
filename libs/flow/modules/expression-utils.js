@@ -26,6 +26,10 @@
 			return ctx.read(source);
 		}
 		var parts = simplePathPartsFor(ctx, source);
+		return readSimpleScopeParts(ctx, parts);
+	}
+
+	function readSimpleScopeParts(ctx, parts) {
 		var current = ctx.scopes[parts[0]];
 		for (var i = 1; i < parts.length; i++) {
 			if (current === null || current === undefined) {
@@ -95,8 +99,8 @@
 		}
 		var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
 		if (exact && isSimpleScopePath(exact[1], env)) {
-			var exactPath = exact[1];
-			return function (ctx) { return readSimpleScopePath(ctx, exactPath); };
+			var exactParts = String(exact[1]).split(".");
+			return function (ctx) { return readSimpleScopeParts(ctx, exactParts); };
 		}
 		if (exact) {
 			var expression = exact[1];
@@ -137,7 +141,8 @@
 			return compileTree(value, env);
 		}
 		if (typeof value === "string" && isSimpleScopePath(value, env)) {
-			return function (ctx) { return readSimpleScopePath(ctx, value); };
+			var parts = String(value).split(".");
+			return function (ctx) { return readSimpleScopeParts(ctx, parts); };
 		}
 		if (typeof value === "string") {
 			return expressionProgramFor(null, value, env);
@@ -612,7 +617,8 @@
 				}
 				if (env.isScopePath(name)) {
 					if (isSimpleScopePath(name, env)) {
-						return function (runCtx) { return readSimpleScopePath(runCtx, name); };
+						var parts = String(name).split(".");
+						return function (runCtx) { return readSimpleScopeParts(runCtx, parts); };
 					}
 					return function (runCtx) { return runCtx.read(name); };
 				}

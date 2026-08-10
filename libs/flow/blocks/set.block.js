@@ -39,10 +39,10 @@ const _meta = {
 
 	return {
 		prepareNode: function (node, helpers) {
-			var path = helpers.props.path;
+			var write = helpers.compileWrite(helpers.props.path);
 			var resolve = helpers.props.value !== undefined ? helpers.compileValue(helpers.props.value) : null;
 			return function (ctx) {
-				return ctx.write(path, resolve ? resolve(ctx) : undefined);
+				return write(ctx, resolve ? resolve(ctx) : undefined);
 			};
 		},
 		run: function (ctx, node) {

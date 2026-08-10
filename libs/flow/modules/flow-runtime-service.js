@@ -44,6 +44,7 @@
 		var readScopePath = env.readScopePath;
 		var readObjectPath = env.readObjectPath;
 		var writeScopePath = env.writeScopePath;
+		var compileWriteScopePath = env.compileWriteScopePath;
 		var evaluateExpression = env.evaluateExpression;
 		var compileExpression = env.compileExpression;
 		var compileTemplateTree = env.compileTemplateTree;
@@ -171,6 +172,7 @@
 			var runner = block.prepareNode(node, {
 				props: props,
 				compileExpression: compileExpression,
+				compileWrite: compileWriteScopePath,
 				compileValue: function (value) {
 					return compileTemplateTree(literalValue(value));
 				}
@@ -181,7 +183,7 @@
 			return runner || null;
 		}
 
-		function prepareNodeExecutor(node, block, name, out, runner) {
+		function prepareNodeExecutor(node, block, name, out, writer, runner) {
 			if (!block) {
 				return null;
 			}
@@ -190,8 +192,8 @@
 					return undefined;
 				}
 				var result = runner ? runner(ctx, node) : block.run(ctx, node);
-				if (out && result !== undefined) {
-					ctx.write(out, result);
+				if (writer && result !== undefined) {
+					writer(ctx, result);
 				}
 				if (ctx.traceEnabled !== false) {
 					ctx.trace(node, name, result);
@@ -218,15 +220,18 @@
 					Object.freeze(reusableProps);
 				}
 				var preparedRunner = prepareNodeRunner(block, node, reusableProps);
+				var preparedOut = reusableProps ? reusableProps.out : nodeOut(node);
+				var preparedWriter = preparedOut ? compileWriteScopePath(preparedOut) : null;
 				var preparedNode = {
 						catalog: blocks,
 						name: name,
 						block: block,
-						out: reusableProps ? reusableProps.out : nodeOut(node),
+						out: preparedOut,
+						write: preparedWriter,
 						props: reusableProps,
 						run: preparedRunner
 					};
-				preparedNode.execute = prepareNodeExecutor(node, block, name, preparedNode.out, preparedRunner);
+				preparedNode.execute = prepareNodeExecutor(node, block, name, preparedNode.out, preparedWriter, preparedRunner);
 				Object.defineProperty(node, "__flowRuntimeNode", {
 					value: preparedNode,
 					enumerable: false,
