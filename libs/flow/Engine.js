@@ -3974,6 +3974,15 @@
 
 	function describeTreeRequest(request, blocks) {
 		request = request || {};
+		if (String(request.target || "flow") === "engine" && String(request.projectDir || "")) {
+			request = Object.assign({}, request);
+			if (request.includeFrontendCatalog === undefined || request.includeFrontendCatalog === null) {
+				request.includeFrontendCatalog = false;
+			}
+			if (request.includeFlowCatalog === undefined || request.includeFlowCatalog === null) {
+				request.includeFlowCatalog = false;
+			}
+		}
 		var cache = runtimeState.caches.treeSnapshots;
 		var key = describeTreeCacheKey(request);
 		var fingerprint = describeTreeFingerprint(request);

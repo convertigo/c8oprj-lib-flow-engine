@@ -180,11 +180,14 @@ blocks, MCP server plumbing, benchmark helpers or migration helpers belong in a
 separate library project such as `lib_flow_mcp`. The Flow MCP block lives there,
 not in the standard catalog.
 
-In the FlowEngine virtual tree and Eclipse palette, blocks are grouped by
-origin: core engine, current project, then external libraries. The runtime still
-receives one flat block name, but the authoring UI should make it clear whether
-a block comes from `lib_flow_engine`, the application project, or a future
-library project.
+The initial FlowEngine virtual tree for a loaded project omits the frontend and
+Flow block catalogs so project structure does not wait for library discovery.
+The contextual palette groups blocks by origin: core engine, current project,
+then external libraries. Explicit tree inspection can still set
+`includeFrontendCatalog:true` or `includeFlowCatalog:true`. The runtime receives
+one flat block name, but the authoring UI should make it clear whether a block
+comes from `lib_flow_engine`, the application project, or a future library
+project.
 
 Block names use a light namespace convention. Short names such as `set`,
 `return` and `forEach` are reserved for core primitives. Domain and integration

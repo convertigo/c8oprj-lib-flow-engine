@@ -4147,6 +4147,9 @@ var flowSvelteTree = JSON.parse(engine.describeTree(JSON.stringify({
 	projectDir: __flowProjectDir,
 	detail: "full"
 })));
+assertTrue(findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendBlockCatalog" || node.path === "catalog";
+}) === null, "loaded project tree should omit eager frontend and Flow catalogs by default");
 var flowSvelteNames = {};
 (function collectVirtualNames(node) {
 	(node.children || []).forEach(function (child) {
@@ -5067,6 +5070,8 @@ var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	engineSource: flowSvelteEngineSource,
 	projectDir: __flowProjectDir,
 	detail: "full",
+	includeFrontendCatalog: true,
+	includeFlowCatalog: false,
 	frontendSourceDrafts: (function () {
 		var drafts = {};
 		drafts[String(flowSvelteComponentFile.getCanonicalPath())] = flowSvelteMove.source;
