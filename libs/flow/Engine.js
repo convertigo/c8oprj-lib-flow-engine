@@ -3757,6 +3757,7 @@
 			writeScopePath: writeScopePath,
 			evaluateExpression: evaluateExpression,
 			compileExpression: compileExpression,
+			compileTemplateTree: compileTemplateTree,
 			literalValue: literalValue,
 			renderTemplate: renderTemplate,
 			renderTemplateTree: renderTemplateTree,

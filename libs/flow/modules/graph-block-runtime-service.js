@@ -417,6 +417,11 @@
 		if (flow) {
 			block.__graphDefinition = flow.definition;
 		}
+		if (rhino && typeof rhino.script.prepareNode === "function") {
+			block.prepareNode = function (node, helpers) {
+				return rhino.script.prepareNode(node, helpers);
+			};
+		}
 		block.__flowOrigin = origin;
 		block.__flowProvider = provider || origin || "unknown";
 		block.__flowFile = String(file.getAbsolutePath());

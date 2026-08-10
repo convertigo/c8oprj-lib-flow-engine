@@ -46,6 +46,7 @@
 		var writeScopePath = env.writeScopePath;
 		var evaluateExpression = env.evaluateExpression;
 		var compileExpression = env.compileExpression;
+		var compileTemplateTree = env.compileTemplateTree;
 		var literalValue = env.literalValue;
 		var renderTemplate = env.renderTemplate;
 		var renderTemplateTree = env.renderTemplateTree;
@@ -162,6 +163,24 @@
 				String(block.__blockImplementationRuntime || "") === "flow");
 		}
 
+		function prepareNodeRunner(block, node, props) {
+			if (!block || String(block.__flowOrigin || "") !== "core" ||
+					typeof block.prepareNode !== "function" || !props) {
+				return null;
+			}
+			var runner = block.prepareNode(node, {
+				props: props,
+				compileExpression: compileExpression,
+				compileValue: function (value) {
+					return compileTemplateTree(literalValue(value));
+				}
+			});
+			if (runner !== null && runner !== undefined && typeof runner !== "function") {
+				raise("INVALID_BLOCK_PREPARATION", "Prepared Flow block must return a function: " + String(block.name || ""), node);
+			}
+			return runner || null;
+		}
+
 		function installPreparedNode(node, blocks, seenGraphBlocks) {
 			if (!node || typeof node !== "object") {
 				return;
@@ -179,13 +198,15 @@
 				if (reusableProps && typeof Object.freeze === "function") {
 					Object.freeze(reusableProps);
 				}
+				var preparedRunner = prepareNodeRunner(block, node, reusableProps);
 				Object.defineProperty(node, "__flowRuntimeNode", {
 					value: {
 						catalog: blocks,
 						name: name,
 						block: block,
 						out: reusableProps ? reusableProps.out : nodeOut(node),
-						props: reusableProps
+						props: reusableProps,
+						run: preparedRunner
 					},
 					enumerable: false,
 					configurable: true
@@ -233,7 +254,13 @@
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
 				try {
-					result = block.run(ctx, node);
+					if (preparedHit && prepared.run) {
+						profileCount(ctx, "preparedRunnerHits");
+						result = prepared.run(ctx, node);
+					} else {
+						profileCount(ctx, "preparedRunnerMisses");
+						result = block.run(ctx, node);
+					}
 				} finally {
 					recordProfile(ctx, "node", name, runStarted);
 					profileAdd(ctx, "executeNodeRunMs", runStarted);

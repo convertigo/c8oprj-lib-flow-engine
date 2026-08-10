@@ -20,6 +20,12 @@ const _meta = {
 
 (function () {
 	return {
+		prepareNode: function (node, helpers) {
+			var resolve = helpers.props.value !== undefined ? helpers.compileValue(helpers.props.value) : null;
+			return function (ctx) {
+				return ctx.returnValue(resolve ? resolve(ctx) : ctx.read("result"));
+			};
+		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.returnValue(ctx.input(props, ctx.read("result")));

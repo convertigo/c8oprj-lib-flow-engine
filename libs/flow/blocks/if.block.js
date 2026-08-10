@@ -43,6 +43,13 @@ const _meta = {
 	}
 
 	return {
+		prepareNode: function (node, helpers) {
+			var condition = helpers.compileExpression(helpers.props.condition);
+			return function (ctx, runNode) {
+				var ok = !!condition(ctx);
+				return ctx.runNodes(ok ? (runNode.then || []) : (runNode["else"] || []));
+			};
+		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var ok = !!ctx.expr(props.condition);

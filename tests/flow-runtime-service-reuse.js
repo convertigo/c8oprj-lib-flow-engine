@@ -87,15 +87,31 @@ assert.ok(second.profile.hotPath.executeNodeTotalMs > 0);
 assert.strictEqual(second.profile.blocks.length, 2);
 
 let preparedNodePropsCalls = 0;
+let preparedRunnerBuilds = 0;
 const preparedEnv = Object.assign({}, env, {
 	nodeProps(node) {
 		preparedNodePropsCalls += 1;
 		return Object.assign({}, node.props || {});
 	},
+	compileExpression(source) {
+		return (ctx) => ctx.scopes.input[source];
+	},
+	compileTemplateTree(value) {
+		return () => value;
+	},
+	literalValue(value) {
+		return value;
+	},
 });
 const preparedBlock = {
 	__flowOrigin: "core",
-	run: (ctx, node) => ctx.props(node).value,
+	prepareNode(node, helpers) {
+		preparedRunnerBuilds += 1;
+		assert.strictEqual(helpers.props.value, 42);
+		const answer = helpers.compileExpression("answer");
+		return (ctx) => answer(ctx);
+	},
+	run: () => { throw new Error("prepared runner was not used"); },
 };
 const preparedNode = { block: "prepared", props: { out: "result.answer", value: 42 } };
 runtime.prepareExecutionPlan({
@@ -106,12 +122,21 @@ assert.strictEqual(Object.prototype.propertyIsEnumerable.call(preparedNode, "__f
 assert.strictEqual(JSON.stringify(preparedNode).includes("__flowRuntimeNode"), false);
 const preparedWrites = [];
 const preparedCtx = runtime.createRunContext({}, {}, preparedNode.__flowRuntimeNode.catalog, {}, preparedEnv);
+preparedCtx.scopes.input.answer = 42;
 preparedCtx.write = (out, value) => preparedWrites.push({ out, value });
 preparedCtx.trace = () => {};
 assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 42);
 assert.deepStrictEqual(preparedWrites, [{ out: "result.answer", value: 42 }]);
 assert.strictEqual(preparedNodePropsCalls, 1,
 	"prepared dispatch rebuilt node properties on the hot path");
+assert.strictEqual(preparedRunnerBuilds, 1,
+	"prepared runner should be built exactly once with the plan");
 assert.strictEqual(Object.isFrozen(preparedNode.__flowRuntimeNode.props), true);
+
+preparedCtx.scopes.input.answer = 84;
+assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 84,
+	"prepared runner captured the first request value");
+assert.strictEqual(preparedRunnerBuilds, 1,
+	"prepared runner was rebuilt on the hot path");
 
 console.log("flow runtime service reuse tests passed");
