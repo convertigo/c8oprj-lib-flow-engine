@@ -377,6 +377,62 @@
 		});
 	}
 
+	var graphBlockPrototype = {
+		catalog: function () {
+			return normalizeTree(this.__graphRuntimeCatalog);
+		},
+		displayName: function (node) {
+			var hooks = this.__graphHooks || {};
+			if (typeof hooks.displayName === "function") {
+				return hooks.displayName(node);
+			}
+			return graphBlockDisplayName(this.__blockDefinition, node);
+		},
+		analyze: function (ctx, node) {
+			var hooks = this.__graphHooks || {};
+			if (typeof hooks.analyze === "function") {
+				return hooks.analyze(ctx, node);
+			}
+			analyzeGraphBlockDescriptor(ctx, node, this.__graphRuntimeCatalog);
+			if (this.__blockImplementationRuntime === "flow" && ctx.withGraphBlock) {
+				var block = this;
+				ctx.withGraphBlock(node, block, function () {
+					ctx.visitNodes(block.__graphDefinition.nodes || []);
+				});
+			} else if (this.__blockImplementationRuntime === "flow") {
+				ctx.visitNodes(this.__graphDefinition.nodes || []);
+			}
+		},
+		analyzeShallow: function (ctx, node) {
+			var hooks = this.__graphHooks || {};
+			if (typeof hooks.analyzeShallow === "function") {
+				return hooks.analyzeShallow(ctx, node);
+			}
+			analyzeGraphBlockDescriptor(ctx, node, this.__graphRuntimeCatalog);
+		},
+		run: function (ctx, node) {
+			var rhino = this.__graphRhino;
+			if (rhino) {
+				return rhino.script[rhino.entry](ctx, node);
+			}
+			return runGraphBlock(ctx, node, this);
+		},
+		prepareNode: function (node, helpers) {
+			var rhino = this.__graphRhino;
+			if (rhino && typeof rhino.script.prepareNode === "function") {
+				return rhino.script.prepareNode(node, helpers);
+			}
+			if (!this.__graphDefinition) {
+				return null;
+			}
+			var block = this;
+			var prepared = prepareGraphBlock(node, block, helpers && helpers.props);
+			return function (ctx) {
+				return runGraphBlock(ctx, node, block, prepared);
+			};
+		}
+	};
+
 	function graphBlockFromDefinition(definition, file, origin, provider) {
 		var catalog = graphBlockCatalog(definition);
 		var implementation = blockImplementation(definition);
@@ -388,62 +444,18 @@
 			file: file
 		} : loadFlowBlockImplementation(definition, file)) : null;
 		var hooks = loadBlockHooks(definition, file);
-		var block = {
+		var block = Object.assign(Object.create(graphBlockPrototype), {
 			name: blockId,
 			"private": definition["private"] === true,
 			visibility: definition.visibility || "",
 			__blockDefinition: definition,
 			__graphRuntimeCatalog: catalog,
 			__blockImplementationRuntime: runtime,
-			catalog: function () {
-				return normalizeTree(catalog);
-			},
-			displayName: function (node) {
-				if (typeof hooks.displayName === "function") {
-					return hooks.displayName(node);
-				}
-				return graphBlockDisplayName(definition, node);
-			},
-			analyze: function (ctx, node) {
-				if (typeof hooks.analyze === "function") {
-					return hooks.analyze(ctx, node);
-				}
-				analyzeGraphBlockDescriptor(ctx, node, catalog);
-				if (runtime === "flow" && ctx.withGraphBlock) {
-					ctx.withGraphBlock(node, block, function () {
-						ctx.visitNodes(block.__graphDefinition.nodes || []);
-					});
-				} else if (runtime === "flow") {
-					ctx.visitNodes(block.__graphDefinition.nodes || []);
-				}
-			},
-			analyzeShallow: function (ctx, node) {
-				if (typeof hooks.analyzeShallow === "function") {
-					return hooks.analyzeShallow(ctx, node);
-				}
-				analyzeGraphBlockDescriptor(ctx, node, catalog);
-			},
-			run: function (ctx, node) {
-				if (rhino) {
-					return rhino.script[rhino.entry](ctx, node);
-				}
-				return runGraphBlock(ctx, node, block);
-			}
-		};
+			__graphHooks: hooks,
+			__graphRhino: rhino
+		});
 		if (flow) {
 			block.__graphDefinition = flow.definition;
-		}
-		if (rhino && typeof rhino.script.prepareNode === "function") {
-			block.prepareNode = function (node, helpers) {
-				return rhino.script.prepareNode(node, helpers);
-			};
-		} else if (flow) {
-			block.prepareNode = function (node, helpers) {
-				var prepared = prepareGraphBlock(node, block, helpers && helpers.props);
-				return function (ctx) {
-					return runGraphBlock(ctx, node, block, prepared);
-				};
-			};
 		}
 		block.__flowOrigin = origin;
 		block.__flowProvider = provider || origin || "unknown";
@@ -481,15 +493,25 @@
 		};
 	}
 
+	function serviceFor(env) {
+		if (!env.__flowGraphBlockRuntimeService) {
+			Object.defineProperty(env, "__flowGraphBlockRuntimeService", {
+				value: create(env),
+				enumerable: false
+			});
+		}
+		return env.__flowGraphBlockRuntimeService;
+	}
+
 	return {
 		validateBlockFlowImplementationSource: function (name, source, env) {
-			return create(env).validateBlockFlowImplementationSource(name, source);
+			return serviceFor(env).validateBlockFlowImplementationSource(name, source);
 		},
 		graphBlockFromDefinition: function (definition, file, origin, provider, env) {
-			return create(env).graphBlockFromDefinition(definition, file, origin, provider);
+			return serviceFor(env).graphBlockFromDefinition(definition, file, origin, provider);
 		},
 		loadGraphBlockFile: function (blocks, file, origin, provider, blocksDir, env) {
-			return create(env).loadGraphBlockFile(blocks, file, origin, provider, blocksDir);
+			return serviceFor(env).loadGraphBlockFile(blocks, file, origin, provider, blocksDir);
 		}
 	};
 }())

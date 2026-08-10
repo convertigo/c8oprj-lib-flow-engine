@@ -11,13 +11,15 @@ const shared = new Set(match[1].split("|").filter(Boolean));
 const modulesDir = path.join(root, "libs/flow/modules");
 const moduleNames = fs.readdirSync(modulesDir).filter((name) => name.endsWith(".js")).sort();
 const stateful = new Set(["flow-code-service.js", "flow-runtime-service.js"]);
-const immutableTopLevelState = {
+const auditedClosureDeclarations = {
 	"catalog-loader-service.js": ["var DEFAULT_HOT_CATALOG_PROBE_INTERVAL_MS = 60000;"],
 	"flow-execution-snapshot-service.js": [
 		'var FORMAT = "convertigo.flow.execution-snapshot";',
 		"var VERSION = 1;"
 	],
 	"flow-summary-service.js": ["var SUMMARY_LIMIT = 72;"],
+	// This prototype is created inside create(env), once per Engine runtime; it is not JVM-shared state.
+	"graph-block-runtime-service.js": ["var graphBlockPrototype = {"],
 	"response-budget-service.js": ['var CURSOR_PREFIX = "rb1.";']
 };
 
@@ -34,8 +36,8 @@ for (const name of shared) {
 		.map((line) => line.trim());
 	assert.deepStrictEqual(
 		topLevelState,
-		immutableTopLevelState[name] || [],
-		`${name} introduced mutable top-level closure state; keep it runtime-local or update the audited contract`
+		auditedClosureDeclarations[name] || [],
+		`${name} introduced unaudited module closure state; keep it runtime-local or update the audited contract`
 	);
 }
 

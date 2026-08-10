@@ -57,6 +57,15 @@ const env = {
 };
 
 const block = graphRuntime.graphBlockFromDefinition(definition, file, "project", "project", env);
+const secondBlock = graphRuntime.graphBlockFromDefinition({
+	...definition,
+	name: "profiled-again",
+	__flowBlockId: "demo.profiledAgain",
+}, file, "project", "project", env);
+for (const method of ["catalog", "displayName", "analyze", "analyzeShallow", "run", "prepareNode"]) {
+	assert.strictEqual(block[method], secondBlock[method], `${method} must be interned on the runtime block prototype`);
+	assert.strictEqual(Object.prototype.hasOwnProperty.call(block, method), false, `${method} must not allocate an own block closure`);
+}
 const originalInput = { outer: true };
 const originalLocal = { kept: true, value: 42 };
 const originalResult = { outer: true };

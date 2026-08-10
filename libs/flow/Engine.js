@@ -35,6 +35,7 @@
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
 	var flowRuntimeServiceEnvInstance = null;
+	var graphBlockRuntimeEnvInstance = null;
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
@@ -1598,7 +1599,10 @@
 	}
 
 	function graphBlockRuntimeEnv() {
-		return {
+		if (graphBlockRuntimeEnvInstance) {
+			return graphBlockRuntimeEnvInstance;
+		}
+		graphBlockRuntimeEnvInstance = {
 			File: File,
 			FileUtils: FileUtils,
 			canonicalPath: canonicalPath,
@@ -1623,6 +1627,7 @@
 			compileTemplateTree: compileTemplateTree,
 			nanoTime: function () { return JavaSystem.nanoTime(); }
 		};
+		return graphBlockRuntimeEnvInstance;
 	}
 
 	function validateBlockFlowImplementationSource(name, source) {
