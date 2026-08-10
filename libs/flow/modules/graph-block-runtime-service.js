@@ -202,7 +202,7 @@
 	}
 
 	function resolveGraphBlockProps(ctx, node, catalog) {
-		var raw = nodeProps(node);
+		var raw = ctx.props(node);
 		var descriptors = catalog.props || {};
 		var props = {};
 		Object.keys(descriptors).forEach(function (key) {

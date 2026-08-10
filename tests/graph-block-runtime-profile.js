@@ -70,6 +70,7 @@ const ctx = {
 	literal: (value) => value,
 	template: (value) => value,
 	expr: (value) => value,
+	props: (node) => Object.assign({}, node.props || {}),
 	runNodes() {
 		this.scopes.result.value = this.scopes.input.value;
 		return this.scopes.result;

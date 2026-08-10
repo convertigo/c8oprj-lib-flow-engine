@@ -93,8 +93,11 @@ const preparedEnv = Object.assign({}, env, {
 		return Object.assign({}, node.props || {});
 	},
 });
-const preparedBlock = { run: () => 42 };
-const preparedNode = { block: "prepared", props: { out: "result.answer" } };
+const preparedBlock = {
+	__flowOrigin: "core",
+	run: (ctx, node) => ctx.props(node).value,
+};
+const preparedNode = { block: "prepared", props: { out: "result.answer", value: 42 } };
 runtime.prepareExecutionPlan({
 	definition: { nodes: [preparedNode] },
 	blocks: { prepared: preparedBlock },
@@ -102,15 +105,13 @@ runtime.prepareExecutionPlan({
 assert.strictEqual(Object.prototype.propertyIsEnumerable.call(preparedNode, "__flowRuntimeNode"), false);
 assert.strictEqual(JSON.stringify(preparedNode).includes("__flowRuntimeNode"), false);
 const preparedWrites = [];
-const preparedCtx = {
-	stopped: false,
-	blocks: preparedNode.__flowRuntimeNode.catalog,
-	write: (out, value) => preparedWrites.push({ out, value }),
-	trace: () => {},
-};
+const preparedCtx = runtime.createRunContext({}, {}, preparedNode.__flowRuntimeNode.catalog, {}, preparedEnv);
+preparedCtx.write = (out, value) => preparedWrites.push({ out, value });
+preparedCtx.trace = () => {};
 assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 42);
 assert.deepStrictEqual(preparedWrites, [{ out: "result.answer", value: 42 }]);
-assert.strictEqual(preparedNodePropsCalls, 0,
+assert.strictEqual(preparedNodePropsCalls, 1,
 	"prepared dispatch rebuilt node properties on the hot path");
+assert.strictEqual(Object.isFrozen(preparedNode.__flowRuntimeNode.props), true);
 
 console.log("flow runtime service reuse tests passed");

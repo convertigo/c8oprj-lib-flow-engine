@@ -157,6 +157,11 @@
 			return node.props && node.props.out !== undefined ? node.props.out : undefined;
 		}
 
+		function canReuseNodeProps(block) {
+			return !!block && (String(block.__flowOrigin || "") === "core" ||
+				String(block.__blockImplementationRuntime || "") === "flow");
+		}
+
 		function installPreparedNode(node, blocks, seenGraphBlocks) {
 			if (!node || typeof node !== "object") {
 				return;
@@ -170,12 +175,17 @@
 			var name = blockName(node);
 			var block = name ? runtimeBlock(blocks, name) : null;
 			if (name) {
+				var reusableProps = canReuseNodeProps(block) ? nodeProps(node) : null;
+				if (reusableProps && typeof Object.freeze === "function") {
+					Object.freeze(reusableProps);
+				}
 				Object.defineProperty(node, "__flowRuntimeNode", {
 					value: {
 						catalog: blocks,
 						name: name,
 						block: block,
-						out: nodeOut(node)
+						out: reusableProps ? reusableProps.out : nodeOut(node),
+						props: reusableProps
 					},
 					enumerable: false,
 					configurable: true
@@ -633,7 +643,15 @@
 					props: {}
 				}
 			};
-			ctx.props = nodeProps;
+			ctx.props = function (node) {
+				var prepared = node && node.__flowRuntimeNode;
+				if (prepared && prepared.catalog === ctx.blocks && prepared.props) {
+					profileCount(ctx, "preparedPropsHits");
+					return prepared.props;
+				}
+				profileCount(ctx, "preparedPropsMisses");
+				return nodeProps(node);
+			};
 			ctx.read = function (path) {
 				return readScopePath(ctx.scopes, path);
 			};
