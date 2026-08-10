@@ -159,9 +159,13 @@
 
 		function contextFrameStats(ctx) {
 			var ownFunctionCount = 0;
+			var ownSharedFunctionCount = 0;
 			Object.keys(ctx || {}).forEach(function (name) {
 				if (typeof ctx[name] === "function") {
 					ownFunctionCount += 1;
+					if (ctx[name] === runContextPrototype[name]) {
+						ownSharedFunctionCount += 1;
+					}
 				}
 			});
 			var sharedMethodCount = 0;
@@ -173,6 +177,8 @@
 			});
 			return {
 				ownFunctionCount: ownFunctionCount,
+				ownSharedFunctionCount: ownSharedFunctionCount,
+				ownClosureCount: ownFunctionCount - ownSharedFunctionCount,
 				sharedMethodCount: sharedMethodCount,
 				lazyMethodCount: coldContextMethodNames.length,
 				coldMethodsInstalled: !Object.prototype.hasOwnProperty.call(ctx, "__installColdContextMethods")
@@ -917,6 +923,8 @@
 				blocks: blocks,
 				preparedNodes: plan && plan.preparedNodes || null,
 				libraries: {},
+				runNodes: runContextPrototype.runNodes,
+				returnValue: runContextPrototype.returnValue,
 				returned: undefined,
 				stopped: false,
 				handles: {},

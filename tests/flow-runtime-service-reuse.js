@@ -63,15 +63,20 @@ assert.strictEqual(first.convertigoContext(), liveContext,
 assert.strictEqual(blockNameReads, 1,
 	"the runtime service factory should read a stable environment only once");
 
-for (const name of ["props", "read", "write", "expr", "template", "runNodes", "callBlock", "trace"]) {
+for (const name of ["props", "read", "write", "expr", "template", "callBlock", "trace"]) {
 	assert.strictEqual(first[name], second[name], `${name} should be shared by all request frames`);
 	assert.strictEqual(Object.prototype.hasOwnProperty.call(first, name), false,
 		`${name} should not allocate an own request closure`);
 }
+for (const name of ["runNodes", "returnValue"]) {
+	assert.strictEqual(first[name], second[name], `${name} should be a shared hot-path reference`);
+	assert.strictEqual(Object.prototype.hasOwnProperty.call(first, name), true,
+		`${name} should be pinned on the frame to avoid repeated prototype lookup`);
+}
 assert.deepStrictEqual(
 	Object.keys(first).filter((name) => typeof first[name] === "function"),
-	["__installColdContextMethods"],
-	"the best-case request frame should allocate only one lazy capability installer"
+	["runNodes", "returnValue", "__installColdContextMethods"],
+	"the best-case request frame should allocate one closure and pin two shared hot-path references"
 );
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), false);
 assert.strictEqual(typeof first.flowCodeGet, "function");
