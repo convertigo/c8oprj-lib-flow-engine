@@ -220,7 +220,9 @@
 		var profiled = !!ctx.profile;
 		var totalStarted = profiled ? nanoTime() : 0;
 		profileCount(ctx, "graphBlockCalls");
-		var catalog = blockCatalog(block);
+		var catalogStarted = profiled ? nanoTime() : 0;
+		var catalog = block.__graphRuntimeCatalog || blockCatalog(block);
+		profileAdd(ctx, "graphBlockCatalogMs", catalogStarted);
 		var graphName = String(block && block.name || blockName(node) || "");
 		ctx.graphBlockStack = ctx.graphBlockStack || [];
 		var maxDepth = Number(ctx.maxGraphBlockDepth || 128);
@@ -313,6 +315,7 @@
 			"private": definition["private"] === true,
 			visibility: definition.visibility || "",
 			__blockDefinition: definition,
+			__graphRuntimeCatalog: catalog,
 			__blockImplementationRuntime: runtime,
 			catalog: function () {
 				return normalizeTree(catalog);

@@ -6,6 +6,7 @@ const vm = require("vm");
 const source = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/graph-block-runtime-service.js"), "utf8");
 const graphRuntime = vm.runInNewContext(source, {});
 let clock = 0;
+let catalogCalls = 0;
 
 const definition = {
 	name: "profiled",
@@ -37,7 +38,10 @@ const env = {
 	parseYamlSource: () => ({}),
 	graphBlockCatalog: (value) => ({ props: value.props || {} }),
 	blockName: (node) => node?.block || "",
-	blockCatalog: (block) => block.catalog(),
+	blockCatalog(block) {
+		catalogCalls += 1;
+		return block.catalog();
+	},
 	nodeProps: (node) => Object.assign({}, node.props || {}),
 	summaryText: String,
 	renderTemplateTree: (_ctx, value) => value,
@@ -79,6 +83,8 @@ assert.strictEqual(ctx.scopes.local, originalLocal);
 assert.strictEqual(ctx.scopes.result, originalResult);
 assert.strictEqual(ctx.graphBlockStack.length, 0);
 assert.strictEqual(ctx.profile.hotPath.graphBlockCalls, 1);
+assert.strictEqual(catalogCalls, 0, "runtime graph execution rebuilt an immutable block catalog");
+assert.ok(ctx.profile.hotPath.graphBlockCatalogMs > 0);
 assert.ok(ctx.profile.hotPath.graphBlockResolvePropsMs > 0);
 assert.ok(ctx.profile.hotPath.graphBlockFrameEnterMs > 0);
 assert.ok(ctx.profile.hotPath.graphBlockExecuteMs > 0);
