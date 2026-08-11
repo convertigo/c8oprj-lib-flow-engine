@@ -139,6 +139,7 @@ public class FlowSharedMachineTest {
 								|| !FlowEngineBridge.currentFlowProjectDir().equals("/override/" + worker)) {
 							throw new AssertionError("project override was not local to worker " + worker);
 						}
+						var nestedFailureObserved = false;
 						try (var child = FlowEngineBridge.beginFlowInvocationFrame(childContext, "/child/" + worker)) {
 							if (FlowEngineBridge.currentFlowConvertigoContext() != childContext
 									|| !FlowEngineBridge.currentFlowProjectDir().equals("/child/" + worker)
@@ -150,6 +151,12 @@ public class FlowSharedMachineTest {
 							if (FlowEngineBridge.currentFlowRequestState() != childRequest) {
 								throw new AssertionError("child request state was not isolated for worker " + worker);
 							}
+							throw new ExpectedFlowFailure();
+						} catch (ExpectedFlowFailure expected) {
+							nestedFailureObserved = true;
+						}
+						if (!nestedFailureObserved) {
+							throw new AssertionError("nested Flow failure was not observed for worker " + worker);
 						}
 						if (FlowEngineBridge.currentFlowConvertigoContext() != parentContext
 								|| !FlowEngineBridge.currentFlowProjectDir().equals("/override/" + worker)
@@ -163,7 +170,15 @@ public class FlowSharedMachineTest {
 						}
 						FlowEngineBridge.restoreCurrentFlowProjectDir(previous);
 					}
-					if (FlowEngineBridge.currentFlowConvertigoContext() != null
+					var outerFailureObserved = false;
+					try (var failed = FlowEngineBridge.beginFlowInvocationFrame(parentContext, "/failed/" + worker)) {
+						FlowEngineBridge.setCurrentFlowRequestState(parentRequest);
+						throw new ExpectedFlowFailure();
+					} catch (ExpectedFlowFailure expected) {
+						outerFailureObserved = true;
+					}
+					if (!outerFailureObserved
+							|| FlowEngineBridge.currentFlowConvertigoContext() != null
 							|| !FlowEngineBridge.currentFlowProjectDir().isEmpty()
 							|| FlowEngineBridge.currentFlowRequestState() != null
 							|| FlowEngineBridge.currentFlowInvocationDepth() != 0) {
@@ -181,6 +196,10 @@ public class FlowSharedMachineTest {
 			future.get();
 		}
 		System.out.println("Flow invocation frame test passed with " + WORKERS + " concurrent workers");
+	}
+
+	private static final class ExpectedFlowFailure extends RuntimeException {
+		private static final long serialVersionUID = 1L;
 	}
 
 	private static void testSharedModule(ScriptableObject sharedStandardScope) throws Exception {
