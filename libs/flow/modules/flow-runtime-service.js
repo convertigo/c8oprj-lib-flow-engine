@@ -1065,6 +1065,18 @@
 			}
 		}
 
+		function frameScopeValue(request, name) {
+			var value = request && request[name];
+			if (value === undefined || value === null) {
+				return {};
+			}
+			if (request.__deferResultSerializationSafety === true && value && typeof value === "object" &&
+				Object.prototype.toString.call(value) === "[object Object]") {
+				return Object.assign({}, value);
+			}
+			return normalizeTree(value);
+		}
+
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {
 			var totalStarted = frameProfile ? nanoTime() : 0;
 			var captureStarted = frameProfile ? nanoTime() : 0;
@@ -1074,7 +1086,7 @@
 				frameProfile.captureInvocationMs = profileDuration(captureStarted);
 			}
 			var requestStarted = frameProfile ? nanoTime() : 0;
-			var requestScope = normalizeTree(request.context || {});
+			var requestScope = frameScopeValue(request, "context");
 			var projectName = currentProjectName(request);
 			if (projectName) {
 				requestScope.project = projectName;
@@ -1103,7 +1115,7 @@
 			var scopesStarted = frameProfile ? nanoTime() : 0;
 			var scopes = {
 				request: requestScope,
-				input: normalizeTree(request.input || {}),
+				input: frameScopeValue(request, "input"),
 				local: {},
 				result: {},
 				trace: { nodes: [] },

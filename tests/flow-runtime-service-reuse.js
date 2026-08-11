@@ -119,6 +119,33 @@ assert.strictEqual(
 	Object.getOwnPropertyDescriptor(second.scopes, "config").get,
 	"config getters should be shared instead of allocating request closures"
 );
+
+let parsedNormalizeCalls = 0;
+const parsedEnv = Object.assign({}, env, {
+	normalizeTree(value) {
+		parsedNormalizeCalls += 1;
+		return JSON.parse(JSON.stringify(value));
+	},
+});
+const parsedContext = { tenant: { id: "tenant-1" } };
+const parsedInput = { payload: { value: 42 } };
+const parsedFrame = runtime.createRunContext({
+	__deferResultSerializationSafety: true,
+	context: parsedContext,
+	input: parsedInput,
+}, {}, {}, {}, parsedEnv);
+assert.strictEqual(parsedNormalizeCalls, 0,
+	"a JSON-parsed request should not be normalized a second time");
+assert.notStrictEqual(parsedFrame.scopes.request, parsedContext,
+	"the request scope should retain an isolated top-level frame object");
+assert.notStrictEqual(parsedFrame.scopes.input, parsedInput,
+	"the input scope should retain an isolated top-level frame object");
+assert.strictEqual(parsedFrame.scopes.request.tenant, parsedContext.tenant);
+assert.strictEqual(parsedFrame.scopes.input.payload, parsedInput.payload);
+
+runtime.createRunContext({ context: { direct: true }, input: { value: 1 } }, {}, {}, {}, parsedEnv);
+assert.strictEqual(parsedNormalizeCalls, 2,
+	"direct runtime callers should retain the normalization fallback");
 assert.strictEqual(
 	Object.getOwnPropertyDescriptor(first, "engine").get,
 	Object.getOwnPropertyDescriptor(second, "engine").get,
