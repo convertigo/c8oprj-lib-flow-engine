@@ -154,12 +154,6 @@
 		}
 
 		coldContextMethodNames.forEach(defineColdContextMethod);
-		Object.defineProperty(runContextPrototype, "__installColdContextMethods", {
-			value: installColdContextMethods,
-			writable: false,
-			enumerable: false,
-			configurable: false
-		});
 
 		function profileDuration(started) {
 			return Number(nanoTime() - started) / 1000000;
@@ -209,7 +203,7 @@
 				ownFunctionCount: ownFunctionCount,
 				sharedMethodCount: sharedMethodCount,
 				lazyMethodCount: coldContextMethodNames.length,
-				coldMethodsInstalled: ctx && ctx.__coldContextMethodsInstalled === true
+				coldMethodsInstalled: !Object.prototype.hasOwnProperty.call(ctx, "__installColdContextMethods")
 			};
 		}
 
@@ -1049,20 +1043,8 @@
 				scopes: scopes
 			});
 			defineLazyValue(ctx, "engine", projectEngineProvider);
-			return ctx;
-		}
-
-		function installColdContextMethods() {
-			var ctx = this;
-			if (ctx.__coldContextMethodsInstalled === true) {
-				return;
-			}
-			Object.defineProperty(ctx, "__coldContextMethodsInstalled", {
-				value: true,
-				writable: false,
-				enumerable: false,
-				configurable: false
-			});
+			ctx.__installColdContextMethods = function () {
+				delete ctx.__installColdContextMethods;
 			ctx.cacheInfo = function () {
 				return cacheInfoRequest();
 			};
@@ -1151,10 +1133,10 @@
 				});
 			};
 			ctx.schemaForOutput = function (node, property, outPath) {
-				return readOutputSchema(ctx.request, ctx.definition, node, property || "out", outPath || "");
+				return readOutputSchema(request, definition, node, property || "out", outPath || "");
 			};
 			ctx.learnOutputSchema = function (node, property, outPath, value) {
-				var learned = learnOutputSchema(ctx.request, ctx.definition, node, property || "out", outPath || "", value);
+				var learned = learnOutputSchema(request, definition, node, property || "out", outPath || "", value);
 				if (learned && learned.learned === true) {
 					ctx.schemaUpdates.push({
 						scope: outPath || "",
@@ -1171,7 +1153,7 @@
 			ctx.schemaReset = function (args) {
 				args = args || {};
 				if (!args.flowName && !args.name) {
-					args.flowName = flowNameFor(ctx.request, ctx.definition);
+					args.flowName = flowNameFor(request, definition);
 				}
 				return withProjectDir(args.projectDir, function () {
 					return resetSchemaRequest(args);
@@ -1467,6 +1449,8 @@
 					return requestables.schema(args);
 				});
 			};
+			};
+			return ctx;
 		}
 
 		return {
