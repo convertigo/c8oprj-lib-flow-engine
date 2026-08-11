@@ -11,6 +11,7 @@
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
 	var Base64 = Packages.java.util.Base64;
 	var JavaSystem = Packages.java.lang.System;
+	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
@@ -107,6 +108,14 @@
 	}
 
 	function projectDir() {
+		try {
+			var invocationProjectDir = String(FlowEngineBridge.currentFlowProjectDir() || "");
+			if (invocationProjectDir.trim() !== "") {
+				return new File(invocationProjectDir);
+			}
+		} catch (e) {
+			// Older bridges do not expose per-invocation Flow frames.
+		}
 		if (projectDirOverride) {
 			return new File(String(projectDirOverride));
 		}
@@ -117,6 +126,24 @@
 	}
 
 	function withProjectDir(dir, callback) {
+		var invocationFrame = false;
+		var invocationPrevious = null;
+		try {
+			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
+				invocationPrevious = FlowEngineBridge.setCurrentFlowProjectDir(
+					dir === undefined || dir === null ? "" : String(dir));
+				invocationFrame = true;
+			}
+		} catch (e) {
+			// Older bridges keep the project override in this Engine closure.
+		}
+		if (invocationFrame) {
+			try {
+				return callback();
+			} finally {
+				FlowEngineBridge.restoreCurrentFlowProjectDir(invocationPrevious);
+			}
+		}
 		var previous = projectDirOverride;
 		if (dir !== undefined && dir !== null && String(dir).trim() !== "") {
 			projectDirOverride = String(dir);
@@ -3957,6 +3984,13 @@
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
 			currentConvertigoContext: function () {
+				try {
+					if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
+						return FlowEngineBridge.currentFlowConvertigoContext();
+					}
+				} catch (e) {
+					// Older bridges expose the Convertigo context on the Engine scope.
+				}
 				return typeof context === "undefined" ? null : context;
 			},
 			nanoTime: function () { return Number(JavaSystem.nanoTime()); }
@@ -9722,6 +9756,15 @@
 		}
 	}
 
+	function flowRunCall(requestJson, callback) {
+		try {
+			var request = parseRequest(requestJson);
+			return response(callback(request), "result");
+		} catch (e) {
+			return response(failure("run", e));
+		}
+	}
+
 	function projectCall(operation, requestJson, callback) {
 		return engineCall(operation, requestJson, function (request) {
 			return withProjectDir(request.projectDir, function () {
@@ -9764,7 +9807,7 @@
 		},
 
 		run: function (requestJson) {
-			return engineCall("run", requestJson, function (request) {
+			return flowRunCall(requestJson, function (request) {
 				request.__deferResultSerializationSafety = true;
 				return runFlowRequest(request);
 			});

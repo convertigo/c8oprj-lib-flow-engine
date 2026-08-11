@@ -14,7 +14,10 @@ class FakeFile {
 
 let blockNameReads = 0;
 let materializeCalls = 0;
-let liveContext = { request: "first" };
+const firstLiveContext = { request: "first" };
+const secondLiveContext = { request: "second" };
+let liveContext = firstLiveContext;
+let liveProjectDir = "/project/first";
 let clock = 0;
 let effectiveConfigCalls = 0;
 let canonicalPathCalls = 0;
@@ -29,7 +32,7 @@ const env = {
 		return file.path;
 	},
 	engineDir: () => new FakeFile("/engine"),
-	projectDir: () => new FakeFile("/project"),
+	projectDir: () => new FakeFile(liveProjectDir),
 	effectiveConfig(_request, _definition, projectEngine) {
 		effectiveConfigCalls += 1;
 		return { name: projectEngine.name || "none" };
@@ -60,7 +63,7 @@ Object.defineProperty(env, "blockName", {
 });
 
 const first = runtime.createRunContext({}, {}, {}, {}, env);
-assert.strictEqual(first.convertigoContext(), liveContext);
+assert.strictEqual(first.convertigoContext(), firstLiveContext);
 assert.strictEqual(effectiveConfigCalls, 0,
 	"the best-case request frame should not build configuration before it is read");
 assert.strictEqual(canonicalPathCalls, 0,
@@ -88,12 +91,17 @@ assert.strictEqual(lazy.scopes.request.engineDir, "/engine");
 assert.strictEqual(canonicalPathCalls, 1,
 	"a technical request path should be canonicalized only on its first read");
 
-liveContext = { request: "second" };
+liveContext = secondLiveContext;
+liveProjectDir = "/project/second";
 const second = runtime.createRunContext({}, {}, {}, {}, env);
-assert.strictEqual(second.convertigoContext(), liveContext,
-	"the reused runtime service captured a stale Convertigo request context");
-assert.strictEqual(first.convertigoContext(), liveContext,
-	"an existing run context should resolve the current live context lazily");
+assert.strictEqual(second.convertigoContext(), secondLiveContext,
+	"the second frame did not capture its Convertigo request context");
+assert.strictEqual(first.convertigoContext(), firstLiveContext,
+	"a Flow frame resolved another invocation's Convertigo context");
+assert.strictEqual(first.scopes.request.projectDir, "/project/first",
+	"a Flow frame resolved another invocation's project directory");
+assert.strictEqual(second.scopes.request.projectDir, "/project/second",
+	"the second frame did not capture its project directory");
 assert.strictEqual(blockNameReads, 1,
 	"the runtime service factory should read a stable environment only once");
 

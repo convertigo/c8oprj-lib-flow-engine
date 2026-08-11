@@ -338,11 +338,11 @@
 			return closeRuntimeHandle(this, handle);
 		};
 		runContextPrototype.convertigoContext = function () {
-			var liveContext = currentConvertigoContext();
-			if (liveContext === null || liveContext === undefined) {
+			var invocationContext = this.convertigoContextRef;
+			if (invocationContext === null || invocationContext === undefined) {
 				raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
 			}
-			return liveContext;
+			return invocationContext;
 		};
 		runContextPrototype.runNodes = function (nodes) {
 			return executeNodes(this, nodes);
@@ -989,6 +989,8 @@
 		}
 
 		function createRunContext(request, definition, blocks, projectEngine, plan) {
+			var invocationContext = currentConvertigoContext();
+			var invocationProjectDir = projectDir();
 			var requestScope = normalizeTree(request.context || {});
 			var projectName = currentProjectName(request);
 			if (projectName) {
@@ -1001,8 +1003,7 @@
 				return canonicalPath(new File(engineDir(), "../.."));
 			});
 			defineLazyValue(requestScope, "projectDir", function () {
-				var currentProjectDir = projectDir();
-				return currentProjectDir ? canonicalPath(currentProjectDir) : "";
+				return invocationProjectDir ? canonicalPath(invocationProjectDir) : "";
 			});
 			var loadProjectEngine = typeof projectEngine === "function"
 				? projectEngine
@@ -1031,6 +1032,7 @@
 			var ctx = Object.create(runContextPrototype);
 			Object.assign(ctx, {
 				request: request,
+				convertigoContextRef: invocationContext,
 				definition: definition,
 				blocks: blocks,
 				preparedNodes: plan && plan.preparedNodes || null,

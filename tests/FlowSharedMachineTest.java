@@ -30,6 +30,18 @@ public class FlowSharedMachineTest {
 			boolean sealed, boolean indexHidden) {
 	}
 
+	private static com.twinsoft.convertigo.engine.Context contextIdentity() {
+		try {
+			var field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+			field.setAccessible(true);
+			var unsafe = (sun.misc.Unsafe) field.get(null);
+			return (com.twinsoft.convertigo.engine.Context) unsafe
+					.allocateInstance(com.twinsoft.convertigo.engine.Context.class);
+		} catch (ReflectiveOperationException exception) {
+			throw new AssertionError("unable to allocate a constructor-free Convertigo Context fixture", exception);
+		}
+	}
+
 	public static void main(String[] args) throws Exception {
 		FlowEngineBridge.clearCaches();
 		ScriptableObject sharedStandardScope;
@@ -87,7 +99,64 @@ public class FlowSharedMachineTest {
 		}
 		testSharedModule(sharedStandardScope);
 		testSharedMachineImage(sharedStandardScope);
+		testInvocationFrames();
 		System.out.println("Flow shared machine test passed: " + info);
+	}
+
+	private static void testInvocationFrames() throws Exception {
+		var barrier = new CyclicBarrier(WORKERS);
+		var executor = Executors.newFixedThreadPool(WORKERS);
+		var futures = new java.util.ArrayList<java.util.concurrent.Future<Void>>();
+		for (var index = 0; index < WORKERS; index++) {
+			final var worker = index;
+			futures.add(executor.submit(new Callable<Void>() {
+				@Override
+				public Void call() throws Exception {
+					barrier.await(30, TimeUnit.SECONDS);
+					var parentContext = contextIdentity();
+					var childContext = contextIdentity();
+					try (var parent = FlowEngineBridge.beginFlowInvocationFrame(parentContext, "/project/" + worker)) {
+						if (FlowEngineBridge.currentFlowConvertigoContext() != parentContext
+								|| !FlowEngineBridge.currentFlowProjectDir().equals("/project/" + worker)
+								|| FlowEngineBridge.currentFlowInvocationDepth() != 1) {
+							throw new AssertionError("parent Flow invocation frame was not isolated for worker " + worker);
+						}
+						var previous = FlowEngineBridge.setCurrentFlowProjectDir("/override/" + worker);
+						if (!previous.equals("/project/" + worker)
+								|| !FlowEngineBridge.currentFlowProjectDir().equals("/override/" + worker)) {
+							throw new AssertionError("project override was not local to worker " + worker);
+						}
+						try (var child = FlowEngineBridge.beginFlowInvocationFrame(childContext, "/child/" + worker)) {
+							if (FlowEngineBridge.currentFlowConvertigoContext() != childContext
+									|| !FlowEngineBridge.currentFlowProjectDir().equals("/child/" + worker)
+									|| FlowEngineBridge.currentFlowInvocationDepth() != 2) {
+								throw new AssertionError("nested Flow invocation frame was not isolated for worker " + worker);
+							}
+						}
+						if (FlowEngineBridge.currentFlowConvertigoContext() != parentContext
+								|| !FlowEngineBridge.currentFlowProjectDir().equals("/override/" + worker)
+								|| FlowEngineBridge.currentFlowInvocationDepth() != 1) {
+							throw new AssertionError("parent Flow invocation frame was not restored for worker " + worker);
+						}
+						FlowEngineBridge.restoreCurrentFlowProjectDir(previous);
+					}
+					if (FlowEngineBridge.currentFlowConvertigoContext() != null
+							|| !FlowEngineBridge.currentFlowProjectDir().isEmpty()
+							|| FlowEngineBridge.currentFlowInvocationDepth() != 0) {
+						throw new AssertionError("Flow invocation frame leaked after worker " + worker);
+					}
+					return null;
+				}
+			}));
+		}
+		executor.shutdown();
+		if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+			throw new AssertionError("Flow invocation frame workers did not terminate");
+		}
+		for (var future : futures) {
+			future.get();
+		}
+		System.out.println("Flow invocation frame test passed with " + WORKERS + " concurrent workers");
 	}
 
 	private static void testSharedModule(ScriptableObject sharedStandardScope) throws Exception {
