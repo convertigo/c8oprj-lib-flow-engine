@@ -262,9 +262,25 @@
 		if (cached) {
 			return writeHotBlockCatalog(env, attachCatalogFingerprint(cached, key));
 		}
-		return writeHotBlockCatalog(env, attachCatalogFingerprint(env.writeRuntimeCache(env.blockCache, key, key,
-			loadBlocksUncached(env, identity.coreKey),
-			"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project")), key));
+		function buildOrReadCatalog() {
+			// Another cold request may have populated the exact generation while this one waited.
+			var currentIdentity = blocksCacheIdentity(env);
+			var currentKey = currentIdentity.key;
+			var current = env.readRuntimeCache(env.blockCache, currentKey, currentKey);
+			if (current) {
+				return writeHotBlockCatalog(env, attachCatalogFingerprint(current, currentKey));
+			}
+			return writeHotBlockCatalog(env, attachCatalogFingerprint(env.writeRuntimeCache(
+				env.blockCache,
+				currentKey,
+				currentKey,
+				loadBlocksUncached(env, currentIdentity.coreKey),
+				"blocks for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project")
+			), currentKey));
+		}
+		return typeof env.withBlockCatalogBuild === "function"
+			? env.withBlockCatalogBuild(blockCatalogHeadKey(env), buildOrReadCatalog)
+			: buildOrReadCatalog();
 	}
 
 	function loadTypeDescriptorFile(types, file, origin, env) {

@@ -11,6 +11,8 @@
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
 	var Base64 = Packages.java.util.Base64;
 	var JavaSystem = Packages.java.lang.System;
+	var ConcurrentHashMap = Packages.java.util.concurrent.ConcurrentHashMap;
+	var ReentrantLock = Packages.java.util.concurrent.locks.ReentrantLock;
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
@@ -45,6 +47,8 @@
 	// so both deliberately remain local to an Engine runtime.
 	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
+	// Catalog construction is single-flight only on a cold generation. Hot reads never take these locks.
+	var blockCatalogBuildLocks = new ConcurrentHashMap();
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
@@ -1519,6 +1523,18 @@
 			blockCache: runtimeState.caches.blocks,
 			coreBlockCache: runtimeState.caches.coreBlocks,
 			blockCatalogHeadCache: runtimeState.caches.blockCatalogHeads,
+			withBlockCatalogBuild: function (key, callback) {
+				key = String(key || "");
+				var candidate = new ReentrantLock();
+				var existing = blockCatalogBuildLocks.putIfAbsent(key, candidate);
+				var lock = existing || candidate;
+				lock.lock();
+				try {
+					return callback();
+				} finally {
+					lock.unlock();
+				}
+			},
 			currentTimeMillis: function () { return new Date().getTime(); },
 			typeCache: runtimeState.caches.types
 		};
@@ -1915,6 +1931,7 @@
 				return writeRuntimeMapCache(runtimeState.caches.blockArtifacts, key, fingerprint, value,
 					"compiled Flow block artifacts");
 			},
+			createBlockMaterializationLock: function () { return new ReentrantLock(); },
 			normalizeTree: normalizeTree,
 			raise: raise,
 			blockIdFromDescriptorFile: blockIdFromDescriptorFile,

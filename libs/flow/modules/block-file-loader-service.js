@@ -33,8 +33,22 @@
 
 	function materializePlaceholder(block, targetBlocks) {
 		targetBlocks = targetBlocks || block.__flowBlocks;
-		return loadFlowScriptBlockFile(targetBlocks, block.__flowFileObject, block.__flowOrigin,
-			block.__flowProvider, block.__flowBlocksDir, block.__flowLoaderEnv);
+		var lock = block.__flowMaterializationLock;
+		if (lock) {
+			lock.lock();
+		}
+		try {
+			var current = targetBlocks && targetBlocks[block.name];
+			if (current && current !== block && current.__flowScriptPlaceholder !== true) {
+				return current;
+			}
+			return loadFlowScriptBlockFile(targetBlocks, block.__flowFileObject, block.__flowOrigin,
+				block.__flowProvider, block.__flowBlocksDir, block.__flowLoaderEnv);
+		} finally {
+			if (lock) {
+				lock.unlock();
+			}
+		}
 	}
 
 	function delegatePlaceholder(block, method, ctx, node) {
@@ -84,7 +98,13 @@
 			__flowBlocks: { value: blocks, enumerable: false },
 			__flowFileObject: { value: file, enumerable: false },
 			__flowBlocksDir: { value: blocksDir, enumerable: false },
-			__flowLoaderEnv: { value: env, enumerable: false }
+			__flowLoaderEnv: { value: env, enumerable: false },
+			__flowMaterializationLock: {
+				value: typeof env.createBlockMaterializationLock === "function"
+					? env.createBlockMaterializationLock()
+					: null,
+				enumerable: false
+			}
 		});
 		return block;
 	}

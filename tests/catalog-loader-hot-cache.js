@@ -57,4 +57,23 @@ assert.strictEqual(sentinel.__flowCatalogFingerprint, "engine\n/engine\ncore\nfi
 assert.strictEqual(Object.keys(sentinel).includes("__flowCatalogFingerprint"), false,
 	"the execution fingerprint must not appear as a Flow block");
 
+let coldReads = 0;
+let coldBuildSections = 0;
+const coldEnv = Object.assign({}, env, {
+	blockCatalogHeadCache: { entries: {}, hits: 0, misses: 0 },
+	readRuntimeCache: () => {
+		coldReads += 1;
+		return coldReads === 1 ? null : sentinel;
+	},
+	withBlockCatalogBuild: (_key, callback) => {
+		coldBuildSections += 1;
+		return callback();
+	},
+});
+assert.strictEqual(catalogLoader.loadBlocks(coldEnv, false), sentinel);
+assert.strictEqual(coldBuildSections, 1, "a cold catalog must enter one single-flight build section");
+assert.strictEqual(coldReads, 2, "a cold waiter must re-read the generation inside the build section");
+assert.strictEqual(catalogLoader.loadBlocks(coldEnv, false), sentinel);
+assert.strictEqual(coldBuildSections, 1, "a hot exact-generation hit must not take the build lock");
+
 console.log("catalog-loader-hot-cache tests passed");

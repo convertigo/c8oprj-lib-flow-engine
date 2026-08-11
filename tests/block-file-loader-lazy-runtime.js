@@ -16,10 +16,16 @@ function file(name) {
 
 let sourceReads = 0;
 let compiles = 0;
+let materializationLocks = 0;
+let materializationUnlocks = 0;
 const env = {
 	blockIdFromDescriptorFile: (value) => value.getName().replace(/\.block\.js$/, ""),
 	readBlockArtifact: () => null,
 	writeBlockArtifact: () => {},
+	createBlockMaterializationLock: () => ({
+		lock: () => { materializationLocks += 1; },
+		unlock: () => { materializationUnlocks += 1; },
+	}),
 	blockSourceFingerprint: () => "source",
 	blockCompilerFingerprint: "compiler",
 	sourceForFile: (value) => {
@@ -70,6 +76,11 @@ assert.strictEqual(compiles, 0, "reading metadata should not compile a runner");
 
 loader.materializeFlowScriptBlock(blocks, "first");
 assert.strictEqual(compiles, 1, "the first used block should compile exactly once");
+assert.strictEqual(materializationLocks, 1, "the first materialization must enter its cold lock");
+assert.strictEqual(materializationUnlocks, 1, "the first materialization must release its cold lock");
+loader.materializeFlowScriptBlock(blocks, "first");
+assert.strictEqual(compiles, 1, "a hot materialized block must not compile again");
+assert.strictEqual(materializationLocks, 1, "a hot materialized block must bypass the cold lock");
 assert.strictEqual(blocks.second.__flowScriptPlaceholder, true, "an unused block was materialized with its neighbor");
 
 console.log("block file loader lazy runtime tests passed");
