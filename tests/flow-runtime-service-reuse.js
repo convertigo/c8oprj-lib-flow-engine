@@ -21,6 +21,7 @@ let liveProjectDir = "/project/first";
 let clock = 0;
 let effectiveConfigCalls = 0;
 let canonicalPathCalls = 0;
+let schemaRead = null;
 const env = {
 	File: FakeFile,
 	nodeProps: (node) => Object.assign({}, node.props || node || {}),
@@ -36,6 +37,10 @@ const env = {
 	effectiveConfig(_request, _definition, projectEngine) {
 		effectiveConfigCalls += 1;
 		return { name: projectEngine.name || "none" };
+	},
+	readOutputSchema(request, definition, node, property, outPath) {
+		schemaRead = { request, definition, node, property, outPath };
+		return { type: "string" };
 	},
 	intOption: (value, fallback) => value === undefined ? fallback : value,
 	runtimeHandles: {
@@ -188,11 +193,20 @@ assert.deepStrictEqual(
 	["__installColdContextMethods"],
 	"the best-case request frame should allocate only one lazy capability installer"
 );
+assert.strictEqual(first.__installColdContextMethods, second.__installColdContextMethods,
+	"the lazy capability installer should be shared by all request frames");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), false);
 assert.strictEqual(typeof first.flowCodeGet, "function");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), true,
 	"the authoring capability should materialize only when first requested");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "__installColdContextMethods"), false);
+const schemaNode = { id: "schema-node" };
+assert.deepStrictEqual(first.schemaForOutput(schemaNode, "value", "result.value"), { type: "string" });
+assert.strictEqual(schemaRead.request, first.request,
+	"shared cold methods should retain the request from their owning frame");
+assert.strictEqual(schemaRead.definition, first.definition,
+	"shared cold methods should retain the definition from their owning frame");
+assert.strictEqual(schemaRead.node, schemaNode);
 assert.strictEqual(Object.prototype.hasOwnProperty.call(second, "flowCodeGet"), false,
 	"materializing cold capabilities in one frame must not affect another frame");
 

@@ -1139,8 +1139,19 @@
 				frameProfile.frameObjectMs = profileDuration(frameStarted);
 			}
 			var capabilitiesStarted = frameProfile ? nanoTime() : 0;
-			ctx.__installColdContextMethods = function () {
-				delete ctx.__installColdContextMethods;
+			ctx.__installColdContextMethods = installColdContextMethods;
+			if (frameProfile) {
+				frameProfile.lazyCapabilitiesMs = profileDuration(capabilitiesStarted);
+				frameProfile.totalMs = profileDuration(totalStarted);
+			}
+			return ctx;
+		}
+
+		function installColdContextMethods() {
+			var ctx = this;
+			var request = ctx.request;
+			var definition = ctx.definition;
+			delete ctx.__installColdContextMethods;
 			ctx.cacheInfo = function () {
 				return cacheInfoRequest();
 			};
@@ -1545,12 +1556,6 @@
 					return requestables.schema(args);
 				});
 			};
-			};
-			if (frameProfile) {
-				frameProfile.lazyCapabilitiesMs = profileDuration(capabilitiesStarted);
-				frameProfile.totalMs = profileDuration(totalStarted);
-			}
-			return ctx;
 		}
 
 		return {
