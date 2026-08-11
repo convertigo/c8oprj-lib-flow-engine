@@ -3,6 +3,10 @@
 		if (value === undefined || value === null) {
 			return value;
 		}
+		var valueType = typeof value;
+		if (valueType === "string" || valueType === "boolean" || valueType === "number") {
+			return value;
+		}
 		try {
 			if (env.NativeJavaObject && value instanceof env.NativeJavaObject) {
 				value = value.unwrap();
