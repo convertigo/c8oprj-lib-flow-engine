@@ -783,6 +783,12 @@
 			engineDir: engineDir,
 			Thread: Packages.java.lang.Thread,
 			globalScope: globalScope,
+			bridgeInfo: function () {
+				var qname = typeof globalScope.__flowBridgeEngineQName !== "undefined"
+					? String(globalScope.__flowBridgeEngineQName || "")
+					: "lib_flow_engine.Engine";
+				return Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge.flowBridgeCacheInfo(qname);
+			},
 			resetModuleCaches: resetRuntimeModuleCaches,
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,

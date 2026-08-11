@@ -15,9 +15,16 @@
 		};
 	}
 
-	function bridgeInfo(scope) {
-		scope = scope || {};
+	function bridgeInfo(env) {
+		var scope = env.globalScope || {};
 		var raw = typeof scope.__flowBridgeInfo !== "undefined" ? String(scope.__flowBridgeInfo || "") : "";
+		if (!raw && typeof env.bridgeInfo === "function") {
+			try {
+				raw = String(env.bridgeInfo() || "");
+			} catch (e) {
+				return { error: String(e) };
+			}
+		}
 		if (!raw) {
 			return {};
 		}
@@ -72,7 +79,7 @@
 			activeProjectDir: activeProjectPath,
 			rawProjectDir: activeProjectDir ? String(activeProjectDir) : "",
 			engineDir: env.canonicalPath(env.engineDir()),
-			bridge: bridgeInfo(env.globalScope),
+			bridge: bridgeInfo(env),
 			bridgeRuntimeCache: bridgeRuntimeCacheInfo(env.globalScope),
 			caches: {
 				blocks: cacheSummary("blocks", caches.blocks, env),
