@@ -46,6 +46,9 @@ const env = {
 	},
 	currentConvertigoContext: () => liveContext,
 	nanoTime: () => ++clock * 1000000,
+	readOutputSchema(request, definition, node, property, outPath) {
+		return { request, definition, node, property, outPath };
+	},
 	materializeFlowScriptBlock(blocks, name) {
 		materializeCalls += 1;
 		return blocks[name].materialized;
@@ -104,16 +107,32 @@ for (const name of ["props", "read", "write", "expr", "template", "runNodes", "c
 }
 assert.deepStrictEqual(
 	Object.keys(first).filter((name) => typeof first[name] === "function"),
-	["__installColdContextMethods"],
-	"the best-case request frame should allocate only one lazy capability installer"
+	[],
+	"the best-case request frame should not allocate a lazy capability installer"
 );
+assert.strictEqual(first.__installColdContextMethods, second.__installColdContextMethods,
+	"all request frames should share the lazy capability installer");
+assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "__installColdContextMethods"), false);
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), false);
 assert.strictEqual(typeof first.flowCodeGet, "function");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), true,
 	"the authoring capability should materialize only when first requested");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "__installColdContextMethods"), false);
+assert.strictEqual(first.__coldContextMethodsInstalled, true);
 assert.strictEqual(Object.prototype.hasOwnProperty.call(second, "flowCodeGet"), false,
 	"materializing cold capabilities in one frame must not affect another frame");
+assert.strictEqual(second.__coldContextMethodsInstalled, undefined,
+	"materializing cold capabilities in one frame must not mark another frame");
+const coldRequest = { marker: "request" };
+const coldDefinition = { marker: "definition" };
+const cold = runtime.createRunContext(coldRequest, coldDefinition, {}, {}, env);
+assert.deepStrictEqual(cold.schemaForOutput({ id: "node" }, "value", "result.value"), {
+	request: coldRequest,
+	definition: coldDefinition,
+	node: { id: "node" },
+	property: "value",
+	outPath: "result.value"
+}, "the shared cold installer should resolve request-local state from its frame");
 
 let traceCalls = 0;
 const concrete = { run: () => "concrete" };
