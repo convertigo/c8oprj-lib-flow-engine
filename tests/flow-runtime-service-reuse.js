@@ -104,6 +104,25 @@ assert.strictEqual(second.scopes.request.projectDir, "/project/second",
 	"the second frame did not capture its project directory");
 assert.strictEqual(blockNameReads, 1,
 	"the runtime service factory should read a stable environment only once");
+assert.strictEqual(
+	Object.getOwnPropertyDescriptor(first.scopes.request, "engineDir").get,
+	Object.getOwnPropertyDescriptor(second.scopes.request, "engineDir").get,
+	"technical request getters should be shared instead of allocating request closures"
+);
+assert.strictEqual(
+	Object.getOwnPropertyDescriptor(first.scopes, "config").get,
+	Object.getOwnPropertyDescriptor(second.scopes, "config").get,
+	"config getters should be shared instead of allocating request closures"
+);
+assert.strictEqual(
+	Object.getOwnPropertyDescriptor(first, "engine").get,
+	Object.getOwnPropertyDescriptor(second, "engine").get,
+	"project Engine getters should be shared instead of allocating request closures"
+);
+assert.strictEqual(Object.keys(first.scopes.request).includes("engineDir"), true,
+	"shared lazy accessors must preserve request field enumerability");
+assert.strictEqual(Object.keys(first.scopes.request).includes("__flowFrameState"), false,
+	"the private frame state must not leak into request data");
 
 let envelopeRuns = 0;
 const envelopeNode = { block: "envelope.ok" };

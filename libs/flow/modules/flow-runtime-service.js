@@ -163,30 +163,86 @@
 			return !!request && (request.profile === true || request.profile === "envelope");
 		}
 
-		function defineLazyValue(target, name, provider) {
+		function materializeLazyValue(target, name, value) {
 			Object.defineProperty(target, name, {
+				value: value,
+				writable: true,
 				configurable: true,
-				enumerable: true,
-				get: function () {
-					var value = provider();
-					Object.defineProperty(target, name, {
-						value: value,
-						writable: true,
-						enumerable: true,
-						configurable: true
-					});
-					return value;
-				},
-				set: function (value) {
-					Object.defineProperty(target, name, {
-						value: value,
-						writable: true,
-						enumerable: true,
-						configurable: true
-					});
-				}
+				enumerable: true
 			});
+			return value;
 		}
+
+		function frameStateForRequestScope(requestScope) {
+			var descriptor = Object.getOwnPropertyDescriptor(requestScope, "__flowFrameState");
+			return descriptor ? descriptor.value : null;
+		}
+
+		function resolveFrameProjectEngine(state) {
+			if (!state.projectEngineResolved) {
+				var started = state.profile ? nanoTime() : 0;
+				var source = state.projectEngineSource;
+				state.projectEngineValue = (typeof source === "function" ? source() : source) || {};
+				state.projectEngineResolved = true;
+				if (state.profile) {
+					state.profile.loadConfigMs += profileDuration(started);
+					state.profile.configLoaded = true;
+				}
+			}
+			return state.projectEngineValue;
+		}
+
+		function requestEngineDirGet() {
+			return materializeLazyValue(this, "engineDir", canonicalPath(engineDir()));
+		}
+		function requestEngineDirSet(value) {
+			materializeLazyValue(this, "engineDir", value);
+		}
+		function requestEngineProjectDirGet() {
+			return materializeLazyValue(this, "engineProjectDir", canonicalPath(new File(engineDir(), "../..")));
+		}
+		function requestEngineProjectDirSet(value) {
+			materializeLazyValue(this, "engineProjectDir", value);
+		}
+		function requestProjectDirGet() {
+			var state = frameStateForRequestScope(this);
+			return materializeLazyValue(this, "projectDir",
+				state && state.invocationProjectDir ? canonicalPath(state.invocationProjectDir) : "");
+		}
+		function requestProjectDirSet(value) {
+			materializeLazyValue(this, "projectDir", value);
+		}
+		function scopesConfigGet() {
+			var state = frameStateForRequestScope(this.request);
+			return materializeLazyValue(this, "config",
+				effectiveConfig(state.request, state.definition, resolveFrameProjectEngine(state)));
+		}
+		function scopesConfigSet(value) {
+			materializeLazyValue(this, "config", value);
+		}
+		function contextEngineGet() {
+			var state = frameStateForRequestScope(this.scopes.request);
+			return materializeLazyValue(this, "engine", resolveFrameProjectEngine(state));
+		}
+		function contextEngineSet(value) {
+			materializeLazyValue(this, "engine", value);
+		}
+
+		var requestEngineDirDescriptor = {
+			configurable: true, enumerable: true, get: requestEngineDirGet, set: requestEngineDirSet
+		};
+		var requestEngineProjectDirDescriptor = {
+			configurable: true, enumerable: true, get: requestEngineProjectDirGet, set: requestEngineProjectDirSet
+		};
+		var requestProjectDirDescriptor = {
+			configurable: true, enumerable: true, get: requestProjectDirGet, set: requestProjectDirSet
+		};
+		var scopesConfigDescriptor = {
+			configurable: true, enumerable: true, get: scopesConfigGet, set: scopesConfigSet
+		};
+		var contextEngineDescriptor = {
+			configurable: true, enumerable: true, get: contextEngineGet, set: contextEngineSet
+		};
 
 		function contextFrameStats(ctx) {
 			var ownFunctionCount = 0;
@@ -928,23 +984,9 @@
 			var plan = resolved.plan;
 			var definition = plan.definition;
 			var activeBlocks = plan.blocks;
-			var projectEngine;
-			var projectEngineLoaded = false;
-			var configMs = 0;
-			function projectEngineProvider() {
-				if (!projectEngineLoaded) {
-					var configStarted = measure ? nanoTime() : 0;
-					projectEngine = loadProjectEngineDefinition() || {};
-					projectEngineLoaded = true;
-					if (measure) {
-						configMs += profileDuration(configStarted);
-					}
-				}
-				return projectEngine;
-			}
 			var contextStarted = measure ? nanoTime() : 0;
-			var ctx = createRunContext(request, definition, activeBlocks, projectEngineProvider, plan,
-				profile ? profile.createContext : null);
+			var ctx = createRunContext(request, definition, activeBlocks, loadProjectEngineDefinition, plan,
+				profile ? profile.createContext : null, profile);
 			if (profile) {
 				profile.createContextMs = profileDuration(contextStarted);
 				profile.frameBefore = contextFrameStats(ctx);
@@ -1007,8 +1049,6 @@
 					out.trace = snapshot(ctx.scopes.trace);
 				}
 				if (profile) {
-					profile.loadConfigMs = configMs;
-					profile.configLoaded = projectEngineLoaded;
 					profile.frameAfter = contextFrameStats(ctx);
 					profile.preparationAfter = preparationStats(ctx);
 					profile.assembleResponseMs = profileDuration(responseStarted);
@@ -1025,7 +1065,7 @@
 			}
 		}
 
-		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile) {
+		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {
 			var totalStarted = frameProfile ? nanoTime() : 0;
 			var captureStarted = frameProfile ? nanoTime() : 0;
 			var invocationContext = currentConvertigoContext();
@@ -1039,33 +1079,26 @@
 			if (projectName) {
 				requestScope.project = projectName;
 			}
-			defineLazyValue(requestScope, "engineDir", function () {
-				return canonicalPath(engineDir());
+			var frameState = {
+				request: request,
+				definition: definition,
+				invocationProjectDir: invocationProjectDir,
+				projectEngineSource: projectEngine,
+				projectEngineValue: null,
+				projectEngineResolved: false,
+				profile: requestProfile || null
+			};
+			Object.defineProperty(requestScope, "__flowFrameState", {
+				value: frameState,
+				writable: false,
+				configurable: false,
+				enumerable: false
 			});
-			defineLazyValue(requestScope, "engineProjectDir", function () {
-				return canonicalPath(new File(engineDir(), "../.."));
-			});
-			defineLazyValue(requestScope, "projectDir", function () {
-				return invocationProjectDir ? canonicalPath(invocationProjectDir) : "";
-			});
+			Object.defineProperty(requestScope, "engineDir", requestEngineDirDescriptor);
+			Object.defineProperty(requestScope, "engineProjectDir", requestEngineProjectDirDescriptor);
+			Object.defineProperty(requestScope, "projectDir", requestProjectDirDescriptor);
 			if (frameProfile) {
 				frameProfile.requestScopeMs = profileDuration(requestStarted);
-			}
-			var providerStarted = frameProfile ? nanoTime() : 0;
-			var loadProjectEngine = typeof projectEngine === "function"
-				? projectEngine
-				: function () { return projectEngine || {}; };
-			var projectEngineValue;
-			var projectEngineResolved = false;
-			function projectEngineProvider() {
-				if (!projectEngineResolved) {
-					projectEngineValue = loadProjectEngine() || {};
-					projectEngineResolved = true;
-				}
-				return projectEngineValue;
-			}
-			if (frameProfile) {
-				frameProfile.projectEngineProviderMs = profileDuration(providerStarted);
 			}
 			var scopesStarted = frameProfile ? nanoTime() : 0;
 			var scopes = {
@@ -1077,9 +1110,7 @@
 				current: null,
 				props: {}
 			};
-			defineLazyValue(scopes, "config", function () {
-				return effectiveConfig(request, definition, projectEngineProvider());
-			});
+			Object.defineProperty(scopes, "config", scopesConfigDescriptor);
 			if (frameProfile) {
 				frameProfile.scopesMs = profileDuration(scopesStarted);
 			}
@@ -1103,7 +1134,7 @@
 				traceEnabled: request.includeTrace !== false,
 				scopes: scopes
 			});
-			defineLazyValue(ctx, "engine", projectEngineProvider);
+			Object.defineProperty(ctx, "engine", contextEngineDescriptor);
 			if (frameProfile) {
 				frameProfile.frameObjectMs = profileDuration(frameStarted);
 			}
