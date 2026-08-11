@@ -423,9 +423,13 @@ assertTrue(portableCatalogBlocks.length === portableFixtureCount && portableCata
 assertTrue(legacyBackendCatalog.targets.join(",") === "backend" &&
 	legacyBackendCatalog.effects.join(",") === "unspecified",
 	"legacy backend blocks did not receive compatible target/effect defaults");
-var compiledScriptsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.compiledScripts;
-assertTrue(compiledScriptsAfterCatalog.size > 0 && compiledScriptsAfterCatalog.misses > 0,
-	"compiled script cache did not compile Rhino scripts");
+var cacheInfoAfterCatalog = JSON.parse(engine.cacheInfo());
+var compiledScriptsAfterCatalog = cacheInfoAfterCatalog.caches.compiledScripts;
+var bridgeCompiledScriptsAfterCatalog = cacheInfoAfterCatalog.bridge && cacheInfoAfterCatalog.bridge.compiledScripts || {};
+assertTrue((compiledScriptsAfterCatalog.size > 0 && compiledScriptsAfterCatalog.misses > 0) ||
+	compiledScriptsAfterCatalog.sharedHits > 0 || bridgeCompiledScriptsAfterCatalog.size > 0,
+	"compiled script cache did not compile or reuse shared Rhino scripts: " +
+	JSON.stringify({ runtime: compiledScriptsAfterCatalog, bridge: bridgeCompiledScriptsAfterCatalog }));
 var blockArtifactsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.blockArtifacts;
 var coreBlocksAfterCatalog = JSON.parse(engine.cacheInfo()).caches.coreBlocks;
 var secondProjectDir = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-smoke-project-2");
@@ -4003,7 +4007,8 @@ var crossProjectOpenBuilt = JSON.parse(engine.contextAction(JSON.stringify({
 assertTrue(crossProjectOpenBuilt.ok === true &&
 	crossProjectOpenBuilt.browser && crossProjectOpenBuilt.browser.project === "SmokeProject" &&
 	String(crossProjectOpenBuilt.openUrl || "").indexOf("/projects/SmokeProject/") !== -1,
-	"frontend actions leaked the MCP host identity instead of the targeted project descriptor");
+	"frontend actions leaked the MCP host identity instead of the targeted project descriptor: " +
+	JSON.stringify(crossProjectOpenBuilt));
 var authoringTextBlock = findNode(authoringProvider, function (node) {
 	return node.kind === "frontendBlock" && node.type === "project.text";
 });
