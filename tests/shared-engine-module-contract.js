@@ -43,4 +43,17 @@ for (const name of shared) {
 	);
 }
 
+for (const contract of [
+	{ variable: "flowRuntimeServiceModule", loader: "flow-runtime-service.js" },
+	{ variable: "runPlanHeadServiceModule", loader: "run-plan-head-service.js" },
+]) {
+	assert.match(engineSource, new RegExp(`var ${contract.variable} = null;`),
+		`${contract.loader} must have a runtime-local hot reference`);
+	assert.match(engineSource, new RegExp(`${contract.variable} = loadEngineModule\\("${contract.loader.replaceAll(".", "\\.")}\\"\\);`),
+		`${contract.loader} must populate its runtime-local hot reference`);
+	const reset = engineSource.match(/function resetRuntimeModuleCaches\(\) \{([\s\S]*?)\n\t\}/);
+	assert(reset && reset[1].includes(`${contract.variable} = null;`),
+		`${contract.loader} hot reference must be invalidated with runtime module caches`);
+}
+
 console.log(`shared-engine-module-contract OK (${shared.size} shared, ${stateful.size} local)`);

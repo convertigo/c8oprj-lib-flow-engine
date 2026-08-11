@@ -34,7 +34,10 @@
 	var expressionUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
+	var flowRuntimeServiceModule = null;
+	var runPlanHeadServiceModule = null;
 	var flowRuntimeServiceEnvInstance = null;
+	var runPlanHeadEnvInstance = null;
 	var graphBlockRuntimeEnvInstance = null;
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
@@ -767,7 +770,10 @@
 		expressionUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
+		flowRuntimeServiceModule = null;
+		runPlanHeadServiceModule = null;
 		flowRuntimeServiceEnvInstance = null;
+		runPlanHeadEnvInstance = null;
 		clearCompiledScriptCache();
 	}
 
@@ -815,11 +821,17 @@
 	}
 
 	function runPlanHeadService() {
-		return loadEngineModule("run-plan-head-service.js");
+		if (!runPlanHeadServiceModule) {
+			runPlanHeadServiceModule = loadEngineModule("run-plan-head-service.js");
+		}
+		return runPlanHeadServiceModule;
 	}
 
 	function runPlanHeadEnv() {
-		return {
+		if (runPlanHeadEnvInstance) {
+			return runPlanHeadEnvInstance;
+		}
+		runPlanHeadEnvInstance = {
 			cache: runtimeState.caches.runPlanHeads,
 			projectDir: projectDir,
 			currentTimeMillis: function () { return new Date().getTime(); },
@@ -827,6 +839,7 @@
 			writeRuntimeBoundedCache: writeRuntimeBoundedMapCache,
 			clearRuntimeBoundedCache: function (cache) { cacheUtils().clearBoundedMap(cache); }
 		};
+		return runPlanHeadEnvInstance;
 	}
 
 	function readRunPlanHead(request) {
@@ -3685,7 +3698,10 @@
 	}
 
 	function flowRuntimeService() {
-		return loadEngineModule("flow-runtime-service.js");
+		if (!flowRuntimeServiceModule) {
+			flowRuntimeServiceModule = loadEngineModule("flow-runtime-service.js");
+		}
+		return flowRuntimeServiceModule;
 	}
 
 	function flowExecutionSnapshotService() {
