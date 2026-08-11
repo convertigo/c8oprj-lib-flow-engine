@@ -287,10 +287,24 @@ var isolatedFlowCodeEnv = {
 };
 var mirroredDraftCode = "function MirrorDraft({ result }) { result.ok = true; return result }\n";
 var mirroredDraftSet = isolatedFlowCodeService.flowCodeDraftSetRequest({}, {}, "MirrorDraft", mirroredDraftCode, isolatedFlowCodeEnv);
-var mirroredDraftRead = isolatedFlowCodeService.flowCodeDraftRead("MirrorDraft", isolatedFlowCodeEnv);
+var mirroredDraftRead = isolatedFlowCodeService.flowCodeDraftRead("MirrorDraft", {}, isolatedFlowCodeEnv);
 assertTrue(mirroredDraftSet.ok === true && mirroredDraftRead && mirroredDraftRead.code === mirroredDraftCode &&
 	mirroredDraftRead.revision === mirroredDraftSet.revision,
 	"FlowScript draft was not mirrored when a live DBO accepted the working copy");
+
+var qualifiedDraftEnv = Object.assign({}, isolatedFlowCodeEnv, {
+	currentProjectName: function (request) { return String(request && request.project || "DraftSmoke"); }
+});
+var sharedFlowName = "SharedDraftName";
+var projectADraftCode = "function SharedDraftName({ result }) { result.project = 'A'; return result }\n";
+var projectBDraftCode = "function SharedDraftName({ result }) { result.project = 'B'; return result }\n";
+isolatedFlowCodeService.flowCodeDraftSetRequest({}, { project: "ProjectA" }, sharedFlowName, projectADraftCode, qualifiedDraftEnv);
+isolatedFlowCodeService.flowCodeDraftSetRequest({}, { project: "ProjectB" }, sharedFlowName, projectBDraftCode, qualifiedDraftEnv);
+var projectADraftRead = isolatedFlowCodeService.flowCodeDraftRead(sharedFlowName, { project: "ProjectA" }, qualifiedDraftEnv);
+var projectBDraftRead = isolatedFlowCodeService.flowCodeDraftRead(sharedFlowName, { project: "ProjectB" }, qualifiedDraftEnv);
+assertTrue(projectADraftRead && projectADraftRead.code === projectADraftCode &&
+	projectBDraftRead && projectBDraftRead.code === projectBDraftCode,
+	"FlowScript in-memory drafts collided across projects sharing the same Flow name");
 
 var blockFileLoaderSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/block-file-loader-service.js"), "UTF-8"));

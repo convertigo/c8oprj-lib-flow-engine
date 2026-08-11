@@ -308,7 +308,11 @@
 		}
 	}
 
-	function flowCodeDraftRead(name) {
+	function flowCodeDraftKey(request, name) {
+		return flowCodeQName(request || {}, name);
+	}
+
+	function flowCodeDraftRead(name, request) {
 		var working = readProjectFlowWorkingCode ? readProjectFlowWorkingCode(name, true) : null;
 		if (working) {
 			return {
@@ -323,7 +327,7 @@
 				code: working.code
 			};
 		}
-		var draft = memoryDrafts[String(name)];
+		var draft = memoryDrafts[flowCodeDraftKey(request, name)];
 		if (!draft) {
 			return null;
 		}
@@ -341,7 +345,7 @@
 	}
 
 	function flowCodeCurrentForEdit(blocks, request, name, preferDraft) {
-		var draft = preferDraft ? flowCodeDraftRead(name) : null;
+		var draft = preferDraft ? flowCodeDraftRead(name, request) : null;
 		if (draft) {
 			draft.qname = flowCodeQName(request, name);
 			return draft;
@@ -360,7 +364,7 @@
 		request = request || {};
 		var name = flowCodeName(request);
 		if (!flowCodeOfficialMode(request)) {
-			var draft = flowCodeDraftRead(name);
+			var draft = flowCodeDraftRead(name, request);
 			if (draft) {
 				draft.qname = flowCodeQName(request, name);
 				draft.next = "Working copy loaded. Check with flow-code-check, run with flow-code-run, then save with flow-code-promote.";
@@ -402,7 +406,7 @@
 	function flowCodeStatusRequest(blocks, request) {
 		request = request || {};
 		var name = flowCodeName(request);
-		var draft = flowCodeDraftRead(name);
+		var draft = flowCodeDraftRead(name, request);
 		var official = flowCodeOfficialRead(blocks, request, name);
 		var dirty = draft !== null && (!official || draft.revision !== official.revision);
 		var status = {
@@ -451,8 +455,9 @@
 		request = request || {};
 		var name = flowCodeName(request);
 		var memoryDiscarded = discardProjectFlowWorkingCopy ? discardProjectFlowWorkingCopy(name) : false;
-		var discarded = memoryDrafts[String(name)] !== undefined;
-		delete memoryDrafts[String(name)];
+		var draftKey = flowCodeDraftKey(request, name);
+		var discarded = memoryDrafts[draftKey] !== undefined;
+		delete memoryDrafts[draftKey];
 		var official = flowCodeOfficialRead(blocks, request, name);
 		return {
 			ok: true,
@@ -499,13 +504,14 @@
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
 		// Keep a runtime-owned mirror even when the current DBO accepts the draft.
 		// Studio tree refreshes may replace that DBO instance before promotion.
-		memoryDrafts[String(name)] = {
+		var draftKey = flowCodeDraftKey(request, name);
+		memoryDrafts[draftKey] = {
 			code: normalized,
 			revision: written && written.revision ? written.revision : sha256Hex(normalized),
 			file: written && written.file || "",
 			codeFile: written && (written.codeFile || written.file) || ""
 		};
-		var revision = memoryDrafts[String(name)].revision;
+		var revision = memoryDrafts[draftKey].revision;
 		var checked = flowCodeValidate(blocks, request, name, normalized);
 		var out = {
 			ok: checked.error === null && checked.validation && checked.validation.ok === true,
@@ -1054,7 +1060,7 @@
 				revision: sha256Hex(normalizeFlowScriptCode(stripFlowScriptMirrorHeader(String(request.code)))),
 				codeFile: ""
 			}
-			: flowCodeDraftRead(name);
+			: flowCodeDraftRead(name, request);
 		if (!current) {
 			return {
 				ok: false,
@@ -1104,7 +1110,7 @@
 		}));
 		var inputSync = flowCodeSyncInputs(name, checked.validation, request);
 		var draftCleared = current.draft === true;
-		delete memoryDrafts[String(name)];
+		delete memoryDrafts[flowCodeDraftKey(request, name)];
 		return flowCodeAddInputReport({
 			ok: true,
 			qname: flowCodeQName(request, name),
