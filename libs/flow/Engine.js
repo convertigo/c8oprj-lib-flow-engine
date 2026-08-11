@@ -39,7 +39,7 @@
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
@@ -84,6 +84,7 @@
 			blockCatalogHeads: createRuntimeMapCacheState(),
 			types: createRuntimeMapCacheState(),
 			flowPlans: createRuntimeBoundedMapCacheState(256),
+			runPlanHeads: createRuntimeBoundedMapCacheState(256),
 			configDefinitions: createRuntimeMapCacheState(),
 			libraries: createRuntimeMapCacheState(),
 			engineModules: createRuntimeMapCacheState(),
@@ -810,6 +811,34 @@
 		cacheUtils().clearMap(runtimeState.caches.blocks);
 		cacheUtils().clearMap(runtimeState.caches.blockCatalogHeads);
 		cacheUtils().clearBoundedMap(runtimeState.caches.flowPlans);
+		clearRunPlanHeads();
+	}
+
+	function runPlanHeadService() {
+		return loadEngineModule("run-plan-head-service.js");
+	}
+
+	function runPlanHeadEnv() {
+		return {
+			cache: runtimeState.caches.runPlanHeads,
+			projectDir: projectDir,
+			currentTimeMillis: function () { return new Date().getTime(); },
+			probeIntervalMs: 60000,
+			writeRuntimeBoundedCache: writeRuntimeBoundedMapCache,
+			clearRuntimeBoundedCache: function (cache) { cacheUtils().clearBoundedMap(cache); }
+		};
+	}
+
+	function readRunPlanHead(request) {
+		return runPlanHeadService().read(request, runPlanHeadEnv());
+	}
+
+	function writeRunPlanHead(request, blocks, plan) {
+		return runPlanHeadService().write(request, blocks, plan, runPlanHeadEnv());
+	}
+
+	function clearRunPlanHeads() {
+		runPlanHeadService().clear(runPlanHeadEnv());
 	}
 
 	function cacheInfoRequest() {
@@ -3819,6 +3848,8 @@
 			readRuntimeBoundedCache: readRuntimeBoundedMapCache,
 			writeRuntimeBoundedCache: writeRuntimeBoundedMapCache,
 			flowPlanCache: runtimeState.caches.flowPlans,
+			readRunPlanHead: readRunPlanHead,
+			writeRunPlanHead: writeRunPlanHead,
 			flowPlanCompilerFingerprint: flowPlanCompilerFingerprint,
 			flowSnapshotService: flowExecutionSnapshotService(),
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
@@ -9710,12 +9741,7 @@
 
 		run: function (requestJson) {
 			return engineCall("run", requestJson, function (request) {
-				var started = request.profile === true ? JavaSystem.nanoTime() : 0;
-				var blocks = loadBlocks(true);
-				if (request.profile === true) {
-					request.loadBlocksMs = Number(JavaSystem.nanoTime() - started) / 1000000;
-				}
-				return runFlowRequest(request, blocks);
+				return runFlowRequest(request);
 			});
 		},
 

@@ -88,6 +88,7 @@
 				blockCatalogHeads: cacheSummary("blockCatalogHeads", caches.blockCatalogHeads, env),
 				types: cacheSummary("types", caches.types, env),
 				flowPlans: cacheSummary("flowPlans", caches.flowPlans, env),
+				runPlanHeads: cacheSummary("runPlanHeads", caches.runPlanHeads, env),
 				flowSnapshots: flowSnapshotInfo(env),
 				configDefinitions: cacheSummary("configDefinitions", caches.configDefinitions, env),
 				libraries: cacheSummary("libraries", caches.libraries, env),
@@ -123,6 +124,7 @@
 		env.cacheUtils.clearMap(caches.blockCatalogHeads);
 		env.cacheUtils.clearMap(caches.types);
 		env.cacheUtils.clearBoundedMap(caches.flowPlans);
+		env.cacheUtils.clearBoundedMap(caches.runPlanHeads);
 		env.cacheUtils.clearMap(caches.configDefinitions);
 		env.cacheUtils.clearMap(caches.libraries);
 		env.cacheUtils.clearMap(caches.engineModules);

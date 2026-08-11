@@ -852,16 +852,16 @@ var naturalRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: naturalFlowScriptSource,
 	includeTrace: false
 })));
-var flowPlanCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.flowPlans;
+var runPlanHeadCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.runPlanHeads;
 var naturalRunRepeat = JSON.parse(engine.run(JSON.stringify({
 	flowSource: naturalFlowScriptSource,
 	includeTrace: false
 })));
-var flowPlanCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.flowPlans;
+var runPlanHeadCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.runPlanHeads;
 var flowSnapshotStatsAfterRepeat = JSON.parse(engine.cacheInfo()).caches.flowSnapshots;
 assertTrue(naturalRunRepeat.result.first === "b" && naturalRunRepeat.result.encoded === "[\"a\",\"b\"]" &&
-	flowPlanCacheAfterRepeat.hits > flowPlanCacheBeforeRepeat.hits,
-	"repeated Flow execution did not reuse its compiled plan");
+	runPlanHeadCacheAfterRepeat.hits > runPlanHeadCacheBeforeRepeat.hits,
+	"repeated Flow execution did not reuse its hot run plan head");
 assertTrue(flowSnapshotStatsAfterRepeat.compiles > 0 &&
 	flowSnapshotStatsAfterRepeat.hydrations === flowSnapshotStatsAfterRepeat.compiles &&
 	flowSnapshotStatsAfterRepeat.payloadBytes >= flowSnapshotStatsAfterRepeat.maxPayloadBytes &&

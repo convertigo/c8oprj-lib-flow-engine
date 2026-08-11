@@ -15,6 +15,8 @@
 		var readRuntimeBoundedCache = env.readRuntimeBoundedCache;
 		var writeRuntimeBoundedCache = env.writeRuntimeBoundedCache;
 		var flowPlanCache = env.flowPlanCache;
+		var readRunPlanHead = env.readRunPlanHead || function () { return null; };
+		var writeRunPlanHead = env.writeRunPlanHead || function () { return null; };
 		var flowPlanCompilerFingerprint = env.flowPlanCompilerFingerprint;
 		var flowSnapshotService = env.flowSnapshotService;
 		var flowSnapshotStats = env.flowSnapshotStats || {};
@@ -866,11 +868,42 @@
 			return plan;
 		}
 
-		function runFlowRequest(request, blocks) {
-			var runStarted = request.profile === true ? nanoTime() : 0;
+		function resolveRunPlan(request, blocks) {
+			var headEligible = !blocks;
+			if (headEligible) {
+				var head = readRunPlanHead(request);
+				if (head && head.blocks && head.plan) {
+					return {
+						blocks: head.blocks,
+						plan: head.plan,
+						headHit: true,
+						loadBlocksMs: 0,
+						compilePlanMs: 0
+					};
+				}
+			}
+			var loadStarted = request.profile === true && !blocks ? nanoTime() : 0;
+			blocks = blocks || loadBlocks(true);
+			var loadMs = request.profile === true && loadStarted ? profileDuration(loadStarted) : Number(request.loadBlocksMs || 0);
 			var compileStarted = request.profile === true ? nanoTime() : 0;
 			var plan = compileFlowPlan(request, blocks);
 			var compileMs = request.profile === true ? profileDuration(compileStarted) : 0;
+			if (headEligible) {
+				writeRunPlanHead(request, blocks, plan);
+			}
+			return {
+				blocks: blocks,
+				plan: plan,
+				headHit: false,
+				loadBlocksMs: loadMs,
+				compilePlanMs: compileMs
+			};
+		}
+
+		function runFlowRequest(request, blocks) {
+			var runStarted = request.profile === true ? nanoTime() : 0;
+			var resolved = resolveRunPlan(request, blocks);
+			var plan = resolved.plan;
 			var definition = plan.definition;
 			var activeBlocks = plan.blocks;
 			var projectEngine;
@@ -891,8 +924,9 @@
 			var ctx = createRunContext(request, definition, activeBlocks, projectEngineProvider, plan);
 			if (request.profile === true) {
 				ctx.profile = {
-					loadBlocksMs: Number(request.loadBlocksMs || 0),
-					compilePlanMs: compileMs,
+					runPlanHeadHit: resolved.headHit,
+					loadBlocksMs: resolved.loadBlocksMs,
+					compilePlanMs: resolved.compilePlanMs,
 					loadConfigMs: 0,
 					configLoaded: false,
 					createContextMs: profileDuration(contextStarted),
@@ -1427,6 +1461,7 @@
 			compileFlowPlan: compileFlowPlan,
 			compileFlowSnapshot: compileFlowSnapshot,
 			hydrateFlowSnapshot: hydrateFlowSnapshot,
+			resolveRunPlan: resolveRunPlan,
 			createRunContext: createRunContext,
 			prepareExecutionPlan: prepareExecutionPlan
 		};

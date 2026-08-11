@@ -14,6 +14,7 @@ const caches = {
 	blockCatalogHeads: cache,
 	types: cache,
 	flowPlans: cache,
+	runPlanHeads: cache,
 	configDefinitions: cache,
 	libraries: cache,
 	engineModules: cache,
