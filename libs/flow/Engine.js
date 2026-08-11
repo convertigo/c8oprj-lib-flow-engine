@@ -372,11 +372,16 @@
 		return canonicalFlowDefinition(parseYamlSource(source, "version: 1\nnodes: []\n"));
 	}
 
-	function response(value, rejectRuntimeHandlesAt) {
+	function response(value, rejectRuntimeHandlesAt, functionProfile) {
+		var sanitizeStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var payload = value || {};
 		payload = rejectRuntimeHandlesAt
 			? sanitizeSerializableRuntimeValue(payload, rejectRuntimeHandlesAt)
 			: sanitizeRuntimeValue(payload);
+		if (functionProfile && payload.profile) {
+			functionProfile.responseSanitizeMs = Number(JavaSystem.nanoTime() - sanitizeStarted) / 1000000;
+			payload.profile.functionCall = functionProfile;
+		}
 		return JSON.stringify(payload);
 	}
 
@@ -9812,10 +9817,20 @@
 
 	function flowRunCall(requestJson, callback) {
 		try {
+			var parseStarted = JavaSystem.nanoTime();
 			var request = parseRequest(requestJson);
-			return withActiveRequest(request, function () {
-				return response(callback(request), "result");
+			var profileRequest = request.profile === true || request.profile === "envelope";
+			var functionProfile = profileRequest ? {
+				parseRequestMs: Number(JavaSystem.nanoTime() - parseStarted) / 1000000
+			} : null;
+			var activeStarted = profileRequest ? JavaSystem.nanoTime() : 0;
+			var value = withActiveRequest(request, function () {
+				return callback(request);
 			});
+			if (functionProfile) {
+				functionProfile.activeRunMs = Number(JavaSystem.nanoTime() - activeStarted) / 1000000;
+			}
+			return response(value, "result", functionProfile);
 		} catch (e) {
 			return response(failure("run", e));
 		}

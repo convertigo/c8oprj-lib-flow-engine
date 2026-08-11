@@ -105,6 +105,60 @@ assert.strictEqual(second.scopes.request.projectDir, "/project/second",
 assert.strictEqual(blockNameReads, 1,
 	"the runtime service factory should read a stable environment only once");
 
+let envelopeRuns = 0;
+const envelopeNode = { block: "envelope.ok" };
+const envelopeBlocks = {
+	"envelope.ok": {
+		__flowOrigin: "core",
+		run(ctx) {
+			assert.strictEqual(ctx.profile, undefined,
+				"envelope profiling must preserve the direct unprofiled node path");
+			envelopeRuns += 1;
+			ctx.scopes.result.ok = true;
+			return true;
+		},
+	},
+};
+const envelopePlan = {
+	definition: { nodes: [envelopeNode] },
+	blocks: envelopeBlocks,
+	preparedNodes: null,
+	preparation: {
+		mode: "lazy",
+		preparedNodes: 0,
+		preparedRunners: 0,
+		preparedWriters: 0,
+		materializedBlocks: 0,
+	},
+};
+const envelopeEnv = Object.assign({}, env, {
+	readRunPlanHead: () => ({ blocks: envelopeBlocks, plan: envelopePlan }),
+	loadProjectEngineDefinition: () => ({}),
+	snapshot: (value) => value,
+	learnResultSchema: () => null,
+	schemaSummary: (value) => value,
+});
+const envelopeResult = runtime.runFlowRequest({
+	profile: "envelope",
+	includeTrace: false,
+	__deferResultSerializationSafety: true,
+}, undefined, envelopeEnv);
+assert.strictEqual(envelopeResult.ok, true);
+assert.strictEqual(JSON.stringify(envelopeResult.result), JSON.stringify({ ok: true }));
+assert.strictEqual(envelopeRuns, 1);
+assert.strictEqual(envelopeResult.profile.mode, "envelope");
+assert.strictEqual(envelopeResult.profile.runPlanHeadHit, true);
+assert.strictEqual(envelopeResult.profile.blocks, undefined,
+	"envelope profiling must not allocate deep per-block samples");
+assert.strictEqual(envelopeResult.profile.hotPath, undefined,
+	"envelope profiling must not allocate deep hot-path counters");
+for (const name of ["createContextMs", "executeNodesMs", "runFlowRequestMs"]) {
+	assert.ok(envelopeResult.profile[name] > 0, `missing envelope phase ${name}`);
+}
+for (const name of ["captureInvocationMs", "requestScopeMs", "scopesMs", "frameObjectMs", "lazyCapabilitiesMs", "totalMs"]) {
+	assert.ok(envelopeResult.profile.createContext[name] > 0, `missing frame phase ${name}`);
+}
+
 for (const name of ["props", "read", "write", "expr", "template", "runNodes", "callBlock", "trace"]) {
 	assert.strictEqual(first[name], second[name], `${name} should be shared by all request frames`);
 	assert.strictEqual(Object.prototype.hasOwnProperty.call(first, name), false,

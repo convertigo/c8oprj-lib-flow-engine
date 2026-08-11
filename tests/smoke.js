@@ -781,6 +781,21 @@ var portableTrimRun = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 assertTrue(portableTrimRun.result.value === "portable", "portable text.trim Rhino implementation returned the wrong value");
+var portableTrimEnvelope = JSON.parse(engine.run(JSON.stringify({
+	flowSource: portableTrimFlowScriptSource,
+	includeTrace: false,
+	profile: "envelope"
+})));
+assertTrue(portableTrimEnvelope.ok === true && portableTrimEnvelope.result.value === "portable",
+	"envelope profiling changed the Flow result");
+assertTrue(portableTrimEnvelope.profile && portableTrimEnvelope.profile.mode === "envelope" &&
+	portableTrimEnvelope.profile.hotPath === undefined && portableTrimEnvelope.profile.blocks === undefined,
+	"envelope profiling enabled the intrusive per-node profile");
+assertTrue(portableTrimEnvelope.profile.createContext && portableTrimEnvelope.profile.createContext.totalMs >= 0 &&
+	portableTrimEnvelope.profile.executeNodesMs >= 0 && portableTrimEnvelope.profile.functionCall &&
+	portableTrimEnvelope.profile.functionCall.activeRunMs >= portableTrimEnvelope.profile.runFlowRequestMs &&
+	portableTrimEnvelope.profile.functionCall.responseSanitizeMs >= 0,
+	"envelope profiling did not expose the frame and Function.call phases");
 var portableFixtureFile = new java.io.File(engineDir, "portable-axiom-fixtures.json");
 var portableFixtures = JSON.parse(String(Packages.org.apache.commons.io.FileUtils.readFileToString(portableFixtureFile, "UTF-8")));
 portableFixtures.forEach(function (fixture, index) {

@@ -159,6 +159,10 @@
 			return Number(nanoTime() - started) / 1000000;
 		}
 
+		function profileEnabled(request) {
+			return !!request && (request.profile === true || request.profile === "envelope");
+		}
+
 		function defineLazyValue(target, name, provider) {
 			Object.defineProperty(target, name, {
 				configurable: true,
@@ -871,6 +875,7 @@
 		}
 
 		function resolveRunPlan(request, blocks) {
+			var measure = profileEnabled(request);
 			var headEligible = !blocks;
 			if (headEligible) {
 				var head = readRunPlanHead(request);
@@ -884,12 +889,12 @@
 					};
 				}
 			}
-			var loadStarted = request.profile === true && !blocks ? nanoTime() : 0;
+			var loadStarted = measure && !blocks ? nanoTime() : 0;
 			blocks = blocks || loadBlocks(true);
-			var loadMs = request.profile === true && loadStarted ? profileDuration(loadStarted) : Number(request.loadBlocksMs || 0);
-			var compileStarted = request.profile === true ? nanoTime() : 0;
+			var loadMs = measure && loadStarted ? profileDuration(loadStarted) : Number(request.loadBlocksMs || 0);
+			var compileStarted = measure ? nanoTime() : 0;
 			var plan = compileFlowPlan(request, blocks);
-			var compileMs = request.profile === true ? profileDuration(compileStarted) : 0;
+			var compileMs = measure ? profileDuration(compileStarted) : 0;
 			if (headEligible) {
 				writeRunPlanHead(request, blocks, plan);
 			}
@@ -903,8 +908,23 @@
 		}
 
 		function runFlowRequest(request, blocks) {
-			var runStarted = request.profile === true ? nanoTime() : 0;
+			var measure = profileEnabled(request);
+			var deepProfile = request.profile === true;
+			var runStarted = measure ? nanoTime() : 0;
+			var resolveStarted = measure ? nanoTime() : 0;
 			var resolved = resolveRunPlan(request, blocks);
+			var profile = measure ? {
+				mode: deepProfile ? "deep" : "envelope",
+				runPlanHeadHit: resolved.headHit,
+				loadBlocksMs: resolved.loadBlocksMs,
+				compilePlanMs: resolved.compilePlanMs,
+				resolveRunPlanMs: profileDuration(resolveStarted),
+				loadConfigMs: 0,
+				configLoaded: false,
+				createContext: {},
+				blocks: deepProfile ? [] : undefined,
+				hotPath: deepProfile ? {} : undefined
+			} : null;
 			var plan = resolved.plan;
 			var definition = plan.definition;
 			var activeBlocks = plan.blocks;
@@ -913,41 +933,45 @@
 			var configMs = 0;
 			function projectEngineProvider() {
 				if (!projectEngineLoaded) {
-					var configStarted = request.profile === true ? nanoTime() : 0;
+					var configStarted = measure ? nanoTime() : 0;
 					projectEngine = loadProjectEngineDefinition() || {};
 					projectEngineLoaded = true;
-					if (request.profile === true) {
+					if (measure) {
 						configMs += profileDuration(configStarted);
 					}
 				}
 				return projectEngine;
 			}
-			var contextStarted = request.profile === true ? nanoTime() : 0;
-			var ctx = createRunContext(request, definition, activeBlocks, projectEngineProvider, plan);
-			if (request.profile === true) {
-				ctx.profile = {
-					runPlanHeadHit: resolved.headHit,
-					loadBlocksMs: resolved.loadBlocksMs,
-					compilePlanMs: resolved.compilePlanMs,
-					loadConfigMs: 0,
-					configLoaded: false,
-					createContextMs: profileDuration(contextStarted),
-					frameBefore: contextFrameStats(ctx),
-					preparationBefore: preparationStats(ctx),
-					blocks: [],
-					hotPath: {}
-				};
+			var contextStarted = measure ? nanoTime() : 0;
+			var ctx = createRunContext(request, definition, activeBlocks, projectEngineProvider, plan,
+				profile ? profile.createContext : null);
+			if (profile) {
+				profile.createContextMs = profileDuration(contextStarted);
+				profile.frameBefore = contextFrameStats(ctx);
+				profile.preparationBefore = preparationStats(ctx);
+				if (deepProfile) {
+					ctx.profile = profile;
+				}
 			}
 			try {
-				var executeStarted = request.profile === true ? nanoTime() : 0;
+				var executeStarted = measure ? nanoTime() : 0;
 				ctx.runNodes(definition.nodes || []);
-				if (ctx.profile) {
-					ctx.profile.executeNodesMs = profileDuration(executeStarted);
+				if (profile) {
+					profile.executeNodesMs = profileDuration(executeStarted);
 				}
+				var selectStarted = measure ? nanoTime() : 0;
 				var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
+				if (profile) {
+					profile.selectResultMs = profileDuration(selectStarted);
+				}
+				var safetyStarted = measure ? nanoTime() : 0;
 				if (request.__deferResultSerializationSafety !== true) {
 					assertNoRuntimeHandle(result, "result");
 				}
+				if (profile) {
+					profile.resultSafetyMs = profileDuration(safetyStarted);
+				}
+				var schemaStarted = measure ? nanoTime() : 0;
 				var resultSchema = shouldLearnResultSchema(request) ? learnResultSchema(request, definition, result) : null;
 				if (resultSchema && resultSchema.learned === true) {
 					ctx.schemaUpdates.push({
@@ -960,7 +984,15 @@
 						message: "Recorded final result schema. Future output-schema calls can use this explicit learned override."
 					});
 				}
+				if (profile) {
+					profile.learnSchemaMs = profileDuration(schemaStarted);
+				}
+				var closeStarted = measure ? nanoTime() : 0;
 				closeRuntimeHandles(ctx);
+				if (profile) {
+					profile.closeHandlesMs = profileDuration(closeStarted);
+				}
+				var responseStarted = measure ? nanoTime() : 0;
 				var out = {
 					ok: true,
 					result: result
@@ -974,23 +1006,34 @@
 				if (request.includeTrace !== false) {
 					out.trace = snapshot(ctx.scopes.trace);
 				}
-				if (ctx.profile) {
-					ctx.profile.loadConfigMs = configMs;
-					ctx.profile.configLoaded = projectEngineLoaded;
-					ctx.profile.frameAfter = contextFrameStats(ctx);
-					ctx.profile.preparationAfter = preparationStats(ctx);
-					ctx.profile.runFlowRequestMs = profileDuration(runStarted);
-					out.profile = ctx.profile;
+				if (profile) {
+					profile.loadConfigMs = configMs;
+					profile.configLoaded = projectEngineLoaded;
+					profile.frameAfter = contextFrameStats(ctx);
+					profile.preparationAfter = preparationStats(ctx);
+					profile.assembleResponseMs = profileDuration(responseStarted);
+					profile.runFlowRequestMs = profileDuration(runStarted);
+					out.profile = profile;
 				}
 				return out;
 			} finally {
+				var finalCloseStarted = measure ? nanoTime() : 0;
 				closeRuntimeHandles(ctx);
+				if (profile) {
+					profile.finalCloseHandlesMs = profileDuration(finalCloseStarted);
+				}
 			}
 		}
 
-		function createRunContext(request, definition, blocks, projectEngine, plan) {
+		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile) {
+			var totalStarted = frameProfile ? nanoTime() : 0;
+			var captureStarted = frameProfile ? nanoTime() : 0;
 			var invocationContext = currentConvertigoContext();
 			var invocationProjectDir = projectDir();
+			if (frameProfile) {
+				frameProfile.captureInvocationMs = profileDuration(captureStarted);
+			}
+			var requestStarted = frameProfile ? nanoTime() : 0;
 			var requestScope = normalizeTree(request.context || {});
 			var projectName = currentProjectName(request);
 			if (projectName) {
@@ -1005,6 +1048,10 @@
 			defineLazyValue(requestScope, "projectDir", function () {
 				return invocationProjectDir ? canonicalPath(invocationProjectDir) : "";
 			});
+			if (frameProfile) {
+				frameProfile.requestScopeMs = profileDuration(requestStarted);
+			}
+			var providerStarted = frameProfile ? nanoTime() : 0;
 			var loadProjectEngine = typeof projectEngine === "function"
 				? projectEngine
 				: function () { return projectEngine || {}; };
@@ -1017,6 +1064,10 @@
 				}
 				return projectEngineValue;
 			}
+			if (frameProfile) {
+				frameProfile.projectEngineProviderMs = profileDuration(providerStarted);
+			}
+			var scopesStarted = frameProfile ? nanoTime() : 0;
 			var scopes = {
 				request: requestScope,
 				input: normalizeTree(request.input || {}),
@@ -1029,6 +1080,10 @@
 			defineLazyValue(scopes, "config", function () {
 				return effectiveConfig(request, definition, projectEngineProvider());
 			});
+			if (frameProfile) {
+				frameProfile.scopesMs = profileDuration(scopesStarted);
+			}
+			var frameStarted = frameProfile ? nanoTime() : 0;
 			var ctx = Object.create(runContextPrototype);
 			Object.assign(ctx, {
 				request: request,
@@ -1049,6 +1104,10 @@
 				scopes: scopes
 			});
 			defineLazyValue(ctx, "engine", projectEngineProvider);
+			if (frameProfile) {
+				frameProfile.frameObjectMs = profileDuration(frameStarted);
+			}
+			var capabilitiesStarted = frameProfile ? nanoTime() : 0;
 			ctx.__installColdContextMethods = function () {
 				delete ctx.__installColdContextMethods;
 			ctx.cacheInfo = function () {
@@ -1456,6 +1515,10 @@
 				});
 			};
 			};
+			if (frameProfile) {
+				frameProfile.lazyCapabilitiesMs = profileDuration(capabilitiesStarted);
+				frameProfile.totalMs = profileDuration(totalStarted);
+			}
 			return ctx;
 		}
 
