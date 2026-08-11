@@ -361,7 +361,9 @@
 			return this.libraries[name];
 		};
 		runContextPrototype.returnValue = function (value) {
-			assertNoRuntimeHandle(value, "result");
+			if (this.request.__deferResultSerializationSafety !== true) {
+				assertNoRuntimeHandle(value, "result");
+			}
 			this.returned = value;
 			this.stopped = true;
 			return value;
@@ -943,7 +945,9 @@
 					ctx.profile.executeNodesMs = profileDuration(executeStarted);
 				}
 				var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
-				assertNoRuntimeHandle(result, "result");
+				if (request.__deferResultSerializationSafety !== true) {
+					assertNoRuntimeHandle(result, "result");
+				}
 				var resultSchema = shouldLearnResultSchema(request) ? learnResultSchema(request, definition, result) : null;
 				if (resultSchema && resultSchema.learned === true) {
 					ctx.schemaUpdates.push({

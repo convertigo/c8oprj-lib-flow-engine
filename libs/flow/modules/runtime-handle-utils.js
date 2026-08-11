@@ -57,14 +57,17 @@
 		return out;
 	}
 
-	function sanitize(value, env, seen) {
+	function sanitizeValue(value, env, seen, rejectWhere) {
 		value = jsValue(value, env);
 		if (isHandle(value)) {
+			if (rejectWhere) {
+				env.raise("RUNTIME_HANDLE_IN_RESULT", "Runtime handles cannot be written to " + rejectWhere + ". Convert them to serializable data first.");
+			}
 			return summary(value);
 		}
 		if (value && Object.prototype.toString.call(value) === "[object Array]") {
 			return value.map(function (item) {
-				return sanitize(item, env, seen);
+				return sanitizeValue(item, env, seen, rejectWhere);
 			});
 		}
 		if (value && typeof value === "object") {
@@ -75,12 +78,20 @@
 			seen.push(value);
 			var out = {};
 			Object.keys(value).forEach(function (key) {
-				out[key] = sanitize(value[key], env, seen);
+				out[key] = sanitizeValue(value[key], env, seen, rejectWhere);
 			});
 			seen.pop();
 			return out;
 		}
 		return value;
+	}
+
+	function sanitize(value, env, seen) {
+		return sanitizeValue(value, env, seen, "");
+	}
+
+	function sanitizeSerializable(value, where, env, seen) {
+		return sanitizeValue(value, env, seen, String(where || "result"));
 	}
 
 	function normalize(value, env) {
@@ -224,6 +235,7 @@
 		type: type,
 		summary: summary,
 		sanitize: sanitize,
+		sanitizeSerializable: sanitizeSerializable,
 		normalize: normalize,
 		snapshot: snapshot,
 		mergedContext: mergedContext,

@@ -300,8 +300,12 @@
 		return canonicalFlowDefinition(parseYamlSource(source, "version: 1\nnodes: []\n"));
 	}
 
-	function response(value) {
-		return JSON.stringify(sanitizeRuntimeValue(value || {}));
+	function response(value, rejectRuntimeHandlesAt) {
+		var payload = value || {};
+		payload = rejectRuntimeHandlesAt
+			? sanitizeSerializableRuntimeValue(payload, rejectRuntimeHandlesAt)
+			: sanitizeRuntimeValue(payload);
+		return JSON.stringify(payload);
 	}
 
 	function failure(operation, error) {
@@ -423,6 +427,10 @@
 
 	function sanitizeRuntimeValue(value, seen) {
 		return runtimeHandleUtils().sanitize(value, runtimeHandleEnv(), seen);
+	}
+
+	function sanitizeSerializableRuntimeValue(value, where, seen) {
+		return runtimeHandleUtils().sanitizeSerializable(value, where, runtimeHandleEnv(), seen);
 	}
 
 	function containsRuntimeHandle(value, seen) {
@@ -9705,7 +9713,7 @@
 			var previousRequest = activeRequest;
 			activeRequest = request;
 			try {
-				return response(callback(request));
+				return response(callback(request), operation === "run" ? "result" : "");
 			} finally {
 				activeRequest = previousRequest;
 			}
@@ -9757,6 +9765,7 @@
 
 		run: function (requestJson) {
 			return engineCall("run", requestJson, function (request) {
+				request.__deferResultSerializationSafety = true;
 				return runFlowRequest(request);
 			});
 		},
