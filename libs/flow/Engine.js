@@ -17,7 +17,7 @@
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
-	var activeRequest = null;
+	var activeRequestFallback = null;
 	var compiledScriptCache = {};
 	var compiledScriptCacheSizeValue = 0;
 	var compiledScriptCacheClock = 0;
@@ -152,6 +152,47 @@
 			return callback();
 		} finally {
 			projectDirOverride = previous;
+		}
+	}
+
+	function currentActiveRequest() {
+		try {
+			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
+				var invocationRequest = FlowEngineBridge.currentFlowRequestState();
+				if (invocationRequest !== null && invocationRequest !== undefined) {
+					return invocationRequest;
+				}
+			}
+		} catch (e) {
+			// Older bridges keep the active request in this Engine closure.
+		}
+		return activeRequestFallback;
+	}
+
+	function withActiveRequest(request, callback) {
+		var invocationFrame = false;
+		var invocationPrevious = null;
+		try {
+			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
+				invocationPrevious = FlowEngineBridge.setCurrentFlowRequestState(request);
+				invocationFrame = true;
+			}
+		} catch (e) {
+			// Older bridges keep the active request in this Engine closure.
+		}
+		if (invocationFrame) {
+			try {
+				return callback();
+			} finally {
+				FlowEngineBridge.restoreCurrentFlowRequestState(invocationPrevious);
+			}
+		}
+		var previous = activeRequestFallback;
+		activeRequestFallback = request;
+		try {
+			return callback();
+		} finally {
+			activeRequestFallback = previous;
 		}
 	}
 
@@ -1864,7 +1905,7 @@
 			sha256Hex: sha256Hex,
 			blockCompilerFingerprint: blockArtifactCompilerFingerprint(),
 			blockSourceFingerprint: function (file) {
-				var draft = frontendDraftForFile(activeRequest, file);
+				var draft = frontendDraftForFile(currentActiveRequest(), file);
 				return draft === null ? fileFingerprint(file) : "draft:" + sha256Hex(draft);
 			},
 			readBlockArtifact: function (key, fingerprint) {
@@ -3517,7 +3558,7 @@
 		} catch (e) {
 		}
 		var current = projectDir();
-		var requested = currentProjectName(activeRequest);
+		var requested = currentProjectName(currentActiveRequest());
 		if (requested && current && canonicalPath(root) === canonicalPath(current)) {
 			return requested;
 		}
@@ -3561,7 +3602,7 @@
 	}
 
 	function requestableInputContract(target, request) {
-		request = Object.assign({}, request || activeRequest || {});
+		request = Object.assign({}, request || currentActiveRequest() || {});
 		if (!currentProjectName(request)) {
 			request.project = projectNameForRoot(projectDir());
 		}
@@ -4128,7 +4169,7 @@
 			referencedProjectRoots: referencedProjectRoots,
 			sourceForFile: sourceForFile,
 			draftFilesUnder: function (baseDir) {
-				return frontendDraftEntriesUnder(activeRequest, baseDir).map(function (entry) {
+				return frontendDraftEntriesUnder(currentActiveRequest(), baseDir).map(function (entry) {
 					return entry.file;
 				});
 			},
@@ -7262,7 +7303,7 @@
 	}
 
 	function sourceDraftsFingerprint() {
-		var drafts = frontendSourceDrafts(activeRequest);
+		var drafts = frontendSourceDrafts(currentActiveRequest());
 		var parts = [];
 		Object.keys(drafts).sort().forEach(function (key) {
 			parts.push(canonicalPath(new File(String(key))) + ":" + sha256Hex(String(drafts[key])));
@@ -7296,7 +7337,7 @@
 	}
 
 	function sourceForFile(file) {
-		var draft = frontendDraftForFile(activeRequest, file);
+		var draft = frontendDraftForFile(currentActiveRequest(), file);
 		return draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
 	}
 
@@ -9744,13 +9785,9 @@
 	function engineCall(operation, requestJson, callback) {
 		try {
 			var request = parseRequest(requestJson);
-			var previousRequest = activeRequest;
-			activeRequest = request;
-			try {
+			return withActiveRequest(request, function () {
 				return response(callback(request), operation === "run" ? "result" : "");
-			} finally {
-				activeRequest = previousRequest;
-			}
+			});
 		} catch (e) {
 			return response(failure(operation, e));
 		}
@@ -9759,7 +9796,9 @@
 	function flowRunCall(requestJson, callback) {
 		try {
 			var request = parseRequest(requestJson);
-			return response(callback(request), "result");
+			return withActiveRequest(request, function () {
+				return response(callback(request), "result");
+			});
 		} catch (e) {
 			return response(failure("run", e));
 		}

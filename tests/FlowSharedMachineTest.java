@@ -115,11 +115,24 @@ public class FlowSharedMachineTest {
 					barrier.await(30, TimeUnit.SECONDS);
 					var parentContext = contextIdentity();
 					var childContext = contextIdentity();
+					var parentRequest = new Object();
+					var parentOverride = new Object();
+					var childRequest = new Object();
 					try (var parent = FlowEngineBridge.beginFlowInvocationFrame(parentContext, "/project/" + worker)) {
 						if (FlowEngineBridge.currentFlowConvertigoContext() != parentContext
 								|| !FlowEngineBridge.currentFlowProjectDir().equals("/project/" + worker)
+								|| FlowEngineBridge.currentFlowRequestState() != null
 								|| FlowEngineBridge.currentFlowInvocationDepth() != 1) {
 							throw new AssertionError("parent Flow invocation frame was not isolated for worker " + worker);
+						}
+						var previousRequest = FlowEngineBridge.setCurrentFlowRequestState(parentRequest);
+						if (previousRequest != null || FlowEngineBridge.currentFlowRequestState() != parentRequest) {
+							throw new AssertionError("request state was not local to parent worker " + worker);
+						}
+						var nestedPreviousRequest = FlowEngineBridge.setCurrentFlowRequestState(parentOverride);
+						if (nestedPreviousRequest != parentRequest
+								|| FlowEngineBridge.currentFlowRequestState() != parentOverride) {
+							throw new AssertionError("request override did not preserve parent state for worker " + worker);
 						}
 						var previous = FlowEngineBridge.setCurrentFlowProjectDir("/override/" + worker);
 						if (!previous.equals("/project/" + worker)
@@ -129,19 +142,30 @@ public class FlowSharedMachineTest {
 						try (var child = FlowEngineBridge.beginFlowInvocationFrame(childContext, "/child/" + worker)) {
 							if (FlowEngineBridge.currentFlowConvertigoContext() != childContext
 									|| !FlowEngineBridge.currentFlowProjectDir().equals("/child/" + worker)
+									|| FlowEngineBridge.currentFlowRequestState() != null
 									|| FlowEngineBridge.currentFlowInvocationDepth() != 2) {
 								throw new AssertionError("nested Flow invocation frame was not isolated for worker " + worker);
+							}
+							FlowEngineBridge.setCurrentFlowRequestState(childRequest);
+							if (FlowEngineBridge.currentFlowRequestState() != childRequest) {
+								throw new AssertionError("child request state was not isolated for worker " + worker);
 							}
 						}
 						if (FlowEngineBridge.currentFlowConvertigoContext() != parentContext
 								|| !FlowEngineBridge.currentFlowProjectDir().equals("/override/" + worker)
+								|| FlowEngineBridge.currentFlowRequestState() != parentOverride
 								|| FlowEngineBridge.currentFlowInvocationDepth() != 1) {
 							throw new AssertionError("parent Flow invocation frame was not restored for worker " + worker);
+						}
+						FlowEngineBridge.restoreCurrentFlowRequestState(nestedPreviousRequest);
+						if (FlowEngineBridge.currentFlowRequestState() != parentRequest) {
+							throw new AssertionError("parent request override was not restored for worker " + worker);
 						}
 						FlowEngineBridge.restoreCurrentFlowProjectDir(previous);
 					}
 					if (FlowEngineBridge.currentFlowConvertigoContext() != null
 							|| !FlowEngineBridge.currentFlowProjectDir().isEmpty()
+							|| FlowEngineBridge.currentFlowRequestState() != null
 							|| FlowEngineBridge.currentFlowInvocationDepth() != 0) {
 						throw new AssertionError("Flow invocation frame leaked after worker " + worker);
 					}
