@@ -16,16 +16,24 @@ let blockNameReads = 0;
 let materializeCalls = 0;
 let liveContext = { request: "first" };
 let clock = 0;
+let effectiveConfigCalls = 0;
+let canonicalPathCalls = 0;
 const env = {
 	File: FakeFile,
 	nodeProps: (node) => Object.assign({}, node.props || node || {}),
 	nodePath: (node) => String(node && node.id || ""),
 	normalizeTree: (value) => value,
 	currentProjectName: () => "Sample",
-	canonicalPath: (file) => file.path,
-	engineDir: () => "/engine",
-	projectDir: () => "/project",
-	effectiveConfig: () => ({}),
+	canonicalPath(file) {
+		canonicalPathCalls += 1;
+		return file.path;
+	},
+	engineDir: () => new FakeFile("/engine"),
+	projectDir: () => new FakeFile("/project"),
+	effectiveConfig(_request, _definition, projectEngine) {
+		effectiveConfigCalls += 1;
+		return { name: projectEngine.name || "none" };
+	},
 	intOption: (value, fallback) => value === undefined ? fallback : value,
 	runtimeHandles: {
 		assertSerializable: () => {},
@@ -53,6 +61,32 @@ Object.defineProperty(env, "blockName", {
 
 const first = runtime.createRunContext({}, {}, {}, {}, env);
 assert.strictEqual(first.convertigoContext(), liveContext);
+assert.strictEqual(effectiveConfigCalls, 0,
+	"the best-case request frame should not build configuration before it is read");
+assert.strictEqual(canonicalPathCalls, 0,
+	"the best-case request frame should not canonicalize technical paths before they are read");
+
+let projectEngineLoads = 0;
+const lazy = runtime.createRunContext({}, {}, {}, () => {
+	projectEngineLoads += 1;
+	return { name: "sample" };
+}, env);
+assert.strictEqual(projectEngineLoads, 0,
+	"the project Engine definition should stay unloaded on a config-free Flow");
+assert.deepStrictEqual(lazy.scopes.config, { name: "sample" });
+assert.strictEqual(projectEngineLoads, 1);
+assert.strictEqual(effectiveConfigCalls, 1);
+assert.strictEqual(lazy.engine.name, "sample");
+assert.strictEqual(projectEngineLoads, 1,
+	"config and engine should share one project Engine definition load");
+assert.strictEqual(lazy.scopes.config, lazy.scopes.config,
+	"the effective config should be materialized only once");
+assert.strictEqual(effectiveConfigCalls, 1);
+assert.strictEqual(lazy.scopes.request.engineDir, "/engine");
+assert.strictEqual(canonicalPathCalls, 1);
+assert.strictEqual(lazy.scopes.request.engineDir, "/engine");
+assert.strictEqual(canonicalPathCalls, 1,
+	"a technical request path should be canonicalized only on its first read");
 
 liveContext = { request: "second" };
 const second = runtime.createRunContext({}, {}, {}, {}, env);

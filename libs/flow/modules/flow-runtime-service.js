@@ -157,10 +157,36 @@
 			return Number(nanoTime() - started) / 1000000;
 		}
 
+		function defineLazyValue(target, name, provider) {
+			Object.defineProperty(target, name, {
+				configurable: true,
+				enumerable: true,
+				get: function () {
+					var value = provider();
+					Object.defineProperty(target, name, {
+						value: value,
+						writable: true,
+						enumerable: true,
+						configurable: true
+					});
+					return value;
+				},
+				set: function (value) {
+					Object.defineProperty(target, name, {
+						value: value,
+						writable: true,
+						enumerable: true,
+						configurable: true
+					});
+				}
+			});
+		}
+
 		function contextFrameStats(ctx) {
 			var ownFunctionCount = 0;
 			Object.keys(ctx || {}).forEach(function (name) {
-				if (typeof ctx[name] === "function") {
+				var descriptor = Object.getOwnPropertyDescriptor(ctx, name);
+				if (descriptor && typeof descriptor.value === "function") {
 					ownFunctionCount += 1;
 				}
 			});
@@ -847,16 +873,28 @@
 			var compileMs = request.profile === true ? profileDuration(compileStarted) : 0;
 			var definition = plan.definition;
 			var activeBlocks = plan.blocks;
-			var configStarted = request.profile === true ? nanoTime() : 0;
-			var projectEngine = loadProjectEngineDefinition();
-			var configMs = request.profile === true ? profileDuration(configStarted) : 0;
+			var projectEngine;
+			var projectEngineLoaded = false;
+			var configMs = 0;
+			function projectEngineProvider() {
+				if (!projectEngineLoaded) {
+					var configStarted = request.profile === true ? nanoTime() : 0;
+					projectEngine = loadProjectEngineDefinition() || {};
+					projectEngineLoaded = true;
+					if (request.profile === true) {
+						configMs += profileDuration(configStarted);
+					}
+				}
+				return projectEngine;
+			}
 			var contextStarted = request.profile === true ? nanoTime() : 0;
-			var ctx = createRunContext(request, definition, activeBlocks, projectEngine, plan);
+			var ctx = createRunContext(request, definition, activeBlocks, projectEngineProvider, plan);
 			if (request.profile === true) {
 				ctx.profile = {
 					loadBlocksMs: Number(request.loadBlocksMs || 0),
 					compilePlanMs: compileMs,
-					loadConfigMs: configMs,
+					loadConfigMs: 0,
+					configLoaded: false,
 					createContextMs: profileDuration(contextStarted),
 					frameBefore: contextFrameStats(ctx),
 					preparationBefore: preparationStats(ctx),
@@ -899,6 +937,8 @@
 					out.trace = snapshot(ctx.scopes.trace);
 				}
 				if (ctx.profile) {
+					ctx.profile.loadConfigMs = configMs;
+					ctx.profile.configLoaded = projectEngineLoaded;
 					ctx.profile.frameAfter = contextFrameStats(ctx);
 					ctx.profile.preparationAfter = preparationStats(ctx);
 					ctx.profile.runFlowRequestMs = profileDuration(runStarted);
@@ -916,15 +956,44 @@
 			if (projectName) {
 				requestScope.project = projectName;
 			}
-			requestScope.engineDir = canonicalPath(engineDir());
-			requestScope.engineProjectDir = canonicalPath(new File(engineDir(), "../.."));
-			var currentProjectDir = projectDir();
-			requestScope.projectDir = currentProjectDir ? canonicalPath(currentProjectDir) : "";
+			defineLazyValue(requestScope, "engineDir", function () {
+				return canonicalPath(engineDir());
+			});
+			defineLazyValue(requestScope, "engineProjectDir", function () {
+				return canonicalPath(new File(engineDir(), "../.."));
+			});
+			defineLazyValue(requestScope, "projectDir", function () {
+				var currentProjectDir = projectDir();
+				return currentProjectDir ? canonicalPath(currentProjectDir) : "";
+			});
+			var loadProjectEngine = typeof projectEngine === "function"
+				? projectEngine
+				: function () { return projectEngine || {}; };
+			var projectEngineValue;
+			var projectEngineResolved = false;
+			function projectEngineProvider() {
+				if (!projectEngineResolved) {
+					projectEngineValue = loadProjectEngine() || {};
+					projectEngineResolved = true;
+				}
+				return projectEngineValue;
+			}
+			var scopes = {
+				request: requestScope,
+				input: normalizeTree(request.input || {}),
+				local: {},
+				result: {},
+				trace: { nodes: [] },
+				current: null,
+				props: {}
+			};
+			defineLazyValue(scopes, "config", function () {
+				return effectiveConfig(request, definition, projectEngineProvider());
+			});
 			var ctx = Object.create(runContextPrototype);
 			Object.assign(ctx, {
 				request: request,
 				definition: definition,
-				engine: projectEngine || {},
 				blocks: blocks,
 				preparedNodes: plan && plan.preparedNodes || null,
 				preparation: plan && plan.preparation || null,
@@ -937,17 +1006,9 @@
 				graphBlockStack: [],
 				maxGraphBlockDepth: intOption(request.maxGraphBlockDepth, 128, 1, 1000),
 				traceEnabled: request.includeTrace !== false,
-				scopes: {
-					request: requestScope,
-					input: normalizeTree(request.input || {}),
-					config: effectiveConfig(request, definition, projectEngine || {}),
-					local: {},
-					result: {},
-					trace: { nodes: [] },
-					current: null,
-					props: {}
-				}
+				scopes: scopes
 			});
+			defineLazyValue(ctx, "engine", projectEngineProvider);
 			ctx.__installColdContextMethods = function () {
 				delete ctx.__installColdContextMethods;
 			ctx.cacheInfo = function () {
