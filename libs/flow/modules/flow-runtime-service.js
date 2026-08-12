@@ -177,29 +177,18 @@
 			var descriptor = Object.getOwnPropertyDescriptor(requestScope, "__flowFrameState");
 			return descriptor ? descriptor.value : null;
 		}
-		function defineFrameStateValue(state, name, value) {
-			Object.defineProperty(state, name, {
-				value: value,
-				writable: true,
-				configurable: true,
-				enumerable: false
-			});
-			return value;
-		}
 
 		function resolveFrameProjectEngine(state) {
-			if (!Object.prototype.hasOwnProperty.call(state, "__flowProjectEngineValue")) {
-				var requestProfile = state.__flowRequestProfile;
-				var started = requestProfile ? nanoTime() : 0;
-				var source = state.__flowProjectEngineSource;
-				defineFrameStateValue(state, "__flowProjectEngineValue",
-					(typeof source === "function" ? source() : source) || {});
-				if (requestProfile) {
-					requestProfile.loadConfigMs += profileDuration(started);
-					requestProfile.configLoaded = true;
+			if (!Object.prototype.hasOwnProperty.call(state, "projectEngineValue")) {
+				var started = state.profile ? nanoTime() : 0;
+				var source = state.projectEngineSource;
+				state.projectEngineValue = (typeof source === "function" ? source() : source) || {};
+				if (state.profile) {
+					state.profile.loadConfigMs += profileDuration(started);
+					state.profile.configLoaded = true;
 				}
 			}
-			return state.__flowProjectEngineValue;
+			return state.projectEngineValue;
 		}
 
 		function requestEngineDirGet() {
@@ -216,11 +205,11 @@
 		}
 		function requestProjectDirGet() {
 			var state = frameStateForRequestScope(this);
-			if (state && !Object.prototype.hasOwnProperty.call(state, "__flowInvocationProjectDir")) {
-				defineFrameStateValue(state, "__flowInvocationProjectDir", projectDir());
+			if (state && !Object.prototype.hasOwnProperty.call(state, "invocationProjectDir")) {
+				state.invocationProjectDir = projectDir();
 			}
 			return materializeLazyValue(this, "projectDir",
-				state && state.__flowInvocationProjectDir ? canonicalPath(state.__flowInvocationProjectDir) : "");
+				state && state.invocationProjectDir ? canonicalPath(state.invocationProjectDir) : "");
 		}
 		function requestProjectDirSet(value) {
 			materializeLazyValue(this, "projectDir", value);
@@ -257,11 +246,6 @@
 			configurable: true, enumerable: true, get: contextEngineGet, set: contextEngineSet
 		};
 		Object.defineProperty(runContextPrototype, "engine", contextEngineDescriptor);
-		Object.defineProperties(runContextPrototype, {
-			__flowProjectEngineSource: {
-				value: loadProjectEngineDefinition, writable: false, configurable: false, enumerable: false
-			}
-		});
 		Object.defineProperty(runContextPrototype, "__installColdContextMethods", {
 			value: installColdContextMethods,
 			writable: false,
@@ -284,18 +268,7 @@
 					sharedMethodCount += 1;
 				}
 			});
-			var scopes = ctx && ctx.scopes;
-			var requestScope = scopes && scopes.request;
-			var frameState = requestScope && requestScope.__flowFrameState;
-			var ownSlotCount = Object.getOwnPropertyNames(ctx || {}).length;
-			var frameStateOwnSlotCount = Object.getOwnPropertyNames(frameState || {}).length;
 			return {
-				ownSlotCount: ownSlotCount,
-				scopesOwnSlotCount: Object.getOwnPropertyNames(scopes || {}).length,
-				requestScopeOwnSlotCount: Object.getOwnPropertyNames(requestScope || {}).length,
-				frameStateOwnSlotCount: frameStateOwnSlotCount,
-				frameStateIsContext: frameState === ctx,
-				retainedFrameSlotCount: ownSlotCount + (frameState === ctx ? 0 : frameStateOwnSlotCount),
 				ownFunctionCount: ownFunctionCount,
 				sharedMethodCount: sharedMethodCount,
 				lazyMethodCount: coldContextMethodNames.length,
@@ -435,10 +408,10 @@
 		};
 		runContextPrototype.convertigoContext = function () {
 			var state = frameStateForRequestScope(this.scopes.request);
-			if (!Object.prototype.hasOwnProperty.call(state, "__flowInvocationContext")) {
-				defineFrameStateValue(state, "__flowInvocationContext", currentConvertigoContext());
+			if (!Object.prototype.hasOwnProperty.call(state, "invocationContext")) {
+				state.invocationContext = currentConvertigoContext();
 			}
-			var invocationContext = state.__flowInvocationContext;
+			var invocationContext = state.invocationContext;
 			if (invocationContext === null || invocationContext === undefined) {
 				raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
 			}
@@ -1130,33 +1103,22 @@
 			if (frameProfile) {
 				frameProfile.captureInvocationMs = profileDuration(captureStarted);
 			}
-			var frameStarted = frameProfile ? nanoTime() : 0;
-			var ctx = Object.create(runContextPrototype);
-			ctx.request = request;
-			ctx.definition = definition;
-			ctx.blocks = blocks;
-			ctx.preparedNodes = plan && plan.preparedNodes || null;
-			ctx.preparation = plan && plan.preparation || null;
-			ctx.returned = undefined;
-			ctx.stopped = false;
-			ctx.traceEnabled = request.includeTrace !== false;
-			if (projectEngine !== loadProjectEngineDefinition) {
-				defineFrameStateValue(ctx, "__flowProjectEngineSource", projectEngine);
-			}
-			if (requestProfile) {
-				defineFrameStateValue(ctx, "__flowRequestProfile", requestProfile);
-			}
-			if (frameProfile) {
-				frameProfile.frameObjectMs = profileDuration(frameStarted);
-			}
 			var requestStarted = frameProfile ? nanoTime() : 0;
 			var requestScope = frameScopeValue(request, "context");
 			var projectName = currentProjectName(request);
 			if (projectName) {
 				requestScope.project = projectName;
 			}
+			var frameState = {
+				request: request,
+				definition: definition,
+				projectEngineSource: projectEngine
+			};
+			if (requestProfile) {
+				frameState.profile = requestProfile;
+			}
 			Object.defineProperty(requestScope, "__flowFrameState", {
-				value: ctx,
+				value: frameState,
 				writable: false,
 				configurable: false,
 				enumerable: false
@@ -1181,9 +1143,22 @@
 			if (frameProfile) {
 				frameProfile.scopesMs = profileDuration(scopesStarted);
 			}
+			var frameStarted = frameProfile ? nanoTime() : 0;
+			var ctx = Object.create(runContextPrototype);
+			ctx.request = request;
+			ctx.definition = definition;
+			ctx.blocks = blocks;
+			ctx.preparedNodes = plan && plan.preparedNodes || null;
+			ctx.preparation = plan && plan.preparation || null;
+			ctx.returned = undefined;
+			ctx.stopped = false;
+			ctx.traceEnabled = request.includeTrace !== false;
 			ctx.scopes = scopes;
 			if (request.maxGraphBlockDepth !== undefined && request.maxGraphBlockDepth !== null) {
 				ctx.maxGraphBlockDepth = intOption(request.maxGraphBlockDepth, 128, 1, 1000);
+			}
+			if (frameProfile) {
+				frameProfile.frameObjectMs = profileDuration(frameStarted);
 			}
 			var capabilitiesStarted = frameProfile ? nanoTime() : 0;
 			if (frameProfile) {
