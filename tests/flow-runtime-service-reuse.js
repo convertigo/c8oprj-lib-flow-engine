@@ -238,6 +238,13 @@ assert.strictEqual(envelopeResult.profile.blocks, undefined,
 	"envelope profiling must not allocate deep per-block samples");
 assert.strictEqual(envelopeResult.profile.hotPath, undefined,
 	"envelope profiling must not allocate deep hot-path counters");
+assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 9);
+assert.strictEqual(envelopeResult.profile.frameBefore.scopesOwnSlotCount, 8);
+assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 5);
+assert.strictEqual(envelopeResult.profile.frameBefore.frameStateOwnSlotCount, 4);
+assert.strictEqual(envelopeResult.profile.frameBefore.frameStateIsContext, false);
+assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 13,
+	"the profile should expose all slots retained by the frame and its private lazy state");
 for (const name of ["createContextMs", "executeNodesMs", "runFlowRequestMs"]) {
 	assert.ok(envelopeResult.profile[name] > 0, `missing envelope phase ${name}`);
 }

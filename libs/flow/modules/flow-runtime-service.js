@@ -268,7 +268,18 @@
 					sharedMethodCount += 1;
 				}
 			});
+			var scopes = ctx && ctx.scopes;
+			var requestScope = scopes && scopes.request;
+			var frameState = requestScope && requestScope.__flowFrameState;
+			var ownSlotCount = Object.getOwnPropertyNames(ctx || {}).length;
+			var frameStateOwnSlotCount = Object.getOwnPropertyNames(frameState || {}).length;
 			return {
+				ownSlotCount: ownSlotCount,
+				scopesOwnSlotCount: Object.getOwnPropertyNames(scopes || {}).length,
+				requestScopeOwnSlotCount: Object.getOwnPropertyNames(requestScope || {}).length,
+				frameStateOwnSlotCount: frameStateOwnSlotCount,
+				frameStateIsContext: frameState === ctx,
+				retainedFrameSlotCount: ownSlotCount + (frameState === ctx ? 0 : frameStateOwnSlotCount),
 				ownFunctionCount: ownFunctionCount,
 				sharedMethodCount: sharedMethodCount,
 				lazyMethodCount: coldContextMethodNames.length,
