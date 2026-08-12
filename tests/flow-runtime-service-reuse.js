@@ -238,6 +238,11 @@ assert.strictEqual(envelopeResult.profile.blocks, undefined,
 	"envelope profiling must not allocate deep per-block samples");
 assert.strictEqual(envelopeResult.profile.hotPath, undefined,
 	"envelope profiling must not allocate deep hot-path counters");
+assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 6,
+	"the default no-trace Flow frame should retain only its six request-specific slots");
+assert.strictEqual(envelopeResult.profile.frameBefore.scopesOwnSlotCount, 8);
+assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 5);
+assert.strictEqual(envelopeResult.profile.frameBefore.frameStateOwnSlotCount, 4);
 for (const name of ["createContextMs", "executeNodesMs", "runFlowRequestMs"]) {
 	assert.ok(envelopeResult.profile[name] > 0, `missing envelope phase ${name}`);
 }
@@ -277,10 +282,29 @@ assert.strictEqual(Object.prototype.hasOwnProperty.call(second, "flowCodeGet"), 
 const noTrace = runtime.createRunContext({ includeTrace: false }, {}, {}, {}, env);
 assert.strictEqual(noTrace.scopes.trace, null,
 	"trace storage should stay absent when the request disables tracing");
+for (const name of ["returned", "stopped", "traceEnabled"]) {
+	assert.strictEqual(Object.prototype.hasOwnProperty.call(noTrace, name), false,
+		`${name} should use the immutable shared best-case default`);
+}
+assert.strictEqual(noTrace.returned, undefined);
+assert.strictEqual(noTrace.stopped, false);
+assert.strictEqual(noTrace.traceEnabled, false);
 noTrace.trace({ id: "ignored" }, "ignored", true);
 assert.strictEqual(noTrace.scopes.trace, null,
 	"a disabled trace call should not materialize trace storage");
+const secondNoTrace = runtime.createRunContext({ includeTrace: false }, {}, {}, {}, env);
+noTrace.returned = "first";
+noTrace.stopped = true;
+noTrace.traceEnabled = true;
+assert.strictEqual(secondNoTrace.returned, undefined,
+	"a returned value must stay local to its request frame");
+assert.strictEqual(secondNoTrace.stopped, false,
+	"a stopped state must stay local to its request frame");
+assert.strictEqual(secondNoTrace.traceEnabled, false,
+	"a trace override must stay local to its request frame");
 const traced = runtime.createRunContext({ includeTrace: true }, {}, {}, {}, env);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(traced, "traceEnabled"), true,
+	"an opt-in trace flag should stay local to its request frame");
 traced.trace({ id: "trace-node" }, "trace.block", true);
 assert.strictEqual(traced.scopes.trace.nodes.length, 1,
 	"explicit tracing should retain the historical trace payload");

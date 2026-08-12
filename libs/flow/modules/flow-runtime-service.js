@@ -246,6 +246,17 @@
 			configurable: true, enumerable: true, get: contextEngineGet, set: contextEngineSet
 		};
 		Object.defineProperty(runContextPrototype, "engine", contextEngineDescriptor);
+		Object.defineProperties(runContextPrototype, {
+			returned: {
+				value: undefined, writable: true, configurable: false, enumerable: true
+			},
+			stopped: {
+				value: false, writable: true, configurable: false, enumerable: true
+			},
+			traceEnabled: {
+				value: false, writable: true, configurable: false, enumerable: true
+			}
+		});
 		Object.defineProperty(runContextPrototype, "__installColdContextMethods", {
 			value: installColdContextMethods,
 			writable: false,
@@ -268,7 +279,14 @@
 					sharedMethodCount += 1;
 				}
 			});
+			var scopes = ctx && ctx.scopes;
+			var requestScope = scopes && scopes.request;
+			var frameState = requestScope && requestScope.__flowFrameState;
 			return {
+				ownSlotCount: Object.getOwnPropertyNames(ctx || {}).length,
+				scopesOwnSlotCount: Object.getOwnPropertyNames(scopes || {}).length,
+				requestScopeOwnSlotCount: Object.getOwnPropertyNames(requestScope || {}).length,
+				frameStateOwnSlotCount: Object.getOwnPropertyNames(frameState || {}).length,
 				ownFunctionCount: ownFunctionCount,
 				sharedMethodCount: sharedMethodCount,
 				lazyMethodCount: coldContextMethodNames.length,
@@ -1150,9 +1168,9 @@
 			ctx.blocks = blocks;
 			ctx.preparedNodes = plan && plan.preparedNodes || null;
 			ctx.preparation = plan && plan.preparation || null;
-			ctx.returned = undefined;
-			ctx.stopped = false;
-			ctx.traceEnabled = request.includeTrace !== false;
+			if (request.includeTrace !== false) {
+				ctx.traceEnabled = true;
+			}
 			ctx.scopes = scopes;
 			if (request.maxGraphBlockDepth !== undefined && request.maxGraphBlockDepth !== null) {
 				ctx.maxGraphBlockDepth = intOption(request.maxGraphBlockDepth, 128, 1, 1000);
