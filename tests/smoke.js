@@ -808,7 +808,11 @@ assertTrue(portableTrimEnvelope.profile && portableTrimEnvelope.profile.mode ===
 assertTrue(portableTrimEnvelope.profile.createContext && portableTrimEnvelope.profile.createContext.totalMs >= 0 &&
 	portableTrimEnvelope.profile.executeNodesMs >= 0 && portableTrimEnvelope.profile.functionCall &&
 	portableTrimEnvelope.profile.functionCall.activeRunMs >= portableTrimEnvelope.profile.runFlowRequestMs &&
-	portableTrimEnvelope.profile.functionCall.responseSanitizeMs >= 0,
+	portableTrimEnvelope.profile.functionCall.activeEnterMs >= 0 &&
+	portableTrimEnvelope.profile.functionCall.activeBodyMs >= portableTrimEnvelope.profile.runFlowRequestMs &&
+	portableTrimEnvelope.profile.functionCall.activeExitMs >= 0 &&
+	portableTrimEnvelope.profile.functionCall.responseSanitizeMs >= 0 &&
+	portableTrimEnvelope.profile.functionCall.responseStringifyMs >= 0,
 	"envelope profiling did not expose the frame and Function.call phases");
 var portableFixtureFile = new java.io.File(engineDir, "portable-axiom-fixtures.json");
 var portableFixtures = JSON.parse(String(Packages.org.apache.commons.io.FileUtils.readFileToString(portableFixtureFile, "UTF-8")));

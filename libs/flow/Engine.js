@@ -375,12 +375,23 @@
 	function response(value, rejectRuntimeHandlesAt, functionProfile) {
 		var sanitizeStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var payload = value || {};
+		var internalProfile = functionProfile && payload.profile ? payload.profile : null;
+		if (internalProfile) {
+			delete payload.profile;
+		}
 		payload = rejectRuntimeHandlesAt
 			? sanitizeSerializableRuntimeValue(payload, rejectRuntimeHandlesAt)
 			: sanitizeRuntimeValue(payload);
-		if (functionProfile && payload.profile) {
+		if (internalProfile) {
 			functionProfile.responseSanitizeMs = Number(JavaSystem.nanoTime() - sanitizeStarted) / 1000000;
-			payload.profile.functionCall = functionProfile;
+			functionProfile.responseStringifyMs = 0;
+			internalProfile.functionCall = functionProfile;
+			payload.profile = internalProfile;
+			var stringifyStarted = JavaSystem.nanoTime();
+			var encoded = JSON.stringify(payload);
+			var stringifyMs = Number(JavaSystem.nanoTime() - stringifyStarted) / 1000000;
+			return encoded.replace('"responseStringifyMs":0',
+				'"responseStringifyMs":' + String(stringifyMs));
 		}
 		return JSON.stringify(payload);
 	}
@@ -9824,11 +9835,26 @@
 				parseRequestMs: Number(JavaSystem.nanoTime() - parseStarted) / 1000000
 			} : null;
 			var activeStarted = profileRequest ? JavaSystem.nanoTime() : 0;
+			var bodyStarted = 0;
+			var bodyFinished = 0;
 			var value = withActiveRequest(request, function () {
-				return callback(request);
+				if (functionProfile) {
+					bodyStarted = JavaSystem.nanoTime();
+					functionProfile.activeEnterMs = Number(bodyStarted - activeStarted) / 1000000;
+				}
+				try {
+					return callback(request);
+				} finally {
+					if (functionProfile) {
+						bodyFinished = JavaSystem.nanoTime();
+						functionProfile.activeBodyMs = Number(bodyFinished - bodyStarted) / 1000000;
+					}
+				}
 			});
 			if (functionProfile) {
-				functionProfile.activeRunMs = Number(JavaSystem.nanoTime() - activeStarted) / 1000000;
+				var activeFinished = JavaSystem.nanoTime();
+				functionProfile.activeExitMs = Number(activeFinished - bodyFinished) / 1000000;
+				functionProfile.activeRunMs = Number(activeFinished - activeStarted) / 1000000;
 			}
 			return response(value, "result", functionProfile);
 		} catch (e) {
