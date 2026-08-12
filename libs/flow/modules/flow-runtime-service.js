@@ -114,7 +114,6 @@
 		var materializeFlowScriptBlock = env.materializeFlowScriptBlock || function (blocks, name) {
 			return blocks && blocks[name];
 		};
-		var unresolvedInvocationValue = {};
 		var runContextPrototype = {};
 		var coldContextMethodNames = [
 			"cacheInfo", "cacheClear", "withProjectDir", "analyzeFlowSource", "contextFlowSource",
@@ -180,11 +179,10 @@
 		}
 
 		function resolveFrameProjectEngine(state) {
-			if (!state.projectEngineResolved) {
+			if (!Object.prototype.hasOwnProperty.call(state, "projectEngineValue")) {
 				var started = state.profile ? nanoTime() : 0;
 				var source = state.projectEngineSource;
 				state.projectEngineValue = (typeof source === "function" ? source() : source) || {};
-				state.projectEngineResolved = true;
 				if (state.profile) {
 					state.profile.loadConfigMs += profileDuration(started);
 					state.profile.configLoaded = true;
@@ -207,7 +205,7 @@
 		}
 		function requestProjectDirGet() {
 			var state = frameStateForRequestScope(this);
-			if (state && state.invocationProjectDir === unresolvedInvocationValue) {
+			if (state && !Object.prototype.hasOwnProperty.call(state, "invocationProjectDir")) {
 				state.invocationProjectDir = projectDir();
 			}
 			return materializeLazyValue(this, "projectDir",
@@ -247,6 +245,13 @@
 		var contextEngineDescriptor = {
 			configurable: true, enumerable: true, get: contextEngineGet, set: contextEngineSet
 		};
+		Object.defineProperty(runContextPrototype, "engine", contextEngineDescriptor);
+		Object.defineProperty(runContextPrototype, "__installColdContextMethods", {
+			value: installColdContextMethods,
+			writable: false,
+			configurable: false,
+			enumerable: false
+		});
 
 		function contextFrameStats(ctx) {
 			var ownFunctionCount = 0;
@@ -267,7 +272,7 @@
 				ownFunctionCount: ownFunctionCount,
 				sharedMethodCount: sharedMethodCount,
 				lazyMethodCount: coldContextMethodNames.length,
-				coldMethodsInstalled: !Object.prototype.hasOwnProperty.call(ctx, "__installColdContextMethods")
+				coldMethodsInstalled: Object.prototype.hasOwnProperty.call(ctx, coldContextMethodNames[0])
 			};
 		}
 
@@ -402,11 +407,11 @@
 			return closeRuntimeHandle(this, handle);
 		};
 		runContextPrototype.convertigoContext = function () {
-			var invocationContext = this.convertigoContextRef;
-			if (invocationContext === unresolvedInvocationValue) {
-				invocationContext = currentConvertigoContext();
-				this.convertigoContextRef = invocationContext;
+			var state = frameStateForRequestScope(this.scopes.request);
+			if (!Object.prototype.hasOwnProperty.call(state, "invocationContext")) {
+				state.invocationContext = currentConvertigoContext();
 			}
+			var invocationContext = state.invocationContext;
 			if (invocationContext === null || invocationContext === undefined) {
 				raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
 			}
@@ -423,10 +428,11 @@
 		};
 		runContextPrototype.lib = function (name) {
 			name = safeFilePart(name);
-			if (!this.libraries[name]) {
-				this.libraries[name] = loadFlowLibrary(name);
+			var libraries = this.libraries || (this.libraries = {});
+			if (!libraries[name]) {
+				libraries[name] = loadFlowLibrary(name);
 			}
-			return this.libraries[name];
+			return libraries[name];
 		};
 		runContextPrototype.returnValue = function (value) {
 			if (this.request.__deferResultSerializationSafety !== true) {
@@ -443,7 +449,8 @@
 			if (!this.traceEnabled) {
 				return;
 			}
-			this.scopes.trace.nodes.push({
+			var trace = this.scopes.trace || (this.scopes.trace = { nodes: [] });
+			trace.nodes.push({
 				id: nodePath(node),
 				block: name,
 				result: snapshot(result)
@@ -729,6 +736,11 @@
 				request.recordResultSchema === true ||
 				request.recordOutputSchema === true ||
 				request.recordSchema === true);
+		}
+
+		function appendSchemaUpdate(ctx, update) {
+			var updates = ctx.schemaUpdates || (ctx.schemaUpdates = []);
+			updates.push(update);
 		}
 
 		function flowPlanIdentity(request) {
@@ -1024,7 +1036,7 @@
 				var schemaStarted = measure ? nanoTime() : 0;
 				var resultSchema = shouldLearnResultSchema(request) ? learnResultSchema(request, definition, result) : null;
 				if (resultSchema && resultSchema.learned === true) {
-					ctx.schemaUpdates.push({
+					appendSchemaUpdate(ctx, {
 						scope: "result",
 						node: "return",
 						block: "return",
@@ -1047,7 +1059,7 @@
 					ok: true,
 					result: result
 				};
-				if (ctx.schemaUpdates.length > 0) {
+				if (ctx.schemaUpdates && ctx.schemaUpdates.length > 0) {
 					out.schemaUpdates = snapshot(ctx.schemaUpdates);
 				}
 				if (request.includeFlow === true || request.includeLocal === true) {
@@ -1100,12 +1112,11 @@
 			var frameState = {
 				request: request,
 				definition: definition,
-				invocationProjectDir: unresolvedInvocationValue,
-				projectEngineSource: projectEngine,
-				projectEngineValue: null,
-				projectEngineResolved: false,
-				profile: requestProfile || null
+				projectEngineSource: projectEngine
 			};
+			if (requestProfile) {
+				frameState.profile = requestProfile;
+			}
 			Object.defineProperty(requestScope, "__flowFrameState", {
 				value: frameState,
 				writable: false,
@@ -1124,7 +1135,7 @@
 				input: frameScopeValue(request, "input"),
 				local: {},
 				result: {},
-				trace: { nodes: [] },
+				trace: request.includeTrace === false ? null : { nodes: [] },
 				current: null,
 				props: {}
 			};
@@ -1136,28 +1147,22 @@
 			var ctx = Object.create(runContextPrototype);
 			Object.assign(ctx, {
 				request: request,
-				convertigoContextRef: unresolvedInvocationValue,
 				definition: definition,
 				blocks: blocks,
 				preparedNodes: plan && plan.preparedNodes || null,
 				preparation: plan && plan.preparation || null,
-				libraries: {},
 				returned: undefined,
 				stopped: false,
-				handles: {},
-				handleSeq: 0,
-				schemaUpdates: [],
-				graphBlockStack: [],
-				maxGraphBlockDepth: intOption(request.maxGraphBlockDepth, 128, 1, 1000),
 				traceEnabled: request.includeTrace !== false,
 				scopes: scopes
 			});
-			Object.defineProperty(ctx, "engine", contextEngineDescriptor);
+			if (request.maxGraphBlockDepth !== undefined && request.maxGraphBlockDepth !== null) {
+				ctx.maxGraphBlockDepth = intOption(request.maxGraphBlockDepth, 128, 1, 1000);
+			}
 			if (frameProfile) {
 				frameProfile.frameObjectMs = profileDuration(frameStarted);
 			}
 			var capabilitiesStarted = frameProfile ? nanoTime() : 0;
-			ctx.__installColdContextMethods = installColdContextMethods;
 			if (frameProfile) {
 				frameProfile.lazyCapabilitiesMs = profileDuration(capabilitiesStarted);
 				frameProfile.totalMs = profileDuration(totalStarted);
@@ -1169,7 +1174,6 @@
 			var ctx = this;
 			var request = ctx.request;
 			var definition = ctx.definition;
-			delete ctx.__installColdContextMethods;
 			ctx.cacheInfo = function () {
 				return cacheInfoRequest();
 			};
@@ -1263,7 +1267,7 @@
 			ctx.learnOutputSchema = function (node, property, outPath, value) {
 				var learned = learnOutputSchema(request, definition, node, property || "out", outPath || "", value);
 				if (learned && learned.learned === true) {
-					ctx.schemaUpdates.push({
+					appendSchemaUpdate(ctx, {
 						scope: outPath || "",
 						node: nodePath(node),
 						block: blockName(node),

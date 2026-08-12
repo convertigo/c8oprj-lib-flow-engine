@@ -29,6 +29,7 @@ const env = {
 	nodeProps: (node) => Object.assign({}, node.props || node || {}),
 	nodePath: (node) => String(node && node.id || ""),
 	normalizeTree: (value) => value,
+	snapshot: (value) => value,
 	currentProjectName: () => "Sample",
 	canonicalPath(file) {
 		canonicalPathCalls += 1;
@@ -76,6 +77,13 @@ Object.defineProperty(env, "blockName", {
 });
 
 const first = runtime.createRunContext({}, {}, {}, {}, env);
+for (const name of [
+	"convertigoContextRef", "libraries", "handles", "handleSeq", "schemaUpdates",
+	"graphBlockStack", "maxGraphBlockDepth", "engine", "__installColdContextMethods",
+]) {
+	assert.strictEqual(Object.prototype.hasOwnProperty.call(first, name), false,
+		`${name} should not allocate an own best-case frame slot before first use`);
+}
 assert.strictEqual(liveContextReads, 0,
 	"the best-case request frame should not capture a Convertigo context before a block needs it");
 assert.strictEqual(liveProjectDirReads, 0,
@@ -174,8 +182,8 @@ runtime.createRunContext({ context: { direct: true }, input: { value: 1 } }, {},
 assert.strictEqual(parsedNormalizeCalls, 2,
 	"direct runtime callers should retain the normalization fallback");
 assert.strictEqual(
-	Object.getOwnPropertyDescriptor(first, "engine").get,
-	Object.getOwnPropertyDescriptor(second, "engine").get,
+	Object.getOwnPropertyDescriptor(Object.getPrototypeOf(first), "engine").get,
+	Object.getOwnPropertyDescriptor(Object.getPrototypeOf(second), "engine").get,
 	"project Engine getters should be shared instead of allocating request closures"
 );
 assert.strictEqual(Object.keys(first.scopes.request).includes("engineDir"), true,
@@ -244,11 +252,13 @@ for (const name of ["props", "read", "write", "expr", "template", "runNodes", "c
 }
 assert.deepStrictEqual(
 	Object.keys(first).filter((name) => typeof first[name] === "function"),
-	["__installColdContextMethods"],
-	"the best-case request frame should allocate only one lazy capability installer"
+	[],
+	"the best-case request frame should not allocate any own capability function"
 );
 assert.strictEqual(first.__installColdContextMethods, second.__installColdContextMethods,
 	"the lazy capability installer should be shared by all request frames");
+assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "__installColdContextMethods"), false,
+	"the lazy capability installer should stay on the shared prototype");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), false);
 assert.strictEqual(typeof first.flowCodeGet, "function");
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first, "flowCodeGet"), true,
@@ -263,6 +273,17 @@ assert.strictEqual(schemaRead.definition, first.definition,
 assert.strictEqual(schemaRead.node, schemaNode);
 assert.strictEqual(Object.prototype.hasOwnProperty.call(second, "flowCodeGet"), false,
 	"materializing cold capabilities in one frame must not affect another frame");
+
+const noTrace = runtime.createRunContext({ includeTrace: false }, {}, {}, {}, env);
+assert.strictEqual(noTrace.scopes.trace, null,
+	"trace storage should stay absent when the request disables tracing");
+noTrace.trace({ id: "ignored" }, "ignored", true);
+assert.strictEqual(noTrace.scopes.trace, null,
+	"a disabled trace call should not materialize trace storage");
+const traced = runtime.createRunContext({ includeTrace: true }, {}, {}, {}, env);
+traced.trace({ id: "trace-node" }, "trace.block", true);
+assert.strictEqual(traced.scopes.trace.nodes.length, 1,
+	"explicit tracing should retain the historical trace payload");
 
 let traceCalls = 0;
 const concrete = { run: () => "concrete" };

@@ -177,7 +177,7 @@
 
 	function create(ctx, typeName, value, options) {
 		options = options || {};
-		ctx.handleSeq++;
+		ctx.handleSeq = Number(ctx.handleSeq || 0) + 1;
 		var id = String(options.id || "h" + ctx.handleSeq);
 		var handle = {
 			__flowHandle: true,
@@ -189,7 +189,8 @@
 			__flowHandleClosed: false,
 			__flowHandleClose: typeof options.close === "function" ? options.close : null
 		};
-		ctx.handles[id] = handle;
+		var handles = ctx.handles || (ctx.handles = {});
+		handles[id] = handle;
 		return handle;
 	}
 
