@@ -213,12 +213,17 @@
 	}
 
 	function closeAll(ctx, env) {
-		Object.keys(ctx.handles || {}).forEach(function (id) {
+		if (!ctx || !ctx.handles) {
+			return;
+		}
+		var ids = Object.keys(ctx.handles);
+		for (var i = 0; i < ids.length; i++) {
+			var id = ids[i];
 			var handle = ctx.handles[id];
 			if (handle && handle.__flowHandleClosed !== true) {
 				close(ctx, handle, env);
 			}
-		});
+		}
 	}
 
 	function value(handle, expectedType, env) {

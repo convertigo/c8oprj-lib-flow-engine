@@ -38,4 +38,23 @@ assert.deepStrictEqual(
 	{ nested: { handle: "test", id: "h1", state: "open" } }
 );
 
+const handleFreeContext = {};
+runtimeHandles.closeAll(handleFreeContext, env);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(handleFreeContext, "handles"), false);
+
+let closeCalls = 0;
+const contextWithHandles = {
+	handles: {
+		h1: Object.assign({}, handle, {
+			__flowHandleClose() {
+				closeCalls += 1;
+			}
+		})
+	}
+};
+runtimeHandles.closeAll(contextWithHandles, env);
+runtimeHandles.closeAll(contextWithHandles, env);
+assert.strictEqual(closeCalls, 1);
+assert.strictEqual(contextWithHandles.handles.h1.__flowHandleClosed, true);
+
 console.log("runtime-handle-utils OK");
