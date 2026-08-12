@@ -114,6 +114,7 @@
 		var materializeFlowScriptBlock = env.materializeFlowScriptBlock || function (blocks, name) {
 			return blocks && blocks[name];
 		};
+		var unresolvedInvocationValue = {};
 		var runContextPrototype = {};
 		var coldContextMethodNames = [
 			"cacheInfo", "cacheClear", "withProjectDir", "analyzeFlowSource", "contextFlowSource",
@@ -206,6 +207,9 @@
 		}
 		function requestProjectDirGet() {
 			var state = frameStateForRequestScope(this);
+			if (state && state.invocationProjectDir === unresolvedInvocationValue) {
+				state.invocationProjectDir = projectDir();
+			}
 			return materializeLazyValue(this, "projectDir",
 				state && state.invocationProjectDir ? canonicalPath(state.invocationProjectDir) : "");
 		}
@@ -399,6 +403,10 @@
 		};
 		runContextPrototype.convertigoContext = function () {
 			var invocationContext = this.convertigoContextRef;
+			if (invocationContext === unresolvedInvocationValue) {
+				invocationContext = currentConvertigoContext();
+				this.convertigoContextRef = invocationContext;
+			}
 			if (invocationContext === null || invocationContext === undefined) {
 				raise("CONVERTIGO_CONTEXT_UNAVAILABLE", "This block needs a live Convertigo context.");
 			}
@@ -1080,8 +1088,6 @@
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {
 			var totalStarted = frameProfile ? nanoTime() : 0;
 			var captureStarted = frameProfile ? nanoTime() : 0;
-			var invocationContext = currentConvertigoContext();
-			var invocationProjectDir = projectDir();
 			if (frameProfile) {
 				frameProfile.captureInvocationMs = profileDuration(captureStarted);
 			}
@@ -1094,7 +1100,7 @@
 			var frameState = {
 				request: request,
 				definition: definition,
-				invocationProjectDir: invocationProjectDir,
+				invocationProjectDir: unresolvedInvocationValue,
 				projectEngineSource: projectEngine,
 				projectEngineValue: null,
 				projectEngineResolved: false,
@@ -1130,7 +1136,7 @@
 			var ctx = Object.create(runContextPrototype);
 			Object.assign(ctx, {
 				request: request,
-				convertigoContextRef: invocationContext,
+				convertigoContextRef: unresolvedInvocationValue,
 				definition: definition,
 				blocks: blocks,
 				preparedNodes: plan && plan.preparedNodes || null,
