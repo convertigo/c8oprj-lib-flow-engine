@@ -238,11 +238,14 @@ assert.strictEqual(envelopeResult.profile.blocks, undefined,
 	"envelope profiling must not allocate deep per-block samples");
 assert.strictEqual(envelopeResult.profile.hotPath, undefined,
 	"envelope profiling must not allocate deep hot-path counters");
-assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 6,
-	"the default no-trace Flow frame should retain only its six request-specific slots");
+assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 7,
+	"the profiled no-trace Flow frame should retain six request slots plus the private profile reference");
 assert.strictEqual(envelopeResult.profile.frameBefore.scopesOwnSlotCount, 8);
 assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 5);
-assert.strictEqual(envelopeResult.profile.frameBefore.frameStateOwnSlotCount, 4);
+assert.strictEqual(envelopeResult.profile.frameBefore.frameStateIsContext, true,
+	"the request scope should reuse the Flow frame instead of retaining a duplicate state object");
+assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 7,
+	"the default profiled path should retain a single seven-slot frame");
 for (const name of ["createContextMs", "executeNodesMs", "runFlowRequestMs"]) {
 	assert.ok(envelopeResult.profile[name] > 0, `missing envelope phase ${name}`);
 }
