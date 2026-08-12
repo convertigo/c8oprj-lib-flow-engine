@@ -238,14 +238,14 @@ assert.strictEqual(envelopeResult.profile.blocks, undefined,
 	"envelope profiling must not allocate deep per-block samples");
 assert.strictEqual(envelopeResult.profile.hotPath, undefined,
 	"envelope profiling must not allocate deep hot-path counters");
-assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 7,
-	"the profiled no-trace Flow frame should retain six request slots plus the private profile reference");
+assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 10,
+	"the profiled Flow frame should keep its three hot flags local plus the private profile reference");
 assert.strictEqual(envelopeResult.profile.frameBefore.scopesOwnSlotCount, 8);
 assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 5);
 assert.strictEqual(envelopeResult.profile.frameBefore.frameStateIsContext, true,
 	"the request scope should reuse the Flow frame instead of retaining a duplicate state object");
-assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 7,
-	"the default profiled path should retain a single seven-slot frame");
+assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 10,
+	"the profiled path should retain one ten-slot frame instead of a frame plus duplicate state object");
 for (const name of ["createContextMs", "executeNodesMs", "runFlowRequestMs"]) {
 	assert.ok(envelopeResult.profile[name] > 0, `missing envelope phase ${name}`);
 }
@@ -286,8 +286,8 @@ const noTrace = runtime.createRunContext({ includeTrace: false }, {}, {}, {}, en
 assert.strictEqual(noTrace.scopes.trace, null,
 	"trace storage should stay absent when the request disables tracing");
 for (const name of ["returned", "stopped", "traceEnabled"]) {
-	assert.strictEqual(Object.prototype.hasOwnProperty.call(noTrace, name), false,
-		`${name} should use the immutable shared best-case default`);
+	assert.strictEqual(Object.prototype.hasOwnProperty.call(noTrace, name), true,
+		`${name} should remain a hot frame-local slot`);
 }
 assert.strictEqual(noTrace.returned, undefined);
 assert.strictEqual(noTrace.stopped, false);

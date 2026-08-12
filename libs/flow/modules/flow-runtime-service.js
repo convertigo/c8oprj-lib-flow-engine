@@ -260,15 +260,6 @@
 		Object.defineProperties(runContextPrototype, {
 			__flowProjectEngineSource: {
 				value: loadProjectEngineDefinition, writable: false, configurable: false, enumerable: false
-			},
-			returned: {
-				value: undefined, writable: true, configurable: false, enumerable: true
-			},
-			stopped: {
-				value: false, writable: true, configurable: false, enumerable: true
-			},
-			traceEnabled: {
-				value: false, writable: true, configurable: false, enumerable: true
 			}
 		});
 		Object.defineProperty(runContextPrototype, "__installColdContextMethods", {
@@ -1146,14 +1137,14 @@
 			ctx.blocks = blocks;
 			ctx.preparedNodes = plan && plan.preparedNodes || null;
 			ctx.preparation = plan && plan.preparation || null;
+			ctx.returned = undefined;
+			ctx.stopped = false;
+			ctx.traceEnabled = request.includeTrace !== false;
 			if (projectEngine !== loadProjectEngineDefinition) {
 				defineFrameStateValue(ctx, "__flowProjectEngineSource", projectEngine);
 			}
 			if (requestProfile) {
 				defineFrameStateValue(ctx, "__flowRequestProfile", requestProfile);
-			}
-			if (request.includeTrace !== false) {
-				ctx.traceEnabled = true;
 			}
 			if (frameProfile) {
 				frameProfile.frameObjectMs = profileDuration(frameStarted);
