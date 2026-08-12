@@ -532,6 +532,26 @@ var callSequenceDescriptor = frontendDescriptors.filter(function (descriptor) {
 assertTrue(callSequenceDescriptor && callSequenceDescriptor.properties.marker &&
 	callSequenceDescriptor.insert.marker === "",
 	"frontend catalog did not expose the NGX-compatible CallSequence marker");
+var fullSyncPostDescriptor = frontendDescriptors.filter(function (descriptor) {
+	return descriptor.id === "frontbuilder.client.fullsync.post";
+})[0];
+var fullSyncPutAttachmentDescriptor = frontendDescriptors.filter(function (descriptor) {
+	return descriptor.id === "frontbuilder.client.fullsync.putAttachment";
+})[0];
+var fullSyncGetAttachmentDescriptor = frontendDescriptors.filter(function (descriptor) {
+	return descriptor.id === "frontbuilder.client.fullsync.getAttachment";
+})[0];
+assertTrue(fullSyncPostDescriptor && fullSyncPostDescriptor.insert.kind === "fullSyncPost" &&
+	fullSyncPostDescriptor.properties.policy.enum.indexOf("override") !== -1 &&
+	fullSyncPutAttachmentDescriptor && fullSyncPutAttachmentDescriptor.properties.content.kind === "binding" &&
+	fullSyncGetAttachmentDescriptor && fullSyncGetAttachmentDescriptor.properties.docid.kind === "binding",
+	"frontend catalog did not expose FullSync document writes and attachment actions");
+var flowTreeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8"));
+assertTrue(flowTreeServiceSource.indexOf('"fullSyncPost"') !== -1 &&
+	flowTreeServiceSource.indexOf('"fullSyncPutAttachment"') !== -1 &&
+	flowTreeServiceSource.indexOf('"fullSyncGetAttachment"') !== -1,
+	"frontend lite tree did not classify new FullSync actions as action blocks");
 var requestableBindingSchema = {
 	type: "object",
 	properties: {

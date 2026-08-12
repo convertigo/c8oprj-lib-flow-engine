@@ -1075,7 +1075,7 @@
 	function flowSvelteLiteActionKind(kind) {
 		return [
 			"callSequence", "portableBlock", "runAxiom",
-			"fullSyncGet", "fullSyncView", "fullSyncSync", "fullSyncReset",
+			"fullSyncGet", "fullSyncView", "fullSyncPost", "fullSyncPutAttachment", "fullSyncGetAttachment", "fullSyncSync", "fullSyncReset",
 			"setValue", "updateList", "updateNumber", "navigate", "goBack"
 		].indexOf(String(kind || "")) !== -1;
 	}

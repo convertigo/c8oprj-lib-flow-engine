@@ -1223,6 +1223,73 @@
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.client.fullsync.post",
+				label: "FullSync Post",
+				category: "Svelte / FullSync",
+				kind: "frontendActionDefinition",
+				icon: "mdi:database-plus-outline",
+				traits: ["ui.action"],
+				slots: { variables: { label: "Document fields", accepts: ["ui.action.variable"] } },
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Creates or updates one document in the local FullSync database.",
+				insert: { id: "fullSyncPost", kind: "fullSyncPost", tag: "FullSyncPost", target: "", database: "", policy: "none" },
+				properties: {
+					id: { type: "string" },
+					target: { type: "string" },
+					database: { type: "string", kind: "fullsync" },
+					policy: { type: "string", enum: ["none", "create", "override", "merge"] },
+					marker: { type: "string" },
+					outputSchema: { type: "object", kind: "literal" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.client.fullsync.putAttachment",
+				label: "FullSync Put attachment",
+				category: "Svelte / FullSync",
+				kind: "frontendActionDefinition",
+				icon: "mdi:paperclip-plus",
+				traits: ["ui.action"],
+				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Stores a browser Blob or File as a local FullSync attachment.",
+				insert: { id: "fullSyncPutAttachment", kind: "fullSyncPutAttachment", tag: "FullSyncPutAttachment", target: "", database: "", docid: "", name: "", contentType: "", content: "" },
+				properties: {
+					id: { type: "string" },
+					target: { type: "string" },
+					database: { type: "string", kind: "fullsync" },
+					docid: { type: "binding", kind: "binding" },
+					name: { type: "binding", kind: "binding" },
+					contentType: { type: "binding", kind: "binding" },
+					content: { type: "binding", kind: "binding" },
+					marker: { type: "string" },
+					outputSchema: { type: "object", kind: "literal" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.client.fullsync.getAttachment",
+				label: "FullSync Get attachment",
+				category: "Svelte / FullSync",
+				kind: "frontendActionDefinition",
+				icon: "mdi:paperclip",
+				traits: ["ui.action"],
+				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
+				targetKinds: ["frontendEventBlock"],
+				acceptedPositions: ["inside"],
+				description: "Reads one attachment Blob from the local FullSync database.",
+				insert: { id: "fullSyncGetAttachment", kind: "fullSyncGetAttachment", tag: "FullSyncGetAttachment", target: "", database: "", docid: "", name: "" },
+				properties: {
+					id: { type: "string" },
+					target: { type: "string" },
+					database: { type: "string", kind: "fullsync" },
+					docid: { type: "binding", kind: "binding" },
+					name: { type: "binding", kind: "binding" },
+					marker: { type: "string" },
+					outputSchema: { type: "object", kind: "literal" }
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.client.fullsync.reset",
 				label: "FullSync Reset",
 				category: "Svelte / FullSync",
