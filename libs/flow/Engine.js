@@ -9828,6 +9828,50 @@
 		}
 	}
 
+	function runWithActiveRequest(request, functionProfile, activeStarted) {
+		var invocationFrame = false;
+		var invocationPrevious = null;
+		try {
+			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
+				invocationPrevious = FlowEngineBridge.setCurrentFlowRequestState(request);
+				invocationFrame = true;
+			}
+		} catch (e) {
+			// Older bridges keep the active request in this Engine closure.
+		}
+		var fallbackPrevious = null;
+		if (!invocationFrame) {
+			fallbackPrevious = activeRequestFallback;
+			activeRequestFallback = request;
+		}
+		var bodyStarted = functionProfile ? JavaSystem.nanoTime() : 0;
+		var bodyFinished = 0;
+		if (functionProfile) {
+			functionProfile.activeEnterMs = Number(bodyStarted - activeStarted) / 1000000;
+		}
+		var value;
+		try {
+			request.__deferResultSerializationSafety = true;
+			value = runFlowRequest(request);
+		} finally {
+			if (functionProfile) {
+				bodyFinished = JavaSystem.nanoTime();
+				functionProfile.activeBodyMs = Number(bodyFinished - bodyStarted) / 1000000;
+			}
+			if (invocationFrame) {
+				FlowEngineBridge.restoreCurrentFlowRequestState(invocationPrevious);
+			} else {
+				activeRequestFallback = fallbackPrevious;
+			}
+		}
+		if (functionProfile) {
+			var activeFinished = JavaSystem.nanoTime();
+			functionProfile.activeExitMs = Number(activeFinished - bodyFinished) / 1000000;
+			functionProfile.activeRunMs = Number(activeFinished - activeStarted) / 1000000;
+		}
+		return value;
+	}
+
 	function flowRunCall(requestJson) {
 		try {
 			var parseStarted = JavaSystem.nanoTime();
@@ -9837,28 +9881,7 @@
 				parseRequestMs: Number(JavaSystem.nanoTime() - parseStarted) / 1000000
 			} : null;
 			var activeStarted = profileRequest ? JavaSystem.nanoTime() : 0;
-			var bodyStarted = 0;
-			var bodyFinished = 0;
-			var value = withActiveRequest(request, function () {
-				if (functionProfile) {
-					bodyStarted = JavaSystem.nanoTime();
-					functionProfile.activeEnterMs = Number(bodyStarted - activeStarted) / 1000000;
-				}
-				try {
-					request.__deferResultSerializationSafety = true;
-					return runFlowRequest(request);
-				} finally {
-					if (functionProfile) {
-						bodyFinished = JavaSystem.nanoTime();
-						functionProfile.activeBodyMs = Number(bodyFinished - bodyStarted) / 1000000;
-					}
-				}
-			});
-			if (functionProfile) {
-				var activeFinished = JavaSystem.nanoTime();
-				functionProfile.activeExitMs = Number(activeFinished - bodyFinished) / 1000000;
-				functionProfile.activeRunMs = Number(activeFinished - activeStarted) / 1000000;
-			}
+			var value = runWithActiveRequest(request, functionProfile, activeStarted);
 			return response(value, "result", functionProfile);
 		} catch (e) {
 			return response(failure("run", e));
