@@ -384,13 +384,15 @@
 			: sanitizeRuntimeValue(payload);
 		if (internalProfile) {
 			functionProfile.responseSanitizeMs = Number(JavaSystem.nanoTime() - sanitizeStarted) / 1000000;
-			functionProfile.responseStringifyMs = 0;
+			var stringifyMarkerName = "__flowProfileStringifyPlaceholder_4072209";
+			var stringifyMarkerValue = "pending";
+			functionProfile[stringifyMarkerName] = stringifyMarkerValue;
 			internalProfile.functionCall = functionProfile;
 			payload.profile = internalProfile;
 			var stringifyStarted = JavaSystem.nanoTime();
 			var encoded = JSON.stringify(payload);
 			var stringifyMs = Number(JavaSystem.nanoTime() - stringifyStarted) / 1000000;
-			return encoded.replace('"responseStringifyMs":0',
+			return encoded.replace('"' + stringifyMarkerName + '":"' + stringifyMarkerValue + '"',
 				'"responseStringifyMs":' + String(stringifyMs));
 		}
 		return JSON.stringify(payload);
