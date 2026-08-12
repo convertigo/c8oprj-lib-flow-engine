@@ -1145,17 +1145,15 @@
 			}
 			var frameStarted = frameProfile ? nanoTime() : 0;
 			var ctx = Object.create(runContextPrototype);
-			Object.assign(ctx, {
-				request: request,
-				definition: definition,
-				blocks: blocks,
-				preparedNodes: plan && plan.preparedNodes || null,
-				preparation: plan && plan.preparation || null,
-				returned: undefined,
-				stopped: false,
-				traceEnabled: request.includeTrace !== false,
-				scopes: scopes
-			});
+			ctx.request = request;
+			ctx.definition = definition;
+			ctx.blocks = blocks;
+			ctx.preparedNodes = plan && plan.preparedNodes || null;
+			ctx.preparation = plan && plan.preparation || null;
+			ctx.returned = undefined;
+			ctx.stopped = false;
+			ctx.traceEnabled = request.includeTrace !== false;
+			ctx.scopes = scopes;
 			if (request.maxGraphBlockDepth !== undefined && request.maxGraphBlockDepth !== null) {
 				ctx.maxGraphBlockDepth = intOption(request.maxGraphBlockDepth, 128, 1, 1000);
 			}
