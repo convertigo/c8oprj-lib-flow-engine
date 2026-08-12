@@ -9828,7 +9828,7 @@
 		}
 	}
 
-	function flowRunCall(requestJson, callback) {
+	function flowRunCall(requestJson) {
 		try {
 			var parseStarted = JavaSystem.nanoTime();
 			var request = parseRequest(requestJson);
@@ -9845,7 +9845,8 @@
 					functionProfile.activeEnterMs = Number(bodyStarted - activeStarted) / 1000000;
 				}
 				try {
-					return callback(request);
+					request.__deferResultSerializationSafety = true;
+					return runFlowRequest(request);
 				} finally {
 					if (functionProfile) {
 						bodyFinished = JavaSystem.nanoTime();
@@ -9906,10 +9907,7 @@
 		},
 
 		run: function (requestJson) {
-			return flowRunCall(requestJson, function (request) {
-				request.__deferResultSerializationSafety = true;
-				return runFlowRequest(request);
-			});
+			return flowRunCall(requestJson);
 		},
 
 		analyze: function (requestJson) {
