@@ -60,9 +60,56 @@ const _meta = {
 		return typeof value === "string" ? value : JSON.stringify(value);
 	}
 
-	function putInput(request, input) {
+	function arrayItems(value) {
+		if (Array.isArray(value)) {
+			return value;
+		}
+		try {
+			if (value && value.getClass && value.getClass().isArray()) {
+				var length = Packages.java.lang.reflect.Array.getLength(value);
+				var items = [];
+				for (var i = 0; i < length; i++) {
+					items.push(Packages.java.lang.reflect.Array.get(value, i));
+				}
+				return items;
+			}
+			if (value && typeof value.size === "function" && typeof value.get === "function") {
+				var size = Number(value.size());
+				var list = [];
+				for (var j = 0; j < size; j++) {
+					list.push(value.get(j));
+				}
+				return list;
+			}
+		} catch (e) {
+		}
+		return null;
+	}
+
+	function isMultiValuedInput(target, key) {
+		try {
+			var variable = target && target.dbo && target.dbo.getVariable ? target.dbo.getVariable(String(key)) : null;
+			return !!(variable && variable.isMultiValued && variable.isMultiValued());
+		} catch (e) {
+			return false;
+		}
+	}
+
+	function inputValue(target, key, value) {
+		var items = isMultiValuedInput(target, key) ? arrayItems(value) : null;
+		if (items === null) {
+			return requestValue(value);
+		}
+		var strings = Packages.java.lang.reflect.Array.newInstance(Packages.java.lang.String, items.length);
+		for (var i = 0; i < items.length; i++) {
+			Packages.java.lang.reflect.Array.set(strings, i, requestValue(items[i]));
+		}
+		return strings;
+	}
+
+	function putInput(request, input, target) {
 		Object.keys(input || {}).forEach(function (key) {
-			request.put(String(key), requestValue(input[key]));
+			request.put(String(key), inputValue(target, key, input[key]));
 		});
 	}
 
@@ -124,6 +171,7 @@ const _meta = {
 				if (String(dbo.getProject().getName()) !== String(candidate.project)) {
 					continue;
 				}
+				candidate.dbo = dbo;
 				var className = String(dbo.getClass().getName());
 				if (className.indexOf(".transactions.") !== -1 || className.indexOf(".beans.core.Transaction") !== -1) {
 					candidate.kind = "transaction";
@@ -232,7 +280,7 @@ const _meta = {
 			return runFlowDirect(ctx, target, input);
 		}
 		var request = requestFromTarget(target);
-		putInput(request, input);
+		putInput(request, input, target);
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();
 		return unwrapDocument(JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true, true))));
 	}

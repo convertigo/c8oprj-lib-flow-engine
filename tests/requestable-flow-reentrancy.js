@@ -17,8 +17,10 @@ HashMap.prototype.put = function (key, value) {
 };
 
 var internalRequests = 0;
-function InternalRequester() {
+var lastInternalRequest = null;
+function InternalRequester(request) {
 	internalRequests++;
+	lastInternalRequest = request;
 }
 InternalRequester.prototype.processRequest = function () {
 	throw new Error("REGULAR_REQUEST_PATH");
@@ -39,8 +41,20 @@ var targetFlow = {
 	},
 	getFlowSource: function () { return "function Child({ input, result }) { return result }"; }
 };
+var targetDbo = targetFlow;
 var packages = {
 	java: {
+		lang: {
+			String: {},
+			reflect: {
+				Array: {
+					newInstance: function (type, length) { return new Array(length); },
+					set: function (array, index, value) { array[index] = value; },
+					get: function (array, index) { return array[index]; },
+					getLength: function (array) { return array.length; }
+				}
+			}
+		},
 		util: {
 			HashMap: HashMap,
 			UUID: { randomUUID: function () { return "uuid"; } }
@@ -53,7 +67,7 @@ var packages = {
 					Engine: {
 						theApp: {
 							databaseObjectsManager: {
-								getDatabaseObjectByQName: function () { return targetFlow; }
+								getDatabaseObjectByQName: function () { return targetDbo; }
 							}
 						}
 					},
@@ -148,5 +162,42 @@ try {
 assertTrue(regularPath && internalRequests === beforeExternal + 1 && externalContext.calls.length === 0,
 	"different-engine Flow call did not preserve the regular Convertigo requestable path: " +
 	regularError + " / requests=" + internalRequests + " / direct=" + externalContext.calls.length);
+
+var connector = { getName: function () { return "Connector"; } };
+targetDbo = {
+	getProject: function () { return targetProject; },
+	getClass: function () {
+		return { getName: function () { return "com.twinsoft.convertigo.beans.transactions.couchdb.PostDocumentTransaction"; } };
+	},
+	getConnector: function () { return connector; },
+	getVariable: function (name) {
+		return {
+			isMultiValued: function () { return String(name) === "users"; }
+		};
+	}
+};
+var transactionContext = runContext("lib_flow_engine.Engine", { ok: true, result: {} });
+var transactionFailedAtRequester = false;
+try {
+	implementation.run(transactionContext, {
+		props: {
+			requestable: "ChildProject.Connector.UserListSet",
+			input: {
+				users: ["aaaa", "bbbb"],
+				metadata: ["one", "two"]
+			}
+		}
+	});
+} catch (e) {
+	transactionFailedAtRequester = String(e && e.message || e).indexOf("REGULAR_REQUEST_PATH") !== -1;
+}
+assertTrue(transactionFailedAtRequester, "transaction input did not reach InternalRequester");
+assertTrue(lastInternalRequest.values.users instanceof Array &&
+	lastInternalRequest.values.users.length === 2 &&
+	lastInternalRequest.values.users[0] === "aaaa" &&
+	lastInternalRequest.values.users[1] === "bbbb",
+	"multi-valued requestable input was flattened instead of becoming a String array");
+assertTrue(lastInternalRequest.values.metadata === '["one","two"]',
+	"scalar requestable input no longer preserves JSON array serialization");
 
 print("requestable-flow-reentrancy OK");
