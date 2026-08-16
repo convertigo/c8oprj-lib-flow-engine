@@ -163,10 +163,17 @@
 	}
 
 	function blockCatalogHeadKey(env) {
-		return [
+		var key = [
 			"engine", env.canonicalPath(env.engineDir()),
 			"project", env.projectDir() ? env.canonicalPath(env.projectDir()) : ""
-		].join("\n");
+		];
+		if (typeof env.sourceDraftsFingerprint === "function") {
+			var draftsFingerprint = env.sourceDraftsFingerprint();
+			if (draftsFingerprint) {
+				key.push("drafts", draftsFingerprint);
+			}
+		}
+		return key.join("\n");
 	}
 
 	function readHotBlockCatalog(env) {
