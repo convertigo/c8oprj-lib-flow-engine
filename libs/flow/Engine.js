@@ -4417,21 +4417,26 @@
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
 	}
 
-	function authoringTreeRequest(request, blocks) {
+	function cachedAuthoringTreeBase(request, blocks) {
 		request = request || {};
 		var cache = runtimeState.caches.treeSnapshots;
-		var fingerprintRequest = Object.assign({}, request, { target: "engine" });
-		var key = "authoring\n" + JSON.stringify({
+		var baseRequest = Object.assign({}, request, {
+			focusPath: "",
+			rootPath: "",
+			path: "",
+			detail: "full",
+			includeChildren: true
+		});
+		delete baseRequest.mode;
+		delete baseRequest.maxDepth;
+		var fingerprintRequest = Object.assign({}, baseRequest, { target: "engine" });
+		var key = "authoring-base\n" + JSON.stringify({
 			project: projectDir() ? canonicalPath(projectDir()) : "",
 			surface: String(request.surface || "frontend"),
 			builder: String(request.builder || ""),
-			focusPath: String(request.focusPath || request.rootPath || request.path || ""),
-			detail: String(request.detail || request.mode || "full"),
-			maxDepth: request.maxDepth === undefined ? "" : String(request.maxDepth),
 			property: String(request.property || ""),
 			sourceId: String(request.sourceId || ""),
 			internalDeep: request.internalDeep === true,
-			includeChildren: request.includeChildren !== false,
 			includeDefinition: request.includeDefinition === true,
 			includeProperties: request.includeProperties === true,
 			includeBindings: request.includeBindings !== false,
@@ -4444,11 +4449,18 @@
 		});
 		var fingerprint = describeTreeFingerprint(fingerprintRequest);
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
-		if (cached) {
-			return normalizeTree(cached);
+		if (!cached) {
+			cached = writeRuntimeMapCache(cache, key, fingerprint,
+				flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv()),
+				"Flow authoring tree snapshots");
 		}
-		var tree = flowTreeService().authoringTreeRequest(request, blocks, flowTreeServiceEnv());
-		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow authoring tree snapshots"));
+		return cached;
+	}
+
+	function authoringTreeRequest(request, blocks) {
+		request = request || {};
+		var cached = cachedAuthoringTreeBase(request, blocks);
+		return normalizeTree(flowTreeService().projectAuthoringTreeResponse(cached, request, flowTreeServiceEnv()));
 	}
 
 	function authoringContractRequest(request, blocks) {
@@ -4456,7 +4468,10 @@
 	}
 
 	function authoringPaletteRequest(request, blocks) {
-		return flowTreeService().authoringPaletteRequest(request || {}, blocks, flowTreeServiceEnv());
+		request = request || {};
+		var treeRequest = flowTreeService().authoringPaletteTreeRequest(request, flowTreeServiceEnv());
+		return flowTreeService().authoringPaletteFromTreeRequest(request, blocks,
+			cachedAuthoringTreeBase(treeRequest, blocks), flowTreeServiceEnv());
 	}
 
 	function authoringMutateRequest(request, blocks) {

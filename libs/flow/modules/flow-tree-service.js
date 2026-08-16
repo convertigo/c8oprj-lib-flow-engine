@@ -4029,24 +4029,47 @@
 		return null;
 	}
 
-	function authoringTreeRequest(request, blocks) {
+	function authoringTreeBaseRequest(request, blocks) {
 		request = request || {};
-		var engine = authoringEngineDefinition(request);
-		var tree = authoringEngineTree(Object.assign({}, request, { definition: engine }), blocks);
+		var baseRequest = Object.assign({}, request, {
+			focusPath: "",
+			rootPath: "",
+			path: "",
+			detail: "full",
+			includeChildren: true
+		});
+		delete baseRequest.mode;
+		delete baseRequest.maxDepth;
+		var engine = authoringEngineDefinition(baseRequest);
+		var tree = authoringEngineTree(Object.assign({}, baseRequest, { definition: engine }), blocks);
 		var surface = String(request.surface || "frontend");
 		var builder = authoringBuilderName(request, engine);
 		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
 		var children = focus ? [focus] : tree.children || [];
+		return {
+			ok: true,
+			target: "authoring",
+			surface: surface,
+			builder: builder,
+			diagnostics: focus && focus.diagnostics || [],
+			children: children
+		};
+	}
+
+	function projectAuthoringTreeResponse(base, request) {
+		request = request || {};
+		base = normalizeTree(base || {});
+		var children = base.children || [];
 		var focusPath = String(request.focusPath || request.rootPath || request.path || "");
 		if (focusPath) {
 			var scopedRoot = { children: children };
-			var focused = findTreeNode(scopedRoot, focusPath) || findTreeNode(tree, focusPath);
+			var focused = findTreeNode(scopedRoot, focusPath);
 			if (!focused || !focused.node) {
 				return compactTreeResponse({
 					ok: false,
 					target: "authoring",
-					surface: surface,
-					builder: builder,
+					surface: String(base.surface || request.surface || "frontend"),
+					builder: String(base.builder || request.builder || ""),
 					focusPath: focusPath,
 					children: [],
 					error: {
@@ -4058,15 +4081,14 @@
 			}
 			children = [focused.node];
 		}
-		return compactTreeResponse({
-			ok: true,
-			target: "authoring",
-			surface: surface,
-			builder: builder,
-			focusPath: focusPath,
-			diagnostics: focus && focus.diagnostics || [],
-			children: children
-		}, request);
+		base.focusPath = focusPath;
+		base.children = children;
+		return compactTreeResponse(base, request);
+	}
+
+	function authoringTreeRequest(request, blocks) {
+		request = request || {};
+		return projectAuthoringTreeResponse(authoringTreeBaseRequest(request, blocks), request);
 	}
 
 	function authoringDescriptors(request, engine, blocks) {
@@ -4659,10 +4681,10 @@
 		};
 	}
 
-	function authoringPaletteRequest(request, blocks) {
+	function authoringPaletteFromTreeRequest(request, blocks, tree) {
 		request = request || {};
 		var engine = authoringEngineDefinition(request);
-		var tree = authoringEngineTree(Object.assign({}, request, { definition: engine }), blocks);
+		tree = normalizeTree(tree || {});
 		var descriptors = authoringDescriptors(request, engine, blocks);
 		var focusPath = String(request.focusPath || request.path || "");
 		if (!focusPath) {
@@ -4727,6 +4749,28 @@
 			}
 		}
 		return result;
+	}
+
+	function authoringPaletteTreeRequest(request) {
+		request = request || {};
+		var surface = String(request.surface || "frontend");
+		var focusPath = String(request.focusPath || request.path || "");
+		var catalogFocus = focusPath === "catalog" || focusPath.indexOf(".catalog") >= 0;
+		var treeRequest = Object.assign({}, request);
+		if (treeRequest.includeFrontendCatalog === undefined || treeRequest.includeFrontendCatalog === null) {
+			treeRequest.includeFrontendCatalog = surface === "frontend" && catalogFocus;
+		}
+		if (treeRequest.includeFlowCatalog === undefined || treeRequest.includeFlowCatalog === null) {
+			treeRequest.includeFlowCatalog = surface !== "frontend";
+		}
+		return treeRequest;
+	}
+
+	function authoringPaletteRequest(request, blocks) {
+		request = request || {};
+		var treeRequest = authoringPaletteTreeRequest(request);
+		return authoringPaletteFromTreeRequest(request, blocks,
+			authoringTreeBaseRequest(treeRequest, blocks));
 	}
 
 	function authoringContractRequest(request, blocks) {
@@ -6262,9 +6306,13 @@
 			activeSlots: activeSlots,
 			toYamlSource: toYamlSource,
 			describeTreeRequest: describeTreeRequest,
+			authoringTreeBaseRequest: authoringTreeBaseRequest,
+			projectAuthoringTreeResponse: projectAuthoringTreeResponse,
 			authoringTreeRequest: authoringTreeRequest,
 			authoringSourceTreeRequest: authoringSourceTreeRequest,
 			authoringContractRequest: authoringContractRequest,
+			authoringPaletteTreeRequest: authoringPaletteTreeRequest,
+			authoringPaletteFromTreeRequest: authoringPaletteFromTreeRequest,
 			authoringPaletteRequest: authoringPaletteRequest,
 			authoringMutateRequest: authoringMutateRequest,
 			searchFlowRequest: searchFlowRequest,
@@ -6295,6 +6343,12 @@
 		describeTreeRequest: function (request, blocks, env) {
 			return create(env).describeTreeRequest(request, blocks);
 		},
+		authoringTreeBaseRequest: function (request, blocks, env) {
+			return create(env).authoringTreeBaseRequest(request, blocks);
+		},
+		projectAuthoringTreeResponse: function (base, request, env) {
+			return create(env).projectAuthoringTreeResponse(base, request);
+		},
 		authoringTreeRequest: function (request, blocks, env) {
 			return create(env).authoringTreeRequest(request, blocks);
 		},
@@ -6303,6 +6357,12 @@
 		},
 		authoringContractRequest: function (request, blocks, env) {
 			return create(env).authoringContractRequest(request, blocks);
+		},
+		authoringPaletteTreeRequest: function (request, env) {
+			return create(env).authoringPaletteTreeRequest(request);
+		},
+		authoringPaletteFromTreeRequest: function (request, blocks, tree, env) {
+			return create(env).authoringPaletteFromTreeRequest(request, blocks, tree);
 		},
 		authoringPaletteRequest: function (request, blocks, env) {
 			return create(env).authoringPaletteRequest(request, blocks);

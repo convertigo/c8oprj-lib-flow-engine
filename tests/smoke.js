@@ -4446,6 +4446,7 @@ JSON.parse(engine.authoringTree(JSON.stringify({
 	projectDir: __flowProjectDir,
 	detail: "compact",
 	maxDepth: 7,
+	sourceId: "cache-binding-variant",
 	includeBindings: false
 })));
 JSON.parse(engine.authoringTree(JSON.stringify({
@@ -4455,6 +4456,7 @@ JSON.parse(engine.authoringTree(JSON.stringify({
 	projectDir: __flowProjectDir,
 	detail: "compact",
 	maxDepth: 7,
+	sourceId: "cache-binding-variant",
 	includeBindings: true
 })));
 var bindingVariantCacheAfter = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
@@ -4511,6 +4513,7 @@ var flowSvelteRoutesNode = findNode(flowSvelteAuthoringTree, function (node) {
 });
 assertTrue(flowSvelteRoutesNode !== null && flowSvelteRoutesNode.path === "frontends.svelte.routes",
 	"authoring tree did not expose the canonical Svelte routes focus path");
+var authoringTreeCacheBeforeFocus = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 var flowSvelteRoutesTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -4523,6 +4526,34 @@ var flowSvelteRoutesTree = JSON.parse(engine.authoringTree(JSON.stringify({
 assertTrue(flowSvelteRoutesTree.childCount === 1 &&
 	flowSvelteRoutesTree.children[0].kind === "frontendRoutes",
 	"authoring tree focusPath did not return the focused Svelte route branch");
+var authoringTreeCacheAfterFocus = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+assertTrue(authoringTreeCacheAfterFocus.hits > authoringTreeCacheBeforeFocus.hits &&
+	authoringTreeCacheAfterFocus.misses === authoringTreeCacheBeforeFocus.misses,
+	"focused authoring tree reads should project the shared full snapshot without rebuilding it");
+JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteRoutesNode.path,
+	detail: "compact",
+	maxDepth: 3,
+	includeFrontendCatalog: false,
+	includeFlowCatalog: false
+})));
+var authoringTreeCacheBeforePalette = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+var cachedRoutePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteRoutesNode.path,
+	query: "page"
+})));
+var authoringTreeCacheAfterPalette = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+assertTrue(cachedRoutePalette.ok === true && authoringTreeCacheAfterPalette.hits > authoringTreeCacheBeforePalette.hits &&
+	authoringTreeCacheAfterPalette.misses === authoringTreeCacheBeforePalette.misses,
+	"authoring palette should reuse the shared catalog-free tree snapshot");
 var flowSveltePageNode = findNode(flowSvelteRoutesTree, function (node) {
 	return node.kind === "frontendPage" && node.path === "frontends.svelte.routes.home";
 });
