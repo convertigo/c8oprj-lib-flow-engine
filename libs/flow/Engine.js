@@ -4018,6 +4018,7 @@
 			cacheInfoRequest: cacheInfoRequest,
 			clearRuntimeCaches: clearRuntimeCaches,
 			withProjectDir: withProjectDir,
+			withActiveRequest: withActiveRequest,
 			analyzeFlowSource: analyzeFlowSource,
 			loadBlocks: loadBlocks,
 			contextForFlowRequest: contextForFlowRequest,

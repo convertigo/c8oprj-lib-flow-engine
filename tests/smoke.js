@@ -4024,6 +4024,71 @@ var frontendEngineSource = [
 	"      modelPath: libs/flow/frontbuilder/svelte/model/App.front.json",
 	""
 ].join("\n");
+var authoringDraftProbeSource = [
+	"const _meta = {",
+	"  \"version\": 1,",
+	"  \"private\": true,",
+	"  \"runtime\": \"rhino\",",
+	"  \"description\": \"Verifies nested authoring requests against an in-memory frontend draft.\",",
+	"  \"properties\": {",
+	"    \"projectDir\": { \"kind\": \"text\", \"type\": \"string\" },",
+	"    \"sourceFile\": { \"kind\": \"text\", \"type\": \"string\" },",
+	"    \"out\": { \"kind\": \"path\", \"mode\": \"write\" }",
+	"  },",
+	"  \"outputs\": { \"out\": { \"type\": \"string\" } }",
+	"}",
+	"",
+	"(function () {",
+	"  return {",
+	"    run: function (ctx, node) {",
+	"      var props = ctx.props(node);",
+	"      var file = new Packages.java.io.File(String(props.sourceFile)).getCanonicalFile();",
+	"      var original = String(Packages.org.apache.commons.io.FileUtils.readFileToString(file, \"UTF-8\"));",
+	"      var drafts = {};",
+	"      drafts[String(file.getCanonicalPath())] = original.replace(\"Shared controls\", \"Draft controls\");",
+	"      var contract = ctx.authoringContractSource({",
+	"        projectDir: String(props.projectDir),",
+	"        surface: \"frontend\",",
+	"        builder: \"svelte\",",
+	"        engineSource: " + JSON.stringify(frontendEngineSource) + ",",
+	"        frontendSourceDrafts: drafts",
+	"      });",
+	"      var label = \"\";",
+	"      (contract.items || []).some(function (item) {",
+	"        if (String(item.id || \"\") !== \"SmokeProject.sharedControls\") return false;",
+	"        label = String(item.label || \"\");",
+	"        return true;",
+	"      });",
+	"      ctx.write(props.out || \"result.label\", label);",
+	"      return label;",
+	"    }",
+	"  };",
+	"}())",
+	""
+].join("\n");
+var authoringDraftProbeSet = JSON.parse(engine.blockCodeSet(JSON.stringify({
+	projectDir: __flowProjectDir,
+	name: "smoke.authoringDraftProbe",
+	code: authoringDraftProbeSource
+})));
+assertTrue(authoringDraftProbeSet.ok === true,
+	"could not create the nested authoring draft probe: " + JSON.stringify(authoringDraftProbeSet));
+var authoringDraftProbe = JSON.parse(engine.run(JSON.stringify({
+	projectDir: __flowProjectDir,
+	flowSource: [
+		"version: 1",
+		"nodes:",
+		"  - id: probe",
+		"    block: smoke.authoringDraftProbe",
+		"    projectDir: " + __flowProjectDir,
+		"    sourceFile: " + String(new java.io.File(frontendComponentsDir, "SharedControls.flow.svelte").getCanonicalPath()),
+		"    out: result.label",
+		""
+	].join("\n"),
+	includeTrace: false
+})));
+assertTrue(authoringDraftProbe.result && authoringDraftProbe.result.label === "Draft controls",
+	"nested authoring requests ignored their frontend source draft: " + JSON.stringify(authoringDraftProbe));
 var authoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	engineSource: frontendEngineSource,
 	detail: "full"

@@ -66,6 +66,7 @@
 		var cacheInfoRequest = env.cacheInfoRequest;
 		var clearRuntimeCaches = env.clearRuntimeCaches;
 		var withProjectDir = env.withProjectDir;
+		var withActiveRequest = env.withActiveRequest || function (_request, callback) { return callback(); };
 		var analyzeFlowSource = env.analyzeFlowSource;
 		var loadBlocks = env.loadBlocks;
 		var contextForFlowRequest = env.contextForFlowRequest;
@@ -1225,25 +1226,33 @@
 			ctx.authoringTreeSource = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return authoringTreeRequest(args, loadBlocks());
+					return withActiveRequest(args, function () {
+						return authoringTreeRequest(args, loadBlocks());
+					});
 				});
 			};
 			ctx.authoringContractSource = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return authoringContractRequest(args, loadBlocks());
+					return withActiveRequest(args, function () {
+						return authoringContractRequest(args, loadBlocks());
+					});
 				});
 			};
 			ctx.authoringPaletteSource = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return authoringPaletteRequest(args, loadBlocks());
+					return withActiveRequest(args, function () {
+						return authoringPaletteRequest(args, loadBlocks());
+					});
 				});
 			};
 			ctx.authoringMutateSource = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return authoringMutateRequest(args, loadBlocks());
+					return withActiveRequest(args, function () {
+						return authoringMutateRequest(args, loadBlocks());
+					});
 				});
 			};
 			ctx.contextMenuSource = function (args) {
