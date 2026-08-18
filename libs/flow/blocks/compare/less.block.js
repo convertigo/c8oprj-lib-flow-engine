@@ -3,8 +3,8 @@ const _meta = {
   "targets": ["backend", "frontend"], "effects": [],
   "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "less.browser.js" } },
   "properties": {
-    "left": { "label": "Left", "kind": "value", "type": "unknown", "description": "Left value." },
-    "right": { "label": "Right", "kind": "value", "type": "unknown", "description": "Right value." },
+    "left": { "label": "Left", "kind": "value", "type": "unknown", "description": "Scalar value tested as less than the right operand." },
+    "right": { "label": "Right", "kind": "value", "type": "unknown", "description": "Scalar value used as the lower comparison operand." },
     "out": { "label": "Output", "kind": "path", "mode": "write", "default": "local.less", "description": "Path receiving the result." }
   },
   "outputs": { "out": { "type": "boolean" } }, "runtime": "rhino",

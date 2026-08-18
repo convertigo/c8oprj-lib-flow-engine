@@ -5,8 +5,8 @@ const _meta = {
   "targets": ["backend", "frontend"], "effects": [],
   "implementations": { "backend": { "runtime": "rhino" }, "frontend": { "runtime": "browser", "file": "equal.browser.js" } },
   "properties": {
-    "left": { "label": "Left", "kind": "value", "type": "unknown", "description": "Left value." },
-    "right": { "label": "Right", "kind": "value", "type": "unknown", "description": "Right value." },
+    "left": { "label": "Left", "kind": "value", "type": "unknown", "description": "First scalar value used by the strict equality comparison." },
+    "right": { "label": "Right", "kind": "value", "type": "unknown", "description": "Second scalar value used by the strict equality comparison." },
     "out": { "label": "Output", "kind": "path", "mode": "write", "default": "local.equal", "description": "Path receiving the result." }
   },
   "outputs": { "out": { "type": "boolean" } }, "runtime": "rhino",

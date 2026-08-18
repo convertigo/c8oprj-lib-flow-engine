@@ -27,18 +27,21 @@ const _meta = {
   },
   "properties": {
     "items": {
+      "label": "Input array",
       "kind": "expression",
       "type": "array",
       "default": "local.items",
       "description": "Array expression to slice."
     },
     "count": {
+      "label": "Maximum items",
       "kind": "expression",
       "type": "integer",
       "default": "5",
       "description": "Maximum number of items to return. Leave empty to keep all items after offset."
     },
     "offset": {
+      "label": "Start offset",
       "kind": "expression",
       "type": "integer",
       "default": "0",
