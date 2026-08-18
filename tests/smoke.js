@@ -4280,11 +4280,19 @@ var fallbackFrontendPalette = JSON.parse(engine.authoringPalette(JSON.stringify(
 	engineSource: frontendEngineSource,
 	focusPath: authoringTextBlock.path
 })));
-assertTrue(fallbackFrontendPalette.ok === true && fallbackFrontendPalette.eligibleCount > 0 &&
+assertTrue(fallbackFrontendPalette.ok === true && fallbackFrontendPalette.eligibleCount === 0 &&
 	fallbackFrontendPalette.fallback && fallbackFrontendPalette.fallback.available === true &&
-	fallbackFrontendPalette.fallback.applied === true &&
-	fallbackFrontendPalette.items.some(function (item) { return item.id === "frontbuilder.svelte.flowUiBlock"; }),
-	"authoring-palette did not apply parent fallback for a frontend definition leaf focus");
+	fallbackFrontendPalette.fallback.applied === false,
+	"authoring-palette applied a parent fallback without explicit permission");
+var appliedFallbackFrontendPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	engineSource: frontendEngineSource,
+	focusPath: authoringTextBlock.path,
+	applyFallback: true
+})));
+assertTrue(appliedFallbackFrontendPalette.ok === true && appliedFallbackFrontendPalette.eligibleCount > 0 &&
+	appliedFallbackFrontendPalette.fallback && appliedFallbackFrontendPalette.fallback.applied === true &&
+	appliedFallbackFrontendPalette.items.some(function (item) { return item.id === "frontbuilder.svelte.flowUiBlock"; }),
+	"authoring-palette did not apply an explicitly requested parent fallback");
 
 var flowSvelteModelDir = new java.io.File(frontendRoot, "model/AstSmoke");
 var flowSvelteRoutesDir = new java.io.File(flowSvelteModelDir, "src/routes");

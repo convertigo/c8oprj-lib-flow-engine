@@ -3738,10 +3738,13 @@
 				if (!requestedSourceId) return true;
 				return String(candidate.id || candidate.source && (candidate.source.actionId || candidate.source.scopeId) || "") === requestedSourceId;
 			}).map(function (candidate) {
+				var sourceType = String(candidate.schema && candidate.schema.type || candidate.type || "unknown");
 				var out = {
 					category: candidate.category || candidate.source && candidate.source.category || "",
 					id: candidate.id || candidate.source && (candidate.source.actionId || candidate.source.scopeId) || "",
 					label: candidate.label || candidate.id || "",
+					type: sourceType,
+					scalar: sourceType !== "unknown" && sourceType !== "object" && sourceType !== "array",
 					binding: candidate.binding || null,
 					mutation: candidate.mutation || null
 				};
@@ -4771,7 +4774,7 @@
 				var parentInfo = findTreeNode(tree, cursor.path);
 				cursor = parentInfo && parentInfo.parent;
 			}
-			var applyFallback = request.applyFallback !== false && fallbackResult && fallbackResult.eligibleCount > 0;
+			var applyFallback = request.applyFallback === true && fallbackResult && fallbackResult.eligibleCount > 0;
 			result.fallback = {
 				applied: applyFallback,
 				from: result.focus,
