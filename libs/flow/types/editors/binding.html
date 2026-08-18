@@ -5,9 +5,11 @@
 		button { border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 6px 10px; cursor: pointer; }
 		button.active { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; font-weight: 700; }
 		.source { display: grid; grid-template-columns: minmax(140px, 0.7fr) minmax(240px, 1.3fr); gap: 8px; align-items: end; }
+		.composition { display: grid; grid-template-columns: minmax(100px, 0.7fr) minmax(220px, 1.6fr) minmax(100px, 0.7fr); gap: 8px; margin-top: 10px; align-items: end; }
 		.field { display: grid; gap: 4px; }
 		label { color: var(--flow-editor-label); font-weight: 700; }
 		input, select { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		input[readonly] { background: var(--flow-editor-surface); color: var(--flow-editor-readonly-text); cursor: default; }
 		.path { margin-top: 10px; }
 		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; line-height: 1.35; }
 		.direct { margin-top: 10px; padding: 10px; border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-text-muted); line-height: 1.4; }
@@ -15,7 +17,7 @@
 		@media (max-width: 640px) {
 			.modes { flex-wrap: wrap; }
 			.modes button { flex: 1 1 auto; min-height: 44px; }
-			.source { grid-template-columns: minmax(0, 1fr); }
+			.source, .composition { grid-template-columns: minmax(0, 1fr); }
 			input, select { min-height: 44px; font-size: 16px; }
 			.path { min-width: 0; }
 		}
@@ -30,6 +32,11 @@
 		<div class="source">
 			<div class="field"><label>Scope</label><select data-category></select></div>
 			<div class="field"><label>Value</label><select data-source></select></div>
+		</div>
+		<div class="composition">
+			<div class="field"><label>Prefix</label><input data-prefix placeholder="Optional text before"></div>
+			<div class="field"><label>Selected expression</label><input data-selected-expression readonly></div>
+			<div class="field"><label>Suffix</label><input data-suffix placeholder="Optional text after"></div>
 		</div>
 		<div class="path"><flow-path-editor data-child="path"></flow-path-editor></div>
 		<div class="direct hidden" data-direct-source></div>
@@ -167,6 +174,27 @@
 			return "This value is scalar and is used directly; no property is required.";
 		}
 
+		function formatParts(binding) {
+			var transforms = binding && binding.transform;
+			if (!Array.isArray(transforms)) return { prefix: "", suffix: "" };
+			var transform = transforms.find(function (entry) { return entry && entry.kind === "format"; });
+			if (!transform) return { prefix: "", suffix: "" };
+			if (transform.prefix !== undefined || transform.suffix !== undefined) {
+				return { prefix: String(transform.prefix || ""), suffix: String(transform.suffix || "") };
+			}
+			var format = String(transform.format || "{value}");
+			var marker = format.indexOf("{value}");
+			return marker < 0
+				? { prefix: format, suffix: "" }
+				: { prefix: format.slice(0, marker), suffix: format.slice(marker + "{value}".length) };
+		}
+
+		function selectedExpression(candidate, binding) {
+			var path = pathText(binding && binding.path);
+			var label = candidate ? sourceLabel(candidate) : "Saved source";
+			return label + (path ? (path.charAt(0) === "[" ? path : "." + path) : "");
+		}
+
 		function sourceRef(category, id, previous) {
 			var out = { category: category };
 			if (category === "requestable" || category === "action") out.actionId = id;
@@ -233,7 +261,10 @@
 					var child = event.target && event.target.getAttribute && event.target.getAttribute("data-child");
 					if (!child) return;
 					event.stopPropagation();
-					if (child === "path") this._binding.path = pathParts(event.detail && event.detail.value);
+					if (child === "path") {
+						this._binding.path = pathParts(event.detail && event.detail.value);
+						this.render();
+					}
 					else if (child === "expression") this._binding.expression = String(event.detail && event.detail.value || "");
 					else if (child === "literal") {
 						var value = event.detail && event.detail.value;
@@ -243,6 +274,12 @@
 					this.emit(); return;
 				}
 				if (event.type !== "input" && event.type !== "change") return;
+				var prefix = this.shadowRoot.querySelector("[data-prefix]");
+				var suffix = this.shadowRoot.querySelector("[data-suffix]");
+				if (event.target === prefix || event.target === suffix) {
+					this.setFormat(prefix && prefix.value || "", suffix && suffix.value || "");
+					this.emit(); return;
+				}
 				var category = this.shadowRoot.querySelector("[data-category]");
 				var selected = this.shadowRoot.querySelector("[data-source]");
 				if (event.target === category) {
@@ -263,6 +300,15 @@
 						this.render(); this.emit(); return;
 					}
 				}
+			}
+
+			setFormat(prefix, suffix) {
+				var transforms = Array.isArray(this._binding.transform)
+					? this._binding.transform.filter(function (entry) { return !entry || entry.kind !== "format"; })
+					: [];
+				if (prefix || suffix) transforms.push({ kind: "format", prefix: String(prefix || ""), suffix: String(suffix || "") });
+				if (transforms.length) this._binding.transform = transforms;
+				else delete this._binding.transform;
 			}
 
 			setMode(mode) {
@@ -320,6 +366,13 @@
 				}).join("") : '<option value="">No source available</option>';
 				sourceSelect.disabled = available.length === 0;
 				var selectedSource = available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._binding.source); });
+				var decoration = formatParts(this._binding);
+				var prefix = this.shadowRoot.querySelector("[data-prefix]");
+				var suffix = this.shadowRoot.querySelector("[data-suffix]");
+				var expression = this.shadowRoot.querySelector("[data-selected-expression]");
+				if (prefix && prefix.value !== decoration.prefix) prefix.value = decoration.prefix;
+				if (suffix && suffix.value !== decoration.suffix) suffix.value = decoration.suffix;
+				if (expression) expression.value = selectedExpression(selectedSource || currentCandidate, this._binding);
 				var context = selectedSource && selectedSource.context || this._state.context || {};
 				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };
 				var path = this.shadowRoot.querySelector('[data-child="path"]');
@@ -338,7 +391,11 @@
 					? "Choose a property from this source, or keep its root value."
 					: hasSelectedPath ? "Schema unavailable; the existing property path is preserved and can be edited manually." : "";
 				else hint.textContent = available.length ? "Choose a source." : "No value of this category is available here.";
-				if (showPath && path && path.setState) path.setState(Object.assign({}, this._state, { context: context, value: pathText(this._binding.path) }));
+				if (showPath && path && path.setState) path.setState(Object.assign({}, this._state, {
+					context: context,
+					value: pathText(this._binding.path),
+					pickerOnly: true
+				}));
 			}
 		});
 	}());

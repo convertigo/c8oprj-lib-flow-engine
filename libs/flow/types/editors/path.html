@@ -10,6 +10,7 @@
 		button.selected { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; box-shadow: inset 3px 0 0 var(--flow-editor-selection-edge); font-weight: 700; }
 		.type { color: var(--flow-editor-info); }
 		.hint, .empty { color: var(--flow-editor-text-muted); margin: 6px 0 0; line-height: 1.35; }
+		.hidden { display: none !important; }
 		@media (max-width: 640px) {
 			.layout { grid-template-columns: minmax(0, 1fr); min-height: 0; }
 			input { min-height: 44px; font-size: 16px; }
@@ -17,7 +18,7 @@
 		}
 	</style>
 	<div class="layout">
-		<div>
+		<div data-path-input>
 			<input part="input" spellcheck="false" placeholder="result.value">
 			<div class="hint">Pick a known scope path or type a target path.</div>
 		</div>
@@ -292,6 +293,8 @@
 					return;
 				}
 				var input = this.shadowRoot.querySelector("input");
+				var inputArea = this.shadowRoot.querySelector("[data-path-input]");
+				if (inputArea) inputArea.classList.toggle("hidden", this._state.pickerOnly === true);
 				if (input && input.value !== this.value) {
 					input.value = this.value;
 				}

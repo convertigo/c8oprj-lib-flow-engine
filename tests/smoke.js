@@ -632,6 +632,83 @@ var enrichedIndex = enrichedBindingDocumentWithIndex.tree.children[0].children[0
 assertTrue(enrichedIndex && enrichedIndex.schema.type === "integer" &&
 	enrichedIndex.bindings[0].path === "" && enrichedIndex.bindings[0].binding.path.length === 0,
 	"frontend binding schemas did not expose the lexical iteration index as an integer root binding");
+var typedIterationDocument = {
+	tree: {
+		children: [{
+			id: "componentLoop",
+			type: "ForEach",
+			props: {
+				kind: "each",
+				source: {
+					mode: "source",
+					source: { category: "requestable", actionId: "loadComponents" },
+					path: [{ kind: "property", name: "components" }]
+				}
+			},
+			children: [{
+				id: "componentIcon",
+				propertyDefinitions: {
+					text: { bindingSources: [{
+						id: "componentLoop",
+						source: { category: "iteration", scopeId: "componentLoop", value: "item" }
+					}, {
+						id: "componentLoop:index",
+						source: { category: "iteration", scopeId: "componentLoop", value: "index" }
+					}] }
+				}
+			}]
+		}]
+	}
+};
+var typedIterationSchema = {
+	type: "object",
+	properties: {
+		components: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					icon: { type: "string" },
+					description: { type: "string" }
+				}
+			}
+		}
+	}
+};
+var typedIterationEnriched = isolatedFrontendCatalogService.enrichBindingSources(typedIterationDocument, {
+	loadComponents: typedIterationSchema
+}, {
+	normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); },
+	schemaPaths: function (schema) {
+		if (schema.type === "integer") return [""];
+		if (schema.properties && schema.properties.components) return ["components", "components[0]", "components[0].icon", "components[0].description"];
+		return ["icon", "description"];
+	},
+	schemaArrayPaths: function (schema) { return schema.properties && schema.properties.components ? ["components"] : []; },
+	schemaLeafEntries: function (schema) {
+		if (schema.properties && schema.properties.components) return [
+			{ path: "components[0].icon", type: "string" },
+			{ path: "components[0].description", type: "string" }
+		];
+		if (schema.type === "integer") return [];
+		return [{ path: "icon", type: "string" }, { path: "description", type: "string" }];
+	},
+	schemaSimpleType: function (schema) { return schema && schema.type || "unknown"; },
+	schemaAtPath: function (schema, path) {
+		if (path === "components") return schema.properties.components;
+		if (path === "components[0]") return schema.properties.components.items;
+		if (path === "components[0].icon") return schema.properties.components.items.properties.icon;
+		if (path === "components[0].description") return schema.properties.components.items.properties.description;
+		return schema.properties && schema.properties[path] || schema;
+	}
+});
+var typedIterationSources = typedIterationEnriched.tree.children[0].children[0].propertyDefinitions.text.bindingSources;
+var typedItemSource = typedIterationSources.filter(function (candidate) { return candidate.source.value === "item"; })[0];
+var typedIndexSource = typedIterationSources.filter(function (candidate) { return candidate.source.value === "index"; })[0];
+assertTrue(typedItemSource.bindings.some(function (candidate) { return candidate.path === "icon" && candidate.type === "string"; }) &&
+	typedItemSource.bindings.some(function (candidate) { return candidate.path === "description" && candidate.type === "string"; }) &&
+	typedIndexSource.schema.type === "integer" && typedIndexSource.binding.path.length === 0,
+	"frontend binding schemas did not expose typed item fields and the numeric index together");
 var fullSyncBindingDocument = JSON.parse(JSON.stringify(bindingSchemaDocument));
 var fullSyncLoop = fullSyncBindingDocument.tree.children[0];
 fullSyncLoop.props.source.source = { category: "fullsync", actionId: "rootCatalog", operation: "view" };
@@ -2512,6 +2589,11 @@ assertTrue(propertyEditor.html.indexOf('"fullsync"') !== -1 &&
 	"binding editor did not expose canonical FullSync, event, local and route source modes");
 assertTrue(propertyEditor.html.indexOf("<label>Scope</label>") !== -1 &&
 	propertyEditor.html.indexOf("<label>Value</label>") !== -1 &&
+	propertyEditor.html.indexOf("<label>Prefix</label>") !== -1 &&
+	propertyEditor.html.indexOf("<label>Selected expression</label>") !== -1 &&
+	propertyEditor.html.indexOf("<label>Suffix</label>") !== -1 &&
+	propertyEditor.html.indexOf("data-selected-expression readonly") !== -1 &&
+	propertyEditor.html.indexOf("pickerOnly: true") !== -1 &&
 	propertyEditor.html.indexOf("Stable id") === -1 &&
 	propertyEditor.html.indexOf("The index is the current item's position") !== -1 &&
 	propertyEditor.html.indexOf('return "Index"') !== -1,
@@ -5209,6 +5291,24 @@ assertTrue(flowSvelteFullSyncBinding.ok === true &&
 	String(flowSvelteFullSyncBinding.source).indexOf('"category":"fullsync"') !== -1 &&
 	String(flowSvelteFullSyncBinding.source).indexOf('"operation":"view"') !== -1,
 	"flow-svelte AST mutations should accept structured FullSync binding sources");
+var flowSvelteFormattedBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteBindingRoundTripSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].slots.children.children[0].props.source",
+		value: {
+			mode: "source",
+			source: { category: "iteration", scopeId: "items", value: "index" },
+			path: [],
+			transform: [{ kind: "format", prefix: "index[", suffix: "]" }]
+		}
+	}
+})));
+assertTrue(flowSvelteFormattedBinding.ok === true &&
+	String(flowSvelteFormattedBinding.source).indexOf('"transform":[{"kind":"format","prefix":"index[","suffix":"]"}]') !== -1,
+	"flow-svelte AST mutations did not preserve the typed Source format transform");
 var flowSvelteConditionalBindingSource = [
 	"<FlowComponent id=\"conditionalBinding\" label=\"Conditional binding\">",
 	"  <Structure>",

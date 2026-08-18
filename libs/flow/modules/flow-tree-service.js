@@ -1350,7 +1350,8 @@
 	}
 
 	function flowSvelteLiteBindingPath(path) {
-		if (!path || Object.prototype.toString.call(path) !== "[object Array]") return false;
+		if (path === undefined) return true;
+		if (Object.prototype.toString.call(path) !== "[object Array]") return false;
 		return path.every(function (step) {
 			return step && typeof step === "object" &&
 				((step.kind === "property" && typeof step.name === "string" && step.name !== "") ||
@@ -1358,11 +1359,24 @@
 		});
 	}
 
+	function flowSvelteLiteBindingTransforms(transforms) {
+		if (transforms === undefined) return true;
+		if (Object.prototype.toString.call(transforms) !== "[object Array]") return false;
+		return transforms.every(function (transform) {
+			if (!transform || typeof transform !== "object" || transform.kind !== "format") return false;
+			if (transform.prefix !== undefined && typeof transform.prefix !== "string") return false;
+			if (transform.suffix !== undefined && typeof transform.suffix !== "string") return false;
+			if (transform.format !== undefined && (typeof transform.format !== "string" || transform.format.indexOf("{value}") < 0)) return false;
+			return String(transform.prefix || "") !== "" || String(transform.suffix || "") !== "" || typeof transform.format === "string";
+		});
+	}
+
 	function flowSvelteLiteIsBinding(value) {
 		if (!value || typeof value !== "object" || value.splice) return false;
 		if (value.mode === "literal") return Object.prototype.hasOwnProperty.call(value, "value");
 		if (value.mode === "expression") return typeof value.expression === "string";
-		if (value.mode !== "source" || !value.source || typeof value.source !== "object" || !flowSvelteLiteBindingPath(value.path)) return false;
+		if (value.mode !== "source" || !value.source || typeof value.source !== "object" ||
+			!flowSvelteLiteBindingPath(value.path) || !flowSvelteLiteBindingTransforms(value.transform)) return false;
 		var source = value.source;
 		if (source.category === "requestable" || source.category === "action") return typeof source.actionId === "string" && source.actionId !== "";
 		if (source.category === "fullsync") return typeof source.actionId === "string" && source.actionId !== "" && typeof source.operation === "string" && source.operation !== "";
