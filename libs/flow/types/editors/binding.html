@@ -27,7 +27,10 @@
 		<button type="button" data-mode="source">Source</button>
 		<button type="button" data-mode="expression">Expression</button>
 	</div>
-	<div data-panel="literal"><flow-literal-editor data-child="literal"></flow-literal-editor></div>
+	<div data-panel="literal">
+		<select class="hidden" data-literal-choice aria-label="Literal choice"></select>
+		<flow-literal-editor data-child="literal"></flow-literal-editor>
+	</div>
 	<div data-panel="source">
 		<div class="source">
 			<div class="field"><label>Scope</label><select data-category></select></div>
@@ -129,6 +132,13 @@
 			var info = state && state.info || {};
 			var rows = state && state.bindingSources || definition.bindingSources || info.bindingSources || [];
 			return Array.isArray(rows) ? rows : [];
+		}
+
+		function literalChoices(state) {
+			var definition = state && state.propertyDefinition || {};
+			var info = state && state.info || {};
+			var values = definition["enum"] || info["enum"] || [];
+			return Array.isArray(values) ? values : [];
 		}
 
 		function sourceId(source) {
@@ -274,6 +284,13 @@
 					this.emit(); return;
 				}
 				if (event.type !== "input" && event.type !== "change") return;
+				var literalChoice = this.shadowRoot.querySelector("[data-literal-choice]");
+				if (event.target === literalChoice && literalChoice.value !== "") {
+					var choices = literalChoices(this._state);
+					var choiceIndex = Number(literalChoice.value);
+					if (choiceIndex >= 0 && choiceIndex < choices.length) this._binding.value = choices[choiceIndex];
+					this.emit(); return;
+				}
 				var prefix = this.shadowRoot.querySelector("[data-prefix]");
 				var suffix = this.shadowRoot.querySelector("[data-suffix]");
 				if (event.target === prefix || event.target === suffix) {
@@ -312,7 +329,12 @@
 			}
 
 			setMode(mode) {
-				if (mode === "literal") this._binding = { mode: "literal", value: this._binding.value === undefined ? "" : this._binding.value };
+				if (mode === "literal") {
+					var choices = literalChoices(this._state);
+					var value = this._binding.value;
+					if (value === undefined) value = choices.length ? choices[0] : "";
+					this._binding = { mode: "literal", value: value };
+				}
 				else if (mode === "expression") this._binding = { mode: "expression", expression: this._binding.expression || "" };
 				else this._binding = { mode: "source", source: this._binding.source || { category: "requestable", actionId: "" }, path: this._binding.path || [] };
 			}
@@ -328,6 +350,21 @@
 				this.shadowRoot.querySelectorAll("[data-panel]").forEach(function (panel) { panel.classList.toggle("hidden", panel.getAttribute("data-panel") !== mode); });
 				if (mode === "literal") {
 					var literal = this.shadowRoot.querySelector('[data-child="literal"]');
+					var choiceSelect = this.shadowRoot.querySelector("[data-literal-choice]");
+					var choices = literalChoices(this._state);
+					var hasChoices = choices.length > 0;
+					if (choiceSelect) choiceSelect.classList.toggle("hidden", !hasChoices);
+					if (literal) literal.classList.toggle("hidden", hasChoices);
+					if (hasChoices && choiceSelect) {
+						var current = JSON.stringify(this._binding.value);
+						var selectedIndex = choices.findIndex(function (choice) { return JSON.stringify(choice) === current; });
+						choiceSelect.innerHTML = (selectedIndex < 0
+							? '<option value="" selected disabled>Legacy value: ' + esc(String(self._binding.value)) + '</option>'
+							: "") + choices.map(function (choice, index) {
+							return '<option value="' + index + '"' + (index === selectedIndex ? " selected" : "") + '>' + esc(String(choice)) + '</option>';
+						}).join("");
+						return;
+					}
 					var literalValue = typeof this._binding.value === "string"
 						? this._binding.value
 						: JSON.stringify(this._binding.value);

@@ -2598,6 +2598,10 @@ assertTrue(propertyEditor.html.indexOf("<label>Scope</label>") !== -1 &&
 	propertyEditor.html.indexOf("The index is the current item's position") !== -1 &&
 	propertyEditor.html.indexOf('return "Index"') !== -1,
 	"binding editor did not expose the compact human-facing source picker");
+assertTrue(propertyEditor.html.indexOf("data-literal-choice") !== -1 &&
+	propertyEditor.html.indexOf("literalChoices(this._state)") !== -1 &&
+	propertyEditor.html.indexOf("Legacy value:") !== -1,
+	"binding editor did not expose enum choices while preserving legacy literal values");
 assertTrue(propertyEditor.html.indexOf("bindingSourcesLoading") !== -1 &&
 	propertyEditor.html.indexOf("Loading available values") !== -1 &&
 	propertyEditor.html.indexOf("receiveFlowData") !== -1,
