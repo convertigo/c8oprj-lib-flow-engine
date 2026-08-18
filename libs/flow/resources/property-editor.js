@@ -964,4 +964,13 @@
     draft = state.value == null ? "" : String(state.value);
     render();
   };
+  window.receiveFlowData = function (message) {
+    if (!state || !message) return;
+    keys(message).forEach(function (key) {
+      state[key] = message[key];
+    });
+    state.value = draft;
+    var editor = document.querySelector("[data-key]");
+    if (editor && editor.setState) editor.setState(typeEditorState(state));
+  };
 })();

@@ -19,6 +19,7 @@ const _meta = {
   "outputs": {
     "out": {
       "type": "array",
+      "x-flow-same-as": "items",
       "items": {
         "type": "unknown"
       }

@@ -85,6 +85,7 @@
 			errors: 0,
 			pruned: false
 		},
+		frontendDependencyFingerprints: {},
 		caches: {
 			blocks: createRuntimeMapCacheState(),
 			coreBlocks: createRuntimeMapCacheState(),
@@ -97,8 +98,8 @@
 			libraries: createRuntimeMapCacheState(),
 			engineModules: createRuntimeMapCacheState(),
 			propertyEditor: createRuntimeCacheState(),
-			treeSnapshots: createRuntimeMapCacheState(),
-			frontendDocuments: createRuntimeMapCacheState(),
+			treeSnapshots: createRuntimeBoundedMapCacheState(8),
+			frontendDocuments: createRuntimeBoundedMapCacheState(128),
 			expressionTokens: createRuntimeBoundedMapCacheState(4096),
 			expressionPrograms: createRuntimeBoundedMapCacheState(4096)
 		}
@@ -846,11 +847,15 @@
 	}
 
 	function readRuntimeMapCache(cache, key, fingerprint) {
-		return cacheUtils().readMap(cache, key, fingerprint);
+		return cache && cache.limit
+			? cacheUtils().readBoundedMap(cache, key, fingerprint)
+			: cacheUtils().readMap(cache, key, fingerprint);
 	}
 
 	function writeRuntimeMapCache(cache, key, fingerprint, value, label) {
-		return cacheUtils().writeMap(cache, key, fingerprint, value, label);
+		return cache && cache.limit
+			? cacheUtils().writeBoundedMap(cache, key, fingerprint, value, label)
+			: cacheUtils().writeMap(cache, key, fingerprint, value, label);
 	}
 
 	function readRuntimeBoundedMapCache(cache, key, fingerprint) {
@@ -4420,12 +4425,16 @@
 	function cachedAuthoringTreeBase(request, blocks) {
 		request = request || {};
 		var cache = runtimeState.caches.treeSnapshots;
+		var includeBindings = request.includeBindings === true
+			|| (request.includeBindings === undefined && !!request.property
+				&& !!(request.focusPath || request.rootPath || request.path));
 		var baseRequest = Object.assign({}, request, {
 			focusPath: "",
 			rootPath: "",
 			path: "",
 			detail: "full",
-			includeChildren: true
+			includeChildren: true,
+			includeBindings: includeBindings
 		});
 		delete baseRequest.mode;
 		delete baseRequest.maxDepth;
@@ -4436,10 +4445,12 @@
 			builder: String(request.builder || ""),
 			property: String(request.property || ""),
 			sourceId: String(request.sourceId || ""),
+			bindingTargetPath: String(request.bindingTargetPath || ""),
+			bindingTargetSource: String(request.bindingTargetSource || ""),
 			internalDeep: request.internalDeep === true,
 			includeDefinition: request.includeDefinition === true,
 			includeProperties: request.includeProperties === true,
-			includeBindings: request.includeBindings !== false,
+			includeBindings: includeBindings,
 			includeSource: request.includeSource === true,
 			includeAnalysis: request.includeAnalysis === true,
 			includeSchema: request.includeSchema === true || request.schema === true,
@@ -4726,6 +4737,7 @@
 		var projectName = projectNameForRoot(projectRoot) || currentProjectName(request);
 		var drafts = frontendSourceDrafts(request);
 		var cache = runtimeState.caches.frontendDocuments;
+		var persistentCacheEligible = request.includeBindings === false;
 		var key = [
 			String(sourceFile.getAbsolutePath()),
 			String(resourceRoot.getAbsolutePath()),
@@ -4733,6 +4745,8 @@
 			projectName,
 			String(request.property || ""),
 			String(request.sourceId || ""),
+			String(request.bindingTargetPath || ""),
+			String(request.bindingTargetSource || ""),
 			String(request.includeBindings !== false),
 			String(request.sourceTree === true)
 		].join("\n");
@@ -4746,7 +4760,7 @@
 			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
 			return enrichFrontendBindingSources(cached, request, projectRoot);
 		}
-		var persistent = readPersistentFrontendDocument(key, fingerprint);
+		var persistent = persistentCacheEligible ? readPersistentFrontendDocument(key, fingerprint) : null;
 		if (persistent) {
 			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
 			var cachedPersistent = writeRuntimeMapCache(cache, key, fingerprint, persistent, "Svelte front documents");
@@ -4769,6 +4783,7 @@
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--drafts", String(draftsTemp.getAbsolutePath()),
+				"--cache-key", fingerprint,
 				"--resource-root", String(resourceRoot.getAbsolutePath()),
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--project-name", projectName,
@@ -4782,6 +4797,12 @@
 			}
 			if (request.sourceId) {
 				cliArgs.push("--source-id", String(request.sourceId));
+			}
+			if (request.bindingTargetPath) {
+				cliArgs.push("--binding-target-path", String(request.bindingTargetPath));
+			}
+			if (request.bindingTargetSource) {
+				cliArgs.push("--binding-target-source", String(request.bindingTargetSource));
 			}
 			if (request.includeBindings === false) {
 				cliArgs.push("--without-bindings");
@@ -4797,7 +4818,9 @@
 				throw error;
 			}
 			var cachedResult = writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents");
-			writePersistentFrontendDocument(key, fingerprint, cachedResult);
+			if (persistentCacheEligible) {
+				writePersistentFrontendDocument(key, fingerprint, cachedResult);
+			}
 			return enrichFrontendBindingSources(cachedResult, request, projectRoot);
 		} finally {
 			try {
@@ -5000,38 +5023,66 @@
 	}
 
 	function frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot) {
-		var entries = [];
-		var visited = {};
+		var referenceRoots = frontendReferenceRoots(projectRoot, resourceRoot);
+		var stableCacheKey = [
+			canonicalPath(resourceRoot),
+			canonicalPath(projectRoot),
+			referenceRoots.map(canonicalPath).sort().join("\n")
+		].join("\n");
+		var stableFingerprint = runtimeState.frontendDependencyFingerprints[stableCacheKey];
 		var toolRoot = frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
 		var sourceRoot = sourceFile && sourceFile.getParentFile();
 		while (sourceRoot && String(sourceRoot.getName()) !== "src") {
 			sourceRoot = sourceRoot.getParentFile();
 		}
+		if (!stableFingerprint) {
+			var stableEntries = [];
+			var stableVisited = {};
+			[
+				{ root: new File(resourceRoot, "components"), suffixes: [".svelte"] },
+				{ root: new File(resourceRoot, "ui"), suffixes: [".uiblock.json"] },
+				{ root: new File(toolRoot, "components"), suffixes: [".svelte"] },
+				{ root: new File(toolRoot, "ui"), suffixes: [".uiblock.json"] },
+				{ root: new File(toolRoot, "src-builder"), suffixes: [".ts"] },
+				{ root: new File(toolRoot, "package.json"), suffixes: ["package.json"] },
+				{ root: new File(toolRoot, "package-lock.json"), suffixes: ["package-lock.json"] },
+				{ root: new File(engineDir(), "blocks"), suffixes: [".block.js", ".browser.js"] }
+			].forEach(function (target) {
+				frontendFingerprintFiles(target.root, target.suffixes, stableEntries, stableVisited);
+			});
+			referenceRoots.forEach(function (root) {
+				frontendFingerprintFiles(new File(root, "libs/flow/blocks"),
+					[".block.js", ".browser.js"], stableEntries, stableVisited);
+				frontendFingerprintFiles(new File(root, "libs/flow/frontbuilder/svelte/components"),
+					[".flow.svelte", ".svelte"], stableEntries, stableVisited);
+			});
+			stableEntries.sort();
+			stableFingerprint = sha256Hex(stableEntries.join("\n"));
+			runtimeState.frontendDependencyFingerprints[stableCacheKey] = stableFingerprint;
+		}
+		// Project authoring sources may also be changed by Studio reloads or a
+		// filesystem watcher. Keep this small part live so persistent cache keys
+		// remain valid across Flow runtime generations.
+		var mutableEntries = [];
+		var mutableVisited = {};
 		[
 			{ root: sourceRoot, suffixes: [".flow.svelte", ".flow.css", ".flow-route.json"] },
-			{ root: new File(resourceRoot, "components"), suffixes: [".svelte"] },
-			{ root: new File(resourceRoot, "ui"), suffixes: [".uiblock.json"] },
-			{ root: new File(toolRoot, "components"), suffixes: [".svelte"] },
-			{ root: new File(toolRoot, "ui"), suffixes: [".uiblock.json"] },
-			{ root: new File(toolRoot, "src-builder"), suffixes: [".ts"] },
-			{ root: new File(toolRoot, "package.json"), suffixes: ["package.json"] },
-			{ root: new File(toolRoot, "package-lock.json"), suffixes: ["package-lock.json"] },
-			{ root: new File(engineDir(), "blocks"), suffixes: [".block.js", ".browser.js"] },
 			{ root: new File(projectRoot, "libs/flow/blocks"), suffixes: [".block.js", ".browser.js"] },
 			{ root: new File(projectRoot, "libs/flow/frontbuilder/svelte/components"), suffixes: [".svelte"] }
 		].forEach(function (target) {
-			frontendFingerprintFiles(target.root, target.suffixes, entries, visited);
+			frontendFingerprintFiles(target.root, target.suffixes, mutableEntries, mutableVisited);
 		});
-		frontendReferenceRoots(projectRoot, resourceRoot).forEach(function (root) {
-			frontendFingerprintFiles(new File(root, "libs/flow/blocks"),
-				[".block.js", ".browser.js"], entries, visited);
-			frontendFingerprintFiles(new File(root, "libs/flow/frontbuilder/svelte/components"),
-				[".flow.svelte", ".svelte"], entries, visited);
-		});
-		return sha256Hex(entries.join("\n"));
+		mutableEntries.sort();
+		return sha256Hex(stableFingerprint + "\n" + mutableEntries.join("\n"));
+	}
+
+	function invalidateFrontendDocumentCaches() {
+		runtimeState.frontendDependencyFingerprints = {};
+		cacheUtils().clearBoundedMap(runtimeState.caches.frontendDocuments);
 	}
 
 	function clearPersistentFrontendDocuments() {
+		invalidateFrontendDocumentCaches();
 		var directory = frontendDocumentCacheDir();
 		try {
 			if (directory.isDirectory()) {
@@ -5047,6 +5098,7 @@
 	}
 
 	function applyFlowSvelteSourceMutationRequest(request) {
+		invalidateFrontendDocumentCaches();
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
 		var sourceFile = frontendRequestSourceFile(request, request.source === undefined || request.source === null);
 		var source = request.source !== undefined && request.source !== null
@@ -5135,11 +5187,14 @@
 		try {
 			frontAstResult = applyFrontAstSourceMutation(source, mutation, sourceFile);
 		} catch (frontAstError) {
-			if (String(frontAstError && frontAstError.code || "").indexOf("FRONTEND_") === 0) {
-				throw frontAstError;
+			// An unexpected fast-path failure is a mutation bug, not a signal to
+			// rewrite the whole document through the slower Svelte serializer.
+			// That rewrite can alter unrelated binding syntax before the caller
+			// notices the original problem.
+			if (!frontAstError.code) {
+				frontAstError.code = "FRONTEND_FAST_MUTATION_FAILED";
 			}
-			frontendStudioLog("[Flow frontend DnD] fast FrontAst mutation failed, retrying with Svelte parser: "
-				+ String(frontAstError && frontAstError.message || frontAstError), true);
+			throw frontAstError;
 		}
 		if (frontAstResult) {
 			return frontAstResult;
@@ -5691,6 +5746,9 @@
 			if (token === "frontAst") {
 				continue;
 			}
+			if (current === undefined || current === null) {
+				throw frontAstPathError(path, tokens, i);
+			}
 			if (token === "slots" && typeof tokens[i + 1] === "string") {
 				current = frontAstSlotNode(current, String(tokens[i + 1]), create);
 				i++;
@@ -5717,6 +5775,16 @@
 			current = current ? current[token] : undefined;
 		}
 		return current;
+	}
+
+	function frontAstPathError(path, tokens, index) {
+		var traversed = tokens.slice(0, index).map(function (token) {
+			return typeof token === "number" ? "[" + token + "]" : String(token);
+		}).join(".").replace(/\.\[/g, "[");
+		var error = new Error("Unknown FrontAst mutation path after " + traversed + ": " + path);
+		error.code = "FRONTAST_PATH_NOT_FOUND";
+		error.hint = "Refresh the authoring tree and retry with the mutation path returned by the selected node.";
+		return error;
 	}
 
 	function frontAstSetValueAtPath(root, path, value, merge) {
@@ -5789,6 +5857,11 @@
 	}
 
 	function frontAstSlotNode(node, name, create) {
+		if (!node) {
+			var error = new Error("Cannot resolve FrontAst slot '" + name + "' without a parent node.");
+			error.code = "FRONTAST_SLOT_PARENT_MISSING";
+			throw error;
+		}
 		var tag = name === "children" && node && node.tag === "ForEach"
 			? "Each"
 			: frontAstSlotTag(name);
@@ -5796,6 +5869,15 @@
 		for (var i = 0; i < children.length; i++) {
 			if (children[i].tag === tag) {
 				return children[i];
+			}
+		}
+		// Both tags are canonical for a ForEach body. New sources use Each,
+		// while older Flow Svelte projects still use Children.
+		if (name === "children" && node && node.tag === "ForEach") {
+			for (var j = 0; j < children.length; j++) {
+				if (children[j].tag === "Children") {
+					return children[j];
+				}
 			}
 		}
 		if (!create) {

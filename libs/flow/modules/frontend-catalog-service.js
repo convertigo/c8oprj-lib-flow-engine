@@ -662,6 +662,7 @@
 			sourceBacked: false,
 			createAction: true,
 			descriptorKind: "create",
+			excludedWhenChildId: options.excludedWhenChildId || "",
 			sourcePath: "",
 			file: "",
 			sourceWritable: true
@@ -1757,7 +1758,43 @@
 				fileName: "${actionName}.svelte.js",
 				source: frontendClientActionSourceTemplate()
 			})
+		].concat(frontendTranslationSourceDefinitionDescriptors(builderName, settings));
+	}
+
+	function frontendTranslationSourceDefinitionDescriptors(builderName, settings) {
+		var locales = [
+			["en", "English"],
+			["fr", "French"],
+			["de", "German"],
+			["es", "Spanish"],
+			["it", "Italian"],
+			["pt", "Portuguese"],
+			["nl", "Dutch"],
+			["pl", "Polish"],
+			["ja", "Japanese"],
+			["ko", "Korean"],
+			["zh", "Chinese"]
 		];
+		return locales.map(function (entry) {
+			var locale = entry[0];
+			var language = entry[1];
+			return frontendSourceDefinitionDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.translation." + locale,
+				label: language + " (" + locale + ")",
+				category: "Svelte / Translations",
+				kind: "frontendTranslationSourceDefinition",
+				icon: "mdi:translate",
+				traits: ["definition.translationSource", "source.json", "i18n.locale"],
+				targetKinds: ["frontendTranslations"],
+				acceptedPositions: ["inside"],
+				description: "Creates the " + language + " translation catalog.",
+				baseId: locale,
+				directory: frontendModelSourceDirectory(builderName, settings) + "/src/i18n",
+				fileName: "${localName}.json",
+				source: "{\n}\n",
+				excludedWhenChildId: "translation_" + locale
+			});
+		});
 	}
 
 	function frontendModelSourceDirectory(builderName, settings) {
@@ -1800,6 +1837,7 @@
 			targetKinds: options.targetKinds,
 			acceptedPositions: options.acceptedPositions,
 			description: options.description,
+			excludedWhenChildId: options.excludedWhenChildId || "",
 			insert: {
 				__frontendCreateSource: {
 					baseId: options.baseId,

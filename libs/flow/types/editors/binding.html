@@ -4,12 +4,13 @@
 		.modes { display: flex; gap: 4px; margin-bottom: 10px; }
 		button { border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 6px 10px; cursor: pointer; }
 		button.active { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; font-weight: 700; }
-		.source { display: grid; grid-template-columns: 110px minmax(180px, 0.7fr) minmax(260px, 1.3fr); gap: 8px; align-items: end; }
+		.source { display: grid; grid-template-columns: minmax(140px, 0.7fr) minmax(240px, 1.3fr); gap: 8px; align-items: end; }
 		.field { display: grid; gap: 4px; }
 		label { color: var(--flow-editor-label); font-weight: 700; }
 		input, select { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		.path { margin-top: 10px; }
 		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; line-height: 1.35; }
+		.direct { margin-top: 10px; padding: 10px; border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-text-muted); line-height: 1.4; }
 		.hidden { display: none; }
 		@media (max-width: 640px) {
 			.modes { flex-wrap: wrap; }
@@ -27,12 +28,12 @@
 	<div data-panel="literal"><flow-literal-editor data-child="literal"></flow-literal-editor></div>
 	<div data-panel="source">
 		<div class="source">
-			<div class="field"><label>Category</label><select data-category></select></div>
-			<div class="field"><label>Source</label><select data-source></select></div>
-			<div class="field"><label>Stable id</label><input data-source-id spellcheck="false"></div>
+			<div class="field"><label>Scope</label><select data-category></select></div>
+			<div class="field"><label>Value</label><select data-source></select></div>
 		</div>
 		<div class="path"><flow-path-editor data-child="path"></flow-path-editor></div>
-		<div class="hint">The source id identifies an action or lexical scope. The path stays relative to that source.</div>
+		<div class="direct hidden" data-direct-source></div>
+		<div class="hint" data-source-hint></div>
 	</div>
 	<div data-panel="expression"><flow-expression-editor data-child="expression"></flow-expression-editor></div>
 </template>
@@ -41,6 +42,15 @@
 		if (customElements.get("flow-binding-editor")) return;
 
 		var categories = ["local", "requestable", "action", "fullsync", "iteration", "event", "route"];
+		var categoryLabels = {
+			local: "Page variables",
+			requestable: "Backend calls",
+			action: "Actions",
+			fullsync: "FullSync",
+			iteration: "Iteration",
+			event: "Event",
+			route: "Current route"
+		};
 
 		function esc(value) {
 			return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
@@ -124,6 +134,39 @@
 			return String(source && (source.actionId || source.scopeId || source.instanceId || source.formId || source.ownerId || source.name || source.path) || "");
 		}
 
+		function sourceKey(source) {
+			source = source || {};
+			return [source.category || "", sourceId(source), source.value || "", source.operation || ""].join("|");
+		}
+
+		function sourceCategory(candidate) {
+			var category = String(candidate && (candidate.category || candidate.source && candidate.source.category) || "");
+			var id = String(candidate && (candidate.id || candidate.label) || "");
+			return category === "action" && id.indexOf("local:") === 0 ? "local" : category;
+		}
+
+		function sourceLabel(candidate) {
+			var source = candidate && (candidate.source || candidate) || {};
+			if (sourceCategory(candidate) === "iteration") {
+				if (source.value === "index") return "Index";
+				if (source.value === "item") return "Current item";
+			}
+			var label = String(candidate && (candidate.label || candidate.id) || sourceId(candidate && (candidate.source || candidate)));
+			if (sourceCategory(candidate) === "local" && label.indexOf("local:") === 0) {
+				var parts = label.split(":");
+				if (parts.length >= 3) return parts.slice(2).join(":") + " (" + parts[1] + ")";
+			}
+			return label;
+		}
+
+		function directSourceText(candidate) {
+			var source = candidate && (candidate.source || candidate) || {};
+			if (source.category === "iteration" && source.value === "index") {
+				return "The index is the current item's position in this repeated list. It is used directly; no property is required.";
+			}
+			return "This value is scalar and is used directly; no property is required.";
+		}
+
 		function sourceRef(category, id, previous) {
 			var out = { category: category };
 			if (category === "requestable" || category === "action") out.actionId = id;
@@ -145,6 +188,7 @@
 				this._state = {};
 				this._binding = normalize("");
 				this._sourcesKey = "";
+				this._visibleSources = [];
 			}
 
 			connectedCallback() {
@@ -168,7 +212,7 @@
 			get value() { return JSON.stringify(this._binding); }
 
 			loadSources() {
-				if (sources(this._state).length || !this.flowHost || !this.flowHost.request) return;
+				if (sources(this._state).length || this._state.bindingSourcesLoading || !this.flowHost || !this.flowHost.request) return;
 				var key = String(this._state.virtualPath || "") + "/" + String(this._state.property || "");
 				if (key === this._sourcesKey) return;
 				this._sourcesKey = key;
@@ -200,18 +244,25 @@
 				}
 				if (event.type !== "input" && event.type !== "change") return;
 				var category = this.shadowRoot.querySelector("[data-category]");
-				var id = this.shadowRoot.querySelector("[data-source-id]");
 				var selected = this.shadowRoot.querySelector("[data-source]");
+				if (event.target === category) {
+					var first = sources(this._state).find(function (candidate) {
+						return sourceCategory(candidate) === category.value;
+					});
+					this._binding.source = first
+						? first.source || sourceRef(first.category, first.id, this._binding.source)
+						: sourceRef(category.value, "", this._binding.source);
+					this._binding.path = [];
+					this.render(); this.emit(); return;
+				}
 				if (event.target === selected && selected.value !== "") {
-					var candidate = sources(this._state)[Number(selected.value)];
+					var candidate = this._visibleSources[Number(selected.value)];
 					if (candidate) {
 						this._binding.source = candidate.source || sourceRef(candidate.category, candidate.id, this._binding.source);
 						this._binding.path = [];
 						this.render(); this.emit(); return;
 					}
 				}
-				this._binding.source = sourceRef(category.value, id.value, this._binding.source);
-				this.emit();
 			}
 
 			setMode(mode) {
@@ -246,23 +297,48 @@
 					return;
 				}
 				var category = this.shadowRoot.querySelector("[data-category]");
-				var currentCategory = String(this._binding.source && this._binding.source.category || "requestable");
-				category.innerHTML = categories.map(function (name) { return '<option value="' + esc(name) + '"' + (name === currentCategory ? " selected" : "") + '>' + esc(name) + '</option>'; }).join("");
-				var available = sources(this._state);
-				var sourceSelect = this.shadowRoot.querySelector("[data-source]");
-				sourceSelect.innerHTML = '<option value="">Custom source</option>' + available.map(function (entry, index) {
-					var selected = sourceId(entry.source || entry) === sourceId(self._binding.source) && String(entry.category || entry.source && entry.source.category) === currentCategory;
-					var type = entry.schema && entry.schema.type ? " " + entry.schema.type : "";
-					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc((entry.label || entry.id || sourceId(entry.source || entry)) + type) + '</option>';
+				var allSources = sources(this._state);
+				var currentCandidate = allSources.find(function (candidate) {
+					return sourceKey(candidate.source || candidate) === sourceKey(self._binding.source);
+				});
+				var currentCategory = currentCandidate
+					? sourceCategory(currentCandidate)
+					: String(this._binding.source && this._binding.source.category || "requestable");
+				var availableCategories = categories.filter(function (name) {
+					return name === currentCategory || allSources.some(function (candidate) { return sourceCategory(candidate) === name; });
+				});
+				category.innerHTML = availableCategories.map(function (name) {
+					return '<option value="' + esc(name) + '"' + (name === currentCategory ? " selected" : "") + '>' + esc(categoryLabels[name] || name) + '</option>';
 				}).join("");
-				var sourceIdInput = this.shadowRoot.querySelector("[data-source-id]");
-				sourceIdInput.value = sourceId(this._binding.source);
-				sourceIdInput.disabled = currentCategory === "event";
-				var selectedSource = available.find(function (entry) { return sourceId(entry.source || entry) === sourceId(self._binding.source); });
+				var available = allSources.filter(function (candidate) { return sourceCategory(candidate) === currentCategory; });
+				this._visibleSources = available;
+				var sourceSelect = this.shadowRoot.querySelector("[data-source]");
+				sourceSelect.innerHTML = available.length ? available.map(function (entry, index) {
+					var selected = sourceKey(entry.source || entry) === sourceKey(self._binding.source);
+					var type = entry.schema && entry.schema.type ? " — " + entry.schema.type : "";
+					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(sourceLabel(entry) + type) + '</option>';
+				}).join("") : '<option value="">No source available</option>';
+				sourceSelect.disabled = available.length === 0;
+				var selectedSource = available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._binding.source); });
 				var context = selectedSource && selectedSource.context || this._state.context || {};
 				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };
 				var path = this.shadowRoot.querySelector('[data-child="path"]');
-				if (path && path.setState) path.setState(Object.assign({}, this._state, { context: context, value: pathText(this._binding.path) }));
+				var pathContainer = this.shadowRoot.querySelector(".path");
+				var direct = this.shadowRoot.querySelector("[data-direct-source]");
+				var hint = this.shadowRoot.querySelector("[data-source-hint]");
+				var hasPaths = !!(selectedSource && Array.isArray(selectedSource.paths) && selectedSource.paths.length);
+				var hasSelectedPath = !!pathText(this._binding.path);
+				var showPath = hasPaths || hasSelectedPath;
+				pathContainer.classList.toggle("hidden", !showPath);
+				direct.classList.toggle("hidden", !selectedSource || showPath);
+				direct.textContent = selectedSource && !showPath ? directSourceText(selectedSource) : "";
+				if (this._state.bindingSourcesLoading) hint.textContent = "Loading available values...";
+				else if (this._state.bindingSourcesError) hint.textContent = "Available values could not be loaded.";
+				else if (selectedSource) hint.textContent = hasPaths
+					? "Choose a property from this source, or keep its root value."
+					: hasSelectedPath ? "Schema unavailable; the existing property path is preserved and can be edited manually." : "";
+				else hint.textContent = available.length ? "Choose a source." : "No value of this category is available here.";
+				if (showPath && path && path.setState) path.setState(Object.assign({}, this._state, { context: context, value: pathText(this._binding.path) }));
 			}
 		});
 	}());

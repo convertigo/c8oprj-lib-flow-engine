@@ -1,12 +1,14 @@
 <template id="flow-literal-editor-template">
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
-		textarea { box-sizing: border-box; width: 100%; min-height: 220px; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
+		textarea { box-sizing: border-box; width: 100%; height: 220px; min-height: 100px; max-height: 55vh; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
 		.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 		button { border: 1px solid var(--flow-editor-accent-border); background: var(--flow-editor-primary-bg); color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
 		button.secondary { background: var(--flow-editor-secondary-bg); border-color: var(--flow-editor-secondary-border); color: var(--flow-editor-secondary-text); }
 		.status { color: var(--flow-editor-text-muted); margin-top: 6px; line-height: 1.35; }
 		.status.error { color: var(--flow-editor-danger-text); }
+		.hidden { display: none; }
+		:host([data-text-literal]) textarea { height: 120px; min-height: 72px; max-height: 35vh; font-family: system-ui, sans-serif; }
 	</style>
 	<div class="toolbar">
 		<button class="secondary" data-value="{}">{}</button>
@@ -44,7 +46,10 @@
 
 			setState(state) {
 				this._value = state && state.value != null ? String(state.value) : "";
-				this._textLiteral = !!(state && state.textLiteral);
+				var definition = state && state.propertyDefinition || {};
+				this._textLiteral = !!(state && state.textLiteral)
+					|| definition.literalType === "string"
+					|| typeof definition["default"] === "string";
 				this.render();
 				this.emit();
 			}
@@ -98,7 +103,7 @@
 					return;
 				}
 				if (this._textLiteral) {
-					status.textContent = "Text literal";
+					status.textContent = "";
 					status.classList.remove("error");
 					return;
 				}
@@ -124,8 +129,14 @@
 					return;
 				}
 				var textarea = this.shadowRoot.querySelector("textarea");
+				var toolbar = this.shadowRoot.querySelector(".toolbar");
+				this.toggleAttribute("data-text-literal", this._textLiteral);
+				if (toolbar) toolbar.classList.toggle("hidden", this._textLiteral);
 				if (textarea && textarea.value !== this.value) {
 					textarea.value = this.value;
+				}
+				if (textarea) {
+					textarea.placeholder = this._textLiteral ? "Enter text" : "Enter a JSON value";
 				}
 				this.validate();
 			}

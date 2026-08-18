@@ -2510,6 +2510,19 @@ assertTrue(propertyEditor.html.indexOf('"fullsync"') !== -1 &&
 	propertyEditor.html.indexOf("source.name || source.ownerId || source.scopeId") !== -1 &&
 	propertyEditor.html.indexOf('this.flowHost.request("bindingSources"') !== -1,
 	"binding editor did not expose canonical FullSync, event, local and route source modes");
+assertTrue(propertyEditor.html.indexOf("<label>Scope</label>") !== -1 &&
+	propertyEditor.html.indexOf("<label>Value</label>") !== -1 &&
+	propertyEditor.html.indexOf("Stable id") === -1 &&
+	propertyEditor.html.indexOf("The index is the current item's position") !== -1 &&
+	propertyEditor.html.indexOf('return "Index"') !== -1,
+	"binding editor did not expose the compact human-facing source picker");
+assertTrue(propertyEditor.html.indexOf("bindingSourcesLoading") !== -1 &&
+	propertyEditor.html.indexOf("Loading available values") !== -1 &&
+	propertyEditor.html.indexOf("receiveFlowData") !== -1,
+	"propertyEditor did not support asynchronous binding source loading");
+assertTrue(propertyEditor.html.indexOf('toolbar.classList.toggle("hidden", this._textLiteral)') !== -1 &&
+	propertyEditor.html.indexOf('textarea.placeholder = this._textLiteral ? "Enter text"') !== -1,
+	"literal editor did not keep text values separate from JSON controls");
 assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
 	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
 	"propertyEditor did not expose generic type editor host API");
@@ -2539,7 +2552,8 @@ assertTrue(propertyEditor.html.indexOf("syncSimpleExpression") !== -1 &&
 	propertyEditor.html.indexOf("pathMatches(value, context)") !== -1 &&
 	propertyEditor.html.indexOf("replaceSimpleSelection(path)") !== -1 &&
 	propertyEditor.html.indexOf("data-action=\"format-json\"") !== -1 &&
-	propertyEditor.html.indexOf("formattedJsonExpression(sourceValue)") !== -1 &&
+	propertyEditor.html.indexOf("expressionValue(this._state.value)") !== -1 &&
+	propertyEditor.html.indexOf('parsed.mode === "expression"') !== -1 &&
 	propertyEditor.html.indexOf("formatJson()") !== -1 &&
 	propertyEditor.html.indexOf("data-action=\"nullish\"") !== -1 &&
 	propertyEditorCompactHtml.indexOf("insertNullishFallback()") !== -1 &&
@@ -4189,14 +4203,18 @@ assertTrue(fallbackFrontendPalette.ok === true && fallbackFrontendPalette.eligib
 var flowSvelteModelDir = new java.io.File(frontendRoot, "model/AstSmoke");
 var flowSvelteRoutesDir = new java.io.File(flowSvelteModelDir, "src/routes");
 var flowSvelteComponentDir = new java.io.File(flowSvelteModelDir, "src/lib/components");
+var flowSvelteTranslationsDir = new java.io.File(flowSvelteModelDir, "src/i18n");
 flowSvelteComponentDir.mkdirs();
 flowSvelteRoutesDir.mkdirs();
+flowSvelteTranslationsDir.mkdirs();
 var flowSveltePageFile = new java.io.File(flowSvelteRoutesDir, "+page.flow.svelte");
 var flowSvelteLayoutFile = new java.io.File(flowSvelteRoutesDir, "+layout.flow.svelte");
 var nestedRouteDir = new java.io.File(flowSvelteRoutesDir, "(shop)/products/[id=integer]");
 nestedRouteDir.mkdirs();
 var nestedRouteFile = new java.io.File(nestedRouteDir, "+page.flow.svelte");
 var flowSvelteComponentFile = new java.io.File(flowSvelteComponentDir, "SmokePanel.flow.svelte");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(
+	new java.io.File(flowSvelteTranslationsDir, "en.json"), "{\n  \"ready\": \"Ready\"\n}\n", "UTF-8");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"<script module>",
 	"  export const _flow = {",
@@ -4427,7 +4445,7 @@ assertTrue(String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("
 	String(flowSvelteAcceptance.calls[2].arguments["function"]).indexOf("terminalReached: !pendingText") > 0,
 	"frontend acceptance should wait for a bounded stable terminal browser state");
 var authoringTreeCacheBeforeRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
-JSON.parse(engine.authoringTree(JSON.stringify({
+var defaultAuthoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
 	engineSource: flowSvelteEngineSource,
@@ -4435,6 +4453,8 @@ JSON.parse(engine.authoringTree(JSON.stringify({
 	detail: "compact",
 	maxDepth: 2
 })));
+assertTrue(JSON.stringify(defaultAuthoringTree).indexOf('"bindingSources"') === -1,
+	"ordinary authoring tree reads should not build frontend binding catalogs");
 var authoringTreeCacheAfterRepeat = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 assertTrue(authoringTreeCacheAfterRepeat.hits > authoringTreeCacheBeforeRepeat.hits,
 	"repeated authoring tree reads should reuse the shared tree snapshot");
@@ -4537,10 +4557,11 @@ JSON.parse(engine.authoringTree(JSON.stringify({
 	projectDir: __flowProjectDir,
 	focusPath: flowSvelteRoutesNode.path,
 	detail: "compact",
-	maxDepth: 3,
-	includeFrontendCatalog: false,
-	includeFlowCatalog: false
-})));
+		maxDepth: 3,
+		includeFrontendCatalog: false,
+		includeFlowCatalog: false,
+		includeBindings: false
+	})));
 var authoringTreeCacheBeforePalette = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 var cachedRoutePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
@@ -4724,6 +4745,31 @@ var flowSvelteVariablesPalette = JSON.parse(engine.authoringPalette(JSON.stringi
 		return item.id === id;
 	}), "authoring palette did not expose reactive variable item " + id + " below Variables");
 });
+var flowSvelteTranslationsNode = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendTranslations";
+});
+var flowSvelteEnglishTranslationNode = findNode(flowSvelteTranslationsNode, function (node) {
+	var definition = node && node.definition ? JSON.parse(node.definition) : {};
+	return node.kind === "frontendTranslationSource" && definition.locale === "en";
+});
+assertTrue(flowSvelteEnglishTranslationNode !== null &&
+	JSON.parse(flowSvelteEnglishTranslationNode.info).sourceWritable === true &&
+	String(JSON.parse(flowSvelteEnglishTranslationNode.info).sourcePath || "").indexOf("/src/i18n/en.json") !== -1,
+	"translation source should remain an editable project JSON file");
+var flowSvelteTranslationsPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteTranslationsNode.path
+})));
+assertTrue(flowSvelteTranslationsPalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.translation.fr" && item.insert &&
+		item.insert.__frontendCreateSource &&
+		item.insert.__frontendCreateSource.fileName === "${localName}.json";
+}) && !flowSvelteTranslationsPalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.translation.en";
+}), "translation palette should propose only missing locale source files");
 var flowSveltePortablePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -5066,9 +5112,10 @@ var flowSvelteBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stri
 	}
 })));
 assertTrue(flowSvelteBindingRoundTrip.ok === true &&
+	flowSvelteBindingRoundTrip.target === "frontAst" &&
 	(String(flowSvelteBindingRoundTrip.source).match(/source=\{\{/g) || []).length === 2 &&
 	String(flowSvelteBindingRoundTrip.source).indexOf('source="{') === -1,
-	"flow-svelte AST mutations should preserve all structured binding attributes across reparses: " +
+	"flow-svelte AST mutations should use the fast path for legacy ForEach Children slots and preserve all structured binding attributes: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
 var flowSvelteIntuitiveBindingMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5226,6 +5273,54 @@ assertTrue(flowSvelteNestedConditionalMutation.ok === true &&
 	String(flowSvelteNestedConditionalMutation.source).indexOf('"scopeId":"items"') !== -1,
 	"flow-svelte AST mutations should resolve Each and named If slots: " +
 		JSON.stringify(flowSvelteNestedConditionalMutation));
+var flowSvelteKitchenSinkSource = [
+	"<FlowComponent id=\"home\" label=\"Kitchen Sink gallery\">",
+	"  <Structure>",
+	"    <PageShell id=\"homeShell\"><Children>",
+	"      <ColumnLayout id=\"homeContent\"><Children>",
+	"        <Card id=\"introCard\" />",
+	"        <SearchField id=\"componentSearch\" />",
+	"        <RowLayout id=\"resultsMeta\" />",
+	"        <GridLayout id=\"componentGrid\"><Children>",
+	"          <ForEach id=\"componentLoop\" source={{\"mode\":\"literal\",\"value\":[]}}><Children>",
+	"            <Card id=\"componentCard\"><Children>",
+	"              <RowLayout id=\"componentCardRow\"><Children>",
+	"                <Text id=\"componentIcon\" text=\"@item.icon\" />",
+	"                <ColumnLayout id=\"componentCopy\"><Children>",
+	"                  <Heading id=\"componentName\" text=\"@item.title\" />",
+	"                  <Text id=\"componentDescription\" text=\"@item.description\" />",
+	"                </Children></ColumnLayout>",
+	"              </Children></RowLayout>",
+	"            </Children></Card>",
+	"          </Children></ForEach>",
+	"        </Children></GridLayout>",
+	"      </Children></ColumnLayout>",
+	"    </Children></PageShell>",
+	"  </Structure>",
+	"</FlowComponent>",
+	""
+].join("\n");
+var flowSvelteKitchenSinkInsertPath = "frontAst.slots.structure.children[0].slots.children.children[0]" +
+	".slots.children.children[3].slots.children.children[0].slots.children.children[0]" +
+	".slots.children.children[0].slots.children.children[1].slots.children.children";
+var flowSvelteKitchenSinkInsert = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSveltePageFile.getAbsolutePath()),
+	sourcePath: String(flowSveltePageFile.getAbsolutePath()),
+	source: flowSvelteKitchenSinkSource,
+	mutation: {
+		op: "insert",
+		path: flowSvelteKitchenSinkInsertPath,
+		index: 2,
+		value: { kind: "frontendWidget", type: "Text", id: "insertedText", text: "Inserted" }
+	}
+})));
+assertTrue(flowSvelteKitchenSinkInsert.ok === true && flowSvelteKitchenSinkInsert.target === "frontAst" &&
+	flowSvelteKitchenSinkInsert.debug.path === flowSvelteKitchenSinkInsertPath &&
+	String(flowSvelteKitchenSinkInsert.source).indexOf('id="insertedText"') !== -1 &&
+	String(flowSvelteKitchenSinkInsert.source).indexOf('id="componentDescription"') <
+		String(flowSvelteKitchenSinkInsert.source).indexOf('id="insertedText"'),
+	"flow-svelte AST insert should support the exact Kitchen Sink componentCopy path: " +
+		JSON.stringify(flowSvelteKitchenSinkInsert));
 var flowSvelteDraftTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: flowSvelteEngineSource,

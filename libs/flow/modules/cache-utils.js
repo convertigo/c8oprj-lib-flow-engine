@@ -164,6 +164,9 @@
 			}
 		});
 		if (removed > 0) {
+			if (cache.limit) {
+				cache.size = Math.max(0, Number(cache.size || 0) - removed);
+			}
 			cache.clears++;
 			cache.updatedAt = now();
 		}

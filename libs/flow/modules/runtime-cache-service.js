@@ -129,8 +129,8 @@
 		env.cacheUtils.clearMap(caches.libraries);
 		env.cacheUtils.clearMap(caches.engineModules);
 		env.cacheUtils.clearValue(caches.propertyEditor);
-		env.cacheUtils.clearMap(caches.treeSnapshots);
-		env.cacheUtils.clearMap(caches.frontendDocuments);
+		env.cacheUtils.clearBoundedMap(caches.treeSnapshots);
+		env.cacheUtils.clearBoundedMap(caches.frontendDocuments);
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
 		env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
 		Object.keys(env.flowSnapshotStats || {}).forEach(function (key) {

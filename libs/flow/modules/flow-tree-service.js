@@ -440,6 +440,8 @@
 					drafts: request && request.frontendSourceDrafts || {},
 					property: request && request.property || "",
 					sourceId: request && request.sourceId || "",
+					bindingTargetPath: request && request.bindingTargetPath || "",
+					bindingTargetSource: request && request.bindingTargetSource || "",
 					sourceTree: request && request.sourceTree === true,
 					includeBindings: request && request.includeBindings !== false
 				});
@@ -1948,6 +1950,9 @@
 		if (kind === "frontendRoutes" || kind === "frontendRouteRoot" || kind === "frontendRouteGroup"
 			|| kind === "frontendRouteSegment" || kind === "frontendRouteChildren") {
 			slots.routes = frontendSlot("Routes", ["definition.routePage", "definition.routeLayout", "definition.routeFolder"], "", writable);
+		}
+		if (kind === "frontendTranslations") {
+			slots.translations = frontendSlot("Translations", ["definition.translationSource"], "", writable);
 		}
 		if (kind === "frontendStructure" || kind === "frontendSlot" || kind === "frontendWidgetRoot"
 			|| kind === "frontendPage" || kind === "frontendRouteLayout" || kind === "frontendComponent") {
@@ -4031,12 +4036,16 @@
 
 	function authoringTreeBaseRequest(request, blocks) {
 		request = request || {};
+		var includeBindings = request.includeBindings === true
+			|| (request.includeBindings === undefined && !!request.property
+				&& !!(request.focusPath || request.rootPath || request.path));
 		var baseRequest = Object.assign({}, request, {
 			focusPath: "",
 			rootPath: "",
 			path: "",
 			detail: "full",
-			includeChildren: true
+			includeChildren: true,
+			includeBindings: includeBindings
 		});
 		delete baseRequest.mode;
 		delete baseRequest.maxDepth;
@@ -4450,8 +4459,9 @@
 		return out;
 	}
 
-	function descriptorItem(descriptor, target) {
+	function descriptorItem(descriptor, target, detail) {
 		var out = {};
+		var compact = String(detail || "") === "compact";
 		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace",
 			"iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32",
 			"sourceBacked", "descriptorKind", "sourceWritable"].forEach(function (key) {
@@ -4467,13 +4477,15 @@
 				}
 			});
 		}
-		out.traits = frontendArray(descriptor.traits);
-		out.slots = descriptor.slots || {};
-		out.targetKinds = descriptor.targetKinds || [];
-		out.acceptedPositions = descriptor.acceptedPositions || [];
-		var properties = descriptorPropertyContract(descriptor.properties);
-		if (Object.keys(properties).length) {
-			out.properties = properties;
+		if (!compact) {
+			out.traits = frontendArray(descriptor.traits);
+			out.slots = descriptor.slots || {};
+			out.targetKinds = descriptor.targetKinds || [];
+			out.acceptedPositions = descriptor.acceptedPositions || [];
+			var properties = descriptorPropertyContract(descriptor.properties);
+			if (Object.keys(properties).length) {
+				out.properties = properties;
+			}
 		}
 		if (target) {
 			out.targetSlot = {
@@ -4604,6 +4616,9 @@
 		var targets = authoringPaletteTargets(focus, position, "inside");
 		var items = [];
 		(descriptors || []).forEach(function (descriptor) {
+			if (descriptorExcludedByFocusChildren(descriptor, focusInfo.node)) {
+				return;
+			}
 			if (!descriptorPositionMatch(descriptor, position)) {
 				filters.acceptedPositions++;
 				return;
@@ -4626,7 +4641,7 @@
 					filters.queryFiltered++;
 					return;
 				}
-				items.push(descriptorItem(descriptor, null));
+				items.push(descriptorItem(descriptor, null, request.detail));
 				return;
 			}
 			var matchedTrait = false;
@@ -4646,7 +4661,7 @@
 				if (!descriptorMatchesQuery(descriptor, query)) {
 					return;
 				}
-				items.push(descriptorItem(descriptor, target));
+				items.push(descriptorItem(descriptor, target, request.detail));
 			});
 			if (!matchedTrait) {
 				filters.noMatchingTrait++;
@@ -4679,6 +4694,16 @@
 			filters: filters,
 			items: items
 		};
+	}
+
+	function descriptorExcludedByFocusChildren(descriptor, focusNode) {
+		var excludedId = String(descriptor && descriptor.excludedWhenChildId || "");
+		if (!excludedId || !focusNode) {
+			return false;
+		}
+		return (focusNode.children || []).some(function (child) {
+			return String(nodeValue(child, "id") || "") === excludedId;
+		});
 	}
 
 	function authoringPaletteFromTreeRequest(request, blocks, tree) {
@@ -4762,6 +4787,9 @@
 		}
 		if (treeRequest.includeFlowCatalog === undefined || treeRequest.includeFlowCatalog === null) {
 			treeRequest.includeFlowCatalog = surface !== "frontend";
+		}
+		if (treeRequest.includeBindings === undefined || treeRequest.includeBindings === null) {
+			treeRequest.includeBindings = false;
 		}
 		return treeRequest;
 	}
