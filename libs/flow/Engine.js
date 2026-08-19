@@ -5455,7 +5455,11 @@
 			return Object.prototype.hasOwnProperty.call(value, "value");
 		}
 		if (value.mode === "expression") {
-			return typeof value.expression === "string";
+			if (typeof value.expression === "string") {
+				return true;
+			}
+			return Object.prototype.toString.call(value.parts) === "[object Array]" && value.parts.length > 0
+				&& value.parts.every(frontAstIsFlowExpressionPart);
 		}
 		if (value.mode !== "source" || !frontAstIsObject(value.source) || !frontAstBindingPath(value.path)) {
 			return false;
@@ -5480,6 +5484,22 @@
 				return source.value === "event";
 			}
 			return source.category === "route" && source.value === "route";
+	}
+
+	function frontAstIsFlowExpressionPart(part) {
+		if (!frontAstIsObject(part)) {
+			return false;
+		}
+		if (part.kind === "literal") {
+			return Object.prototype.hasOwnProperty.call(part, "value");
+		}
+		if (part.kind === "expression") {
+			return typeof part.expression === "string";
+		}
+		if (part.kind === "source") {
+			return frontAstIsFlowValueBinding({ mode: "source", source: part.source, path: part.path });
+		}
+		return false;
 	}
 
 	function frontAstBindingPath(path) {

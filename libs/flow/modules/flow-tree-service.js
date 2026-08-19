@@ -1364,18 +1364,24 @@
 		if (transforms === undefined) return true;
 		if (Object.prototype.toString.call(transforms) !== "[object Array]") return false;
 		return transforms.every(function (transform) {
-			if (!transform || typeof transform !== "object" || transform.kind !== "format") return false;
-			if (transform.prefix !== undefined && typeof transform.prefix !== "string") return false;
-			if (transform.suffix !== undefined && typeof transform.suffix !== "string") return false;
-			if (transform.format !== undefined && (typeof transform.format !== "string" || transform.format.indexOf("{value}") < 0)) return false;
-			return String(transform.prefix || "") !== "" || String(transform.suffix || "") !== "" || typeof transform.format === "string";
+			return !!transform && typeof transform === "object" && transform.kind === "default"
+				&& Object.prototype.hasOwnProperty.call(transform, "value");
 		});
+	}
+
+	function flowSvelteLiteExpressionPart(part) {
+		if (!part || typeof part !== "object" || part.splice) return false;
+		if (part.kind === "literal") return Object.prototype.hasOwnProperty.call(part, "value");
+		if (part.kind === "expression") return typeof part.expression === "string";
+		if (part.kind === "source") return flowSvelteLiteIsBinding({ mode: "source", source: part.source, path: part.path });
+		return false;
 	}
 
 	function flowSvelteLiteIsBinding(value) {
 		if (!value || typeof value !== "object" || value.splice) return false;
 		if (value.mode === "literal") return Object.prototype.hasOwnProperty.call(value, "value");
-		if (value.mode === "expression") return typeof value.expression === "string";
+		if (value.mode === "expression") return typeof value.expression === "string" ||
+			(Object.prototype.toString.call(value.parts) === "[object Array]" && value.parts.length > 0 && value.parts.every(flowSvelteLiteExpressionPart));
 		if (value.mode !== "source" || !value.source || typeof value.source !== "object" ||
 			!flowSvelteLiteBindingPath(value.path) || !flowSvelteLiteBindingTransforms(value.transform)) return false;
 		var source = value.source;

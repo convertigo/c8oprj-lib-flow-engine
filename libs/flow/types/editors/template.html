@@ -6,7 +6,8 @@
 		textarea { min-height: 180px; resize: vertical; }
 		.modebar { display: flex; gap: 6px; margin-bottom: 8px; }
 		.modebar button.active { background: var(--flow-editor-primary-active); border-color: var(--flow-editor-accent); color: white; }
-		.simple { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 6px; margin-bottom: 8px; }
+		.simple { display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 8px; }
+		.simple textarea { min-height: 110px; }
 		.hidden { display: none !important; }
 		.picker { overflow: auto; max-height: 420px; border: 1px solid var(--flow-editor-border); border-radius: 4px; padding: 8px; background: var(--flow-editor-surface); }
 		details.scopeGroup { margin: 6px 0; }
@@ -26,16 +27,14 @@
 	<div class="layout">
 		<div>
 			<div class="modebar">
-				<button data-mode="simple">Simple</button>
-				<button data-mode="custom">Custom</button>
+				<button data-mode="simple">Compose</button>
+				<button data-mode="custom">Raw</button>
 			</div>
 			<div class="simple" part="simple">
-				<input data-simple="prefix" placeholder="prefix">
-				<input data-simple="pick" placeholder="pick a path">
-				<input data-simple="suffix" placeholder="suffix">
+				<textarea data-simple="template" placeholder="Write text and select values on the right"></textarea>
 			</div>
 			<textarea part="input" spellcheck="false"></textarea>
-			<div class="hint">Simple builds prefix + {{ expression }} + suffix. Custom edits the full template.</div>
+			<div class="hint">Each selected value is inserted as {{ source }} at the cursor. Plain text stays plain text.</div>
 		</div>
 		<div class="picker" part="picker"></div>
 	</div>
@@ -116,21 +115,6 @@
 			return html || "<div class=\"empty\">No known path yet.</div>";
 		}
 
-		function parts(value) {
-			value = String(value || "");
-			var start = value.indexOf("{{");
-			var end = start < 0 ? -1 : value.indexOf("}}", start + 2);
-			if (start >= 0 && end >= 0) {
-				return { prefix: value.slice(0, start), path: value.slice(start + 2, end).trim(), suffix: value.slice(end + 2) };
-			}
-			return { prefix: value, path: "", suffix: "" };
-		}
-
-		function canUseSimple(value) {
-			var p = parts(value);
-			return p.path !== "" && p.prefix.indexOf("}}") < 0 && p.suffix.indexOf("{{") < 0;
-		}
-
 		customElements.define("flow-template-editor", class extends HTMLElement {
 			constructor() {
 				super();
@@ -158,7 +142,7 @@
 					}
 				}
 				this._value = this._state.value == null ? "" : String(this._state.value);
-				this._mode = canUseSimple(this._value) ? "simple" : "custom";
+				this._mode = "simple";
 				this.render();
 				this.emit();
 			}
@@ -171,7 +155,7 @@
 				if (event.type === "input") {
 					if (event.target && event.target.matches("[data-simple]")) {
 						this.syncSimple();
-					} else if (event.target && event.target.matches("textarea")) {
+					} else if (event.target && event.target.matches('[part="input"]')) {
 						this._value = event.target.value;
 						this.emit();
 					}
@@ -195,22 +179,25 @@
 			}
 
 			syncSimple() {
-				var prefix = this.shadowRoot.querySelector("[data-simple=prefix]");
-				var pick = this.shadowRoot.querySelector("[data-simple=pick]");
-				var suffix = this.shadowRoot.querySelector("[data-simple=suffix]");
-				var path = pick && pick.value.trim();
-				this._value = (prefix ? prefix.value : "") + (path ? "{{ " + path + " }}" : "") + (suffix ? suffix.value : "");
+				var input = this.shadowRoot.querySelector("[data-simple=template]");
+				this._value = input ? input.value : "";
 				this.emit();
 			}
 
 			pick(path) {
 				if (this._mode === "simple") {
-					var pick = this.shadowRoot.querySelector("[data-simple=pick]");
-					if (pick) {
-						pick.value = path;
+					var input = this.shadowRoot.querySelector("[data-simple=template]");
+					if (input) {
+						var text = "{{ " + path + " }}";
+						var start = input.selectionStart == null ? input.value.length : input.selectionStart;
+						var end = input.selectionEnd == null ? start : input.selectionEnd;
+						input.value = input.value.slice(0, start) + text + input.value.slice(end);
+						this.syncSimple();
+						this.render();
+						input = this.shadowRoot.querySelector("[data-simple=template]");
+						input.focus();
+						input.selectionStart = input.selectionEnd = start + text.length;
 					}
-					this.syncSimple();
-					this.render();
 					return;
 				}
 				var textarea = this.shadowRoot.querySelector("textarea");
@@ -235,7 +222,6 @@
 				if (!this.shadowRoot) {
 					return;
 				}
-				var p = parts(this._value);
 				var simple = this.shadowRoot.querySelector(".simple");
 				var textarea = this.shadowRoot.querySelector("textarea");
 				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) {
@@ -250,12 +236,8 @@
 						textarea.value = this._value;
 					}
 				}
-				var prefix = this.shadowRoot.querySelector("[data-simple=prefix]");
-				var pick = this.shadowRoot.querySelector("[data-simple=pick]");
-				var suffix = this.shadowRoot.querySelector("[data-simple=suffix]");
-				if (prefix && prefix.value !== p.prefix) prefix.value = p.prefix;
-				if (pick && pick.value !== p.path) pick.value = p.path;
-				if (suffix && suffix.value !== p.suffix) suffix.value = p.suffix;
+				var template = this.shadowRoot.querySelector("[data-simple=template]");
+				if (template && template.value !== this._value) template.value = this._value;
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
 					picker.innerHTML = renderPicker(this._state.context, this._state.propertyDefinition);

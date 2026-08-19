@@ -733,6 +733,13 @@ Use `value` for literals and dynamic values. A string containing only
 `{{ expression }}` returns the expression value with its native type; mixed text
 uses the same syntax as a string template.
 
+Studio edits backend `expression` and `value` properties as one readable
+expression. Selecting a picker path inserts it at the current cursor position,
+so a human can compose several sources, operators, nullish fallbacks and
+wrappers without a fixed prefix/pick/suffix form. Persistence remains the same:
+`{{ expression }}` for native values and embedded slots for templates. Existing
+FlowScript therefore needs no migration.
+
 ## Contracts and bindings
 
 A Flow can call an intention instead of a technical implementation through

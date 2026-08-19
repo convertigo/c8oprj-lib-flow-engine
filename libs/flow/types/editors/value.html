@@ -9,7 +9,7 @@
 		.simple { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
 		.simple label { display: block; margin: 0; }
 		.simpleLabel { display: block; margin-bottom: 3px; color: var(--flow-editor-text-muted); font-weight: 600; }
-		.simple input[readonly] { background: var(--flow-editor-surface); color: var(--flow-editor-readonly-text); }
+		.simple textarea { min-height: 110px; }
 		.hidden { display: none !important; }
 		.picker { overflow: auto; max-height: 420px; border: 1px solid var(--flow-editor-border); border-radius: 4px; padding: 8px; background: var(--flow-editor-surface); }
 		details.scopeGroup { margin: 6px 0; }
@@ -30,25 +30,17 @@
 	<div class="layout">
 		<div>
 			<div class="modebar">
-				<button data-mode="simple">Simple</button>
-				<button data-mode="custom">Custom</button>
+				<button data-mode="simple">Compose</button>
+				<button data-mode="custom">Raw</button>
 			</div>
 			<div class="simple" part="simple">
 				<label>
-					<span class="simpleLabel">Prefix</span>
-					<input data-simple="prefix" placeholder="expression prefix">
-				</label>
-				<label>
-					<span class="simpleLabel">Pick</span>
-					<input data-simple="pick" placeholder="select a scope path" readonly>
-				</label>
-				<label>
-					<span class="simpleLabel">Suffix</span>
-					<input data-simple="suffix" placeholder="expression suffix">
+					<span class="simpleLabel">Expression</span>
+					<textarea data-simple="expression" placeholder="Select values on the right or type an expression"></textarea>
 				</label>
 			</div>
 			<textarea part="input" spellcheck="false"></textarea>
-			<div class="hint">Prefix, pick and suffix are concatenated inside {{ expression }} to keep the native value type.</div>
+			<div class="hint">Each selected value is inserted at the cursor. Add operators, fallbacks, ternaries or wrappers explicitly.</div>
 		</div>
 		<div class="picker" part="picker"></div>
 	</div>
@@ -165,22 +157,13 @@
 			var match = value.match(/^\s*\{\{([\s\S]*)\}\}\s*$/);
 			if (match) {
 				var expression = match[1].trim();
-				var path = bestPathInExpression(expression, context, propertyDefinition);
-				if (path) {
-					var index = expression.indexOf(path);
-					return {
-						prefix: expression.slice(0, index),
-						path: path,
-						suffix: expression.slice(index + path.length)
-					};
-				}
-				return { prefix: "", path: expression, suffix: "" };
+				return { expression: expression, path: bestPathInExpression(expression, context, propertyDefinition) };
 			}
-			return { prefix: "", path: "", suffix: "" };
+			return { expression: "", path: "" };
 		}
 
 		function canUseSimple(value, context, propertyDefinition) {
-			return String(value || "").trim() === "" || parts(value, context, propertyDefinition).path !== "";
+			return String(value || "").trim() === "" || /^\s*\{\{[\s\S]*\}\}\s*$/.test(String(value || ""));
 		}
 
 		customElements.define("flow-value-editor", class extends HTMLElement {
@@ -223,7 +206,7 @@
 				if (event.type === "input") {
 					if (event.target && event.target.matches("[data-simple]")) {
 						this.syncSimple();
-					} else if (event.target && event.target.matches("textarea")) {
+					} else if (event.target && event.target.matches('[part="input"]')) {
 						this._value = event.target.value;
 						this.emit();
 					}
@@ -247,23 +230,25 @@
 			}
 
 			syncSimple() {
-				var prefix = this.shadowRoot.querySelector("[data-simple=prefix]");
-				var pick = this.shadowRoot.querySelector("[data-simple=pick]");
-				var suffix = this.shadowRoot.querySelector("[data-simple=suffix]");
-				var path = pick && pick.value.trim();
-				var expression = ((prefix ? prefix.value : "") + (path || "") + (suffix ? suffix.value : "")).trim();
+				var input = this.shadowRoot.querySelector("[data-simple=expression]");
+				var expression = input ? input.value.trim() : "";
 				this._value = expression ? "{{ " + expression + " }}" : "";
 				this.emit();
 			}
 
 			pick(path) {
 				if (this._mode === "simple") {
-					var pick = this.shadowRoot.querySelector("[data-simple=pick]");
-					if (pick) {
-						pick.value = path;
+					var input = this.shadowRoot.querySelector("[data-simple=expression]");
+					if (input) {
+						var start = input.selectionStart == null ? input.value.length : input.selectionStart;
+						var end = input.selectionEnd == null ? start : input.selectionEnd;
+						input.value = input.value.slice(0, start) + path + input.value.slice(end);
+						this.syncSimple();
+						this.render();
+						input = this.shadowRoot.querySelector("[data-simple=expression]");
+						input.focus();
+						input.selectionStart = input.selectionEnd = start + path.length;
 					}
-					this.syncSimple();
-					this.render();
 					return;
 				}
 				var textarea = this.shadowRoot.querySelector("textarea");
@@ -303,12 +288,8 @@
 						textarea.value = this._value;
 					}
 				}
-				var prefix = this.shadowRoot.querySelector("[data-simple=prefix]");
-				var pick = this.shadowRoot.querySelector("[data-simple=pick]");
-				var suffix = this.shadowRoot.querySelector("[data-simple=suffix]");
-				if (prefix && prefix.value !== p.prefix) prefix.value = p.prefix;
-				if (pick && pick.value !== p.path) pick.value = p.path;
-				if (suffix && suffix.value !== p.suffix) suffix.value = p.suffix;
+				var expression = this.shadowRoot.querySelector("[data-simple=expression]");
+				if (expression && expression.value !== p.expression) expression.value = p.expression;
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
 					picker.innerHTML = renderPicker(this._state.context, this._state.propertyDefinition, p.path);

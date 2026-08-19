@@ -2605,15 +2605,23 @@ assertTrue(propertyEditor.html.indexOf('"fullsync"') !== -1 &&
 	"binding editor did not expose canonical FullSync, event, local and route source modes");
 assertTrue(propertyEditor.html.indexOf("<label>Scope</label>") !== -1 &&
 	propertyEditor.html.indexOf("<label>Value</label>") !== -1 &&
-	propertyEditor.html.indexOf("<label>Prefix</label>") !== -1 &&
-	propertyEditor.html.indexOf("<label>Selected expression</label>") !== -1 &&
-	propertyEditor.html.indexOf("<label>Suffix</label>") !== -1 &&
-	propertyEditor.html.indexOf("data-selected-expression readonly") !== -1 &&
+	propertyEditor.html.indexOf("Add text") !== -1 &&
+	propertyEditor.html.indexOf("Add selected value") !== -1 &&
+	propertyEditor.html.indexOf("Add code") !== -1 &&
+	propertyEditor.html.indexOf("data-parts") !== -1 &&
+	propertyEditor.html.indexOf("ensureSelection()") !== -1 &&
+	propertyEditor.html.indexOf("addSource.disabled") !== -1 &&
+	propertyEditor.html.indexOf("<label>Prefix</label>") === -1 &&
 	propertyEditor.html.indexOf("pickerOnly: true") !== -1 &&
 	propertyEditor.html.indexOf("Stable id") === -1 &&
 	propertyEditor.html.indexOf("The index is the current item's position") !== -1 &&
 	propertyEditor.html.indexOf('return "Index"') !== -1,
 	"binding editor did not expose the compact human-facing source picker");
+assertTrue(propertyEditor.html.indexOf('data-simple="expression"') !== -1 &&
+	propertyEditor.html.indexOf("each click inserts at the cursor") !== -1 &&
+	propertyEditor.html.indexOf('data-simple="template"') !== -1 &&
+	propertyEditor.html.indexOf('data-simple="prefix"') === -1,
+	"backend property editor did not expose the multi-source expression composer");
 assertTrue(propertyEditor.html.indexOf("data-literal-choice") !== -1 &&
 	propertyEditor.html.indexOf("literalChoices(this._state)") !== -1 &&
 	propertyEditor.html.indexOf("Legacy value:") !== -1,
@@ -5328,7 +5336,7 @@ assertTrue(flowSvelteFullSyncBinding.ok === true &&
 	String(flowSvelteFullSyncBinding.source).indexOf('"category":"fullsync"') !== -1 &&
 	String(flowSvelteFullSyncBinding.source).indexOf('"operation":"view"') !== -1,
 	"flow-svelte AST mutations should accept structured FullSync binding sources");
-var flowSvelteFormattedBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
+var flowSvelteComposedBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
 	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
 	source: flowSvelteBindingRoundTripSource,
@@ -5336,16 +5344,20 @@ var flowSvelteFormattedBinding = JSON.parse(engine.applySourceMutation(JSON.stri
 		op: "replace",
 		path: "frontAst.slots.structure.children[0].slots.children.children[0].props.source",
 		value: {
-			mode: "source",
-			source: { category: "iteration", scopeId: "items", value: "index" },
-			path: [],
-			transform: [{ kind: "format", prefix: "index[", suffix: "]" }]
+			mode: "expression",
+			parts: [
+				{ kind: "literal", value: "index[" },
+				{ kind: "source", source: { category: "iteration", scopeId: "items", value: "index" }, path: [] },
+				{ kind: "literal", value: "]" }
+			]
 		}
 	}
 })));
-assertTrue(flowSvelteFormattedBinding.ok === true &&
-	String(flowSvelteFormattedBinding.source).indexOf('"transform":[{"kind":"format","prefix":"index[","suffix":"]"}]') !== -1,
-	"flow-svelte AST mutations did not preserve the typed Source format transform");
+assertTrue(flowSvelteComposedBinding.ok === true &&
+	String(flowSvelteComposedBinding.source).indexOf('"parts"') !== -1 &&
+	String(flowSvelteComposedBinding.source).indexOf('"value":"index["') !== -1 &&
+	String(flowSvelteComposedBinding.source).indexOf('"value":"]"') !== -1,
+	"flow-svelte AST mutations did not preserve ordered expression fragments");
 var flowSvelteConditionalBindingSource = [
 	"<FlowComponent id=\"conditionalBinding\" label=\"Conditional binding\">",
 	"  <Structure>",

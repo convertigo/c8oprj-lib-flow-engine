@@ -140,18 +140,14 @@
   function simpleParts(v) {
     v = String(v || "");
     var m = v.match(/^\s*\{\{([\s\S]*)\}\}\s*$/);
-    if (m) return { prefix: "", path: m[1].trim(), suffix: "" };
-    return { prefix: "", path: "", suffix: "" };
+    return { expression: m ? m[1].trim() : "" };
   }
   function simpleCandidate(v) {
-    return String(v || "").trim() === "" || simpleParts(v).path !== "";
+    return String(v || "").trim() === "" || simpleParts(v).expression !== "";
   }
   function simpleValue() {
-    var p = document.querySelector('[data-simple="prefix"]');
-    var m = document.querySelector('[data-simple="pick"]');
-    var s = document.querySelector('[data-simple="suffix"]');
-    var path = m ? m.value.trim() : "";
-    var expr = ((p ? p.value : "") + path + (s ? s.value : "")).trim();
+    var input = document.querySelector('[data-simple="expression"]');
+    var expr = input ? input.value.trim() : "";
     return expr ? "{{ " + expr + " }}" : "";
   }
   function setDraft(v) {
@@ -551,13 +547,9 @@
       html +=
         '<div data-simple-box class="simple ' +
         (editorMode === "simple" ? "" : "hidden") +
-        '"><label><span class="simpleLabel">Prefix</span><input data-simple="prefix" placeholder="expression prefix" value="' +
-        esc(p.prefix) +
-        '"></label><label><span class="simpleLabel">Pick</span><input data-simple="pick" placeholder="select a scope path" value="' +
-        esc(p.path) +
-        '" readonly></label><label><span class="simpleLabel">Suffix</span><input data-simple="suffix" placeholder="expression suffix" value="' +
-        esc(p.suffix) +
-        '"></label></div><div class="desc">Prefix, pick and suffix are concatenated inside {{ expression }}.</div>';
+        '"><label><span class="simpleLabel">Expression</span><textarea data-simple="expression" placeholder="Select values below or type an expression">' +
+        esc(p.expression) +
+        '</textarea></label></div><div class="desc">Select one or more values below; each click inserts at the cursor so operators, fallbacks and wrappers remain explicit.</div>';
     }
     html +=
       '<textarea data-key="' +
@@ -921,17 +913,21 @@
         updatePickerValue(pickedText(path));
         return;
       }
+      if (editorMode === "simple" && templateLike(currentPropertyKind())) {
+        var expression = document.querySelector('[data-simple="expression"]');
+        if (expression) {
+          var start = expression.selectionStart == null ? expression.value.length : expression.selectionStart;
+          var end = expression.selectionEnd == null ? start : expression.selectionEnd;
+          expression.value = expression.value.slice(0, start) + path + expression.value.slice(end);
+          expression.focus();
+          expression.selectionStart = expression.selectionEnd = start + path.length;
+          syncSimple();
+          return;
+        }
+      }
       var el = focusKey && input(focusKey);
       if (el) {
         var kind = el.getAttribute("data-kind") || "";
-        if (editorMode === "simple" && templateLike(kind)) {
-          var pick = document.querySelector('[data-simple="pick"]');
-          if (pick) {
-            pick.value = path;
-            syncSimple();
-            return;
-          }
-        }
         var text =
           kind === "template" || kind === "value" ? "{{ " + path + " }}" : path;
         var s = el.selectionStart || 0;

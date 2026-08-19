@@ -4,8 +4,17 @@
 		.modes { display: flex; gap: 4px; margin-bottom: 10px; }
 		button { border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 6px 10px; cursor: pointer; }
 		button.active { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; font-weight: 700; }
+		button:disabled { cursor: default; opacity: 0.5; }
 		.source { display: grid; grid-template-columns: minmax(140px, 0.7fr) minmax(240px, 1.3fr); gap: 8px; align-items: end; }
-		.composition { display: grid; grid-template-columns: minmax(100px, 0.7fr) minmax(220px, 1.6fr) minmax(100px, 0.7fr); gap: 8px; margin-top: 10px; align-items: end; }
+		.composer-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
+		.composer-tools button { padding: 5px 8px; }
+		.parts { display: grid; gap: 5px; margin-top: 8px; }
+		.part { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+		.part-kind { color: var(--flow-editor-text-muted); font-weight: 700; text-transform: uppercase; font-size: 10px; }
+		.part-actions { display: flex; gap: 3px; }
+		.part-actions button { min-width: 28px; padding: 4px 6px; }
+		.part-source { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.preview { margin-top: 8px; padding: 8px; border-left: 2px solid var(--flow-editor-selection-border); color: var(--flow-editor-text-muted); font: 12px ui-monospace, monospace; }
 		.field { display: grid; gap: 4px; }
 		label { color: var(--flow-editor-label); font-weight: 700; }
 		input, select { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
@@ -17,7 +26,8 @@
 		@media (max-width: 640px) {
 			.modes { flex-wrap: wrap; }
 			.modes button { flex: 1 1 auto; min-height: 44px; }
-			.source, .composition { grid-template-columns: minmax(0, 1fr); }
+			.source, .part { grid-template-columns: minmax(0, 1fr); }
+			.part-actions { justify-content: flex-end; }
 			input, select { min-height: 44px; font-size: 16px; }
 			.path { min-width: 0; }
 		}
@@ -25,27 +35,32 @@
 	<div class="modes">
 		<button type="button" data-mode="literal">Literal</button>
 		<button type="button" data-mode="source">Source</button>
-		<button type="button" data-mode="expression">Expression</button>
+		<button type="button" data-mode="expression">Compose</button>
 	</div>
 	<div data-panel="literal">
 		<select class="hidden" data-literal-choice aria-label="Literal choice"></select>
 		<flow-literal-editor data-child="literal"></flow-literal-editor>
 	</div>
-	<div data-panel="source">
+	<div data-picker class="hidden">
 		<div class="source">
 			<div class="field"><label>Scope</label><select data-category></select></div>
 			<div class="field"><label>Value</label><select data-source></select></div>
-		</div>
-		<div class="composition">
-			<div class="field"><label>Prefix</label><input data-prefix placeholder="Optional text before"></div>
-			<div class="field"><label>Selected expression</label><input data-selected-expression readonly></div>
-			<div class="field"><label>Suffix</label><input data-suffix placeholder="Optional text after"></div>
 		</div>
 		<div class="path"><flow-path-editor data-child="path"></flow-path-editor></div>
 		<div class="direct hidden" data-direct-source></div>
 		<div class="hint" data-source-hint></div>
 	</div>
-	<div data-panel="expression"><flow-expression-editor data-child="expression"></flow-expression-editor></div>
+	<div data-panel="source"></div>
+	<div data-panel="expression">
+		<div class="composer-tools">
+			<button type="button" data-add-part="literal">Add text</button>
+			<button type="button" data-add-part="source">Add selected value</button>
+			<button type="button" data-add-part="expression">Add code</button>
+		</div>
+		<div class="parts" data-parts></div>
+		<div class="preview" data-preview></div>
+		<div class="hint">Parts are evaluated from left to right as one JavaScript expression. Values remain picker-backed; code parts hold operators or wrappers such as +, ??, [, ] or a ternary.</div>
+	</div>
 </template>
 <script>
 	(function () {
@@ -184,25 +199,47 @@
 			return "This value is scalar and is used directly; no property is required.";
 		}
 
-		function formatParts(binding) {
-			var transforms = binding && binding.transform;
-			if (!Array.isArray(transforms)) return { prefix: "", suffix: "" };
-			var transform = transforms.find(function (entry) { return entry && entry.kind === "format"; });
-			if (!transform) return { prefix: "", suffix: "" };
-			if (transform.prefix !== undefined || transform.suffix !== undefined) {
-				return { prefix: String(transform.prefix || ""), suffix: String(transform.suffix || "") };
-			}
-			var format = String(transform.format || "{value}");
-			var marker = format.indexOf("{value}");
-			return marker < 0
-				? { prefix: format, suffix: "" }
-				: { prefix: format.slice(0, marker), suffix: format.slice(marker + "{value}".length) };
-		}
-
-		function selectedExpression(candidate, binding) {
+		function sourceExpression(candidate, binding) {
 			var path = pathText(binding && binding.path);
 			var label = candidate ? sourceLabel(candidate) : "Saved source";
 			return label + (path ? (path.charAt(0) === "[" ? path : "." + path) : "");
+		}
+
+		function copy(value) {
+			return value == null ? value : JSON.parse(JSON.stringify(value));
+		}
+
+		function sourcePart(binding) {
+			var part = { kind: "source", source: copy(binding && binding.source || {}) };
+			if (binding && Array.isArray(binding.path)) part.path = copy(binding.path);
+			if (binding && Object.prototype.hasOwnProperty.call(binding, "fallback")) part.fallback = copy(binding.fallback);
+			else if (binding && Array.isArray(binding.transform)) {
+				var fallback = binding.transform.find(function (entry) { return entry && entry.kind === "default"; });
+				if (fallback && Object.prototype.hasOwnProperty.call(fallback, "value")) part.fallback = copy(fallback.value);
+			}
+			return part;
+		}
+
+		function sourceSelection(binding) {
+			var part = sourcePart(binding);
+			return { mode: "source", source: part.source, path: part.path || [], fallback: part.fallback };
+		}
+
+		function composedParts(binding) {
+			if (binding && binding.mode === "expression" && Array.isArray(binding.parts)) return binding.parts;
+			if (binding && binding.mode === "expression") return [{ kind: "expression", expression: String(binding.expression || "") }];
+			if (binding && binding.mode === "source") return [sourcePart(binding)];
+			return [{ kind: "literal", value: binding && binding.value !== undefined ? binding.value : "" }];
+		}
+
+		function partPreview(part, allSources) {
+			if (!part) return "";
+			if (part.kind === "literal") return JSON.stringify(part.value);
+			if (part.kind === "expression") return String(part.expression || "");
+			var candidate = allSources.find(function (entry) {
+				return sourceKey(entry.source || entry) === sourceKey(part.source);
+			});
+			return sourceExpression(candidate, part);
 		}
 
 		function sourceRef(category, id, previous) {
@@ -225,6 +262,8 @@
 				super();
 				this._state = {};
 				this._binding = normalize("");
+				this._selection = { mode: "source", source: { category: "requestable", actionId: "" }, path: [] };
+				this._editingPartIndex = -1;
 				this._sourcesKey = "";
 				this._visibleSources = [];
 			}
@@ -243,7 +282,14 @@
 			setState(state) {
 				this._state = state || {};
 				this._binding = normalize(this._state.value);
+				this._selection = { mode: "source", source: { category: "requestable", actionId: "" }, path: [] };
+				if (this._binding.mode === "source") this._selection = copy(this._binding);
+				else {
+					var selectedPart = composedParts(this._binding).find(function (part) { return part && part.kind === "source"; });
+					if (selectedPart) this._selection = sourceSelection(selectedPart);
+				}
 				this.loadSources();
+				this.ensureSelection();
 				this.render();
 			}
 
@@ -262,20 +308,78 @@
 				}
 			}
 
+			ensureSelection() {
+				var available = sources(this._state);
+				if (!available.length) return;
+				var selected = available.find(function (candidate) {
+					return sourceKey(candidate.source || candidate) === sourceKey(this._selection.source);
+				}, this);
+				if (selected) return;
+				var hasSavedIdentity = sourceId(this._selection.source) || String(this._selection.source && this._selection.source.value || "");
+				if (hasSavedIdentity) return;
+				var first = available[0];
+				this._selection = {
+					mode: "source",
+					source: copy(first.source || sourceRef(first.category, first.id, this._selection.source)),
+					path: []
+				};
+				if (this._binding.mode === "source") this._binding = copy(this._selection);
+			}
+
 			handleEvent(event) {
 				var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
 				if (event.type === "click" && mode) {
 					this.setMode(mode); this.render(); this.emit(); return;
+				}
+				if (event.type === "click") {
+					var addKind = event.target && event.target.getAttribute && event.target.getAttribute("data-add-part");
+					var partAction = event.target && event.target.getAttribute && event.target.getAttribute("data-part-action");
+					var partIndex = Number(event.target && event.target.getAttribute && event.target.getAttribute("data-part-index"));
+					if (addKind) {
+						var parts = composedParts(this._binding);
+						if (addKind === "literal") parts.push({ kind: "literal", value: "" });
+						else if (addKind === "expression") parts.push({ kind: "expression", expression: "+" });
+						else {
+							var selectedSource = sources(this._state).find(function (candidate) {
+								return sourceKey(candidate.source || candidate) === sourceKey(this._selection.source);
+							}, this);
+							if (!selectedSource) return;
+							parts.push(sourcePart(this._selection));
+						}
+						this._binding = { mode: "expression", parts: parts };
+						this._editingPartIndex = parts.length - 1;
+						this.render(); this.emit(); return;
+					}
+					if (partAction && Number.isInteger(partIndex)) {
+						var currentParts = composedParts(this._binding);
+						if (partAction === "select" && currentParts[partIndex] && currentParts[partIndex].kind === "source") {
+							this._editingPartIndex = partIndex;
+							this._selection = sourceSelection(currentParts[partIndex]);
+						} else if (partAction === "remove") {
+							currentParts.splice(partIndex, 1);
+							if (!currentParts.length) currentParts.push({ kind: "literal", value: "" });
+							this._editingPartIndex = -1;
+						} else if (partAction === "left" && partIndex > 0) {
+							var previous = currentParts[partIndex - 1]; currentParts[partIndex - 1] = currentParts[partIndex]; currentParts[partIndex] = previous;
+						} else if (partAction === "right" && partIndex + 1 < currentParts.length) {
+							var next = currentParts[partIndex + 1]; currentParts[partIndex + 1] = currentParts[partIndex]; currentParts[partIndex] = next;
+						}
+						this._binding = { mode: "expression", parts: currentParts };
+						this.render(); this.emit(); return;
+					}
 				}
 				if (event.type === "flow-value") {
 					var child = event.target && event.target.getAttribute && event.target.getAttribute("data-child");
 					if (!child) return;
 					event.stopPropagation();
 					if (child === "path") {
-						this._binding.path = pathParts(event.detail && event.detail.value);
+						this._selection.path = pathParts(event.detail && event.detail.value);
+						if (this._binding.mode === "source") this._binding.path = copy(this._selection.path);
+						else if (Array.isArray(this._binding.parts) && this._editingPartIndex >= 0 && this._binding.parts[this._editingPartIndex]) {
+							this._binding.parts[this._editingPartIndex] = sourcePart(this._selection);
+						}
 						this.render();
 					}
-					else if (child === "expression") this._binding.expression = String(event.detail && event.detail.value || "");
 					else if (child === "literal") {
 						var value = event.detail && event.detail.value;
 						if (event.detail && event.detail.textLiteral) this._binding.value = String(value || "");
@@ -291,11 +395,16 @@
 					if (choiceIndex >= 0 && choiceIndex < choices.length) this._binding.value = choices[choiceIndex];
 					this.emit(); return;
 				}
-				var prefix = this.shadowRoot.querySelector("[data-prefix]");
-				var suffix = this.shadowRoot.querySelector("[data-suffix]");
-				if (event.target === prefix || event.target === suffix) {
-					this.setFormat(prefix && prefix.value || "", suffix && suffix.value || "");
-					this.emit(); return;
+				var partValue = event.target && event.target.getAttribute && event.target.getAttribute("data-part-value");
+				if (partValue) {
+					var valueIndex = Number(event.target.getAttribute("data-part-index"));
+					var valueParts = composedParts(this._binding);
+					if (valueParts[valueIndex]) {
+						if (valueParts[valueIndex].kind === "literal") valueParts[valueIndex].value = event.target.value;
+						else if (valueParts[valueIndex].kind === "expression") valueParts[valueIndex].expression = event.target.value;
+						this._binding = { mode: "expression", parts: valueParts };
+						this.updatePreview(); this.emit(); return;
+					}
 				}
 				var category = this.shadowRoot.querySelector("[data-category]");
 				var selected = this.shadowRoot.querySelector("[data-source]");
@@ -303,29 +412,29 @@
 					var first = sources(this._state).find(function (candidate) {
 						return sourceCategory(candidate) === category.value;
 					});
-					this._binding.source = first
-						? first.source || sourceRef(first.category, first.id, this._binding.source)
-						: sourceRef(category.value, "", this._binding.source);
-					this._binding.path = [];
+					this._selection.source = first
+						? first.source || sourceRef(first.category, first.id, this._selection.source)
+						: sourceRef(category.value, "", this._selection.source);
+					this._selection.path = [];
+					this.applySelection();
 					this.render(); this.emit(); return;
 				}
 				if (event.target === selected && selected.value !== "") {
 					var candidate = this._visibleSources[Number(selected.value)];
 					if (candidate) {
-						this._binding.source = candidate.source || sourceRef(candidate.category, candidate.id, this._binding.source);
-						this._binding.path = [];
+						this._selection.source = candidate.source || sourceRef(candidate.category, candidate.id, this._selection.source);
+						this._selection.path = [];
+						this.applySelection();
 						this.render(); this.emit(); return;
 					}
 				}
 			}
 
-			setFormat(prefix, suffix) {
-				var transforms = Array.isArray(this._binding.transform)
-					? this._binding.transform.filter(function (entry) { return !entry || entry.kind !== "format"; })
-					: [];
-				if (prefix || suffix) transforms.push({ kind: "format", prefix: String(prefix || ""), suffix: String(suffix || "") });
-				if (transforms.length) this._binding.transform = transforms;
-				else delete this._binding.transform;
+			applySelection() {
+				if (this._binding.mode === "source") this._binding = copy(this._selection);
+				else if (Array.isArray(this._binding.parts) && this._editingPartIndex >= 0 && this._binding.parts[this._editingPartIndex]) {
+					this._binding.parts[this._editingPartIndex] = sourcePart(this._selection);
+				}
 			}
 
 			setMode(mode) {
@@ -335,12 +444,24 @@
 					if (value === undefined) value = choices.length ? choices[0] : "";
 					this._binding = { mode: "literal", value: value };
 				}
-				else if (mode === "expression") this._binding = { mode: "expression", expression: this._binding.expression || "" };
-				else this._binding = { mode: "source", source: this._binding.source || { category: "requestable", actionId: "" }, path: this._binding.path || [] };
+				else if (mode === "expression") this._binding = { mode: "expression", parts: composedParts(this._binding) };
+				else {
+					this._binding = copy(this._selection);
+					this._binding.mode = "source";
+				}
 			}
 
 			emit() {
 				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value } }));
+			}
+
+			updatePreview() {
+				var preview = this.shadowRoot && this.shadowRoot.querySelector("[data-preview]");
+				if (!preview) return;
+				var allSources = sources(this._state);
+				preview.textContent = composedParts(this._binding).map(function (part) {
+					return partPreview(part, allSources);
+				}).join(" ") || "Empty expression";
 			}
 
 			render() {
@@ -348,6 +469,8 @@
 				var self = this, mode = this._binding.mode || "source";
 				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) { button.classList.toggle("active", button.getAttribute("data-mode") === mode); });
 				this.shadowRoot.querySelectorAll("[data-panel]").forEach(function (panel) { panel.classList.toggle("hidden", panel.getAttribute("data-panel") !== mode); });
+				var picker = this.shadowRoot.querySelector("[data-picker]");
+				picker.classList.toggle("hidden", mode !== "source" && mode !== "expression");
 				if (mode === "literal") {
 					var literal = this.shadowRoot.querySelector('[data-child="literal"]');
 					var choiceSelect = this.shadowRoot.querySelector("[data-literal-choice]");
@@ -375,18 +498,32 @@
 					return;
 				}
 				if (mode === "expression") {
-					var expression = this.shadowRoot.querySelector('[data-child="expression"]');
-					if (expression && expression.setState) expression.setState(Object.assign({}, this._state, { value: this._binding.expression || "" }));
-					return;
+					var parts = composedParts(this._binding);
+					this._binding = { mode: "expression", parts: parts };
+					var addSource = this.shadowRoot.querySelector('[data-add-part="source"]');
+					if (addSource) addSource.disabled = !sources(this._state).some(function (candidate) {
+						return sourceKey(candidate.source || candidate) === sourceKey(self._selection.source);
+					});
+					var partsElement = this.shadowRoot.querySelector("[data-parts]");
+					partsElement.innerHTML = parts.map(function (part, index) {
+						var editor = part.kind === "source"
+							? '<button type="button" class="part-source" data-part-action="select" data-part-index="' + index + '">' + esc(partPreview(part, sources(self._state))) + '</button>'
+							: '<input data-part-value="1" data-part-index="' + index + '" value="' + esc(part.kind === "literal" ? String(part.value == null ? "" : part.value) : String(part.expression || "")) + '" placeholder="' + (part.kind === "literal" ? "Text" : "Operator or code") + '">';
+						return '<div class="part"><span class="part-kind">' + esc(part.kind) + '</span>' + editor +
+							'<span class="part-actions"><button type="button" title="Move left" data-part-action="left" data-part-index="' + index + '">&#8592;</button>' +
+							'<button type="button" title="Move right" data-part-action="right" data-part-index="' + index + '">&#8594;</button>' +
+							'<button type="button" title="Remove" data-part-action="remove" data-part-index="' + index + '">&#215;</button></span></div>';
+					}).join("");
+					this.updatePreview();
 				}
 				var category = this.shadowRoot.querySelector("[data-category]");
 				var allSources = sources(this._state);
 				var currentCandidate = allSources.find(function (candidate) {
-					return sourceKey(candidate.source || candidate) === sourceKey(self._binding.source);
+					return sourceKey(candidate.source || candidate) === sourceKey(self._selection.source);
 				});
 				var currentCategory = currentCandidate
 					? sourceCategory(currentCandidate)
-					: String(this._binding.source && this._binding.source.category || "requestable");
+					: String(this._selection.source && this._selection.source.category || "requestable");
 				var availableCategories = categories.filter(function (name) {
 					return name === currentCategory || allSources.some(function (candidate) { return sourceCategory(candidate) === name; });
 				});
@@ -397,19 +534,12 @@
 				this._visibleSources = available;
 				var sourceSelect = this.shadowRoot.querySelector("[data-source]");
 				sourceSelect.innerHTML = available.length ? available.map(function (entry, index) {
-					var selected = sourceKey(entry.source || entry) === sourceKey(self._binding.source);
+					var selected = sourceKey(entry.source || entry) === sourceKey(self._selection.source);
 					var type = entry.schema && entry.schema.type ? " — " + entry.schema.type : "";
 					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(sourceLabel(entry) + type) + '</option>';
 				}).join("") : '<option value="">No source available</option>';
 				sourceSelect.disabled = available.length === 0;
-				var selectedSource = available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._binding.source); });
-				var decoration = formatParts(this._binding);
-				var prefix = this.shadowRoot.querySelector("[data-prefix]");
-				var suffix = this.shadowRoot.querySelector("[data-suffix]");
-				var expression = this.shadowRoot.querySelector("[data-selected-expression]");
-				if (prefix && prefix.value !== decoration.prefix) prefix.value = decoration.prefix;
-				if (suffix && suffix.value !== decoration.suffix) suffix.value = decoration.suffix;
-				if (expression) expression.value = selectedExpression(selectedSource || currentCandidate, this._binding);
+				var selectedSource = available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._selection.source); });
 				var context = selectedSource && selectedSource.context || this._state.context || {};
 				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };
 				var path = this.shadowRoot.querySelector('[data-child="path"]');
@@ -417,7 +547,7 @@
 				var direct = this.shadowRoot.querySelector("[data-direct-source]");
 				var hint = this.shadowRoot.querySelector("[data-source-hint]");
 				var hasPaths = !!(selectedSource && Array.isArray(selectedSource.paths) && selectedSource.paths.length);
-				var hasSelectedPath = !!pathText(this._binding.path);
+				var hasSelectedPath = !!pathText(this._selection.path);
 				var showPath = hasPaths || hasSelectedPath;
 				pathContainer.classList.toggle("hidden", !showPath);
 				direct.classList.toggle("hidden", !selectedSource || showPath);
@@ -430,7 +560,7 @@
 				else hint.textContent = available.length ? "Choose a source." : "No value of this category is available here.";
 				if (showPath && path && path.setState) path.setState(Object.assign({}, this._state, {
 					context: context,
-					value: pathText(this._binding.path),
+					value: pathText(this._selection.path),
 					pickerOnly: true
 				}));
 			}
