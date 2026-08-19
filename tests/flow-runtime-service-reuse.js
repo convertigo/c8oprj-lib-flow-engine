@@ -24,11 +24,16 @@ let clock = 0;
 let effectiveConfigCalls = 0;
 let canonicalPathCalls = 0;
 let schemaRead = null;
+let blockCatalogReads = 0;
 const env = {
 	File: FakeFile,
 	nodeProps: (node) => Object.assign({}, node.props || node || {}),
 	nodePath: (node) => String(node && node.id || ""),
 	normalizeTree: (value) => value,
+	blockCatalog(block) {
+		blockCatalogReads += 1;
+		return block.contract;
+	},
 	snapshot: (value) => value,
 	currentProjectName: () => "Sample",
 	canonicalPath(file) {
@@ -88,6 +93,25 @@ assert.strictEqual(liveContextReads, 0,
 	"the best-case request frame should not capture a Convertigo context before a block needs it");
 assert.strictEqual(liveProjectDirReads, 0,
 	"the best-case request frame should not capture a project directory before it is read");
+
+const alphaContract = { description: "Alpha", props: { value: { type: "string" } } };
+const catalogFrame = runtime.createRunContext({}, {}, {
+	zeta: { contract: { description: "Zeta" } },
+	alpha: { contract: alphaContract },
+}, {}, env);
+assert.deepStrictEqual(Array.from(catalogFrame.blockNames()), ["alpha", "zeta"],
+	"the active block inventory should be stable and sorted without rebuilding the global catalog");
+const exactContract = catalogFrame.blockContract("alpha");
+assert.strictEqual(exactContract.blockId, "alpha");
+assert.strictEqual(exactContract.block, "alpha");
+assert.strictEqual(exactContract.name, "alpha");
+assert.strictEqual(exactContract.description, "Alpha");
+assert.notStrictEqual(exactContract, alphaContract,
+	"blockContract should not add identity fields to a provider-owned descriptor");
+assert.strictEqual(alphaContract.blockId, undefined);
+assert.strictEqual(catalogFrame.blockContract("missing"), null);
+assert.strictEqual(blockCatalogReads, 1,
+	"blockContract should inspect only the requested active block");
 assert.strictEqual(first.convertigoContext(), firstLiveContext);
 assert.strictEqual(liveContextReads, 1);
 assert.strictEqual(first.convertigoContext(), firstLiveContext);

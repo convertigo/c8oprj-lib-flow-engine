@@ -4046,6 +4046,7 @@
 			notifySourceMutation: notifySourceMutation,
 			mergedContext: mergedContext,
 			catalogDefinition: catalogDefinition,
+			blockCatalog: blockCatalog,
 			getBlockSource: getBlockSource,
 			createProjectBlock: createProjectBlock,
 			duplicateProjectBlock: duplicateProjectBlock,

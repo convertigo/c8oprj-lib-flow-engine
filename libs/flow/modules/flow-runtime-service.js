@@ -91,6 +91,9 @@
 		var notifySourceMutation = env.notifySourceMutation || function () { return { ok: true }; };
 		var mergedContext = env.mergedContext;
 		var catalogDefinition = env.catalogDefinition;
+		var blockCatalog = env.blockCatalog || function (block) {
+			return block && typeof block.catalog === "function" ? block.catalog() : {};
+		};
 		var getBlockSource = env.getBlockSource;
 		var createProjectBlock = env.createProjectBlock;
 		var duplicateProjectBlock = env.duplicateProjectBlock;
@@ -437,6 +440,21 @@
 		};
 		runContextPrototype.catalog = function () {
 			return catalogDefinition(this.blocks);
+		};
+		runContextPrototype.blockNames = function () {
+			return Object.keys(this.blocks || {}).sort();
+		};
+		runContextPrototype.blockContract = function (name) {
+			var blockId = String(name || "");
+			var block = blockId && this.blocks && this.blocks[blockId];
+			if (!block) {
+				return null;
+			}
+			var contract = Object.assign({}, normalizeTree(blockCatalog(block) || {}));
+			contract.blockId = blockId;
+			contract.block = contract.block || blockId;
+			contract.name = contract.name || blockId;
+			return contract;
 		};
 		runContextPrototype.lib = function (name) {
 			name = safeFilePart(name);
