@@ -1,7 +1,7 @@
 <template id="flow-literal-editor-template">
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
-		textarea, input[type="number"] { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		textarea, input[type="number"], select { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		textarea { height: 220px; min-height: 100px; max-height: 55vh; resize: vertical; }
 		input[type="number"] { min-height: 34px; }
 		.boolean { display: flex; align-items: center; gap: 8px; min-height: 34px; color: var(--flow-editor-text-strong); }
@@ -25,6 +25,7 @@
 	<textarea part="input" spellcheck="false"></textarea>
 	<input class="hidden" type="number" data-number part="input">
 	<label class="boolean hidden" data-boolean><input type="checkbox">True</label>
+	<select class="hidden" data-select part="input"></select>
 	<div class="status" part="status"></div>
 </template>
 <script>
@@ -41,6 +42,7 @@
 				this._literalType = "unknown";
 				this._minimum = null;
 				this._maximum = null;
+				this._choices = [];
 			}
 
 			connectedCallback() {
@@ -67,6 +69,7 @@
 				this._literalType = type === "integer" ? "number" : type;
 				this._minimum = definition.minimum != null ? definition.minimum : definition.min;
 				this._maximum = definition.maximum != null ? definition.maximum : definition.max;
+				this._choices = Array.isArray(definition.enum) ? definition.enum.slice() : [];
 				this._textLiteral = !!(state && state.textLiteral)
 					|| this._literalType === "string"
 					|| definition.literalType === "string"
@@ -94,6 +97,13 @@
 				}
 				if (event.type === "change" && event.target && event.target.matches("[data-boolean] input")) {
 					this._value = event.target.checked ? "true" : "false";
+					this.validate();
+					this.emit();
+					return;
+				}
+				if (event.type === "change" && event.target && event.target.matches("[data-select]")) {
+					this._value = event.target.value;
+					this._textLiteral = this._literalType === "string";
 					this.validate();
 					this.emit();
 					return;
@@ -135,7 +145,7 @@
 					status.classList.remove("error");
 					return;
 				}
-				if (this._textLiteral || this._literalType === "boolean" || this._literalType === "number") {
+				if (this._textLiteral || this._literalType === "boolean" || this._literalType === "number" || this._choices.length) {
 					status.textContent = "";
 					status.classList.remove("error");
 					return;
@@ -166,14 +176,17 @@
 				var number = this.shadowRoot.querySelector("[data-number]");
 				var boolean = this.shadowRoot.querySelector("[data-boolean]");
 				var booleanInput = boolean && boolean.querySelector("input");
+				var select = this.shadowRoot.querySelector("[data-select]");
+				var selectMode = this._choices.length > 0;
 				var numberMode = this._literalType === "number";
 				var booleanMode = this._literalType === "boolean";
-				var jsonMode = !this._textLiteral && !numberMode && !booleanMode;
+				var jsonMode = !this._textLiteral && !numberMode && !booleanMode && !selectMode;
 				this.toggleAttribute("data-text-literal", this._textLiteral);
 				if (toolbar) toolbar.classList.toggle("hidden", !jsonMode);
-				if (textarea) textarea.classList.toggle("hidden", numberMode || booleanMode);
-				if (number) number.classList.toggle("hidden", !numberMode);
-				if (boolean) boolean.classList.toggle("hidden", !booleanMode);
+				if (textarea) textarea.classList.toggle("hidden", numberMode || booleanMode || selectMode);
+				if (number) number.classList.toggle("hidden", !numberMode || selectMode);
+				if (boolean) boolean.classList.toggle("hidden", !booleanMode || selectMode);
+				if (select) select.classList.toggle("hidden", !selectMode);
 				if (textarea && textarea.value !== this.value) {
 					textarea.value = this.value;
 				}
@@ -183,6 +196,18 @@
 					if (this._maximum != null) number.max = String(this._maximum); else number.removeAttribute("max");
 				}
 				if (booleanInput) booleanInput.checked = this.value === "true";
+				if (selectMode && select) {
+					var values = this._choices.map(function (choice) { return String(choice); });
+					if (this.value && values.indexOf(this.value) === -1) values.unshift(this.value);
+					select.innerHTML = "";
+					values.forEach(function (value) {
+						var option = document.createElement("option");
+						option.value = value;
+						option.textContent = value;
+						select.append(option);
+					});
+					select.value = this.value || values[0] || "";
+				}
 				if (textarea) {
 					textarea.placeholder = this._textLiteral ? "Enter text" : "Enter a JSON value";
 				}

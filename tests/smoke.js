@@ -2633,8 +2633,10 @@ assertTrue(propertyEditor.html.indexOf("bindingSourcesLoading") !== -1 &&
 assertTrue(propertyEditor.html.indexOf('toolbar.classList.toggle("hidden", !jsonMode)') !== -1 &&
 	propertyEditor.html.indexOf('textarea.placeholder = this._textLiteral ? "Enter text"') !== -1 &&
 	propertyEditor.html.indexOf('data-number') !== -1 &&
-	propertyEditor.html.indexOf('data-boolean') !== -1,
-	"literal editor did not expose type-appropriate text, number, boolean and JSON controls");
+	propertyEditor.html.indexOf('data-boolean') !== -1 &&
+	propertyEditor.html.indexOf('data-select') !== -1 &&
+	propertyEditor.html.indexOf('Array.isArray(definition.enum)') !== -1,
+	"literal editor did not expose type-appropriate text, number, boolean, enum and JSON controls");
 assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
 	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
 	"propertyEditor did not expose generic type editor host API");
