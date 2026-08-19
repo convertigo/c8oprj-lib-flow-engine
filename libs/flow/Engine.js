@@ -8537,6 +8537,11 @@
 		if (root) {
 			return root;
 		}
+		var configuredRoot = String(Packages.java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || "").trim();
+		root = configuredRoot ? usable(new File(configuredRoot)) : null;
+		if (root) {
+			return root;
+		}
 		var loadedRoot = loadedProjectRootForName("lib_flow_frontbuilder_svelte");
 		root = loadedRoot ? usable(new File(loadedRoot, "libs/flow/frontbuilder/svelte")) : null;
 		if (root) {
