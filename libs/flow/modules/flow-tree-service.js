@@ -54,6 +54,7 @@
 		var requestableInputContract = env.requestableInputContract || function () { return null; };
 		var frontendBlocksForSettings = env.frontendBlocksForSettings || function () { return []; };
 		var frontendCreateDescriptorsForSettings = env.frontendCreateDescriptorsForSettings || function () { return []; };
+		var frontendCreateDescriptorsForConfig = env.frontendCreateDescriptorsForConfig || function () { return []; };
 		var describeFrontendDocument = env.describeFrontendDocument || function () { return null; };
 		var raise = env.raise;
 		var intOption = env.intOption;
@@ -3480,8 +3481,8 @@
 		});
 	}
 
-	function addCatalogLibraries(catalog) {
-		var libraries = listFlowLibraries();
+	function addCatalogLibraries(catalog, options) {
+		var libraries = options && options.includeLibraries === false ? [] : listFlowLibraries();
 		var folder = virtualNode("libraries", "folder", "libraries", "catalog.libraries",
 			"Libraries", compact({ count: libraries.length }), null, "mdi:library-outline");
 		catalog.children.push(folder);
@@ -3568,7 +3569,7 @@
 				addBlockUses(blockNode, blockDefinition, blockPath);
 			});
 		});
-		addCatalogLibraries(catalog);
+		addCatalogLibraries(catalog, options);
 		var typesFolder = virtualNode("types", "folder", "types", "catalog.types", "Types", compact({}), null, "mdi:shape-outline");
 		catalog.children.push(typesFolder);
 		catalogDefinitionValue.types.forEach(function (type) {
@@ -3916,7 +3917,9 @@
 			if (request.includeFlowCatalog !== false) {
 				addFragments(children, blocks);
 				addCatalog(children, blocks, {
-					includePrivate: request.includePrivate !== false
+					includePrivate: request.includePrivate !== false,
+					origin: request.flowCatalogOrigin || "",
+					includeLibraries: request.includeCatalogLibraries !== false
 				});
 			}
 		} else {
@@ -4037,6 +4040,16 @@
 		var frontendsMatch = findTreeNode(tree, "frontends");
 		var frontends = frontendsMatch && frontendsMatch.node ? frontendsMatch.node : frontendsMatch;
 		if (!frontends) {
+			var roots = tree && tree.children || [];
+			for (var rootIndex = 0; rootIndex < roots.length; rootIndex++) {
+				var root = roots[rootIndex];
+				if (root && root.kind === "frontendBuilder"
+						&& (!builder || root.type === builder)) {
+					return root;
+				}
+			}
+		}
+		if (!frontends) {
 			return null;
 		}
 		if (!builder) {
@@ -4127,9 +4140,7 @@
 		var entries = frontbuilderSettings(engine && engine.config || {});
 		var descriptors = [];
 		if (!entries.length) {
-			descriptors = descriptors.concat(frontendCreateDescriptorsForSettings(builder || "svelte", {
-				target: "svelte5"
-			}) || []);
+			descriptors = descriptors.concat(frontendCreateDescriptorsForConfig(engine && engine.config || {}) || []);
 		} else {
 			entries.forEach(function (entry) {
 				if (builder && entry.name !== builder) {

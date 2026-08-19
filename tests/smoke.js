@@ -1829,6 +1829,22 @@ var frontendOnlyCodeSource = [
 ].join("\n");
 assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({ name: "smoke.normalize", code: frontendOnlyCodeSource }))).ok === true,
 	"blockCodeSet did not create the canonical frontend-only block contract");
+var engineWithLocalCatalog = eval(source);
+var localCatalogTree = JSON.parse(engineWithLocalCatalog.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: "version: 1\nconfig: {}\n",
+	projectDir: __flowProjectDir,
+	includeFlowCatalog: true,
+	flowCatalogOrigin: "project",
+	includeCatalogLibraries: false,
+	includeFrontendCatalog: false
+})));
+assertTrue(findNode(localCatalogTree, function (node) {
+	return node.type === "smoke.flowBacked";
+}) !== null && findNode(localCatalogTree, function (node) {
+	return node.type === "set";
+}) === null,
+	"the local engine catalog did not expose project definitions without the core catalog");
 var frontendWrite = JSON.parse(engine.blockCodeSet(JSON.stringify({
 	name: "smoke.normalize",
 	target: "frontend",
@@ -4124,6 +4140,15 @@ var frontendEngineSource = [
 	"      modelPath: libs/flow/frontbuilder/svelte/model/App.front.json",
 	""
 ].join("\n");
+var bareFrontendPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	engineSource: "version: 1\nconfig: {}\n",
+	projectDir: __flowProjectDir,
+	focusPath: "frontends"
+})));
+assertTrue(bareFrontendPalette.ok === true &&
+	bareFrontendPalette.items.some(function (item) { return item.id === "frontbuilder.svelte.builder"; }),
+	"a bare Flow engine did not propose the Svelte builder bootstrap descriptor");
 var authoringDraftProbeSource = [
 	"const _meta = {",
 	"  \"version\": 1,",

@@ -554,6 +554,17 @@
 		var page = catalogPage(blocks, options, function (descriptor) { return descriptor; }, env);
 		var descriptors = page.blocks;
 		var typeDescriptors = env.loadTypes();
+		var requestedOrigin = String(options.origin || "").trim();
+		if (requestedOrigin) {
+			var filteredTypeDescriptors = {};
+			Object.keys(typeDescriptors || {}).forEach(function (name) {
+				var descriptor = typeDescriptor(typeDescriptors[name], env);
+				if (String(descriptor.origin || "") === requestedOrigin) {
+					filteredTypeDescriptors[name] = typeDescriptors[name];
+				}
+			});
+			typeDescriptors = filteredTypeDescriptors;
+		}
 		var groups = [];
 		function groupLabel(provider, origin) {
 			if (provider) {
@@ -630,7 +641,7 @@
 			nextCursor: page.nextCursor,
 			blocks: descriptors,
 			groups: groups,
-			libraries: env.listFlowLibraries(),
+			libraries: options.includeLibraries === false ? [] : env.listFlowLibraries(),
 			types: catalogTypes(descriptors, typeDescriptors, env)
 		}, catalogPageFields(page)), options);
 	}

@@ -4365,6 +4365,7 @@
 				requestableInputContract: requestableInputContract,
 				frontendBlocksForSettings: frontendBlocksForSettings,
 				frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,
+				frontendCreateDescriptorsForConfig: frontendCreateDescriptorsForConfig,
 				sha256Hex: sha256Hex,
 				responseBudget: responseBudget,
 				describeFrontendDocument: describeFrontendDocument,
@@ -4513,7 +4514,11 @@
 			String(request.includeSource === true),
 			String(request.includeAnalysis === true),
 			String(request.includeSchema === true || request.schema === true),
-			String(request.includePrivate === false ? "no-private" : "private")
+			String(request.includePrivate === false ? "no-private" : "private"),
+			String(request.includeFrontendCatalog === false ? "no-frontend-catalog" : "frontend-catalog"),
+			String(request.includeFlowCatalog === false ? "no-flow-catalog" : "flow-catalog"),
+			String(request.flowCatalogOrigin || ""),
+			String(request.includeCatalogLibraries === false ? "no-catalog-libraries" : "catalog-libraries")
 		].join("|");
 		return [
 			target,
@@ -10181,7 +10186,7 @@
 		},
 
 		describeTree: function (requestJson) {
-			return engineCall("describeTree", requestJson, function (request) {
+			return projectCall("describeTree", requestJson, function (request) {
 				return describeTreeRequest(request, loadBlocks());
 			});
 		},
