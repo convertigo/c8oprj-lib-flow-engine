@@ -1,7 +1,11 @@
 <template id="flow-literal-editor-template">
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
-		textarea { box-sizing: border-box; width: 100%; height: 220px; min-height: 100px; max-height: 55vh; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
+		textarea, input[type="number"] { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
+		textarea { height: 220px; min-height: 100px; max-height: 55vh; resize: vertical; }
+		input[type="number"] { min-height: 34px; }
+		.boolean { display: flex; align-items: center; gap: 8px; min-height: 34px; color: var(--flow-editor-text-strong); }
+		.boolean input { width: 18px; height: 18px; }
 		.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 		button { border: 1px solid var(--flow-editor-accent-border); background: var(--flow-editor-primary-bg); color: white; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
 		button.secondary { background: var(--flow-editor-secondary-bg); border-color: var(--flow-editor-secondary-border); color: var(--flow-editor-secondary-text); }
@@ -19,6 +23,8 @@
 		<button data-format="true">Format JSON</button>
 	</div>
 	<textarea part="input" spellcheck="false"></textarea>
+	<input class="hidden" type="number" data-number part="input">
+	<label class="boolean hidden" data-boolean><input type="checkbox">True</label>
 	<div class="status" part="status"></div>
 </template>
 <script>
@@ -32,6 +38,9 @@
 				super();
 				this._value = "";
 				this._textLiteral = false;
+				this._literalType = "unknown";
+				this._minimum = null;
+				this._maximum = null;
 			}
 
 			connectedCallback() {
@@ -39,6 +48,7 @@
 					this.attachShadow({ mode: "open" })
 						.append(document.getElementById("flow-literal-editor-template").content.cloneNode(true));
 					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("change", this);
 					this.shadowRoot.addEventListener("click", this);
 				}
 				this.render();
@@ -47,7 +57,18 @@
 			setState(state) {
 				this._value = state && state.value != null ? String(state.value) : "";
 				var definition = state && state.propertyDefinition || {};
+				var type = String(definition.literalType || definition.type || "").toLowerCase();
+				if (!type || type === "binding" || type === "value") {
+					if (typeof definition["default"] === "string") type = "string";
+					else if (typeof definition["default"] === "boolean") type = "boolean";
+					else if (typeof definition["default"] === "number") type = "number";
+					else type = "unknown";
+				}
+				this._literalType = type === "integer" ? "number" : type;
+				this._minimum = definition.minimum != null ? definition.minimum : definition.min;
+				this._maximum = definition.maximum != null ? definition.maximum : definition.max;
 				this._textLiteral = !!(state && state.textLiteral)
+					|| this._literalType === "string"
 					|| definition.literalType === "string"
 					|| typeof definition["default"] === "string";
 				this.render();
@@ -61,6 +82,18 @@
 			handleEvent(event) {
 				if (event.type === "input" && event.target && event.target.matches("textarea")) {
 					this._value = event.target.value;
+					this.validate();
+					this.emit();
+					return;
+				}
+				if (event.type === "input" && event.target && event.target.matches("[data-number]")) {
+					this._value = event.target.value;
+					this.validate();
+					this.emit();
+					return;
+				}
+				if (event.type === "change" && event.target && event.target.matches("[data-boolean] input")) {
+					this._value = event.target.checked ? "true" : "false";
 					this.validate();
 					this.emit();
 					return;
@@ -102,7 +135,7 @@
 					status.classList.remove("error");
 					return;
 				}
-				if (this._textLiteral) {
+				if (this._textLiteral || this._literalType === "boolean" || this._literalType === "number") {
 					status.textContent = "";
 					status.classList.remove("error");
 					return;
@@ -130,11 +163,26 @@
 				}
 				var textarea = this.shadowRoot.querySelector("textarea");
 				var toolbar = this.shadowRoot.querySelector(".toolbar");
+				var number = this.shadowRoot.querySelector("[data-number]");
+				var boolean = this.shadowRoot.querySelector("[data-boolean]");
+				var booleanInput = boolean && boolean.querySelector("input");
+				var numberMode = this._literalType === "number";
+				var booleanMode = this._literalType === "boolean";
+				var jsonMode = !this._textLiteral && !numberMode && !booleanMode;
 				this.toggleAttribute("data-text-literal", this._textLiteral);
-				if (toolbar) toolbar.classList.toggle("hidden", this._textLiteral);
+				if (toolbar) toolbar.classList.toggle("hidden", !jsonMode);
+				if (textarea) textarea.classList.toggle("hidden", numberMode || booleanMode);
+				if (number) number.classList.toggle("hidden", !numberMode);
+				if (boolean) boolean.classList.toggle("hidden", !booleanMode);
 				if (textarea && textarea.value !== this.value) {
 					textarea.value = this.value;
 				}
+				if (number) {
+					number.value = this.value;
+					if (this._minimum != null) number.min = String(this._minimum); else number.removeAttribute("min");
+					if (this._maximum != null) number.max = String(this._maximum); else number.removeAttribute("max");
+				}
+				if (booleanInput) booleanInput.checked = this.value === "true";
 				if (textarea) {
 					textarea.placeholder = this._textLiteral ? "Enter text" : "Enter a JSON value";
 				}

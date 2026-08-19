@@ -2630,9 +2630,11 @@ assertTrue(propertyEditor.html.indexOf("bindingSourcesLoading") !== -1 &&
 	propertyEditor.html.indexOf("Loading available values") !== -1 &&
 	propertyEditor.html.indexOf("receiveFlowData") !== -1,
 	"propertyEditor did not support asynchronous binding source loading");
-assertTrue(propertyEditor.html.indexOf('toolbar.classList.toggle("hidden", this._textLiteral)') !== -1 &&
-	propertyEditor.html.indexOf('textarea.placeholder = this._textLiteral ? "Enter text"') !== -1,
-	"literal editor did not keep text values separate from JSON controls");
+assertTrue(propertyEditor.html.indexOf('toolbar.classList.toggle("hidden", !jsonMode)') !== -1 &&
+	propertyEditor.html.indexOf('textarea.placeholder = this._textLiteral ? "Enter text"') !== -1 &&
+	propertyEditor.html.indexOf('data-number') !== -1 &&
+	propertyEditor.html.indexOf('data-boolean') !== -1,
+	"literal editor did not expose type-appropriate text, number, boolean and JSON controls");
 assertTrue(propertyEditorCompactHtml.indexOf("hostRequest(name,payload)") !== -1 &&
 	propertyEditorCompactHtml.indexOf("typeEditorTag(kind)") !== -1,
 	"propertyEditor did not expose generic type editor host API");
