@@ -22,6 +22,11 @@ const _meta = {
       "description": "Scope path receiving the asset text."
     }
   },
+  "outputs": {
+    "out": {
+      "type": "string"
+    }
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "read.hooks.js"

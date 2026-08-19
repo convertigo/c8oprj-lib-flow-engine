@@ -1636,20 +1636,26 @@ assertTrue(publicResourceGet.kind === "publicResource" &&
 	publicResourceGet.uri === "flow://public/fixtures/catalog" &&
 	publicResourceGet.content.indexOf("item id=\"42\"") !== -1,
 	"resourceGet did not expose one canonical textual resource shared with the frontend");
+var publicAssetReadFlowSource = [
+	"version: 1",
+	"nodes:",
+	"  - id: readPublicAsset",
+	"    block: asset.read",
+	"    path: resources/fixtures/catalog.xml",
+	"    out: result.content",
+	""
+].join("\n");
 var publicAssetRead = JSON.parse(engine.run(JSON.stringify({
-	flowSource: [
-		"version: 1",
-		"nodes:",
-		"  - id: readPublicAsset",
-		"    block: asset.read",
-		"    path: resources/fixtures/catalog.xml",
-		"    out: result.content",
-		""
-	].join("\n"),
+	flowSource: publicAssetReadFlowSource,
 	includeTrace: false
 })));
 assertTrue(publicAssetRead.result.content.indexOf("<catalog>") === 0,
 	"asset.read did not read a textual resource from the frontend-visible resources directory");
+var publicAssetReadOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({
+	flowSource: publicAssetReadFlowSource
+})));
+assertTrue(publicAssetReadOutputSchema.schema.properties.content.type === "string",
+	"asset.read did not publish its textual output schema");
 var flowEngineConfigFile = new java.io.File(projectDirFile, "libs/flow/engine.yaml");
 flowEngineConfigFile.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowEngineConfigFile, [
