@@ -106,6 +106,16 @@ var frontendLaunchViteSource = source.substring(
 );
 assertTrue(frontendLaunchViteSource.indexOf("pid: frontendPidForPort(port) || processPid") >= 0,
 	"Frontend dev state should track the real Vite listener instead of the npm wrapper");
+assertTrue(frontendLaunchViteSource.indexOf("frontendRotateLogFile(logFile)") >= 0 &&
+	frontendLaunchViteSource.indexOf("previousLogFile:") >= 0,
+	"Frontend dev startup should preserve the previous Vite log for incident diagnosis");
+var frontendExitWatcherSource = source.substring(
+	source.indexOf("\tfunction frontendStartDevExitWatcher("),
+	source.indexOf("\n\tfunction frontendWaitForPort(")
+);
+assertTrue(frontendExitWatcherSource.indexOf("entry.exitCode = exitCode") >= 0 &&
+	frontendExitWatcherSource.indexOf("entry.exitLogTail = frontendLogTail") >= 0,
+	"Frontend dev exit state should retain the Vite exit code and final log lines");
 var frontendDestroyProcessSource = source.substring(
 	source.indexOf("\tfunction frontendDestroyJavaProcess("),
 	source.indexOf("\n\tfunction frontendRestartDev(")
@@ -173,6 +183,10 @@ assertTrue(devProxyState.localUrl === "http://127.0.0.1:5174/" &&
 
 var flowTreeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8"));
+assertTrue(flowTreeServiceSource.indexOf('"enum": value["enum"]') !== -1,
+	"frontend property projection did not preserve descriptor enum choices");
+assertTrue(flowTreeServiceSource.indexOf('definition["enum"] = normalizeTree(options["enum"])') !== -1,
+	"generic Flow property definitions did not retain enum choices");
 var isolatedFlowTreeService = eval(flowTreeServiceSource);
 var embeddedInvalidBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
 	'<FlowComponent id="smoke" label="Smoke">',
@@ -654,6 +668,9 @@ var typedIterationDocument = {
 					}, {
 						id: "componentLoop:index",
 						source: { category: "iteration", scopeId: "componentLoop", value: "index" }
+					}, {
+						id: "componentLoop:iterable",
+						source: { category: "iteration", scopeId: "componentLoop", value: "iterable" }
 					}] }
 				}
 			}]
@@ -705,10 +722,14 @@ var typedIterationEnriched = isolatedFrontendCatalogService.enrichBindingSources
 var typedIterationSources = typedIterationEnriched.tree.children[0].children[0].propertyDefinitions.text.bindingSources;
 var typedItemSource = typedIterationSources.filter(function (candidate) { return candidate.source.value === "item"; })[0];
 var typedIndexSource = typedIterationSources.filter(function (candidate) { return candidate.source.value === "index"; })[0];
+var typedIterableSource = typedIterationSources.filter(function (candidate) { return candidate.source.value === "iterable"; })[0];
 assertTrue(typedItemSource.bindings.some(function (candidate) { return candidate.path === "icon" && candidate.type === "string"; }) &&
 	typedItemSource.bindings.some(function (candidate) { return candidate.path === "description" && candidate.type === "string"; }) &&
-	typedIndexSource.schema.type === "integer" && typedIndexSource.binding.path.length === 0,
-	"frontend binding schemas did not expose typed item fields and the numeric index together");
+	typedIndexSource.schema.type === "integer" && typedIndexSource.binding.path.length === 0 &&
+	typedIterableSource.schema.type === "array" && typedIterableSource.bindings.some(function (candidate) {
+		return candidate.path === "length" && candidate.type === "integer";
+	}),
+	"frontend binding schemas did not expose typed item fields, numeric index and iterable length together");
 var fullSyncBindingDocument = JSON.parse(JSON.stringify(bindingSchemaDocument));
 var fullSyncLoop = fullSyncBindingDocument.tree.children[0];
 fullSyncLoop.props.source.source = { category: "fullsync", actionId: "rootCatalog", operation: "view" };
@@ -2632,6 +2653,14 @@ assertTrue(propertyEditor.html.indexOf("data-literal-choice") !== -1 &&
 	propertyEditor.html.indexOf("literalChoices(this._state)") !== -1 &&
 	propertyEditor.html.indexOf("Legacy value:") !== -1,
 	"binding editor did not expose enum choices while preserving legacy literal values");
+assertTrue(propertyEditor.html.indexOf('source.value === "iterable"') !== -1 &&
+	propertyEditor.html.indexOf("The iterable is the repeated collection") !== -1 &&
+	propertyEditor.html.indexOf("Invalid JavaScript expression:") !== -1 &&
+	propertyEditor.html.indexOf("appendValuePart(parts") !== -1 &&
+	propertyEditor.html.indexOf("renderPreservingScroll(activeTarget)") !== -1 &&
+	propertyEditor.html.indexOf("normalizeCompositionParts") !== -1 &&
+	propertyEditor.html.indexOf("joined automatically") !== -1,
+	"binding editor did not expose iterable collections or reject invalid composed expressions");
 assertTrue(propertyEditor.html.indexOf("bindingSourcesLoading") !== -1 &&
 	propertyEditor.html.indexOf("Loading available values") !== -1 &&
 	propertyEditor.html.indexOf("receiveFlowData") !== -1,
@@ -5368,6 +5397,29 @@ assertTrue(flowSvelteComposedBinding.ok === true &&
 	String(flowSvelteComposedBinding.source).indexOf('"value":"index["') !== -1 &&
 	String(flowSvelteComposedBinding.source).indexOf('"value":"]"') !== -1,
 	"flow-svelte AST mutations did not preserve ordered expression fragments");
+var flowSvelteIterableComposition = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteBindingRoundTripSource,
+	mutation: {
+		op: "replace",
+		path: "frontAst.slots.structure.children[0].slots.children.children[0].props.source",
+		value: {
+			mode: "expression",
+			parts: [
+				{ kind: "source", source: { category: "iteration", scopeId: "items", value: "index" }, path: [] },
+				{ kind: "expression", expression: "+ 1" },
+				{ kind: "literal", value: " / " },
+				{ kind: "source", source: { category: "iteration", scopeId: "items", value: "iterable" }, path: [{ kind: "property", name: "length" }] }
+			]
+		}
+	}
+})));
+assertTrue(flowSvelteIterableComposition.ok === true &&
+	String(flowSvelteIterableComposition.source).indexOf('"value":"iterable"') !== -1 &&
+	String(flowSvelteIterableComposition.source).indexOf('"name":"length"') !== -1,
+	"flow-svelte AST mutations rejected a picker-backed iterable composition: " +
+		JSON.stringify(flowSvelteIterableComposition));
 var flowSvelteConditionalBindingSource = [
 	"<FlowComponent id=\"conditionalBinding\" label=\"Conditional binding\">",
 	"  <Structure>",

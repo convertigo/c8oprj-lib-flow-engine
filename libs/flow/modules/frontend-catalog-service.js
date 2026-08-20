@@ -2368,7 +2368,7 @@
 		return current;
 	}
 
-	function schemaForBinding(binding, actionSchemas, iterationSchemas) {
+	function schemaForBinding(binding, actionSchemas, iterationSchemas, iterationCollectionSchemas) {
 		if (!binding || binding.mode !== "source" || !binding.source) {
 			return null;
 		}
@@ -2377,7 +2377,18 @@
 		if (source.category === "requestable" || source.category === "action" || source.category === "fullsync") {
 			schema = actionSchemas[String(source.actionId || "")];
 		} else if (source.category === "iteration") {
-			schema = iterationSchemas[String(source.scopeId || "")];
+			var scopeId = String(source.scopeId || "");
+			if (source.value === "index") {
+				schema = { type: "integer" };
+			} else if (source.value === "iterable") {
+				schema = iterationCollectionSchemas && iterationCollectionSchemas[scopeId];
+			} else {
+				schema = iterationSchemas[scopeId];
+			}
+		}
+		if (source.category === "iteration" && source.value === "iterable" && binding.path && binding.path.length === 1 &&
+			binding.path[0] && binding.path[0].kind === "property" && binding.path[0].name === "length") {
+			return schema ? { type: "integer" } : null;
 		}
 		return bindingSchemaAtPath(schema, binding.path || []);
 	}
@@ -2402,11 +2413,11 @@
 		return { type: typeof value === "number" ? "number" : typeof value === "boolean" ? "boolean" : "string" };
 	}
 
-	function schemaForActionValue(value, actionSchemas, iterationSchemas) {
+	function schemaForActionValue(value, actionSchemas, iterationSchemas, iterationCollectionSchemas) {
 		if (value && value.mode === "literal") {
 			return literalSchema(value.value);
 		}
-		return schemaForBinding(value, actionSchemas, iterationSchemas);
+		return schemaForBinding(value, actionSchemas, iterationSchemas, iterationCollectionSchemas);
 	}
 
 	function schemaRichness(schema) {
@@ -2423,7 +2434,7 @@
 		return score;
 	}
 
-	function deriveStateActionSchemas(document, actionSchemas, iterationSchemas) {
+	function deriveStateActionSchemas(document, actionSchemas, iterationSchemas, iterationCollectionSchemas) {
 		var actions = document && document.model && document.model.clientActions || [];
 		for (var pass = 0; pass < actions.length + 1; pass++) {
 			var changed = false;
@@ -2435,9 +2446,9 @@
 				if (action.kind === "updateNumber") {
 					schema = { type: "number" };
 				} else if (action.kind === "setValue") {
-					schema = schemaForActionValue(action.value, actionSchemas, iterationSchemas);
+					schema = schemaForActionValue(action.value, actionSchemas, iterationSchemas, iterationCollectionSchemas);
 				} else if (action.kind === "updateList") {
-					var itemSchema = schemaForActionValue(action.value, actionSchemas, iterationSchemas);
+					var itemSchema = schemaForActionValue(action.value, actionSchemas, iterationSchemas, iterationCollectionSchemas);
 					if (action.operation === "set" && itemSchema && itemSchema.type === "array") {
 						schema = itemSchema;
 					} else if (itemSchema) {
@@ -2554,21 +2565,23 @@
 			}
 		});
 		var iterationSchemas = {};
+		var iterationCollectionSchemas = {};
 		function resolveIterationSchemas() {
 			var pending = Object.keys(iterations).filter(function (id) { return !iterationSchemas[id]; });
 			for (var pass = 0; pass < pending.length + 1 && pending.length; pass++) {
 				pending = pending.filter(function (id) {
-					var schema = schemaForBinding(iterations[id], actionSchemas, iterationSchemas);
+					var schema = schemaForActionValue(iterations[id], actionSchemas, iterationSchemas, iterationCollectionSchemas);
 					if (!schema) {
 						return true;
 					}
+					iterationCollectionSchemas[id] = schema;
 					iterationSchemas[id] = schema.type === "array" && schema.items ? schema.items : schema;
 					return false;
 				});
 			}
 		}
 		resolveIterationSchemas();
-		deriveStateActionSchemas(document, actionSchemas, iterationSchemas);
+		deriveStateActionSchemas(document, actionSchemas, iterationSchemas, iterationCollectionSchemas);
 		resolveIterationSchemas();
 		walkDocument(document, function (node) {
 			var definitions = node.propertyDefinitions || {};
@@ -2589,7 +2602,9 @@
 					var schema = candidate && candidate.schema || (source.category === "iteration"
 						? source.value === "index"
 							? { type: "integer" }
-							: iterationSchemas[String(source.scopeId || candidate.id || "")]
+							: source.value === "iterable"
+								? iterationCollectionSchemas[String(source.scopeId || candidate.id || "")]
+								: iterationSchemas[String(source.scopeId || candidate.id || "")]
 						: actionSchemas[String(source.actionId || candidate.id || "")]);
 					var info = schemaInfo(schema, env);
 					if (!info) {
@@ -2597,6 +2612,9 @@
 					}
 					candidate.schema = info.schema;
 					candidate.paths = info.paths;
+					if (source.category === "iteration" && source.value === "iterable" && !candidate.paths.some(function (entry) { return entry.path === "length"; })) {
+						candidate.paths = candidate.paths.concat({ path: "length", type: "integer" });
+					}
 					candidate.arrayPaths = info.arrayPaths;
 					candidate.leafPaths = info.leafPaths;
 					candidate.binding = {
@@ -2604,7 +2622,7 @@
 						source: env.normalizeTree(source),
 						path: []
 					};
-					candidate.bindings = info.paths.map(function (entry) {
+					candidate.bindings = candidate.paths.map(function (entry) {
 						return bindingCandidate(source, entry.path, entry.type, candidate.mutation, env);
 					});
 				});

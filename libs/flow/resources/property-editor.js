@@ -150,9 +150,9 @@
     var expr = input ? input.value.trim() : "";
     return expr ? "{{ " + expr + " }}" : "";
   }
-  function setDraft(v) {
+  function setDraft(v, valid, error) {
     draft = v == null ? "" : String(v);
-    send({ type: "value", value: draft });
+    send({ type: "value", value: draft, valid: valid !== false, error: error || "" });
   }
   function syncSimple() {
     var el = document.querySelector("[data-key]");
@@ -629,14 +629,15 @@
       editor.setState(typeEditorState(state));
       focusKey = editor.getAttribute("data-key");
       editor.addEventListener("flow-value", function (e) {
-        setDraft(e.detail && e.detail.value);
+        var detail = e.detail || {};
+        setDraft(detail.value, detail.valid, detail.error);
       });
       editor.addEventListener("flow-values", function (e) {
         var d = e.detail || {};
         if (d.value !== undefined) setDraft(d.value);
         send({ type: "values", value: d.value, values: d.values || {} });
       });
-      setDraft(editor.value || "");
+      setDraft(editor.value || "", editor.valid, editor.validationError);
       return true;
     }
     return false;

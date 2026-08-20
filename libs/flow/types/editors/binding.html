@@ -8,13 +8,14 @@
 		.source { display: grid; grid-template-columns: minmax(140px, 0.7fr) minmax(240px, 1.3fr); gap: 8px; align-items: end; }
 		.composer-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
 		.composer-tools button { padding: 5px 8px; }
-		.parts { display: grid; gap: 5px; margin-top: 8px; }
+		.parts { display: grid; gap: 5px; margin-top: 8px; overflow-anchor: none; }
 		.part { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
 		.part-kind { color: var(--flow-editor-text-muted); font-weight: 700; text-transform: uppercase; font-size: 10px; }
 		.part-actions { display: flex; gap: 3px; }
 		.part-actions button { min-width: 28px; padding: 4px 6px; }
 		.part-source { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 		.preview { margin-top: 8px; padding: 8px; border-left: 2px solid var(--flow-editor-selection-border); color: var(--flow-editor-text-muted); font: 12px ui-monospace, monospace; }
+		.validation { margin-top: 6px; color: #ff9b91; line-height: 1.35; }
 		.field { display: grid; gap: 4px; }
 		label { color: var(--flow-editor-label); font-weight: 700; }
 		input, select { box-sizing: border-box; width: 100%; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
@@ -59,7 +60,8 @@
 		</div>
 		<div class="parts" data-parts></div>
 		<div class="preview" data-preview></div>
-		<div class="hint">Parts are evaluated from left to right as one JavaScript expression. Values remain picker-backed; code parts hold operators or wrappers such as +, ??, [, ] or a ternary.</div>
+		<div class="validation hidden" data-validation></div>
+		<div class="hint">Text and selected values are joined automatically. Parts are evaluated from left to right as one JavaScript expression; code is only needed for operations or wrappers such as + 1, ??, [, ] or a ternary.</div>
 	</div>
 </template>
 <script>
@@ -182,6 +184,7 @@
 			if (sourceCategory(candidate) === "iteration") {
 				if (source.value === "index") return "Index";
 				if (source.value === "item") return "Current item";
+				if (source.value === "iterable") return "Iterable";
 			}
 			var label = String(candidate && (candidate.label || candidate.id) || sourceId(candidate && (candidate.source || candidate)));
 			if (sourceCategory(candidate) === "local" && label.indexOf("local:") === 0) {
@@ -195,6 +198,9 @@
 			var source = candidate && (candidate.source || candidate) || {};
 			if (source.category === "iteration" && source.value === "index") {
 				return "The index is the current item's position in this repeated list. It is used directly; no property is required.";
+			}
+			if (source.category === "iteration" && source.value === "iterable") {
+				return "The iterable is the repeated collection. Choose length to read its item count.";
 			}
 			return "This value is scalar and is used directly; no property is required.";
 		}
@@ -242,6 +248,62 @@
 			return sourceExpression(candidate, part);
 		}
 
+		function composedExpression(binding) {
+			var sourceIndex = 0;
+			var parameters = [];
+			var previous = null;
+			var tokens = [];
+			composedParts(binding).forEach(function (part) {
+				if (!part) return "";
+				var valuePart = part.kind === "literal" || part.kind === "source";
+				if (valuePart && previous && (previous.kind === "literal" || previous.kind === "source" ||
+					(previous.kind === "expression" && !expressionExpectsValue(previous.expression)))) tokens.push("+");
+				if (part.kind === "literal") tokens.push(JSON.stringify(part.value));
+				else if (part.kind === "expression") tokens.push(String(part.expression || ""));
+				else {
+					var parameter = "__flowSource" + sourceIndex++;
+					parameters.push(parameter);
+					tokens.push(parameter);
+				}
+				previous = part;
+			});
+			return { expression: tokens.join(""), parameters: parameters };
+		}
+
+		function bindingValidation(binding) {
+			if (!binding || binding.mode !== "expression") return { valid: true, error: "" };
+			var composed = composedExpression(binding);
+			if (!composed.expression.trim()) return { valid: false, error: "The composed expression is empty." };
+			try {
+				Function.apply(null, composed.parameters.concat("return (" + composed.expression + ");"));
+				return { valid: true, error: "" };
+			} catch (error) {
+				return { valid: false, error: "Invalid JavaScript expression: " + String(error && error.message || error) };
+			}
+		}
+
+		function expressionExpectsValue(expression) {
+			var trimmed = String(expression || "").trim();
+			return !trimmed || /(?:\+\+|--|\?\?|&&|\|\||=>|[+\-*\/%?:,&|!<>=([{])$/.test(trimmed);
+		}
+
+		function appendValuePart(parts, part) {
+			parts.push(part);
+			return parts.length - 1;
+		}
+		function normalizeCompositionParts(parts) {
+			return parts.filter(function (part, index) {
+				if (!part || part.kind !== "expression" || String(part.expression || "").trim() !== "+") return true;
+				var previous = parts[index - 1], next = parts[index + 1];
+				var nextIsValue = next && (next.kind === "literal" || next.kind === "source");
+				var previousHasValue = previous && (
+					previous.kind === "literal" || previous.kind === "source" ||
+					(previous.kind === "expression" && !expressionExpectsValue(previous.expression))
+				);
+				return !(previousHasValue && nextIsValue);
+			});
+		}
+
 		function sourceRef(category, id, previous) {
 			var out = { category: category };
 			if (category === "requestable" || category === "action") out.actionId = id;
@@ -282,6 +344,9 @@
 			setState(state) {
 				this._state = state || {};
 				this._binding = normalize(this._state.value);
+				if (this._binding.mode === "expression") {
+					this._binding.parts = normalizeCompositionParts(composedParts(this._binding));
+				}
 				this._selection = { mode: "source", source: { category: "requestable", actionId: "" }, path: [] };
 				if (this._binding.mode === "source") this._selection = copy(this._binding);
 				else {
@@ -294,6 +359,40 @@
 			}
 
 			get value() { return JSON.stringify(this._binding); }
+			get valid() { return bindingValidation(this._binding).valid; }
+			get validationError() { return bindingValidation(this._binding).error; }
+
+			renderPreservingScroll(activeTarget) {
+				var positions = [], node = this;
+				while (node) {
+					if (typeof node.scrollTop === "number") positions.push([node, node.scrollLeft, node.scrollTop]);
+					node = node.parentNode || node.host || null;
+				}
+				var x = typeof window !== "undefined" ? window.scrollX : 0;
+				var y = typeof window !== "undefined" ? window.scrollY : 0;
+				var selector = "";
+				if (activeTarget && activeTarget.getAttribute) {
+					var action = activeTarget.getAttribute("data-part-action");
+					var index = activeTarget.getAttribute("data-part-index");
+					var add = activeTarget.getAttribute("data-add-part");
+					if (action != null && index != null) selector = '[data-part-action="' + action + '"][data-part-index="' + index + '"]';
+					else if (add != null) selector = '[data-add-part="' + add + '"]';
+				}
+				var self = this;
+				var restore = function () {
+					var focus = selector && self.shadowRoot.querySelector(selector);
+					if (focus && focus.focus) focus.focus({ preventScroll: true });
+					positions.forEach(function (position) {
+						position[0].scrollLeft = position[1];
+						position[0].scrollTop = position[2];
+					});
+					if (typeof window !== "undefined" && window.scrollTo) window.scrollTo(x, y);
+				};
+				this.render();
+				restore();
+				if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
+				if (typeof setTimeout === "function") setTimeout(restore, 50);
+			}
 
 			loadSources() {
 				if (sources(this._state).length || this._state.bindingSourcesLoading || !this.flowHost || !this.flowHost.request) return;
@@ -329,28 +428,31 @@
 			handleEvent(event) {
 				var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
 				if (event.type === "click" && mode) {
-					this.setMode(mode); this.render(); this.emit(); return;
+					event.preventDefault(); this.setMode(mode); this.render(); this.emit(); return;
 				}
 				if (event.type === "click") {
 					var addKind = event.target && event.target.getAttribute && event.target.getAttribute("data-add-part");
 					var partAction = event.target && event.target.getAttribute && event.target.getAttribute("data-part-action");
 					var partIndex = Number(event.target && event.target.getAttribute && event.target.getAttribute("data-part-index"));
 					if (addKind) {
+						event.preventDefault();
 						var parts = composedParts(this._binding);
-						if (addKind === "literal") parts.push({ kind: "literal", value: "" });
-						else if (addKind === "expression") parts.push({ kind: "expression", expression: "+" });
+						var insertedIndex = -1;
+						if (addKind === "literal") insertedIndex = appendValuePart(parts, { kind: "literal", value: "" });
+						else if (addKind === "expression") parts.push({ kind: "expression", expression: "" });
 						else {
 							var selectedSource = sources(this._state).find(function (candidate) {
 								return sourceKey(candidate.source || candidate) === sourceKey(this._selection.source);
 							}, this);
 							if (!selectedSource) return;
-							parts.push(sourcePart(this._selection));
+							insertedIndex = appendValuePart(parts, sourcePart(this._selection));
 						}
 						this._binding = { mode: "expression", parts: parts };
-						this._editingPartIndex = parts.length - 1;
-						this.render(); this.emit(); return;
+						this._editingPartIndex = insertedIndex >= 0 ? insertedIndex : parts.length - 1;
+						this.renderPreservingScroll(event.target); this.emit(); return;
 					}
 					if (partAction && Number.isInteger(partIndex)) {
+						event.preventDefault();
 						var currentParts = composedParts(this._binding);
 						if (partAction === "select" && currentParts[partIndex] && currentParts[partIndex].kind === "source") {
 							this._editingPartIndex = partIndex;
@@ -365,7 +467,7 @@
 							var next = currentParts[partIndex + 1]; currentParts[partIndex + 1] = currentParts[partIndex]; currentParts[partIndex] = next;
 						}
 						this._binding = { mode: "expression", parts: currentParts };
-						this.render(); this.emit(); return;
+						this.renderPreservingScroll(event.target); this.emit(); return;
 					}
 				}
 				if (event.type === "flow-value") {
@@ -452,16 +554,29 @@
 			}
 
 			emit() {
-				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value } }));
+				var validation = bindingValidation(this._binding);
+				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value, valid: validation.valid, error: validation.error } }));
 			}
 
 			updatePreview() {
 				var preview = this.shadowRoot && this.shadowRoot.querySelector("[data-preview]");
 				if (!preview) return;
 				var allSources = sources(this._state);
-				preview.textContent = composedParts(this._binding).map(function (part) {
-					return partPreview(part, allSources);
-				}).join(" ") || "Empty expression";
+				var previous = null, output = [];
+				composedParts(this._binding).forEach(function (part) {
+					var valuePart = part && (part.kind === "literal" || part.kind === "source");
+					if (valuePart && previous && (previous.kind === "literal" || previous.kind === "source" ||
+						(previous.kind === "expression" && !expressionExpectsValue(previous.expression)))) output.push(" + ");
+					output.push(partPreview(part, allSources));
+					previous = part;
+				});
+				preview.textContent = output.join("") || "Empty expression";
+				var validation = bindingValidation(this._binding);
+				var message = this.shadowRoot.querySelector("[data-validation]");
+				if (message) {
+					message.classList.toggle("hidden", validation.valid);
+					message.textContent = validation.error;
+				}
 			}
 
 			render() {

@@ -1389,7 +1389,7 @@
 		if (source.category === "fullsync") return typeof source.actionId === "string" && source.actionId !== "" && typeof source.operation === "string" && source.operation !== "";
 		if (source.category === "local") return typeof source.name === "string" && source.name !== ""
 			&& typeof source.scopeId === "string" && source.scopeId !== "";
-		if (source.category === "iteration") return typeof source.scopeId === "string" && source.scopeId !== "" && (source.value === "item" || source.value === "index");
+		if (source.category === "iteration") return typeof source.scopeId === "string" && source.scopeId !== "" && (source.value === "item" || source.value === "index" || source.value === "iterable");
 		if (source.category === "event") return source.value === "event";
 		return source.category === "route" && source.value === "route";
 	}
@@ -2793,6 +2793,7 @@
 			{
 				kind: value.kind || value.editor || value.type || "text",
 				type: value.type || "string",
+				"enum": value["enum"],
 				items: value.items,
 				bindingSources: value.bindingSources,
 				defaultValue: value["default"],
@@ -3114,6 +3115,9 @@
 		}
 		if (options.items !== undefined) {
 			definition.items = options.items;
+		}
+		if (options["enum"] !== undefined) {
+			definition["enum"] = normalizeTree(options["enum"]);
 		}
 		if (options.bindingSources !== undefined) {
 			definition.bindingSources = normalizeTree(options.bindingSources);
@@ -3693,7 +3697,7 @@
 	function compactInspectPropertyDefinition(property) {
 		property = property || {};
 		var out = {};
-		["label", "kind", "type", "required", "description", "catalogProperty"].forEach(function (key) {
+		["label", "kind", "type", "enum", "required", "description", "catalogProperty"].forEach(function (key) {
 			if (property[key] !== undefined) {
 				out[key] = property[key];
 			}

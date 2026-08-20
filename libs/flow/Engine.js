@@ -5478,7 +5478,7 @@
 			}
 			if (source.category === "iteration") {
 				return typeof source.scopeId === "string" && source.scopeId !== ""
-					&& (source.value === "item" || source.value === "index");
+					&& (source.value === "item" || source.value === "index" || source.value === "iterable");
 			}
 			if (source.category === "event") {
 				return source.value === "event";
@@ -8305,6 +8305,7 @@
 			projectRoot: entry.projectRoot || "",
 			generatedRoot: entry.generatedRoot || "",
 			logFile: entry.logFile || "",
+			previousLogFile: entry.previousLogFile || "",
 			startedAt: entry.startedAt || new Date().toISOString(),
 			status: entry.status || "running",
 			setupLogFile: entry.setupLogFile || "",
@@ -8325,7 +8326,11 @@
 			lastViewerTransitionAt: entry.lastViewerTransitionAt || "",
 			lastTransitionAt: entry.lastTransitionAt || entry.startedAt || "",
 			stoppedAt: entry.stoppedAt || "",
-			stopReason: entry.stopReason || ""
+			stopReason: entry.stopReason || "",
+			exitCode: entry.exitCode === null || entry.exitCode === undefined
+				? null
+				: Number(entry.exitCode),
+			exitLogTail: entry.exitLogTail || ""
 		};
 		frontendWriteFile(file, JSON.stringify(state, null, 2) + "\n");
 		entry.stateFile = String(file.getAbsolutePath());
@@ -8473,6 +8478,7 @@
 			projectRoot: entry.projectRoot,
 			generatedRoot: entry.generatedRoot,
 			logFile: entry.logFile,
+			previousLogFile: entry.previousLogFile || "",
 			startedAt: entry.startedAt,
 			pid: entry.pid || 0,
 			stateFile: entry.stateFile || "",
@@ -8490,6 +8496,10 @@
 			lastTransitionAt: entry.lastTransitionAt || "",
 			stoppedAt: entry.stoppedAt || "",
 			stopReason: entry.stopReason || "",
+			exitCode: entry.exitCode === null || entry.exitCode === undefined
+				? null
+				: Number(entry.exitCode),
+			exitLogTail: entry.exitLogTail || "",
 			setupKind: entry.setupKind || "",
 			error: entry.error || null
 		};
@@ -8642,6 +8652,25 @@
 		}
 	}
 
+	function frontendRotateLogFile(logFile) {
+		if (!logFile) {
+			return null;
+		}
+		var previousLogFile = new File(logFile.getParentFile(), "vite-dev.previous.log");
+		try {
+			if (previousLogFile.isFile()) {
+				previousLogFile["delete"]();
+			}
+			if (logFile.isFile() && !logFile.renameTo(previousLogFile)) {
+				FileUtils.copyFile(logFile, previousLogFile);
+				FileUtils.writeStringToFile(logFile, "", "UTF-8");
+			}
+		} catch (e) {
+			frontendStudioLog("[Svelte dev] Unable to preserve previous Vite log: " + String(e), true);
+		}
+		return previousLogFile;
+	}
+
 	function frontendStartLogPump(process, logFile, label) {
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
@@ -8785,6 +8814,8 @@
 				} catch (_ignoreDevWait) {
 				}
 				try {
+					entry.exitCode = exitCode;
+					entry.exitLogTail = frontendLogTail(new File(String(entry.logFile || "")), 80);
 					frontendUnregisterDevProxy(entry);
 					var key = frontendDevKey(request, info);
 					var current = runtimeState.frontendDevServers[key];
@@ -8912,10 +8943,7 @@
 		}
 		var url = proxy.publicUrl;
 		var logFile = new File(generatedRoot, "vite-dev.log");
-		try {
-			FileUtils.writeStringToFile(logFile, "", "UTF-8");
-		} catch (e) {
-		}
+		var previousLogFile = frontendRotateLogFile(logFile);
 		var pb = new Packages.java.lang.ProcessBuilder(javaStringList([
 			npm, "--prefix", String(generatedRoot.getAbsolutePath()), "exec", "--",
 			"vite", "--host", "127.0.0.1", "--port", String(port), "--strictPort"
@@ -8971,6 +8999,7 @@
 			projectRoot: String(projectRoot.getAbsolutePath()),
 			generatedRoot: String(generatedRoot.getAbsolutePath()),
 			logFile: String(logFile.getAbsolutePath()),
+			previousLogFile: previousLogFile ? String(previousLogFile.getAbsolutePath()) : "",
 			startedAt: startedAt,
 			status: "running",
 			idlePolicy: frontendDevIdlePolicy(),
