@@ -103,6 +103,9 @@
 					writes: Number(env.runtimeState.persistentFrontendDocuments.writes || 0),
 					errors: Number(env.runtimeState.persistentFrontendDocuments.errors || 0)
 				},
+				catalogSnapshots: typeof env.catalogSnapshotInfo === "function"
+					? env.catalogSnapshotInfo()
+					: { version: 1, entries: 0, bytes: 0, path: "" },
 				frontendDocumentServer: {
 					starts: Number(env.runtimeState.frontendDocumentServerStats.starts || 0),
 					reuses: Number(env.runtimeState.frontendDocumentServerStats.reuses || 0),
@@ -138,6 +141,9 @@
 		});
 		env.clearFrontendDocumentServers();
 		env.clearPersistentFrontendDocuments();
+		if (typeof env.clearCatalogSnapshots === "function") {
+			env.clearCatalogSnapshots();
+		}
 		env.resetModuleCaches();
 		return info(env);
 	}

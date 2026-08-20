@@ -83,4 +83,24 @@ assert.strictEqual(compiles, 1, "a hot materialized block must not compile again
 assert.strictEqual(materializationLocks, 1, "a hot materialized block must bypass the cold lock");
 assert.strictEqual(blocks.second.__flowScriptPlaceholder, true, "an unused block was materialized with its neighbor");
 
+let staticAccessorCalls = 0;
+loader.reserveFlowScriptBlockFile(blocks, file("third"), "core", "engine", null, env, {
+	entryFor: () => {
+		staticAccessorCalls += 1;
+		return {
+			runtime: "rhino",
+			private: true,
+			visibility: "private",
+			catalog: { name: "third", implementation: "rhino", props: {} },
+		};
+	},
+});
+assert.strictEqual(staticAccessorCalls, 0, "reserving a block eagerly restored the workspace snapshot");
+const readsBeforeStaticCatalog = sourceReads;
+assert.strictEqual(blocks.third.catalog().name, "third");
+assert.strictEqual(staticAccessorCalls, 1, "catalog discovery did not restore the static entry lazily");
+assert.strictEqual(sourceReads, readsBeforeStaticCatalog, "static catalog hit reread the block source");
+assert.strictEqual(blocks.third.private, true);
+assert.strictEqual(blocks.third.visibility, "private");
+
 console.log("block file loader lazy runtime tests passed");

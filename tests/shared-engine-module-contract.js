@@ -13,6 +13,13 @@ const moduleNames = fs.readdirSync(modulesDir).filter((name) => name.endsWith(".
 const stateful = new Set(["flow-code-service.js", "flow-runtime-service.js"]);
 const auditedClosureDeclarations = {
 	"catalog-loader-service.js": ["var DEFAULT_HOT_CATALOG_PROBE_INTERVAL_MS = 60000;"],
+	"catalog-static-snapshot-service.js": [
+		"var FORMAT_VERSION = 1;",
+		"var DEFAULT_MAX_ENTRIES = 256;",
+		"var DEFAULT_MAX_BYTES = 64 * 1024 * 1024;",
+		"var DEFAULT_MEMORY_MAX_ENTRIES = 32;",
+		"var DEFAULT_MEMORY_MAX_BYTES = 16 * 1024 * 1024;"
+	],
 	// Shared function-only prototype. Object.freeze prevents descriptors from becoming module state.
 	"block-file-loader-service.js": ["var placeholderPrototype = Object.freeze({"],
 	"flow-execution-snapshot-service.js": [

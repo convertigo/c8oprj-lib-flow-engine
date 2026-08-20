@@ -201,6 +201,16 @@
 			: String(env.FileUtils.readFileToString(file, "UTF-8"));
 	}
 
+	function staticSourceForFile(file, env) {
+		return typeof env.staticSourceForFile === "function"
+			? String(env.staticSourceForFile(file))
+			: String(env.FileUtils.readFileToString(file, "UTF-8"));
+	}
+
+	function hasSourceDraft(file, env) {
+		return typeof env.hasSourceDraft === "function" && env.hasSourceDraft(file) === true;
+	}
+
 	function addDraftFiles(dir, env, out, accept) {
 		if (!dir || typeof env.draftFilesUnder !== "function") {
 			return;
@@ -2137,6 +2147,90 @@
 		return roots;
 	}
 
+	function invalidFrontendDescriptor(file, type, name, settings, env, providerHint, error) {
+		var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
+		var suffix = type === "component"
+			? /\.flow\.svelte$|\.svelte$/
+			: type === "action" ? /\.svelte\.(js|ts)$/ : /\.uiblock\.json$/;
+		return {
+			id: name + ".invalid." + String(file.getName()).replace(suffix, ""),
+			name: String(file.getName()),
+			label: String(file.getName()),
+			category: "Svelte / Invalid",
+			kind: "error",
+			targetKinds: [],
+			description: String(error && error.message || error),
+			icon: "mdi:alert-outline",
+			insert: {},
+			builder: name,
+			target: settings.target || "",
+			provider: sourceInfo.provider,
+			sourceBacked: true,
+			descriptorKind: "source",
+			sourcePath: sourceInfo.sourcePath,
+			sourceRelativePath: sourceInfo.sourceRelativePath || "",
+			sourceOrigin: sourceInfo.sourceOrigin,
+			file: sourceInfo.file,
+			sourceWritable: sourceInfo.sourceWritable,
+			error: String(error && error.message || error)
+		};
+	}
+
+	function frontendDescriptorForRecord(record, name, settings, env, providerHint, staticSource) {
+		var file = record.file;
+		try {
+			var source = staticSource ? staticSourceForFile(file, env) : sourceForFile(file, env);
+			if (record.type === "component") {
+				return normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint);
+			}
+			if (record.type === "action") {
+				return normalizeSvelteAction(svelteMeta(source), file, name, settings, env, providerHint);
+			}
+			return normalizeUiBlock(JSON.parse(source), file, name, settings, env, providerHint);
+		} catch (e) {
+			return invalidFrontendDescriptor(file, record.type, name, settings, env, providerHint, e);
+		}
+	}
+
+	function frontendRecords(root, env, modelComponentsOnly) {
+		var records = [];
+		function append(files, type) {
+			files.forEach(function (file) {
+				records.push({ file: file, type: type });
+			});
+		}
+		var componentFiles = [];
+		collectSvelteComponentFiles(modelComponentsOnly ? root : new env.File(root, "components"), env, componentFiles);
+		append(componentFiles, "component");
+		if (!modelComponentsOnly) {
+			var actionFiles = [];
+			collectSvelteActionFiles(new env.File(root, "actions"), env, actionFiles);
+			append(actionFiles, "action");
+			var uiFiles = [];
+			collectUiBlockFiles(new env.File(root, "ui"), env, uiFiles);
+			append(uiFiles, "ui");
+		}
+		return records;
+	}
+
+	function descriptorsForFrontendRoot(root, name, settings, env, providerHint, modelComponentsOnly) {
+		var records = frontendRecords(root, env, modelComponentsOnly === true);
+		var staticRecords = records.filter(function (record) {
+			return record.file.isFile();
+		});
+		var staticEntries = staticRecords.length > 0 && typeof env.staticFrontendCatalogEntries === "function"
+			? env.staticFrontendCatalogEntries(root, name, settings, providerHint, staticRecords, function (record) {
+				return frontendDescriptorForRecord(record, name, settings, env, providerHint, true);
+			})
+			: {};
+		return records.map(function (record) {
+			var path = canonicalPath(record.file);
+			return !hasSourceDraft(record.file, env) && staticEntries[path]
+				? staticEntries[path]
+				: frontendDescriptorForRecord(record, name, settings, env, providerHint, false);
+		});
+	}
+
 	function frontendBlocksForSettings(name, settings, env) {
 		settings = settings || {};
 		var roots = frontendResourceRoots(name, settings, env);
@@ -2152,145 +2246,19 @@
 			if (id && seen[id]) {
 				return;
 			}
-				if (id) {
-					seen[id] = true;
-				}
-				out.push(descriptor);
+			if (id) {
+				seen[id] = true;
 			}
+			out.push(descriptor);
+		}
 		roots.forEach(function (root) {
 			var providerHint = rootProvider(root, projectFrontendRoot, name, settings, env);
-			var uiFiles = [];
-			collectUiBlockFiles(new env.File(root, "ui"), env, uiFiles);
-				var componentFiles = [];
-				collectSvelteComponentFiles(new env.File(root, "components"), env, componentFiles);
-				var actionFiles = [];
-				collectSvelteActionFiles(new env.File(root, "actions"), env, actionFiles);
-				componentFiles.forEach(function (file) {
-					try {
-						var source = sourceForFile(file, env);
-						addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint));
-					} catch (e) {
-						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
-						addDescriptor({
-							id: name + ".invalid." + String(file.getName()).replace(/\.flow\.svelte$|\.svelte$/, ""),
-							name: String(file.getName()),
-							label: String(file.getName()),
-							category: "Svelte / Invalid",
-							kind: "error",
-							targetKinds: [],
-							description: String(e && e.message || e),
-							icon: "mdi:alert-outline",
-							insert: {},
-							builder: name,
-							target: settings.target || "",
-							provider: sourceInfo.provider,
-							sourceBacked: true,
-							descriptorKind: "source",
-							sourcePath: sourceInfo.sourcePath,
-							sourceRelativePath: sourceInfo.sourceRelativePath || "",
-							sourceOrigin: sourceInfo.sourceOrigin,
-							file: sourceInfo.file,
-							sourceWritable: sourceInfo.sourceWritable,
-							error: String(e && e.message || e)
-						});
-					}
-				});
-				actionFiles.forEach(function (file) {
-					try {
-						var source = sourceForFile(file, env);
-						addDescriptor(normalizeSvelteAction(svelteMeta(source), file, name, settings, env, providerHint));
-					} catch (e) {
-						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
-						addDescriptor({
-							id: name + ".invalid." + String(file.getName()).replace(/\.svelte\.(js|ts)$/, ""),
-							name: String(file.getName()),
-							label: String(file.getName()),
-							category: "Svelte / Invalid",
-							kind: "error",
-							targetKinds: [],
-							description: String(e && e.message || e),
-							icon: "mdi:alert-outline",
-							insert: {},
-							builder: name,
-							target: settings.target || "",
-							provider: sourceInfo.provider,
-							sourceBacked: true,
-							descriptorKind: "source",
-							sourcePath: sourceInfo.sourcePath,
-							sourceRelativePath: sourceInfo.sourceRelativePath || "",
-							sourceOrigin: sourceInfo.sourceOrigin,
-							file: sourceInfo.file,
-							sourceWritable: sourceInfo.sourceWritable,
-							error: String(e && e.message || e)
-						});
-					}
-				});
-				uiFiles.forEach(function (file) {
-					try {
-						var raw = JSON.parse(sourceForFile(file, env));
-						addDescriptor(normalizeUiBlock(raw, file, name, settings, env, providerHint));
-					} catch (e) {
-						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
-						addDescriptor({
-							id: name + ".invalid." + String(file.getName()).replace(/\.uiblock\.json$/, ""),
-							name: String(file.getName()),
-							label: String(file.getName()),
-							category: "Svelte / Invalid",
-							kind: "error",
-							targetKinds: [],
-							description: String(e && e.message || e),
-							icon: "mdi:alert-outline",
-							insert: {},
-							builder: name,
-							target: settings.target || "",
-							provider: sourceInfo.provider,
-							sourceBacked: true,
-							descriptorKind: "source",
-							sourcePath: sourceInfo.sourcePath,
-							sourceRelativePath: sourceInfo.sourceRelativePath || "",
-							sourceOrigin: sourceInfo.sourceOrigin,
-							file: sourceInfo.file,
-							sourceWritable: sourceInfo.sourceWritable,
-							error: String(e && e.message || e)
-						});
-				}
-			});
+			descriptorsForFrontendRoot(root, name, settings, env, providerHint, false).forEach(addDescriptor);
 		});
 		var modelComponentsDir = modelComponentsDirForSettings(settings, env);
 		if (modelComponentsDir) {
 			var providerHint = projectProviderForResourceRoot(modelComponentsDir, env) || currentProjectProvider(env);
-			var componentFiles = [];
-			collectSvelteComponentFiles(modelComponentsDir, env, componentFiles);
-			componentFiles.forEach(function (file) {
-				try {
-					var source = sourceForFile(file, env);
-					addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint));
-				} catch (e) {
-					var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
-					addDescriptor({
-						id: name + ".invalid." + String(file.getName()).replace(/\.flow\.svelte$|\.svelte$/, ""),
-						name: String(file.getName()),
-						label: String(file.getName()),
-						category: "Svelte / Invalid",
-						kind: "error",
-						targetKinds: [],
-						description: String(e && e.message || e),
-						icon: "mdi:alert-outline",
-						insert: {},
-						builder: name,
-						target: settings.target || "",
-						provider: sourceInfo.provider,
-						sourceBacked: true,
-						descriptorKind: "source",
-						sourcePath: sourceInfo.sourcePath,
-						sourceRelativePath: sourceInfo.sourceRelativePath || "",
-						sourceOrigin: sourceInfo.sourceOrigin,
-						file: sourceInfo.file,
-						sourceWritable: sourceInfo.sourceWritable,
-						error: String(e && e.message || e)
-					});
-				}
-			});
+			descriptorsForFrontendRoot(modelComponentsDir, name, settings, env, providerHint, true).forEach(addDescriptor);
 		}
 		return out;
 	}

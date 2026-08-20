@@ -39,13 +39,14 @@
 	var iconServiceModule = null;
 	var flowRuntimeServiceModule = null;
 	var runPlanHeadServiceModule = null;
+	var catalogStaticSnapshotServiceModule = null;
 	var flowRuntimeServiceEnvInstance = null;
 	var runPlanHeadEnvInstance = null;
 	var graphBlockRuntimeEnvInstance = null;
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|catalog-static-snapshot-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// Catalog construction is single-flight only on a cold generation. Hot reads never take these locks.
 	var blockCatalogBuildLocks = new ConcurrentHashMap();
@@ -85,6 +86,30 @@
 			errors: 0,
 			pruned: false
 		},
+		catalogSnapshots: {
+			hits: 0,
+			memoryHits: 0,
+			diskHits: 0,
+			misses: 0,
+			stale: 0,
+			corrupt: 0,
+			rebuilds: 0,
+			writes: 0,
+			errors: 0,
+			evictions: 0,
+			memoryEvictions: 0,
+			invalidations: 0,
+			hashedFiles: 0,
+			hashedBytes: 0,
+			hashMs: 0,
+			extractMs: 0,
+			validationMs: 0,
+			lastCause: ""
+		},
+		catalogSnapshotMemory: {
+			entries: {}
+		},
+		staticCatalogSnapshotDepth: 0,
 		frontendDependencyFingerprints: {},
 		caches: {
 			blocks: createRuntimeMapCacheState(),
@@ -884,6 +909,117 @@
 		return loadEngineModule("runtime-cache-service.js");
 	}
 
+	function catalogStaticSnapshotService() {
+		if (!catalogStaticSnapshotServiceModule) {
+			catalogStaticSnapshotServiceModule = loadEngineModule("catalog-static-snapshot-service.js");
+		}
+		return catalogStaticSnapshotServiceModule;
+	}
+
+	function catalogSnapshotCacheDir() {
+		if (typeof globalScope.__flowCatalogSnapshotDir !== "undefined") {
+			var explicit = String(globalScope.__flowCatalogSnapshotDir || "").trim();
+			return explicit ? new File(explicit) : null;
+		}
+		if (typeof globalScope.__flowCatalogSnapshotDisabled !== "undefined" &&
+				globalScope.__flowCatalogSnapshotDisabled === true) {
+			return null;
+		}
+		try {
+			var EngineClass = Packages.com.twinsoft.convertigo.engine.Engine;
+			var appText = String(EngineClass.theApp || "");
+			var cacheText = String(EngineClass.CACHE_PATH || "");
+			var liveBridge = typeof globalScope.__flowBridgeEngineQName !== "undefined" ||
+				(!!appText && appText.indexOf("[JavaPackage ") !== 0);
+			var cacheCandidate = cacheText && cacheText.indexOf("JavaPackage") === -1
+				? new File(cacheText) : null;
+			var cachePath = liveBridge && cacheCandidate && cacheCandidate.isAbsolute()
+				? cacheText : "";
+			return cachePath ? new File(cachePath, "flow/catalog-meta-v1") : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function writeCatalogSnapshotAtomic(file, text) {
+		var parent = file.getParentFile();
+		if (parent && !parent.isDirectory()) {
+			parent.mkdirs();
+		}
+		var temporary = File.createTempFile("catalog-snapshot-", ".json", parent);
+		try {
+			FileUtils.writeStringToFile(temporary, String(text), "UTF-8");
+			try {
+				Packages.java.nio.file.Files.move(temporary.toPath(), file.toPath(),
+					Packages.java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+					Packages.java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+			} catch (atomicError) {
+				Packages.java.nio.file.Files.move(temporary.toPath(), file.toPath(),
+					Packages.java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
+		} finally {
+			if (temporary.isFile()) {
+				temporary["delete"]();
+			}
+		}
+	}
+
+	function catalogSnapshotEnv() {
+		return {
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			stats: runtimeState.catalogSnapshots,
+			memory: runtimeState.catalogSnapshotMemory,
+			cacheDir: catalogSnapshotCacheDir,
+			canonicalPath: canonicalPath,
+			sha256Hex: sha256Hex,
+			fileContentHash: function (file) {
+				return sha256Hex(String(FileUtils.readFileToString(file, "UTF-8")));
+			},
+			readText: function (file) { return String(FileUtils.readFileToString(file, "UTF-8")); },
+			normalizeTree: normalizeTree,
+			writeAtomic: writeCatalogSnapshotAtomic,
+			currentTimeMillis: function () { return new Date().getTime(); },
+			maxEntries: 256,
+			maxBytes: 64 * 1024 * 1024,
+			memoryMaxEntries: 32,
+			memoryMaxBytes: 16 * 1024 * 1024
+		};
+	}
+
+	function loadCatalogSnapshot(request) {
+		return catalogStaticSnapshotService().load(request, catalogSnapshotEnv());
+	}
+
+	function withStaticCatalogSnapshots(callback) {
+		runtimeState.staticCatalogSnapshotDepth++;
+		try {
+			return callback();
+		} finally {
+			runtimeState.staticCatalogSnapshotDepth--;
+		}
+	}
+
+	function catalogSnapshotInfo() {
+		return catalogStaticSnapshotService().info(catalogSnapshotEnv());
+	}
+
+	function invalidateCatalogSnapshotsForRoot(root) {
+		if (!root) {
+			return 0;
+		}
+		return catalogStaticSnapshotService().invalidateRoot(canonicalPath(root), catalogSnapshotEnv());
+	}
+
+	function clearCatalogSnapshots() {
+		var result = catalogStaticSnapshotService().clear(catalogSnapshotEnv());
+		Object.keys(runtimeState.catalogSnapshots).forEach(function (key) {
+			runtimeState.catalogSnapshots[key] = typeof runtimeState.catalogSnapshots[key] === "number" ? 0 : "";
+		});
+		return result;
+	}
+
 	function runtimeCacheEnv() {
 		return {
 			runtimeState: runtimeState,
@@ -905,6 +1041,8 @@
 			sharedFlowSnapshotInfo: sharedFlowSnapshotInfo,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
+			catalogSnapshotInfo: catalogSnapshotInfo,
+			clearCatalogSnapshots: clearCatalogSnapshots,
 			clearFrontendDocumentServers: clearFrontendDocumentServers
 		};
 	}
@@ -921,6 +1059,7 @@
 		cacheUtils().clearMap(runtimeState.caches.blockCatalogHeads);
 		cacheUtils().clearBoundedMap(runtimeState.caches.flowPlans);
 		clearRunPlanHeads();
+		invalidateCatalogSnapshotsForRoot(projectDir());
 	}
 
 	function runPlanHeadService() {
@@ -1541,6 +1680,10 @@
 			loadGraphBlockFile: loadGraphBlockFile,
 			reserveFlowScriptBlockFile: reserveFlowScriptBlockFile,
 			reserveGraphBlockFile: reserveGraphBlockFile,
+			staticBlockCatalogEntries: staticBlockCatalogEntries,
+			hasSourceDraft: function (file) {
+				return frontendDraftForFile(currentActiveRequest(), file) !== null;
+			},
 			validateTypeDescriptorSource: validateTypeDescriptorSource,
 			raise: raise,
 			blockCache: runtimeState.caches.blocks,
@@ -1573,6 +1716,52 @@
 
 	function reserveBlockDir(blocks, blocksDir, origin, provider) {
 		return catalogLoaderService().reserveBlockDir(blocks, blocksDir, origin, provider, catalogLoaderEnv());
+	}
+
+	function staticBlockCatalogEntries(blocksDir, origin, provider, baseDir, files) {
+		if (runtimeState.staticCatalogSnapshotDepth <= 0) {
+			return undefined;
+		}
+		if (!catalogSnapshotCacheDir()) {
+			return {};
+		}
+		var extractor = [
+			"backend-static-v1",
+			blockArtifactCompilerFingerprint(),
+			fileFingerprint(engineModuleFile("catalog-static-snapshot-service.js")),
+			fileFingerprint(engineModuleFile("catalog-loader-service.js"))
+		].join("\n");
+		var roots = [canonicalPath(blocksDir), canonicalPath(baseDir)];
+		var result = loadCatalogSnapshot({
+			scope: "backend-blocks",
+			closure: {
+				origin: String(origin || ""),
+				provider: String(provider || ""),
+				root: canonicalPath(blocksDir),
+				base: canonicalPath(baseDir)
+			},
+			extractor: extractor,
+			roots: roots,
+			files: files || [],
+			extract: function (sourceFiles) {
+				return sourceFiles.map(function (file) {
+					return {
+						path: canonicalPath(file),
+						value: staticCatalogEntryForFlowScriptBlockFile(file, origin, provider, baseDir)
+					};
+				});
+			},
+			validate: function (payload) {
+				return Object.prototype.toString.call(payload) === "[object Array]" && payload.every(function (entry) {
+					return entry && typeof entry.path === "string" && entry.value && entry.value.catalog;
+				});
+			}
+		}, catalogSnapshotEnv());
+		var entries = {};
+		(result.payload || []).forEach(function (entry) {
+			entries[String(entry.path)] = entry.value;
+		});
+		return entries;
 	}
 
 	function blocksCacheKey() {
@@ -1941,6 +2130,9 @@
 		return {
 			FileUtils: FileUtils,
 			sourceForFile: sourceForFile,
+			staticSourceForFile: function (file) {
+				return String(FileUtils.readFileToString(file, "UTF-8"));
+			},
 			sha256Hex: sha256Hex,
 			blockCompilerFingerprint: blockArtifactCompilerFingerprint(),
 			blockSourceFingerprint: function (file) {
@@ -1973,8 +2165,14 @@
 		return blockFileLoaderService().loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
 	}
 
-	function reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir) {
-		return blockFileLoaderService().reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
+	function reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, staticEntry) {
+		return blockFileLoaderService().reserveFlowScriptBlockFile(blocks, file, origin, provider, blocksDir,
+			blockFileLoaderEnv(), staticEntry);
+	}
+
+	function staticCatalogEntryForFlowScriptBlockFile(file, origin, provider, blocksDir) {
+		return blockFileLoaderService().staticCatalogEntryForFlowScriptBlockFile(file, origin, provider, blocksDir,
+			blockFileLoaderEnv());
 	}
 
 	function materializeFlowScriptBlock(blocks, name, runtime) {
@@ -2071,15 +2269,21 @@
 	}
 
 	function createProjectBlock(blocks, name, request, overwrite) {
-		return blockAuthoringService().createProjectBlock(blocks, name, request, overwrite, blockAuthoringEnv());
+		var result = blockAuthoringService().createProjectBlock(blocks, name, request, overwrite, blockAuthoringEnv());
+		invalidateBlockCatalogCaches();
+		return result;
 	}
 
 	function editProjectBlock(blocks, name, request) {
-		return blockAuthoringService().editProjectBlock(blocks, name, request, blockAuthoringEnv());
+		var result = blockAuthoringService().editProjectBlock(blocks, name, request, blockAuthoringEnv());
+		invalidateBlockCatalogCaches();
+		return result;
 	}
 
 	function duplicateProjectBlock(blocks, fromName, toName, overwrite) {
-		return blockAuthoringService().duplicateProjectBlock(blocks, fromName, toName, overwrite, blockAuthoringEnv());
+		var result = blockAuthoringService().duplicateProjectBlock(blocks, fromName, toName, overwrite, blockAuthoringEnv());
+		invalidateBlockCatalogCaches();
+		return result;
 	}
 
 	function blockSourceService() {
@@ -4194,6 +4398,56 @@
 		return loadEngineModule("frontend-catalog-service.js");
 	}
 
+	function staticFrontendCatalogEntries(root, builderName, settings, providerHint, records, extractRecord) {
+		if (!catalogSnapshotCacheDir()) {
+			return {};
+		}
+		var recordByPath = {};
+		(records || []).forEach(function (record) {
+			recordByPath[canonicalPath(record.file)] = record;
+		});
+		var packageFile = new File(root, "package.json");
+		var result = loadCatalogSnapshot({
+			scope: "frontend-blocks",
+			closure: {
+				builder: String(builderName || ""),
+				provider: String(providerHint || ""),
+				root: canonicalPath(root),
+				project: projectDir() ? canonicalPath(projectDir()) : "",
+				providerVersion: fileFingerprint(packageFile),
+				settings: normalizeTree(settings || {})
+			},
+			extractor: [
+				"frontend-static-v1",
+				fileFingerprint(engineModuleFile("catalog-static-snapshot-service.js")),
+				fileFingerprint(engineModuleFile("frontend-catalog-service.js"))
+			].join("\n"),
+			roots: [canonicalPath(root)],
+			files: (records || []).map(function (record) { return record.file; }),
+			extract: function (sourceFiles) {
+				return sourceFiles.map(function (file) {
+					var path = canonicalPath(file);
+					var record = recordByPath[path];
+					if (!record) {
+						raise("FRONTEND_CATALOG_SNAPSHOT_RECORD_MISSING",
+							"Static frontend catalog record is missing for " + path + ".");
+					}
+					return { path: path, value: extractRecord(record) };
+				});
+			},
+			validate: function (payload) {
+				return Object.prototype.toString.call(payload) === "[object Array]" && payload.every(function (entry) {
+					return entry && typeof entry.path === "string" && entry.value && typeof entry.value.id === "string";
+				});
+			}
+		}, catalogSnapshotEnv());
+		var entries = {};
+		(result.payload || []).forEach(function (entry) {
+			entries[String(entry.path)] = entry.value;
+		});
+		return entries;
+	}
+
 	function frontendCatalogServiceEnv() {
 		return {
 			File: File,
@@ -4210,6 +4464,13 @@
 			projectRootForName: loadedProjectRootForName,
 			referencedProjectRoots: referencedProjectRoots,
 			sourceForFile: sourceForFile,
+			staticSourceForFile: function (file) {
+				return String(FileUtils.readFileToString(file, "UTF-8"));
+			},
+			hasSourceDraft: function (file) {
+				return frontendDraftForFile(currentActiveRequest(), file) !== null;
+			},
+			staticFrontendCatalogEntries: staticFrontendCatalogEntries,
 			draftFilesUnder: function (baseDir) {
 				return frontendDraftEntriesUnder(currentActiveRequest(), baseDir).map(function (entry) {
 					return entry.file;
@@ -4420,7 +4681,9 @@
 			return normalizeTree(cached);
 		}
 		pruneDescribeTreeCacheFamily(cache, request);
-		var tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+		var tree = withStaticCatalogSnapshots(function () {
+			return flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+		});
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
 	}
 
@@ -4464,7 +4727,9 @@
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (!cached) {
 			cached = writeRuntimeMapCache(cache, key, fingerprint,
-				flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv()),
+				withStaticCatalogSnapshots(function () {
+					return flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
+				}),
 				"Flow authoring tree snapshots");
 		}
 		return cached;
@@ -4477,7 +4742,9 @@
 	}
 
 	function authoringContractRequest(request, blocks) {
-		return flowTreeService().authoringContractRequest(request || {}, blocks, flowTreeServiceEnv());
+		return withStaticCatalogSnapshots(function () {
+			return flowTreeService().authoringContractRequest(request || {}, blocks, flowTreeServiceEnv());
+		});
 	}
 
 	function authoringPaletteRequest(request, blocks) {
@@ -10176,31 +10443,33 @@
 					} catch (e) {
 					}
 				}
-				var out = Object.assign({ ok: true }, catalogDefinition(blocks, {
-					detail: request.detail || request.mode || "full",
-					includePrivate: request.includePrivate === true,
-					includeInternal: request.includeInternal === true,
-					query: request.query || request.q || "",
-					namespace: request.namespace || "",
-					provider: request.provider || "",
-					origin: request.origin || "",
-					limit: request.limit,
-					cursor: request.cursor,
-					answerBefore: request.answerBefore,
-					timeoutMs: request.timeoutMs,
-					maxResponseKB: request.maxResponseKB,
-					minItems: request.minItems,
-					doc: request.doc,
-					hints: request.hints
-				}));
-					try {
-						var projectConfig = projectEngineDefinitionForRequest(request).config || {};
-						out.frontendBlocks = frontendBlocksForConfig(projectConfig);
-						out.frontendCreateDescriptors = frontendCreateDescriptorsForConfig(projectConfig);
-					} catch (e) {
-						out.frontendBlocks = [];
-						out.frontendCreateDescriptors = [];
-					}
+				var out = withStaticCatalogSnapshots(function () {
+					return Object.assign({ ok: true }, catalogDefinition(blocks, {
+						detail: request.detail || request.mode || "full",
+						includePrivate: request.includePrivate === true,
+						includeInternal: request.includeInternal === true,
+						query: request.query || request.q || "",
+						namespace: request.namespace || "",
+						provider: request.provider || "",
+						origin: request.origin || "",
+						limit: request.limit,
+						cursor: request.cursor,
+						answerBefore: request.answerBefore,
+						timeoutMs: request.timeoutMs,
+						maxResponseKB: request.maxResponseKB,
+						minItems: request.minItems,
+						doc: request.doc,
+						hints: request.hints
+					}));
+				});
+				try {
+					var projectConfig = projectEngineDefinitionForRequest(request).config || {};
+					out.frontendBlocks = frontendBlocksForConfig(projectConfig);
+					out.frontendCreateDescriptors = frontendCreateDescriptorsForConfig(projectConfig);
+				} catch (e) {
+					out.frontendBlocks = [];
+					out.frontendCreateDescriptors = [];
+				}
 				return out;
 			});
 		},

@@ -114,18 +114,53 @@
 		});
 	}
 
-	function reserveBlockDir(blocks, blocksDir, origin, provider, env, baseDir) {
-		baseDir = baseDir || blocksBaseDir(origin, env);
+	function collectBlockFiles(blocksDir, env, out) {
+		out = out || [];
 		sortedFiles(blocksDir, env).forEach(function (file) {
 			if (file.isDirectory()) {
-				reserveBlockDir(blocks, file, origin, provider, env, baseDir);
+				collectBlockFiles(file, env, out);
+			} else if (file.isFile() && String(file.getName()).endsWith(".block.js")) {
+				out.push(file);
+			}
+		});
+		return out;
+	}
+
+	function reserveBlockDir(blocks, blocksDir, origin, provider, env, baseDir, staticEntries) {
+		baseDir = baseDir || blocksBaseDir(origin, env);
+		if (staticEntries === undefined) {
+			var blockFiles = collectBlockFiles(blocksDir, env);
+			staticEntries = {
+				loaded: null,
+				entryFor: function (file) {
+					if (this.loaded === null) {
+						var candidate = blockFiles.length > 0 && typeof env.staticBlockCatalogEntries === "function"
+							? env.staticBlockCatalogEntries(blocksDir, origin, provider, baseDir, blockFiles)
+							: {};
+						if (candidate === undefined || candidate === null) {
+							return undefined;
+						}
+						this.loaded = candidate;
+					}
+					return this.loaded[env.canonicalPath(file)] || null;
+				}
+			};
+		}
+		sortedFiles(blocksDir, env).forEach(function (file) {
+			if (file.isDirectory()) {
+				reserveBlockDir(blocks, file, origin, provider, env, baseDir, staticEntries);
 				return;
 			}
 			if (!file.isFile()) {
 				return;
 			}
 			if (String(file.getName()).endsWith(".block.js")) {
-				env.reserveFlowScriptBlockFile(blocks, file, origin, provider, baseDir);
+				var path = env.canonicalPath(file);
+				var hasDraft = typeof env.hasSourceDraft === "function" && env.hasSourceDraft(file);
+				env.reserveFlowScriptBlockFile(blocks, file, origin, provider, baseDir,
+					hasDraft ? null : staticEntries && typeof staticEntries.entryFor === "function"
+						? staticEntries
+						: staticEntries[path] || null);
 			}
 		});
 	}
@@ -351,6 +386,7 @@
 		referencedProjectRoots: referencedProjectRoots,
 		loadBlockDir: loadBlockDir,
 		reserveBlockDir: reserveBlockDir,
+		collectBlockFiles: collectBlockFiles,
 		blocksCacheKey: blocksCacheKey,
 		loadBlocksUncached: loadBlocksUncached,
 		loadBlocks: loadBlocks,
