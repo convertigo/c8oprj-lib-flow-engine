@@ -41,6 +41,26 @@
 		return env.cacheUtils.summary(name, cache);
 	}
 
+	function frontendProviderInfo(env) {
+		var providers = env.runtimeState.frontendProviders || {};
+		var stats = providers.stats || {};
+		return {
+			compiledSelections: Number(stats.compiledSelections || 0),
+			tsxSelections: Number(stats.tsxSelections || 0),
+			validations: Number(stats.validations || 0),
+			validationCacheHits: Number(stats.validationCacheHits || 0),
+			valid: Number(stats.valid || 0),
+			absent: Number(stats.absent || 0),
+			stale: Number(stats.stale || 0),
+			corrupt: Number(stats.corrupt || 0),
+			unsupported: Number(stats.unsupported || 0),
+			launchRejected: Number(stats.launchRejected || 0),
+			launchFallbacks: Number(stats.launchFallbacks || 0),
+			cachedRoots: Object.keys(providers.cache || {}).length,
+			rejectedBundles: Object.keys(providers.rejected || {}).length
+		};
+	}
+
 	function flowSnapshotInfo(env) {
 		var stats = env.flowSnapshotStats || {};
 		return {
@@ -108,8 +128,10 @@
 					reuses: Number(env.runtimeState.frontendDocumentServerStats.reuses || 0),
 					fallbacks: Number(env.runtimeState.frontendDocumentServerStats.fallbacks || 0),
 					errors: Number(env.runtimeState.frontendDocumentServerStats.errors || 0),
-					active: Object.keys(env.runtimeState.frontendDocumentServers).length
+					active: Object.keys(env.runtimeState.frontendDocumentServers).length,
+					lastError: String(env.runtimeState.frontendDocumentServerStats.lastError || "")
 				},
+				frontendProvider: frontendProviderInfo(env),
 				expressions: cacheSummary("expressions", caches.expressionTokens, env),
 				expressionPrograms: cacheSummary("expressionPrograms", caches.expressionPrograms, env)
 			}
@@ -137,6 +159,7 @@
 			env.flowSnapshotStats[key] = 0;
 		});
 		env.clearFrontendDocumentServers();
+		env.clearFrontendProviderState();
 		env.clearPersistentFrontendDocuments();
 		env.resetModuleCaches();
 		return info(env);
