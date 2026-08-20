@@ -20,6 +20,12 @@ const auditedClosureDeclarations = {
 		"var VERSION = 1;"
 	],
 	"flow-summary-service.js": ["var SUMMARY_LIMIT = 72;"],
+	"frontend-provider-service.js": [
+		'var FORMAT = "convertigo-flow-svelte-provider";',
+		"var VERSION = 1;",
+		"var PROVIDERS = Object.freeze({",
+		"var REQUIRED_SOURCES = Object.freeze(["
+	],
 	// This prototype is created inside create(env), once per Engine runtime; it is not JVM-shared state.
 	"graph-block-runtime-service.js": ["var graphBlockPrototype = {"],
 	"response-budget-service.js": ['var CURSOR_PREFIX = "rb1.";']

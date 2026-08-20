@@ -39,13 +39,14 @@
 	var iconServiceModule = null;
 	var flowRuntimeServiceModule = null;
 	var runPlanHeadServiceModule = null;
+	var frontendProviderServiceModule = null;
 	var flowRuntimeServiceEnvInstance = null;
 	var runPlanHeadEnvInstance = null;
 	var graphBlockRuntimeEnvInstance = null;
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// Catalog construction is single-flight only on a cold generation. Hot reads never take these locks.
 	var blockCatalogBuildLocks = new ConcurrentHashMap();
@@ -58,7 +59,13 @@
 			starts: 0,
 			reuses: 0,
 			fallbacks: 0,
-			errors: 0
+			errors: 0,
+			lastError: ""
+		},
+		frontendProviders: {
+			cache: {},
+			rejected: {},
+			stats: {}
 		},
 		blockArtifactCompilerFingerprint: null,
 		flowPlanCompilerFingerprint: null,
@@ -875,6 +882,7 @@
 		iconServiceModule = null;
 		flowRuntimeServiceModule = null;
 		runPlanHeadServiceModule = null;
+		frontendProviderServiceModule = null;
 		flowRuntimeServiceEnvInstance = null;
 		runPlanHeadEnvInstance = null;
 		clearCompiledScriptCache();
@@ -905,7 +913,8 @@
 			sharedFlowSnapshotInfo: sharedFlowSnapshotInfo,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
-			clearFrontendDocumentServers: clearFrontendDocumentServers
+			clearFrontendDocumentServers: clearFrontendDocumentServers,
+			clearFrontendProviderState: clearFrontendProviderState
 		};
 	}
 
@@ -3785,6 +3794,21 @@
 		}
 	}
 
+	function sha256FileHex(file) {
+		var digest = Packages.java.security.MessageDigest.getInstance("SHA-256")
+			.digest(FileUtils.readFileToByteArray(file));
+		var out = "";
+		for (var i = 0; i < digest.length; i++) {
+			var value = digest[i];
+			if (value < 0) {
+				value += 256;
+			}
+			var hex = value.toString(16);
+			out += hex.length === 1 ? "0" + hex : hex;
+		}
+		return out;
+	}
+
 	function iconService() {
 		if (!iconServiceModule) {
 			iconServiceModule = loadEngineModule("icon-service.js");
@@ -4756,11 +4780,7 @@
 			String(request.includeBindings !== false),
 			String(request.sourceTree === true)
 		].join("\n");
-		var fingerprint = sha256Hex([
-			source,
-			JSON.stringify(drafts || {}),
-			frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot)
-		].join("\n"));
+		var fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot);
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (cached) {
 			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
@@ -4822,6 +4842,11 @@
 				error.code = "FRONTEND_DOCUMENT_INVALID_RESULT";
 				error.hint = "Check src-builder/frontDocumentCli.ts output for " + sourcePath + ".";
 				throw error;
+			}
+			if (persistentCacheEligible) {
+				// The first provider request may install the frontbuilder and update package metadata.
+				// Store the document under the post-install fingerprint so the next Engine runtime can reuse it.
+				fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot);
 			}
 			var cachedResult = writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents");
 			if (persistentCacheEligible) {
@@ -5082,6 +5107,14 @@
 		return sha256Hex(stableFingerprint + "\n" + mutableEntries.join("\n"));
 	}
 
+	function frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot) {
+		return sha256Hex([
+			source,
+			JSON.stringify(drafts || {}),
+			frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot)
+		].join("\n"));
+	}
+
 	function invalidateFrontendDocumentCaches() {
 		runtimeState.frontendDependencyFingerprints = {};
 		cacheUtils().clearBoundedMap(runtimeState.caches.frontendDocuments);
@@ -5211,12 +5244,11 @@
 		try {
 			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
 			FileUtils.writeStringToFile(mutationTemp, JSON.stringify(mutation), "UTF-8");
-			var args = frontendTsxCommand(resourceRoot, "src-builder/sourceMutateCli.ts", [
+			var output = frontendRunProviderOneShot(resourceRoot, "src-builder/sourceMutateCli.ts", [
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--mutation", String(mutationTemp.getAbsolutePath())
-			]);
-			var output = frontendRunOneShot(args, resourceRoot, "Svelte source mutate");
+			], "Svelte source mutate", "__C8O_FLOW_SOURCE_MUTATION__");
 			var result = frontendMarkedJson(output, "__C8O_FLOW_SOURCE_MUTATION__");
 			if (!result || result.ok !== true || typeof result.source !== "string") {
 				var error = new Error("Svelte source mutation did not return a valid source.");
@@ -7215,6 +7247,40 @@
 		return output;
 	}
 
+	function frontendRunProviderOneShot(resourceRoot, script, args, label, marker) {
+		var selection = frontendProviderCommand(resourceRoot, script, args);
+		try {
+			var output = frontendRunOneShot(selection.command, selection.toolRoot, label);
+			if (marker) {
+				var marked = null;
+				try {
+					marked = frontendMarkedJson(output, marker);
+				} catch (parseError) {
+					parseError.code = "FRONTEND_PROVIDER_PROTOCOL_INVALID";
+					throw parseError;
+				}
+				if (!marked) {
+					var protocolError = new Error(label + " did not emit " + marker + ".");
+					protocolError.code = "FRONTEND_PROVIDER_PROTOCOL_INVALID";
+					throw protocolError;
+				}
+			}
+			return output;
+		} catch (error) {
+			if (selection.kind !== "compiled") {
+				throw error;
+			}
+			frontendRejectProvider(selection, error);
+			frontendStudioLog("[" + label + "] Precompiled provider failed; retrying with tsx: "
+				+ String(error && error.message || error), true);
+			return frontendRunOneShot(
+				frontendTsxCommandForToolRoot(selection.toolRoot, script, args),
+				selection.toolRoot,
+				label + " tsx fallback"
+			);
+		}
+	}
+
 	function stopFrontendDocumentServer(server) {
 		if (!server) {
 			return;
@@ -7247,8 +7313,9 @@
 	function startFrontendDocumentServer(resourceRoot) {
 		var toolRoot = frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
 		var key = canonicalPath(toolRoot);
+		var selection = frontendProviderCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
 		var existing = runtimeState.frontendDocumentServers[key];
-		if (existing && existing.process.isAlive()) {
+		if (existing && existing.process.isAlive() && existing.providerKey === selection.key) {
 			runtimeState.frontendDocumentServerStats.reuses++;
 			return existing;
 		}
@@ -7256,18 +7323,28 @@
 			stopFrontendDocumentServer(existing);
 		}
 		ensureFrontendDocumentDependencies(toolRoot);
-		var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
+		selection = frontendProviderCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
+		var args = selection.command;
 		frontendStudioLog("[Svelte front document server] > " + args.join(" "));
-		var process = frontendProcessBuilder(args, toolRoot).start();
+		var process;
+		try {
+			process = frontendProcessBuilder(args, toolRoot).start();
+		} catch (launchError) {
+			launchError.frontendProviderSelection = selection;
+			throw launchError;
+		}
 		var server = {
 			process: process,
 			writer: new Packages.java.io.BufferedWriter(new Packages.java.io.OutputStreamWriter(process.getOutputStream(), "UTF-8")),
 			reader: new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(process.getInputStream(), "UTF-8")),
 			lock: new Packages.java.util.concurrent.locks.ReentrantLock(),
-			sequence: 0
+			sequence: 0,
+			providerKey: selection.key,
+			providerSelection: selection
 		};
 		runtimeState.frontendDocumentServers[key] = server;
 		runtimeState.frontendDocumentServerStats.starts++;
+		runtimeState.frontendDocumentServerStats.lastError = "";
 		return server;
 	}
 
@@ -7311,6 +7388,9 @@
 				Packages.java.lang.Thread.sleep(20);
 			}
 			throw new Error("Svelte front document server did not answer within 30 seconds.");
+		} catch (error) {
+			error.frontendProviderSelection = server.providerSelection;
+			throw error;
 		} finally {
 			server.lock.unlock();
 		}
@@ -7321,13 +7401,23 @@
 			return frontendRunDocumentServer(resourceRoot, cliArgs);
 		} catch (e) {
 			runtimeState.frontendDocumentServerStats.errors++;
+			runtimeState.frontendDocumentServerStats.lastError = String(e && e.message || e);
 			if (e && e.frontendDocumentResponse === true) {
 				throw e;
 			}
+			var failedSelection = e && e.frontendProviderSelection;
+			if (failedSelection && failedSelection.kind === "compiled") {
+				frontendRejectProvider(failedSelection, e);
+				frontendStudioLog("[Svelte front document server] Precompiled provider failed; retrying with tsx: "
+					+ String(e && e.message || e), true);
+			}
 			clearFrontendDocumentServers();
 			runtimeState.frontendDocumentServerStats.fallbacks++;
-			var args = frontendTsxCommand(resourceRoot, "src-builder/frontDocumentCli.ts", cliArgs);
-			var output = frontendRunOneShot(args, resourceRoot, "Svelte front document");
+			var toolRoot = failedSelection && failedSelection.toolRoot
+				? failedSelection.toolRoot
+				: frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
+			var args = frontendTsxCommandForToolRoot(toolRoot, "src-builder/frontDocumentCli.ts", cliArgs);
+			var output = frontendRunOneShot(args, toolRoot, "Svelte front document tsx fallback");
 			return frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
 		}
 	}
@@ -7787,6 +7877,9 @@
 				frontendDependencyFingerprint(installRoot, npm),
 				installKind
 			);
+			if (stepAction === "installBuilder") {
+				runtimeState.frontendDependencyFingerprints = {};
+			}
 		}
 		return {
 			action: stepAction,
@@ -8548,6 +8641,68 @@
 		return parent ? String(parent.getAbsolutePath()) + File.pathSeparator : "";
 	}
 
+	function frontendProviderService() {
+		if (!frontendProviderServiceModule) {
+			frontendProviderServiceModule = loadEngineModule("frontend-provider-service.js");
+		}
+		return frontendProviderServiceModule;
+	}
+
+	function frontendProviderEnv() {
+		return {
+			canonical: function (path) {
+				return String(new File(String(path || "")).getCanonicalPath());
+			},
+			resolve: function (root, path) {
+				return String(new File(new File(String(root || "")), String(path || "")).getCanonicalPath());
+			},
+			fileInfo: function (path) {
+				var file = new File(String(path || ""));
+				return {
+					exists: file.isFile(),
+					size: file.isFile() ? Number(file.length()) : -1,
+					mtime: file.isFile() ? Number(file.lastModified()) : -1
+				};
+			},
+			readText: function (path) {
+				return String(FileUtils.readFileToString(new File(String(path)), "UTF-8"));
+			},
+			sha256Text: sha256Hex,
+			sha256File: function (path) {
+				return sha256FileHex(new File(String(path)));
+			}
+		};
+	}
+
+	function clearFrontendProviderState() {
+		frontendProviderService().clear(runtimeState.frontendProviders);
+	}
+
+	function frontendProviderSelection(resourceRoot, script) {
+		var toolRoot = frontendSvelteToolRoot(resourceRoot, script);
+		var selection = frontendProviderService().select(
+			String(toolRoot.getCanonicalPath()),
+			script,
+			runtimeState.frontendProviders,
+			frontendProviderEnv()
+		);
+		selection.toolRoot = toolRoot;
+		return selection;
+	}
+
+	function frontendRejectProvider(selection, error) {
+		if (!selection || selection.kind !== "compiled") {
+			return;
+		}
+		frontendProviderService().reject(selection, runtimeState.frontendProviders,
+			String(error && error.message || error || "provider launch failed"));
+	}
+
+	function frontendProviderKey(selection) {
+		return String(selection.kind || "tsx") + "\n"
+			+ String(selection.reason || "") + "\n" + String(selection.signature || "");
+	}
+
 	function frontendSvelteToolRoot(resourceRoot, script) {
 		function usable(root) {
 			if (!root || !root.isDirectory()) {
@@ -8580,9 +8735,8 @@
 		return root || resourceRoot;
 	}
 
-	function frontendTsxCommand(resourceRoot, script, args) {
+	function frontendTsxCommandForToolRoot(toolRoot, script, args) {
 		args = args || [];
-		var toolRoot = frontendSvelteToolRoot(resourceRoot, script);
 		var scriptFile = new File(toolRoot, script);
 		var tsxCli = new File(toolRoot, "node_modules/tsx/dist/cli.mjs");
 		if (tsxCli.isFile()) {
@@ -8597,6 +8751,25 @@
 			fallback.push(arg);
 		});
 		return fallback;
+	}
+
+	function frontendTsxCommand(resourceRoot, script, args) {
+		return frontendTsxCommandForToolRoot(frontendSvelteToolRoot(resourceRoot, script), script, args);
+	}
+
+	function frontendProviderCommand(resourceRoot, script, args) {
+		args = args || [];
+		var selection = frontendProviderSelection(resourceRoot, script);
+		var command;
+		if (selection.kind === "compiled") {
+			command = [frontendExecutable("node"), String(selection.bundle)];
+			args.forEach(function (arg) { command.push(arg); });
+		} else {
+			command = frontendTsxCommandForToolRoot(selection.toolRoot, script, args);
+		}
+		selection.command = command;
+		selection.key = frontendProviderKey(selection);
+		return selection;
 	}
 
 	function freePort() {
@@ -9261,6 +9434,9 @@
 				entry.setupFingerprint = frontendDependencyFingerprint(entry.setupRoot, frontendExecutable("npm"))
 					|| entry.setupFingerprint;
 				writeFrontendDependencyInstallStamp(entry.setupRoot, entry.setupFingerprint, entry.setupKind || "builder");
+				if (entry.setupKind !== "app") {
+					runtimeState.frontendDependencyFingerprints = {};
+				}
 				entry.status = "prepared";
 				frontendStudioLog("[Svelte dev] " + (entry.setupKind === "app" ? "App" : "Builder") +
 					" dependencies are ready." + (entry.setupKind === "app"

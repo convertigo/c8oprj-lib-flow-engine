@@ -4533,10 +4533,26 @@ assertTrue(findNode(leanFlowSvelteAuthoringTree, function (node) {
 	return node.kind === "frontendBlockCatalog" || node.path === "catalog";
 }) === null, "lean authoring tree should omit frontend and Flow catalogs");
 var frontendDocumentServerInfo = JSON.parse(engine.cacheInfo()).caches.frontendDocumentServer;
+var frontendProviderInfo = JSON.parse(engine.cacheInfo()).caches.frontendProvider;
+var configuredFrontendProviderRoot = String(Packages.java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || "");
+var configuredFrontendProviderManifest = configuredFrontendProviderRoot
+	? new java.io.File(configuredFrontendProviderRoot, "provider-dist/provider-manifest.json")
+	: null;
 assertTrue(frontendDocumentServerInfo.starts === 1 && frontendDocumentServerInfo.active === 1 &&
 	frontendDocumentServerInfo.fallbacks === 0 && frontendDocumentServerInfo.errors === 0,
 	"frontend document parsing should use one healthy persistent Node worker: " +
 	JSON.stringify(frontendDocumentServerInfo));
+if (configuredFrontendProviderManifest && configuredFrontendProviderManifest.isFile()) {
+	assertTrue(frontendProviderInfo.compiledSelections > 0 && frontendProviderInfo.valid > 0 &&
+		frontendProviderInfo.stale === 0 && frontendProviderInfo.corrupt === 0 &&
+		frontendProviderInfo.launchFallbacks === 0,
+		"frontend document parsing should select only a validated precompiled provider when it is installed: " +
+		JSON.stringify(frontendProviderInfo));
+} else {
+	assertTrue(frontendProviderInfo.tsxSelections > 0,
+		"frontend document parsing should keep the tsx fallback when no provider manifest is installed: " +
+		JSON.stringify(frontendProviderInfo));
+}
 var engineAfterFrontendRestart = eval(source);
 var persistentFrontendTree = JSON.parse(engineAfterFrontendRestart.authoringTree(JSON.stringify({
 	surface: "frontend",
@@ -4551,7 +4567,11 @@ var persistentFrontendTree = JSON.parse(engineAfterFrontendRestart.authoringTree
 var persistentFrontendCacheInfo = JSON.parse(engineAfterFrontendRestart.cacheInfo()).caches.persistentFrontendDocuments;
 assertTrue(persistentFrontendTree.childCount === leanFlowSvelteAuthoringTree.childCount &&
 	persistentFrontendCacheInfo.hits > 0 && persistentFrontendCacheInfo.errors === 0,
-	"a new Flow runtime should reuse the persistent frontend document cache");
+	"a new Flow runtime should reuse the persistent frontend document cache: " + JSON.stringify({
+		initialChildCount: leanFlowSvelteAuthoringTree.childCount,
+		restartedChildCount: persistentFrontendTree.childCount,
+		cache: persistentFrontendCacheInfo
+	}));
 var flowSvelteOpenBuilt = JSON.parse(engine.contextAction(JSON.stringify({
 	project: "AstSmoke",
 	projectDir: __flowProjectDir,
