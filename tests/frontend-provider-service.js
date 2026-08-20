@@ -103,7 +103,7 @@ try {
 	const document = service.select(root, "src-builder/frontDocumentCli.ts", state, env);
 	assert.equal(document.kind, "compiled");
 	assert.equal(document.reason, "valid");
-	assert.equal(document.bundle, path.join(root, "provider-dist/frontDocumentCli.mjs"));
+	assert.equal(document.bundle, fs.realpathSync(path.join(root, "provider-dist/frontDocumentCli.mjs")));
 	const mutation = service.select(root, "src-builder/sourceMutateCli.ts", state, env);
 	assert.equal(mutation.kind, "compiled");
 	assert.equal(state.stats.validations, 1);
