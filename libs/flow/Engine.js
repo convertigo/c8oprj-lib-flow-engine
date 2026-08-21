@@ -4346,6 +4346,7 @@
 			resolveBlockIcon: resolveBlockIcon,
 			normalizeTree: normalizeTree,
 			compact: compact,
+			compactPlain: compactPlain,
 			summaryText: summaryText,
 			blockCatalog: blockCatalog,
 			blockDescriptor: blockDescriptor,
@@ -10236,6 +10237,18 @@
 
 	function compact(value) {
 		return value === undefined || value === null ? "" : JSON.stringify(normalizeTree(value));
+	}
+
+	function compactPlain(value) {
+		if (value === undefined || value === null) {
+			return "";
+		}
+		try {
+			var json = JSON.stringify(value);
+			return json === undefined ? "" : json;
+		} catch (e) {
+			return compact(value);
+		}
 	}
 
 	function flowSummaryService() {

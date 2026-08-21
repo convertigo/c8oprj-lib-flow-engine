@@ -11,6 +11,7 @@
 		var resolveBlockIcon = env.resolveBlockIcon;
 		var normalizeTree = env.normalizeTree;
 		var compact = env.compact;
+		var compactPlain = env.compactPlain || compact;
 		var summaryText = env.summaryText;
 		var blockCatalog = env.blockCatalog;
 		var blockDescriptor = env.blockDescriptor;
@@ -180,7 +181,7 @@
 			Object.keys(iconInfo).forEach(function (key) {
 				baseInfo[key] = iconInfo[key];
 			});
-			nodeInfo = compact(baseInfo);
+			nodeInfo = compactPlain(baseInfo);
 		}
 		return {
 			name: safeVirtualName(kind || "item", name),
@@ -2172,7 +2173,7 @@
 		var summary = String(node.label || node.name || node.id || virtualType || "Node");
 		var pathName = String(path || "").split(".").pop();
 		var virtual = virtualNode("authoring_" + safeVirtualName("node", pathName), virtualKind, virtualType,
-			path, summary, compact(definition), compact(info), frontendAuthoringIcon(node));
+			path, summary, compactPlain(definition), compactPlain(info), frontendAuthoringIcon(node));
 		parent.children.push(virtual);
 		var projected = frontendProjectedChildren(node, path);
 		projected.children.forEach(function (child, index) {
