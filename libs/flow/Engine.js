@@ -8377,6 +8377,7 @@
 				entry.status = "running";
 			}
 			entry.stateFile = String(file.getAbsolutePath());
+			entry._stateModifiedAt = Number(file.lastModified());
 			entry.detected = "stateFile";
 			return entry;
 		} catch (e) {
@@ -8386,6 +8387,75 @@
 			}
 			return null;
 		}
+	}
+
+	function frontendDevStateTimestamp(entry) {
+		if (!entry) {
+			return 0;
+		}
+		var timestamp = Number(entry._stateModifiedAt || 0);
+		["lastTransitionAt", "stoppedAt", "startedAt"].forEach(function (name) {
+			var parsed = Date.parse(String(entry[name] || ""));
+			if (isFinite(parsed)) {
+				timestamp = Math.max(timestamp, parsed);
+			}
+		});
+		return timestamp;
+	}
+
+	function frontendPersistedDevStateWins(cached, persisted, cachedAlive, persistedAlive) {
+		if (!persisted) {
+			return false;
+		}
+		if (!cached) {
+			return true;
+		}
+		var cachedTime = frontendDevStateTimestamp(cached);
+		var persistedTime = frontendDevStateTimestamp(persisted);
+		var cachedPid = Number(cached.pid || 0);
+		var persistedPid = Number(persisted.pid || 0);
+		if (persistedAlive && !cachedAlive) {
+			return true;
+		}
+		if (persistedTime <= cachedTime) {
+			return false;
+		}
+		if (frontendDevTerminal(persisted)) {
+			return true;
+		}
+		if (persistedAlive && cachedPid !== persistedPid) {
+			return true;
+		}
+		return persistedAlive && String(persisted.status || "") !== String(cached.status || "");
+	}
+
+	function frontendReconcileDevEntry(cached, persisted) {
+		if (!cached) {
+			return persisted;
+		}
+		if (!persisted) {
+			return cached;
+		}
+		var cachedPid = Number(cached.pid || 0);
+		var persistedPid = Number(persisted.pid || 0);
+		if (cachedPid > 0 && cachedPid === persistedPid) {
+			var runtimeFields = {
+				process: cached.process,
+				setupProcess: cached.setupProcess,
+				logPump: cached.logPump,
+				idleThread: cached.idleThread,
+				activationThread: cached.activationThread
+			};
+			Object.assign(cached, persisted);
+			Object.keys(runtimeFields).forEach(function (name) {
+				if (runtimeFields[name]) {
+					cached[name] = runtimeFields[name];
+				}
+			});
+			return cached;
+		}
+		return frontendPersistedDevStateWins(cached, persisted,
+			frontendDevAlive(cached), frontendDevAlive(persisted)) ? persisted : cached;
 	}
 
 	function frontendReadDevLogState(request, info) {
@@ -8534,7 +8604,17 @@
 
 	function frontendDevEntry(request, info) {
 		var key = frontendDevKey(request, info);
-		var entry = runtimeState.frontendDevServers[key];
+		var cachedEntry = runtimeState.frontendDevServers[key];
+		var persistedEntry = frontendReadDevState(request, info);
+		var entry = frontendReconcileDevEntry(cachedEntry, persistedEntry);
+		if (entry && entry !== cachedEntry) {
+			if (cachedEntry && /^(?:starting|prepared)$/.test(String(cachedEntry.status || ""))
+					&& String(entry.status || "") === "running") {
+				cachedEntry.cancelled = true;
+				frontendDestroyJavaProcess(cachedEntry.setupProcess);
+			}
+			runtimeState.frontendDevServers[key] = entry;
+		}
 		if (entry && entry.status === "starting") {
 			frontendFinishPreparation(entry, false);
 		}
