@@ -7757,6 +7757,46 @@
 		return entries.length > 1 ? sha256Hex(entries.join("\n")) : "";
 	}
 
+	function frontendDependencyManifestFingerprint(root, npm) {
+		var file = new File(root, "package.json");
+		if (!file.isFile()) {
+			return "";
+		}
+		try {
+			var manifest = JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+			function stable(value) {
+				if (Array.isArray(value)) {
+					return "[" + value.map(stable).join(",") + "]";
+				}
+				if (value && typeof value === "object") {
+					return "{" + Object.keys(value).sort().map(function (key) {
+						return JSON.stringify(key) + ":" + stable(value[key]);
+					}).join(",") + "}";
+				}
+				return JSON.stringify(value);
+			}
+			var runtimeManifest = {
+				type: manifest.type || "",
+				packageManager: manifest.packageManager || "",
+				dependencies: manifest.dependencies || {},
+				devDependencies: manifest.devDependencies || {},
+				optionalDependencies: manifest.optionalDependencies || {},
+				peerDependencies: manifest.peerDependencies || {},
+				overrides: manifest.overrides || {},
+				resolutions: manifest.resolutions || {},
+				devScript: manifest.scripts && manifest.scripts.dev || ""
+			};
+			return sha256Hex("npm\n" + String(npm || "") + "\n" + stable(runtimeManifest));
+		} catch (ignored) {
+			return "";
+		}
+	}
+
+	function frontendDevRestartRequired(dependenciesInstalled, previousFingerprint, currentFingerprint) {
+		return dependenciesInstalled === true
+			&& (!previousFingerprint || !currentFingerprint || previousFingerprint !== currentFingerprint);
+	}
+
 	function frontendDependencyInstallStamp(root, kind) {
 		if (kind === "builder") {
 			return new File(new File(root, "node_modules"), ".flow-svelte-builder-install.json");
@@ -8409,6 +8449,7 @@
 			setupKind: entry.setupKind || "",
 			idlePolicy: entry.idlePolicy || null,
 			dependencyFingerprint: entry.dependencyFingerprint || "",
+			dependencyManifestFingerprint: entry.dependencyManifestFingerprint || "",
 			restartCount: Number(entry.restartCount || 0),
 			previousPid: Number(entry.previousPid || 0),
 			viewerCount: Number(entry.viewerCount || 0),
@@ -8578,6 +8619,7 @@
 			status: entry.status || "running",
 			idlePolicy: entry.idlePolicy || null,
 			dependencyFingerprint: entry.dependencyFingerprint || "",
+			dependencyManifestFingerprint: entry.dependencyManifestFingerprint || "",
 			restartCount: Number(entry.restartCount || 0),
 			previousPid: Number(entry.previousPid || 0),
 			viewerCount: Number(entry.viewerCount || 0),
@@ -9177,6 +9219,7 @@
 			status: "running",
 			idlePolicy: frontendDevIdlePolicy(),
 			dependencyFingerprint: frontendDependencyFingerprint(generatedRoot, npm),
+			dependencyManifestFingerprint: frontendDependencyManifestFingerprint(generatedRoot, npm),
 			restartCount: 0,
 			viewerCount: 0,
 			viewerIds: [],
@@ -9683,10 +9726,22 @@
 				: "Svelte dev mode started from the final authored source.";
 			return started;
 		}
+		var generatedRoot = entry.generatedRoot
+			? new File(String(entry.generatedRoot))
+			: frontendGeneratedRootFile(request, info);
+		var npm = frontendExecutable("npm");
+		var previousManifestFingerprint = entry.dependencyManifestFingerprint
+			|| frontendDependencyManifestFingerprint(generatedRoot, npm);
 		var generated = frontendRunAction(request, blocks, "install");
 		var dependenciesInstalled = generated.ok !== false
 			&& frontendActionStepPerformed(generated, "installApp");
-		if (dependenciesInstalled) {
+		var currentManifestFingerprint = frontendDependencyManifestFingerprint(generatedRoot, npm);
+		var dependenciesChanged = frontendDevRestartRequired(
+			dependenciesInstalled,
+			previousManifestFingerprint,
+			currentManifestFingerprint
+		);
+		if (dependenciesChanged) {
 			var restarted = frontendRestartDev(request, info, entry);
 			if (restarted.ok === false) {
 				restarted.title = "Svelte dev mode";
@@ -9697,15 +9752,22 @@
 			entry = restarted.entry;
 			generated.openUrl = entry.url;
 			generated.browser = restarted.browser;
+		} else if (generated.ok !== false) {
+			entry.dependencyFingerprint = frontendDependencyFingerprint(generatedRoot, npm);
+			entry.dependencyManifestFingerprint = currentManifestFingerprint;
+			frontendWriteDevState(request, info, entry);
 		}
 		generated.title = "Svelte dev mode";
 		generated.generated = generated.ok !== false;
 		generated.dev = frontendDevDetails(entry);
 		generated.dependenciesInstalled = dependenciesInstalled;
+		generated.dependenciesChanged = dependenciesChanged;
 		generated.message = generated.ok === false
 			? "Svelte dev source update failed."
-			: dependenciesInstalled
+			: dependenciesChanged
 				? "Svelte dev source updated; dependencies installed and dev mode restarted."
+				: dependenciesInstalled
+					? "Svelte dev source updated; dependency metadata refreshed without restarting dev mode."
 				: "Svelte dev source updated.";
 		return generated;
 	}
