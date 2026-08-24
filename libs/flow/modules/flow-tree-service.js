@@ -60,6 +60,9 @@
 		var raise = env.raise;
 		var intOption = env.intOption;
 		var resolvedTypes;
+		var frontendBaseDefinitions;
+		var frontendVisualBaseDefinitions;
+		var frontendKnownDefinitions;
 
 	function flowTypes() {
 		if (!resolvedTypes) {
@@ -68,8 +71,7 @@
 		return resolvedTypes;
 	}
 
-	function resolvedPropertyDefinition(value) {
-		var definition = normalizeTree(value || {});
+	function applyResolvedPropertyEditor(definition) {
 		var typeName = String(definition.kind || definition.type || "");
 		var type = flowTypes()[typeName];
 		if (type) {
@@ -83,6 +85,14 @@
 			}
 		}
 		return definition;
+	}
+
+	function resolvedPropertyDefinition(value) {
+		return applyResolvedPropertyEditor(normalizeTree(value || {}));
+	}
+
+	function resolvedPlainPropertyDefinition(value) {
+		return applyResolvedPropertyEditor(value || {});
 	}
 
 	function nodeInfo(nodeAnalysis, catalog) {
@@ -193,6 +203,18 @@
 			info: nodeInfo,
 			children: []
 		};
+	}
+
+	function virtualNodeFromPlain(name, kind, type, path, summary, definition, info, icon) {
+		info = info || {};
+		if (icon) {
+			var iconInfo = virtualIcon(icon);
+			Object.keys(iconInfo).forEach(function (key) {
+				info[key] = iconInfo[key];
+			});
+		}
+		return virtualNode(name, kind, type, path, summary,
+			compactPlain(definition || {}), compactPlain(info), null);
 	}
 
 	function addSchemaFields(parent, schema, path, name) {
@@ -1856,7 +1878,7 @@
 
 	function frontendItemInfo(file, mutationPath, definitions, order) {
 		var allDefinitions = frontendSourceTargetPropertyDefinitions(definitions);
-		var info = sourceObjectInfo(frontendSourceInfo(file, "frontend-model", mutationPath), allDefinitions, order);
+		var info = plainSourceObjectInfo(frontendSourceInfo(file, "frontend-model", mutationPath), allDefinitions, order);
 		info.frontendModelPath = mutationPath || "";
 		return info;
 	}
@@ -2172,8 +2194,8 @@
 		var virtualType = String(node.type || node.kind || "frontendNode");
 		var summary = String(node.label || node.name || node.id || virtualType || "Node");
 		var pathName = String(path || "").split(".").pop();
-		var virtual = virtualNode("authoring_" + safeVirtualName("node", pathName), virtualKind, virtualType,
-			path, summary, compactPlain(definition), compactPlain(info), frontendAuthoringIcon(node));
+		var virtual = virtualNodeFromPlain("authoring_" + safeVirtualName("node", pathName), virtualKind, virtualType,
+			path, summary, definition, info, frontendAuthoringIcon(node));
 		parent.children.push(virtual);
 		var projected = frontendProjectedChildren(node, path);
 		projected.children.forEach(function (child, index) {
@@ -2363,16 +2385,54 @@
 	function frontendAuthoringPropertyDefinitions(node) {
 		var extra = node && node.propertyDefinitions || {};
 		var visualNode = String(node && node.kind || "") === "frontendWidget";
-		var definitions = {
-			id: propertyDefinition("Id", "Information", "Generated low-code object id.", { readOnly: true, hidden: visualNode }),
-			kind: propertyDefinition("Kind", "Information", "Low-code object kind.", { readOnly: true, hidden: true }),
-			sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative source path.", { readOnly: true }),
-			sourceWritable: propertyDefinition("Writable", "Information", "Whether this source can be edited.", { readOnly: true }),
-			traits: propertyDefinition("Traits", "Authoring", "Low-code authoring traits exposed by this node.", { readOnly: true, hidden: true }),
-			slots: propertyDefinition("Slots", "Authoring", "Low-code authoring child slots exposed by this node.", { readOnly: true, hidden: true }),
-			sourcePropertyMutationPaths: propertyDefinition("Property mutation paths", "Information", "Internal per-property source mutation paths.", { readOnly: true, hidden: true })
-		};
-		var known = {
+		var definitions = frontendAuthoringBasePropertyDefinitions(visualNode);
+		var known = frontendKnownPropertyDefinitions();
+		Object.keys(extra || {}).forEach(function (key) {
+			definitions[key] = frontendPropertyDefinition(key, extra[key]);
+		});
+		var props = node && node.props || {};
+		Object.keys(props).forEach(function (key) {
+			if (!frontendAuthoringPropertyVisible(node, key)) {
+				return;
+			}
+			if (!definitions[key]) {
+				definitions[key] = known[key] || frontendPropertyDefinition(key, { type: typeof props[key] === "boolean" ? "boolean" : "string" });
+				if (!known[key]) {
+					definitions[key].inferredFromSource = true;
+				}
+			}
+		});
+		return definitions;
+	}
+
+	function frontendAuthoringBasePropertyDefinitions(visualNode) {
+		var cache = visualNode ? frontendVisualBaseDefinitions : frontendBaseDefinitions;
+		if (!cache) {
+			cache = {
+				id: propertyDefinition("Id", "Information", "Generated low-code object id.", { readOnly: true, hidden: visualNode }),
+				kind: propertyDefinition("Kind", "Information", "Low-code object kind.", { readOnly: true, hidden: true }),
+				sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative source path.", { readOnly: true }),
+				sourceWritable: propertyDefinition("Writable", "Information", "Whether this source can be edited.", { readOnly: true }),
+				traits: propertyDefinition("Traits", "Authoring", "Low-code authoring traits exposed by this node.", { readOnly: true, hidden: true }),
+				slots: propertyDefinition("Slots", "Authoring", "Low-code authoring child slots exposed by this node.", { readOnly: true, hidden: true }),
+				sourcePropertyMutationPaths: propertyDefinition("Property mutation paths", "Information", "Internal per-property source mutation paths.", { readOnly: true, hidden: true })
+			};
+			if (visualNode) {
+				frontendVisualBaseDefinitions = cache;
+			} else {
+				frontendBaseDefinitions = cache;
+			}
+		}
+		var definitions = {};
+		Object.keys(cache).forEach(function (key) {
+			definitions[key] = cache[key];
+		});
+		return definitions;
+	}
+
+	function frontendKnownPropertyDefinitions() {
+		if (!frontendKnownDefinitions) {
+			frontendKnownDefinitions = {
 			type: propertyDefinition("Type", "Information", "Source or AST node type.", { readOnly: true, hidden: true }),
 			tag: propertyDefinition("Tag", "Information", "Svelte component or HTML tag.", { readOnly: true, hidden: true }),
 			role: propertyDefinition("Role", "Routing", "Route file or library role.", { readOnly: true }),
@@ -2400,24 +2460,10 @@
 			context: propertyDefinition("Context", "Logic", "Svelte each context.", { kind: "text", type: "string" }),
 			index: propertyDefinition("Index", "Logic", "Svelte each index.", { kind: "text", type: "string" }),
 			inferred: propertyDefinition("Inferred", "Information", "Whether this node is derived from another source object.", { kind: "boolean", type: "boolean", readOnly: true }),
-			readOnly: propertyDefinition("Read only", "Information", "Whether this node is informative and cannot be edited directly.", { kind: "boolean", type: "boolean", readOnly: true })
-		};
-		Object.keys(extra || {}).forEach(function (key) {
-			definitions[key] = frontendPropertyDefinition(key, extra[key]);
-		});
-		var props = node && node.props || {};
-		Object.keys(props).forEach(function (key) {
-			if (!frontendAuthoringPropertyVisible(node, key)) {
-				return;
-			}
-			if (!definitions[key]) {
-				definitions[key] = known[key] || frontendPropertyDefinition(key, { type: typeof props[key] === "boolean" ? "boolean" : "string" });
-				if (!known[key]) {
-					definitions[key].inferredFromSource = true;
-				}
-			}
-		});
-		return definitions;
+				readOnly: propertyDefinition("Read only", "Information", "Whether this node is informative and cannot be edited directly.", { kind: "boolean", type: "boolean", readOnly: true })
+			};
+		}
+		return frontendKnownDefinitions;
 	}
 
 	function frontendAuthoringPropertyVisible(node, key) {
@@ -2808,7 +2854,7 @@
 		if (value.catalogProperty === true) {
 			definition.catalogProperty = true;
 		}
-		return resolvedPropertyDefinition(definition);
+		return resolvedPlainPropertyDefinition(definition);
 	}
 
 	function widgetIcon(kind) {
@@ -3143,6 +3189,20 @@
 
 	function sourceObjectInfo(sourceInfo, propertyDefinitions, propertyOrder) {
 		var info = normalizeTree(sourceInfo || {});
+		if (propertyDefinitions) {
+			info.propertyDefinitions = propertyDefinitions;
+		}
+		if (propertyOrder) {
+			info.propertyOrder = propertyOrder;
+		}
+		return info;
+	}
+
+	function plainSourceObjectInfo(sourceInfo, propertyDefinitions, propertyOrder) {
+		var info = {};
+		Object.keys(sourceInfo || {}).forEach(function (key) {
+			info[key] = sourceInfo[key];
+		});
 		if (propertyDefinitions) {
 			info.propertyDefinitions = propertyDefinitions;
 		}
