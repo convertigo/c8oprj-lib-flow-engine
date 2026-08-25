@@ -696,7 +696,7 @@
       '</h1><div class="sub">' +
       esc((state.flowQName || "") + " " + (state.virtualPath || "")) +
       "</div>";
-    if (props.length) {
+    if (props.length && !state.singleProperty) {
       html += '<div class="target"><div class="propList">';
       props.forEach(function (prop) {
         html +=

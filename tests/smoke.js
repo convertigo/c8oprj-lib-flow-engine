@@ -187,6 +187,10 @@ assertTrue(flowTreeServiceSource.indexOf('"enum": value["enum"]') !== -1,
 	"frontend property projection did not preserve descriptor enum choices");
 assertTrue(flowTreeServiceSource.indexOf('definition["enum"] = normalizeTree(options["enum"])') !== -1,
 	"generic Flow property definitions did not retain enum choices");
+var propertyEditorSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "resources/property-editor.js"), "UTF-8"));
+assertTrue(propertyEditorSource.indexOf("props.length && !state.singleProperty") !== -1,
+	"embedded property pickers should not render sibling-property navigation");
 var isolatedFlowTreeService = eval(flowTreeServiceSource);
 var embeddedInvalidBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
 	'<FlowComponent id="smoke" label="Smoke">',
