@@ -508,6 +508,20 @@
     var kind = def.kind || def.editor || "text";
     var value = state.value == null ? "" : String(state.value);
     var label = def.label || key || "value";
+    if (state.embedded && hasTypeEditor(kind)) {
+      var embeddedTag = typeEditorTag(kind);
+      return (
+        '<div class="field embedded"><' +
+        embeddedTag +
+        ' data-key="' +
+        esc(key) +
+        '" data-kind="' +
+        esc(kind) +
+        '"></' +
+        embeddedTag +
+        "></div>"
+      );
+    }
     var html =
       '<div class="field"><label>' +
       esc(label) +
@@ -646,6 +660,21 @@
     var node = stateDefinition();
     var title = state.summary || node.id || state.virtualPath || "Flow node";
     var custom = hasTypeEditor(currentPropertyKind());
+    if (state.embedded) {
+      app.className = "";
+      app.innerHTML =
+        '<div class="wrap single embedded"><div class="main">' +
+        propertyField() +
+        "</div></div>";
+      if (attachTypeEditor()) return;
+      var embeddedInput = document.querySelector("[data-key]");
+      if (embeddedInput) {
+        focusKey = embeddedInput.getAttribute("data-key");
+        draft = embeddedInput.value;
+        send({ type: "value", value: draft });
+      }
+      return;
+    }
     var html =
       '<div class="wrap ' +
       (custom ? "single" : "") +

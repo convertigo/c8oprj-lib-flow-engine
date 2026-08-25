@@ -2621,6 +2621,9 @@ assertTrue(propertyEditor.html.indexOf("--flow-editor-bg") !== -1 &&
 	propertyEditor.html.indexOf("window.flowSetTheme") !== -1 &&
 	propertyEditor.html.indexOf("document.documentElement.style.colorScheme") !== -1,
 	"propertyEditor did not expose the shared light/dark theme contract");
+assertTrue(propertyEditor.html.indexOf("state.embedded && hasTypeEditor(kind)") !== -1 &&
+	propertyEditor.html.indexOf("wrap single embedded") !== -1,
+	"propertyEditor did not expose the action-free embedded draft mode");
 assertTrue(propertyEditor.html.indexOf(":host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }") === -1,
 	"propertyEditor still embeds hard-coded dark text in Flow type editors");
 assertTrue(propertyEditor.html.indexOf("flow-path-editor") !== -1 &&
