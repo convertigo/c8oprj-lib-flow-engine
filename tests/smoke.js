@@ -2611,6 +2611,11 @@ assertTrue(propertyEditor.html.indexOf("flow-requestable-editor") !== -1 &&
 	"propertyEditor did not embed standalone requestable editor");
 assertTrue((propertyEditor.html.match(/@media \(max-width: 640px\)/g) || []).length >= 9,
 	"propertyEditor did not embed responsive rules for the core Flow picker editors");
+assertTrue((propertyEditor.html.match(/Shared Flow type editor chrome/g) || []).length >= 9 &&
+	propertyEditor.html.indexOf("@media (pointer: fine)") !== -1 &&
+	propertyEditor.html.indexOf("@media (pointer: coarse)") !== -1 &&
+	propertyEditor.html.indexOf("--flow-editor-control-min-height") !== -1,
+	"propertyEditor did not apply shared pointer-aware typography and density to type editors");
 assertTrue(propertyEditor.html.indexOf("--flow-editor-bg") !== -1 &&
 	propertyEditor.html.indexOf("light-dark(") !== -1 &&
 	propertyEditor.html.indexOf("window.flowSetTheme") !== -1 &&

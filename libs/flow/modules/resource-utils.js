@@ -43,7 +43,8 @@
 			if ([
 				"libs/flow/resources/property-editor.css",
 				"libs/flow/resources/property-editor.html",
-				"libs/flow/resources/property-editor.js"
+				"libs/flow/resources/property-editor.js",
+				"libs/flow/resources/type-editor-chrome.css"
 			].indexOf(String(path)) !== -1) {
 				return true;
 			}
@@ -88,7 +89,7 @@
 			return String(path).endsWith(".uiblock.json") ? "frontendBlock"
 				: String(path).endsWith(".flow.css") ? "frontendStyle" : "frontendModel";
 		}
-		if (/^libs\/flow\/resources\/property-editor\.(?:css|html|js)$/.test(String(path))) {
+		if (/^libs\/flow\/resources\/(?:property-editor\.(?:css|html|js)|type-editor-chrome\.css)$/.test(String(path))) {
 			return "propertyEditorHost";
 		}
 		if (String(path).indexOf("resources/") === 0) {

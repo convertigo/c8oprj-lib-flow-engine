@@ -1,0 +1,50 @@
+:host {
+  font-family: var(--flow-editor-ui-font-family, system-ui, sans-serif);
+  font-size: var(--flow-editor-ui-font-size, 12px);
+}
+
+button {
+  font-family: inherit;
+  font-size: var(--flow-editor-control-font-size, 14px);
+  line-height: 1.25;
+}
+
+/*
+ * A type editor is hosted in a narrow iframe even on desktop. Width remains a
+ * useful layout signal, but it must not turn desktop controls into touch-sized
+ * controls. Pointer capability owns density; editor-specific layout media
+ * queries can continue to use their available width.
+ */
+@media (pointer: fine) {
+  input,
+  select,
+  textarea {
+    font-size: var(--flow-editor-control-font-size, 14px);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]),
+  select {
+    min-height: var(--flow-editor-control-min-height, 35px);
+  }
+
+  button {
+    min-height: 0 !important;
+  }
+}
+
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]),
+  select {
+    min-height: 44px;
+  }
+
+  button {
+    min-height: 40px !important;
+  }
+}

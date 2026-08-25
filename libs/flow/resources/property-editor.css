@@ -2,6 +2,10 @@
   color-scheme: dark light;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
+  --flow-editor-ui-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --flow-editor-ui-font-size: 12px;
+  --flow-editor-control-font-size: 14px;
+  --flow-editor-control-min-height: 35px;
   --flow-editor-bg: light-dark(#f6f8fa, #1f2327);
   --flow-editor-surface: light-dark(#ffffff, #171a1d);
   --flow-editor-input-bg: light-dark(#ffffff, #111417);
