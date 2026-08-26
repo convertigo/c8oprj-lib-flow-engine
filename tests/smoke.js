@@ -4391,9 +4391,16 @@ var flowSvelteModelDir = new java.io.File(frontendRoot, "model/AstSmoke");
 var flowSvelteRoutesDir = new java.io.File(flowSvelteModelDir, "src/routes");
 var flowSvelteComponentDir = new java.io.File(flowSvelteModelDir, "src/lib/components");
 var flowSvelteTranslationsDir = new java.io.File(flowSvelteModelDir, "src/i18n");
+var flowSvelteThemeFile = new java.io.File(flowSvelteModelDir, "src/theme.flow.css");
 flowSvelteComponentDir.mkdirs();
 flowSvelteRoutesDir.mkdirs();
 flowSvelteTranslationsDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSvelteThemeFile, [
+	"@layer flow.theme {",
+	"  :root { --c8o-color-primary: #075985; }",
+	"}",
+	""
+].join("\n"), "UTF-8");
 var flowSveltePageFile = new java.io.File(flowSvelteRoutesDir, "+page.flow.svelte");
 var flowSvelteLayoutFile = new java.io.File(flowSvelteRoutesDir, "+layout.flow.svelte");
 var nestedRouteDir = new java.io.File(flowSvelteRoutesDir, "(shop)/products/[id=integer]");
@@ -4998,6 +5005,23 @@ assertTrue(flowSvelteTranslationsPalette.items.some(function (item) {
 }) && !flowSvelteTranslationsPalette.items.some(function (item) {
 	return item.id === "frontbuilder.svelte.translation.en";
 }), "translation palette should propose only missing locale source files");
+var flowSvelteThemeNode = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendThemeSource";
+});
+var flowSvelteThemePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteThemeNode.path
+})));
+assertTrue(flowSvelteThemePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.create" && item.category === "Themes" &&
+		item.insert && item.insert.__frontendMutationPath === "theme.palettes";
+}) && flowSvelteThemePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.copy.default";
+}), "theme palette should expose document-derived create and copy actions: " +
+	JSON.stringify(flowSvelteThemePalette));
 var flowSveltePortablePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",

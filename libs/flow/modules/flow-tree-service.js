@@ -594,6 +594,7 @@
 		try {
 			var document = frontendModelDocument(request, modelFile, settings);
 			var model = normalizeTree(document.model);
+			builder.__authoringDescriptors = document.descriptors || [];
 			builder.diagnostics = document.diagnostics || [];
 			builder.definition = compact(Object.assign(definition, {
 				appId: model.app && model.app.id || "",
@@ -4180,12 +4181,17 @@
 		var builder = authoringBuilderName(request, engine);
 		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
 		var children = focus ? [focus] : tree.children || [];
+		var dynamicDescriptors = focus && focus.__authoringDescriptors || [];
+		if (focus) {
+			delete focus.__authoringDescriptors;
+		}
 		return {
 			ok: true,
 			target: "authoring",
 			surface: surface,
 			builder: builder,
 			diagnostics: focus && focus.diagnostics || [],
+			descriptors: dynamicDescriptors,
 			children: children
 		};
 	}
@@ -4833,7 +4839,17 @@
 		request = request || {};
 		var engine = authoringEngineDefinition(request);
 		tree = normalizeTree(tree || {});
-		var descriptors = authoringDescriptors(request, engine, blocks);
+		var descriptors = authoringDescriptors(request, engine, blocks)
+			.concat(tree.descriptors || []);
+		var seenDescriptors = {};
+		descriptors = descriptors.filter(function (descriptor) {
+			var id = String(descriptor && descriptor.id || "");
+			if (!id || seenDescriptors[id]) {
+				return false;
+			}
+			seenDescriptors[id] = true;
+			return true;
+		});
 		var focusPath = String(request.focusPath || request.path || "");
 		if (!focusPath) {
 			var builderNode = findAuthoringBuilderNode(tree, authoringBuilderName(request, engine));

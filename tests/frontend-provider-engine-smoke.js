@@ -83,6 +83,29 @@ if (!secondary || secondary.cssVariable !== "--c8o-color-secondary"
 		|| secondary.light !== "#0f9f91" || secondary.dark !== "#5bd4c5") {
 	throw new Error("typed color editor did not receive the project theme: " + JSON.stringify(color.literalOptions));
 }
+var authoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: engineSource,
+	projectDir: String(root.getAbsolutePath()),
+	detail: "full"
+})));
+var themeNode = findNode(authoringTree, "theme");
+var themePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: engineSource,
+	projectDir: String(root.getAbsolutePath()),
+	focusPath: themeNode && themeNode.path
+})));
+if (!themePalette.items || !themePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.create" && item.category === "Themes";
+}) || !themePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.copy.default";
+})) {
+	throw new Error("document-derived theme palette was not projected through Engine: "
+		+ JSON.stringify(themePalette));
+}
 if (info.frontendDocumentServer.starts !== 1 || info.frontendDocumentServer.errors !== 0
 		|| info.frontendDocumentServer.fallbacks !== 0 || info.frontendDocumentServer.active !== 1) {
 	throw new Error("frontend provider server did not stay healthy: "
