@@ -1,23 +1,37 @@
 <template id="flow-color-editor-template">
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
+		.tokens { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 6px; margin-bottom: 10px; }
+		.token { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 7px; align-items: center; min-height: 38px; border: 1px solid var(--flow-editor-control-border); border-radius: 6px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 4px 7px; text-align: left; cursor: pointer; }
+		.token.selected { border-color: var(--flow-editor-selection-border); box-shadow: 0 0 0 1px var(--flow-editor-selection-border); }
+		.swatches { display: grid; grid-template-columns: 1fr 1fr; width: 32px; height: 24px; overflow: hidden; border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; }
+		.swatches span:first-child { background: var(--light); }
+		.swatches span:last-child { background: var(--dark); }
+		.token-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 		.row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: center; }
 		input { box-sizing: border-box; width: 100%; min-height: 34px; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		input[type="color"] { height: 34px; padding: 2px; cursor: pointer; }
-		.preview { height: 28px; margin-top: 8px; border: 1px solid var(--flow-editor-control-border); border-radius: 4px; background: var(--color, transparent); }
-		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; }
+		.previews { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+		.preview { display: grid; min-height: 42px; place-items: end start; border: 1px solid var(--flow-editor-control-border); border-radius: 4px; background: var(--color, transparent); color: #111827; padding: 5px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+		.preview.dark { color: #f8fafc; }
+		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; line-height: 1.35; }
 		.invalid { color: var(--flow-editor-error, #b91c1c); }
 		@media (max-width: 640px) {
-			input { min-height: 44px; font-size: 16px; }
+			.tokens { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+			.token, input { min-height: 44px; font-size: 16px; }
 			input[type="color"] { height: 44px; }
 		}
 	</style>
+	<div class="tokens" data-tokens aria-label="Semantic theme colors"></div>
 	<div class="row">
-		<input part="picker" type="color" aria-label="Color picker">
-		<input part="value" spellcheck="false" placeholder="#2563eb, oklch(...), var(...) or color-mix(...)" aria-label="CSS color value">
+		<input part="picker" type="color" aria-label="Custom color picker">
+		<input part="value" spellcheck="false" placeholder="Theme token, #2563eb, oklch(...), var(...) or color-mix(...)" aria-label="Flow color value">
 	</div>
-	<div class="preview" part="preview"></div>
-	<div class="hint" part="hint">Any valid CSS color is accepted; the picker edits hexadecimal colors.</div>
+	<div class="previews" aria-label="Light and dark color previews">
+		<div class="preview light" data-preview="light">Light</div>
+		<div class="preview dark" data-preview="dark">Dark</div>
+	</div>
+	<div class="hint" part="hint">Semantic tokens follow the application theme; exact CSS colors use the same value in both modes.</div>
 </template>
 <script>
 	(function () {
@@ -25,10 +39,28 @@
 			return;
 		}
 
+		var semanticPalette = {
+			neutral: { light: "#64748b", dark: "#94a3b8" },
+			primary: { light: "#2563eb", dark: "#60a5fa" },
+			secondary: { light: "#7c3aed", dark: "#a78bfa" },
+			tertiary: { light: "#0891b2", dark: "#22d3ee" },
+			info: { light: "#0284c7", dark: "#38bdf8" },
+			success: { light: "#16a34a", dark: "#4ade80" },
+			warning: { light: "#d97706", dark: "#fbbf24" },
+			danger: { light: "#dc2626", dark: "#f87171" }
+		};
+		var defaultTokens = Object.keys(semanticPalette);
+
+		function title(value) {
+			var text = String(value || "").replace(/[-_]+/g, " ");
+			return text ? text.charAt(0).toUpperCase() + text.substring(1) : "";
+		}
+
 		customElements.define("flow-color-editor", class extends HTMLElement {
 			constructor() {
 				super();
 				this._value = "";
+				this._tokens = defaultTokens.slice();
 			}
 
 			connectedCallback() {
@@ -37,12 +69,19 @@
 						.append(document.getElementById("flow-color-editor-template").content.cloneNode(true));
 					this.shadowRoot.addEventListener("input", this);
 					this.shadowRoot.addEventListener("change", this);
+					this.shadowRoot.addEventListener("click", this);
 				}
 				this.render();
 			}
 
 			setState(state) {
 				this._value = state && state.value != null ? String(state.value) : "";
+				var definition = state && state.propertyDefinition || {};
+				var configured = Array.isArray(definition.suggestions) ? definition.suggestions : definition["enum"];
+				var choices = Array.isArray(configured)
+					? configured.map(String).filter(function (value) { return semanticPalette[value]; })
+					: [];
+				this._tokens = choices.length ? choices : defaultTokens.slice();
 				this.render();
 				this.emit();
 			}
@@ -54,6 +93,14 @@
 			handleEvent(event) {
 				var input = event.target;
 				if (!input || !input.getAttribute) {
+					return;
+				}
+				var tokenButton = input.closest && input.closest("[data-token]");
+				var token = tokenButton && tokenButton.getAttribute("data-token");
+				if (event.type === "click" && token) {
+					this._value = token;
+					this.render();
+					this.emit();
 					return;
 				}
 				if (input.getAttribute("part") === "value" && event.type === "input") {
@@ -75,32 +122,69 @@
 				}));
 			}
 
+			semantic() {
+				return semanticPalette[this.value] || null;
+			}
+
 			isValid() {
-				return !this.value || !window.CSS || !CSS.supports || CSS.supports("color", this.value);
+				return !!this.semantic() || !this.value || !window.CSS || !CSS.supports || CSS.supports("color", this.value);
+			}
+
+			renderTokens() {
+				var container = this.shadowRoot && this.shadowRoot.querySelector("[data-tokens]");
+				if (!container) return;
+				container.replaceChildren();
+				var self = this;
+				this._tokens.forEach(function (name) {
+					var colors = semanticPalette[name];
+					var button = document.createElement("button");
+					button.type = "button";
+					button.className = "token" + (self.value === name ? " selected" : "");
+					button.setAttribute("data-token", name);
+					button.setAttribute("aria-pressed", self.value === name ? "true" : "false");
+					button.title = title(name) + " theme token";
+					var swatches = document.createElement("span");
+					swatches.className = "swatches";
+					swatches.style.setProperty("--light", colors.light);
+					swatches.style.setProperty("--dark", colors.dark);
+					swatches.append(document.createElement("span"), document.createElement("span"));
+					var label = document.createElement("span");
+					label.className = "token-name";
+					label.textContent = title(name);
+					button.append(swatches, label);
+					container.append(button);
+				});
 			}
 
 			render() {
 				if (!this.shadowRoot) {
 					return;
 				}
+				this.renderTokens();
 				var value = this.shadowRoot.querySelector("[part=value]");
 				var picker = this.shadowRoot.querySelector("[part=picker]");
-				var preview = this.shadowRoot.querySelector("[part=preview]");
+				var light = this.shadowRoot.querySelector('[data-preview="light"]');
+				var dark = this.shadowRoot.querySelector('[data-preview="dark"]');
 				var hint = this.shadowRoot.querySelector("[part=hint]");
+				var semantic = this.semantic();
+				var valid = this.isValid();
+				var lightColor = semantic ? semantic.light : valid ? this.value : "transparent";
+				var darkColor = semantic ? semantic.dark : valid ? this.value : "transparent";
 				if (value && value.value !== this.value) {
 					value.value = this.value;
 				}
 				if (picker && /^#[0-9a-f]{6}$/i.test(this.value)) {
 					picker.value = this.value;
 				}
-				if (preview) {
-					preview.style.setProperty("--color", this.isValid() ? this.value : "transparent");
-				}
+				if (light) light.style.setProperty("--color", lightColor || "transparent");
+				if (dark) dark.style.setProperty("--color", darkColor || "transparent");
 				if (hint) {
-					hint.classList.toggle("invalid", !this.isValid());
-					hint.textContent = this.isValid()
-						? "Any valid CSS color is accepted; the picker edits hexadecimal colors."
-						: "This value is not recognized as a CSS color.";
+					hint.classList.toggle("invalid", !valid);
+					hint.textContent = !valid
+						? "This value is neither a known theme token nor a valid CSS color."
+						: semantic
+							? "Theme token " + this.value + " adapts automatically to light and dark mode."
+							: "Exact CSS colors use the same value in light and dark mode; choose a token for theme-aware color.";
 				}
 			}
 		});

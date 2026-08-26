@@ -2665,6 +2665,15 @@ assertTrue(propertyEditor.html.indexOf("data-literal-choice") !== -1 &&
 	propertyEditor.html.indexOf("literalChoices(this._state)") !== -1 &&
 	propertyEditor.html.indexOf("Legacy value:") !== -1,
 	"binding editor did not expose enum choices while preserving legacy literal values");
+assertTrue(propertyEditor.html.indexOf("data-literal-custom") !== -1 &&
+	propertyEditor.html.indexOf("literalEditorTag(this._state)") !== -1 &&
+	propertyEditor.html.indexOf("definition.literalEditorClass") !== -1,
+	"binding editor did not delegate typed literals to their custom type editor");
+assertTrue(propertyEditor.html.indexOf("Semantic theme colors") !== -1 &&
+	propertyEditor.html.indexOf("Light and dark color previews") !== -1 &&
+	propertyEditor.html.indexOf("semanticPalette") !== -1 &&
+	propertyEditor.html.indexOf("Custom color picker") !== -1,
+	"color editor did not expose semantic tokens, light/dark previews and an exact custom color");
 assertTrue(propertyEditor.html.indexOf('source.value === "iterable"') !== -1 &&
 	propertyEditor.html.indexOf("The iterable is the repeated collection") !== -1 &&
 	propertyEditor.html.indexOf("Invalid JavaScript expression:") !== -1 &&

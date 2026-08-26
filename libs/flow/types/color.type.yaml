@@ -3,7 +3,7 @@ name: "color"
 label: "Color"
 icon: "mdi:palette-outline"
 type: "string"
-description: "CSS color value with a native picker and an exact text fallback."
+description: "Semantic theme token or exact CSS color, with light/dark previews and a native color picker."
 editor:
   label: "Color picker"
   kind: "webcomponent"

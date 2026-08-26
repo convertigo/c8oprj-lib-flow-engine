@@ -84,6 +84,18 @@
 				definition.editorResource = String(editor.file);
 			}
 		}
+		var literalTypeName = String(definition.literalType || "");
+		var literalType = flowTypes()[literalTypeName];
+		if (literalType) {
+			var literalDescriptor = typeDescriptor(literalType);
+			var literalEditor = literalDescriptor && literalDescriptor.editor;
+			if (literalEditor && literalEditor.component && !definition.literalEditorClass) {
+				definition.literalEditorClass = String(literalEditor.component);
+			}
+			if (literalEditor && literalEditor.file && !definition.literalEditorResource) {
+				definition.literalEditorResource = String(literalEditor.file);
+			}
+		}
 		return definition;
 	}
 
@@ -2840,7 +2852,9 @@
 			{
 				kind: value.kind || value.editor || value.type || "text",
 				type: value.type || "string",
+				literalType: value.literalType,
 				"enum": value["enum"],
+				suggestions: value.suggestions,
 				items: value.items,
 				bindingSources: value.bindingSources,
 				defaultValue: value["default"],
@@ -3159,6 +3173,12 @@
 		}
 		if (options.type) {
 			definition.type = options.type;
+		}
+		if (options.literalType) {
+			definition.literalType = options.literalType;
+		}
+		if (options.suggestions !== undefined) {
+			definition.suggestions = options.suggestions;
 		}
 		if (options.items !== undefined) {
 			definition.items = options.items;
