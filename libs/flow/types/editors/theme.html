@@ -1,0 +1,189 @@
+<template id="flow-theme-editor-template">
+	<style>
+		:host { display: block; color: var(--flow-editor-text); }
+		.header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+		.title { min-width: 0; }
+		.title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--flow-editor-text-strong); font-size: 14px; }
+		.title span { color: var(--flow-editor-text-muted); font-size: 11px; }
+		.badge { flex: 0 0 auto; border: 1px solid var(--flow-editor-control-border); border-radius: 999px; padding: 3px 7px; color: var(--flow-editor-info); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+		.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 10px; }
+		.tabs button { border: 1px solid var(--flow-editor-control-border); border-radius: 5px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 6px 4px; cursor: pointer; }
+		.tabs button.active { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; font-weight: 700; }
+		.panel { display: grid; gap: 8px; }
+		.hidden { display: none !important; }
+		.token { border: 1px solid var(--flow-editor-border); border-radius: 7px; background: color-mix(in srgb, var(--flow-editor-control-bg) 74%, transparent); padding: 8px; }
+		.token-head { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 8px; align-items: center; margin-bottom: 7px; }
+		.token-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--flow-editor-label); font-weight: 700; }
+		.token-code { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--flow-editor-text-muted); font: 10px ui-monospace, monospace; }
+		.colors { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+		.color-field { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 5px; align-items: center; }
+		.color-field label { grid-column: 1 / -1; color: var(--flow-editor-text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+		input, select { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); padding: 5px 6px; }
+		input[type="color"] { height: 34px; padding: 2px; cursor: pointer; }
+		.simple-row { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(0, 1.2fr); gap: 8px; align-items: center; }
+		.simple-row label { color: var(--flow-editor-label); font-weight: 700; }
+		.preview { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 10px; }
+		.preview-card { min-height: 105px; border: 1px solid var(--preview-border); border-radius: var(--preview-radius); background: var(--preview-surface); color: var(--preview-text); padding: 10px; }
+		.preview-card strong { display: block; margin-bottom: 6px; color: var(--preview-heading); font-family: var(--preview-font); }
+		.preview-card button { border: 0; border-radius: calc(var(--preview-radius) * .7); background: var(--preview-primary); color: white; padding: 6px 9px; margin-top: 9px; }
+		.empty { color: var(--flow-editor-text-muted); padding: 8px; text-align: center; }
+		.hint { margin-top: 8px; color: var(--flow-editor-text-muted); font-size: 11px; line-height: 1.35; }
+		@media (max-width: 520px) {
+			.preview { grid-template-columns: 1fr; }
+			.colors { grid-template-columns: 1fr; }
+			.simple-row { grid-template-columns: 1fr; gap: 3px; }
+		}
+	</style>
+	<div class="header">
+		<div class="title"><strong data-name>Theme</strong><span data-key></span></div>
+		<span class="badge hidden" data-default>Default</span>
+	</div>
+	<div class="tabs" role="tablist" aria-label="Theme sections">
+		<button type="button" data-tab="colors">Colors</button>
+		<button type="button" data-tab="shape">Shape</button>
+		<button type="button" data-tab="type">Type</button>
+	</div>
+	<div class="panel" data-panel="colors"></div>
+	<div class="panel hidden" data-panel="shape"></div>
+	<div class="panel hidden" data-panel="type"></div>
+	<div class="preview" data-preview></div>
+	<div class="hint">Literal theme values are saved together. Complete CSS tokens remain available below this theme under Expert.</div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-theme-editor")) return;
+
+		function objectValue(value) {
+			if (value && typeof value === "object" && !Array.isArray(value)) return value;
+			try {
+				var parsed = JSON.parse(String(value || "{}"));
+				return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+			} catch (e) { return {}; }
+		}
+
+		function esc(value) {
+			return String(value == null ? "" : value).replace(/[&<>"']/g, function (char) {
+				return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
+			});
+		}
+
+		function cssColor(value, fallback) {
+			var text = String(value || "").trim();
+			return !text || (window.CSS && CSS.supports && !CSS.supports("color", text)) ? fallback : text;
+		}
+
+		function groups(design) {
+			return ["colors", "radius", "spacing", "typography"].reduce(function (out, key) {
+				out[key] = Array.isArray(design[key]) ? design[key] : [];
+				return out;
+			}, {});
+		}
+
+		customElements.define("flow-theme-editor", class extends HTMLElement {
+			constructor() {
+				super();
+				this._design = { version: 1, key: "theme", name: "Theme", default: false, colors: [], radius: [], spacing: [], typography: [] };
+				this._active = "colors";
+			}
+
+			connectedCallback() {
+				if (!this.shadowRoot) {
+					this.attachShadow({ mode: "open" }).append(document.getElementById("flow-theme-editor-template").content.cloneNode(true));
+					this.shadowRoot.addEventListener("click", this);
+					this.shadowRoot.addEventListener("input", this);
+					this.shadowRoot.addEventListener("change", this);
+				}
+				this.render();
+			}
+
+			setState(state) {
+				var incoming = objectValue(state && state.value);
+				var normalized = groups(incoming);
+				this._design = Object.assign({ version: 1, key: "theme", name: "Theme", default: false }, incoming, normalized);
+				this.render();
+				this.emit();
+			}
+
+			get value() { return JSON.stringify(this._design); }
+
+			handleEvent(event) {
+				var target = event.target;
+				if (!target || !target.getAttribute) return;
+				var tab = target.getAttribute("data-tab");
+				if (event.type === "click" && tab) {
+					this._active = tab;
+					this.render();
+					return;
+				}
+				var group = target.getAttribute("data-group");
+				var index = Number(target.getAttribute("data-index"));
+				var field = target.getAttribute("data-field");
+				if (!group || !field || !this._design[group] || !this._design[group][index]) return;
+				this._design[group][index][field] = target.value;
+				if (target.type === "color") {
+					var text = this.shadowRoot.querySelector('[data-group="' + group + '"][data-index="' + index + '"][data-field="' + field + '"]:not([type="color"])');
+					if (text) text.value = target.value;
+				}
+				this.renderPreview();
+				this.emit();
+			}
+
+			emit() {
+				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value } }));
+			}
+
+			render() {
+				if (!this.shadowRoot) return;
+				this.shadowRoot.querySelector("[data-name]").textContent = this._design.name || "Theme";
+				this.shadowRoot.querySelector("[data-key]").textContent = this._design.key || "";
+				this.shadowRoot.querySelector("[data-default]").classList.toggle("hidden", !this._design.default);
+				this.shadowRoot.querySelectorAll("[data-tab]").forEach(function (button) {
+					button.classList.toggle("active", button.getAttribute("data-tab") === this._active);
+				}, this);
+				this.shadowRoot.querySelectorAll("[data-panel]").forEach(function (panel) {
+					panel.classList.toggle("hidden", panel.getAttribute("data-panel") !== this._active);
+				}, this);
+				this.renderColors();
+				this.renderSimple("shape", this._design.radius.concat(this._design.spacing));
+				this.renderSimple("type", this._design.typography);
+				this.renderPreview();
+			}
+
+			renderColors() {
+				var panel = this.shadowRoot.querySelector('[data-panel="colors"]');
+				panel.innerHTML = this._design.colors.length ? this._design.colors.map(function (token, index) {
+					var strategy = token.strategy || "same";
+					return '<div class="token"><div class="token-head"><div><span class="token-label">' + esc(token.label) + '</span><span class="token-code">' + esc(token.cssVariable) + '</span></div>' +
+						'<select data-group="colors" data-index="' + index + '" data-field="strategy" aria-label="Light and dark strategy"><option value="same"' + (strategy === "same" ? " selected" : "") + '>Same</option><option value="auto"' + (strategy === "auto" ? " selected" : "") + '>Auto</option><option value="choose"' + (strategy === "choose" ? " selected" : "") + '>Choose</option></select></div>' +
+						'<div class="colors"><div class="color-field"><label>Light</label><input type="color" data-group="colors" data-index="' + index + '" data-field="light" value="' + esc(cssColor(token.light, "#64748b")) + '"><input data-group="colors" data-index="' + index + '" data-field="light" value="' + esc(token.light) + '"></div>' +
+						'<div class="color-field' + (strategy === "same" ? " hidden" : "") + '"><label>' + (strategy === "auto" ? "Auto dark" : "Dark") + '</label><input type="color" data-group="colors" data-index="' + index + '" data-field="dark" value="' + esc(cssColor(token.dark, "#94a3b8")) + '"><input data-group="colors" data-index="' + index + '" data-field="dark" value="' + esc(token.dark) + '"></div></div></div>';
+				}, this).join("") : '<div class="empty">No semantic color token is declared by this theme.</div>';
+			}
+
+			renderSimple(panelName, tokens) {
+				var panel = this.shadowRoot.querySelector('[data-panel="' + panelName + '"]');
+				panel.innerHTML = tokens.length ? tokens.map(function (token) {
+					var group = this._design.radius.indexOf(token) >= 0 ? "radius" : this._design.spacing.indexOf(token) >= 0 ? "spacing" : "typography";
+					var index = this._design[group].indexOf(token);
+					return '<div class="simple-row"><label>' + esc(token.label) + '<span class="token-code">' + esc(token.cssVariable) + '</span></label><input data-group="' + group + '" data-index="' + index + '" data-field="light" value="' + esc(token.light) + '"></div>';
+				}, this).join("") : '<div class="empty">No matching token is declared by this theme.</div>';
+			}
+
+			renderPreview() {
+				var preview = this.shadowRoot && this.shadowRoot.querySelector("[data-preview]");
+				if (!preview) return;
+				var colors = {};
+				this._design.colors.forEach(function (token) { colors[String(token.label || "").toLowerCase()] = token; });
+				var primary = colors.primary || this._design.colors[0] || {};
+				var surface = colors.surface || colors.background || {};
+				var text = colors.text || colors.heading || {};
+				var radius = this._design.radius[0] && this._design.radius[0].light || "10px";
+				var font = this._design.typography[0] && this._design.typography[0].light || "system-ui";
+				preview.innerHTML = ["light", "dark"].map(function (mode) {
+					var pick = function (token, fallback) { return cssColor(mode === "dark" ? token.dark : token.light, fallback); };
+					return '<div class="preview-card" style="--preview-primary:' + esc(pick(primary, mode === "dark" ? "#93c5fd" : "#2563eb")) + ';--preview-surface:' + esc(pick(surface, mode === "dark" ? "#172033" : "#f8fafc")) + ';--preview-text:' + esc(pick(text, mode === "dark" ? "#dbeafe" : "#334155")) + ';--preview-heading:' + esc(pick(text, mode === "dark" ? "#fff" : "#0f172a")) + ';--preview-radius:' + esc(radius) + ';--preview-font:' + esc(font) + '"><strong>' + (mode === "dark" ? "Dark" : "Light") + ' preview</strong><span>Semantic tokens drive every component.</span><br><button type="button">Primary action</button></div>';
+				}).join("");
+			}
+		});
+	}());
+</script>
