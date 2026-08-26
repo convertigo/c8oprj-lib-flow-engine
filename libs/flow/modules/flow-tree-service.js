@@ -2853,6 +2853,7 @@
 				kind: value.kind || value.editor || value.type || "text",
 				type: value.type || "string",
 				literalType: value.literalType,
+				literalOptions: value.literalOptions,
 				"enum": value["enum"],
 				suggestions: value.suggestions,
 				items: value.items,
@@ -3176,6 +3177,9 @@
 		}
 		if (options.literalType) {
 			definition.literalType = options.literalType;
+		}
+		if (options.literalOptions !== undefined) {
+			definition.literalOptions = normalizeTree(options.literalOptions);
 		}
 		if (options.suggestions !== undefined) {
 			definition.suggestions = options.suggestions;

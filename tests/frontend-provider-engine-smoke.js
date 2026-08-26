@@ -19,6 +19,13 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(model, [
 	'</FlowComponent>',
 	''
 ].join("\n"), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(model.getParentFile().getParentFile(), "theme.flow.css"), [
+	"@layer flow.theme {",
+	"  :root { --c8o-color-primary: #123456; --c8o-color-secondary: #0f9f91; }",
+	"  [data-flow-theme=\"dark\"] { --c8o-color-primary: #abcdef; --c8o-color-secondary: #5bd4c5; }",
+	"}",
+	""
+].join("\n"), "UTF-8");
 var engine = eval(source);
 var engineSource = [
 	"version: 1",
@@ -69,6 +76,12 @@ if (!color || color.kind !== "binding" || color.type !== "string" || color.liter
 		|| color.literalEditorClass !== "flow-color-editor" || color["enum"] !== undefined
 		|| !color.suggestions || color.suggestions.join(",") !== "neutral,primary,secondary,success,warning,danger") {
 	throw new Error("typed color binding contract was not projected through Engine: " + JSON.stringify(color));
+}
+var colorTokens = color.literalOptions && color.literalOptions.theme && color.literalOptions.theme.tokens || [];
+var secondary = colorTokens.filter(function (token) { return token.value === "secondary"; })[0];
+if (!secondary || secondary.cssVariable !== "--c8o-color-secondary"
+		|| secondary.light !== "#0f9f91" || secondary.dark !== "#5bd4c5") {
+	throw new Error("typed color editor did not receive the project theme: " + JSON.stringify(color.literalOptions));
 }
 if (info.frontendDocumentServer.starts !== 1 || info.frontendDocumentServer.errors !== 0
 		|| info.frontendDocumentServer.fallbacks !== 0 || info.frontendDocumentServer.active !== 1) {

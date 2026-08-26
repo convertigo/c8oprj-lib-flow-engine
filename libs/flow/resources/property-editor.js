@@ -971,6 +971,13 @@
     }
   });
   window.flowSetTheme = applyTheme;
+  window.flowSetContext = function (context) {
+    if (!state) return;
+    state.themeContext = objectValue(context);
+    state.value = draft;
+    var editor = document.querySelector("[data-key]");
+    if (editor && editor.setState) editor.setState(typeEditorState(state));
+  };
   window.receiveFromJava = function (message) {
     applyTheme(message && message.theme);
     if (!state || !message || state.virtualPath !== message.virtualPath) {

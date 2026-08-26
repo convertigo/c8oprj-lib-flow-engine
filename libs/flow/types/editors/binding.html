@@ -10,6 +10,8 @@
 		.composer-tools button { padding: 5px 8px; }
 		.parts { display: grid; gap: 5px; margin-top: 8px; overflow-anchor: none; }
 		.part { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+		.part.has-custom { align-items: start; }
+		.part-literal-custom { min-width: 0; }
 		.part-kind { color: var(--flow-editor-text-muted); font-weight: 700; text-transform: uppercase; font-size: 10px; }
 		.part-actions { display: flex; gap: 3px; }
 		.part-actions button { min-width: 28px; padding: 4px 6px; }
@@ -168,6 +170,12 @@
 			var type = String(definition.literalType || "").trim().toLowerCase();
 			var inferred = /^[a-z][a-z0-9-]*$/.test(type) ? "flow-" + type + "-editor" : "";
 			return inferred && inferred !== "flow-binding-editor" && customElements.get(inferred) ? inferred : "";
+		}
+
+		function literalEditorLabel(state) {
+			var definition = state && state.propertyDefinition || {};
+			var type = String(definition.literalType || "").trim().toLowerCase();
+			return type === "color" ? "color" : type && type !== "string" ? type : "text";
 		}
 
 		function sourceId(source) {
@@ -376,14 +384,19 @@
 
 			customLiteralEditor(tag) {
 				var container = this.shadowRoot && this.shadowRoot.querySelector("[data-literal-custom]");
+				return this.customLiteralEditorIn(container, tag, "literal", -1);
+			}
+
+			customLiteralEditorIn(container, tag, child, index) {
 				if (!container || !tag) return null;
 				var editor = container.firstElementChild;
 				if (!editor || editor.tagName.toLowerCase() !== tag) {
 					container.replaceChildren();
 					editor = document.createElement(tag);
-					editor.setAttribute("data-child", "literal");
 					container.append(editor);
 				}
+				editor.setAttribute("data-child", child);
+				if (index >= 0) editor.setAttribute("data-part-index", String(index));
 				return editor;
 			}
 
@@ -511,6 +524,15 @@
 						var value = event.detail && event.detail.value;
 						if (event.detail && event.detail.textLiteral) this._binding.value = String(value || "");
 						else try { this._binding.value = JSON.parse(value); } catch (e) { this._binding.value = value; }
+					}
+					else if (child === "part-literal") {
+						var literalPartIndex = Number(event.target.getAttribute("data-part-index"));
+						var literalParts = composedParts(this._binding);
+						if (literalParts[literalPartIndex] && literalParts[literalPartIndex].kind === "literal") {
+							literalParts[literalPartIndex].value = event.detail && event.detail.value;
+							this._binding = { mode: "expression", parts: literalParts };
+							this.updatePreview();
+						}
 					}
 					this.emit(); return;
 				}
@@ -650,6 +672,9 @@
 				if (mode === "expression") {
 					var parts = composedParts(this._binding);
 					this._binding = { mode: "expression", parts: parts };
+					var customLiteralTag = literalEditorTag(this._state);
+					var addLiteral = this.shadowRoot.querySelector('[data-add-part="literal"]');
+					if (addLiteral) addLiteral.textContent = "Add " + literalEditorLabel(this._state);
 					var addSource = this.shadowRoot.querySelector('[data-add-part="source"]');
 					if (addSource) addSource.disabled = !sources(this._state).some(function (candidate) {
 						return sourceKey(candidate.source || candidate) === sourceKey(self._selection.source);
@@ -658,12 +683,24 @@
 					partsElement.innerHTML = parts.map(function (part, index) {
 						var editor = part.kind === "source"
 							? '<button type="button" class="part-source" data-part-action="select" data-part-index="' + index + '">' + esc(partPreview(part, sources(self._state))) + '</button>'
+							: part.kind === "literal" && customLiteralTag
+								? '<div class="part-literal-custom" data-part-literal-custom="' + index + '"></div>'
 							: '<input data-part-value="1" data-part-index="' + index + '" value="' + esc(part.kind === "literal" ? String(part.value == null ? "" : part.value) : String(part.expression || "")) + '" placeholder="' + (part.kind === "literal" ? "Text" : "Operator or code") + '">';
-						return '<div class="part"><span class="part-kind">' + esc(part.kind) + '</span>' + editor +
+						return '<div class="part' + (part.kind === "literal" && customLiteralTag ? ' has-custom' : '') + '"><span class="part-kind">' + esc(part.kind) + '</span>' + editor +
 							'<span class="part-actions"><button type="button" title="Move left" data-part-action="left" data-part-index="' + index + '">&#8592;</button>' +
 							'<button type="button" title="Move right" data-part-action="right" data-part-index="' + index + '">&#8594;</button>' +
 							'<button type="button" title="Remove" data-part-action="remove" data-part-index="' + index + '">&#215;</button></span></div>';
 					}).join("");
+					if (customLiteralTag) {
+						parts.forEach(function (part, index) {
+							if (!part || part.kind !== "literal") return;
+							var container = partsElement.querySelector('[data-part-literal-custom="' + index + '"]');
+							var editor = self.customLiteralEditorIn(container, customLiteralTag, "part-literal", index);
+							if (editor && editor.setState) editor.setState(Object.assign({}, self._state, {
+								value: part.value == null ? "" : String(part.value)
+							}));
+						});
+					}
 					this.updatePreview();
 				}
 				var category = this.shadowRoot.querySelector("[data-category]");

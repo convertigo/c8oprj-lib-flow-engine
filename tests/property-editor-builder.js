@@ -8,6 +8,9 @@ const source = fs.readFileSync(path.join(__dirname,
 	"../libs/flow/modules/property-editor-builder.js"), "utf8");
 const builder = vm.runInNewContext(source, {});
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "flow-property-editor-builder-"));
+const bindingEditor = fs.readFileSync(path.join(__dirname, "../libs/flow/types/editors/binding.html"), "utf8");
+const colorEditor = fs.readFileSync(path.join(__dirname, "../libs/flow/types/editors/color.html"), "utf8");
+const propertyEditor = fs.readFileSync(path.join(__dirname, "../libs/flow/resources/property-editor.js"), "utf8");
 
 function write(relativePath, content) {
 	const file = path.join(root, relativePath);
@@ -62,6 +65,12 @@ try {
 	assert.equal((html.match(/Shared Flow type editor chrome/g) || []).length, 2,
 		"every type editor template must receive the shared chrome, including style-less editors");
 	assert.match(html, /window\.ready = true/);
+	assert.match(bindingEditor, /data-part-literal-custom/,
+		"Compose must host the custom literal editor declared by literalType");
+	assert.match(colorEditor, /data-custom-mode="auto"/);
+	assert.match(colorEditor, /Generated Flow shades from 50 to 950/);
+	assert.match(propertyEditor, /window\.flowSetContext/,
+		"the host must be able to refresh runtime theme context without reloading the picker");
 
 	const before = builder.cacheKey(env);
 	write("resources/type-editor-chrome.css", ":host { font-size: 13px; }");
