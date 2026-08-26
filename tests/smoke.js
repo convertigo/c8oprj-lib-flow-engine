@@ -2671,8 +2671,8 @@ assertTrue(propertyEditor.html.indexOf("data-literal-custom") !== -1 &&
 	"binding editor did not delegate typed literals to their custom type editor");
 assertTrue(propertyEditor.html.indexOf("Semantic theme colors") !== -1 &&
 	propertyEditor.html.indexOf("Light and dark color previews") !== -1 &&
-	propertyEditor.html.indexOf("semanticPalette") !== -1 &&
-	propertyEditor.html.indexOf("Custom color picker") !== -1,
+	propertyEditor.html.indexOf("fallbackPalette") !== -1 &&
+	propertyEditor.html.indexOf('aria-label="Custom color"') !== -1,
 	"color editor did not expose semantic tokens, light/dark previews and an exact custom color");
 assertTrue(propertyEditor.html.indexOf('source.value === "iterable"') !== -1 &&
 	propertyEditor.html.indexOf("The iterable is the repeated collection") !== -1 &&
@@ -4835,12 +4835,33 @@ var flowSvelteLocalBindingTree = JSON.parse(engine.authoringTree(JSON.stringify(
 	includeFlowCatalog: false,
 	property: "text"
 })));
+var targetedBindingCacheBefore = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+var flowSvelteLocalClassBindingTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteLocalTextNode.path,
+	detail: "full",
+	includeBindings: true,
+	includeFrontendCatalog: false,
+	includeFlowCatalog: false,
+	property: "class"
+})));
+var targetedBindingCacheAfter = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 var flowSvelteLocalBindingInfo = JSON.parse(flowSvelteLocalBindingTree.children[0].info);
 var flowSvelteLocalBindingSources = flowSvelteLocalBindingInfo.propertyDefinitions.text.bindingSources || [];
+var flowSvelteLocalClassBindingInfo = JSON.parse(flowSvelteLocalClassBindingTree.children[0].info);
 assertTrue(flowSvelteLocalBindingSources.some(function (candidate) {
 	return candidate.category === "local" && candidate.source &&
 		candidate.source.category === "local" && candidate.source.name === "localMessage";
 }), "targeted authoring tree did not expose the page local variable to the binding picker");
+assertTrue(flowSvelteLocalClassBindingInfo.propertyDefinitions.class &&
+	Object.prototype.toString.call(flowSvelteLocalClassBindingInfo.propertyDefinitions.class.bindingSources) === "[object Array]",
+	"a second targeted property did not receive its binding sources");
+assertTrue(targetedBindingCacheAfter.hits > targetedBindingCacheBefore.hits &&
+	targetedBindingCacheAfter.misses === targetedBindingCacheBefore.misses,
+	"targeted picker properties should reuse the property-independent authoring tree snapshot");
 var flowSvelteCompactInspect = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
