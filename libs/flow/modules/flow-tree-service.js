@@ -931,7 +931,12 @@
 				blockPath, block.label || block.name || block.id,
 				blockDefinition, compact(blockInfo), null);
 			folder.children.push(blockNode);
-			if (!summaryOnly) {
+			if (summaryOnly) {
+				// Provider libraries keep their catalog cheap to project while still
+				// exposing where and how a block is implemented. This child only
+				// carries source metadata; it never parses the implementation AST.
+				addFrontendBlockImplementation(blockNode, block, blockPath, settings);
+			} else {
 				addFrontendBlockDetails(blockNode, block, blockPath, settings, request);
 			}
 		});
