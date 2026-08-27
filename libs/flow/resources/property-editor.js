@@ -249,6 +249,10 @@
   function pickerLabel(prop) {
     return (prop.def && prop.def.label) || prop.key;
   }
+  function pickerDescription(prop) {
+    var def = (prop && prop.def) || {};
+    return def.description || def.shortDescription || def.longDescription || "";
+  }
   function pickerDefaultProperty(props) {
     var preferred = [
       "value",
@@ -741,6 +745,15 @@
       });
       html +=
         "</div>" +
+        (target
+          ? '<div class="selectedPropertyDoc"><div><strong>' +
+            esc(pickerLabel(target)) +
+            '</strong> <span class="type">' +
+            esc(pickerType(target)) +
+            '</span></div><div class="desc">' +
+            esc(pickerDescription(target) || "No description is available for this property.") +
+            "</div></div>"
+          : "") +
         (state.applied
           ? '<div class="applied">Applied ' +
             esc(state.applied.property || "") +

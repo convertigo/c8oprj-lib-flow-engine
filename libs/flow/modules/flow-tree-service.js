@@ -4591,6 +4591,11 @@
 			if (definition.required === true) {
 				item.required = true;
 			}
+			["label", "category", "description", "shortDescription", "longDescription"].forEach(function (key) {
+				if (definition[key] !== undefined && definition[key] !== null && String(definition[key]) !== "") {
+					item[key] = normalizeTree(definition[key]);
+				}
+			});
 			out[name] = item;
 		});
 		return out;
@@ -4644,15 +4649,15 @@
 				}
 			});
 		}
+		var properties = descriptorPropertyContract(descriptor.properties);
+		if (Object.keys(properties).length) {
+			out.properties = properties;
+		}
 		if (!compact) {
 			out.traits = frontendArray(descriptor.traits);
 			out.slots = descriptor.slots || {};
 			out.targetKinds = descriptor.targetKinds || [];
 			out.acceptedPositions = descriptor.acceptedPositions || [];
-			var properties = descriptorPropertyContract(descriptor.properties);
-			if (Object.keys(properties).length) {
-				out.properties = properties;
-			}
 		}
 		if (target) {
 			out.targetSlot = {

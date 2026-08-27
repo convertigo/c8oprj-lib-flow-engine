@@ -76,6 +76,8 @@ try {
 	assert.match(themeEditor, /Semantic tokens drive every component/);
 	assert.match(propertyEditor, /window\.flowSetContext/,
 		"the host must be able to refresh runtime theme context without reloading the picker");
+	assert.match(propertyEditor, /selectedPropertyDoc/,
+		"the picker must explain the property selected from the multi-property target list");
 
 	const before = builder.cacheKey(env);
 	write("resources/type-editor-chrome.css", ":host { font-size: 13px; }");

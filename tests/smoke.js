@@ -4165,7 +4165,8 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(fron
 		text: {
 			label: "Text",
 			kind: "text",
-			type: "string"
+			type: "string",
+			description: "Displayed text."
 		}
 	}
 }, null, 2), "UTF-8");
@@ -5049,6 +5050,21 @@ assertTrue(flowSvelteMultiQueryPalette.ok === true &&
 			item.properties.text.type === "string" && item.properties.text.intents[0] === "literal";
 	}),
 	"authoring palette should match useful tokens from a multi-intent frontend query");
+var compactFlowSveltePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteStructureNode.path,
+	query: "Text",
+	detail: "compact"
+})));
+assertTrue(compactFlowSveltePalette.ok === true &&
+	compactFlowSveltePalette.items.some(function (item) {
+		return item.id === "project.text" && item.properties && item.properties.text &&
+			item.properties.text.label === "Text" && item.properties.text.description === "Displayed text.";
+	}),
+	"compact authoring palette should preserve property labels and documentation");
 var flowSvelteContract = JSON.parse(engine.authoringContract(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
