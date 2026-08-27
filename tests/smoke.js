@@ -5203,7 +5203,7 @@ var flowSvelteDisabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	}
 })));
 assertTrue(flowSvelteDisabled.ok === true && flowSvelteDisabled.target === "frontAst" &&
-	String(flowSvelteDisabled.source).indexOf("<Text id=\"title\"") !== -1 &&
+	String(flowSvelteDisabled.source).indexOf("<Text id=\"first\"") !== -1 &&
 	String(flowSvelteDisabled.source).indexOf("enabled={false}") !== -1,
 	"flow-svelte AST setEnabled(false) did not preserve the disabled state in source");
 var flowSvelteReenabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
