@@ -285,6 +285,17 @@ details.scopeGroup > summary {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.selectedPropertyDoc {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--flow-editor-accent);
+  border-radius: 3px;
+  background: var(--flow-editor-control-bg);
+  color: var(--flow-editor-control-text);
+}
+.selectedPropertyDoc .desc {
+  margin-top: 4px;
+}
 .pickerEditor {
   margin-top: 8px;
 }
