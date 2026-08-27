@@ -133,21 +133,28 @@
 			: projectRoot ? String(projectRoot.getName()) : "project";
 	}
 
-	function projectProviderForResourceRoot(root, env) {
+	function projectRootForResourceRoot(root, env) {
 		var path = canonicalPath(root);
 		if (!path) {
-			return "";
+			return null;
 		}
 		var marker = env.File.separator + "libs" + env.File.separator + "flow" + env.File.separator;
 		var index = path.indexOf(marker);
 		if (index < 0) {
-			return "";
+			return null;
 		}
 		var projectPath = path.substring(0, index);
 		if (!projectPath) {
+			return null;
+		}
+		return new env.File(projectPath);
+	}
+
+	function projectProviderForResourceRoot(root, env) {
+		var projectRoot = projectRootForResourceRoot(root, env);
+		if (!projectRoot) {
 			return "";
 		}
-		var projectRoot = new env.File(projectPath);
 		return typeof env.projectNameForRoot === "function"
 			? String(env.projectNameForRoot(projectRoot) || "")
 			: String(projectRoot.getName());
@@ -170,6 +177,7 @@
 	function sourceMetadataForFile(file, builderName, env, providerHint) {
 		var provider = projectProviderForResourceRoot(file, env) || providerHint || "frontbuilder." + builderName;
 		var writable = isUnderProject(file, env);
+		var providerProjectRoot = projectRootForResourceRoot(file, env);
 		var metadata = {
 			provider: provider,
 			sourcePath: String(file.getAbsolutePath()),
@@ -177,8 +185,11 @@
 			sourceOrigin: writable ? "project" : "library",
 			sourceWritable: writable
 		};
-		if (writable && typeof env.resourceRelativePath === "function") {
-			metadata.sourceRelativePath = env.resourceRelativePath(env.projectDir(), file);
+		if (typeof env.resourceRelativePath === "function") {
+			var relativeRoot = providerProjectRoot || (writable ? env.projectDir() : null);
+			if (relativeRoot) {
+				metadata.sourceRelativePath = env.resourceRelativePath(relativeRoot, file);
+			}
 		}
 		return metadata;
 	}
@@ -2633,6 +2644,7 @@
 
 	return {
 		frontbuilderSettings: frontbuilderSettings,
+		sourceMetadataForFile: sourceMetadataForFile,
 			resourceRootForSettings: resourceRootForSettings,
 			frontendBlocksForSettings: frontendBlocksForSettings,
 			frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,

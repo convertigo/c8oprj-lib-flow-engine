@@ -580,9 +580,10 @@
 				}), compact(sourceObjectInfo(sourceInfo, frontendSourcePropertyDefinitions(),
 					["sourceRelativePath", "sourceWritable", "sourceDirty"])), "mdi:file-code-outline"));
 		}
-		var catalogNode = request.includeFrontendCatalog === false
+		var librarySummary = request.includeFrontendCatalog === false && !settings.modelPath;
+		var catalogNode = request.includeFrontendCatalog === false && !librarySummary
 			? null
-			: addFrontendBlockCatalog(builder, name, settings, path, request, blocks);
+			: addFrontendBlockCatalog(builder, name, settings, path, request, blocks, librarySummary);
 		if (!settings.modelPath) {
 			return;
 		}
@@ -638,7 +639,7 @@
 		};
 	}
 
-	function addFrontendBlockCatalog(parent, name, settings, path, request, flowBlocks) {
+	function addFrontendBlockCatalog(parent, name, settings, path, request, flowBlocks, summaryOnly) {
 		var blocks = (frontendBlocksForSettings(name, settings) || [])
 			.concat(frontendPortableBlockDescriptors(flowBlocks));
 		var createDescriptors = frontendCreateDescriptorsForSettings(name, settings) || [];
@@ -646,7 +647,7 @@
 			return null;
 		}
 		var catalog = virtualNode("catalog", "folder", "frontendBlockCatalog", path + ".catalog",
-			"Catalog", compact({
+			summaryOnly ? "Library" : "Catalog", compact({
 				count: blocks.length
 			}), null, "mdi:library-shelves");
 		parent.children.push(catalog);
@@ -672,7 +673,7 @@
 			return a.localeCompare(b);
 		}).forEach(function (provider) {
 			addFrontendProviderCatalog(catalog, name, projectProvider, provider, providers[provider],
-				path + ".catalog." + safeVirtualName("provider", provider), settings, request);
+				path + ".catalog." + safeVirtualName("provider", provider), settings, request, summaryOnly);
 		});
 		return catalog;
 	}
@@ -822,7 +823,7 @@
 		};
 	}
 
-	function addFrontendProviderCatalog(parent, name, projectProvider, provider, blocks, path, settings, request) {
+	function addFrontendProviderCatalog(parent, name, projectProvider, provider, blocks, path, settings, request, summaryOnly) {
 		var writable = provider === projectProvider;
 		var definition = {
 			provider: provider,
@@ -851,11 +852,11 @@
 			return a.localeCompare(b);
 		}).forEach(function (namespace) {
 			addFrontendNamespaceCatalog(providerNode, name, namespace, namespaces[namespace],
-				path + "." + safeVirtualName("namespace", namespace), settings, writable, request);
+				path + "." + safeVirtualName("namespace", namespace), settings, writable, request, summaryOnly);
 		});
 	}
 
-	function addFrontendNamespaceCatalog(parent, name, namespace, blocks, path, settings, writable, request) {
+	function addFrontendNamespaceCatalog(parent, name, namespace, blocks, path, settings, writable, request, summaryOnly) {
 		var definition = {
 			namespace: namespace === "_root" ? "" : namespace,
 			count: blocks.length,
@@ -867,11 +868,11 @@
 			path, label, compact(definition), compact(info), writable ? "mdi:folder-pound-outline" : "mdi:folder-outline");
 		parent.children.push(namespaceNode);
 		addFrontendBlocksFolder(namespaceNode, name, blocks.filter(frontendStructureBlock), path + ".structureBlocks",
-			"structureBlocks", "frontendStructureBlocks", "Structure blocks", "mdi:shape-outline", settings, writable, request);
+			"structureBlocks", "frontendStructureBlocks", "Structure blocks", "mdi:shape-outline", settings, writable, request, summaryOnly);
 		addFrontendBlocksFolder(namespaceNode, name, blocks.filter(frontendActionBlock), path + ".actionBlocks",
-			"actionBlocks", "frontendActionBlocks", "Action blocks", "mdi:gesture-tap", settings, writable, request);
+			"actionBlocks", "frontendActionBlocks", "Action blocks", "mdi:gesture-tap", settings, writable, request, summaryOnly);
 		addFrontendBlocksFolder(namespaceNode, name, blocks.filter(frontendUiBlock), path + ".uiBlocks",
-			"uiBlocks", "frontendBlocks", "UI blocks", "mdi:widgets-outline", settings, writable, request);
+			"uiBlocks", "frontendBlocks", "UI blocks", "mdi:widgets-outline", settings, writable, request, summaryOnly);
 	}
 
 	function frontendStructureBlock(block) {
@@ -896,7 +897,7 @@
 			|| !frontendStructureBlock(block) && !frontendActionBlock(block);
 	}
 
-	function addFrontendBlocksFolder(parent, name, blocks, path, nodeName, nodeType, summary, icon, settings, showWhenEmpty, request) {
+	function addFrontendBlocksFolder(parent, name, blocks, path, nodeName, nodeType, summary, icon, settings, showWhenEmpty, request, summaryOnly) {
 		if (!blocks.length && !showWhenEmpty) {
 			return;
 		}
@@ -943,7 +944,14 @@
 				blockPath, block.label || block.name || block.id,
 				blockDefinition, compact(blockInfo), null);
 			folder.children.push(blockNode);
-			addFrontendBlockDetails(blockNode, block, blockPath, settings, request);
+			if (summaryOnly) {
+				// Provider libraries keep their catalog cheap to project while still
+				// exposing where and how a block is implemented. This child only
+				// carries source metadata; it never parses the implementation AST.
+				addFrontendBlockImplementation(blockNode, block, blockPath, settings);
+			} else {
+				addFrontendBlockDetails(blockNode, block, blockPath, settings, request);
+			}
 		});
 	}
 
@@ -4588,16 +4596,46 @@
 		return out;
 	}
 
+	function frontendDefinitionFolder(descriptor) {
+		return frontendStructureBlock(descriptor)
+			? "structureBlocks"
+			: frontendActionBlock(descriptor)
+				? "actionBlocks"
+				: "uiBlocks";
+	}
+
+	function frontendDefinitionPath(descriptor, builder) {
+		var provider = frontendCatalogProvider(descriptor);
+		var namespace = frontendCatalogNamespace(descriptor);
+		var blockId = String(descriptor && (descriptor.id || descriptor.name) || "");
+		if (!provider || !blockId) {
+			return "";
+		}
+		return [
+			"frontends",
+			"builder_" + safeVirtualName("builder", builder || descriptor.builder || "svelte"),
+			"catalog",
+			"provider_" + safeVirtualName("provider", provider),
+			"namespace_" + safeVirtualName("namespace", namespace),
+			frontendDefinitionFolder(descriptor),
+			"block_" + safeVirtualName("block", blockId)
+		].join(".");
+	}
+
 	function descriptorItem(descriptor, target, detail) {
 		var out = {};
 		var compact = String(detail || "") === "compact";
 		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace",
 			"iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32",
-			"sourceBacked", "descriptorKind", "sourceWritable"].forEach(function (key) {
+			"sourceBacked", "descriptorKind", "sourceWritable", "runtime", "sourceRelativePath", "sourceOrigin"].forEach(function (key) {
 			if (descriptor[key] !== undefined && descriptor[key] !== null && descriptor[key] !== "") {
 				out[key] = descriptor[key];
 			}
 		});
+		var definitionPath = frontendDefinitionPath(descriptor);
+		if (definitionPath) {
+			out.definitionPath = definitionPath;
+		}
 		if (out.icon && !out.iconFile && !out.iconFile16 && !out.iconFile32) {
 			var resolvedIcon = virtualIcon(out.icon);
 			["iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"].forEach(function (key) {
@@ -6489,6 +6527,7 @@
 			searchNeedle: searchNeedle,
 			searchMatches: searchMatches,
 			searchSnippet: searchSnippet,
+			descriptorItem: descriptorItem,
 			childSlotNamesForMutation: childSlotNamesForMutation
 		};
 	}
@@ -6554,6 +6593,10 @@
 		},
 		searchMatches: function (text, needle, env) {
 			return create(env).searchMatches(text, needle);
+		},
+		descriptorItem: function (descriptor, target, detail, env) {
+			return create(env || { normalizeTree: function (value) { return value; } })
+				.descriptorItem(descriptor, target, detail);
 		},
 		searchSnippet: function (text, needle, env) {
 			return create(env).searchSnippet(text, needle);
