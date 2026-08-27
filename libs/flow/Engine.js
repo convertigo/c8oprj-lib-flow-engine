@@ -5315,7 +5315,21 @@
 			fromId: String(mutation.fromId || ""),
 			sourceFile: String(sourceFile.getAbsolutePath())
 		};
-		if (op === "append" || op === "insert") {
+		if (op === "setEnabled") {
+			var enabledTarget = frontAstValueAtPath(root, path, false);
+			if (!frontAstIsNode(enabledTarget)) {
+				throw new Error("Unknown FrontAst enable/disable target: " + path);
+			}
+			debug.targetTag = String(enabledTarget.tag || "");
+			debug.enabled = mutation.enabled !== false;
+			if (mutation.enabled === false) {
+				enabledTarget.attrs.enabled = false;
+				enabledTarget.attrSyntax.enabled = "expression";
+			} else {
+				delete enabledTarget.attrs.enabled;
+				delete enabledTarget.attrSyntax.enabled;
+			}
+		} else if (op === "append" || op === "insert") {
 			var array = frontAstArrayAtPath(root, path, true);
 			var value = frontAstTemplateNode(mutation.value || {});
 			var index = op === "insert" && mutation.index !== undefined && mutation.index !== null
