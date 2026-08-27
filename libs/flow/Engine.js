@@ -4498,8 +4498,95 @@
 
 	function authoringTreeRequest(request, blocks) {
 		request = request || {};
+		if (targetedFrontendBindingRequest(request)) {
+			var baseRequest = Object.assign({}, request, {
+				property: "",
+				sourceId: "",
+				bindingTargetPath: "",
+				bindingTargetSource: "",
+				includeBindings: false
+			});
+			var targeted = flowTreeService().projectAuthoringTreeResponse(
+				cachedAuthoringTreeBase(baseRequest, blocks), request, flowTreeServiceEnv());
+			return enrichTargetedFrontendBindingTree(targeted, request);
+		}
 		var cached = cachedAuthoringTreeBase(request, blocks);
 		return normalizeTree(flowTreeService().projectAuthoringTreeResponse(cached, request, flowTreeServiceEnv()));
+	}
+
+	function targetedFrontendBindingRequest(request) {
+		return String(request && request.surface || "frontend") === "frontend"
+			&& request && request.includeBindings !== false
+			&& !!String(request.property || "")
+			&& !!String(request.focusPath || request.rootPath || request.path || "")
+			&& String(request.detail || request.mode || "full") === "full";
+	}
+
+	function frontendBindingTreeNode(value, predicate) {
+		if (!value || typeof value !== "object") {
+			return null;
+		}
+		if (predicate(value)) {
+			return value;
+		}
+		var children = value.children || [];
+		for (var i = 0; i < children.length; i++) {
+			var found = frontendBindingTreeNode(children[i], predicate);
+			if (found) {
+				return found;
+			}
+		}
+		return null;
+	}
+
+	function frontendBindingNodeInfo(node) {
+		var info = node && node.info;
+		if (info && typeof info === "object") {
+			return normalizeTree(info);
+		}
+		if (typeof info === "string" && info) {
+			try {
+				return JSON.parse(info);
+			} catch (e) {
+			}
+		}
+		return {};
+	}
+
+	function enrichTargetedFrontendBindingTree(tree, request) {
+		tree = normalizeTree(tree || {});
+		var focusPath = String(request.focusPath || request.rootPath || request.path || "");
+		var focused = frontendBindingTreeNode(tree, function (node) {
+			return String(node.path || "") === focusPath;
+		});
+		var info = frontendBindingNodeInfo(focused);
+		var sourcePath = String(info.sourcePath || info.sourceRelativePath || "");
+		var mutationPath = String(info.sourceMutationPath || info.frontendModelPath || "");
+		var property = String(request.property || "");
+		if (!focused || !sourcePath || !mutationPath || !property) {
+			return tree;
+		}
+		var described = describeFrontendDocument(Object.assign({}, request, {
+			sourceFile: sourcePath,
+			sourcePath: sourcePath,
+			property: property,
+			bindingTargetPath: mutationPath,
+			bindingTargetSource: "",
+			includeBindings: true
+		}));
+		var projected = frontendBindingTreeNode(described && described.tree || {}, function (node) {
+			return String(node.sourceMutationPath || "") === mutationPath
+				&& !!(node.propertyDefinitions && node.propertyDefinitions[property]);
+		});
+		var definition = projected && projected.propertyDefinitions
+			&& projected.propertyDefinitions[property];
+		if (!definition) {
+			return tree;
+		}
+		info.propertyDefinitions = info.propertyDefinitions || {};
+		info.propertyDefinitions[property] = normalizeTree(definition);
+		focused.info = typeof focused.info === "string" ? JSON.stringify(info) : info;
+		return tree;
 	}
 
 	function authoringContractRequest(request, blocks) {

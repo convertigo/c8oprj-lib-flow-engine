@@ -1,0 +1,12 @@
+version: 1
+name: "theme"
+label: "Theme"
+icon: "mdi:palette-swatch-variant"
+type: "object"
+description: "A named Flow application theme with semantic colors, light/dark behavior, typography, radius and spacing."
+editor:
+  label: "Theme designer"
+  kind: "webcomponent"
+  component: "flow-theme-editor"
+  file: "editors/theme.html"
+  icon: "mdi:palette-swatch-variant"

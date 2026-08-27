@@ -84,6 +84,18 @@
 				definition.editorResource = String(editor.file);
 			}
 		}
+		var literalTypeName = String(definition.literalType || "");
+		var literalType = flowTypes()[literalTypeName];
+		if (literalType) {
+			var literalDescriptor = typeDescriptor(literalType);
+			var literalEditor = literalDescriptor && literalDescriptor.editor;
+			if (literalEditor && literalEditor.component && !definition.literalEditorClass) {
+				definition.literalEditorClass = String(literalEditor.component);
+			}
+			if (literalEditor && literalEditor.file && !definition.literalEditorResource) {
+				definition.literalEditorResource = String(literalEditor.file);
+			}
+		}
 		return definition;
 	}
 
@@ -582,6 +594,7 @@
 		try {
 			var document = frontendModelDocument(request, modelFile, settings);
 			var model = normalizeTree(document.model);
+			builder.__authoringDescriptors = document.descriptors || [];
 			builder.diagnostics = document.diagnostics || [];
 			builder.definition = compact(Object.assign(definition, {
 				appId: model.app && model.app.id || "",
@@ -2840,7 +2853,10 @@
 			{
 				kind: value.kind || value.editor || value.type || "text",
 				type: value.type || "string",
+				literalType: value.literalType,
+				literalOptions: value.literalOptions,
 				"enum": value["enum"],
+				suggestions: value.suggestions,
 				items: value.items,
 				bindingSources: value.bindingSources,
 				defaultValue: value["default"],
@@ -3159,6 +3175,15 @@
 		}
 		if (options.type) {
 			definition.type = options.type;
+		}
+		if (options.literalType) {
+			definition.literalType = options.literalType;
+		}
+		if (options.literalOptions !== undefined) {
+			definition.literalOptions = normalizeTree(options.literalOptions);
+		}
+		if (options.suggestions !== undefined) {
+			definition.suggestions = options.suggestions;
 		}
 		if (options.items !== undefined) {
 			definition.items = options.items;
@@ -4156,12 +4181,17 @@
 		var builder = authoringBuilderName(request, engine);
 		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
 		var children = focus ? [focus] : tree.children || [];
+		var dynamicDescriptors = focus && focus.__authoringDescriptors || [];
+		if (focus) {
+			delete focus.__authoringDescriptors;
+		}
 		return {
 			ok: true,
 			target: "authoring",
 			surface: surface,
 			builder: builder,
 			diagnostics: focus && focus.diagnostics || [],
+			descriptors: dynamicDescriptors,
 			children: children
 		};
 	}
@@ -4809,7 +4839,17 @@
 		request = request || {};
 		var engine = authoringEngineDefinition(request);
 		tree = normalizeTree(tree || {});
-		var descriptors = authoringDescriptors(request, engine, blocks);
+		var descriptors = authoringDescriptors(request, engine, blocks)
+			.concat(tree.descriptors || []);
+		var seenDescriptors = {};
+		descriptors = descriptors.filter(function (descriptor) {
+			var id = String(descriptor && descriptor.id || "");
+			if (!id || seenDescriptors[id]) {
+				return false;
+			}
+			seenDescriptors[id] = true;
+			return true;
+		});
 		var focusPath = String(request.focusPath || request.path || "");
 		if (!focusPath) {
 			var builderNode = findAuthoringBuilderNode(tree, authoringBuilderName(request, engine));

@@ -2665,6 +2665,15 @@ assertTrue(propertyEditor.html.indexOf("data-literal-choice") !== -1 &&
 	propertyEditor.html.indexOf("literalChoices(this._state)") !== -1 &&
 	propertyEditor.html.indexOf("Legacy value:") !== -1,
 	"binding editor did not expose enum choices while preserving legacy literal values");
+assertTrue(propertyEditor.html.indexOf("data-literal-custom") !== -1 &&
+	propertyEditor.html.indexOf("literalEditorTag(this._state)") !== -1 &&
+	propertyEditor.html.indexOf("definition.literalEditorClass") !== -1,
+	"binding editor did not delegate typed literals to their custom type editor");
+assertTrue(propertyEditor.html.indexOf("Semantic theme colors") !== -1 &&
+	propertyEditor.html.indexOf("Light and dark color previews") !== -1 &&
+	propertyEditor.html.indexOf("fallbackPalette") !== -1 &&
+	propertyEditor.html.indexOf('aria-label="Custom color"') !== -1,
+	"color editor did not expose semantic tokens, light/dark previews and an exact custom color");
 assertTrue(propertyEditor.html.indexOf('source.value === "iterable"') !== -1 &&
 	propertyEditor.html.indexOf("The iterable is the repeated collection") !== -1 &&
 	propertyEditor.html.indexOf("Invalid JavaScript expression:") !== -1 &&
@@ -4382,9 +4391,16 @@ var flowSvelteModelDir = new java.io.File(frontendRoot, "model/AstSmoke");
 var flowSvelteRoutesDir = new java.io.File(flowSvelteModelDir, "src/routes");
 var flowSvelteComponentDir = new java.io.File(flowSvelteModelDir, "src/lib/components");
 var flowSvelteTranslationsDir = new java.io.File(flowSvelteModelDir, "src/i18n");
+var flowSvelteThemeFile = new java.io.File(flowSvelteModelDir, "src/theme.flow.css");
 flowSvelteComponentDir.mkdirs();
 flowSvelteRoutesDir.mkdirs();
 flowSvelteTranslationsDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSvelteThemeFile, [
+	"@layer flow.theme {",
+	"  :root { --c8o-color-primary: #075985; }",
+	"}",
+	""
+].join("\n"), "UTF-8");
 var flowSveltePageFile = new java.io.File(flowSvelteRoutesDir, "+page.flow.svelte");
 var flowSvelteLayoutFile = new java.io.File(flowSvelteRoutesDir, "+layout.flow.svelte");
 var nestedRouteDir = new java.io.File(flowSvelteRoutesDir, "(shop)/products/[id=integer]");
@@ -4826,12 +4842,33 @@ var flowSvelteLocalBindingTree = JSON.parse(engine.authoringTree(JSON.stringify(
 	includeFlowCatalog: false,
 	property: "text"
 })));
+var targetedBindingCacheBefore = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
+var flowSvelteLocalClassBindingTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteLocalTextNode.path,
+	detail: "full",
+	includeBindings: true,
+	includeFrontendCatalog: false,
+	includeFlowCatalog: false,
+	property: "class"
+})));
+var targetedBindingCacheAfter = JSON.parse(engine.cacheInfo()).caches.treeSnapshots;
 var flowSvelteLocalBindingInfo = JSON.parse(flowSvelteLocalBindingTree.children[0].info);
 var flowSvelteLocalBindingSources = flowSvelteLocalBindingInfo.propertyDefinitions.text.bindingSources || [];
+var flowSvelteLocalClassBindingInfo = JSON.parse(flowSvelteLocalClassBindingTree.children[0].info);
 assertTrue(flowSvelteLocalBindingSources.some(function (candidate) {
 	return candidate.category === "local" && candidate.source &&
 		candidate.source.category === "local" && candidate.source.name === "localMessage";
 }), "targeted authoring tree did not expose the page local variable to the binding picker");
+assertTrue(flowSvelteLocalClassBindingInfo.propertyDefinitions.class &&
+	Object.prototype.toString.call(flowSvelteLocalClassBindingInfo.propertyDefinitions.class.bindingSources) === "[object Array]",
+	"a second targeted property did not receive its binding sources");
+assertTrue(targetedBindingCacheAfter.hits > targetedBindingCacheBefore.hits &&
+	targetedBindingCacheAfter.misses === targetedBindingCacheBefore.misses,
+	"targeted picker properties should reuse the property-independent authoring tree snapshot");
 var flowSvelteCompactInspect = JSON.parse(engine.authoringTree(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -4968,6 +5005,23 @@ assertTrue(flowSvelteTranslationsPalette.items.some(function (item) {
 }) && !flowSvelteTranslationsPalette.items.some(function (item) {
 	return item.id === "frontbuilder.svelte.translation.en";
 }), "translation palette should propose only missing locale source files");
+var flowSvelteThemeNode = findNode(flowSvelteTree, function (node) {
+	return node.kind === "frontendThemeSource";
+});
+var flowSvelteThemePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteThemeNode.path
+})));
+assertTrue(flowSvelteThemePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.create" && item.category === "Themes" &&
+		item.insert && item.insert.__frontendMutationPath === "theme.palettes";
+}) && flowSvelteThemePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.copy.default";
+}), "theme palette should expose document-derived create and copy actions: " +
+	JSON.stringify(flowSvelteThemePalette));
 var flowSveltePortablePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",

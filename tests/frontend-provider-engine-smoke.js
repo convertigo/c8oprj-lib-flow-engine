@@ -15,9 +15,16 @@ var model = new java.io.File(root,
 model.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(model, [
 	'<FlowComponent id="home" label="Home">',
-	'  <Structure><Text id="title" text="Provider smoke" /></Structure>',
+	'  <Structure><Text id="title" text="Provider smoke" /><Avatar id="avatar" variant="primary" /></Structure>',
 	'</FlowComponent>',
 	''
+].join("\n"), "UTF-8");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(model.getParentFile().getParentFile(), "theme.flow.css"), [
+	"@layer flow.theme {",
+	"  :root { --c8o-color-primary: #123456; --c8o-color-secondary: #0f9f91; }",
+	"  [data-flow-theme=\"dark\"] { --c8o-color-primary: #abcdef; --c8o-color-secondary: #5bd4c5; }",
+	"}",
+	""
 ].join("\n"), "UTF-8");
 var engine = eval(source);
 var engineSource = [
@@ -40,6 +47,64 @@ var tree = JSON.parse(engine.describeTree(JSON.stringify({
 var info = JSON.parse(engine.cacheInfo()).caches;
 if (!tree || tree.ok === false) {
 	throw new Error("frontend provider smoke did not produce a tree: " + JSON.stringify(tree));
+}
+var detailedTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: engineSource,
+	projectDir: String(root.getAbsolutePath()),
+	detail: "full",
+	maxDepth: 12
+})));
+function findNode(node, id) {
+	var definition = {};
+	try { definition = node && typeof node.definition === "string" ? JSON.parse(node.definition) : node && node.definition || {}; }
+	catch (e) {}
+	if (node && (String(node.id || "") === id || String(definition.id || "") === id)) return node;
+	var children = node && node.children || [];
+	for (var i = 0; i < children.length; i++) {
+		var found = findNode(children[i], id);
+		if (found) return found;
+	}
+	return null;
+}
+var avatar = findNode(detailedTree.tree || detailedTree, "avatar");
+var avatarInfo = {};
+try { avatarInfo = avatar && typeof avatar.info === "string" ? JSON.parse(avatar.info) : avatar && avatar.info || {}; }
+catch (e) {}
+var color = avatarInfo.propertyDefinitions && avatarInfo.propertyDefinitions.variant;
+if (!color || color.kind !== "binding" || color.type !== "string" || color.literalType !== "color"
+		|| color.literalEditorClass !== "flow-color-editor" || color["enum"] !== undefined
+		|| !color.suggestions || color.suggestions.join(",") !== "neutral,primary,secondary,success,warning,danger") {
+	throw new Error("typed color binding contract was not projected through Engine: " + JSON.stringify(color));
+}
+var colorTokens = color.literalOptions && color.literalOptions.theme && color.literalOptions.theme.tokens || [];
+var secondary = colorTokens.filter(function (token) { return token.value === "secondary"; })[0];
+if (!secondary || secondary.cssVariable !== "--c8o-color-secondary"
+		|| secondary.light !== "#0f9f91" || secondary.dark !== "#5bd4c5") {
+	throw new Error("typed color editor did not receive the project theme: " + JSON.stringify(color.literalOptions));
+}
+var authoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: engineSource,
+	projectDir: String(root.getAbsolutePath()),
+	detail: "full"
+})));
+var themeNode = findNode(authoringTree, "theme");
+var themePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: engineSource,
+	projectDir: String(root.getAbsolutePath()),
+	focusPath: themeNode && themeNode.path
+})));
+if (!themePalette.items || !themePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.create" && item.category === "Themes";
+}) || !themePalette.items.some(function (item) {
+	return item.id === "frontbuilder.svelte.theme.copy.default";
+})) {
+	throw new Error("document-derived theme palette was not projected through Engine: "
+		+ JSON.stringify(themePalette));
 }
 if (info.frontendDocumentServer.starts !== 1 || info.frontendDocumentServer.errors !== 0
 		|| info.frontendDocumentServer.fallbacks !== 0 || info.frontendDocumentServer.active !== 1) {

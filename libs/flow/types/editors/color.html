@@ -1,107 +1,346 @@
 <template id="flow-color-editor-template">
 	<style>
 		:host { display: block; font: 12px system-ui, sans-serif; color: var(--flow-editor-text); }
-		.row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: center; }
+		.tokens { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 6px; margin-bottom: 10px; }
+		.token { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 7px; align-items: center; min-height: 38px; border: 1px solid var(--flow-editor-control-border); border-radius: 6px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 4px 7px; text-align: left; cursor: pointer; }
+		.token.selected { border-color: var(--flow-editor-selection-border); box-shadow: 0 0 0 1px var(--flow-editor-selection-border); }
+		.swatches { display: grid; grid-template-columns: 1fr 1fr; width: 32px; height: 24px; overflow: hidden; border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; }
+		.swatches span:first-child { background: var(--light); }
+		.swatches span:last-child { background: var(--dark); }
+		.token-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+		.custom { border-top: 1px solid var(--flow-editor-border); padding-top: 9px; }
+		.mode-label { margin-bottom: 5px; color: var(--flow-editor-label); font-weight: 700; }
+		.modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 8px; }
+		.modes button { border: 1px solid var(--flow-editor-control-border); border-radius: 4px; background: var(--flow-editor-control-bg); color: var(--flow-editor-control-text); padding: 6px; cursor: pointer; }
+		.modes button.active { border-color: var(--flow-editor-selection-border); background: var(--flow-editor-selection-bg-strong); color: white; font-weight: 700; }
+		.controls { display: grid; gap: 7px; }
+		.row { display: grid; grid-template-columns: 76px 44px minmax(0, 1fr); gap: 7px; align-items: center; }
+		.row.compact { grid-template-columns: 44px minmax(0, 1fr); }
+		.row label { color: var(--flow-editor-label); font-weight: 700; }
 		input { box-sizing: border-box; width: 100%; min-height: 34px; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 6px; font: 12px ui-monospace, monospace; }
 		input[type="color"] { height: 34px; padding: 2px; cursor: pointer; }
-		.preview { height: 28px; margin-top: 8px; border: 1px solid var(--flow-editor-control-border); border-radius: 4px; background: var(--color, transparent); }
-		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; }
+		.scale { display: grid; grid-template-columns: repeat(11, minmax(15px, 1fr)); min-height: 30px; overflow: hidden; border: 1px solid var(--flow-editor-border-strong); border-radius: 4px; }
+		.shade { display: flex; align-items: end; justify-content: center; min-width: 0; background: var(--shade); color: transparent; font-size: 8px; }
+		.shade.selected { color: white; box-shadow: inset 0 0 0 2px white, inset 0 0 0 3px #111827; font-weight: 800; }
+		.previews { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+		.preview { display: grid; min-height: 42px; place-items: end start; border: 1px solid var(--flow-editor-control-border); border-radius: 4px; background: var(--color, transparent); color: #111827; padding: 5px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+		.preview.dark { color: #f8fafc; }
+		.hint { color: var(--flow-editor-text-muted); margin-top: 6px; line-height: 1.35; }
 		.invalid { color: var(--flow-editor-error, #b91c1c); }
+		.hidden { display: none; }
 		@media (max-width: 640px) {
-			input { min-height: 44px; font-size: 16px; }
+			.tokens { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+			.token, input, .modes button { min-height: 44px; font-size: 16px; }
 			input[type="color"] { height: 44px; }
+			.row { grid-template-columns: 64px 44px minmax(0, 1fr); }
 		}
 	</style>
-	<div class="row">
-		<input part="picker" type="color" aria-label="Color picker">
-		<input part="value" spellcheck="false" placeholder="#2563eb, oklch(...), var(...) or color-mix(...)" aria-label="CSS color value">
+	<div class="tokens" data-tokens aria-label="Semantic theme colors"></div>
+	<div class="custom">
+		<div class="mode-label">Custom color across light and dark themes</div>
+		<div class="modes" role="group" aria-label="Light and dark color strategy">
+			<button type="button" data-custom-mode="same">Same</button>
+			<button type="button" data-custom-mode="auto">Auto</button>
+			<button type="button" data-custom-mode="choose">Choose</button>
+		</div>
+		<div class="controls" data-panel="same">
+			<div class="row compact"><input data-color="base" type="color" aria-label="Custom color"><input data-text="base" spellcheck="false" aria-label="Custom color value"></div>
+		</div>
+		<div class="controls hidden" data-panel="auto">
+			<div class="row"><label>Base 500</label><input data-color="auto" type="color" aria-label="Automatic base color"><input data-text="auto" spellcheck="false" aria-label="Automatic base color value"></div>
+			<div class="scale" data-scale aria-label="Generated Flow shades from 50 to 950"></div>
+		</div>
+		<div class="controls hidden" data-panel="choose">
+			<div class="row"><label>Light</label><input data-color="light" type="color" aria-label="Light theme color"><input data-text="light" spellcheck="false" aria-label="Light theme color value"></div>
+			<div class="row"><label>Dark</label><input data-color="dark" type="color" aria-label="Dark theme color"><input data-text="dark" spellcheck="false" aria-label="Dark theme color value"></div>
+		</div>
+		<div class="row compact" style="margin-top:8px"><span></span><input part="value" spellcheck="false" placeholder="Theme token, CSS color or light-dark(...)" aria-label="Flow color value"></div>
 	</div>
-	<div class="preview" part="preview"></div>
-	<div class="hint" part="hint">Any valid CSS color is accepted; the picker edits hexadecimal colors.</div>
+	<div class="previews" aria-label="Light and dark color previews">
+		<div class="preview light" data-preview="light">Light</div>
+		<div class="preview dark" data-preview="dark">Dark</div>
+	</div>
+	<div class="hint" part="hint">Theme tokens use the colors declared by the current Flow theme.</div>
 </template>
 <script>
 	(function () {
-		if (customElements.get("flow-color-editor")) {
-			return;
+		if (customElements.get("flow-color-editor")) return;
+
+		var fallbackPalette = {
+			neutral: { value: "neutral", label: "Neutral", cssVariable: "--c8o-color-muted", light: "#5f6f85", dark: "#9eacc2" },
+			primary: { value: "primary", label: "Primary", cssVariable: "--c8o-color-primary", light: "#3166e8", dark: "#8eb1ff" },
+			secondary: { value: "secondary", label: "Secondary", cssVariable: "--c8o-color-secondary", light: "#0f9f91", dark: "#5bd4c5" },
+			tertiary: { value: "tertiary", label: "Tertiary", cssVariable: "--c8o-color-tertiary", light: "#7c5ce5", dark: "#b8a3ff" },
+			success: { value: "success", label: "Success", cssVariable: "--c8o-color-success", light: "#16865b", dark: "#16865b" },
+			warning: { value: "warning", label: "Warning", cssVariable: "--c8o-color-warning", light: "#b87512", dark: "#b87512" },
+			danger: { value: "danger", label: "Danger", cssVariable: "--c8o-color-danger", light: "#cb3b4f", dark: "#cb3b4f" }
+		};
+		var shades = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+
+		function record(value) {
+			return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+		}
+
+		function colorMix(base, shade) {
+			if (shade === 500) return base;
+			var weights = { 50: 12, 100: 22, 200: 40, 300: 58, 400: 78, 600: 86, 700: 70, 800: 52, 900: 36, 950: 24 };
+			return "color-mix(in oklch, " + base + " " + weights[shade] + "%, " + (shade < 500 ? "white" : "black") + ")";
+		}
+
+		function autoValue(base) {
+			return "light-dark(" + colorMix(base, 300) + ", " + colorMix(base, 700) + ")";
+		}
+
+		function splitLightDark(value) {
+			var text = String(value || "").trim();
+			if (text.substring(0, 11).toLowerCase() !== "light-dark(" || text.charAt(text.length - 1) !== ")") return null;
+			var body = text.substring(11, text.length - 1), depth = 0;
+			for (var i = 0; i < body.length; i++) {
+				var ch = body.charAt(i);
+				if (ch === "(") depth++;
+				else if (ch === ")") depth--;
+				else if (ch === "," && depth === 0) return [body.substring(0, i).trim(), body.substring(i + 1).trim()];
+			}
+			return null;
+		}
+
+		function autoBase(value) {
+			var pair = splitLightDark(value);
+			if (!pair || pair[0].indexOf("color-mix(in oklch,") !== 0 || pair[1].indexOf("color-mix(in oklch,") !== 0) return "";
+			var match = pair[0].match(/^color-mix\(in oklch,\s*(#[0-9a-f]{6})\s+58%,\s*white\)$/i);
+			return match ? match[1] : "";
+		}
+
+		function validHex(value) {
+			return /^#[0-9a-f]{6}$/i.test(String(value || "").trim());
 		}
 
 		customElements.define("flow-color-editor", class extends HTMLElement {
 			constructor() {
 				super();
 				this._value = "";
+				this._palette = fallbackPalette;
+				this._tokens = Object.keys(fallbackPalette);
+				this._customMode = "same";
+				this._base = "#3166e8";
+				this._light = "#7fa2f7";
+				this._dark = "#2349a8";
 			}
 
 			connectedCallback() {
 				if (!this.shadowRoot) {
-					this.attachShadow({ mode: "open" })
-						.append(document.getElementById("flow-color-editor-template").content.cloneNode(true));
+					this.attachShadow({ mode: "open" }).append(document.getElementById("flow-color-editor-template").content.cloneNode(true));
 					this.shadowRoot.addEventListener("input", this);
 					this.shadowRoot.addEventListener("change", this);
+					this.shadowRoot.addEventListener("click", this);
 				}
 				this.render();
 			}
 
 			setState(state) {
+				var definition = record(state && state.propertyDefinition);
+				var literalOptions = record(definition.literalOptions);
+				var theme = record(literalOptions.theme);
+				var palette = {};
+				var themeContext = record(state && state.themeContext);
+				var declaredTokens = Array.isArray(theme.tokens) ? theme.tokens : [];
+				var runtimeTokens = Array.isArray(themeContext.tokens) ? themeContext.tokens : [];
+				declaredTokens.concat(runtimeTokens).forEach(function (token) {
+					if (!token || !token.value || !token.light) return;
+					palette[String(token.value)] = {
+						value: String(token.value), label: String(token.label || token.value),
+						cssVariable: String(token.cssVariable || ""), light: String(token.light), dark: String(token.dark || token.light)
+					};
+				});
+				this._palette = Object.keys(palette).length ? palette : fallbackPalette;
+				var configured = Array.isArray(definition.suggestions) ? definition.suggestions : definition["enum"];
+				var choices = Array.isArray(configured) ? configured.map(String).filter(function (name) { return !!this._palette[name]; }, this) : [];
+				this._tokens = choices.length ? choices : Object.keys(this._palette);
 				this._value = state && state.value != null ? String(state.value) : "";
+				this.adoptValue();
 				this.render();
-				this.emit();
 			}
 
-			get value() {
-				return this._value || "";
+			get value() { return this._value || ""; }
+
+			semantic() { return this._palette[this.value] || null; }
+
+			adoptValue() {
+				if (this.semantic()) return;
+				var automatic = autoBase(this.value);
+				if (automatic) {
+					this._customMode = "auto";
+					this._base = automatic;
+					return;
+				}
+				var pair = splitLightDark(this.value);
+				if (pair) {
+					this._customMode = "choose";
+					this._light = pair[0];
+					this._dark = pair[1];
+					return;
+				}
+				this._customMode = "same";
+				if (validHex(this.value)) this._base = this.value;
+			}
+
+			applyCustomValue(render) {
+				if (this._customMode === "auto") this._value = autoValue(this._base);
+				else if (this._customMode === "choose") this._value = "light-dark(" + this._light + ", " + this._dark + ")";
+				else this._value = this._base;
+				if (render !== false) this.render();
+				else {
+					this.setInput("[part=value]", this.value);
+					this.renderScale();
+					this.updatePreview();
+				}
+				this.emit();
 			}
 
 			handleEvent(event) {
 				var input = event.target;
-				if (!input || !input.getAttribute) {
+				if (!input || !input.getAttribute) return;
+				var tokenButton = input.closest && input.closest("[data-token]");
+				var token = tokenButton && tokenButton.getAttribute("data-token");
+				if (event.type === "click" && token) {
+					this._value = token;
+					this.render();
+					this.emit();
+					return;
+				}
+				var mode = input.getAttribute("data-custom-mode");
+				if (event.type === "click" && mode) {
+					this._customMode = mode;
+					this.applyCustomValue(event.type === "change" || !!colorPart);
+					return;
+				}
+				var colorPart = input.getAttribute("data-color");
+				var textPart = input.getAttribute("data-text");
+				if ((event.type === "input" || event.type === "change") && (colorPart || textPart)) {
+					var part = colorPart || textPart;
+					if (part === "base" || part === "auto") this._base = input.value;
+					else if (part === "light") this._light = input.value;
+					else if (part === "dark") this._dark = input.value;
+					this.applyCustomValue();
 					return;
 				}
 				if (input.getAttribute("part") === "value" && event.type === "input") {
 					this._value = input.value;
-					this.render();
+					this.updatePreview();
 					this.emit();
-				}
-				if (input.getAttribute("part") === "picker" && event.type === "change") {
-					this._value = input.value;
+				} else if (input.getAttribute("part") === "value" && event.type === "change") {
+					this.adoptValue();
 					this.render();
-					this.emit();
 				}
 			}
 
 			emit() {
-				this.dispatchEvent(new CustomEvent("flow-value", {
-					bubbles: true,
-					detail: { value: this.value }
-				}));
+				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value, textLiteral: true } }));
 			}
 
 			isValid() {
-				return !this.value || !window.CSS || !CSS.supports || CSS.supports("color", this.value);
+				return !!this.semantic() || !this.value || !window.CSS || !CSS.supports || CSS.supports("color", this.value);
+			}
+
+			previewColors() {
+				var semantic = this.semantic();
+				if (semantic) return [semantic.light, semantic.dark];
+				var pair = splitLightDark(this.value);
+				return pair || [this.value, this.value];
+			}
+
+			renderTokens() {
+				var container = this.shadowRoot && this.shadowRoot.querySelector("[data-tokens]");
+				if (!container) return;
+				container.replaceChildren();
+				var self = this;
+				this._tokens.forEach(function (name) {
+					var colors = self._palette[name];
+					if (!colors) return;
+					var button = document.createElement("button");
+					button.type = "button";
+					button.className = "token" + (self.value === name ? " selected" : "");
+					button.setAttribute("data-token", name);
+					button.setAttribute("aria-pressed", self.value === name ? "true" : "false");
+					button.title = colors.label + " — " + colors.cssVariable;
+					var swatches = document.createElement("span");
+					swatches.className = "swatches";
+					swatches.style.setProperty("--light", colors.light);
+					swatches.style.setProperty("--dark", colors.dark);
+					swatches.append(document.createElement("span"), document.createElement("span"));
+					var label = document.createElement("span");
+					label.className = "token-name";
+					label.textContent = colors.label;
+					button.append(swatches, label);
+					container.append(button);
+				});
+			}
+
+			renderScale() {
+				var container = this.shadowRoot.querySelector("[data-scale]");
+				container.replaceChildren();
+				var self = this;
+				shades.forEach(function (shade) {
+					var swatch = document.createElement("span");
+					swatch.className = "shade" + (shade === 300 || shade === 700 ? " selected" : "");
+					swatch.style.setProperty("--shade", colorMix(self._base, shade));
+					swatch.title = String(shade);
+					swatch.textContent = String(shade);
+					container.append(swatch);
+				});
+			}
+
+			setInput(selector, value) {
+				var input = this.shadowRoot.querySelector(selector);
+				if (input && input.value !== value) input.value = value;
+			}
+
+			updatePreview() {
+				if (!this.shadowRoot) return;
+				var colors = this.previewColors();
+				var valid = this.isValid();
+				var light = this.shadowRoot.querySelector('[data-preview="light"]');
+				var dark = this.shadowRoot.querySelector('[data-preview="dark"]');
+				var hint = this.shadowRoot.querySelector("[part=hint]");
+				if (light) light.style.setProperty("--color", valid ? colors[0] || "transparent" : "transparent");
+				if (dark) dark.style.setProperty("--color", valid ? colors[1] || "transparent" : "transparent");
+				if (hint) {
+					hint.classList.toggle("invalid", !valid);
+					var semantic = this.semantic();
+					hint.textContent = !valid
+						? "This value is neither a theme token nor a valid CSS color."
+						: semantic
+							? semantic.label + " uses " + semantic.cssVariable + " from the active viewer theme."
+							: this._customMode === "auto"
+								? "Auto generates the 50–950 Flow scale and applies shades 300 / 700."
+								: this._customMode === "choose"
+									? "Choose stores one explicit color for each theme."
+									: "Same stores one color for both themes.";
+				}
 			}
 
 			render() {
-				if (!this.shadowRoot) {
-					return;
+				if (!this.shadowRoot) return;
+				this.renderTokens();
+				this.shadowRoot.querySelectorAll("[data-custom-mode]").forEach(function (button) {
+					button.classList.toggle("active", button.getAttribute("data-custom-mode") === this._customMode);
+				}, this);
+				this.shadowRoot.querySelectorAll("[data-panel]").forEach(function (panel) {
+					panel.classList.toggle("hidden", panel.getAttribute("data-panel") !== this._customMode);
+				}, this);
+				this.setInput('[data-text="base"]', this._base);
+				this.setInput('[data-text="auto"]', this._base);
+				this.setInput('[data-text="light"]', this._light);
+				this.setInput('[data-text="dark"]', this._dark);
+				if (validHex(this._base)) {
+					this.setInput('[data-color="base"]', this._base);
+					this.setInput('[data-color="auto"]', this._base);
 				}
-				var value = this.shadowRoot.querySelector("[part=value]");
-				var picker = this.shadowRoot.querySelector("[part=picker]");
-				var preview = this.shadowRoot.querySelector("[part=preview]");
-				var hint = this.shadowRoot.querySelector("[part=hint]");
-				if (value && value.value !== this.value) {
-					value.value = this.value;
-				}
-				if (picker && /^#[0-9a-f]{6}$/i.test(this.value)) {
-					picker.value = this.value;
-				}
-				if (preview) {
-					preview.style.setProperty("--color", this.isValid() ? this.value : "transparent");
-				}
-				if (hint) {
-					hint.classList.toggle("invalid", !this.isValid());
-					hint.textContent = this.isValid()
-						? "Any valid CSS color is accepted; the picker edits hexadecimal colors."
-						: "This value is not recognized as a CSS color.";
-				}
+				if (validHex(this._light)) this.setInput('[data-color="light"]', this._light);
+				if (validHex(this._dark)) this.setInput('[data-color="dark"]', this._dark);
+				this.setInput("[part=value]", this.value);
+				this.renderScale();
+				this.updatePreview();
 			}
 		});
 	}());
