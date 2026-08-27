@@ -5189,6 +5189,39 @@ assertTrue(flowSvelteMove.authoringTree && flowSvelteMove.authoringTree.ok === t
 		return node.summary === "Last";
 	}) !== null,
 	"flow-svelte source mutation did not return the updated document projection");
+var flowSvelteDisabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteMoveSource,
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	authoringRootPath: smokePanelRoot.path,
+	mutation: {
+		op: "setEnabled",
+		path: "frontAst.slots.structure.children[0]",
+		enabled: false
+	}
+})));
+assertTrue(flowSvelteDisabled.ok === true && flowSvelteDisabled.target === "frontAst" &&
+	String(flowSvelteDisabled.source).indexOf("<Text id=\"title\"") !== -1 &&
+	String(flowSvelteDisabled.source).indexOf("enabled={false}") !== -1,
+	"flow-svelte AST setEnabled(false) did not preserve the disabled state in source");
+var flowSvelteReenabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
+	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
+	source: flowSvelteDisabled.source,
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	authoringRootPath: smokePanelRoot.path,
+	mutation: {
+		op: "setEnabled",
+		path: "frontAst.slots.structure.children[0]",
+		enabled: true
+	}
+})));
+assertTrue(flowSvelteReenabled.ok === true && flowSvelteReenabled.target === "frontAst" &&
+	String(flowSvelteReenabled.source).indexOf("enabled={false}") === -1,
+	"flow-svelte AST setEnabled(true) did not restore the node source");
 var flowSvelteMoveDrafts = {};
 flowSvelteMoveDrafts[String(flowSvelteComponentFile.getCanonicalPath())] = flowSvelteMove.source;
 var flowSvelteMoveFreshTree = JSON.parse(engine.describeTree(JSON.stringify({
