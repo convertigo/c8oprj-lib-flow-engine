@@ -16,8 +16,23 @@ function extract(name, nextName) {
 }
 
 var frontendDevTerminal = extract("frontendDevTerminal", "frontendConnects");
+var frontendDevHealthUrl = extract("frontendDevHealthUrl", "frontendDevHttpReady");
 var frontendDevStateTimestamp = extract("frontendDevStateTimestamp", "frontendPersistedDevStateWins");
 var frontendPersistedDevStateWins = extract("frontendPersistedDevStateWins", "frontendReconcileDevEntry");
+
+assertTrue(frontendDevHealthUrl({ port: 5173, proxyPath: "/convertigo/gw/ticket/" }) ===
+	"http://127.0.0.1:5173/convertigo/gw/ticket/",
+	"dev readiness must probe the Vite base path, not only its listening socket");
+assertTrue(frontendDevHealthUrl({ port: 5173, proxyPath: "convertigo/gw/ticket/" }) ===
+	"http://127.0.0.1:5173/convertigo/gw/ticket/",
+	"dev readiness must normalize persisted proxy paths");
+assertTrue(frontendDevHealthUrl({ port: 5173 }) === "http://127.0.0.1:5173/",
+	"legacy dev state must keep a usable root health URL");
+assertTrue(frontendDevHealthUrl({}) === "",
+	"dev state without a port must not be considered probeable");
+assertTrue(source.indexOf("status >= 200 && status < 400") >= 0 &&
+	source.indexOf("frontendWaitForDevHttp(healthEntry, process, 20000)") >= 0,
+	"Vite launch must wait for an actual non-error HTTP response before opening Studio");
 
 var stalePrepared = {
 	status: "prepared",

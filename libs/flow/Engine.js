@@ -8452,6 +8452,66 @@
 		}
 	}
 
+	function frontendDevHealthUrl(entry) {
+		if (!entry || !entry.port) {
+			return "";
+		}
+		var path = String(entry.proxyPath || "/").trim();
+		if (!path) {
+			path = "/";
+		} else if (path.charAt(0) !== "/") {
+			path = "/" + path;
+		}
+		return "http://127.0.0.1:" + Number(entry.port) + path;
+	}
+
+	function frontendDevHttpReady(entry, timeoutMs) {
+		var url = frontendDevHealthUrl(entry);
+		if (!url) {
+			return false;
+		}
+		var connection = null;
+		try {
+			connection = new Packages.java.net.URL(url).openConnection();
+			var timeout = Math.max(100, Number(timeoutMs || 500));
+			connection.setConnectTimeout(timeout);
+			connection.setReadTimeout(timeout);
+			connection.setUseCaches(false);
+			if (typeof connection.setInstanceFollowRedirects === "function") {
+				connection.setInstanceFollowRedirects(false);
+			}
+			var status = Number(connection.getResponseCode());
+			return status >= 200 && status < 400;
+		} catch (e) {
+			return false;
+		} finally {
+			try {
+				if (connection && typeof connection.disconnect === "function") {
+					connection.disconnect();
+				}
+			} catch (_ignoreDevHealthDisconnect) {
+			}
+		}
+	}
+
+	function frontendWaitForDevHttp(entry, process, waitMs) {
+		var deadline = JavaSystem.currentTimeMillis() + Math.max(1, Number(waitMs || 1));
+		do {
+			if (frontendDevHttpReady(entry, 500)) {
+				return true;
+			}
+			if (process && typeof process.isAlive === "function" && !process.isAlive()) {
+				return false;
+			}
+			try {
+				Packages.java.lang.Thread.sleep(50);
+			} catch (_ignoreDevHealthWait) {
+				return false;
+			}
+		} while (JavaSystem.currentTimeMillis() < deadline);
+		return frontendDevHttpReady(entry, 500);
+	}
+
 	function frontendProcessAlive(pid) {
 		if (!pid) {
 			return false;
@@ -8753,6 +8813,15 @@
 		if (entry && /^(?:starting|prepared)$/.test(String(entry.status || ""))) {
 			return entry;
 		}
+		if (entry && !frontendWaitForDevHttp(entry, entry.process, 1500)) {
+			frontendUnregisterDevProxy(entry);
+			if (entry.process) {
+				frontendDestroyDevProcess(entry, "dev-http-unavailable");
+			}
+			delete runtimeState.frontendDevServers[key];
+			frontendDeleteDevState(request, info);
+			entry = null;
+		}
 		if (entry && frontendEnsureDevProxy(request, entry)) {
 			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
@@ -8774,7 +8843,8 @@
 			runtimeState.frontendDevServers[key] = entry;
 			return entry;
 		}
-		if (entry && frontendDevAlive(entry) && frontendEnsureDevProxy(request, entry)) {
+		if (entry && frontendDevAlive(entry) && frontendWaitForDevHttp(entry, null, 1500)
+				&& frontendEnsureDevProxy(request, entry)) {
 			runtimeState.frontendDevServers[key] = entry;
 			frontendStartDevIdleWatcher(request, info, entry);
 			return entry;
@@ -8783,7 +8853,8 @@
 			frontendDeleteDevState(request, info);
 		}
 		entry = frontendReadDevLogState(request, info);
-		if (entry && frontendDevAlive(entry) && frontendEnsureDevProxy(request, entry)) {
+		if (entry && frontendDevAlive(entry) && frontendWaitForDevHttp(entry, null, 1500)
+				&& frontendEnsureDevProxy(request, entry)) {
 			runtimeState.frontendDevServers[key] = entry;
 			frontendWriteDevState(request, info, entry);
 			frontendStartDevIdleWatcher(request, info, entry);
@@ -9401,7 +9472,12 @@
 			});
 		}
 		var logPump = frontendStartLogPump(process, logFile, "Svelte dev");
-		if (!frontendWaitForPort("127.0.0.1", port, process, 20000)) {
+		var healthEntry = {
+			port: port,
+			proxyPath: proxy.viteBase
+		};
+		if (!frontendWaitForPort("127.0.0.1", port, process, 20000)
+				|| !frontendWaitForDevHttp(healthEntry, process, 20000)) {
 			try {
 				process.destroy();
 			} catch (e) {
