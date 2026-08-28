@@ -288,6 +288,11 @@ Use dotted names for non-core vocabulary: `json.select`, `requestable.call`,
 `flow.node.add`, `mcp.server`. Catalog metadata may expose `package`,
 `namespace` and `private`.
 
+Frontend action shortcut `dev.ensure` is the public idempotent preflight for
+`frontbuilder.svelte.dev.start`: it preserves a running viewer and starts a
+missing one after Studio restarts. Keep it aligned with `dev.start` rather than
+adding a second lifecycle implementation.
+
 Prefer a project-local custom block over inline Rhino code when behavior does
 not fit existing blocks. Mark one-off or implementation-detail blocks
 `private: true` so they are usable in the owning project but not advertised to

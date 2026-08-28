@@ -8,7 +8,7 @@ const _meta = {
       "label": "actionId",
       "kind": "text",
       "type": "string",
-      "description": "Action id or shortcut: generate, build, openBuilt, dev.start, dev.stop, dev.open, dev.sync."
+      "description": "Action id or shortcut: generate, build, openBuilt, dev.ensure, dev.start, dev.stop, dev.open, dev.sync."
     },
     "action": {
       "label": "action",
@@ -70,6 +70,8 @@ const _meta = {
 		openBuilt: "frontbuilder.svelte.openBuilt",
 		"open-built": "frontbuilder.svelte.openBuilt",
 		dev: "frontbuilder.svelte.dev.start",
+		"dev.ensure": "frontbuilder.svelte.dev.start",
+		"dev-ensure": "frontbuilder.svelte.dev.start",
 		"dev.start": "frontbuilder.svelte.dev.start",
 		"dev-start": "frontbuilder.svelte.dev.start",
 		"dev.stop": "frontbuilder.svelte.dev.stop",
