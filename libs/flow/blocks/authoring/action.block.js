@@ -36,6 +36,12 @@ const _meta = {
       "default": true,
       "description": "For dev.start, set false to generate the starter app and install its dependencies while authoring continues."
     },
+    "browserDebugPort": {
+      "label": "browserDebugPort",
+      "kind": "literal",
+      "type": "integer",
+      "description": "Managed Studio viewer CDP port injected by the MCP transport."
+    },
     "projectDir": {
       "label": "projectDir",
       "kind": "text",

@@ -1445,10 +1445,18 @@
 		var notified = false;
 		try {
 			if (typeof Bridge.notifySourceMutation === "function") {
-				Bridge.notifySourceMutation(
-					String(request.projectDir || ""),
-					String(request.path || request.sourcePath || "")
-				);
+				try {
+					Bridge.notifySourceMutation(
+						String(request.projectDir || ""),
+						String(request.path || request.sourcePath || ""),
+						request.reveal === true || String(request.reveal || "").toLowerCase() === "true"
+					);
+				} catch (_legacySourceMutationBridge) {
+					Bridge.notifySourceMutation(
+						String(request.projectDir || ""),
+						String(request.path || request.sourcePath || "")
+					);
+				}
 				notified = true;
 			}
 		} catch (ignored) {
@@ -9294,6 +9302,9 @@
 	function frontendStudioBrowser(request, url, title, kind) {
 		var projectName = frontendProjectName(request) || "project";
 		var browserKind = String(kind || "preview");
+		var debugPort = Number(request && request.browserDebugPort || 0);
+		debugPort = isFinite(debugPort) && debugPort >= 1024 && debugPort <= 65535
+			? Math.floor(debugPort) : 0;
 		var browser = {
 			id: "flow.frontend:" + projectName + ":" + browserKind,
 			title: browserKind === "frontbuilder.svelte.dev"
@@ -9304,12 +9315,29 @@
 			tooltip: String(url || ""),
 			kind: browserKind
 		};
+		if (debugPort) {
+			browser.debugPort = debugPort;
+			browser.debugUrl = "http://127.0.0.1:" + debugPort;
+		}
 		if (browser.kind === "frontbuilder.svelte.dev") {
 			browser.authoring = {
 				protocol: "convertigo.flow.authoring.v1"
 			};
 		}
 		return browser;
+	}
+
+	function frontendBrowserControlState(request, browser, waitMs) {
+		var debugPort = Number(browser && browser.debugPort || request && request.browserDebugPort || 0);
+		debugPort = isFinite(debugPort) && debugPort >= 1024 && debugPort <= 65535
+			? Math.floor(debugPort) : 0;
+		var ready = debugPort > 0 && frontendWaitForPort("127.0.0.1", debugPort, null, waitMs || 1);
+		return {
+			browserDebugPortRequested: debugPort,
+			browserDebugPortMatched: ready,
+			browserControlReady: ready,
+			browserDebugUrl: debugPort ? "http://127.0.0.1:" + debugPort : ""
+		};
 	}
 
 	function frontendNotifyStudioBrowser(request, browser) {
@@ -10004,12 +10032,17 @@
 		}
 		var browser = frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
+		var browserControl = frontendBrowserControlState(request, browser, 3000);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
 			message: "Opening Svelte dev mode.",
 			openUrl: entry.url,
 			browser: browser,
+			browserDebugPortRequested: browserControl.browserDebugPortRequested,
+			browserDebugPortMatched: browserControl.browserDebugPortMatched,
+			browserControlReady: browserControl.browserControlReady,
+			browserDebugUrl: browserControl.browserDebugUrl,
 			details: frontendDevDetails(entry)
 		};
 	}
