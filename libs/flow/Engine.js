@@ -46,15 +46,17 @@
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var frontendDocumentServerStartLock = new Packages.java.util.concurrent.locks.ReentrantLock();
+	var frontendProductionBuildLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// Catalog construction is single-flight only on a cold generation. Hot reads never take these locks.
 	var blockCatalogBuildLocks = new ConcurrentHashMap();
 	var runtimeState = {
 		id: String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000),
 		startedAt: new Date().toISOString(),
 		frontendDevServers: {},
+		frontendProductionBuilds: {},
 		frontendDocumentServers: {},
 		frontendDocumentServerStats: {
 			starts: 0,
@@ -8163,15 +8165,19 @@
 		var generationMode = "incremental";
 		var sourceRoot = String(settings.privateDir || "_private/svelte");
 		var buildOutput = String(settings.buildOutput || "DisplayObjects/mobile");
+		var atomicOutput = action === "build" ? frontendAtomicBuildOutput(projectRoot, buildOutput) : null;
 		var npm = frontendExecutable("npm");
 		var envValues = {
 			FRONTBUILDER_PROJECT_ROOT: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
 			FRONTBUILDER_PROJECT_NAME: projectName,
 			FRONTBUILDER_SOURCE_ROOT: sourceRoot,
-			FRONTBUILDER_BUILD_OUTPUT: buildOutput,
+			FRONTBUILDER_BUILD_OUTPUT: atomicOutput
+				? String(atomicOutput.staging.getAbsolutePath())
+				: buildOutput,
 			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
 		};
 		var draftsTemp = null;
+		var atomicConfig = null;
 		if (draftCount > 0) {
 			draftsTemp = File.createTempFile("c8o-frontbuilder-drafts-", ".json");
 			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(frontendSourceDrafts(request)), "UTF-8");
@@ -8196,6 +8202,21 @@
 					ok = false;
 					break;
 				}
+				if (atomicOutput && currentStepAction === "generate") {
+					atomicConfig = frontendPrepareAtomicGeneratedOutput(generatedRoot, atomicOutput);
+				}
+			}
+			if (ok && atomicOutput) {
+				currentStepAction = "publish";
+				currentStepStartedAt = JavaSystem.nanoTime();
+				frontendPromoteBuildOutput(atomicOutput);
+				steps.push({
+					action: "publish",
+					ok: true,
+					exitCode: 0,
+					skipped: false,
+					durationMs: frontendDurationMs(currentStepStartedAt)
+				});
 			}
 		} catch (e) {
 			ok = false;
@@ -8208,6 +8229,10 @@
 			});
 		} finally {
 			try {
+				frontendRestoreGeneratedOutput(atomicConfig);
+				if (atomicOutput && atomicOutput.staging.exists()) {
+					FileUtils.deleteDirectory(atomicOutput.staging);
+				}
 				if (draftsTemp) {
 					draftsTemp["delete"]();
 				}
@@ -8255,9 +8280,22 @@
 			}
 		};
 		if (ok && action === "build") {
+			var productionInfo = frontbuilderSettingsForRequest(request);
+			var productionFingerprint = frontendProductionFingerprint(request, productionInfo);
+			var productionState = frontendProductionLifecycle().completed(
+				frontendReadProductionState(request, productionInfo),
+				productionFingerprint,
+				new Date().toISOString(),
+				frontendDurationMs(actionStartedAt)
+			);
+			frontendWriteProductionState(request, productionInfo, productionState);
+			response.details.production = productionState;
 			var builtUrl = frontendBuiltUrl(request);
 			response.openUrl = builtUrl;
 			response.acceptance = builtUrl ? frontendAcceptancePlan(builtUrl) : null;
+		}
+		if (ok && (action === "install" || action === "generate")) {
+			response.details.production = frontendObserveProductionState(request, frontbuilderSettingsForRequest(request));
 		}
 		return response;
 	}
@@ -8391,6 +8429,140 @@
 		var settings = info && info.settings || {};
 		var projectRoot = frontendProjectRootFile(request);
 		return fileForProjectPath(projectRoot || new File("."), settings.privateDir || "_private/svelte");
+	}
+
+	function frontendProductionLifecycle() {
+		return loadEngineModule("frontend-production-lifecycle.js");
+	}
+
+	function frontendProductionStateFile(request, info) {
+		var generatedRoot = frontendGeneratedRootFile(request, info);
+		return generatedRoot ? new File(generatedRoot, ".flow-svelte-production.json") : null;
+	}
+
+	function frontendReadProductionState(request, info) {
+		var file = frontendProductionStateFile(request, info);
+		try {
+			if (file && file.isFile()) {
+				return frontendProductionLifecycle().normalize(JSON.parse(String(FileUtils.readFileToString(file, "UTF-8"))));
+			}
+		} catch (ignored) {
+		}
+		return frontendProductionLifecycle().normalize(null);
+	}
+
+	function frontendWriteProductionState(request, info, state) {
+		var file = frontendProductionStateFile(request, info);
+		if (!file) {
+			return;
+		}
+		file.getParentFile().mkdirs();
+		var temporary = File.createTempFile("flow-svelte-production-", ".json", file.getParentFile());
+		try {
+			FileUtils.writeStringToFile(temporary, JSON.stringify(state, null, 2) + "\n", "UTF-8");
+			if (!temporary.renameTo(file)) {
+				FileUtils.copyFile(temporary, file);
+			}
+		} finally {
+			temporary["delete"]();
+		}
+	}
+
+	function frontendProductionFingerprint(request, info) {
+		var model = frontendModelPath(request, info);
+		if (!model || !model.isFile()) {
+			return "";
+		}
+		var projectRoot = frontendProjectRootFile(request);
+		var resourceRoot = frontendSvelteResourceRoot(request);
+		var sourceRoot = model.getParentFile();
+		while (sourceRoot && String(sourceRoot.getName()) !== "src") {
+			sourceRoot = sourceRoot.getParentFile();
+		}
+		return sha256Hex([
+			"flow-svelte-production-v1",
+			fileFingerprint(model),
+			sourceRoot && sourceRoot.isDirectory() ? directoryFingerprint(sourceRoot) : "",
+			frontendDocumentDependenciesFingerprint(model, resourceRoot, projectRoot)
+		].join("\n"));
+	}
+
+	function frontendObserveProductionState(request, info) {
+		var state = frontendProductionLifecycle().observe(
+			frontendReadProductionState(request, info),
+			frontendProductionFingerprint(request, info)
+		);
+		frontendWriteProductionState(request, info, state);
+		return state;
+	}
+
+	function frontendAtomicBuildOutput(projectRoot, buildOutput) {
+		var target = fileForProjectPath(projectRoot, buildOutput);
+		var parent = target.getParentFile();
+		parent.mkdirs();
+		var suffix = String(new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000);
+		return {
+			target: target,
+			staging: new File(parent, "." + target.getName() + ".flow-build-" + suffix),
+			backup: new File(parent, "." + target.getName() + ".flow-previous-" + suffix)
+		};
+	}
+
+	function frontendPromoteBuildOutput(output) {
+		if (!output || !output.staging.isDirectory()) {
+			throw new Error("The staged Svelte production output is missing.");
+		}
+		var backedUp = false;
+		try {
+			if (output.target.exists()) {
+				if (!output.target.renameTo(output.backup)) {
+					throw new Error("Unable to preserve the previous Svelte production output.");
+				}
+				backedUp = true;
+			}
+			if (!output.staging.renameTo(output.target)) {
+				throw new Error("Unable to atomically publish the staged Svelte production output.");
+			}
+			if (backedUp && output.backup.exists()) {
+				try {
+					FileUtils.deleteDirectory(output.backup);
+				} catch (ignoredCleanup) {
+					frontendStudioLog("[Svelte production] The previous output backup could not be removed: " + output.backup, true);
+				}
+			}
+		} catch (e) {
+			if (!output.target.exists() && backedUp && output.backup.exists()) {
+				output.backup.renameTo(output.target);
+			}
+			throw e;
+		} finally {
+			if (output.staging.exists()) {
+				FileUtils.deleteDirectory(output.staging);
+			}
+		}
+	}
+
+	function frontendPrepareAtomicGeneratedOutput(generatedRoot, output) {
+		var file = new File(generatedRoot, "svelte.config.js");
+		if (!file.isFile()) {
+			throw new Error("The generated Svelte configuration is missing.");
+		}
+		var original = String(FileUtils.readFileToString(file, "UTF-8"));
+		var replacement = JSON.stringify(String(output.staging.getAbsolutePath()));
+		var patched = original
+			.replace(/(\bpages\s*:\s*)["'][^"']*["']/, "$1" + replacement)
+			.replace(/(\bassets\s*:\s*)["'][^"']*["']/, "$1" + replacement);
+		if (patched === original || patched.indexOf(replacement) < 0) {
+			throw new Error("The generated Svelte output settings could not be staged.");
+		}
+		FileUtils.writeStringToFile(file, patched, "UTF-8");
+		return { file: file, original: original };
+	}
+
+	function frontendRestoreGeneratedOutput(config) {
+		if (config && config.file) {
+			FileUtils.writeStringToFile(config.file, config.original, "UTF-8");
+		}
 	}
 
 	function frontendDevStateFile(request, info) {
@@ -8823,7 +8995,7 @@
 			entry = null;
 		}
 		if (entry && frontendEnsureDevProxy(request, entry)) {
-			frontendStartDevIdleWatcher(request, info, entry);
+			frontendStartDevIdleWatcher(request, null, info, entry);
 			return entry;
 		}
 		if (entry) {
@@ -8846,7 +9018,7 @@
 		if (entry && frontendDevAlive(entry) && frontendWaitForDevHttp(entry, null, 1500)
 				&& frontendEnsureDevProxy(request, entry)) {
 			runtimeState.frontendDevServers[key] = entry;
-			frontendStartDevIdleWatcher(request, info, entry);
+			frontendStartDevIdleWatcher(request, null, info, entry);
 			return entry;
 		}
 		if (entry && !frontendDevTerminal(entry)) {
@@ -8857,7 +9029,7 @@
 				&& frontendEnsureDevProxy(request, entry)) {
 			runtimeState.frontendDevServers[key] = entry;
 			frontendWriteDevState(request, info, entry);
-			frontendStartDevIdleWatcher(request, info, entry);
+			frontendStartDevIdleWatcher(request, null, info, entry);
 			return entry;
 		}
 		if (entry && frontendDevAlive(entry)) {
@@ -9215,11 +9387,13 @@
 		frontendWriteDevState(request, info, entry);
 	}
 
-	function frontendStartDevIdleWatcher(request, info, entry) {
+	function frontendStartDevIdleWatcher(request, blocks, info, entry) {
 		if (!entry || entry.idleThreadStarted === true || frontendDevTerminal(entry)
 				|| !/^(?:running|starting)$/.test(String(entry.status || "running"))) {
 			return;
 		}
+		var watcherRequest = JSON.parse(JSON.stringify(request || {}));
+		watcherRequest.engineSource = watcherRequest.engineSource || JSON.stringify(projectEngineDefinitionForRequest(request));
 		entry.idlePolicy = entry.idlePolicy || frontendDevIdlePolicy();
 		entry.idleThreadStarted = true;
 		var Runnable = Packages.java.lang.Runnable;
@@ -9272,6 +9446,7 @@
 								}
 								frontendFinalizeDevState(request, info, entry, "stopped", decision.stopReason);
 								frontendDeleteDevViewers(request, info);
+								frontendScheduleProductionBuild(watcherRequest, blocks, decision.stopReason);
 								return;
 							}
 						}
@@ -9565,7 +9740,7 @@
 		runtimeState.frontendDevServers[frontendDevKey(request, info)] = entry;
 		frontendWriteDevState(request, info, entry);
 		frontendStartDevExitWatcher(request, info, entry);
-		frontendStartDevIdleWatcher(request, info, entry);
+		frontendStartDevIdleWatcher(request, blocks, info, entry);
 		var browser = frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		var details = frontendDevDetails(entry);
@@ -9604,7 +9779,7 @@
 		runtimeState.frontendDevServers[key] = active;
 		frontendWriteDevState(request, info, active);
 		frontendStartDevExitWatcher(request, info, active);
-		frontendStartDevIdleWatcher(request, info, active);
+		frontendStartDevIdleWatcher(request, blocks, info, active);
 		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		frontendStudioLog("[Svelte dev] App dependencies are ready; Vite and the Studio viewer started automatically.");
@@ -9858,6 +10033,14 @@
 				details: frontendDevDetails(existing)
 			};
 		}
+		var productionState = frontendReadProductionState(request, info);
+		if (productionState.dirty === true && !runtimeState.frontendProductionBuilds[frontendDevKey(request, info)]) {
+			frontendStudioLog("[Svelte production] Catching up a production build left dirty by an interrupted dev stop.");
+			var catchUp = frontendRunAction(request, blocks, "build");
+			if (catchUp.ok === false) {
+				frontendStudioLog("[Svelte production] Catch-up failed; dev mode will still start and the previous production output remains available.", true);
+			}
+		}
 		if (!frontendDevWaitRequested(request)) {
 			return frontendStartDevBackground(request, blocks, info);
 		}
@@ -9937,7 +10120,7 @@
 		runtimeState.frontendDevServers[key] = active;
 		frontendWriteDevState(request, info, active);
 		frontendStartDevExitWatcher(request, info, active);
-		frontendStartDevIdleWatcher(request, info, active);
+		frontendStartDevIdleWatcher(request, blocks, info, active);
 		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
 		return {
@@ -9947,7 +10130,75 @@
 		};
 	}
 
-	function frontendStopDev(request) {
+	function frontendScheduleProductionBuild(request, blocks, reason) {
+		var lifecycle = frontendProductionLifecycle();
+		if (!lifecycle.shouldBuildOnStop(reason)) {
+			return { scheduled: false, reason: String(reason || ""), cause: "stop-reason" };
+		}
+		var info = frontbuilderSettingsForRequest(request);
+		var key = frontendDevKey(request, info);
+		var state = frontendObserveProductionState(request, info);
+		if (!state.dirty) {
+			return { scheduled: false, reason: String(reason || ""), cause: "already-current", state: state };
+		}
+		if (runtimeState.frontendProductionBuilds[key]) {
+			return { scheduled: false, reason: String(reason || ""), cause: "single-flight", state: state };
+		}
+		state = lifecycle.requested(state, reason, new Date().toISOString());
+		frontendWriteProductionState(request, info, state);
+		// Request objects belong to the request Rhino scope. Keep only JSON data
+		// before crossing into the daemon thread so project/model resolution stays
+		// valid after the HTTP request has completed.
+		var stableRequest = JSON.parse(JSON.stringify(request || {}));
+		stableRequest.engineSource = JSON.stringify(projectEngineDefinitionForRequest(request));
+		var Runnable = Packages.java.lang.Runnable;
+		var Thread = Packages.java.lang.Thread;
+		var thread = new Thread(new Runnable({
+			run: function () {
+				var startedAt = JavaSystem.nanoTime();
+				frontendProductionBuildLock.lock();
+				try {
+					var stableInfo = frontbuilderSettingsForRequest(stableRequest);
+					var activeState = lifecycle.started(frontendReadProductionState(stableRequest, stableInfo), new Date().toISOString());
+					frontendWriteProductionState(stableRequest, stableInfo, activeState);
+					frontendStudioLog("[Svelte production] Building the dirty application after dev stop (" + reason + ").");
+					var built = frontendRunAction(stableRequest, blocks, "build");
+					if (built.ok === false) {
+						var failed = lifecycle.failed(
+							frontendReadProductionState(stableRequest, stableInfo),
+							built.details && built.details.steps && built.details.steps.length
+								? built.details.steps[built.details.steps.length - 1].stdout || built.message
+								: built.message || "Svelte production build failed.",
+							new Date().toISOString(),
+							frontendDurationMs(startedAt)
+						);
+						frontendWriteProductionState(stableRequest, stableInfo, failed);
+						frontendStudioLog("[Svelte production] Build failed; the previous production output was preserved.", true);
+					} else {
+						frontendStudioLog("[Svelte production] Production output published in " + frontendDurationMs(startedAt) + " ms.");
+					}
+				} catch (e) {
+					var failedState = lifecycle.failed(
+						frontendReadProductionState(stableRequest, stableInfo),
+						String(e && (e.message || e) || "Svelte production build failed."),
+						new Date().toISOString(),
+						frontendDurationMs(startedAt)
+					);
+					frontendWriteProductionState(stableRequest, stableInfo, failedState);
+					frontendStudioLog("[Svelte production] Build failed; the previous production output was preserved: " + failedState.failure, true);
+				} finally {
+					frontendProductionBuildLock.unlock();
+					delete runtimeState.frontendProductionBuilds[key];
+				}
+			}
+		}), "Flow Svelte production build");
+		thread.setDaemon(true);
+		runtimeState.frontendProductionBuilds[key] = thread;
+		thread.start();
+		return { scheduled: true, reason: String(reason || ""), state: state };
+	}
+
+	function frontendStopDev(request, blocks) {
 		var info = frontbuilderSettingsForRequest(request);
 		var key = frontendDevKey(request, info);
 		var entry = frontendDevEntry(request, info);
@@ -9963,11 +10214,12 @@
 		delete runtimeState.frontendDevServers[key];
 		frontendFinalizeDevState(request, info, entry, "stopped", "manual");
 		frontendDeleteDevViewers(request, info);
+		var production = frontendScheduleProductionBuild(request, blocks, "manual");
 		return {
 			ok: true,
 			title: "Svelte dev mode",
 			message: "Svelte dev mode stopped.",
-			details: frontendDevDetails(entry)
+			details: Object.assign(frontendDevDetails(entry), { production: production })
 		};
 	}
 
@@ -10337,7 +10589,7 @@
 			return frontendStartDev(request, blocks);
 		}
 		if (id === "frontbuilder.svelte.dev.stop") {
-			return frontendStopDev(request);
+			return frontendStopDev(request, blocks);
 		}
 		if (id === "frontbuilder.svelte.dev.open") {
 			return frontendOpenDev(request);

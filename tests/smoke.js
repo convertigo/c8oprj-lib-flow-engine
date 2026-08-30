@@ -142,6 +142,17 @@ var frontendRunActionSource = source.substring(
 assertTrue(frontendRunActionSource.indexOf("durationMs: Number(step.durationMs || 0)") >= 0 &&
 	frontendRunActionSource.indexOf("durationMs: frontendDurationMs(actionStartedAt)") >= 0,
 	"Frontend builder responses should expose step and total durations");
+assertTrue(frontendRunActionSource.indexOf("frontendAtomicBuildOutput(projectRoot, buildOutput)") >= 0 &&
+	frontendRunActionSource.indexOf("frontendPrepareAtomicGeneratedOutput(generatedRoot, atomicOutput)") >= 0 &&
+	frontendRunActionSource.indexOf("frontendPromoteBuildOutput(atomicOutput)") >= 0 &&
+	frontendRunActionSource.indexOf("frontendRestoreGeneratedOutput(atomicConfig)") >= 0,
+	"Production builds should stage output before atomic publication");
+assertTrue(source.indexOf("frontendScheduleProductionBuild(watcherRequest, blocks, decision.stopReason)") >= 0 &&
+	source.indexOf("frontendScheduleProductionBuild(request, blocks, \"manual\")") >= 0,
+	"Manual and automatic no-viewer stops should schedule production catch-up");
+assertTrue(source.indexOf("frontendProductionBuildLock.lock()") >= 0 &&
+	source.indexOf("frontendProductionBuildLock.unlock()") >= 0,
+	"Production builds should be serialized to bound peak memory across projects");
 var frontendStartDevNowSource = source.substring(
 	source.indexOf("\tfunction frontendStartDevNow("),
 	source.indexOf("\n\tfunction frontendActivatePreparedDev(")
