@@ -1444,7 +1444,14 @@
 		var Bridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
 		var notified = false;
 		try {
-			if (typeof Bridge.notifySourceMutation === "function") {
+			if (typeof Bridge.notifySourceMutationWithReveal === "function") {
+				Bridge.notifySourceMutationWithReveal(
+					String(request.projectDir || ""),
+					String(request.path || request.sourcePath || ""),
+					request.reveal === true || String(request.reveal || "").toLowerCase() === "true"
+				);
+				notified = true;
+			} else if (typeof Bridge.notifySourceMutation === "function") {
 				try {
 					Bridge.notifySourceMutation(
 						String(request.projectDir || ""),
