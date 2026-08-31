@@ -9756,7 +9756,7 @@
 		};
 	}
 
-	function frontendActivatePreparedDev(request, info, entry) {
+	function frontendActivatePreparedDev(request, blocks, info, entry) {
 		if (!entry || entry.cancelled === true || entry.status !== "prepared" || entry.activationStarted === true) {
 			return null;
 		}
@@ -9790,7 +9790,7 @@
 		};
 	}
 
-	function frontendStartDevActivationWatcher(request, info, entry) {
+	function frontendStartDevActivationWatcher(request, blocks, info, entry) {
 		if (!entry || entry.setupKind !== "app" || entry.status === "failed") {
 			return;
 		}
@@ -9802,7 +9802,7 @@
 					if (entry.status === "starting") {
 						frontendFinishPreparation(entry, true);
 					}
-					frontendActivatePreparedDev(request, info, entry);
+					frontendActivatePreparedDev(request, blocks, info, entry);
 				} catch (e) {
 					entry.status = "failed";
 					entry.error = {
@@ -9932,7 +9932,7 @@
 		}
 		runtimeState.frontendDevServers[key] = entry;
 		frontendWriteDevState(request, info, entry);
-		frontendStartDevActivationWatcher(request, info, entry);
+		frontendStartDevActivationWatcher(request, blocks, info, entry);
 		return {
 			ok: true,
 			title: "Svelte dev mode",
