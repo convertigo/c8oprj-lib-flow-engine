@@ -4911,8 +4911,11 @@
 		if (request && request.includeBindings === false) {
 			return document;
 		}
-		return frontendCatalogService().enrichBindingSources(document,
-			frontendBindingActionSchemas(document, request, projectRoot), {
+		frontendPerformanceMark("frontend.enrich.beforeActionSchemas");
+		var actionSchemas = frontendBindingActionSchemas(document, request, projectRoot);
+		frontendPerformanceMark("frontend.enrich.actionSchemas");
+		var enriched = frontendCatalogService().enrichBindingSources(document,
+			actionSchemas, {
 				normalizeTree: normalizeTree,
 				schemaPaths: schemaPaths,
 				schemaArrayPaths: schemaArrayPaths,
@@ -4923,6 +4926,8 @@
 				property: request && request.property || "",
 				sourceId: request && request.sourceId || ""
 			});
+		frontendPerformanceMark("frontend.enrich.catalog");
+		return enriched;
 	}
 
 	function describeFrontendDocument(request) {

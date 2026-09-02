@@ -1,32 +1,4 @@
 (function () {
-	var cacheDirectoryIndexes = {};
-
-	function cacheDirectoryIndex(dir, env) {
-		var key = String(dir && dir.getAbsolutePath() || "");
-		if (Object.prototype.hasOwnProperty.call(cacheDirectoryIndexes, key)) {
-			return cacheDirectoryIndexes[key];
-		}
-		var index = {};
-		var names = dir && dir.list();
-		if (names) {
-			env.Arrays.asList(names).toArray().forEach(function (name) {
-				index[String(name)] = true;
-			});
-		}
-		cacheDirectoryIndexes[key] = index;
-		return index;
-	}
-
-	function indexedFile(index, file) {
-		return !!(file && index[String(file.getName())]);
-	}
-
-	function rememberIndexedFile(index, file) {
-		if (file) {
-			index[String(file.getName())] = true;
-		}
-	}
-
 	function isIconifyIcon(icon) {
 		return String(icon || "").match(/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9_.-]+$/) !== null;
 	}
@@ -210,33 +182,11 @@
 		var name = safeIconName(parts[1]);
 		var base = new env.File(iconCacheDir(block, "iconify", provider, env), name);
 		var svg = new env.File(String(base.getAbsolutePath()) + ".svg");
-		var index = cacheDirectoryIndex(base.getParentFile(), env);
-		if (!indexedFile(index, svg) &&
-				downloadToCache("https://api.iconify.design/" + provider + "/" + name + ".svg?color=%2314a7cf", svg, env)) {
-			rememberIndexedFile(index, svg);
+		if (!svg.isFile()) {
+			downloadToCache("https://api.iconify.design/" + provider + "/" + name + ".svg?color=%2314a7cf", svg, env);
 		}
 		descriptor.iconify = provider + ":" + name;
-		if (!indexedFile(index, svg)) {
-			return;
-		}
-		descriptor.iconSvg = String(svg.getAbsolutePath());
-		var png16 = new env.File(String(base.getAbsolutePath()) + "_16x16.png");
-		var png32 = new env.File(String(base.getAbsolutePath()) + "_32x32.png");
-		if (!indexedFile(index, png16) && rasterizeSvg(svg, png16, 16, env)) {
-			rememberIndexedFile(index, png16);
-		}
-		if (!indexedFile(index, png32) && rasterizeSvg(svg, png32, 32, env)) {
-			rememberIndexedFile(index, png32);
-		}
-		if (indexedFile(index, png32)) {
-			descriptor.iconFile32 = String(png32.getAbsolutePath());
-			descriptor.iconFile = descriptor.iconFile32;
-		}
-		if (indexedFile(index, png16)) {
-			descriptor.iconFile16 = String(png16.getAbsolutePath());
-			descriptor.iconFile = descriptor.iconFile || descriptor.iconFile16;
-		}
-		descriptor.iconFile = descriptor.iconFile || descriptor.iconSvg;
+		exposeCachedIconFiles(descriptor, base, "svg", env);
 	}
 
 	function addUrlIconCache(block, descriptor, icon, env) {
