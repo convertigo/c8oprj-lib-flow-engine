@@ -472,7 +472,7 @@
 		if (isFlowSvelteModel(file)) {
 			var described;
 			try {
-				described = describeFrontendDocument({
+				var documentRequest = {
 					sourceFile: String(file.getAbsolutePath()),
 					source: source,
 					projectDir: projectDir() ? String(projectDir().getAbsolutePath()) : "",
@@ -485,7 +485,9 @@
 					bindingTargetSource: request && request.bindingTargetSource || "",
 					sourceTree: request && request.sourceTree === true,
 					includeBindings: request && request.includeBindings !== false
-				});
+				};
+				performanceMark("frontend.model.documentRequest");
+				described = describeFrontendDocument(documentRequest);
 			} catch (e) {
 				var message = String(e && e.message || e);
 				var root = /Cannot run program|ENOENT|not found/i.test(message)

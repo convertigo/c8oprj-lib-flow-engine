@@ -4911,6 +4911,7 @@
 
 	function describeFrontendDocument(request) {
 		request = request || {};
+		frontendPerformanceMark("frontend.document.beforeSourceFile");
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
 		var sourceFile = frontendRequestSourceFile(request, request.source === undefined || request.source === null);
 		frontendPerformanceMark("frontend.document.sourceFile");
