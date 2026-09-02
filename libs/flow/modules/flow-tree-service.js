@@ -64,6 +64,12 @@
 		var frontendBaseDefinitions;
 		var frontendVisualBaseDefinitions;
 		var frontendKnownDefinitions;
+		// A provider tree commonly assigns the same source path to hundreds of
+		// projected descendants. Keep filesystem existence checks local to this
+		// service invocation so one authoring response performs at most one NFS
+		// lookup per distinct path without retaining stale state across requests.
+		var frontendNodeSourceFiles = {};
+		var frontendFlowSvelteRoots = {};
 
 	function flowTypes() {
 		if (!resolvedTypes) {
@@ -2108,7 +2114,7 @@
 	}
 
 	function normalizeFrontendFlowSvelteRootNode(node, sourceFile) {
-		if (!node || !sourceFile || !sourceFile.isFile() || String(node.kind || "") !== "frontendComponent") {
+		if (!node || String(node.kind || "") !== "frontendComponent" || !sourceFile) {
 			return node;
 		}
 		var mutationPath = String(node.sourceMutationPath || "");
@@ -2120,8 +2126,15 @@
 			return node;
 		}
 		try {
-			var root = flowSvelteLiteComponentRoot(String(sourceFile.getAbsolutePath()),
-				String(FileUtils.readFileToString(sourceFile, "UTF-8")));
+			var sourceKey = String(sourceFile.getAbsolutePath());
+			var root;
+			if (Object.prototype.hasOwnProperty.call(frontendFlowSvelteRoots, sourceKey)) {
+				root = frontendFlowSvelteRoots[sourceKey];
+			} else {
+				root = flowSvelteLiteComponentRoot(sourceKey,
+					String(FileUtils.readFileToString(sourceFile, "UTF-8")));
+				frontendFlowSvelteRoots[sourceKey] = root || null;
+			}
 			if (!root) {
 				return node;
 			}
@@ -2155,10 +2168,16 @@
 	}
 
 	function normalizeFrontendRouteSourceNode(node, sourceFile) {
-		if (!node || !sourceFile || !sourceFile.isFile() || !String(sourceFile.getName()).endsWith(".flow.svelte")) {
+		if (!node) {
 			return node;
 		}
 		var kind = String(node.kind || "");
+		if (kind !== "frontendPage" && kind !== "frontendRouteLayout") {
+			return node;
+		}
+		if (!sourceFile || !String(sourceFile.getName()).endsWith(".flow.svelte")) {
+			return node;
+		}
 		if ((kind === "frontendPage" || kind === "frontendRouteLayout") && !node.sourceMutationPath) {
 			node.sourceMutationPath = "frontAst";
 		}
@@ -2274,8 +2293,12 @@
 		if (!sourcePath) {
 			return fallback || null;
 		}
+		if (Object.prototype.hasOwnProperty.call(frontendNodeSourceFiles, sourcePath)) {
+			return frontendNodeSourceFiles[sourcePath] || fallback || null;
+		}
 		var file = new File(sourcePath);
-		return file.isFile() ? file : fallback || null;
+		frontendNodeSourceFiles[sourcePath] = file.isFile() ? file : null;
+		return frontendNodeSourceFiles[sourcePath] || fallback || null;
 	}
 
 	function frontendNodeInsertMutationPath(node) {
