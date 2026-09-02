@@ -11,6 +11,7 @@
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
 	var Base64 = Packages.java.util.Base64;
 	var JavaSystem = Packages.java.lang.System;
+	var JavaFiles = Packages.java.nio.file.Files;
 	var ConcurrentHashMap = Packages.java.util.concurrent.ConcurrentHashMap;
 	var ReentrantLock = Packages.java.util.concurrent.locks.ReentrantLock;
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
@@ -4593,6 +4594,7 @@
 		var described = describeFrontendDocument(Object.assign({}, request, {
 			sourceFile: sourcePath,
 			sourcePath: sourcePath,
+			__trustedSourceFile: frontendProjectedSourceFile(sourcePath, true),
 			property: property,
 			bindingTargetPath: mutationPath,
 			bindingTargetSource: "",
@@ -4794,6 +4796,10 @@
 	}
 
 	function frontendRequestSourceFile(request, mustExist) {
+		var trusted = request && request.__trustedSourceFile;
+		if (trusted && typeof trusted.getAbsolutePath === "function") {
+			return trusted;
+		}
 		var sourcePath = String(request && (request.sourceFile || request.sourcePath) || "");
 		if (!sourcePath) {
 			raise("MISSING_FRONTEND_SOURCE", "A Flow Svelte or Flow CSS source path is required.");
@@ -4803,6 +4809,41 @@
 			return sourceFile.getCanonicalFile();
 		}
 		return projectResourceFile(sourcePath, mustExist).file.getCanonicalFile();
+	}
+
+	function frontendProjectedSourceFile(sourcePath, mustExist) {
+		var base = projectDir();
+		if (!base) {
+			return frontendRequestSourceFile({ sourcePath: sourcePath }, mustExist);
+		}
+		base = base.getAbsoluteFile();
+		var sourceFile = new File(String(sourcePath || ""));
+		var basePath = String(base.toPath().normalize());
+		var sourceText = String(sourcePath || "");
+		if (sourceFile.isAbsolute()) {
+			var absolutePath = String(sourceFile.toPath().normalize());
+			if (absolutePath !== basePath && absolutePath.indexOf(basePath + File.separator) !== 0) {
+				raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path escapes the project: " + sourceText);
+			}
+			sourceText = absolutePath.substring(basePath.length + 1).replace(/\\/g, "/");
+		}
+		var normalized = normalizeResourcePath(sourceText);
+		if (!isAllowedResourcePath(normalized)) {
+			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path is not allowed: " + normalized);
+		}
+		var file = new File(base, normalized).getAbsoluteFile();
+		var current = file;
+		var absoluteBasePath = String(base.getAbsolutePath());
+		while (current && String(current.getAbsolutePath()) !== absoluteBasePath) {
+			if (JavaFiles.isSymbolicLink(current.toPath())) {
+				return projectResourceFile(normalized, mustExist).file.getCanonicalFile();
+			}
+			current = current.getParentFile();
+		}
+		if (mustExist && !file.isFile()) {
+			raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + normalized);
+		}
+		return file;
 	}
 
 	function frontendBindingActionSchemas(document, request, projectRoot) {

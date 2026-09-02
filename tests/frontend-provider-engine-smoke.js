@@ -91,6 +91,22 @@ var authoringTree = JSON.parse(engine.authoringTree(JSON.stringify({
 	detail: "full"
 })));
 var themeNode = findNode(authoringTree, "theme");
+var authoringAvatar = findNode(authoringTree, "avatar");
+var targetedAvatar = JSON.parse(engine.authoringTree(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: engineSource,
+	projectDir: String(root.getAbsolutePath()),
+	focusPath: authoringAvatar && authoringAvatar.path,
+	property: "variant",
+	detail: "full",
+	includeBindings: true,
+	includeFrontendCatalog: false,
+	includeFlowCatalog: false
+})));
+if (!findNode(targetedAvatar, "avatar")) {
+	throw new Error("targeted frontend property projection did not preserve the focused source node");
+}
 var themePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
