@@ -57,6 +57,7 @@
 		var frontendCreateDescriptorsForSettings = env.frontendCreateDescriptorsForSettings || function () { return []; };
 		var frontendCreateDescriptorsForConfig = env.frontendCreateDescriptorsForConfig || function () { return []; };
 		var describeFrontendDocument = env.describeFrontendDocument || function () { return null; };
+		var performanceMark = env.performanceMark || function () {};
 		var raise = env.raise;
 		var intOption = env.intOption;
 		var resolvedTypes;
@@ -465,7 +466,9 @@
 	}
 
 	function frontendModelDocument(request, file, settings) {
+		performanceMark("frontend.model.beforeSource");
 		var source = frontendModelSource(request, file);
+		performanceMark("frontend.model.source");
 		if (isFlowSvelteModel(file)) {
 			var described;
 			try {
@@ -558,7 +561,9 @@
 
 	function addFrontendBuilder(parent, name, settings, path, request, blocks) {
 		settings = settings || {};
+		performanceMark("frontend.model.beforeResolve");
 		var modelFile = frontendModelFile(settings.modelPath);
+		performanceMark("frontend.model.resolve");
 		var definition = {
 			id: name,
 			target: settings.target || "",
@@ -568,6 +573,7 @@
 			resourceRoot: settings.resourceRoot || ""
 		};
 		var sourceInfo = frontendSourceInfo(modelFile, "frontend-model", "", request);
+		performanceMark("frontend.model.sourceInfo");
 		var builder = virtualNode("builder_" + name, "frontendBuilder", name, path,
 			name === "svelte" ? "Svelte builder" : name + " builder", compact(definition),
 			compact(sourceObjectInfo(sourceInfo, frontendBuilderPropertyDefinitions(),

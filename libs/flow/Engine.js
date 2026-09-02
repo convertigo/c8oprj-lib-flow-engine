@@ -4422,6 +4422,7 @@
 				sha256Hex: sha256Hex,
 				responseBudget: responseBudget,
 				describeFrontendDocument: describeFrontendDocument,
+				performanceMark: frontendPerformanceMark,
 				raise: raise,
 				intOption: intOption
 		};
