@@ -133,6 +133,21 @@
 		}
 	}
 
+	function exposeCompleteIconifyCache(descriptor, base, iconify, env) {
+		var svg = new env.File(String(base.getAbsolutePath()) + ".svg");
+		var png16 = new env.File(String(base.getAbsolutePath()) + "_16x16.png");
+		var png32 = new env.File(String(base.getAbsolutePath()) + "_32x32.png");
+		if (!svg.isFile() || !png16.isFile() || !png32.isFile()) {
+			return false;
+		}
+		descriptor.iconify = iconify;
+		descriptor.iconSvg = env.canonicalPath(svg);
+		descriptor.iconFile16 = env.canonicalPath(png16);
+		descriptor.iconFile32 = env.canonicalPath(png32);
+		descriptor.iconFile = descriptor.iconFile32;
+		return true;
+	}
+
 	function rasterizeSvg(svg, png, size, env) {
 		if (!svg || !svg.isFile() || !png || png.isFile()) {
 			return false;
@@ -222,6 +237,13 @@
 		var provider = safeIconName(parts[0]);
 		var name = safeIconName(parts[1]);
 		var base = new env.File(iconCacheDir(block, "iconify", provider, env), name);
+		var iconify = provider + ":" + name;
+		// The common authoring path resolves already-generated MDI assets hundreds
+		// of times. Avoid probing and copying the shared cache when all local
+		// variants are present; on NFS this removes most icon projection latency.
+		if (exposeCompleteIconifyCache(descriptor, base, iconify, env)) {
+			return;
+		}
 		var sharedDir = sharedIconCacheDir("iconify", provider, env);
 		var sharedBase = sharedDir ? new env.File(sharedDir, name) : null;
 		copyCachedIconFiles(sharedBase, base, "svg", env);
@@ -229,7 +251,7 @@
 		if (!svg.isFile()) {
 			downloadToCache("https://api.iconify.design/" + provider + "/" + name + ".svg?color=%2314a7cf", svg, env);
 		}
-		descriptor.iconify = provider + ":" + name;
+		descriptor.iconify = iconify;
 		exposeCachedIconFiles(descriptor, base, "svg", env);
 		copyCachedIconFiles(base, sharedBase, "svg", env);
 	}

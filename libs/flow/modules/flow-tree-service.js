@@ -79,6 +79,8 @@
 		var frontendAuthoringDepth = 0;
 
 	function measureFrontendAuthoring(phase, callback) {
+		// Nested phase timings intentionally share the request accumulator so cold
+		// projection profiles can distinguish cache-key, resolution and I/O costs.
 		var startedAt = nanoTime();
 		try {
 			return callback();
@@ -216,12 +218,15 @@
 		if (Object.prototype.hasOwnProperty.call(virtualIcons, key)) {
 			return virtualIcons[key];
 		}
-		var descriptor = {
-			icon: icon
-		};
-		resolveBlockIcon({
-			__flowFile: new File(engineDir(), "virtual-icons.js").getAbsolutePath()
-		}, descriptor);
+		var descriptor = measureFrontendAuthoring("icon.resolve", function () {
+			var resolved = {
+				icon: icon
+			};
+			resolveBlockIcon({
+				__flowFile: new File(engineDir(), "virtual-icons.js").getAbsolutePath()
+			}, resolved);
+			return resolved;
+		});
 		virtualIcons[key] = descriptor;
 		return descriptor;
 	}
@@ -2556,43 +2561,51 @@
 		var extra = node && node.propertyDefinitions || {};
 		var visualNode = String(node && node.kind || "") === "frontendWidget";
 		var props = node && node.props || {};
-		var visibleProps = Object.keys(props).filter(function (key) {
-			return frontendAuthoringPropertyVisible(node, key);
-		}).map(function (key) {
-			return key + ":" + (typeof props[key] === "boolean" ? "boolean" : "string");
+		var visibleProps = measureFrontendAuthoring("propertyDefinitions.visibleProps", function () {
+			return Object.keys(props).filter(function (key) {
+				return frontendAuthoringPropertyVisible(node, key);
+			}).map(function (key) {
+				return key + ":" + (typeof props[key] === "boolean" ? "boolean" : "string");
+			});
 		});
-		var cacheKey = JSON.stringify([
-			visualNode,
-			String(node && node.kind || ""),
-			String(node && node.type || ""),
-			String(node && node.descriptorId || ""),
-			extra,
-			visibleProps
-		]);
+		var cacheKey = measureFrontendAuthoring("propertyDefinitions.cacheKey", function () {
+			return JSON.stringify([
+				visualNode,
+				String(node && node.kind || ""),
+				String(node && node.type || ""),
+				String(node && node.descriptorId || ""),
+				extra,
+				visibleProps
+			]);
+		});
 		if (Object.prototype.hasOwnProperty.call(frontendAuthoringPropertyDefinitionsCache, cacheKey)) {
 			return frontendAuthoringPropertyDefinitionsCache[cacheKey];
 		}
-		var definitions = frontendAuthoringBasePropertyDefinitions(visualNode);
-		var known = frontendKnownPropertyDefinitions();
-		Object.keys(extra || {}).forEach(function (key) {
-			definitions[key] = frontendPropertyDefinition(key, extra[key]);
-		});
-		Object.keys(props).forEach(function (key) {
-			if (!frontendAuthoringPropertyVisible(node, key)) {
-				return;
-			}
-			if (!definitions[key]) {
-				definitions[key] = known[key] || frontendPropertyDefinition(key, { type: typeof props[key] === "boolean" ? "boolean" : "string" });
-				if (!known[key]) {
-					definitions[key].inferredFromSource = true;
+		var definitions = measureFrontendAuthoring("propertyDefinitions.resolve", function () {
+			var resolved = frontendAuthoringBasePropertyDefinitions(visualNode);
+			var known = frontendKnownPropertyDefinitions();
+			Object.keys(extra || {}).forEach(function (key) {
+				resolved[key] = frontendPropertyDefinition(key, extra[key]);
+			});
+			Object.keys(props).forEach(function (key) {
+				if (!frontendAuthoringPropertyVisible(node, key)) {
+					return;
 				}
-			}
+				if (!resolved[key]) {
+					resolved[key] = known[key] || frontendPropertyDefinition(key, { type: typeof props[key] === "boolean" ? "boolean" : "string" });
+					if (!known[key]) {
+						resolved[key].inferredFromSource = true;
+					}
+				}
+			});
+			return frontendSourceTargetPropertyDefinitions(resolved);
 		});
-		definitions = frontendSourceTargetPropertyDefinitions(definitions);
 		try {
-			Object.defineProperty(definitions, "__flowCompactJson", {
-				value: compactPlain(definitions),
-				enumerable: false
+			measureFrontendAuthoring("propertyDefinitions.compact", function () {
+				Object.defineProperty(definitions, "__flowCompactJson", {
+					value: compactPlain(definitions),
+					enumerable: false
+				});
 			});
 		} catch (ignored) {
 		}
