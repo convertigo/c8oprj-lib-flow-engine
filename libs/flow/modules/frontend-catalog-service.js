@@ -2341,6 +2341,24 @@
 
 	function fingerprintForConfig(config, env) {
 		var parts = [];
+		var performanceDuration = env.performanceDuration || function () {};
+		var nanoTime = env.nanoTime || function () { return 0; };
+		function measuredDirectoryFingerprint(kind, root, dir) {
+			if (!dir || !dir.exists()) {
+				return "";
+			}
+			var startedAt = nanoTime();
+			try {
+				return env.directoryFingerprint(dir);
+			} finally {
+				if (startedAt) {
+					var provider = String(env.projectNameForRoot(root) || root.getName() || "resource")
+						.replace(/[^A-Za-z0-9_.-]+/g, "_");
+					performanceDuration("frontend.catalog.fingerprint." + kind + "." + provider,
+						Number(nanoTime() - startedAt));
+				}
+			}
+		}
 		frontbuilderSettings(config).forEach(function (entry) {
 			parts.push(entry.name);
 				frontendResourceRoots(entry.name, entry.settings, env).forEach(function (root) {
@@ -2348,12 +2366,12 @@
 					var componentsDir = root ? new env.File(root, "components") : null;
 					var actionsDir = root ? new env.File(root, "actions") : null;
 					parts.push(root && root.exists() ? env.canonicalPath(root) : "");
-					parts.push(uiDir && uiDir.exists() ? env.directoryFingerprint(uiDir) : "");
-					parts.push(componentsDir && componentsDir.exists() ? env.directoryFingerprint(componentsDir) : "");
-					parts.push(actionsDir && actionsDir.exists() ? env.directoryFingerprint(actionsDir) : "");
+					parts.push(measuredDirectoryFingerprint("ui", root, uiDir));
+					parts.push(measuredDirectoryFingerprint("components", root, componentsDir));
+					parts.push(measuredDirectoryFingerprint("actions", root, actionsDir));
 				});
 				var modelComponentsDir = modelComponentsDirForSettings(entry.settings, env);
-				parts.push(modelComponentsDir && modelComponentsDir.exists() ? env.directoryFingerprint(modelComponentsDir) : "");
+				parts.push(measuredDirectoryFingerprint("model", modelComponentsDir, modelComponentsDir));
 			});
 		if (typeof env.sourceDraftsFingerprint === "function") {
 			parts.push(String(env.sourceDraftsFingerprint() || ""));

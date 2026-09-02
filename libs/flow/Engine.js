@@ -4249,6 +4249,8 @@
 			projectNameForRoot: projectNameForRoot,
 			canonicalPath: canonicalPath,
 			directoryFingerprint: directoryFingerprint,
+			performanceDuration: frontendPerformanceDuration,
+			nanoTime: function () { return JavaSystem.nanoTime(); },
 			resourceRelativePath: resourceRelativePath,
 			resolveBlockIcon: resolveBlockIcon,
 			normalizeTree: normalizeTree,
