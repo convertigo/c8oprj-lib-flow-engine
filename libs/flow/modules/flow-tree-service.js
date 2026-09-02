@@ -66,6 +66,7 @@
 		var frontendBaseDefinitions;
 		var frontendVisualBaseDefinitions;
 		var frontendKnownDefinitions;
+		var frontendAuthoringPropertyDefinitionsCache = {};
 		// A provider tree commonly assigns the same source path to hundreds of
 		// projected descendants. Keep filesystem existence checks local to this
 		// service invocation so one authoring response performs at most one NFS
@@ -1950,15 +1951,15 @@
 		parent.children.push(implementationNode);
 	}
 
-	function frontendItemInfo(file, mutationPath, definitions, order) {
-		var allDefinitions = frontendSourceTargetPropertyDefinitions(definitions);
+	function frontendItemInfo(file, mutationPath, definitions, order, sourceTargetsIncluded) {
+		var allDefinitions = sourceTargetsIncluded ? definitions : frontendSourceTargetPropertyDefinitions(definitions);
 		var info = plainSourceObjectInfo(frontendSourceInfo(file, "frontend-model", mutationPath), allDefinitions, order);
 		info.frontendModelPath = mutationPath || "";
 		return info;
 	}
 
-	function frontendContainerInfo(file, mutationPath, insertMutationPath, definitions, order) {
-		var info = frontendItemInfo(file, mutationPath, definitions, order);
+	function frontendContainerInfo(file, mutationPath, insertMutationPath, definitions, order, sourceTargetsIncluded) {
+		var info = frontendItemInfo(file, mutationPath, definitions, order, sourceTargetsIncluded);
 		if (file) {
 			info.frontendInsertSourcePath = String(file.getAbsolutePath());
 			info.frontendInsertMutationPath = insertMutationPath || mutationPath || "";
@@ -2289,8 +2290,8 @@
 		});
 		var info = measureFrontendAuthoring("info", function () {
 			return insertMutationPath
-				? frontendContainerInfo(sourceFile, mutationPath, insertMutationPath, definitions, order)
-				: frontendItemInfo(sourceFile, mutationPath, definitions, order);
+				? frontendContainerInfo(sourceFile, mutationPath, insertMutationPath, definitions, order, true)
+				: frontendItemInfo(sourceFile, mutationPath, definitions, order, true);
 		});
 		measureFrontendAuthoring("sourceTargets", function () {
 			applyFrontendAuthoringSourcePath(info, node);
@@ -2512,12 +2513,28 @@
 	function frontendAuthoringPropertyDefinitions(node) {
 		var extra = node && node.propertyDefinitions || {};
 		var visualNode = String(node && node.kind || "") === "frontendWidget";
+		var props = node && node.props || {};
+		var visibleProps = Object.keys(props).filter(function (key) {
+			return frontendAuthoringPropertyVisible(node, key);
+		}).map(function (key) {
+			return key + ":" + (typeof props[key] === "boolean" ? "boolean" : "string");
+		});
+		var cacheKey = JSON.stringify([
+			visualNode,
+			String(node && node.kind || ""),
+			String(node && node.type || ""),
+			String(node && node.descriptorId || ""),
+			extra,
+			visibleProps
+		]);
+		if (Object.prototype.hasOwnProperty.call(frontendAuthoringPropertyDefinitionsCache, cacheKey)) {
+			return frontendAuthoringPropertyDefinitionsCache[cacheKey];
+		}
 		var definitions = frontendAuthoringBasePropertyDefinitions(visualNode);
 		var known = frontendKnownPropertyDefinitions();
 		Object.keys(extra || {}).forEach(function (key) {
 			definitions[key] = frontendPropertyDefinition(key, extra[key]);
 		});
-		var props = node && node.props || {};
 		Object.keys(props).forEach(function (key) {
 			if (!frontendAuthoringPropertyVisible(node, key)) {
 				return;
@@ -2529,6 +2546,8 @@
 				}
 			}
 		});
+		definitions = frontendSourceTargetPropertyDefinitions(definitions);
+		frontendAuthoringPropertyDefinitionsCache[cacheKey] = definitions;
 		return definitions;
 	}
 
