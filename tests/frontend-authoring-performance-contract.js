@@ -28,4 +28,11 @@ var catalogSource = functionSource("frontendBlocksForSettings", "frontendCreateD
 assertTrue(catalogSource.indexOf('frontendPerformanceMark("frontend.catalog.blocks")') >= 0,
 	"frontend catalog construction must expose a performance phase");
 
+var candidateSource = functionSource("seedAuthoringTreeCandidate", "cachedAuthoringTreeBase");
+assertTrue(candidateSource.indexOf("authoringTreeBaseFromEngineTree") >= 0,
+	"engine describeTree must retain a bounded authoring base candidate");
+var baseSource = functionSource("cachedAuthoringTreeBase", "authoringTreeRequest");
+assertTrue(baseSource.indexOf('"frontend.base.sharedCandidateMatch"') >= 0,
+	"cold authoring profiling must prove candidate equality before enabling reuse");
+
 print("frontend-authoring-performance-contract OK");

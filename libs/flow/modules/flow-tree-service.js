@@ -4106,6 +4106,32 @@
 		}), blocks);
 	}
 
+	function authoringTreeBaseFromEngineTree(request, tree, cloneProjection) {
+		request = request || {};
+		var surface = String(request.surface || "frontend");
+		var engine = authoringEngineDefinition(request);
+		var builder = authoringBuilderName(request, engine);
+		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
+		if (cloneProjection === true) {
+			focus = focus ? normalizeTree(focus) : null;
+			tree = focus ? tree : normalizeTree(tree || {});
+		}
+		var children = focus ? [focus] : tree.children || [];
+		var dynamicDescriptors = focus && focus.__authoringDescriptors || [];
+		if (focus) {
+			delete focus.__authoringDescriptors;
+		}
+		return {
+			ok: true,
+			target: "authoring",
+			surface: surface,
+			builder: builder,
+			diagnostics: focus && focus.diagnostics || [],
+			descriptors: dynamicDescriptors,
+			children: children
+		};
+	}
+
 	function authoringSourceTreeRequest(request) {
 		request = request || {};
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
@@ -4235,24 +4261,9 @@
 		performanceMark("frontend.base.engineDefinition");
 		var tree = authoringEngineTree(Object.assign({}, baseRequest, { definition: engine }), blocks);
 		performanceMark("frontend.base.engineTree");
-		var surface = String(request.surface || "frontend");
-		var builder = authoringBuilderName(request, engine);
-		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
-		var children = focus ? [focus] : tree.children || [];
-		var dynamicDescriptors = focus && focus.__authoringDescriptors || [];
-		if (focus) {
-			delete focus.__authoringDescriptors;
-		}
+		var base = authoringTreeBaseFromEngineTree(request, tree, false);
 		performanceMark("frontend.base.focus");
-		return {
-			ok: true,
-			target: "authoring",
-			surface: surface,
-			builder: builder,
-			diagnostics: focus && focus.diagnostics || [],
-			descriptors: dynamicDescriptors,
-			children: children
-		};
+		return base;
 	}
 
 	function projectAuthoringTreeResponse(base, request) {
@@ -6567,6 +6578,7 @@
 			activeSlots: activeSlots,
 			toYamlSource: toYamlSource,
 			describeTreeRequest: describeTreeRequest,
+			authoringTreeBaseFromEngineTree: authoringTreeBaseFromEngineTree,
 			authoringTreeBaseRequest: authoringTreeBaseRequest,
 			projectAuthoringTreeResponse: projectAuthoringTreeResponse,
 			authoringTreeRequest: authoringTreeRequest,
@@ -6604,6 +6616,9 @@
 		},
 		describeTreeRequest: function (request, blocks, env) {
 			return create(env).describeTreeRequest(request, blocks);
+		},
+		authoringTreeBaseFromEngineTree: function (request, tree, env) {
+			return create(env).authoringTreeBaseFromEngineTree(request, tree, true);
 		},
 		authoringTreeBaseRequest: function (request, blocks, env) {
 			return create(env).authoringTreeBaseRequest(request, blocks);

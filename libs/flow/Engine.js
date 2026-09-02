@@ -4475,13 +4475,12 @@
 		}
 		pruneDescribeTreeCacheFamily(cache, request);
 		var tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+		seedAuthoringTreeCandidate(request, tree);
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
 	}
 
-	function cachedAuthoringTreeBase(request, blocks) {
-		frontendPerformanceMark("frontend.base.entry");
+	function authoringTreeBaseRequest(request) {
 		request = request || {};
-		var cache = runtimeState.caches.treeSnapshots;
 		var includeBindings = request.includeBindings === true
 			|| (request.includeBindings === undefined && !!request.property
 				&& !!(request.focusPath || request.rootPath || request.path));
@@ -4495,9 +4494,11 @@
 		});
 		delete baseRequest.mode;
 		delete baseRequest.maxDepth;
-		var fingerprintRequest = Object.assign({}, baseRequest, { target: "engine" });
-		frontendPerformanceMark("frontend.base.beforeKey");
-		var key = "authoring-base\n" + JSON.stringify({
+		return baseRequest;
+	}
+
+	function authoringTreeBaseCacheKey(request) {
+		return "authoring-base\n" + JSON.stringify({
 			project: projectDir() ? canonicalPath(projectDir()) : "",
 			surface: String(request.surface || "frontend"),
 			builder: String(request.builder || ""),
@@ -4508,7 +4509,7 @@
 			internalDeep: request.internalDeep === true,
 			includeDefinition: request.includeDefinition === true,
 			includeProperties: request.includeProperties === true,
-			includeBindings: includeBindings,
+			includeBindings: request.includeBindings === true,
 			includeSource: request.includeSource === true,
 			includeAnalysis: request.includeAnalysis === true,
 			includeSchema: request.includeSchema === true || request.schema === true,
@@ -4516,14 +4517,71 @@
 			includeFrontendCatalog: request.includeFrontendCatalog !== false,
 			includeFlowCatalog: request.includeFlowCatalog !== false
 		});
+	}
+
+	function authoringTreeCandidateCacheKey(request) {
+		return "authoring-candidate\n" + authoringTreeBaseCacheKey(request);
+	}
+
+	function seedAuthoringTreeCandidate(request, tree) {
+		if (String(request && request.target || "") !== "engine"
+				|| request.includeBindings !== false
+				|| request.includeFrontendCatalog !== false) {
+			return;
+		}
+		var frontends = frontendBindingTreeNode(tree, function (node) {
+			return String(node && node.path || "") === "frontends";
+		});
+		(frontends && frontends.children || []).forEach(function (builderNode) {
+			if (!builderNode || String(builderNode.kind || "") !== "frontendBuilder") {
+				return;
+			}
+			var candidateRequest = authoringTreeBaseRequest(Object.assign({}, request, {
+				surface: "frontend",
+				builder: String(builderNode.type || ""),
+				property: "",
+				sourceId: "",
+				bindingTargetPath: "",
+				bindingTargetSource: "",
+				includeBindings: false,
+				includeFrontendCatalog: false,
+				includeFlowCatalog: false
+			}));
+			var fingerprintRequest = Object.assign({}, candidateRequest, { target: "engine" });
+			var candidate = flowTreeService().authoringTreeBaseFromEngineTree(
+				candidateRequest, tree, flowTreeServiceEnv());
+			writeRuntimeMapCache(runtimeState.caches.treeSnapshots,
+				authoringTreeCandidateCacheKey(candidateRequest),
+				describeTreeFingerprint(fingerprintRequest), candidate,
+				"Flow authoring tree snapshot candidates");
+		});
+	}
+
+	function cachedAuthoringTreeBase(request, blocks) {
+		frontendPerformanceMark("frontend.base.entry");
+		var cache = runtimeState.caches.treeSnapshots;
+		var baseRequest = authoringTreeBaseRequest(request);
+		var fingerprintRequest = Object.assign({}, baseRequest, { target: "engine" });
+		frontendPerformanceMark("frontend.base.beforeKey");
+		var key = authoringTreeBaseCacheKey(baseRequest);
 		frontendPerformanceMark("frontend.base.key");
 		var fingerprint = describeTreeFingerprint(fingerprintRequest);
 		frontendPerformanceMark("frontend.base.fingerprint");
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		frontendPerformanceMark("frontend.base.cacheLookup");
 		if (!cached) {
+			var candidate = readRuntimeMapCache(cache,
+				authoringTreeCandidateCacheKey(baseRequest), fingerprint);
+			frontendPerformanceMark(candidate
+				? "frontend.base.sharedCandidateFound"
+				: "frontend.base.sharedCandidateMissing");
 			var generated = flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
 			frontendPerformanceMark("frontend.base.generate");
+			if (candidate) {
+				frontendPerformanceMark(JSON.stringify(candidate) === JSON.stringify(generated)
+					? "frontend.base.sharedCandidateMatch"
+					: "frontend.base.sharedCandidateMismatch");
+			}
 			cached = writeRuntimeMapCache(cache, key, fingerprint, generated, "Flow authoring tree snapshots");
 			frontendPerformanceMark("frontend.base.cacheStore");
 		}
