@@ -258,14 +258,22 @@
 	function virtualNodeFromPlain(name, kind, type, path, summary, definition, info, icon) {
 		info = info || {};
 		if (icon) {
-			var iconInfo = virtualIcon(icon);
-			Object.keys(iconInfo).forEach(function (key) {
-				info[key] = iconInfo[key];
+			measureFrontendAuthoring("serialize.icon", function () {
+				var iconInfo = virtualIcon(icon);
+				Object.keys(iconInfo).forEach(function (key) {
+					info[key] = iconInfo[key];
+				});
 			});
 		}
-		var compactDefinition = compactPlain(definition || {});
-		var compactInfo = compactFrontendAuthoringInfo(info);
-		var node = virtualNode(name, kind, type, path, summary, compactDefinition, compactInfo, null);
+		var compactDefinition = measureFrontendAuthoring("serialize.definition", function () {
+			return compactPlain(definition || {});
+		});
+		var compactInfo = measureFrontendAuthoring("serialize.info", function () {
+			return compactFrontendAuthoringInfo(info);
+		});
+		var node = measureFrontendAuthoring("serialize.node", function () {
+			return virtualNode(name, kind, type, path, summary, compactDefinition, compactInfo, null);
+		});
 		return node;
 	}
 
