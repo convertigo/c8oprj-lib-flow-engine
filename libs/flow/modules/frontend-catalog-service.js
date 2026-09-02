@@ -2558,7 +2558,11 @@
 	}
 
 	function enrichBindingSources(document, actionSchemas, env, options) {
-		document = env.normalizeTree(document || {});
+		// Provider documents are JSON values. Let Engine clone them through the
+		// native JSON implementation so binding enrichment never mutates the
+		// cached base document without paying for a full Rhino/Java normalization
+		// walk on every picker reopening.
+		document = env.cloneTree ? env.cloneTree(document || {}) : env.normalizeTree(document || {});
 		actionSchemas = Object.assign({}, actionSchemas || {});
 		options = options || {};
 		var requestedProperty = String(options.property || "");

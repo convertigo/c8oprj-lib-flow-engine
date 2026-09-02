@@ -4917,6 +4917,9 @@
 		var enriched = frontendCatalogService().enrichBindingSources(document,
 			actionSchemas, {
 				normalizeTree: normalizeTree,
+				cloneTree: function (value) {
+					return JSON.parse(JSON.stringify(value));
+				},
 				schemaPaths: schemaPaths,
 				schemaArrayPaths: schemaArrayPaths,
 				schemaLeafEntries: schemaLeafEntries,
