@@ -34,6 +34,13 @@ assertTrue(candidateSource.indexOf("authoringTreeBaseFromEngineTree") >= 0,
 var bridgeCandidateSource = functionSource("bridgeAuthoringTreeCandidate", "cachedAuthoringTreeBase");
 assertTrue(bridgeCandidateSource.indexOf("__flowBridgeDescribeTreeSnapshot") >= 0,
 	"authoring runtimes must accept the opaque describeTree snapshot shared by the bridge");
+assertTrue(bridgeCandidateSource.indexOf("__flowAuthoringSnapshotFingerprints") >= 0
+	&& bridgeCandidateSource.indexOf("fingerprints[builder]") >= 0,
+	"a bridge snapshot must be rejected when its source fingerprint is stale");
+var candidateValidationSource = functionSource("validAuthoringTreeCandidate", "cachedAuthoringTreeBase");
+assertTrue(candidateValidationSource.indexOf('candidate.ok !== true') >= 0
+	&& candidateValidationSource.indexOf('children.length === 1') >= 0,
+	"a malformed shared candidate must be rejected before reuse");
 var baseSource = functionSource("cachedAuthoringTreeBase", "authoringTreeRequest");
 assertTrue(baseSource.indexOf('"frontend.base.sharedCandidateUsed"') >= 0,
 	"cold authoring must expose reuse of a validated shared candidate");
