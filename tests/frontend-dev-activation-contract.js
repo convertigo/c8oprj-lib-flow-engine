@@ -16,6 +16,7 @@ function functionSource(name, nextName) {
 var activate = functionSource("frontendActivatePreparedDev", "frontendStartDevActivationWatcher");
 var watcher = functionSource("frontendStartDevActivationWatcher", "frontendStartDependencyPreparation");
 var background = functionSource("frontendStartDevBackground", "frontendStartDev");
+var start = functionSource("frontendStartDev", "frontendDestroyJavaProcess");
 
 assertTrue(activate.indexOf("frontendActivatePreparedDev(request, blocks, info, entry)") >= 0 &&
 	activate.indexOf("frontendStartDevIdleWatcher(request, blocks, info, active)") >= 0,
@@ -25,5 +26,31 @@ assertTrue(watcher.indexOf("frontendStartDevActivationWatcher(request, blocks, i
 	"the asynchronous activation watcher must preserve the block catalog in its closure");
 assertTrue(background.indexOf("frontendStartDevActivationWatcher(request, blocks, info, entry)") >= 0,
 	"background dev startup must pass the block catalog to asynchronous activation");
+assertTrue(start.indexOf('frontendRunAction(request, blocks, "build")') < 0,
+	"dev startup must not run a blocking production catch-up before Vite");
+assertTrue(activate.indexOf('frontendScheduleProductionBuild(request, blocks, "startup-catch-up")') >
+	activate.indexOf("frontendNotifyStudioBrowser(request, browser)"),
+	"asynchronous activation must schedule production only after Vite and its viewer are ready");
+
+var startNow = functionSource("frontendStartDevNow", "frontendActivatePreparedDev");
+assertTrue(startNow.indexOf('frontendScheduleProductionBuild(request, blocks, "startup-catch-up")') >
+	startNow.indexOf("frontendNotifyStudioBrowser(request, browser)"),
+	"synchronous startup must schedule production only after Vite and its viewer are ready");
+
+var logPump = functionSource("frontendStartLogPump", "frontendFinalizeDevState");
+assertTrue(logPump.indexOf("/(?:stream|pipe) closed/i") >= 0 &&
+	logPump.indexOf("!process.isAlive()") >= 0 &&
+	logPump.indexOf("frontendStudioLog") >= 0,
+	"expected process stream closure must not be logged as a dev failure");
+
+var runAction = functionSource("frontendRunAction", "frontendActionSteps");
+assertTrue(runAction.indexOf("request.productionBuildFingerprint") >= 0 &&
+	runAction.indexOf("currentProductionFingerprint") >= 0,
+	"a background production build must retain the fingerprint it actually started from");
+
+var schedule = functionSource("frontendScheduleProductionBuild", "frontendStopDev");
+assertTrue(schedule.indexOf("stableRequest.productionBuildFingerprint = activeState.currentFingerprint") <
+	schedule.indexOf('frontendRunAction(stableRequest, blocks, "build")'),
+	"the asynchronous builder must capture its source fingerprint before generation starts");
 
 print("frontend-dev-activation-contract OK");

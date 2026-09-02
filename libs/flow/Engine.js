@@ -8288,12 +8288,18 @@
 		};
 		if (ok && action === "build") {
 			var productionInfo = frontbuilderSettingsForRequest(request);
-			var productionFingerprint = frontendProductionFingerprint(request, productionInfo);
+			var currentProductionFingerprint = frontendProductionFingerprint(request, productionInfo);
+			var builtProductionFingerprint = String(request.productionBuildFingerprint
+				|| currentProductionFingerprint);
 			var productionState = frontendProductionLifecycle().completed(
 				frontendReadProductionState(request, productionInfo),
-				productionFingerprint,
+				builtProductionFingerprint,
 				new Date().toISOString(),
 				frontendDurationMs(actionStartedAt)
+			);
+			productionState = frontendProductionLifecycle().observe(
+				productionState,
+				currentProductionFingerprint
 			);
 			frontendWriteProductionState(request, productionInfo, productionState);
 			response.details.production = productionState;
@@ -9360,7 +9366,12 @@
 						frontendStudioLog("[" + label + "] " + line);
 					}
 				} catch (e) {
-					frontendStudioLog("[" + label + "] log pump stopped: " + String(e), true);
+					var expected = /(?:stream|pipe) closed/i.test(String(e || ""));
+					try {
+						expected = expected || !process || !process.isAlive();
+					} catch (_ignoreLogPumpState) {
+					}
+					frontendStudioLog("[" + label + "] log pump stopped: " + String(e), !expected);
 				} finally {
 					try {
 						if (reader) {
@@ -9753,6 +9764,7 @@
 		var details = frontendDevDetails(entry);
 		details.steps = steps;
 		details.durationMs = frontendDurationMs(startedAt);
+		details.production = frontendScheduleProductionBuild(request, blocks, "startup-catch-up");
 		return {
 			ok: true,
 			title: "Svelte dev mode",
@@ -9789,11 +9801,13 @@
 		frontendStartDevIdleWatcher(request, blocks, info, active);
 		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
+		var production = frontendScheduleProductionBuild(request, blocks, "startup-catch-up");
 		frontendStudioLog("[Svelte dev] App dependencies are ready; Vite and the Studio viewer started automatically.");
 		return {
 			ok: true,
 			entry: active,
-			browser: browser
+			browser: browser,
+			production: production
 		};
 	}
 
@@ -10040,14 +10054,6 @@
 				details: frontendDevDetails(existing)
 			};
 		}
-		var productionState = frontendReadProductionState(request, info);
-		if (productionState.dirty === true && !runtimeState.frontendProductionBuilds[frontendDevKey(request, info)]) {
-			frontendStudioLog("[Svelte production] Catching up a production build left dirty by an interrupted dev stop.");
-			var catchUp = frontendRunAction(request, blocks, "build");
-			if (catchUp.ok === false) {
-				frontendStudioLog("[Svelte production] Catch-up failed; dev mode will still start and the previous production output remains available.", true);
-			}
-		}
 		if (!frontendDevWaitRequested(request)) {
 			return frontendStartDevBackground(request, blocks, info);
 		}
@@ -10139,8 +10145,8 @@
 
 	function frontendScheduleProductionBuild(request, blocks, reason) {
 		var lifecycle = frontendProductionLifecycle();
-		if (!lifecycle.shouldBuildOnStop(reason)) {
-			return { scheduled: false, reason: String(reason || ""), cause: "stop-reason" };
+		if (!lifecycle.shouldBuild(reason)) {
+			return { scheduled: false, reason: String(reason || ""), cause: "build-reason" };
 		}
 		var info = frontbuilderSettingsForRequest(request);
 		var key = frontendDevKey(request, info);
@@ -10168,7 +10174,8 @@
 					var stableInfo = frontbuilderSettingsForRequest(stableRequest);
 					var activeState = lifecycle.started(frontendReadProductionState(stableRequest, stableInfo), new Date().toISOString());
 					frontendWriteProductionState(stableRequest, stableInfo, activeState);
-					frontendStudioLog("[Svelte production] Building the dirty application after dev stop (" + reason + ").");
+					stableRequest.productionBuildFingerprint = activeState.currentFingerprint;
+					frontendStudioLog("[Svelte production] Building the dirty application in background (" + reason + ").");
 					var built = frontendRunAction(stableRequest, blocks, "build");
 					if (built.ok === false) {
 						var failed = lifecycle.failed(

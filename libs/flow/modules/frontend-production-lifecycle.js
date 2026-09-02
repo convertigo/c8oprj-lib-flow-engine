@@ -4,11 +4,16 @@
 	var FORMAT_VERSION = 1;
 	var BUILD_REASONS = {
 		manual: true,
-		"no-viewer-timeout": true
+		"no-viewer-timeout": true,
+		"startup-catch-up": true
 	};
 
-	function shouldBuildOnStop(reason) {
+	function shouldBuild(reason) {
 		return BUILD_REASONS[String(reason || "")] === true;
+	}
+
+	function shouldBuildOnStop(reason) {
+		return /^(?:manual|no-viewer-timeout)$/.test(String(reason || ""));
 	}
 
 	function normalize(state) {
@@ -80,6 +85,7 @@
 
 	return Object.freeze({
 		FORMAT_VERSION: FORMAT_VERSION,
+		shouldBuild: shouldBuild,
 		shouldBuildOnStop: shouldBuildOnStop,
 		normalize: normalize,
 		observe: observe,
