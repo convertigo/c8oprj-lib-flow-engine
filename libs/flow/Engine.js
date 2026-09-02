@@ -4587,12 +4587,12 @@
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		frontendPerformanceMark("frontend.base.cacheLookup");
 		if (!cached) {
-			var candidate = readRuntimeMapCache(cache,
-				authoringTreeCandidateCacheKey(baseRequest), fingerprint);
-			var candidateOrigin = candidate ? "runtime" : "";
+			var candidate = bridgeAuthoringTreeCandidate(baseRequest, fingerprint);
+			var candidateOrigin = candidate ? "bridge" : "";
 			if (!candidate) {
-				candidate = bridgeAuthoringTreeCandidate(baseRequest, fingerprint);
-				candidateOrigin = candidate ? "bridge" : "";
+				candidate = readRuntimeMapCache(cache,
+					authoringTreeCandidateCacheKey(baseRequest), fingerprint);
+				candidateOrigin = candidate ? "runtime" : "";
 			}
 			frontendPerformanceMark(candidate
 				? "frontend.base.sharedCandidateFound"
