@@ -4263,11 +4263,15 @@
 	}
 
 	function frontendBlocksForSettings(name, settings) {
-		return frontendCatalogService().frontendBlocksForSettings(name, settings, frontendCatalogServiceEnv());
+		var result = frontendCatalogService().frontendBlocksForSettings(name, settings, frontendCatalogServiceEnv());
+		frontendPerformanceMark("frontend.catalog.blocks");
+		return result;
 	}
 
 	function frontendCreateDescriptorsForSettings(name, settings) {
-		return frontendCatalogService().frontendCreateDescriptorsForSettings(name, settings, frontendCatalogServiceEnv());
+		var result = frontendCatalogService().frontendCreateDescriptorsForSettings(name, settings, frontendCatalogServiceEnv());
+		frontendPerformanceMark("frontend.catalog.createDescriptors");
+		return result;
 	}
 
 	function frontendBlocksForConfig(config) {
@@ -4293,8 +4297,11 @@
 	function frontendCatalogFingerprintForRequest(request) {
 		try {
 			var engine = projectEngineDefinitionForRequest(request);
-			return frontendCatalogService().fingerprintForConfig(engine.config || {}, frontendCatalogServiceEnv());
+			var fingerprint = frontendCatalogService().fingerprintForConfig(engine.config || {}, frontendCatalogServiceEnv());
+			frontendPerformanceMark("frontend.catalog.fingerprint");
+			return fingerprint;
 		} catch (e) {
+			frontendPerformanceMark("frontend.catalog.fingerprintError");
 			return "";
 		}
 	}
@@ -4868,6 +4875,7 @@
 		var source = request.source !== undefined && request.source !== null
 			? String(request.source)
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
+		frontendPerformanceMark("frontend.document.source");
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
 		var projectName = projectNameForRoot(projectRoot) || currentProjectName(request);
@@ -4887,24 +4895,34 @@
 			String(request.sourceTree === true)
 		].join("\n");
 		var fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot);
+		frontendPerformanceMark("frontend.document.fingerprint");
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
+		frontendPerformanceMark("frontend.document.memoryCache");
 		if (cached) {
 			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
-			return enrichFrontendBindingSources(cached, request, projectRoot);
+			var enrichedCached = enrichFrontendBindingSources(cached, request, projectRoot);
+			frontendPerformanceMark("frontend.document.enrich");
+			return enrichedCached;
 		}
 		var persistent = persistentCacheEligible ? readPersistentFrontendDocument(key, fingerprint) : null;
+		frontendPerformanceMark("frontend.document.persistentCache");
 		if (persistent) {
 			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
 			var cachedPersistent = writeRuntimeMapCache(cache, key, fingerprint, persistent, "Svelte front documents");
-			return enrichFrontendBindingSources(cachedPersistent, request, projectRoot);
+			var enrichedPersistent = enrichFrontendBindingSources(cachedPersistent, request, projectRoot);
+			frontendPerformanceMark("frontend.document.enrich");
+			return enrichedPersistent;
 		}
 		var normalizedSourcePath = String(sourceFile.getCanonicalPath()).replace(/\\/g, "/");
 		var local = request.sourceTree === true || normalizedSourcePath.indexOf("/src/routes/") >= 0
 			? null
 			: describeFrontAstDocument(source, request, sourceFile, projectRoot);
+		frontendPerformanceMark("frontend.document.localProjection");
 		if (local) {
 			var cachedLocal = writeRuntimeMapCache(cache, key, fingerprint, local, "Svelte front documents");
-			return enrichFrontendBindingSources(cachedLocal, request, projectRoot);
+			var enrichedLocal = enrichFrontendBindingSources(cachedLocal, request, projectRoot);
+			frontendPerformanceMark("frontend.document.enrich");
+			return enrichedLocal;
 		}
 		var sourceTemp = File.createTempFile("c8o-front-document-source-", ".flow.svelte");
 		var draftsTemp = File.createTempFile("c8o-front-document-drafts-", ".json");
@@ -4942,7 +4960,9 @@
 			if (request.sourceTree === true) {
 				cliArgs.push("--source-tree");
 			}
+			frontendPerformanceMark("frontend.document.providerPrepare");
 			var result = frontendDescribeDocument(resourceRoot, cliArgs);
+			frontendPerformanceMark("frontend.document.provider");
 			if (!result || !result.model) {
 				var error = new Error("Svelte front document did not return a valid model.");
 				error.code = "FRONTEND_DOCUMENT_INVALID_RESULT";
@@ -4953,12 +4973,16 @@
 				// The first provider request may install the frontbuilder and update package metadata.
 				// Store the document under the post-install fingerprint so the next Engine runtime can reuse it.
 				fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot);
+				frontendPerformanceMark("frontend.document.postInstallFingerprint");
 			}
 			var cachedResult = writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents");
 			if (persistentCacheEligible) {
 				writePersistentFrontendDocument(key, fingerprint, cachedResult);
 			}
-			return enrichFrontendBindingSources(cachedResult, request, projectRoot);
+			frontendPerformanceMark("frontend.document.cacheStore");
+			var enrichedResult = enrichFrontendBindingSources(cachedResult, request, projectRoot);
+			frontendPerformanceMark("frontend.document.enrich");
+			return enrichedResult;
 		} finally {
 			try {
 				sourceTemp["delete"]();
@@ -8000,6 +8024,13 @@
 
 	function frontendDurationMs(startedAt) {
 		return Math.max(0, Math.round(Number(JavaSystem.nanoTime() - startedAt) / 1000000));
+	}
+
+	function frontendPerformanceMark(phase) {
+		try {
+			Packages.com.twinsoft.convertigo.engine.flow.FlowStudioSupport.performanceProfileMark(String(phase || ""));
+		} catch (ignored) {
+		}
 	}
 
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
