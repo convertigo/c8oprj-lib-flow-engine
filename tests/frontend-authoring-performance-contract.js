@@ -46,7 +46,9 @@ assertTrue(iconServiceSource.indexOf("sharedIconCacheRoot") >= 0
 	"generated icon caches must survive project redeployment through the workspace cache");
 assertTrue(source.indexOf('frontendPerformanceDuration("frontend.provider.start.dependencies"') >= 0
 	&& source.indexOf('frontendPerformanceDuration("frontend.provider.start.process"') >= 0
-	&& source.indexOf('frontendPerformanceDuration("frontend.provider.request.response"') >= 0,
+	&& source.indexOf('frontendPerformanceDuration("frontend.provider.request.response"') >= 0
+	&& source.indexOf('"__C8O_FRONT_DOCUMENT_READY__"') >= 0
+	&& source.indexOf('"__C8O_FRONT_DOCUMENT_PROFILE__"') >= 0,
 	"cold provider startup and request phases must remain observable");
 
 var candidateSource = functionSource("seedAuthoringTreeCandidate", "cachedAuthoringTreeBase");

@@ -7711,6 +7711,7 @@
 			frontendPerformanceDuration("frontend.provider.request.write", JavaSystem.nanoTime() - phaseStartedAt);
 			var deadline = new Date().getTime() + 30000;
 			var responseStartedAt = JavaSystem.nanoTime();
+			var readyAt = 0;
 			while (new Date().getTime() < deadline) {
 				if (server.reader.ready()) {
 					var line = server.reader.readLine();
@@ -7718,6 +7719,32 @@
 						break;
 					}
 					line = String(line);
+					if (line.indexOf("__C8O_FRONT_DOCUMENT_READY__") === 0) {
+						readyAt = JavaSystem.nanoTime();
+						frontendPerformanceDuration("frontend.provider.request.startup", readyAt - responseStartedAt);
+						try {
+							var ready = JSON.parse(line.substring("__C8O_FRONT_DOCUMENT_READY__".length));
+							frontendPerformanceDuration("frontend.provider.node.startup",
+								Number(ready.uptimeMs || 0) * 1000000);
+						} catch (ignoredReady) {
+						}
+						continue;
+					}
+					if (line.indexOf("__C8O_FRONT_DOCUMENT_PROFILE__") === 0) {
+						try {
+							var providerProfile = JSON.parse(line.substring("__C8O_FRONT_DOCUMENT_PROFILE__".length));
+							if (String(providerProfile.id || "") === id) {
+								var providerPhases = providerProfile.phases || {};
+								["parseArgsMs", "readInputsMs", "loadDocumentMs", "describeDocumentMs", "totalMs"]
+									.forEach(function (name) {
+										frontendPerformanceDuration("frontend.provider.node." + name.replace(/Ms$/, ""),
+											Number(providerPhases[name] || 0) * 1000000);
+									});
+							}
+						} catch (ignoredProfile) {
+						}
+						continue;
+					}
 					if (line.indexOf("__C8O_FRONT_DOCUMENT__") !== 0) {
 						frontendStudioLog("[Svelte front document server] " + line);
 						continue;
@@ -7727,6 +7754,9 @@
 						continue;
 					}
 					frontendPerformanceDuration("frontend.provider.request.response", JavaSystem.nanoTime() - responseStartedAt);
+					if (readyAt) {
+						frontendPerformanceDuration("frontend.provider.request.afterReady", JavaSystem.nanoTime() - readyAt);
+					}
 					if (response.error) {
 						var responseError = new Error(String(response.error));
 						responseError.frontendDocumentResponse = true;
