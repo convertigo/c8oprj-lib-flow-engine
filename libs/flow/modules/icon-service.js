@@ -236,6 +236,7 @@
 			descriptor.iconFile16 = String(png16.getAbsolutePath());
 			descriptor.iconFile = descriptor.iconFile || descriptor.iconFile16;
 		}
+		descriptor.iconFile = descriptor.iconFile || descriptor.iconSvg;
 	}
 
 	function addUrlIconCache(block, descriptor, icon, env) {

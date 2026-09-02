@@ -232,14 +232,21 @@
 
 	function virtualNodeFromPlain(name, kind, type, path, summary, definition, info, icon) {
 		info = info || {};
+		performanceMark("frontend.virtual.beforeIcon");
 		if (icon) {
 			var iconInfo = virtualIcon(icon);
 			Object.keys(iconInfo).forEach(function (key) {
 				info[key] = iconInfo[key];
 			});
 		}
-		return virtualNode(name, kind, type, path, summary,
-			compactPlain(definition || {}), compactPlain(info), null);
+		performanceMark("frontend.virtual.icon");
+		var compactDefinition = compactPlain(definition || {});
+		performanceMark("frontend.virtual.definition");
+		var compactInfo = compactPlain(info);
+		performanceMark("frontend.virtual.info");
+		var node = virtualNode(name, kind, type, path, summary, compactDefinition, compactInfo, null);
+		performanceMark("frontend.virtual.node");
+		return node;
 	}
 
 	function addSchemaFields(parent, schema, path, name) {
