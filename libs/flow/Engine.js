@@ -4872,10 +4872,11 @@
 		request = request || {};
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
 		var sourceFile = frontendRequestSourceFile(request, request.source === undefined || request.source === null);
+		frontendPerformanceMark("frontend.document.sourceFile");
 		var source = request.source !== undefined && request.source !== null
 			? String(request.source)
 			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
-		frontendPerformanceMark("frontend.document.source");
+		frontendPerformanceMark("frontend.document.sourceRead");
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
 		var projectName = projectNameForRoot(projectRoot) || currentProjectName(request);
