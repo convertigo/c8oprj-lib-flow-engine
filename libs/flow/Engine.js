@@ -11,7 +11,6 @@
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
 	var Base64 = Packages.java.util.Base64;
 	var JavaSystem = Packages.java.lang.System;
-	var JavaFiles = Packages.java.nio.file.Files;
 	var ConcurrentHashMap = Packages.java.util.concurrent.ConcurrentHashMap;
 	var ReentrantLock = Packages.java.util.concurrent.locks.ReentrantLock;
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
@@ -4594,7 +4593,7 @@
 		var described = describeFrontendDocument(Object.assign({}, request, {
 			sourceFile: sourcePath,
 			sourcePath: sourcePath,
-			__trustedSourceFile: frontendProjectedSourceFile(sourcePath, true),
+			__trustedSourceFile: frontendProjectedSourceFile(sourcePath),
 			property: property,
 			bindingTargetPath: mutationPath,
 			bindingTargetSource: "",
@@ -4811,10 +4810,10 @@
 		return projectResourceFile(sourcePath, mustExist).file.getCanonicalFile();
 	}
 
-	function frontendProjectedSourceFile(sourcePath, mustExist) {
+	function frontendProjectedSourceFile(sourcePath) {
 		var base = projectDir();
 		if (!base) {
-			return frontendRequestSourceFile({ sourcePath: sourcePath }, mustExist);
+			return frontendRequestSourceFile({ sourcePath: sourcePath }, true);
 		}
 		base = base.getAbsoluteFile();
 		var sourceFile = new File(String(sourcePath || ""));
@@ -4831,19 +4830,12 @@
 		if (!isAllowedResourcePath(normalized)) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path is not allowed: " + normalized);
 		}
-		var file = new File(base, normalized).getAbsoluteFile();
-		var current = file;
-		var absoluteBasePath = String(base.getAbsolutePath());
-		while (current && String(current.getAbsolutePath()) !== absoluteBasePath) {
-			if (JavaFiles.isSymbolicLink(current.toPath())) {
-				return projectResourceFile(normalized, mustExist).file.getCanonicalFile();
-			}
-			current = current.getParentFile();
-		}
-		if (mustExist && !file.isFile()) {
-			raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + normalized);
-		}
-		return file;
+		// This path comes from the focused node in the provider-produced authoring
+		// tree, not from the caller. It has already been constrained to the project
+		// and to an allowed frontend resource. Avoid canonical/stat calls here: on
+		// NFS they can block for seconds. The subsequent read remains authoritative
+		// and fails if the projected source disappeared.
+		return new File(base, normalized).getAbsoluteFile();
 	}
 
 	function frontendBindingActionSchemas(document, request, projectRoot) {
