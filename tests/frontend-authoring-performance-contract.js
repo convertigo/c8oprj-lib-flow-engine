@@ -36,6 +36,9 @@ var treeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFile
 assertTrue(treeServiceSource.indexOf('measureFrontendAuthoring("propertyDefinitions"') >= 0
 	&& treeServiceSource.indexOf('measureFrontendAuthoring("serialize"') >= 0,
 	"frontend authoring projection must expose definition and serialization costs");
+assertTrue(treeServiceSource.indexOf('Object.defineProperty(definitions, "__flowCompactJson"') >= 0
+	&& treeServiceSource.indexOf('key === "propertyDefinitions"') >= 0,
+	"repeated authoring property contracts must reuse their compact representation");
 
 var candidateSource = functionSource("seedAuthoringTreeCandidate", "cachedAuthoringTreeBase");
 assertTrue(candidateSource.indexOf("authoringTreeBaseFromEngineTree") >= 0,

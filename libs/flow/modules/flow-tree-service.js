@@ -264,9 +264,31 @@
 			});
 		}
 		var compactDefinition = compactPlain(definition || {});
-		var compactInfo = compactPlain(info);
+		var compactInfo = compactFrontendAuthoringInfo(info);
 		var node = virtualNode(name, kind, type, path, summary, compactDefinition, compactInfo, null);
 		return node;
+	}
+
+	function compactFrontendAuthoringInfo(info) {
+		var definitions = info && info.propertyDefinitions;
+		var compactDefinitions = definitions && definitions.__flowCompactJson;
+		if (typeof compactDefinitions !== "string") {
+			return compactPlain(info);
+		}
+		try {
+			var parts = [];
+			Object.keys(info).forEach(function (key) {
+				var value = key === "propertyDefinitions"
+					? compactDefinitions
+					: JSON.stringify(info[key]);
+				if (value !== undefined) {
+					parts.push(JSON.stringify(key) + ":" + value);
+				}
+			});
+			return "{" + parts.join(",") + "}";
+		} catch (e) {
+			return compactPlain(info);
+		}
 	}
 
 	function addSchemaFields(parent, schema, path, name) {
@@ -2559,6 +2581,13 @@
 			}
 		});
 		definitions = frontendSourceTargetPropertyDefinitions(definitions);
+		try {
+			Object.defineProperty(definitions, "__flowCompactJson", {
+				value: compactPlain(definitions),
+				enumerable: false
+			});
+		} catch (ignored) {
+		}
 		frontendAuthoringPropertyDefinitionsCache[cacheKey] = definitions;
 		return definitions;
 	}
