@@ -3846,6 +3846,9 @@
 			canonicalPath: canonicalPath,
 			engineDir: engineDir,
 			projectDir: projectDir,
+			sharedIconCacheRoot: new File(
+				Packages.com.twinsoft.convertigo.engine.Engine.USER_WORKSPACE_PATH,
+				"cache/flow-icons-v1"),
 			sha256Hex: sha256Hex
 		};
 	}

@@ -39,6 +39,11 @@ assertTrue(treeServiceSource.indexOf('measureFrontendAuthoring("propertyDefiniti
 assertTrue(treeServiceSource.indexOf('Object.defineProperty(definitions, "__flowCompactJson"') >= 0
 	&& treeServiceSource.indexOf('key === "propertyDefinitions"') >= 0,
 	"repeated authoring property contracts must reuse their compact representation");
+var iconServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/icon-service.js"), "UTF-8"));
+assertTrue(iconServiceSource.indexOf("sharedIconCacheRoot") >= 0
+	&& iconServiceSource.indexOf("copyCachedIconFiles(sharedBase, base") >= 0,
+	"generated icon caches must survive project redeployment through the workspace cache");
 
 var candidateSource = functionSource("seedAuthoringTreeCandidate", "cachedAuthoringTreeBase");
 assertTrue(candidateSource.indexOf("authoringTreeBaseFromEngineTree") >= 0,

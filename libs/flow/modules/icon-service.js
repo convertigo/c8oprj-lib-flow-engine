@@ -24,6 +24,47 @@
 		return provider ? new env.File(dir, provider) : dir;
 	}
 
+	function sharedIconCacheDir(family, provider, env) {
+		if (!env.sharedIconCacheRoot) {
+			return null;
+		}
+		var dir = new env.File(env.sharedIconCacheRoot, family);
+		return provider ? new env.File(dir, provider) : dir;
+	}
+
+	function cachedIconFiles(base, extension, env) {
+		if (!base) {
+			return [];
+		}
+		var files = [
+			new env.File(String(base.getAbsolutePath()) + ".svg"),
+			new env.File(String(base.getAbsolutePath()) + "_16x16.png"),
+			new env.File(String(base.getAbsolutePath()) + "_32x32.png")
+		];
+		if (extension && extension !== "svg") {
+			files.push(new env.File(String(base.getAbsolutePath()) + "." + extension));
+		}
+		return files;
+	}
+
+	function copyCachedIconFiles(sourceBase, targetBase, extension, env) {
+		if (!sourceBase || !targetBase) {
+			return;
+		}
+		var sources = cachedIconFiles(sourceBase, extension, env);
+		var targets = cachedIconFiles(targetBase, extension, env);
+		sources.forEach(function (source, index) {
+			var target = targets[index];
+			if (source.isFile() && !target.isFile()) {
+				try {
+					target.getParentFile().mkdirs();
+					env.FileUtils.copyFile(source, target);
+				} catch (ignored) {
+				}
+			}
+		});
+	}
+
 	function safeIconName(name) {
 		return String(name || "").replace(/[^A-Za-z0-9_.-]/g, "_");
 	}
@@ -181,21 +222,29 @@
 		var provider = safeIconName(parts[0]);
 		var name = safeIconName(parts[1]);
 		var base = new env.File(iconCacheDir(block, "iconify", provider, env), name);
+		var sharedDir = sharedIconCacheDir("iconify", provider, env);
+		var sharedBase = sharedDir ? new env.File(sharedDir, name) : null;
+		copyCachedIconFiles(sharedBase, base, "svg", env);
 		var svg = new env.File(String(base.getAbsolutePath()) + ".svg");
 		if (!svg.isFile()) {
 			downloadToCache("https://api.iconify.design/" + provider + "/" + name + ".svg?color=%2314a7cf", svg, env);
 		}
 		descriptor.iconify = provider + ":" + name;
 		exposeCachedIconFiles(descriptor, base, "svg", env);
+		copyCachedIconFiles(base, sharedBase, "svg", env);
 	}
 
 	function addUrlIconCache(block, descriptor, icon, env) {
 		var ext = urlExtension(icon);
 		var base = new env.File(iconCacheDir(block, "url", null, env), env.sha256Hex(icon));
+		var sharedDir = sharedIconCacheDir("url", null, env);
+		var sharedBase = sharedDir ? new env.File(sharedDir, env.sha256Hex(icon)) : null;
+		copyCachedIconFiles(sharedBase, base, ext, env);
 		var file = new env.File(String(base.getAbsolutePath()) + "." + ext);
 		downloadToCache(icon, file, env);
 		descriptor.iconUrl = icon;
 		exposeCachedIconFiles(descriptor, base, ext, env);
+		copyCachedIconFiles(base, sharedBase, ext, env);
 	}
 
 	function exposeLocalIcon(descriptor, iconFile, env) {
