@@ -7735,11 +7735,13 @@
 							var providerProfile = JSON.parse(line.substring("__C8O_FRONT_DOCUMENT_PROFILE__".length));
 							if (String(providerProfile.id || "") === id) {
 								var providerPhases = providerProfile.phases || {};
-								["parseArgsMs", "readInputsMs", "loadDocumentMs", "describeDocumentMs", "totalMs"]
-									.forEach(function (name) {
+								Object.keys(providerPhases).forEach(function (name) {
+									var duration = Number(providerPhases[name]);
+									if (/^[A-Za-z][A-Za-z0-9.]*Ms$/.test(name) && isFinite(duration) && duration >= 0) {
 										frontendPerformanceDuration("frontend.provider.node." + name.replace(/Ms$/, ""),
-											Number(providerPhases[name] || 0) * 1000000);
-									});
+											duration * 1000000);
+									}
+								});
 							}
 						} catch (ignoredProfile) {
 						}
