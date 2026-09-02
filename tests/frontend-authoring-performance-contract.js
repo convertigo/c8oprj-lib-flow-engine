@@ -31,6 +31,9 @@ assertTrue(catalogSource.indexOf('frontendPerformanceMark("frontend.catalog.bloc
 var candidateSource = functionSource("seedAuthoringTreeCandidate", "cachedAuthoringTreeBase");
 assertTrue(candidateSource.indexOf("authoringTreeBaseFromEngineTree") >= 0,
 	"engine describeTree must retain a bounded authoring base candidate");
+var bridgeCandidateSource = functionSource("bridgeAuthoringTreeCandidate", "cachedAuthoringTreeBase");
+assertTrue(bridgeCandidateSource.indexOf("__flowBridgeDescribeTreeSnapshot") >= 0,
+	"authoring runtimes must accept the opaque describeTree snapshot shared by the bridge");
 var baseSource = functionSource("cachedAuthoringTreeBase", "authoringTreeRequest");
 assertTrue(baseSource.indexOf('"frontend.base.sharedCandidateMatch"') >= 0,
 	"cold authoring profiling must prove candidate equality before enabling reuse");

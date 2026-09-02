@@ -4532,6 +4532,7 @@
 		var frontends = frontendBindingTreeNode(tree, function (node) {
 			return String(node && node.path || "") === "frontends";
 		});
+		var fingerprints = {};
 		(frontends && frontends.children || []).forEach(function (builderNode) {
 			if (!builderNode || String(builderNode.kind || "") !== "frontendBuilder") {
 				return;
@@ -4550,11 +4551,27 @@
 			var fingerprintRequest = Object.assign({}, candidateRequest, { target: "engine" });
 			var candidate = flowTreeService().authoringTreeBaseFromEngineTree(
 				candidateRequest, tree, flowTreeServiceEnv());
+			var fingerprint = describeTreeFingerprint(fingerprintRequest);
+			fingerprints[String(builderNode.type || "")] = fingerprint;
 			writeRuntimeMapCache(runtimeState.caches.treeSnapshots,
 				authoringTreeCandidateCacheKey(candidateRequest),
-				describeTreeFingerprint(fingerprintRequest), candidate,
+				fingerprint, candidate,
 				"Flow authoring tree snapshot candidates");
 		});
+		if (Object.keys(fingerprints).length) {
+			tree.__flowAuthoringSnapshotFingerprints = fingerprints;
+		}
+	}
+
+	function bridgeAuthoringTreeCandidate(request, fingerprint) {
+		var snapshot = request && request.__flowBridgeDescribeTreeSnapshot;
+		var fingerprints = snapshot && snapshot.__flowAuthoringSnapshotFingerprints;
+		var builder = String(request && request.builder || "");
+		if (!snapshot || !fingerprints || String(fingerprints[builder] || "") !== String(fingerprint || "")) {
+			return null;
+		}
+		return flowTreeService().authoringTreeBaseFromEngineTree(
+			request, snapshot, flowTreeServiceEnv());
 	}
 
 	function cachedAuthoringTreeBase(request, blocks) {
@@ -4572,9 +4589,17 @@
 		if (!cached) {
 			var candidate = readRuntimeMapCache(cache,
 				authoringTreeCandidateCacheKey(baseRequest), fingerprint);
+			var candidateOrigin = candidate ? "runtime" : "";
+			if (!candidate) {
+				candidate = bridgeAuthoringTreeCandidate(baseRequest, fingerprint);
+				candidateOrigin = candidate ? "bridge" : "";
+			}
 			frontendPerformanceMark(candidate
 				? "frontend.base.sharedCandidateFound"
 				: "frontend.base.sharedCandidateMissing");
+			if (candidateOrigin) {
+				frontendPerformanceMark("frontend.base.sharedCandidate." + candidateOrigin);
+			}
 			var generated = flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
 			frontendPerformanceMark("frontend.base.generate");
 			if (candidate) {
