@@ -4824,18 +4824,17 @@
 			return frontendRequestSourceFile({ sourcePath: sourcePath }, true);
 		}
 		base = base.getAbsoluteFile();
+		var projectPath = base.toPath().normalize();
 		var sourceFile = new File(String(sourcePath || ""));
-		var basePath = String(base.toPath().normalize());
-		var sourceText = String(sourcePath || "");
-		if (sourceFile.isAbsolute()) {
-			var absolutePath = String(sourceFile.toPath().normalize());
-			if (absolutePath !== basePath && absolutePath.indexOf(basePath + File.separator) !== 0) {
-				raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path escapes the project: " + sourceText);
-			}
-			sourceText = absolutePath.substring(basePath.length + 1).replace(/\\/g, "/");
+		var filePath = (sourceFile.isAbsolute() ? sourceFile.toPath() : projectPath.resolve(String(sourcePath || "")))
+				.toAbsolutePath().normalize();
+		if (!filePath.startsWith(projectPath)) {
+			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path escapes the project: " + sourcePath);
 		}
-		var normalized = normalizeResourcePath(sourceText);
-		if (!isAllowedResourcePath(normalized)) {
+		var normalized = String(projectPath.relativize(filePath)).replace(/\\/g, "/");
+		var allowed = normalized.indexOf("libs/flow/frontbuilder/") === 0
+				&& (normalized.endsWith(".flow.svelte") || normalized.endsWith(".flow.css"));
+		if (!allowed) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path is not allowed: " + normalized);
 		}
 		// This path comes from the focused node in the provider-produced authoring
@@ -4843,7 +4842,7 @@
 		// and to an allowed frontend resource. Avoid canonical/stat calls here: on
 		// NFS they can block for seconds. The subsequent read remains authoritative
 		// and fails if the projected source disappeared.
-		return new File(base, normalized).getAbsoluteFile();
+		return filePath.toFile();
 	}
 
 	function frontendBindingActionSchemas(document, request, projectRoot) {
