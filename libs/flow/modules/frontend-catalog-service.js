@@ -2567,6 +2567,7 @@
 		options = options || {};
 		var requestedProperty = String(options.property || "");
 		var requestedSourceId = String(options.sourceId || "");
+		var requestedTargetPath = String(options.bindingTargetPath || "");
 		function sourceId(candidate) {
 			var source = candidate && (candidate.source || candidate) || {};
 			return String(candidate && candidate.id || source.actionId || source.scopeId || "");
@@ -2599,6 +2600,9 @@
 		deriveStateActionSchemas(document, actionSchemas, iterationSchemas, iterationCollectionSchemas);
 		resolveIterationSchemas();
 		walkDocument(document, function (node) {
+			if (requestedTargetPath && String(node.sourceMutationPath || node.frontendModelPath || "") !== requestedTargetPath) {
+				return;
+			}
 			var definitions = node.propertyDefinitions || {};
 			Object.keys(definitions).forEach(function (name) {
 				if (requestedProperty && name !== requestedProperty) {

@@ -9,11 +9,20 @@ function assertTrue(value, message) {
 var cloneCalls = 0;
 var original = {
 	tree: {
+		sourceMutationPath: "frontAst.target",
 		propertyDefinitions: {
 			text: {
 				bindingSources: [{ id: "load", source: { category: "action", actionId: "load" } }]
 			}
-		}
+		},
+		children: [{
+			sourceMutationPath: "frontAst.other",
+			propertyDefinitions: {
+				text: {
+					bindingSources: [{ id: "load", source: { category: "action", actionId: "load" } }]
+				}
+			}
+		}]
 	}
 };
 var enriched = service.enrichBindingSources(original, {
@@ -29,12 +38,14 @@ var enriched = service.enrichBindingSources(original, {
 	schemaPaths: function () { return ["name"]; },
 	schemaSimpleType: function () { return "string"; },
 	schemaAtPath: function () { return { type: "string" }; }
-}, { property: "text" });
+}, { property: "text", bindingTargetPath: "frontAst.target" });
 
 assertTrue(cloneCalls === 1, "Binding enrichment did not use the supplied JSON clone");
 assertTrue(original.tree.propertyDefinitions.text.bindingSources[0].paths === undefined,
 	"Binding enrichment mutated the cached source document");
 assertTrue(enriched.tree.propertyDefinitions.text.bindingSources[0].paths[0].path === "name",
 	"Binding enrichment did not preserve the enriched response");
+assertTrue(enriched.tree.children[0].propertyDefinitions.text.bindingSources[0].paths === undefined,
+	"Targeted binding enrichment processed an unrelated frontend node");
 
 print("frontend-binding-clone OK");

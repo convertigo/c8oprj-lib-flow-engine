@@ -4927,7 +4927,8 @@
 				schemaAtPath: schemaAtPath
 			}, {
 				property: request && request.property || "",
-				sourceId: request && request.sourceId || ""
+				sourceId: request && request.sourceId || "",
+				bindingTargetPath: request && request.bindingTargetPath || ""
 			});
 		frontendPerformanceMark("frontend.enrich.catalog");
 		return enriched;
