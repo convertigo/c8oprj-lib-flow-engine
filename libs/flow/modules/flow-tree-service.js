@@ -422,16 +422,14 @@
 		if (!root || !path) {
 			return null;
 		}
+		var rootPath = root.toPath().toAbsolutePath().normalize();
 		var file = new File(path);
-		if (!file.isAbsolute()) {
-			file = new File(root, path);
-		}
-		var rootPath = String(root.getCanonicalPath());
-		var filePath = String(file.getCanonicalPath());
-		if (filePath !== rootPath && filePath.indexOf(rootPath + File.separator) !== 0) {
+		var filePath = (file.isAbsolute() ? file.toPath() : rootPath.resolve(path))
+				.toAbsolutePath().normalize();
+		if (!filePath.startsWith(rootPath)) {
 			return null;
 		}
-		return file;
+		return filePath.toFile();
 	}
 
 	function frontendDraftForFile(request, file) {
@@ -441,6 +439,14 @@
 		var drafts = request && request.frontendSourceDrafts || {};
 		if (!drafts || typeof drafts !== "object") {
 			return null;
+		}
+		var keys = Object.keys(drafts);
+		if (!keys.length) {
+			return null;
+		}
+		var absoluteKey = String(file.toPath().toAbsolutePath().normalize());
+		if (Object.prototype.hasOwnProperty.call(drafts, absoluteKey)) {
+			return String(drafts[absoluteKey]);
 		}
 		var key = String(file.getCanonicalPath());
 		if (Object.prototype.hasOwnProperty.call(drafts, key)) {
