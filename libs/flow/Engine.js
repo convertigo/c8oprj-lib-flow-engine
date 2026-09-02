@@ -1377,12 +1377,15 @@
 	}
 
 	function resourceRelativePath(base, file) {
-		var basePath = canonicalPath(base);
-		var filePath = canonicalPath(file);
-		if (filePath.indexOf(basePath + File.separator) !== 0) {
+		if (!base || !file) {
 			return "";
 		}
-		return filePath.substring(basePath.length + 1).replace(/\\/g, "/");
+		var basePath = base.toPath().toAbsolutePath().normalize();
+		var filePath = file.toPath().toAbsolutePath().normalize();
+		if (!filePath.startsWith(basePath) || filePath.equals(basePath)) {
+			return "";
+		}
+		return String(basePath.relativize(filePath)).replace(/\\/g, "/");
 	}
 
 	function projectResourceFile(path, mustExist) {

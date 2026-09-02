@@ -448,10 +448,6 @@
 		if (Object.prototype.hasOwnProperty.call(drafts, absoluteKey)) {
 			return String(drafts[absoluteKey]);
 		}
-		var key = String(file.getCanonicalPath());
-		if (Object.prototype.hasOwnProperty.call(drafts, key)) {
-			return String(drafts[key]);
-		}
 		return null;
 	}
 
