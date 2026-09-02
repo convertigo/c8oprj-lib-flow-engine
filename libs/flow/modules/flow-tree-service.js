@@ -58,6 +58,8 @@
 		var frontendCreateDescriptorsForConfig = env.frontendCreateDescriptorsForConfig || function () { return []; };
 		var describeFrontendDocument = env.describeFrontendDocument || function () { return null; };
 		var performanceMark = env.performanceMark || function () {};
+		var performanceDuration = env.performanceDuration || function () {};
+		var nanoTime = env.nanoTime || function () { return 0; };
 		var raise = env.raise;
 		var intOption = env.intOption;
 		var resolvedTypes;
@@ -71,6 +73,27 @@
 		var frontendNodeSourceFiles = {};
 		var frontendFlowSvelteRoots = {};
 		var virtualIcons = {};
+		var frontendAuthoringDurations = {};
+		var frontendAuthoringDepth = 0;
+
+	function measureFrontendAuthoring(phase, callback) {
+		var startedAt = nanoTime();
+		try {
+			return callback();
+		} finally {
+			if (startedAt) {
+				frontendAuthoringDurations[phase] = (frontendAuthoringDurations[phase] || 0)
+					+ Number(nanoTime() - startedAt);
+			}
+		}
+	}
+
+	function flushFrontendAuthoringDurations() {
+		Object.keys(frontendAuthoringDurations).forEach(function (phase) {
+			performanceDuration("frontend.model.authoring." + phase, frontendAuthoringDurations[phase]);
+		});
+		frontendAuthoringDurations = {};
+	}
 
 	function flowTypes() {
 		if (!resolvedTypes) {
@@ -2229,37 +2252,73 @@
 	}
 
 	function addFrontendAuthoringNode(parent, node, path, modelFile) {
+		var rootProjection = frontendAuthoringDepth === 0;
+		if (rootProjection) {
+			frontendAuthoringDurations = {};
+		}
+		frontendAuthoringDepth++;
+		try {
+			return addFrontendAuthoringNodeMeasured(parent, node, path, modelFile);
+		} finally {
+			frontendAuthoringDepth--;
+			if (rootProjection) {
+				flushFrontendAuthoringDurations();
+			}
+		}
+	}
+
+	function addFrontendAuthoringNodeMeasured(parent, node, path, modelFile) {
 		node = node || {};
-		var sourceFile = frontendNodeSourceFile(node, modelFile);
-		normalizeFrontendFlowSvelteRootNode(node, sourceFile);
-		normalizeFrontendComponentInstanceNode(node);
-		normalizeFrontendRouteSourceNode(node, sourceFile);
+		var sourceFile = measureFrontendAuthoring("sourceFile", function () {
+			return frontendNodeSourceFile(node, modelFile);
+		});
+		measureFrontendAuthoring("normalize", function () {
+			normalizeFrontendFlowSvelteRootNode(node, sourceFile);
+			normalizeFrontendComponentInstanceNode(node);
+			normalizeFrontendRouteSourceNode(node, sourceFile);
+		});
 		var mutationPath = String(node.sourceMutationPath || "");
-		var insertMutationPath = frontendNodeInsertMutationPath(node);
-		var definitions = frontendAuthoringPropertyDefinitions(node);
-		var order = frontendAuthoringPropertyOrder(node);
-		var info = insertMutationPath
-			? frontendContainerInfo(sourceFile, mutationPath, insertMutationPath, definitions, order)
-			: frontendItemInfo(sourceFile, mutationPath, definitions, order);
-		applyFrontendAuthoringSourcePath(info, node);
-		applyFrontendAuthoringInsertTarget(info, node);
-		var definition = frontendAuthoringDefinition(node);
-		var traits = frontendAuthoringTraits(node);
-		var slots = frontendAuthoringSlots(node);
-		if (traits.length) {
-			info.traits = traits;
-			definition.traits = traits;
-		}
-		if (Object.keys(slots).length) {
-			info.slots = slots;
-			definition.slots = slots;
-		}
+		var insertMutationPath = measureFrontendAuthoring("insertPath", function () {
+			return frontendNodeInsertMutationPath(node);
+		});
+		var definitions = measureFrontendAuthoring("propertyDefinitions", function () {
+			return frontendAuthoringPropertyDefinitions(node);
+		});
+		var order = measureFrontendAuthoring("propertyOrder", function () {
+			return frontendAuthoringPropertyOrder(node);
+		});
+		var info = measureFrontendAuthoring("info", function () {
+			return insertMutationPath
+				? frontendContainerInfo(sourceFile, mutationPath, insertMutationPath, definitions, order)
+				: frontendItemInfo(sourceFile, mutationPath, definitions, order);
+		});
+		measureFrontendAuthoring("sourceTargets", function () {
+			applyFrontendAuthoringSourcePath(info, node);
+			applyFrontendAuthoringInsertTarget(info, node);
+		});
+		var definition = measureFrontendAuthoring("definition", function () {
+			return frontendAuthoringDefinition(node);
+		});
+		measureFrontendAuthoring("traitsSlots", function () {
+			var traits = frontendAuthoringTraits(node);
+			var slots = frontendAuthoringSlots(node);
+			if (traits.length) {
+				info.traits = traits;
+				definition.traits = traits;
+			}
+			if (Object.keys(slots).length) {
+				info.slots = slots;
+				definition.slots = slots;
+			}
+		});
 		var virtualKind = frontendAuthoringVirtualKind(node);
 		var virtualType = String(node.type || node.kind || "frontendNode");
 		var summary = String(node.label || node.name || node.id || virtualType || "Node");
 		var pathName = String(path || "").split(".").pop();
-		var virtual = virtualNodeFromPlain("authoring_" + safeVirtualName("node", pathName), virtualKind, virtualType,
-			path, summary, definition, info, frontendAuthoringIcon(node));
+		var virtual = measureFrontendAuthoring("serialize", function () {
+			return virtualNodeFromPlain("authoring_" + safeVirtualName("node", pathName), virtualKind, virtualType,
+				path, summary, definition, info, frontendAuthoringIcon(node));
+		});
 		parent.children.push(virtual);
 		var projected = frontendProjectedChildren(node, path);
 		projected.children.forEach(function (child, index) {

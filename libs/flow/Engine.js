@@ -4423,6 +4423,8 @@
 				responseBudget: responseBudget,
 				describeFrontendDocument: describeFrontendDocument,
 				performanceMark: frontendPerformanceMark,
+				performanceDuration: frontendPerformanceDuration,
+				nanoTime: function () { return JavaSystem.nanoTime(); },
 				raise: raise,
 				intOption: intOption
 		};
@@ -8200,6 +8202,14 @@
 	function frontendPerformanceMark(phase) {
 		try {
 			Packages.com.twinsoft.convertigo.engine.flow.FlowStudioSupport.performanceProfileMark(String(phase || ""));
+		} catch (ignored) {
+		}
+	}
+
+	function frontendPerformanceDuration(phase, nanos) {
+		try {
+			Packages.com.twinsoft.convertigo.engine.flow.FlowStudioSupport.performanceProfileAdd(
+				String(phase || ""), Math.max(0, Math.round(Number(nanos) || 0)));
 		} catch (ignored) {
 		}
 	}

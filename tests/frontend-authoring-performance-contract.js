@@ -28,6 +28,15 @@ var catalogSource = functionSource("frontendBlocksForSettings", "frontendCreateD
 assertTrue(catalogSource.indexOf('frontendPerformanceMark("frontend.catalog.blocks")') >= 0,
 	"frontend catalog construction must expose a performance phase");
 
+var durationSource = functionSource("frontendPerformanceDuration", "frontendRunStep");
+assertTrue(durationSource.indexOf("performanceProfileAdd") >= 0,
+	"nested frontend profiling must preserve the coarse sequential phase cursor");
+var treeServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8"));
+assertTrue(treeServiceSource.indexOf('measureFrontendAuthoring("propertyDefinitions"') >= 0
+	&& treeServiceSource.indexOf('measureFrontendAuthoring("serialize"') >= 0,
+	"frontend authoring projection must expose definition and serialization costs");
+
 var candidateSource = functionSource("seedAuthoringTreeCandidate", "cachedAuthoringTreeBase");
 assertTrue(candidateSource.indexOf("authoringTreeBaseFromEngineTree") >= 0,
 	"engine describeTree must retain a bounded authoring base candidate");
