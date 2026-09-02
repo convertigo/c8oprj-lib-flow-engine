@@ -4527,6 +4527,7 @@
 	function authoringTreeRequest(request, blocks) {
 		request = request || {};
 		if (targetedFrontendBindingRequest(request)) {
+			frontendPerformanceMark("frontend.targeted.beforeBase");
 			var baseRequest = Object.assign({}, request, {
 				property: "",
 				sourceId: "",
@@ -4534,8 +4535,11 @@
 				bindingTargetSource: "",
 				includeBindings: false
 			});
+			var targetedBase = cachedAuthoringTreeBase(baseRequest, blocks);
+			frontendPerformanceMark("frontend.targeted.base");
 			var targeted = flowTreeService().projectAuthoringTreeResponse(
-				cachedAuthoringTreeBase(baseRequest, blocks), request, flowTreeServiceEnv());
+				targetedBase, request, flowTreeServiceEnv());
+			frontendPerformanceMark("frontend.targeted.project");
 			return enrichTargetedFrontendBindingTree(targeted, request);
 		}
 		var cached = cachedAuthoringTreeBase(request, blocks);
@@ -4582,22 +4586,29 @@
 	}
 
 	function enrichTargetedFrontendBindingTree(tree, request) {
+		frontendPerformanceMark("frontend.targeted.enrichEntry");
 		tree = normalizeTree(tree || {});
+		frontendPerformanceMark("frontend.targeted.normalize");
 		var focusPath = String(request.focusPath || request.rootPath || request.path || "");
 		var focused = frontendBindingTreeNode(tree, function (node) {
 			return String(node.path || "") === focusPath;
 		});
+		frontendPerformanceMark("frontend.targeted.findFocus");
 		var info = frontendBindingNodeInfo(focused);
+		frontendPerformanceMark("frontend.targeted.nodeInfo");
 		var sourcePath = String(info.sourcePath || info.sourceRelativePath || "");
 		var mutationPath = String(info.sourceMutationPath || info.frontendModelPath || "");
 		var property = String(request.property || "");
 		if (!focused || !sourcePath || !mutationPath || !property) {
 			return tree;
 		}
+		frontendPerformanceMark("frontend.targeted.beforeTrustedSource");
+		var trustedSourceFile = frontendProjectedSourceFile(sourcePath);
+		frontendPerformanceMark("frontend.targeted.trustedSource");
 		var described = describeFrontendDocument(Object.assign({}, request, {
 			sourceFile: sourcePath,
 			sourcePath: sourcePath,
-			__trustedSourceFile: frontendProjectedSourceFile(sourcePath),
+			__trustedSourceFile: trustedSourceFile,
 			property: property,
 			bindingTargetPath: mutationPath,
 			bindingTargetSource: "",
