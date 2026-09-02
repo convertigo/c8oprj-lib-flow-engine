@@ -5120,6 +5120,13 @@
 				"--project-name", projectName,
 				"--engine-model"
 			];
+			var catalogFingerprint = frontendCatalogFingerprintForRequest(request);
+			var catalogCacheKey = catalogFingerprint
+				? sha256Hex(catalogFingerprint + "\n" + blocksCacheKey())
+				: "";
+			if (catalogCacheKey) {
+				cliArgs.push("--catalog-cache-key", catalogCacheKey);
+			}
 			frontendReferenceCliArgs(projectRoot, resourceRoot).forEach(function (arg) {
 				cliArgs.push(arg);
 			});
