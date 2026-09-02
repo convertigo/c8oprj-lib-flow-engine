@@ -10752,7 +10752,10 @@
 		if (!backendNode && !frontendNode) {
 			return null;
 		}
-		var disabled = definition.disabled === true;
+		// Frontend projections expose the effective disabled state through info,
+		// while backend Flow nodes keep it on the definition. Treat either shape
+		// as authoritative so the next menu action always offers the inverse.
+		var disabled = definition.disabled === true || info.disabled === true;
 		var mutation = {
 			op: "setEnabled",
 			enabled: disabled

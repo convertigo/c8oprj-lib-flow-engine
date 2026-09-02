@@ -46,4 +46,20 @@ assertTrue(reenabled.ok === true && reenabled.target === "frontAst",
 assertTrue(String(reenabled.source).indexOf("enabled={false}") === -1,
 	"setEnabled(true) did not restore the frontend node: " + reenabled.source);
 
+var enableMenu = JSON.parse(engine.contextMenu(JSON.stringify({
+	targetObject: {
+		kind: "frontendWidget",
+		definition: { id: "title" },
+		info: {
+			disabled: true,
+			sourceWritable: true,
+			sourceMutationPath: mutationPath
+		}
+	}
+})));
+assertTrue(enableMenu.items.some(function (item) {
+	return item.id === "flow.node.enable" &&
+		item.payload.mutation.op === "setEnabled" && item.payload.mutation.enabled === true;
+}), "disabled frontend projection did not offer the enable action");
+
 print("frontend-set-enabled-smoke OK");

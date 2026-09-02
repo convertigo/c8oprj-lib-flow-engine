@@ -2935,6 +2935,21 @@ assertTrue(disableMenu.items.some(function (item) {
 	return item.id === "flow.node.disable" && item.placement === "root" &&
 		item.payload.mutation.op === "setEnabled" && item.payload.mutation.enabled === false;
 }), "Flow context menu did not expose the shared disable mutation");
+var enableFrontendMenu = JSON.parse(engine.contextMenu(JSON.stringify({
+	targetObject: {
+		kind: "frontendWidget",
+		definition: { id: "loading" },
+		info: {
+			disabled: true,
+			sourceWritable: true,
+			sourceMutationPath: "frontAst.slots.structure.children[0]"
+		}
+	}
+})));
+assertTrue(enableFrontendMenu.items.some(function (item) {
+	return item.id === "flow.node.enable" &&
+		item.payload.mutation.op === "setEnabled" && item.payload.mutation.enabled === true;
+}), "Frontend context menu did not expose enable from the effective projected state");
 var semanticInsertedFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 	target: "flow",
 	flowSource: flowSource,
