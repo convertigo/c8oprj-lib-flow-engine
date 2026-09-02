@@ -4916,6 +4916,7 @@
 		frontendPerformanceMark("frontend.enrich.actionSchemas");
 		var enriched = frontendCatalogService().enrichBindingSources(document,
 			actionSchemas, {
+				performanceMark: frontendPerformanceMark,
 				normalizeTree: normalizeTree,
 				cloneTree: function (value) {
 					return JSON.parse(JSON.stringify(value));

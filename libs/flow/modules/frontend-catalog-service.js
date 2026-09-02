@@ -2558,11 +2558,13 @@
 	}
 
 	function enrichBindingSources(document, actionSchemas, env, options) {
+		var performanceMark = typeof env.performanceMark === "function" ? env.performanceMark : function () {};
 		// Provider documents are JSON values. Let Engine clone them through the
 		// native JSON implementation so binding enrichment never mutates the
 		// cached base document without paying for a full Rhino/Java normalization
 		// walk on every picker reopening.
 		document = env.cloneTree ? env.cloneTree(document || {}) : env.normalizeTree(document || {});
+		performanceMark("frontend.enrich.clone");
 		actionSchemas = Object.assign({}, actionSchemas || {});
 		options = options || {};
 		var requestedProperty = String(options.property || "");
@@ -2580,6 +2582,7 @@
 				iterations[String(node.id)] = props.source;
 			}
 		});
+		performanceMark("frontend.enrich.iterations");
 		var iterationSchemas = {};
 		var iterationCollectionSchemas = {};
 		function resolveIterationSchemas() {
@@ -2599,6 +2602,7 @@
 		resolveIterationSchemas();
 		deriveStateActionSchemas(document, actionSchemas, iterationSchemas, iterationCollectionSchemas);
 		resolveIterationSchemas();
+		performanceMark("frontend.enrich.schemas");
 		walkDocument(document, function (node) {
 			if (requestedTargetPath && String(node.sourceMutationPath || node.frontendModelPath || "") !== requestedTargetPath) {
 				return;
@@ -2647,6 +2651,7 @@
 				});
 			});
 		});
+		performanceMark("frontend.enrich.candidates");
 		return document;
 	}
 
