@@ -4179,6 +4179,7 @@
 	}
 
 	function authoringTreeBaseRequest(request, blocks) {
+		performanceMark("frontend.base.serviceEntry");
 		request = request || {};
 		var includeBindings = request.includeBindings === true
 			|| (request.includeBindings === undefined && !!request.property
@@ -4194,7 +4195,9 @@
 		delete baseRequest.mode;
 		delete baseRequest.maxDepth;
 		var engine = authoringEngineDefinition(baseRequest);
+		performanceMark("frontend.base.engineDefinition");
 		var tree = authoringEngineTree(Object.assign({}, baseRequest, { definition: engine }), blocks);
+		performanceMark("frontend.base.engineTree");
 		var surface = String(request.surface || "frontend");
 		var builder = authoringBuilderName(request, engine);
 		var focus = surface === "frontend" ? findAuthoringBuilderNode(tree, builder) : null;
@@ -4203,6 +4206,7 @@
 		if (focus) {
 			delete focus.__authoringDescriptors;
 		}
+		performanceMark("frontend.base.focus");
 		return {
 			ok: true,
 			target: "authoring",

@@ -4479,6 +4479,7 @@
 	}
 
 	function cachedAuthoringTreeBase(request, blocks) {
+		frontendPerformanceMark("frontend.base.entry");
 		request = request || {};
 		var cache = runtimeState.caches.treeSnapshots;
 		var includeBindings = request.includeBindings === true
@@ -4495,6 +4496,7 @@
 		delete baseRequest.mode;
 		delete baseRequest.maxDepth;
 		var fingerprintRequest = Object.assign({}, baseRequest, { target: "engine" });
+		frontendPerformanceMark("frontend.base.beforeKey");
 		var key = "authoring-base\n" + JSON.stringify({
 			project: projectDir() ? canonicalPath(projectDir()) : "",
 			surface: String(request.surface || "frontend"),
@@ -4514,12 +4516,16 @@
 			includeFrontendCatalog: request.includeFrontendCatalog !== false,
 			includeFlowCatalog: request.includeFlowCatalog !== false
 		});
+		frontendPerformanceMark("frontend.base.key");
 		var fingerprint = describeTreeFingerprint(fingerprintRequest);
+		frontendPerformanceMark("frontend.base.fingerprint");
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
+		frontendPerformanceMark("frontend.base.cacheLookup");
 		if (!cached) {
-			cached = writeRuntimeMapCache(cache, key, fingerprint,
-				flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv()),
-				"Flow authoring tree snapshots");
+			var generated = flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
+			frontendPerformanceMark("frontend.base.generate");
+			cached = writeRuntimeMapCache(cache, key, fingerprint, generated, "Flow authoring tree snapshots");
+			frontendPerformanceMark("frontend.base.cacheStore");
 		}
 		return cached;
 	}
