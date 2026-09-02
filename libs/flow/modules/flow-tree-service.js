@@ -594,6 +594,7 @@
 		var catalogNode = request.includeFrontendCatalog === false && !librarySummary
 			? null
 			: addFrontendBlockCatalog(builder, name, settings, path, request, blocks, librarySummary);
+		performanceMark("frontend.model.catalog");
 		if (!settings.modelPath) {
 			return;
 		}
@@ -604,7 +605,9 @@
 		}
 		try {
 			var document = frontendModelDocument(request, modelFile, settings);
+			performanceMark("frontend.model.document");
 			var model = normalizeTree(document.model);
+			performanceMark("frontend.model.normalize");
 			builder.__authoringDescriptors = document.descriptors || [];
 			builder.diagnostics = document.diagnostics || [];
 			builder.definition = compact(Object.assign(definition, {
@@ -615,11 +618,14 @@
 			}));
 			if (document.tree && document.tree.children) {
 				addFrontendAuthoringTree(builder, document.tree, path, modelFile);
+				performanceMark("frontend.model.authoringTree");
 				if (catalogNode) {
 					addFrontendAuthoringCatalogMirror(catalogNode, document.tree, path + ".catalog.authoring", modelFile);
+					performanceMark("frontend.model.catalogMirror");
 				}
 			} else {
 				addFrontendModelTree(builder, model, path + ".model", modelFile);
+				performanceMark("frontend.model.modelTree");
 			}
 		} catch (e) {
 			builder.children.push(virtualNode("modelError", "error", "frontendModel", path + ".model",
