@@ -67,6 +67,7 @@
 		var frontendVisualBaseDefinitions;
 		var frontendKnownDefinitions;
 		var frontendAuthoringPropertyDefinitionsCache = {};
+		var frontendSourceInfoCache = {};
 		// A provider tree commonly assigns the same source path to hundreds of
 		// projected descendants. Keep filesystem existence checks local to this
 		// service invocation so one authoring response performs at most one NFS
@@ -582,10 +583,21 @@
 	}
 
 	function frontendSourceInfo(file, kind, mutationPath, request) {
-		var source = sourceDefinitionForFile(file ? String(file.getAbsolutePath()) : "", kind || "frontend-model");
+		var sourcePath = file ? String(file.getAbsolutePath()) : "";
+		var sourceDirty = frontendModelDirty(request, file);
+		var cacheKey = sourcePath + "|" + String(kind || "frontend-model") + "|" + sourceDirty;
+		var cached = frontendSourceInfoCache[cacheKey];
+		if (!cached) {
+			cached = sourceDefinitionForFile(sourcePath, kind || "frontend-model");
+			cached.frontendModel = true;
+			cached.sourceDirty = sourceDirty;
+			frontendSourceInfoCache[cacheKey] = cached;
+		}
+		var source = {};
+		Object.keys(cached).forEach(function (key) {
+			source[key] = cached[key];
+		});
 		source.sourceMutationPath = mutationPath || "";
-		source.frontendModel = true;
-		source.sourceDirty = frontendModelDirty(request, file);
 		return source;
 	}
 

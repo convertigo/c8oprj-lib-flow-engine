@@ -4300,6 +4300,7 @@
 	}
 
 	function frontendCatalogFingerprintForRequest(request) {
+		var startedAt = JavaSystem.nanoTime();
 		try {
 			var engine = projectEngineDefinitionForRequest(request);
 			var fingerprint = frontendCatalogService().fingerprintForConfig(engine.config || {}, frontendCatalogServiceEnv());
@@ -4308,6 +4309,8 @@
 		} catch (e) {
 			frontendPerformanceMark("frontend.catalog.fingerprintError");
 			return "";
+		} finally {
+			frontendPerformanceDuration("frontend.catalog.fingerprint.work", JavaSystem.nanoTime() - startedAt);
 		}
 	}
 
