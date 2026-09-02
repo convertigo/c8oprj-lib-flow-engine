@@ -44,6 +44,10 @@ var iconServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFile
 assertTrue(iconServiceSource.indexOf("sharedIconCacheRoot") >= 0
 	&& iconServiceSource.indexOf("copyCachedIconFiles(sharedBase, base") >= 0,
 	"generated icon caches must survive project redeployment through the workspace cache");
+assertTrue(source.indexOf('frontendPerformanceDuration("frontend.provider.start.dependencies"') >= 0
+	&& source.indexOf('frontendPerformanceDuration("frontend.provider.start.process"') >= 0
+	&& source.indexOf('frontendPerformanceDuration("frontend.provider.request.response"') >= 0,
+	"cold provider startup and request phases must remain observable");
 
 var candidateSource = functionSource("seedAuthoringTreeCandidate", "cachedAuthoringTreeBase");
 assertTrue(candidateSource.indexOf("authoringTreeBaseFromEngineTree") >= 0,

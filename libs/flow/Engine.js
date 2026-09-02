@@ -7641,11 +7641,17 @@
 	}
 
 	function startFrontendDocumentServer(resourceRoot) {
+		var lockStartedAt = JavaSystem.nanoTime();
 		frontendDocumentServerStartLock.lock();
+		frontendPerformanceDuration("frontend.provider.start.lockWait", JavaSystem.nanoTime() - lockStartedAt);
 		try {
+			var phaseStartedAt = JavaSystem.nanoTime();
 			var toolRoot = frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
+			frontendPerformanceDuration("frontend.provider.start.toolRoot", JavaSystem.nanoTime() - phaseStartedAt);
 			var key = canonicalPath(toolRoot);
+			phaseStartedAt = JavaSystem.nanoTime();
 			var selection = frontendProviderCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
+			frontendPerformanceDuration("frontend.provider.start.selection", JavaSystem.nanoTime() - phaseStartedAt);
 			var existing = runtimeState.frontendDocumentServers[key];
 			if (existing && existing.process.isAlive() && existing.providerKey === selection.key) {
 				runtimeState.frontendDocumentServerStats.reuses++;
@@ -7654,13 +7660,19 @@
 			if (existing) {
 				stopFrontendDocumentServer(existing);
 			}
+			phaseStartedAt = JavaSystem.nanoTime();
 			ensureFrontendDocumentDependencies(toolRoot);
+			frontendPerformanceDuration("frontend.provider.start.dependencies", JavaSystem.nanoTime() - phaseStartedAt);
+			phaseStartedAt = JavaSystem.nanoTime();
 			selection = frontendProviderCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
+			frontendPerformanceDuration("frontend.provider.start.selectionAfterDependencies", JavaSystem.nanoTime() - phaseStartedAt);
 			var args = selection.command;
 			frontendStudioLog("[Svelte front document server] > " + args.join(" "));
 			var process;
 			try {
+				phaseStartedAt = JavaSystem.nanoTime();
 				process = frontendProcessBuilder(args, toolRoot).start();
+				frontendPerformanceDuration("frontend.provider.start.process", JavaSystem.nanoTime() - phaseStartedAt);
 			} catch (launchError) {
 				launchError.frontendProviderSelection = selection;
 				throw launchError;
@@ -7684,14 +7696,21 @@
 	}
 
 	function frontendRunDocumentServer(resourceRoot, cliArgs) {
+		var phaseStartedAt = JavaSystem.nanoTime();
 		var server = startFrontendDocumentServer(resourceRoot);
+		frontendPerformanceDuration("frontend.provider.request.server", JavaSystem.nanoTime() - phaseStartedAt);
+		phaseStartedAt = JavaSystem.nanoTime();
 		server.lock.lock();
+		frontendPerformanceDuration("frontend.provider.request.queueWait", JavaSystem.nanoTime() - phaseStartedAt);
 		try {
 			var id = runtimeState.id + "-" + (++server.sequence);
+			phaseStartedAt = JavaSystem.nanoTime();
 			server.writer.write(JSON.stringify({ id: id, args: cliArgs }));
 			server.writer.newLine();
 			server.writer.flush();
+			frontendPerformanceDuration("frontend.provider.request.write", JavaSystem.nanoTime() - phaseStartedAt);
 			var deadline = new Date().getTime() + 30000;
+			var responseStartedAt = JavaSystem.nanoTime();
 			while (new Date().getTime() < deadline) {
 				if (server.reader.ready()) {
 					var line = server.reader.readLine();
@@ -7707,6 +7726,7 @@
 					if (String(response.id || "") !== id) {
 						continue;
 					}
+					frontendPerformanceDuration("frontend.provider.request.response", JavaSystem.nanoTime() - responseStartedAt);
 					if (response.error) {
 						var responseError = new Error(String(response.error));
 						responseError.frontendDocumentResponse = true;
