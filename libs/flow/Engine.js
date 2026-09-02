@@ -4805,7 +4805,11 @@
 		}
 		var sourceFile = new File(sourcePath);
 		if (sourceFile.isAbsolute()) {
-			return sourceFile.getCanonicalFile();
+			// Absolute authoring paths are supplied by the resolved frontbuilder
+			// settings or by a provider-produced tree. Canonicalization adds no access
+			// boundary here and can stall for seconds on NFS; normalize lexically and
+			// let the authoritative read report a missing file.
+			return sourceFile.getAbsoluteFile().toPath().normalize().toFile();
 		}
 		return projectResourceFile(sourcePath, mustExist).file.getCanonicalFile();
 	}
