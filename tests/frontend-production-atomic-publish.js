@@ -15,9 +15,7 @@ function extract(name, nextName) {
 	return eval("(" + source.substring(start, end).trim() + ")");
 }
 
-var frontendPromoteBuildOutput = extract("frontendPromoteBuildOutput", "frontendPrepareAtomicGeneratedOutput");
-var frontendPrepareAtomicGeneratedOutput = extract("frontendPrepareAtomicGeneratedOutput", "frontendRestoreGeneratedOutput");
-var frontendRestoreGeneratedOutput = extract("frontendRestoreGeneratedOutput", "frontendDevStateFile");
+var frontendPromoteBuildOutput = extract("frontendPromoteBuildOutput", "frontendDevStateFile");
 var root = Packages.java.nio.file.Files.createTempDirectory("flow-production-publish-").toFile();
 try {
 	var target = new File(root, "mobile");
@@ -27,18 +25,6 @@ try {
 	staging.mkdirs();
 	FileUtils.writeStringToFile(new File(target, "version.txt"), "old", "UTF-8");
 	FileUtils.writeStringToFile(new File(staging, "version.txt"), "new", "UTF-8");
-	var generated = new File(root, "generated");
-	generated.mkdirs();
-	var configFile = new File(generated, "svelte.config.js");
-	var configSource = 'adapter({ pages: "../../DisplayObjects/mobile", assets: "../../DisplayObjects/mobile" })';
-	FileUtils.writeStringToFile(configFile, configSource, "UTF-8");
-	var config = frontendPrepareAtomicGeneratedOutput(generated, { staging: staging });
-	var stagedConfig = String(FileUtils.readFileToString(configFile, "UTF-8"));
-	assertTrue(stagedConfig.indexOf(String(staging.getAbsolutePath())) >= 0,
-		"generated Svelte output must target the staging directory during build");
-	frontendRestoreGeneratedOutput(config);
-	assertTrue(String(FileUtils.readFileToString(configFile, "UTF-8")) === configSource,
-		"generated Svelte configuration must be restored after build");
 	frontendPromoteBuildOutput({ target: target, staging: staging, backup: backup });
 	assertTrue(String(FileUtils.readFileToString(new File(target, "version.txt"), "UTF-8")) === "new",
 		"published output must replace the old output");

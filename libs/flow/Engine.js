@@ -8462,8 +8462,11 @@
 				: buildOutput,
 			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
 		};
+		if (atomicOutput) {
+			envValues.FLOW_SVELTE_BUILD_OUTPUT = String(atomicOutput.staging.getAbsolutePath());
+			envValues.FLOW_SVELTE_BUILD_OUT_DIR = String(atomicOutput.kit.getAbsolutePath());
+		}
 		var draftsTemp = null;
-		var atomicConfig = null;
 		if (draftCount > 0) {
 			draftsTemp = File.createTempFile("c8o-frontbuilder-drafts-", ".json");
 			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(frontendSourceDrafts(request)), "UTF-8");
@@ -8487,9 +8490,6 @@
 				if (step.ok === false) {
 					ok = false;
 					break;
-				}
-				if (atomicOutput && currentStepAction === "generate") {
-					atomicConfig = frontendPrepareAtomicGeneratedOutput(generatedRoot, atomicOutput);
 				}
 			}
 			if (ok && atomicOutput) {
@@ -8515,9 +8515,11 @@
 			});
 		} finally {
 			try {
-				frontendRestoreGeneratedOutput(atomicConfig);
 				if (atomicOutput && atomicOutput.staging.exists()) {
 					FileUtils.deleteDirectory(atomicOutput.staging);
+				}
+				if (atomicOutput && atomicOutput.kit.exists()) {
+					FileUtils.deleteDirectory(atomicOutput.kit);
 				}
 				if (draftsTemp) {
 					draftsTemp["delete"]();
@@ -8796,7 +8798,8 @@
 		return {
 			target: target,
 			staging: new File(parent, "." + target.getName() + ".flow-build-" + suffix),
-			backup: new File(parent, "." + target.getName() + ".flow-previous-" + suffix)
+			backup: new File(parent, "." + target.getName() + ".flow-previous-" + suffix),
+			kit: new File(projectRoot, "_private/.svelte-kit.flow-build-" + suffix)
 		};
 	}
 
@@ -8831,29 +8834,6 @@
 			if (output.staging.exists()) {
 				FileUtils.deleteDirectory(output.staging);
 			}
-		}
-	}
-
-	function frontendPrepareAtomicGeneratedOutput(generatedRoot, output) {
-		var file = new File(generatedRoot, "svelte.config.js");
-		if (!file.isFile()) {
-			throw new Error("The generated Svelte configuration is missing.");
-		}
-		var original = String(FileUtils.readFileToString(file, "UTF-8"));
-		var replacement = JSON.stringify(String(output.staging.getAbsolutePath()));
-		var patched = original
-			.replace(/(\bpages\s*:\s*)["'][^"']*["']/, "$1" + replacement)
-			.replace(/(\bassets\s*:\s*)["'][^"']*["']/, "$1" + replacement);
-		if (patched === original || patched.indexOf(replacement) < 0) {
-			throw new Error("The generated Svelte output settings could not be staged.");
-		}
-		FileUtils.writeStringToFile(file, patched, "UTF-8");
-		return { file: file, original: original };
-	}
-
-	function frontendRestoreGeneratedOutput(config) {
-		if (config && config.file) {
-			FileUtils.writeStringToFile(config.file, config.original, "UTF-8");
 		}
 	}
 

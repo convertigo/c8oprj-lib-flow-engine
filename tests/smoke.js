@@ -143,10 +143,11 @@ assertTrue(frontendRunActionSource.indexOf("durationMs: Number(step.durationMs |
 	frontendRunActionSource.indexOf("durationMs: frontendDurationMs(actionStartedAt)") >= 0,
 	"Frontend builder responses should expose step and total durations");
 assertTrue(frontendRunActionSource.indexOf("frontendAtomicBuildOutput(projectRoot, buildOutput)") >= 0 &&
-	frontendRunActionSource.indexOf("frontendPrepareAtomicGeneratedOutput(generatedRoot, atomicOutput)") >= 0 &&
+	frontendRunActionSource.indexOf("FLOW_SVELTE_BUILD_OUTPUT") >= 0 &&
+	frontendRunActionSource.indexOf("FLOW_SVELTE_BUILD_OUT_DIR") >= 0 &&
 	frontendRunActionSource.indexOf("frontendPromoteBuildOutput(atomicOutput)") >= 0 &&
-	frontendRunActionSource.indexOf("frontendRestoreGeneratedOutput(atomicConfig)") >= 0,
-	"Production builds should stage output before atomic publication");
+	frontendRunActionSource.indexOf("frontendPrepareAtomicGeneratedOutput") < 0,
+	"Production builds should isolate SvelteKit and output before atomic publication");
 assertTrue(source.indexOf("frontendScheduleProductionBuild(watcherRequest, blocks, decision.stopReason)") >= 0 &&
 	source.indexOf("frontendScheduleProductionBuild(request, blocks, \"manual\")") >= 0,
 	"Manual and automatic no-viewer stops should schedule production catch-up");
