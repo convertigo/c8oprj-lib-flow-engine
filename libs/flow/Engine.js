@@ -4574,6 +4574,21 @@
 			request, snapshot, flowTreeServiceEnv());
 	}
 
+	function validAuthoringTreeCandidate(candidate, request) {
+		if (!candidate || candidate.ok !== true || String(candidate.target || "") !== "authoring") {
+			return false;
+		}
+		var builder = String(request && request.builder || "");
+		if (String(candidate.surface || "") !== String(request && request.surface || "frontend")
+				|| String(candidate.builder || "") !== builder) {
+			return false;
+		}
+		var children = candidate.children || [];
+		return children.length === 1
+			&& String(children[0] && children[0].kind || "") === "frontendBuilder"
+			&& String(children[0] && children[0].type || "") === builder;
+	}
+
 	function cachedAuthoringTreeBase(request, blocks) {
 		frontendPerformanceMark("frontend.base.entry");
 		var cache = runtimeState.caches.treeSnapshots;
@@ -4594,20 +4609,24 @@
 					authoringTreeCandidateCacheKey(baseRequest), fingerprint);
 				candidateOrigin = candidate ? "runtime" : "";
 			}
+			var validCandidate = validAuthoringTreeCandidate(candidate, baseRequest);
 			frontendPerformanceMark(candidate
 				? "frontend.base.sharedCandidateFound"
 				: "frontend.base.sharedCandidateMissing");
 			if (candidateOrigin) {
 				frontendPerformanceMark("frontend.base.sharedCandidate." + candidateOrigin);
 			}
-			var generated = flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
-			frontendPerformanceMark("frontend.base.generate");
-			if (candidate) {
-				frontendPerformanceMark(JSON.stringify(candidate) === JSON.stringify(generated)
-					? "frontend.base.sharedCandidateMatch"
-					: "frontend.base.sharedCandidateMismatch");
+			if (validCandidate) {
+				cached = candidate;
+				frontendPerformanceMark("frontend.base.sharedCandidateUsed");
+			} else {
+				if (candidate) {
+					frontendPerformanceMark("frontend.base.sharedCandidateRejected");
+				}
+				cached = flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
+				frontendPerformanceMark("frontend.base.generate");
 			}
-			cached = writeRuntimeMapCache(cache, key, fingerprint, generated, "Flow authoring tree snapshots");
+			cached = writeRuntimeMapCache(cache, key, fingerprint, cached, "Flow authoring tree snapshots");
 			frontendPerformanceMark("frontend.base.cacheStore");
 		}
 		return cached;

@@ -35,7 +35,11 @@ var bridgeCandidateSource = functionSource("bridgeAuthoringTreeCandidate", "cach
 assertTrue(bridgeCandidateSource.indexOf("__flowBridgeDescribeTreeSnapshot") >= 0,
 	"authoring runtimes must accept the opaque describeTree snapshot shared by the bridge");
 var baseSource = functionSource("cachedAuthoringTreeBase", "authoringTreeRequest");
-assertTrue(baseSource.indexOf('"frontend.base.sharedCandidateMatch"') >= 0,
-	"cold authoring profiling must prove candidate equality before enabling reuse");
+assertTrue(baseSource.indexOf('"frontend.base.sharedCandidateUsed"') >= 0,
+	"cold authoring must expose reuse of a validated shared candidate");
+assertTrue(baseSource.indexOf("if (validCandidate)") < baseSource.indexOf("authoringTreeBaseRequest(baseRequest"),
+	"a valid shared candidate must bypass the duplicate authoring tree build");
+assertTrue(baseSource.indexOf('"frontend.base.sharedCandidateRejected"') >= 0,
+	"invalid shared candidates must expose their fallback before regeneration");
 
 print("frontend-authoring-performance-contract OK");

@@ -62,4 +62,14 @@ assertTrue(tree.children[0].children[0].__authoringDescriptors !== undefined,
 assertTrue(projected.children[0] !== tree.children[0].children[0],
 	"shared candidate must own an isolated builder projection");
 
+var wrongBuilder = service.authoringTreeBaseFromEngineTree({
+	surface: "frontend",
+	builder: "react",
+	definition: {}
+}, tree, {
+	normalizeTree: clone
+});
+assertTrue(wrongBuilder.children.length !== 1,
+	"a candidate for another builder must not project the Svelte subtree");
+
 print("frontend-authoring-shared-candidate OK");
