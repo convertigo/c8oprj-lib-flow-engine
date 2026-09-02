@@ -232,20 +232,15 @@
 
 	function virtualNodeFromPlain(name, kind, type, path, summary, definition, info, icon) {
 		info = info || {};
-		performanceMark("frontend.virtual.beforeIcon");
 		if (icon) {
 			var iconInfo = virtualIcon(icon);
 			Object.keys(iconInfo).forEach(function (key) {
 				info[key] = iconInfo[key];
 			});
 		}
-		performanceMark("frontend.virtual.icon");
 		var compactDefinition = compactPlain(definition || {});
-		performanceMark("frontend.virtual.definition");
 		var compactInfo = compactPlain(info);
-		performanceMark("frontend.virtual.info");
 		var node = virtualNode(name, kind, type, path, summary, compactDefinition, compactInfo, null);
-		performanceMark("frontend.virtual.node");
 		return node;
 	}
 
@@ -2235,29 +2230,22 @@
 
 	function addFrontendAuthoringNode(parent, node, path, modelFile) {
 		node = node || {};
-		performanceMark("frontend.node.beforeSourceFile");
 		var sourceFile = frontendNodeSourceFile(node, modelFile);
-		performanceMark("frontend.node.sourceFile");
 		normalizeFrontendFlowSvelteRootNode(node, sourceFile);
 		normalizeFrontendComponentInstanceNode(node);
 		normalizeFrontendRouteSourceNode(node, sourceFile);
-		performanceMark("frontend.node.normalize");
 		var mutationPath = String(node.sourceMutationPath || "");
 		var insertMutationPath = frontendNodeInsertMutationPath(node);
-		performanceMark("frontend.node.paths");
 		var definitions = frontendAuthoringPropertyDefinitions(node);
 		var order = frontendAuthoringPropertyOrder(node);
-		performanceMark("frontend.node.definitions");
 		var info = insertMutationPath
 			? frontendContainerInfo(sourceFile, mutationPath, insertMutationPath, definitions, order)
 			: frontendItemInfo(sourceFile, mutationPath, definitions, order);
 		applyFrontendAuthoringSourcePath(info, node);
 		applyFrontendAuthoringInsertTarget(info, node);
-		performanceMark("frontend.node.info");
 		var definition = frontendAuthoringDefinition(node);
 		var traits = frontendAuthoringTraits(node);
 		var slots = frontendAuthoringSlots(node);
-		performanceMark("frontend.node.metadata");
 		if (traits.length) {
 			info.traits = traits;
 			definition.traits = traits;
@@ -2274,7 +2262,6 @@
 			path, summary, definition, info, frontendAuthoringIcon(node));
 		parent.children.push(virtual);
 		var projected = frontendProjectedChildren(node, path);
-		performanceMark("frontend.node.virtual");
 		projected.children.forEach(function (child, index) {
 			addFrontendAuthoringNode(virtual, child, projected.path + "." + frontendAuthoringPathSegment(child, index), sourceFile || modelFile);
 		});
