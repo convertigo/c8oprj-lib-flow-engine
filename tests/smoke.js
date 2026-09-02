@@ -142,7 +142,7 @@ var frontendRunActionSource = source.substring(
 assertTrue(frontendRunActionSource.indexOf("durationMs: Number(step.durationMs || 0)") >= 0 &&
 	frontendRunActionSource.indexOf("durationMs: frontendDurationMs(actionStartedAt)") >= 0,
 	"Frontend builder responses should expose step and total durations");
-assertTrue(frontendRunActionSource.indexOf("frontendAtomicBuildOutput(projectRoot, buildOutput)") >= 0 &&
+assertTrue(frontendRunActionSource.indexOf("frontendAtomicBuildOutput(projectRoot, generatedRoot, buildOutput)") >= 0 &&
 	frontendRunActionSource.indexOf("FLOW_SVELTE_BUILD_OUTPUT") >= 0 &&
 	frontendRunActionSource.indexOf("FLOW_SVELTE_BUILD_OUT_DIR") >= 0 &&
 	frontendRunActionSource.indexOf("frontendPromoteBuildOutput(atomicOutput)") >= 0 &&

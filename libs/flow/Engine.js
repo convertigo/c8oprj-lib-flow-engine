@@ -8451,7 +8451,7 @@
 		var generationMode = "incremental";
 		var sourceRoot = String(settings.privateDir || "_private/svelte");
 		var buildOutput = String(settings.buildOutput || "DisplayObjects/mobile");
-		var atomicOutput = action === "build" ? frontendAtomicBuildOutput(projectRoot, buildOutput) : null;
+		var atomicOutput = action === "build" ? frontendAtomicBuildOutput(projectRoot, generatedRoot, buildOutput) : null;
 		var npm = frontendExecutable("npm");
 		var envValues = {
 			FRONTBUILDER_PROJECT_ROOT: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
@@ -8790,7 +8790,7 @@
 		return state;
 	}
 
-	function frontendAtomicBuildOutput(projectRoot, buildOutput) {
+	function frontendAtomicBuildOutput(projectRoot, generatedRoot, buildOutput) {
 		var target = fileForProjectPath(projectRoot, buildOutput);
 		var parent = target.getParentFile();
 		parent.mkdirs();
@@ -8799,7 +8799,7 @@
 			target: target,
 			staging: new File(parent, "." + target.getName() + ".flow-build-" + suffix),
 			backup: new File(parent, "." + target.getName() + ".flow-previous-" + suffix),
-			kit: new File(projectRoot, "_private/.svelte-kit.flow-build-" + suffix)
+			kit: new File(generatedRoot, ".svelte-kit.flow-build-" + suffix)
 		};
 	}
 
