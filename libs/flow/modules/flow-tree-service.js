@@ -70,6 +70,7 @@
 		// lookup per distinct path without retaining stale state across requests.
 		var frontendNodeSourceFiles = {};
 		var frontendFlowSvelteRoots = {};
+		var virtualIcons = {};
 
 	function flowTypes() {
 		if (!resolvedTypes) {
@@ -186,12 +187,17 @@
 	}
 
 	function virtualIcon(icon) {
+		var key = String(icon || "");
+		if (Object.prototype.hasOwnProperty.call(virtualIcons, key)) {
+			return virtualIcons[key];
+		}
 		var descriptor = {
 			icon: icon
 		};
 		resolveBlockIcon({
 			__flowFile: new File(engineDir(), "virtual-icons.js").getAbsolutePath()
 		}, descriptor);
+		virtualIcons[key] = descriptor;
 		return descriptor;
 	}
 
