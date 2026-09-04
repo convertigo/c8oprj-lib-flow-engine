@@ -8112,7 +8112,7 @@
 
 	function frontendRunCommandFor(action, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode) {
 		if (action === "installBuilder") {
-			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "install"];
+			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "install", "--prefer-offline", "--no-audit", "--no-fund"];
 		}
 		if (action === "generate") {
 			var generateArgs = [
@@ -8127,7 +8127,7 @@
 			return frontendTsxCommand(resourceRoot, "src-builder/cli.ts", generateArgs);
 		}
 		if (action === "installApp") {
-			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "install"];
+			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "install", "--prefer-offline", "--no-audit", "--no-fund"];
 		}
 		if (action === "check") {
 			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "run", "check"];
