@@ -8671,9 +8671,12 @@
 		}
 	}
 
-	function frontendRegisterDevProxy(request, port) {
+	function frontendRegisterDevProxy(request, port, reusableTicket) {
 		var manager = Packages.com.twinsoft.convertigo.engine.Engine.theApp.reverseProxyManager;
-		var ticket = String(manager.registerLoopbackHttp(Number(port)));
+		var ticket = String(reusableTicket || "");
+		if (!ticket || !manager.restoreLoopbackHttp(ticket, Number(port))) {
+			ticket = String(manager.registerLoopbackHttp(Number(port)));
+		}
 		var plan = frontendDevProxyService().plan(frontendPublicBaseUrl(request), ticket, Number(port));
 		if (!plan) {
 			manager.removeReverseProxyHttp(ticket);
@@ -9885,7 +9888,7 @@
 		}
 	}
 
-	function frontendLaunchVite(request, info) {
+	function frontendLaunchVite(request, info, reusableTicket) {
 		var settings = info.settings || {};
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "");
 		var generatedRoot = fileForProjectPath(projectRoot, settings.privateDir || "_private/svelte");
@@ -9904,7 +9907,7 @@
 		var npm = frontendExecutable("npm");
 		frontendDeleteDevViewers(request, info);
 		var port = freePort();
-		var proxy = frontendRegisterDevProxy(request, port);
+		var proxy = frontendRegisterDevProxy(request, port, reusableTicket);
 		if (!proxy) {
 			return failure("frontbuilder", {
 				code: "FRONTBUILDER_DEV_PUBLIC_ROUTE_UNAVAILABLE",
@@ -10400,8 +10403,9 @@
 		var key = frontendDevKey(request, info);
 		var restartCount = Number(entry && entry.restartCount || 0) + 1;
 		var previousPid = Number(entry && entry.pid || 0);
+		var reusableTicket = String(entry && entry.proxyKey || "");
 		frontendDestroyDevProcess(entry, "dependencies-changed");
-		var launched = frontendLaunchVite(request, info);
+		var launched = frontendLaunchVite(request, info, reusableTicket);
 		if (launched.ok === false) {
 			delete runtimeState.frontendDevServers[key];
 			frontendDeleteDevState(request, info);

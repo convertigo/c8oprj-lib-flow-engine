@@ -37,6 +37,19 @@ assertTrue(startNow.indexOf('frontendScheduleProductionBuild(request, blocks, "s
 	startNow.indexOf('cause: "dev-active"') > startNow.indexOf("frontendNotifyStudioBrowser(request, browser)"),
 	"synchronous startup must leave dirty production deferred while Vite is active");
 
+var registerProxy = functionSource("frontendRegisterDevProxy", "frontendEnsureDevProxy");
+assertTrue(registerProxy.indexOf("reusableTicket") >= 0 &&
+	registerProxy.indexOf("manager.restoreLoopbackHttp(ticket, Number(port))") >= 0 &&
+	registerProxy.indexOf("manager.registerLoopbackHttp(Number(port))") >
+		registerProxy.indexOf("manager.restoreLoopbackHttp(ticket, Number(port))"),
+	"a Vite restart must reuse its managed proxy ticket when possible");
+
+var restartDev = functionSource("frontendRestartDev", "frontendScheduleProductionBuild");
+assertTrue(restartDev.indexOf("entry && entry.proxyKey") >= 0 &&
+	restartDev.indexOf("frontendLaunchVite(request, info, reusableTicket)") >
+		restartDev.indexOf("frontendDestroyDevProcess(entry, \"dependencies-changed\")"),
+	"dependency-driven Vite restarts must preserve the public viewer URL");
+
 var logPump = functionSource("frontendStartLogPump", "frontendFinalizeDevState");
 assertTrue(logPump.indexOf("/(?:stream|pipe) closed/i") >= 0 &&
 	logPump.indexOf("!process.isAlive()") >= 0 &&
