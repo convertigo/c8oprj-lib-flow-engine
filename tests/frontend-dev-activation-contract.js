@@ -46,9 +46,15 @@ assertTrue(registerProxy.indexOf("reusableTicket") >= 0 &&
 
 var restartDev = functionSource("frontendRestartDev", "frontendScheduleProductionBuild");
 assertTrue(restartDev.indexOf("entry && entry.proxyKey") >= 0 &&
+	restartDev.indexOf("frontendRestartDev(request, blocks, info, entry)") >= 0 &&
+	restartDev.indexOf("frontendStartDevIdleWatcher(request, blocks, info, active)") >= 0 &&
 	restartDev.indexOf("frontendLaunchVite(request, info, reusableTicket)") >
 		restartDev.indexOf("frontendDestroyDevProcess(entry, \"dependencies-changed\")"),
-	"dependency-driven Vite restarts must preserve the public viewer URL");
+	"dependency-driven Vite restarts must preserve the public viewer URL and block catalog");
+
+var syncDev = functionSource("frontendSyncDev", "frontendOpenDev");
+assertTrue(syncDev.indexOf("frontendRestartDev(request, blocks, info, entry)") >= 0,
+	"dev.sync must pass the block catalog through a dependency-driven restart");
 
 var logPump = functionSource("frontendStartLogPump", "frontendFinalizeDevState");
 assertTrue(logPump.indexOf("/(?:stream|pipe) closed/i") >= 0 &&

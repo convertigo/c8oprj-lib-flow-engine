@@ -10399,7 +10399,7 @@
 		}
 	}
 
-	function frontendRestartDev(request, info, entry) {
+	function frontendRestartDev(request, blocks, info, entry) {
 		var key = frontendDevKey(request, info);
 		var restartCount = Number(entry && entry.restartCount || 0) + 1;
 		var previousPid = Number(entry && entry.pid || 0);
@@ -10589,7 +10589,7 @@
 			currentManifestFingerprint
 		);
 		if (dependenciesChanged) {
-			var restarted = frontendRestartDev(request, info, entry);
+			var restarted = frontendRestartDev(request, blocks, info, entry);
 			if (restarted.ok === false) {
 				restarted.title = "Svelte dev mode";
 				restarted.generated = true;
