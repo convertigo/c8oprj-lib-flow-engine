@@ -9,7 +9,7 @@ function assertTrue(value, message) {
 
 assertTrue(lifecycle.shouldBuildOnStop("manual"), "manual stop must publish production");
 assertTrue(lifecycle.shouldBuildOnStop("no-viewer-timeout"), "automatic viewer timeout must publish production");
-assertTrue(lifecycle.shouldBuild("startup-catch-up"), "a dirty production must catch up after Vite starts");
+assertTrue(!lifecycle.shouldBuild("startup-catch-up"), "production catch-up must wait until Vite stops");
 assertTrue(!lifecycle.shouldBuildOnStop("startup-catch-up"), "startup catch-up is not a dev stop reason");
 ["first-viewer-timeout", "process-exited", "dependencies-changed", "dev-http-unavailable", "proxy-route-unavailable"]
 	.forEach(function (reason) {

@@ -8425,6 +8425,17 @@
 	function frontendRunAction(request, blocks, action) {
 		var actionStartedAt = JavaSystem.nanoTime();
 		var info = frontbuilderSettingsForRequest(request);
+		if (action === "build") {
+			var activeDev = frontendDevEntry(request, info);
+			if (activeDev) {
+				return failure("frontbuilder", {
+					code: "FRONTBUILDER_BUILD_BLOCKED_DEV_ACTIVE",
+					message: "Production build is deferred while Svelte dev mode is active.",
+					hint: "Stop dev mode first. Dirty production output is rebuilt automatically after the dev server stops.",
+					devStatus: String(activeDev.status || "running")
+				});
+			}
+		}
 		var modelPath = frontendModelPath(request, info);
 		if (!modelPath || !modelPath.isFile()) {
 			return failure("frontbuilder", {
@@ -10023,7 +10034,12 @@
 		var details = frontendDevDetails(entry);
 		details.steps = steps;
 		details.durationMs = frontendDurationMs(startedAt);
-		details.production = frontendScheduleProductionBuild(request, blocks, "startup-catch-up");
+		details.production = {
+			scheduled: false,
+			reason: "startup",
+			cause: "dev-active",
+			state: frontendObserveProductionState(request, info)
+		};
 		return {
 			ok: true,
 			title: "Svelte dev mode",
@@ -10060,7 +10076,12 @@
 		frontendStartDevIdleWatcher(request, blocks, info, active);
 		var browser = frontendStudioBrowser(request, active.url, "Svelte dev mode", "frontbuilder.svelte.dev");
 		frontendNotifyStudioBrowser(request, browser);
-		var production = frontendScheduleProductionBuild(request, blocks, "startup-catch-up");
+		var production = {
+			scheduled: false,
+			reason: "startup",
+			cause: "dev-active",
+			state: frontendObserveProductionState(request, info)
+		};
 		frontendStudioLog("[Svelte dev] App dependencies are ready; Vite and the Studio viewer started automatically.");
 		return {
 			ok: true,
@@ -10700,7 +10721,8 @@
 				items.push(contextMenuItem("frontbuilder.svelte.generate", "Update generated source",
 					"Regenerate the Svelte sources under the project private directory.", "Svelte build"));
 				items.push(contextMenuItem("frontbuilder.svelte.build", "Build prod",
-					"Generate and build production assets under DisplayObjects/mobile.", "Svelte build"));
+					"Generate and build production assets under DisplayObjects/mobile. Stop Dev first; dirty production is rebuilt automatically after Dev stops.", "Svelte build",
+					{}, "", "", !dev));
 				items.push(contextMenuItem("frontbuilder.svelte.openBuilt", "Open built prod",
 					"Open the built production frontend in a Studio browser.", "Svelte build"));
 			}

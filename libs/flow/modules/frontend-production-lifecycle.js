@@ -4,8 +4,7 @@
 	var FORMAT_VERSION = 1;
 	var BUILD_REASONS = {
 		manual: true,
-		"no-viewer-timeout": true,
-		"startup-catch-up": true
+		"no-viewer-timeout": true
 	};
 
 	function shouldBuild(reason) {
