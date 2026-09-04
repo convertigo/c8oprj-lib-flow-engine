@@ -43,6 +43,18 @@ const _meta = {
       "type": "string",
       "description": "Optional palette text filter."
     },
+    "detail": {
+      "label": "detail",
+      "kind": "text",
+      "type": "string",
+      "description": "Optional response detail level, for example compact."
+    },
+    "limit": {
+      "label": "limit",
+      "kind": "literal",
+      "type": "number",
+      "description": "Optional maximum number of returned palette items. The eligible count remains available for diagnostics."
+    },
     "applyFallback": {
       "label": "applyFallback",
       "kind": "literal",

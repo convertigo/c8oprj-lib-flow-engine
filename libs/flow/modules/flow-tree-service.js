@@ -4711,7 +4711,8 @@
 	}
 
 	function descriptorMatchesQuery(descriptor, query) {
-		query = String(query || "").trim().toLowerCase();
+		var rawQuery = String(query || "").trim();
+		query = rawQuery.toLowerCase();
 		if (!query) {
 			return true;
 		}
@@ -4719,6 +4720,7 @@
 			descriptor.id,
 			descriptor.name,
 			descriptor.localName,
+			descriptor.tag,
 			descriptor.label,
 			descriptor.category,
 			descriptor.description,
@@ -4727,11 +4729,36 @@
 		if (text.indexOf(query) !== -1) {
 			return true;
 		}
-		var tokens = query.split(/\s+/).filter(function (token) {
+		var rawTokens = rawQuery.split(/\s+/).filter(function (token) {
 			return token.length > 1;
 		});
+		var strongTokens = rawTokens.filter(function (token) {
+			return /[a-z][A-Z]/.test(token) || /[._:/-]/.test(token);
+		});
+		if (strongTokens.length) {
+			var identity = [
+				descriptor.id,
+				descriptor.name,
+				descriptor.localName,
+				descriptor.tag,
+				descriptor.label
+			].join(" ").toLowerCase().replace(/[^a-z0-9]+/g, "");
+			return strongTokens.some(function (token) {
+				return identity.indexOf(token.toLowerCase().replace(/[^a-z0-9]+/g, "")) !== -1;
+			});
+		}
+		var ignored = {
+			a: true, an: true, and: true, the: true, for: true, from: true, with: true,
+			add: true, create: true, use: true, current: true, local: true,
+			action: true, actions: true, block: true, blocks: true, component: true, components: true
+		};
+		var tokens = rawTokens.map(function (token) {
+			return token.toLowerCase();
+		}).filter(function (token) {
+			return !ignored[token];
+		});
 		if (!tokens.length) {
-			return true;
+			return text.indexOf(query) !== -1;
 		}
 		return tokens.some(function (token) {
 			return text.indexOf(token) !== -1;
@@ -5054,6 +5081,12 @@
 				}
 			}
 		});
+		var eligibleCount = items.length;
+		var requestedLimit = Math.floor(Number(request.limit || 0));
+		var limit = isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 0;
+		if (limit && items.length > limit) {
+			items = items.slice(0, limit);
+		}
 		return {
 			ok: true,
 			target: "authoring.palette",
@@ -5064,7 +5097,9 @@
 			position: position,
 			query: query,
 			candidateCount: (descriptors || []).length,
-			eligibleCount: items.length,
+			eligibleCount: eligibleCount,
+			returnedCount: items.length,
+			truncated: items.length < eligibleCount,
 			filters: filters,
 			items: items
 		};

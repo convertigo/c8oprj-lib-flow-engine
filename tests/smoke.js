@@ -5077,6 +5077,33 @@ assertTrue(flowSvelteMultiQueryPalette.ok === true &&
 			item.properties.text.type === "string" && item.properties.text.intents[0] === "literal";
 	}),
 	"authoring palette should match useful tokens from a multi-intent frontend query");
+var limitedFlowSveltePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteStructureNode.path,
+	query: "Text Card",
+	limit: 1
+})));
+assertTrue(limitedFlowSveltePalette.ok === true &&
+	limitedFlowSveltePalette.eligibleCount >= 2 &&
+	limitedFlowSveltePalette.returnedCount === 1 &&
+	limitedFlowSveltePalette.items.length === 1 &&
+	limitedFlowSveltePalette.truncated === true,
+	"authoring palette limits should bound returned items without hiding the eligible count");
+var precisePortablePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
+	surface: "frontend",
+	builder: "svelte",
+	engineSource: flowSvelteEngineSource,
+	projectDir: __flowProjectDir,
+	focusPath: flowSvelteTicker.path,
+	query: "DateNow current timestamp action"
+})));
+assertTrue(precisePortablePalette.ok === true &&
+	precisePortablePalette.items.length === 1 &&
+	precisePortablePalette.items[0].id === "flow.block.date.now",
+	"a strong portable block identifier should not expand to every action: " + JSON.stringify(precisePortablePalette.items));
 var compactFlowSveltePalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
