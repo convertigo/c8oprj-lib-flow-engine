@@ -10604,6 +10604,15 @@
 			entry.dependencyManifestFingerprint = currentManifestFingerprint;
 			frontendWriteDevState(request, info, entry);
 		}
+		if (generated.ok !== false) {
+			var browser = generated.browser
+				|| frontendStudioBrowser(request, entry.url, "Svelte dev mode", "frontbuilder.svelte.dev");
+			generated.openUrl = entry.url;
+			generated.browser = browser;
+			if (!dependenciesChanged) {
+				frontendNotifyStudioBrowser(request, browser);
+			}
+		}
 		generated.title = "Svelte dev mode";
 		generated.generated = generated.ok !== false;
 		generated.dev = frontendDevDetails(entry);

@@ -55,6 +55,10 @@ assertTrue(restartDev.indexOf("entry && entry.proxyKey") >= 0 &&
 var syncDev = functionSource("frontendSyncDev", "frontendOpenDev");
 assertTrue(syncDev.indexOf("frontendRestartDev(request, blocks, info, entry)") >= 0,
 	"dev.sync must pass the block catalog through a dependency-driven restart");
+assertTrue(syncDev.indexOf("generated.openUrl = entry.url") >= 0 &&
+	syncDev.indexOf("generated.browser = browser") >= 0 &&
+	syncDev.indexOf("frontendNotifyStudioBrowser(request, browser)") >= 0,
+	"every successful dev.sync must return and notify the active Studio viewer, including an HMR-only update");
 
 var logPump = functionSource("frontendStartLogPump", "frontendFinalizeDevState");
 assertTrue(logPump.indexOf("/(?:stream|pipe) closed/i") >= 0 &&
