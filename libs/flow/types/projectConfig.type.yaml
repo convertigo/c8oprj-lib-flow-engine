@@ -1,0 +1,12 @@
+version: 1
+name: "projectConfig"
+label: "Project configuration"
+icon: "mdi:cog-outline"
+type: "object"
+description: "Named project-wide configuration branches exposed to Flow as config.*."
+editor:
+  label: "Project configuration editor"
+  kind: "webcomponent"
+  component: "flow-config-overrides-editor"
+  file: "editors/configOverrides.html"
+  icon: "mdi:cog-outline"

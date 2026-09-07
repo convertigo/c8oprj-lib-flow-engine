@@ -5211,6 +5211,21 @@ assertTrue(findNode(configVisibilityTree, function (node) {
 assertTrue(findNode(configVisibilityTree, function (node) {
 	return node.path === "config.frontbuilder";
 }) === null, "engine tree exposed default-private frontbuilder config");
+var emptyConfigTree = JSON.parse(engine.describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: ["version: 1", "bindings: {}", "config: {}", ""].join("\n"),
+	projectDir: __flowProjectDir,
+	detail: "full"
+})));
+var emptyConfigRoot = findNode(emptyConfigTree, function (node) {
+	return node.path === "config" && node.kind === "scope";
+});
+assertTrue(emptyConfigRoot !== null, "engine tree must expose an empty Config root for manual authoring");
+var publicConfigUrl = findNode(configVisibilityTree, function (node) {
+	return node.path === "config.services.publicUrl";
+});
+assertTrue(nodeInfoObject(publicConfigUrl).propertyDefinitions["#flow_value"].kind === "text",
+	"config URL field did not expose its typed text editor contract");
 function nodeInfoObject(node) {
 	return node && node.info ? JSON.parse(node.info) : {};
 }

@@ -438,18 +438,70 @@
 		return out;
 	}
 
-	function addConfig(out, config, path, visibility, request) {
-		if (!config || typeof config !== "object" || Object.keys(config).length === 0) {
-			return;
+	function configScalarDefinition(name, value) {
+		var type = typeof value;
+		var label = /(?:url|uri|endpoint)$/i.test(String(name || "")) ? "Service URL" : "Value";
+		var description = label === "Service URL"
+			? "Project service endpoint. Use this configuration from Flow expressions as config.*."
+			: "Project configuration value. It is available to backend Flow editors and source pickers as config.*.";
+		if (type === "boolean") {
+			return propertyDefinition(label, "Configuration", description, { kind: "boolean", type: "boolean" });
 		}
+		if (type === "number") {
+			return propertyDefinition(label, "Configuration", description, { kind: "literal", type: "number" });
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]" || value === null) {
+			return propertyDefinition(label, "Configuration", description, { kind: "literal", type: "array" });
+		}
+		return propertyDefinition(label, "Configuration", description, { kind: "text", type: "string" });
+	}
+
+	function configNodeInfo(name, value, path) {
+		var info = {
+			sourceMutationPath: path,
+			sourceWritable: true
+		};
+		if (!value || typeof value !== "object" || Object.prototype.toString.call(value) === "[object Array]") {
+			info.propertyDefinitions = {
+				"#flow_value": resolvedPropertyDefinition(configScalarDefinition(name, value))
+			};
+			info.propertyOrder = ["#flow_value"];
+		}
+		return info;
+	}
+
+	function addConfigFields(parent, object, path) {
+		Object.keys(object || {}).sort().forEach(function (key) {
+			var value = object[key];
+			var fieldPath = path + "." + key;
+			if (value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]") {
+				var folder = virtualNodeFromPlain(key, "object", "config", fieldPath, key, value,
+					configNodeInfo(key, value, fieldPath), "mdi:cube-outline");
+				parent.children.push(folder);
+				addConfigFields(folder, value, fieldPath);
+			} else {
+				parent.children.push(virtualNodeFromPlain(key, "field", "config", fieldPath,
+					key + ": " + String(value), value, configNodeInfo(key, value, fieldPath), "mdi:variable"));
+			}
+		});
+	}
+
+	function addConfig(out, config, path, visibility, request) {
+		config = config && typeof config === "object" ? config : {};
 		var visibilityMap = flattenConfigVisibility(visibility || {});
 		var visibleConfig = visibleConfigObject(config, path, visibilityMap, request);
-		if (!visibleConfig || typeof visibleConfig !== "object" || Object.keys(visibleConfig).length === 0) {
-			return;
-		}
-		var folder = virtualNode("config", "scope", "config", path, "Config", compact(visibleConfig), null, "mdi:cog-outline");
+		var folder = virtualNodeFromPlain("config", "scope", "config", path, "Config", visibleConfig, {
+			sourceMutationPath: path,
+			sourceWritable: true,
+			propertyDefinitions: {
+				"#flow_value": resolvedPropertyDefinition(propertyDefinition("Configuration", "Configuration",
+					"Project configuration. Add named branches here; every value is available to backend Flow editors and source pickers as config.*.",
+					{ kind: "projectConfig", type: "object" }))
+			},
+			propertyOrder: ["#flow_value"]
+		}, "mdi:cog-outline");
 		out.push(folder);
-		addObjectFields(folder, visibleConfig, path);
+		addConfigFields(folder, visibleConfig, path);
 	}
 
 	function addEngineMetadata(out, engine, path) {
