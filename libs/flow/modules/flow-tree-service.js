@@ -4519,6 +4519,47 @@
 		});
 	}
 
+	function nextVirtualChildName(value, prefix) {
+		value = value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]"
+			? value : {};
+		var index = 1;
+		var name = prefix;
+		while (Object.prototype.hasOwnProperty.call(value, name)) {
+			name = prefix + (++index);
+		}
+		return name;
+	}
+
+	function focusedVirtualDescriptors(engine, focus) {
+		if (!focus || String(focus.type || "") !== "config") {
+			return [];
+		}
+		var path = String(nodeValue(focus, "sourceMutationPath") || focus.path || "");
+		var value = nodeJson(focus, "definition");
+		var kind = String(focus.kind || "");
+		var prefix = kind === "scope" ? "service" : kind === "object" ? "setting" : "";
+		if (!prefix || !path) {
+			return [];
+		}
+		var name = nextVirtualChildName(value, prefix);
+		return [{
+			id: "virtual.create." + kind,
+			label: kind === "scope" ? "Add service" : "Add setting",
+			category: "Flow configuration",
+			description: kind === "scope"
+				? "Adds a configuration service. Select it to add typed settings such as a base URL or API key."
+				: "Adds an editable setting to this configuration service.",
+			icon: kind === "scope" ? "mdi:cloud-cog-outline" : "mdi:variable-plus-outline",
+			targetKinds: [kind],
+			acceptedPositions: ["inside"],
+			authoringMutation: {
+				op: kind === "scope" ? "merge" : "replace",
+				__engineMutationPath: path + "." + name,
+				value: kind === "scope" ? {} : ""
+			}
+		}];
+	}
+
 	function findTreeNode(root, path) {
 		if (!root || !path) {
 			return null;
@@ -4954,6 +4995,9 @@
 				out.insert.__frontendCreateSource.targetSourcePath = target.sourcePath;
 			}
 		}
+		if (descriptor.authoringMutation) {
+			out.authoringMutation = normalizeTree(descriptor.authoringMutation);
+		}
 		return out;
 	}
 
@@ -5203,6 +5247,7 @@
 				items: []
 			};
 		}
+		descriptors = descriptors.concat(focusedVirtualDescriptors(engine, focusInfo.node));
 		var result = computeAuthoringPalette(request, tree, descriptors, focusInfo);
 		if (result.eligibleCount === 0 && focusInfo.parent) {
 			var cursor = focusInfo.parent;
@@ -5291,6 +5336,31 @@
 
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
+		if (request.transfer) {
+			var engine = authoringEngineDefinition(request);
+			var transfer = request.transfer || {};
+			var targetPath = String(transfer.targetPath || "");
+			var targetParts = parseMutationPath(targetPath);
+			var targetValue = valueAt(engine, targetParts);
+			if (!targetValue || typeof targetValue !== "object"
+					|| Object.prototype.toString.call(targetValue) === "[object Array]") {
+				targetParts = targetParts.slice(0, -1);
+				targetPath = pointerPath(targetParts);
+				targetValue = valueAt(engine, targetParts);
+			}
+			if (!targetValue || typeof targetValue !== "object"
+					|| Object.prototype.toString.call(targetValue) === "[object Array]") {
+				raise("INVALID_AUTHORING_TRANSFER_TARGET", "The selected virtual object cannot contain copied values.");
+			}
+			var sourceParts = parseMutationPath(String(transfer.sourcePath || ""));
+			var sourceName = String(transfer.name || sourceParts[sourceParts.length - 1] || "item");
+			var name = nextVirtualChildName(targetValue, sourceName);
+			return applyEngineMutationRequest(request, blocks, [{
+				op: "replace",
+				__engineMutationPath: pointerPath(targetParts.concat([name])),
+				value: normalizeTree(transfer.value)
+			}]);
+		}
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		var engineMutations = mutations.filter(function (mutation) {
 			return !!engineMutationSpec(mutation);
@@ -6253,17 +6323,20 @@
 	}
 
 	function engineMutationSpec(mutation) {
-		var value = mutation && mutation.value || {};
+		var hasTopLevelPath = !!(mutation && mutation.__engineMutationPath);
+		var value = mutation && mutation.value !== undefined ? mutation.value : {};
 		var path = value.__engineMutationPath || mutation && mutation.__engineMutationPath;
 		if (!path) {
 			return null;
 		}
-		var payload = {};
-		Object.keys(value || {}).forEach(function (key) {
-			if (String(key).indexOf("__") !== 0) {
-				payload[key] = value[key];
-			}
-		});
+		var payload = hasTopLevelPath ? cloneMutationValue(value) : {};
+		if (!hasTopLevelPath) {
+			Object.keys(value || {}).forEach(function (key) {
+				if (String(key).indexOf("__") !== 0) {
+					payload[key] = value[key];
+				}
+			});
+		}
 		return {
 			op: String(value.__engineMutationOp || mutation.__engineMutationOp || mutation.op || "merge"),
 			path: String(path),
