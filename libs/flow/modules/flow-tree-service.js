@@ -6325,20 +6325,21 @@
 	function engineMutationSpec(mutation) {
 		var hasTopLevelPath = !!(mutation && mutation.__engineMutationPath);
 		var value = mutation && mutation.value !== undefined ? mutation.value : {};
-		var path = value.__engineMutationPath || mutation && mutation.__engineMutationPath;
+		var embedded = value && typeof value === "object" ? value : {};
+		var path = embedded.__engineMutationPath || mutation && mutation.__engineMutationPath;
 		if (!path) {
 			return null;
 		}
 		var payload = hasTopLevelPath ? cloneMutationValue(value) : {};
 		if (!hasTopLevelPath) {
-			Object.keys(value || {}).forEach(function (key) {
+			Object.keys(embedded).forEach(function (key) {
 				if (String(key).indexOf("__") !== 0) {
-					payload[key] = value[key];
+					payload[key] = embedded[key];
 				}
 			});
 		}
 		return {
-			op: String(value.__engineMutationOp || mutation.__engineMutationOp || mutation.op || "merge"),
+			op: String(embedded.__engineMutationOp || mutation.__engineMutationOp || mutation.op || "merge"),
 			path: String(path),
 			value: payload
 		};
