@@ -271,7 +271,7 @@
 			});
 		}
 		var compactDefinition = measureFrontendAuthoring("serialize.definition", function () {
-			return compactPlain(definition || {});
+			return compactPlain(definition === undefined || definition === null ? {} : definition);
 		});
 		var compactInfo = measureFrontendAuthoring("serialize.info", function () {
 			return compactFrontendAuthoringInfo(info);
@@ -4542,20 +4542,30 @@
 			return [];
 		}
 		var name = nextVirtualChildName(value, prefix);
+		var childKind = kind === "scope" ? "object" : "field";
+		var childValue = kind === "scope" ? {} : "";
+		var description = kind === "scope"
+			? "Adds a configuration service. Select the created service to add settings such as a base URL or API key."
+			: "Adds an editable setting to this configuration service.";
+		var prototype = virtualNodeFromPlain(name, childKind, "config", path + "." + name,
+			name, childValue, {
+				description: description,
+				sourceMutationPath: path + "." + name,
+				sourceWritable: true
+			}, childKind === "object" ? "mdi:cube-outline" : "mdi:variable");
 		return [{
 			id: "virtual.create." + kind,
 			label: kind === "scope" ? "Add service" : "Add setting",
 			category: "Flow configuration",
-			description: kind === "scope"
-				? "Adds a configuration service. Select it to add typed settings such as a base URL or API key."
-				: "Adds an editable setting to this configuration service.",
-			icon: kind === "scope" ? "mdi:cloud-cog-outline" : "mdi:variable-plus-outline",
+			description: description,
+			icon: childKind === "object" ? "mdi:cube-outline" : "mdi:variable",
+			virtualPrototype: prototype,
 			targetKinds: [kind],
 			acceptedPositions: ["inside"],
 			authoringMutation: {
 				op: kind === "scope" ? "merge" : "replace",
 				__engineMutationPath: path + "." + name,
-				value: kind === "scope" ? {} : ""
+				value: childValue
 			}
 		}];
 	}
@@ -4972,8 +4982,11 @@
 		if (!compact) {
 			out.traits = frontendArray(descriptor.traits);
 			out.slots = descriptor.slots || {};
-			out.targetKinds = descriptor.targetKinds || [];
-			out.acceptedPositions = descriptor.acceptedPositions || [];
+		}
+		out.targetKinds = descriptor.targetKinds || [];
+		out.acceptedPositions = descriptor.acceptedPositions || [];
+		if (descriptor.virtualPrototype) {
+			out.virtualPrototype = normalizeTree(descriptor.virtualPrototype);
 		}
 		if (target) {
 			out.targetSlot = {
@@ -4995,7 +5008,9 @@
 				out.insert.__frontendCreateSource.targetSourcePath = target.sourcePath;
 			}
 		}
-		if (descriptor.authoringMutation) {
+		if (descriptor.virtualPrototype && descriptor.authoringMutation) {
+			out.authoringAction = { id: String(descriptor.id || "") };
+		} else if (descriptor.authoringMutation) {
 			out.authoringMutation = normalizeTree(descriptor.authoringMutation);
 		}
 		return out;
@@ -5311,6 +5326,53 @@
 			authoringTreeBaseRequest(treeRequest, blocks));
 	}
 
+	function authoringActionMutationFromTreeRequest(request, blocks, tree) {
+		request = request || {};
+		var action = request.action || {};
+		var actionId = String(action.id || "");
+		var paletteRequest = Object.assign({}, request, {
+			surface: String(request.surface || "virtual"),
+			focusPath: String(action.targetPath || ""),
+			position: String(action.position || "inside"),
+			detail: "normal",
+			applyFallback: false
+		});
+		delete paletteRequest.action;
+		var palette = authoringPaletteFromTreeRequest(paletteRequest, blocks, tree);
+		if (!palette || palette.ok !== true) {
+			raise("INVALID_AUTHORING_ACTION_TARGET", "The selected virtual target is not available anymore.");
+		}
+		var eligible = false;
+		(palette.items || []).some(function (candidate) {
+			if (String(candidate && candidate.id || "") === actionId) {
+				eligible = true;
+				return true;
+			}
+			return false;
+		});
+		if (!eligible) {
+			raise("INVALID_AUTHORING_ACTION", "The virtual authoring action is not valid for the selected target.");
+		}
+		var focusInfo = findTreeNode(tree, String(action.targetPath || ""));
+		var engine = authoringEngineDefinition(request);
+		var descriptors = authoringDescriptors(request, engine, blocks).concat(tree.descriptors || []);
+		if (focusInfo) {
+			descriptors = descriptors.concat(focusedVirtualDescriptors(engine, focusInfo.node));
+		}
+		var mutation = null;
+		descriptors.some(function (descriptor) {
+			if (String(descriptor && descriptor.id || "") === actionId && descriptor.authoringMutation) {
+				mutation = descriptor.authoringMutation;
+				return true;
+			}
+			return false;
+		});
+		if (!mutation) {
+			raise("INVALID_AUTHORING_ACTION", "The virtual authoring action has no mutation capability.");
+		}
+		return mutation;
+	}
+
 	function authoringContractRequest(request, blocks) {
 		request = request || {};
 		var engine = authoringEngineDefinition(request);
@@ -5336,6 +5398,12 @@
 
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
+		if (request.action) {
+			var treeRequest = authoringPaletteTreeRequest(request);
+			var tree = authoringTreeBaseRequest(treeRequest, blocks);
+			return applyEngineMutationRequest(request, blocks,
+				[authoringActionMutationFromTreeRequest(request, blocks, tree)]);
+		}
 		if (request.transfer) {
 			var engine = authoringEngineDefinition(request);
 			var transfer = request.transfer || {};
@@ -6882,6 +6950,7 @@
 			authoringPaletteTreeRequest: authoringPaletteTreeRequest,
 			authoringPaletteFromTreeRequest: authoringPaletteFromTreeRequest,
 			authoringPaletteRequest: authoringPaletteRequest,
+			authoringActionMutationFromTreeRequest: authoringActionMutationFromTreeRequest,
 			authoringMutateRequest: authoringMutateRequest,
 			searchFlowRequest: searchFlowRequest,
 			applyMutationRequest: applyMutationRequest,
@@ -6938,6 +7007,9 @@
 		},
 		authoringPaletteRequest: function (request, blocks, env) {
 			return create(env).authoringPaletteRequest(request, blocks);
+		},
+		authoringActionMutationFromTreeRequest: function (request, blocks, tree, env) {
+			return create(env).authoringActionMutationFromTreeRequest(request, blocks, tree);
 		},
 		authoringMutateRequest: function (request, blocks, env) {
 			return create(env).authoringMutateRequest(request, blocks);

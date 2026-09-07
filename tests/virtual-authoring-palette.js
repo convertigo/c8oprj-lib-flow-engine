@@ -50,8 +50,12 @@ var rootPalette = service.authoringPaletteFromTreeRequest({
 	definition: { config: config.definition }
 }, {}, tree, env);
 assertTrue(rootPalette.ok && rootPalette.items.length === 1, "Config root must expose one Rhino palette action");
-assertTrue(rootPalette.items[0].authoringMutation.__engineMutationPath === "config.service",
-	"Rhino must compute the service mutation path");
+assertTrue(rootPalette.items[0].authoringAction.id === "virtual.create.scope",
+	"The palette must expose an opaque virtual authoring action");
+assertTrue(rootPalette.items[0].virtualPrototype.kind === "object",
+	"The service action must expose a projected virtual object prototype");
+assertTrue(rootPalette.items[0].icon === "mdi:cube-outline",
+	"The service prototype must reuse the projected tree icon");
 
 var servicePalette = service.authoringPaletteFromTreeRequest({
 	surface: "virtual",
@@ -61,8 +65,27 @@ var servicePalette = service.authoringPaletteFromTreeRequest({
 	definition: { config: config.definition }
 }, {}, tree, env);
 assertTrue(servicePalette.ok && servicePalette.items.length === 1, "Config service must expose one Rhino palette action");
-assertTrue(servicePalette.items[0].authoringMutation.__engineMutationPath === "config.weather.setting",
-	"Rhino must compute the setting mutation path");
-assertTrue(servicePalette.items[0].authoringMutation.value === "", "A new setting must start as an editable scalar");
+assertTrue(servicePalette.items[0].authoringAction.id === "virtual.create.object",
+	"The setting palette entry must expose an opaque virtual authoring action");
+assertTrue(servicePalette.items[0].virtualPrototype.kind === "field",
+	"The setting action must expose a projected virtual field prototype");
+assertTrue(JSON.parse(servicePalette.items[0].virtualPrototype.definition) === "",
+	"An empty scalar prototype must stay a scalar");
+assertTrue(servicePalette.items[0].icon === "mdi:variable",
+	"The setting prototype must reuse the projected tree icon");
+assertTrue(servicePalette.items[0].description.length > 0,
+	"Every virtual palette prototype must carry documentation");
+
+var settingMutation = service.authoringActionMutationFromTreeRequest({
+	surface: "virtual",
+	definition: { config: config.definition },
+	action: {
+		id: servicePalette.items[0].id,
+		targetPath: "config.weather",
+		position: "inside"
+	}
+}, {}, tree, env);
+assertTrue(settingMutation.__engineMutationPath === "config.weather.setting",
+	"The action must be recomputed from the current virtual target instead of trusting stale palette mutations");
 
 print("virtual-authoring-palette OK");
