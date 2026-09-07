@@ -189,8 +189,12 @@
       "-editor"
     );
   }
-  function hasTypeEditor(kind) {
-    return !!customElements.get(typeEditorTag(kind));
+  function editorTag(kind, definition) {
+    var declared = definition && definition.editorClass;
+    return declared || typeEditorTag(kind);
+  }
+  function hasTypeEditor(kind, definition) {
+    return !!customElements.get(editorTag(kind, definition));
   }
   function itemKind(def) {
     var item = (def && def.items) || {};
@@ -512,8 +516,8 @@
     var kind = def.kind || def.editor || "text";
     var value = state.value == null ? "" : String(state.value);
     var label = def.label || key || "value";
-    if (state.embedded && hasTypeEditor(kind)) {
-      var embeddedTag = typeEditorTag(kind);
+    if (state.embedded && hasTypeEditor(kind, def)) {
+      var embeddedTag = editorTag(kind, def);
       return (
         '<div class="field embedded"><' +
         embeddedTag +
@@ -537,8 +541,8 @@
         '<div class="desc">' +
         esc(def.description || def.shortDescription) +
         "</div>";
-    if (hasTypeEditor(kind)) {
-      var tag = typeEditorTag(kind);
+    if (hasTypeEditor(kind, def)) {
+      var tag = editorTag(kind, def);
       return (
         html +
         "<" +
@@ -639,7 +643,7 @@
     return html + "</div>";
   }
   function attachTypeEditor() {
-    var tag = typeEditorTag(currentPropertyKind());
+    var tag = editorTag(currentPropertyKind(), (state && state.propertyDefinition) || {});
     var editor = document.querySelector(tag + "[data-key]");
     if (editor && editor.setState) {
       window.flowHost = { request: hostRequest, setValue: setDraft };
@@ -663,7 +667,7 @@
   function renderProperty(app) {
     var node = stateDefinition();
     var title = state.summary || node.id || state.virtualPath || "Flow node";
-    var custom = hasTypeEditor(currentPropertyKind());
+    var custom = hasTypeEditor(currentPropertyKind(), (state && state.propertyDefinition) || {});
     if (state.embedded) {
       app.className = "";
       app.innerHTML =
