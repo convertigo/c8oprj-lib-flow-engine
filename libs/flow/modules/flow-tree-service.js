@@ -492,13 +492,7 @@
 		var visibleConfig = visibleConfigObject(config, path, visibilityMap, request);
 		var folder = virtualNodeFromPlain("config", "scope", "config", path, "Config", visibleConfig, {
 			sourceMutationPath: path,
-			sourceWritable: true,
-			propertyDefinitions: {
-				"#flow_value": resolvedPropertyDefinition(propertyDefinition("Configuration", "Configuration",
-					"Project configuration. Add named branches here; every value is available to backend Flow editors and source pickers as config.*.",
-					{ kind: "projectConfig", type: "object" }))
-			},
-			propertyOrder: ["#flow_value"]
+			sourceWritable: true
 		}, "mdi:cog-outline");
 		out.push(folder);
 		addConfigFields(folder, visibleConfig, path);
