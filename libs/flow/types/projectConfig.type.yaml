@@ -7,6 +7,6 @@ description: "Named project-wide configuration branches exposed to Flow as confi
 editor:
   label: "Project configuration editor"
   kind: "webcomponent"
-  component: "flow-config-overrides-editor"
-  file: "editors/configOverrides.html"
+  component: "flow-project-config-editor"
+  file: "editors/projectConfig.html"
   icon: "mdi:cog-outline"

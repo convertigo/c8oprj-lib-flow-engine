@@ -1,0 +1,66 @@
+<template id="flow-project-config-editor-template">
+	<style>
+		:host { display: block; font: 13px system-ui, sans-serif; color: var(--flow-editor-text); }
+		.toolbar { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+		.services { display: grid; gap: 10px; }
+		.service { border: 1px solid var(--flow-editor-border); border-radius: 6px; padding: 10px; background: var(--flow-editor-surface); }
+		.service-head, .setting { display: grid; grid-template-columns: minmax(120px, .9fr) minmax(100px, .7fr) minmax(180px, 1.5fr) auto; gap: 7px; align-items: end; }
+		.service-head { grid-template-columns: minmax(160px, 1fr) auto; margin-bottom: 9px; }
+		.settings { display: grid; gap: 7px; }
+		.setting-label { color: var(--flow-editor-text-muted); font-size: 11px; margin-bottom: 3px; }
+		input, select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--flow-editor-border-strong); background: var(--flow-editor-input-bg); color: var(--flow-editor-text-strong); border-radius: 4px; padding: 7px; font: inherit; }
+		button { border: 1px solid var(--flow-editor-accent-border); background: var(--flow-editor-primary-bg); color: white; border-radius: 4px; padding: 6px 9px; font: inherit; cursor: pointer; }
+		button.secondary { background: var(--flow-editor-secondary-bg); border-color: var(--flow-editor-secondary-border); color: var(--flow-editor-secondary-text); }
+		button.danger { background: var(--flow-editor-danger-bg); border-color: var(--flow-editor-danger-border); }
+		.hint, .status { color: var(--flow-editor-text-muted); line-height: 1.4; margin: 8px 0; }
+		.status.error { color: var(--flow-editor-danger-text); }
+		.empty { padding: 10px; border: 1px dashed var(--flow-editor-border); border-radius: 5px; color: var(--flow-editor-text-muted); }
+		@media (max-width: 620px) { .setting { grid-template-columns: 1fr; } .service-head { grid-template-columns: 1fr; } }
+	</style>
+	<div class="hint">Add services and their settings once. Backend Flow source pickers expose them as <code>config.service.setting</code>.</div>
+	<div class="toolbar"><button data-add-service="true">Add service</button></div>
+	<div class="services" part="services"></div>
+	<div class="status" part="status"></div>
+</template>
+<script>
+	(function () {
+		if (customElements.get("flow-project-config-editor")) return;
+		var reserved = { id: true, block: true, comment: true, out: true, nodes: true, then: true, "else": true, fields: true, props: true };
+		function esc(value) { return String(value == null ? "" : value).replace(/[&<>\"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]; }); }
+		function validName(value) { return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(value || "")); }
+		function parse(value) { try { var result = typeof value === "string" ? JSON.parse(value || "{}") : value; return result && typeof result === "object" && !Array.isArray(result) ? result : {}; } catch (_) { return {}; } }
+		function kind(value) { return typeof value === "boolean" ? "boolean" : typeof value === "number" ? "number" : "text"; }
+		function rows(value) {
+			return Object.keys(value).sort().filter(function (name) { return value[name] && typeof value[name] === "object" && !Array.isArray(value[name]); }).map(function (name) {
+				return { name: name, settings: Object.keys(value[name]).sort().filter(function (key) { return ["string", "number", "boolean"].indexOf(typeof value[name][key]) >= 0; }).map(function (key) { return { name: key, type: kind(value[name][key]), value: value[name][key] }; }) };
+			});
+		}
+		customElements.define("flow-project-config-editor", class extends HTMLElement {
+			constructor() { super(); this._services = []; this._state = {}; }
+			connectedCallback() { if (!this.shadowRoot) { this.attachShadow({ mode: "open" }).append(document.getElementById("flow-project-config-editor-template").content.cloneNode(true)); this.shadowRoot.addEventListener("input", this); this.shadowRoot.addEventListener("change", this); this.shadowRoot.addEventListener("click", this); } this.render(); }
+			setState(state) { this._state = state || {}; this._services = rows(parse(this._state.value)); this.render(); this.emit(); }
+			get value() { return JSON.stringify(this.normalized()); }
+			nextName(prefix, used) { for (var n = 1; ; n++) { var candidate = n === 1 ? prefix : prefix + n; if (!used[candidate]) return candidate; } }
+			handleEvent(event) {
+				var t = event.target, service = Number(t && t.getAttribute("data-service")), settingAttribute = t && t.getAttribute("data-setting"), setting = settingAttribute === null ? -1 : Number(settingAttribute), field = t && t.getAttribute("data-field");
+				if (event.type === "click") {
+					if (t.getAttribute("data-add-service")) { var names = {}; this._services.forEach(function (s) { names[s.name] = true; }); this._services.push({ name: this.nextName("service", names), settings: [] }); this.render(); this.emit(); return; }
+					if (t.getAttribute("data-remove-service") !== null) { this._services.splice(service, 1); this.render(); this.emit(); return; }
+					if (t.getAttribute("data-add-setting") !== null) { var s = this._services[service], keys = {}; s.settings.forEach(function (v) { keys[v.name] = true; }); s.settings.push({ name: this.nextName("baseUrl", keys), type: "text", value: "" }); this.render(); this.emit(); return; }
+					if (t.getAttribute("data-remove-setting") !== null) { this._services[service].settings.splice(setting, 1); this.render(); this.emit(); return; }
+				}
+				if ((event.type === "input" || event.type === "change") && field) {
+					var target = setting >= 0 ? this._services[service].settings[setting] : this._services[service];
+					if (!target) return;
+					if (field === "value") target.value = t.type === "checkbox" ? t.checked : t.value;
+					else { target[field] = t.value; if (field === "type" && t.value === "boolean") target.value = false; }
+					this.validate(); this.emit();
+				}
+			}
+			normalized() { var out = {}; this._services.forEach(function (service) { var name = String(service.name || "").trim(); if (!validName(name) || reserved[name]) return; var values = {}; service.settings.forEach(function (setting) { var key = String(setting.name || "").trim(); if (!validName(key) || reserved[key]) return; var value = setting.value; if (setting.type === "number") { value = Number(value); if (!Number.isFinite(value)) return; } else if (setting.type === "boolean") value = value === true || value === "true"; else value = String(value == null ? "" : value); values[key] = value; }); out[name] = values; }); return out; }
+			validate() { var messages = [], names = {}; this._services.forEach(function (service) { var name = String(service.name || "").trim(); if (!validName(name) || reserved[name]) messages.push("Each service needs a valid name."); else if (names[name]) messages.push("Service names must be unique."); names[name] = true; var keys = {}; service.settings.forEach(function (setting) { var key = String(setting.name || "").trim(); if (!validName(key) || reserved[key]) messages.push("Each setting needs a valid name."); else if (keys[key]) messages.push("Setting names must be unique in a service."); keys[key] = true; if (setting.type === "number" && !Number.isFinite(Number(setting.value))) messages.push("A number setting needs a numeric value."); }); }); var status = this.shadowRoot.querySelector("[part=status]"); status.textContent = messages.length ? messages[0] : "Configuration is valid."; status.classList.toggle("error", messages.length > 0); this.valid = !messages.length; this.validationError = messages[0] || ""; return this.valid; }
+			emit() { var value = this.value; this.dispatchEvent(new CustomEvent("flow-values", { bubbles: true, detail: { value: value, values: { config: value } } })); }
+			render() { if (!this.shadowRoot) return; var root = this.shadowRoot.querySelector("[part=services]"); root.innerHTML = this._services.map(function (service, si) { var settings = service.settings.map(function (setting, vi) { var input = setting.type === "boolean" ? "<select data-service=\"" + si + "\" data-setting=\"" + vi + "\" data-field=\"value\"><option value=\"true\"" + (setting.value === true || setting.value === "true" ? " selected" : "") + ">Yes</option><option value=\"false\"" + (setting.value === false || setting.value === "false" ? " selected" : "") + ">No</option></select>" : "<input data-service=\"" + si + "\" data-setting=\"" + vi + "\" data-field=\"value\" type=\"" + (setting.type === "number" ? "number" : "text") + "\" value=\"" + esc(setting.value) + "\" placeholder=\"value\">"; return "<div class=\"setting\"><label><div class=\"setting-label\">Setting</div><input data-service=\"" + si + "\" data-setting=\"" + vi + "\" data-field=\"name\" value=\"" + esc(setting.name) + "\" placeholder=\"baseUrl\"></label><label><div class=\"setting-label\">Type</div><select data-service=\"" + si + "\" data-setting=\"" + vi + "\" data-field=\"type\"><option value=\"text\"" + (setting.type === "text" ? " selected" : "") + ">Text</option><option value=\"number\"" + (setting.type === "number" ? " selected" : "") + ">Number</option><option value=\"boolean\"" + (setting.type === "boolean" ? " selected" : "") + ">Yes / No</option></select></label><label><div class=\"setting-label\">Value</div>" + input + "</label><button class=\"danger\" data-service=\"" + si + "\" data-setting=\"" + vi + "\" data-remove-setting=\"true\">Remove</button></div>"; }).join("") || "<div class=\"empty\">No setting yet. Add the service URL, API key, or another value.</div>"; return "<section class=\"service\"><div class=\"service-head\"><label><div class=\"setting-label\">Service name</div><input data-service=\"" + si + "\" data-field=\"name\" value=\"" + esc(service.name) + "\" placeholder=\"weather\"></label><button class=\"danger\" data-service=\"" + si + "\" data-remove-service=\"true\">Remove service</button></div><div class=\"settings\">" + settings + "</div><div class=\"toolbar\"><button class=\"secondary\" data-service=\"" + si + "\" data-add-setting=\"true\">Add setting</button></div></section>"; }).join("") || "<div class=\"empty\">No service configured yet.</div>"; this.validate(); }
+		});
+	}());
+</script>
