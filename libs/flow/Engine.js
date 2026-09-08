@@ -3641,6 +3641,7 @@
 
 	function requestableServiceEnv() {
 		return {
+			outputSchemaRequest: outputSchemaRequest,
 			File: File,
 			mergeSchema: mergeSchema,
 			projectDir: projectDir,
