@@ -8,6 +8,7 @@
 		.modebar button.active { background: var(--flow-editor-primary-active); border-color: var(--flow-editor-accent); color: white; }
 		.simple { display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 8px; }
 		.simple textarea { min-height: 110px; }
+		.entry { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
 		.hidden { display: none !important; }
 		.picker { overflow: auto; max-height: 420px; border: 1px solid var(--flow-editor-border); border-radius: 4px; padding: 8px; background: var(--flow-editor-surface); }
 		details.scopeGroup { margin: 6px 0; }
@@ -33,6 +34,7 @@
 			<div class="simple" part="simple">
 				<textarea data-simple="template" placeholder="Write text and select values on the right"></textarea>
 			</div>
+			<div class="entries hidden" part="entries"></div>
 			<textarea part="input" spellcheck="false"></textarea>
 			<div class="hint">Each selected value is inserted as {{ source }} at the cursor. Plain text stays plain text.</div>
 		</div>
@@ -121,6 +123,7 @@
 				this._state = {};
 				this._value = "";
 				this._mode = "custom";
+				this._entries = null;
 			}
 
 			connectedCallback() {
@@ -129,6 +132,7 @@
 						.append(document.getElementById("flow-template-editor-template").content.cloneNode(true));
 					this.shadowRoot.addEventListener("input", this);
 					this.shadowRoot.addEventListener("click", this);
+					this.shadowRoot.addEventListener("focusin", this);
 				}
 				this.render();
 			}
@@ -141,8 +145,21 @@
 						this._state.context = response.context;
 					}
 				}
-				this._value = this._state.value == null ? "" : String(this._state.value);
+				this._value = this._state.value == null ? "" : typeof this._state.value === "object"
+					? JSON.stringify(this._state.value) : String(this._state.value);
 				this._mode = "simple";
+				this._entries = null;
+				this._entryError = "";
+				this._focusedEntry = null;
+				if (targetType(this._state.propertyDefinition) === "object") {
+					try {
+						var object = this._value.trim() ? JSON.parse(this._value) : {};
+						if (object && !Array.isArray(object) && typeof object === "object"
+							&& Object.keys(object).every(function (key) { return typeof object[key] === "string"; })) {
+							this._entries = Object.keys(object).map(function (key) { return { name: key, value: object[key] }; });
+						}
+					} catch (e) { /* Preserve expressions and structured values in the existing editor. */ }
+				}
 				this.render();
 				this.emit();
 			}
@@ -152,7 +169,18 @@
 			}
 
 			handleEvent(event) {
+				if (event.type === "focusin" && event.target.matches("[data-entry-value]")) {
+					this._focusedEntry = Number(event.target.getAttribute("data-entry-value"));
+					return;
+				}
 				if (event.type === "input") {
+					if (event.target.matches("[data-entry-name], [data-entry-value]")) {
+						var name = event.target.hasAttribute("data-entry-name");
+						var index = Number(event.target.getAttribute(name ? "data-entry-name" : "data-entry-value"));
+						this._entries[index][name ? "name" : "value"] = event.target.value;
+						this.syncEntries();
+						return;
+					}
 					if (event.target && event.target.matches("[data-simple]")) {
 						this.syncSimple();
 					} else if (event.target && event.target.matches('[part="input"]')) {
@@ -162,6 +190,15 @@
 					return;
 				}
 				if (event.type === "click") {
+					if (event.target.hasAttribute("data-add-entry")) {
+						this._entries.push({ name: "", value: "" }); this.syncEntries(); this.render();
+						this.shadowRoot.querySelector('[data-entry-name="' + (this._entries.length - 1) + '"]').focus();
+						return;
+					}
+					if (event.target.hasAttribute("data-remove-entry")) {
+						this._entries.splice(Number(event.target.getAttribute("data-remove-entry")), 1);
+						this._focusedEntry = null; this.syncEntries(); this.render(); return;
+					}
 					var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
 					if (mode) {
 						this._mode = mode;
@@ -179,12 +216,35 @@
 			}
 
 			syncSimple() {
+				if (this._entries !== null && this._mode === "simple") { this.syncEntries(); return; }
 				var input = this.shadowRoot.querySelector("[data-simple=template]");
 				this._value = input ? input.value : "";
 				this.emit();
 			}
 
+			syncEntries() {
+				var object = Object.create(null), error = "";
+				this._entries.forEach(function (entry) {
+					if (!entry.name.trim()) error = "Each entry needs a name.";
+					if (Object.prototype.hasOwnProperty.call(object, entry.name)) error = "Entry names must be unique.";
+					object[entry.name] = entry.value;
+				});
+				this._entryError = error;
+				if (!error) this._value = JSON.stringify(object);
+				this.emit();
+			}
+
 			pick(path) {
+				if (this._mode === "simple" && this._entries !== null) {
+					var index = this._focusedEntry;
+					var input = index == null ? null : this.shadowRoot.querySelector('[data-entry-value="' + index + '"]');
+					if (!input) return;
+					var text = "{{ " + path + " }}", start = input.selectionStart || 0, end = input.selectionEnd || start;
+					input.value = input.value.slice(0, start) + text + input.value.slice(end);
+					this._entries[index].value = input.value; this.syncEntries();
+					input.focus(); input.selectionStart = input.selectionEnd = start + text.length;
+					return;
+				}
 				if (this._mode === "simple") {
 					var input = this.shadowRoot.querySelector("[data-simple=template]");
 					if (input) {
@@ -200,7 +260,7 @@
 					}
 					return;
 				}
-				var textarea = this.shadowRoot.querySelector("textarea");
+				var textarea = this.shadowRoot.querySelector('[part="input"]');
 				var text = "{{ " + path + " }}";
 				var start = textarea.selectionStart || 0;
 				var end = textarea.selectionEnd || start;
@@ -214,7 +274,7 @@
 			emit() {
 				this.dispatchEvent(new CustomEvent("flow-value", {
 					bubbles: true,
-					detail: { value: this.value }
+					detail: { value: this.value, valid: !this._entryError, error: this._entryError || "" }
 				}));
 			}
 
@@ -223,12 +283,21 @@
 					return;
 				}
 				var simple = this.shadowRoot.querySelector(".simple");
-				var textarea = this.shadowRoot.querySelector("textarea");
+				var textarea = this.shadowRoot.querySelector('[part="input"]');
+				var entries = this.shadowRoot.querySelector('[part="entries"]');
+				var objectMode = this._entries !== null && this._mode === "simple";
+				this.shadowRoot.querySelector(".modebar").classList.toggle("hidden", this._entries !== null);
+				entries.classList.toggle("hidden", !objectMode);
+				if (objectMode) entries.innerHTML = this._entries.map(function (entry, index) {
+					return '<div class="entry"><input aria-label="Name" data-entry-name="' + index + '" value="' + esc(entry.name)
+						+ '"><input aria-label="Value" data-entry-value="' + index + '" value="' + esc(entry.value)
+						+ '"><button data-remove-entry="' + index + '" aria-label="Remove entry">Remove</button></div>';
+				}).join("") + '<button data-add-entry>Add entry</button><p class="hint">Enter a name and value. Select a value field before choosing a source.</p>';
 				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) {
 					button.classList.toggle("active", button.getAttribute("data-mode") === this._mode);
 				}, this);
 				if (simple) {
-					simple.classList.toggle("hidden", this._mode !== "simple");
+					simple.classList.toggle("hidden", this._mode !== "simple" || objectMode);
 				}
 				if (textarea) {
 					textarea.classList.toggle("hidden", this._mode === "simple");
