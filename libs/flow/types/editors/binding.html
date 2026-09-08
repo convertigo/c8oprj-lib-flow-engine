@@ -51,6 +51,7 @@
 			<div class="field"><label>Value</label><select data-source></select></div>
 		</div>
 		<div class="path"><flow-path-editor data-child="path"></flow-path-editor></div>
+		<div data-array-positions></div>
 		<div class="direct hidden" data-direct-source></div>
 		<div class="hint" data-source-hint></div>
 	</div>
@@ -145,6 +146,68 @@
 			if (parsed && ["literal", "source", "expression"].indexOf(parsed.mode) !== -1) return parsed;
 			if (value !== undefined && value !== null && value !== "") return { mode: "literal", value: value };
 			return { mode: "source", source: { category: "requestable", actionId: "" }, path: [] };
+		}
+
+		// Editor-only index references are lowered to the existing typed composition contract.
+		// Neither the source path model nor the runtime needs a new kind of segment.
+		function indexedBinding(binding) {
+			if (binding && binding.mode === "expression" && Array.isArray(binding.parts)) {
+				var result = copy(binding);
+				result.parts = [];
+				binding.parts.forEach(function (part) {
+					var lowered = part.kind === "source" ? indexedBinding(Object.assign({ mode: "source" }, part)) : null;
+					if (lowered && lowered.mode === "expression") result.parts.push.apply(result.parts, [{ kind: "expression", expression: "(" }].concat(lowered.parts, [{ kind: "expression", expression: ")" }]));
+					else result.parts.push(copy(part));
+				});
+				return result;
+			}
+			if (!binding || binding.mode !== "source") return binding;
+			var path = binding.path || [], first = path.findIndex(function (part) { return part.kind === "index" && part.source; });
+			if (first < 0) return binding;
+			var base = sourcePart(binding);
+			base.path = copy(path.slice(0, first));
+			var parts = [base], expression = "";
+			path.slice(first).forEach(function (part) {
+				if (part.kind === "index" && part.source) {
+					parts.push({ kind: "expression", expression: expression + "?.[" });
+					parts.push({ kind: "source", source: copy(part.source), path: [] });
+					expression = "]";
+				} else expression += "?.[" + (part.kind === "index" ? Number(part.index) : JSON.stringify(part.name)) + "]";
+			});
+			parts.push({ kind: "expression", expression: expression });
+			return { mode: "expression", parts: parts };
+		}
+
+		function editableIndexedBinding(binding) {
+			var parts = binding && binding.mode === "expression" && binding.parts;
+			if (!parts || parts.length < 4 || parts.length % 2 || parts[0].kind !== "source") return binding;
+			var candidate = sourceSelection(parts[0]);
+			for (var i = 1; i < parts.length; i += 2) {
+				var code = parts[i];
+				if (!code || code.kind !== "expression") return binding;
+				var text = String(code.expression);
+				if (i > 1) { if (text.charAt(0) !== "]") return binding; text = text.slice(1); }
+				var dynamic = i + 1 < parts.length;
+				if (dynamic) {
+					if (!text.endsWith("?.[")) return binding;
+					text = text.slice(0, -3);
+				}
+				// Parse only our canonical optional bracket accesses; never interpret arbitrary code.
+				while (text) {
+					var match = /^\?\.\[("(?:[^"\\]|\\.)*"|\d+)\]/.exec(text);
+					if (!match) return binding;
+					var key;
+					try { key = JSON.parse(match[1]); } catch (e) { return binding; }
+					candidate.path.push(typeof key === "number" ? { kind: "index", index: key } : { kind: "property", name: key });
+					text = text.slice(match[0].length);
+				}
+				if (dynamic) {
+					var index = parts[i + 1];
+					if (!index || index.kind !== "source" || !index.source || index.source.category !== "iteration" || index.source.value !== "index" || (index.path || []).length) return binding;
+					candidate.path.push({ kind: "index", index: 0, source: copy(index.source) });
+				}
+			}
+			return JSON.stringify(indexedBinding(candidate).parts) === JSON.stringify(parts) ? candidate : binding;
 		}
 
 		function sources(state) {
@@ -363,7 +426,7 @@
 
 			setState(state) {
 				this._state = state || {};
-				this._binding = normalize(this._state.value);
+				this._binding = editableIndexedBinding(normalize(this._state.value));
 				if (this._binding.mode === "expression") {
 					this._binding.parts = normalizeCompositionParts(composedParts(this._binding));
 				}
@@ -378,9 +441,9 @@
 				this.render();
 			}
 
-			get value() { return JSON.stringify(this._binding); }
-			get valid() { return bindingValidation(this._binding).valid; }
-			get validationError() { return bindingValidation(this._binding).error; }
+			get value() { return JSON.stringify(indexedBinding(this._binding)); }
+			get valid() { return bindingValidation(indexedBinding(this._binding)).valid; }
+			get validationError() { return bindingValidation(indexedBinding(this._binding)).error; }
 
 			customLiteralEditor(tag) {
 				var container = this.shadowRoot && this.shadowRoot.querySelector("[data-literal-custom]");
@@ -537,6 +600,15 @@
 					this.emit(); return;
 				}
 				if (event.type !== "input" && event.type !== "change") return;
+				var position = event.target.getAttribute && event.target.getAttribute("data-array-position");
+				if (position != null) {
+					var segment = this._selection.path[Number(position)];
+					if (!segment || segment.kind !== "index") return;
+					var indexSource = this._indexSources[Number(event.target.value)];
+					if (event.target.value === "fixed") delete segment.source;
+					else if (indexSource) segment.source = copy(indexSource.source || indexSource);
+					this.applySelection(); this.render(); this.emit(); return;
+				}
 				var literalChoice = this.shadowRoot.querySelector("[data-literal-choice]");
 				if (event.target === literalChoice && literalChoice.value !== "") {
 					var choices = literalChoices(this._state);
@@ -593,7 +665,7 @@
 					if (value === undefined) value = choices.length ? choices[0] : "";
 					this._binding = { mode: "literal", value: value };
 				}
-				else if (mode === "expression") this._binding = { mode: "expression", parts: composedParts(this._binding) };
+				else if (mode === "expression") this._binding = { mode: "expression", parts: composedParts(indexedBinding(this._binding)) };
 				else {
 					this._binding = copy(this._selection);
 					this._binding.mode = "source";
@@ -601,7 +673,7 @@
 			}
 
 			emit() {
-				var validation = bindingValidation(this._binding);
+				var validation = bindingValidation(indexedBinding(this._binding));
 				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value, valid: validation.valid, error: validation.error } }));
 			}
 
@@ -609,6 +681,19 @@
 				var preview = this.shadowRoot && this.shadowRoot.querySelector("[data-preview]");
 				if (!preview) return;
 				var allSources = sources(this._state);
+				this._indexSources = allSources.filter(function (candidate) {
+					var source = candidate.source || candidate;
+					return source.category === "iteration" && source.value === "index";
+				});
+				var positions = this.shadowRoot.querySelector("[data-array-positions]");
+				positions.innerHTML = this._binding.mode !== "source" ? "" : (this._selection.path || []).map(function (segment, index) {
+					if (segment.kind !== "index" || !self._indexSources.length || self._selection.fallback !== undefined || self._selection.transform) return "";
+					var label = "Array position — " + pathText(self._selection.path.slice(0, index));
+					return '<label class="field path">' + esc(label) + '<select data-array-position="' + index + '"><option value="fixed"' + (!segment.source ? ' selected' : '') + '>Fixed position ' + Number(segment.index || 0) + '</option>' + self._indexSources.map(function (candidate, position) {
+						var source = candidate.source || candidate;
+						return '<option value="' + position + '"' + (sourceKey(source) === sourceKey(segment.source) ? ' selected' : '') + '>Iteration index — ' + esc(candidate.label || source.scopeId || sourceLabel(candidate)) + '</option>';
+					}).join('') + '</select></label>';
+				}).join('');
 				var previous = null, output = [];
 				composedParts(this._binding).forEach(function (part) {
 					var valuePart = part && (part.kind === "literal" || part.kind === "source");
