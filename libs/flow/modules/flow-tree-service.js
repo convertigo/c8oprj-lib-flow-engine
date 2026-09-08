@@ -430,7 +430,8 @@
 			}
 			var visibleValue = visibleConfigObject(value[key], fieldPath, visibilityMap, request);
 			if (visibleValue && typeof visibleValue === "object" && Object.prototype.toString.call(visibleValue) !== "[object Array]" &&
-					Object.keys(visibleValue).length === 0) {
+					Object.keys(visibleValue).length === 0 && Object.keys(value[key]).length > 0) {
+				// Hide containers emptied by visibility filtering, not newly created empty objects.
 				return;
 			}
 			out[key] = visibleValue;

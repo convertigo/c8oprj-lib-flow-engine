@@ -88,4 +88,23 @@ var settingMutation = service.authoringActionMutationFromTreeRequest({
 assertTrue(settingMutation.__engineMutationPath === "config.weather.setting",
 	"The action must be recomputed from the current virtual target instead of trusting stale palette mutations");
 
+var projected = service.describeTreeRequest({
+	target: "engine",
+	detail: "full",
+	includeFlowCatalog: false,
+	definition: {
+		config: { service: {}, nested: { empty: {} }, hiddenOnly: { secret: "private" }, privateEmpty: {} },
+		configVisibility: { "hiddenOnly.secret": "private", privateEmpty: "private" }
+	}
+}, {}, env);
+var projectedConfig = projected.children.filter(function (node) { return node.path === "config"; })[0];
+var projectedPaths = projectedConfig.children.map(function (node) { return node.path; });
+assertTrue(projectedPaths.indexOf("config.service") !== -1,
+	"A newly added empty service must remain visible in the virtual tree");
+assertTrue(projectedPaths.indexOf("config.hiddenOnly") === -1 && projectedPaths.indexOf("config.privateEmpty") === -1,
+	"Visibility filtering must still hide private-only containers and private empty objects");
+var nestedConfig = projectedConfig.children.filter(function (node) { return node.path === "config.nested"; })[0];
+assertTrue(nestedConfig.children[0].path === "config.nested.empty",
+	"Nested empty configuration objects must remain editable");
+
 print("virtual-authoring-palette OK");
