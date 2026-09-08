@@ -5440,16 +5440,22 @@
 			var targetPath = String(transfer.targetPath || "");
 			var targetParts = parseMutationPath(targetPath);
 			var targetValue = valueAt(engine, targetParts);
-			if (!targetValue || typeof targetValue !== "object"
-					|| Object.prototype.toString.call(targetValue) === "[object Array]") {
+			var transferKind = String(transfer.kind || (transfer.value && typeof transfer.value === "object"
+				&& !Array.isArray(transfer.value) ? "object" : "field"));
+			var transferTree = describeTreeRequest({ target: "engine", definition: engine, includeFlowCatalog: false }, blocks);
+			var acceptsTransfer = false;
+			while (targetParts.length) {
+				var targetNode = findTreeNode(transferTree, targetParts.join("."));
+				acceptsTransfer = !!targetNode && focusedVirtualDescriptors(engine, targetNode.node).some(function (descriptor) {
+					return descriptor.virtualPrototype && descriptor.virtualPrototype.kind === transferKind;
+				});
+				if (acceptsTransfer) break;
 				targetParts = targetParts.slice(0, -1);
-				targetPath = pointerPath(targetParts);
-				targetValue = valueAt(engine, targetParts);
 			}
-			if (!targetValue || typeof targetValue !== "object"
-					|| Object.prototype.toString.call(targetValue) === "[object Array]") {
-				raise("INVALID_AUTHORING_TRANSFER_TARGET", "The selected virtual object cannot contain copied values.");
+			if (!acceptsTransfer) {
+				raise("INVALID_AUTHORING_TRANSFER_TARGET", "Neither this object nor its parents accept this kind of item in the palette.");
 			}
+			targetValue = valueAt(engine, targetParts);
 			var sourceParts = parseMutationPath(String(transfer.sourcePath || ""));
 			var sourceName = String(transfer.name || sourceParts[sourceParts.length - 1] || "item");
 			var name = nextVirtualChildName(targetValue, sourceName);
@@ -6266,10 +6272,6 @@
 		}
 		if (op === "renameKey") {
 			var renameParts = resolveMutationValueParts(root, mutation, blocks);
-			// Do not detach visibility rules from their keys. The provider must migrate these together.
-			if (renameParts[0] === "config" && Object.keys(root.configVisibility || {}).length) {
-				raise("UNSUPPORTED_MUTATION", "Renaming configuration with visibility rules is not supported yet.");
-			}
 			var renameParent = containerAt(root, renameParts, false);
 			var oldKey = renameParts[renameParts.length - 1];
 			var newKey = String(mutation.value || "").trim();
@@ -6286,6 +6288,21 @@
 					raise("MUTATION_NAME_CONFLICT", "An entry named " + newKey + " already exists.");
 				}
 				renameParent[newKey] = renameParent[oldKey];
+				if (renameParts[0] === "config" && root.configVisibility) {
+					var oldPrefix = renameParts.slice(1).join(".");
+					var newPrefix = renameParts.slice(1, -1).concat([newKey]).join(".");
+					var visibility = flattenConfigVisibility(root.configVisibility);
+					var migrated = {};
+					Object.keys(visibility).forEach(function (key) {
+						var moved = key === oldPrefix || key.indexOf(oldPrefix + ".") === 0;
+						var destination = moved ? newPrefix + key.substring(oldPrefix.length) : key;
+						if (moved && Object.prototype.hasOwnProperty.call(visibility, destination)) {
+							raise("MUTATION_NAME_CONFLICT", "Visibility rules already exist for " + destination);
+						}
+						migrated[destination] = visibility[key];
+					});
+					root.configVisibility = migrated;
+				}
 				delete renameParent[oldKey];
 			}
 			renameParts[renameParts.length - 1] = newKey;

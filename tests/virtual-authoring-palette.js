@@ -39,6 +39,22 @@ function renameFixture(name) {
 	}, {}, env);
 }
 var renamed = renameFixture("renamed");
+
+var visibleRename = service.applyMutationRequest({ target: "engine",
+	engineSource: JSON.stringify({ config: { service: { key: "value" } },
+		configVisibility: { unrelated: "private", service: { key: "private" } } }),
+	mutation: { op: "renameKey", path: "config.service", value: "renamed" }
+}, {}, env);
+var renamedVisibility = JSON.parse(visibleRename.source).configVisibility;
+assertTrue(renamedVisibility.unrelated === "private", "Unrelated visibility must not block rename or change");
+assertTrue(renamedVisibility["renamed.key"] === "private" && !renamedVisibility["service.key"],
+	"Visibility must follow renamed descendants");
+var flatRename = service.applyMutationRequest({ target: "engine",
+	engineSource: JSON.stringify({ config: { service: { key: "value" } }, configVisibility: { "service.key": "private" } }),
+	mutation: { op: "renameKey", path: "config.service.key", value: "renamed" }
+}, {}, env);
+assertTrue(JSON.parse(flatRename.source).configVisibility["service.renamed"] === "private",
+	"Flat visibility paths must follow a renamed setting");
 assertTrue(JSON.parse(renamed.source).config.renamed.setting === "value", "Rename must preserve descendants");
 assertTrue(!JSON.parse(renamed.source).config.service, "Rename must remove the old key");
 assertTrue(renamed.selectionMutationPath === "config.renamed", "Rename must return the new selection path");
@@ -60,6 +76,20 @@ var added = service.authoringMutateRequest({
 assertTrue(JSON.parse(added.source).config.unsaved.value === "keep", "Authoring must retain unsaved source values");
 assertTrue(added.selectionMutationPath === "config.added", "Creation must return its selection path");
 assertTrue(added.written === false && added.children.length === 0, "Dry-run with no projection must not write or build a tree");
+
+var pasted = service.authoringMutateRequest({ surface: "virtual", includeTree: false, dryRun: true,
+	engineSource: JSON.stringify({ config: { service4: { setting: "keep" } } }),
+	transfer: { sourcePath: "config.service4", targetPath: "config.service4", name: "service4", value: { setting: "copy" } }
+}, {}, mutationEnv);
+var pastedConfig = JSON.parse(pasted.source).config;
+assertTrue(pastedConfig.service42.setting === "copy" && !pastedConfig.service4.service4,
+	"Pasting a service on itself must create a sibling accepted by the palette, not a nested service");
+var pastedSetting = service.authoringMutateRequest({ surface: "virtual", includeTree: false, dryRun: true,
+	engineSource: JSON.stringify({ config: { service: { setting: "keep" } } }),
+	transfer: { sourcePath: "config.service.setting", targetPath: "config.service.setting", name: "setting", value: "copy" }
+}, {}, mutationEnv);
+assertTrue(JSON.parse(pastedSetting.source).config.service.setting2 === "copy",
+	"Pasting a setting on itself must use its parent service");
 
 var config = {
 	path: "config",
