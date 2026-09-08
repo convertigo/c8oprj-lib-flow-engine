@@ -35,6 +35,7 @@
 				<textarea data-simple="template" placeholder="Write text and select values on the right"></textarea>
 			</div>
 			<div class="entries hidden" part="entries"></div>
+			<div part="error" role="alert"></div>
 			<textarea part="input" spellcheck="false"></textarea>
 			<div class="hint">Each selected value is inserted as {{ source }} at the cursor. Plain text stays plain text.</div>
 		</div>
@@ -230,6 +231,7 @@
 					object[entry.name] = entry.value;
 				});
 				this._entryError = error;
+				if (this.shadowRoot) this.shadowRoot.querySelector('[part="error"]').textContent = error;
 				if (!error) this._value = JSON.stringify(object);
 				this.emit();
 			}
