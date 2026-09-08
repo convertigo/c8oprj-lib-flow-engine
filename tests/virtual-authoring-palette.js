@@ -11,6 +11,13 @@ function clone(value) {
 }
 
 var env = {
+	jsonMapper: { readTree: JSON.parse },
+	yamlMapper: { writeValueAsString: JSON.stringify },
+	parseYamlSource: JSON.parse,
+	listProjectFragments: function () { return { fragments: [] }; },
+	blockCatalog: function () { return []; },
+	catalogDefinition: function () { return { groups: [], types: [] }; },
+	listFlowLibraries: function () { return []; },
 	File: java.io.File,
 	engineDir: function () { return engineDir; },
 	normalizeTree: clone,
@@ -24,6 +31,35 @@ var env = {
 	frontendCreateDescriptorsForConfig: function () { return []; },
 	raise: function (code, message) { throw new Error(code + ": " + message); }
 };
+
+function renameFixture(name) {
+	return service.applyMutationRequest({ target: "engine",
+		engineSource: JSON.stringify({ config: { service: { setting: "value" }, other: {} } }),
+		mutation: { op: "renameKey", path: "config.service", value: name }
+	}, {}, env);
+}
+var renamed = renameFixture("renamed");
+assertTrue(JSON.parse(renamed.source).config.renamed.setting === "value", "Rename must preserve descendants");
+assertTrue(!JSON.parse(renamed.source).config.service, "Rename must remove the old key");
+assertTrue(renamed.selectionMutationPath === "config.renamed", "Rename must return the new selection path");
+["other", "", "a.b", "__proto__", "constructor"].forEach(function (name) {
+	var rejected = false;
+	try { renameFixture(name); } catch (e) { rejected = true; }
+	assertTrue(rejected, "Invalid or colliding names must be rejected: " + name);
+});
+
+// Dry-run authoring exercises the real mutation pipeline without touching any project.
+var mutationEnv = Object.assign({}, env, {
+	projectDir: function () { return new java.io.File("/nonexistent-flow-lifecycle-fixture"); }
+});
+var added = service.authoringMutateRequest({
+	surface: "virtual", includeTree: false, dryRun: true,
+	engineSource: JSON.stringify({ config: { unsaved: { value: "keep" } } }),
+	mutation: { op: "replace", __engineMutationPath: "config.added", value: {} }
+}, {}, mutationEnv);
+assertTrue(JSON.parse(added.source).config.unsaved.value === "keep", "Authoring must retain unsaved source values");
+assertTrue(added.selectionMutationPath === "config.added", "Creation must return its selection path");
+assertTrue(added.written === false && added.children.length === 0, "Dry-run with no projection must not write or build a tree");
 
 var config = {
 	path: "config",
@@ -98,6 +134,10 @@ var projected = service.describeTreeRequest({
 	}
 }, {}, env);
 var projectedConfig = projected.children.filter(function (node) { return node.path === "config"; })[0];
+assertTrue(JSON.parse(projectedConfig.info).deletable === false,
+	"The configuration root must not be deletable");
+assertTrue(projectedConfig.children.every(function (node) { return JSON.parse(node.info).deletable === true; }),
+	"Configuration entries must advertise deletion independently of their Java class");
 var projectedPaths = projectedConfig.children.map(function (node) { return node.path; });
 assertTrue(projectedPaths.indexOf("config.service") !== -1,
 	"A newly added empty service must remain visible in the virtual tree");

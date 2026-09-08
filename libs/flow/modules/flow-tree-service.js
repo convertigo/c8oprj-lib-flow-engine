@@ -233,21 +233,19 @@
 
 	function virtualNode(name, kind, type, path, summary, definition, info, icon) {
 		var nodeInfo = info === undefined || info === null ? "" : String(info);
+		// Mutation capabilities belong to the projection, not to Studio Java classes.
+		var capabilities = {};
+		try { capabilities = nodeInfo ? JSON.parse(nodeInfo) : {}; } catch (e) {}
+		if (capabilities.deletable === undefined) {
+			capabilities.deletable = kind === "node" || kind === "field" || kind === "binding";
+		}
 		if (icon) {
-			var baseInfo = {};
-			if (nodeInfo) {
-				try {
-					baseInfo = normalizeTree(JSON.parse(nodeInfo));
-				} catch (e) {
-					baseInfo = {};
-				}
-			}
 			var iconInfo = virtualIcon(icon);
 			Object.keys(iconInfo).forEach(function (key) {
-				baseInfo[key] = iconInfo[key];
+				capabilities[key] = iconInfo[key];
 			});
-			nodeInfo = compactPlain(baseInfo);
 		}
+		nodeInfo = compactPlain(capabilities);
 		return {
 			name: safeVirtualName(kind || "item", name),
 			kind: String(kind || ""),
@@ -488,7 +486,9 @@
 	function configNodeInfo(name, value, path) {
 		var info = {
 			sourceMutationPath: path,
-			sourceWritable: true
+			sourceWritable: true,
+			deletable: true,
+			renameMutationOp: "renameKey"
 		};
 		if (!value || typeof value !== "object" || Object.prototype.toString.call(value) === "[object Array]") {
 			info.propertyDefinitions = {
@@ -6264,6 +6264,34 @@
 		if (op === "remove") {
 			op = "delete";
 		}
+		if (op === "renameKey") {
+			var renameParts = resolveMutationValueParts(root, mutation, blocks);
+			// Do not detach visibility rules from their keys. The provider must migrate these together.
+			if (renameParts[0] === "config" && Object.keys(root.configVisibility || {}).length) {
+				raise("UNSUPPORTED_MUTATION", "Renaming configuration with visibility rules is not supported yet.");
+			}
+			var renameParent = containerAt(root, renameParts, false);
+			var oldKey = renameParts[renameParts.length - 1];
+			var newKey = String(mutation.value || "").trim();
+			if (!renameParts.length || !renameParent || Array.isArray(renameParent)
+					|| !Object.prototype.hasOwnProperty.call(renameParent, oldKey)) {
+				raise("INVALID_MUTATION_TARGET", "Rename requires an existing named object entry.");
+			}
+			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(newKey)
+					|| newKey === "__proto__" || newKey === "constructor" || newKey === "prototype") {
+				raise("INVALID_MUTATION_NAME", "Use a name beginning with a letter or underscore, followed by letters, digits or underscores.");
+			}
+			if (newKey !== oldKey) {
+				if (Object.prototype.hasOwnProperty.call(renameParent, newKey)) {
+					raise("MUTATION_NAME_CONFLICT", "An entry named " + newKey + " already exists.");
+				}
+				renameParent[newKey] = renameParent[oldKey];
+				delete renameParent[oldKey];
+			}
+			renameParts[renameParts.length - 1] = newKey;
+			mutation.selectionMutationPath = renameParts.join(".");
+			return;
+		}
 		if (op === "replaceVisibleConfig") {
 			var visibleParts = resolveMutationValueParts(root, mutation, blocks);
 			var visibilityMap = flattenConfigVisibility(root.configVisibility || {});
@@ -6421,6 +6449,7 @@
 			ok: true,
 			target: target,
 			source: source,
+			selectionMutationPath: mutations[mutations.length - 1].selectionMutationPath || "",
 			children: tree.children
 		};
 		if (target === "flow") {
@@ -6460,16 +6489,20 @@
 		}
 		var file = new File(base, "libs/flow/engine.yaml");
 		var fallback = "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n";
-		var oldSource = file.isFile()
+		var oldSource = request.engineSource !== undefined && request.engineSource !== null && String(request.engineSource).trim()
+			? String(request.engineSource)
+			: file.isFile()
 			? String(FileUtils.readFileToString(file, "UTF-8"))
 			: fallback;
 		var definition = parseYamlSource(oldSource, fallback);
+		var selectionMutationPath = "";
 		mutations.forEach(function (mutation) {
 			var spec = engineMutationSpec(mutation);
 			if (!spec) {
 				raise("UNSUPPORTED_AUTHORING_MUTATION", "Engine authoring mutations require a palette payload with __engineMutationPath.");
 			}
 			applyOneMutation(definition, spec, blocks);
+			selectionMutationPath = spec.op === "remove" || spec.op === "delete" ? "" : spec.path;
 		});
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;
@@ -6482,7 +6515,7 @@
 			FileUtils.forceMkdir(file.getParentFile());
 			FileUtils.writeStringToFile(file, source, "UTF-8");
 		}
-		var tree = authoringTreeRequest({
+		var tree = request.includeTree === false ? {} : authoringTreeRequest({
 			surface: request.surface || "frontend",
 			builder: request.builder || "svelte",
 			engineSource: source,
@@ -6500,6 +6533,7 @@
 			newHash: env.sha256Hex ? env.sha256Hex(source) : "",
 			changed: oldSource !== source,
 			written: request.dryRun === true || request.write === false || request.persist === false ? false : oldSource !== source,
+			selectionMutationPath: selectionMutationPath,
 			children: tree.children || []
 		};
 	}
