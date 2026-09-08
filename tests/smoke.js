@@ -5211,6 +5211,22 @@ assertTrue(findNode(configVisibilityTree, function (node) {
 assertTrue(findNode(configVisibilityTree, function (node) {
 	return node.path === "config.frontbuilder";
 }) === null, "engine tree exposed default-private frontbuilder config");
+var preservedPrivateConfig = JSON.parse(engine.applyMutation(JSON.stringify({
+	target: "engine",
+	engineSource: configVisibilityEngineSource,
+	mutation: {
+		op: "replaceVisibleConfig",
+		path: "config",
+		value: {
+			services: { publicUrl: "https://example.test/v2" },
+			weather: { unit: "C" }
+		}
+	}
+})));
+assertTrue(preservedPrivateConfig.ok === true && preservedPrivateConfig.source.indexOf("keep-me-out-of-tree") !== -1
+		&& preservedPrivateConfig.source.indexOf("frontbuilder:") !== -1
+		&& preservedPrivateConfig.source.indexOf("https://example.test/v2") !== -1,
+	"visible config replacement did not preserve private nested and frontbuilder branches");
 var emptyConfigTree = JSON.parse(engine.describeTree(JSON.stringify({
 	target: "engine",
 	engineSource: ["version: 1", "bindings: {}", "config: {}", ""].join("\n"),

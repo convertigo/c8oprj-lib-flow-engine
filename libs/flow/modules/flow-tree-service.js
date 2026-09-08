@@ -438,6 +438,34 @@
 		return out;
 	}
 
+	function replaceVisibleConfigObject(current, replacement, path, visibilityMap) {
+		current = current && typeof current === "object" && Object.prototype.toString.call(current) !== "[object Array]"
+			? current : {};
+		replacement = replacement && typeof replacement === "object"
+			&& Object.prototype.toString.call(replacement) !== "[object Array]" ? replacement : {};
+		Object.keys(current).forEach(function (key) {
+			var fieldPath = path + "." + key;
+			if (configPathVisible(visibilityMap, fieldPath, {})
+					&& !Object.prototype.hasOwnProperty.call(replacement, key)) {
+				delete current[key];
+			}
+		});
+		Object.keys(replacement).forEach(function (key) {
+			var fieldPath = path + "." + key;
+			if (!configPathVisible(visibilityMap, fieldPath, {})) {
+				return;
+			}
+			var replacementValue = replacement[key];
+			if (replacementValue && typeof replacementValue === "object"
+					&& Object.prototype.toString.call(replacementValue) !== "[object Array]") {
+				current[key] = replaceVisibleConfigObject(current[key], replacementValue, fieldPath, visibilityMap);
+			} else {
+				current[key] = cloneMutationValue(replacementValue);
+			}
+		});
+		return current;
+	}
+
 	function configScalarDefinition(name, value) {
 		var type = typeof value;
 		var label = /(?:url|uri|endpoint)$/i.test(String(name || "")) ? "Service URL" : "Value";
@@ -492,7 +520,8 @@
 		var visibleConfig = visibleConfigObject(config, path, visibilityMap, request);
 		var folder = virtualNodeFromPlain("config", "scope", "config", path, "Config", visibleConfig, {
 			sourceMutationPath: path,
-			sourceWritable: true
+			sourceWritable: true,
+			sourceMutationOp: "replaceVisibleConfig"
 		}, "mdi:cog-outline");
 		out.push(folder);
 		addConfigFields(folder, visibleConfig, path);
@@ -6233,6 +6262,15 @@
 		}
 		if (op === "remove") {
 			op = "delete";
+		}
+		if (op === "replaceVisibleConfig") {
+			var visibleParts = resolveMutationValueParts(root, mutation, blocks);
+			var visibilityMap = flattenConfigVisibility(root.configVisibility || {});
+			var currentConfig = replaceVisibleConfigObject(valueAt(root, visibleParts), mutation.value,
+					visibleParts.join("."), visibilityMap);
+			var visibleParent = containerAt(root, visibleParts, true);
+			visibleParent[visibleParts[visibleParts.length - 1]] = currentConfig;
+			return;
 		}
 		if (op === "batch") {
 			(mutation.mutations || []).forEach(function (child) {
