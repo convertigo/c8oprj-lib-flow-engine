@@ -182,6 +182,12 @@
 						flowName: String(dbo.getName()),
 						flowSource: String(dbo.getFlowSource())
 					};
+					// Use the same effective schema as Studio, including inference
+					// from learned node outputs. A Flow need not declare its result.
+					if (typeof env.outputSchemaRequest === "function") {
+						var effective = env.outputSchemaRequest(request, blocks);
+						if (effective && effective.ok && effective.schema) return effective.schema;
+					}
 					var definition = env.parseSource(env.sourceForFlowRequest(request, blocks));
 					return env.objectSchema(env.declaredOutputSchema(definition) || env.readResultSchema(request, definition) || {});
 				});
