@@ -7147,12 +7147,18 @@
 			var requestable = String(node.props.requestable || "");
 			var id = String(node.props.id || frontAstActionIdFromRequestable(requestable));
 			var backendCall = frontAstActionIdFromRequestable(requestable) || id;
-			clientActions.push({ id: id, kind: "backendCall", backendCall: backendCall });
-			backendCalls.push({
+			var action = { id: id, kind: "backendCall", backendCall: backendCall, target: String(node.props.target || id) };
+			var call = {
 				id: backendCall,
 				requestable: requestable,
 				parameters: frontAstVariablesFromNode(node)
-			});
+			};
+			if (frontAstIsObject(node.props.outputSchema)) {
+				action.outputSchema = frontAstClone(node.props.outputSchema);
+				call.outputSchema = frontAstClone(node.props.outputSchema);
+			}
+			clientActions.push(action);
+			backendCalls.push(call);
 		});
 		return {
 			clientActions: frontAstMergeById(clientActions),
