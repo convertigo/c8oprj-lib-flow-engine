@@ -52,6 +52,10 @@
 		</div>
 		<div class="path"><flow-path-editor data-child="path"></flow-path-editor></div>
 		<div data-array-positions></div>
+		<div data-source-format class="path">
+			<label class="field">Text before<input data-source-format="before" placeholder="Optional label" /></label>
+			<label class="field path">Text after<input data-source-format="after" placeholder="Optional unit or suffix" /></label>
+		</div>
 		<div class="direct hidden" data-direct-source></div>
 		<div class="hint" data-source-hint></div>
 	</div>
@@ -208,6 +212,31 @@
 				}
 			}
 			return JSON.stringify(indexedBinding(candidate).parts) === JSON.stringify(parts) ? candidate : binding;
+		}
+
+		function formattedBinding(binding) {
+			if (!binding || binding.mode !== "source") return indexedBinding(binding);
+			var source = copy(binding), before = source.textBefore || "", after = source.textAfter || "";
+			delete source.textBefore;
+			delete source.textAfter;
+			var lowered = indexedBinding(source);
+			if (!before && !after) return lowered;
+			var parts = composedParts(lowered);
+			if (before) parts.unshift({ kind: "literal", value: before });
+			if (after) parts.push({ kind: "literal", value: after });
+			return { mode: "expression", parts: parts };
+		}
+
+		function editableFormattedBinding(binding) {
+			if (!binding || binding.mode !== "expression" || !Array.isArray(binding.parts)) return editableIndexedBinding(binding);
+			var parts = copy(binding.parts), before = "", after = "";
+			if (parts[0] && parts[0].kind === "literal" && typeof parts[0].value === "string") before = parts.shift().value;
+			if (parts.length && parts[parts.length - 1].kind === "literal" && typeof parts[parts.length - 1].value === "string") after = parts.pop().value;
+			var source = parts.length === 1 && parts[0].kind === "source" ? sourceSelection(parts[0]) : editableIndexedBinding({ mode: "expression", parts: parts });
+			if (source.mode !== "source") return binding;
+			if (before) source.textBefore = before;
+			if (after) source.textAfter = after;
+			return JSON.stringify(formattedBinding(source).parts) === JSON.stringify(binding.parts) ? source : binding;
 		}
 
 		function sources(state) {
@@ -426,7 +455,7 @@
 
 			setState(state) {
 				this._state = state || {};
-				this._binding = editableIndexedBinding(normalize(this._state.value));
+				this._binding = editableFormattedBinding(normalize(this._state.value));
 				if (this._binding.mode === "expression") {
 					this._binding.parts = normalizeCompositionParts(composedParts(this._binding));
 				}
@@ -441,9 +470,9 @@
 				this.render();
 			}
 
-			get value() { return JSON.stringify(indexedBinding(this._binding)); }
-			get valid() { return bindingValidation(indexedBinding(this._binding)).valid; }
-			get validationError() { return bindingValidation(indexedBinding(this._binding)).error; }
+			get value() { return JSON.stringify(formattedBinding(this._binding)); }
+			get valid() { return bindingValidation(formattedBinding(this._binding)).valid; }
+			get validationError() { return bindingValidation(formattedBinding(this._binding)).error; }
 
 			customLiteralEditor(tag) {
 				var container = this.shadowRoot && this.shadowRoot.querySelector("[data-literal-custom]");
@@ -600,6 +629,11 @@
 					this.emit(); return;
 				}
 				if (event.type !== "input" && event.type !== "change") return;
+				var format = event.target.getAttribute && event.target.getAttribute("data-source-format");
+				if (format === "before" || format === "after") {
+					this._selection[format === "before" ? "textBefore" : "textAfter"] = event.target.value;
+					this.applySelection(); this.emit(); return;
+				}
 				var position = event.target.getAttribute && event.target.getAttribute("data-array-position");
 				if (position != null) {
 					var segment = this._selection.path[Number(position)];
@@ -665,7 +699,7 @@
 					if (value === undefined) value = choices.length ? choices[0] : "";
 					this._binding = { mode: "literal", value: value };
 				}
-				else if (mode === "expression") this._binding = { mode: "expression", parts: composedParts(indexedBinding(this._binding)) };
+				else if (mode === "expression") this._binding = { mode: "expression", parts: composedParts(formattedBinding(this._binding)) };
 				else {
 					this._binding = copy(this._selection);
 					this._binding.mode = "source";
@@ -673,7 +707,7 @@
 			}
 
 			emit() {
-				var validation = bindingValidation(indexedBinding(this._binding));
+				var validation = bindingValidation(formattedBinding(this._binding));
 				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value, valid: validation.valid, error: validation.error } }));
 			}
 
@@ -796,6 +830,9 @@
 				var category = this.shadowRoot.querySelector("[data-category]");
 				var allSources = sources(this._state);
 				this.renderArrayPositions();
+				this.shadowRoot.querySelector("div[data-source-format]").classList.toggle("hidden", mode !== "source");
+				this.shadowRoot.querySelector('input[data-source-format="before"]').value = this._selection.textBefore || "";
+				this.shadowRoot.querySelector('input[data-source-format="after"]').value = this._selection.textAfter || "";
 				var currentCandidate = allSources.find(function (candidate) {
 					return sourceKey(candidate.source || candidate) === sourceKey(self._selection.source);
 				});
