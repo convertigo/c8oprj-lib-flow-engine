@@ -677,9 +677,8 @@
 				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value, valid: validation.valid, error: validation.error } }));
 			}
 
-			updatePreview() {
-				var preview = this.shadowRoot && this.shadowRoot.querySelector("[data-preview]");
-				if (!preview) return;
+			renderArrayPositions() {
+				var self = this;
 				var allSources = sources(this._state);
 				this._indexSources = allSources.filter(function (candidate) {
 					var source = candidate.source || candidate;
@@ -694,6 +693,12 @@
 						return '<option value="' + position + '"' + (sourceKey(source) === sourceKey(segment.source) ? ' selected' : '') + '>Iteration index — ' + esc(candidate.label || source.scopeId || sourceLabel(candidate)) + '</option>';
 					}).join('') + '</select></label>';
 				}).join('');
+			}
+
+			updatePreview() {
+				var preview = this.shadowRoot && this.shadowRoot.querySelector("[data-preview]");
+				if (!preview) return;
+				var allSources = sources(this._state);
 				var previous = null, output = [];
 				composedParts(this._binding).forEach(function (part) {
 					var valuePart = part && (part.kind === "literal" || part.kind === "source");
@@ -790,6 +795,7 @@
 				}
 				var category = this.shadowRoot.querySelector("[data-category]");
 				var allSources = sources(this._state);
+				this.renderArrayPositions();
 				var currentCandidate = allSources.find(function (candidate) {
 					return sourceKey(candidate.source || candidate) === sourceKey(self._selection.source);
 				});
