@@ -1,4 +1,5 @@
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+var __flowEngineDir = engineDir;
 var resourceRoot = String(Packages.java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || "");
 if (!resourceRoot) {
 	throw new Error("FLOW_FRONTBUILDER_RESOURCE_ROOT is required");
@@ -6,7 +7,7 @@ if (!resourceRoot) {
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "Engine.js"), "UTF-8"));
 var root = new java.io.File(Packages.java.lang.System.getProperty("java.io.tmpdir"),
-	"flow-provider-engine-smoke");
+	"flow-provider-engine-smoke").getCanonicalFile();
 if (root.isDirectory()) {
 	Packages.org.apache.commons.io.FileUtils.deleteDirectory(root);
 }
@@ -131,6 +132,77 @@ if (info.frontendProvider.compiledSelections < 1 || info.frontendProvider.valid 
 		|| info.frontendProvider.stale !== 0 || info.frontendProvider.corrupt !== 0) {
 	throw new Error("frontend provider manifest was not selected: " + JSON.stringify(info.frontendProvider));
 }
+// The public mutation response must contain a fresh projection for the Studio,
+// not only the correct source string produced by the canonical serializer.
+var reusable = new java.io.File(model.getParentFile().getParentFile(), "lib/components/Reusable.flow.svelte");
+reusable.getParentFile().mkdirs();
+var reusableSource = '<FlowComponent id="reusable"><Structure><Text id="first" text="First" /><Text id="last" text="Last" /></Structure></FlowComponent>';
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(reusable, reusableSource, "UTF-8");
+var projectionRoot = "frontends.svelte.library.uiBlocks.reusable";
+var moved = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(reusable.getCanonicalPath()), source: reusableSource,
+	engineSource: engineSource, projectDir: String(root.getAbsolutePath()),
+	authoringRootPath: projectionRoot,
+	mutation: { op: "move", from: "frontAst.slots.structure.children[1]", fromId: "last",
+		path: "frontAst.slots.structure.children", index: 0 }
+})));
+if (!moved.ok || !moved.authoringTree || !moved.authoringTree.ok
+		|| moved.authoringTree.children.length !== 1 || moved.authoringTree.children[0].path !== projectionRoot
+		|| !findNode(moved.authoringTree, "last")) {
+	throw new Error("canonical mutation did not return the component projection: " + JSON.stringify(moved.authoringTree || moved));
+}
+if (String(Packages.org.apache.commons.io.FileUtils.readFileToString(reusable, "UTF-8")) !== reusableSource) {
+	throw new Error("draft mutation unexpectedly wrote the component source");
+}
+function projectedShape(node) {
+	return { path: node.path, kind: node.kind, type: node.type, summary: node.summary,
+		children: (node.children || []).map(projectedShape) };
+}
+function sourceRoot(tree, file) {
+	var nodeInfo = {};
+	try { nodeInfo = JSON.parse(tree.info || "{}"); } catch (ignored) {}
+	if ((tree.kind === "frontendPage" || tree.kind === "frontendRouteLayout" || tree.kind === "frontendComponent") && nodeInfo.sourcePath &&
+			String(new java.io.File(nodeInfo.sourcePath).getCanonicalPath()) === String(file.getCanonicalPath())) return tree;
+	var children = tree.children || [];
+	for (var i = 0; i < children.length; i++) {
+		var found = sourceRoot(children[i], file);
+		if (found) return found;
+	}
+	return null;
+}
+// Compare incremental and full projections, not just whether a node is present.
+[reusable, model, new java.io.File(model.getParentFile(), "+layout.flow.svelte")].forEach(function (file) {
+	var fileSource = reusableSource.replace('id="reusable"', 'id="' + (file === reusable ? "reusable" : String(file.getName()).indexOf("layout") >= 0 ? "layout" : "page") + '"');
+	Packages.org.apache.commons.io.FileUtils.writeStringToFile(file, fileSource, "UTF-8");
+	var treeRequest = { target: "engine", engineSource: engineSource, projectDir: String(root.getAbsolutePath()),
+		detail: "full", includeBindings: false, includeFrontendCatalog: false, includeFlowCatalog: false };
+	var initialTree = JSON.parse(engine.describeTree(JSON.stringify(treeRequest)));
+	var initialRoot = sourceRoot(initialTree, file);
+	if (!initialRoot) throw new Error("missing source root for " + file);
+	var response = JSON.parse(engine.applySourceMutation(JSON.stringify({
+		sourceFile: String(file.getCanonicalPath()), source: fileSource,
+		engineSource: engineSource, projectDir: String(root.getAbsolutePath()), authoringRootPath: initialRoot.path,
+		mutation: { op: "move", from: "frontAst.slots.structure.children[1]", path: "frontAst.slots.structure.children", index: 0 }
+	})));
+	if (!response.ok || !response.authoringTree || !response.authoringTree.ok) {
+		throw new Error("source mutation projection failed for " + file + ": " + JSON.stringify({rootPath: initialRoot.path, rootKind: initialRoot.kind, response: response}));
+	}
+	var drafts = {};
+	drafts[String(file.getCanonicalPath())] = response.source;
+	treeRequest.frontendSourceDrafts = drafts;
+	var fullRoot = sourceRoot(JSON.parse(engine.describeTree(JSON.stringify(treeRequest))), file);
+	var incrementalRoot = response.authoringTree.children[0];
+	if (!fullRoot || JSON.stringify(projectedShape(fullRoot)) !== JSON.stringify(projectedShape(incrementalRoot))) {
+		throw new Error("incremental/full source projection mismatch for " + file + ": " + JSON.stringify({
+			full: fullRoot && projectedShape(fullRoot), incremental: projectedShape(incrementalRoot) }));
+	}
+	var movedLast = findNode(response.authoringTree, "last");
+	var movedFirst = findNode(response.authoringTree, "first");
+	if (!movedLast || !movedFirst || JSON.parse(movedLast.info).sourceMutationPath.indexOf("children[0]") === -1
+			|| JSON.parse(movedFirst.info).sourceMutationPath.indexOf("children[1]") === -1) {
+		throw new Error("projected source did not expose the new sibling order");
+	}
+});
 engine.cacheClear();
 Packages.org.apache.commons.io.FileUtils.deleteDirectory(root);
 print("frontend-provider-engine-smoke OK " + JSON.stringify({

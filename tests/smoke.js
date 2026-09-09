@@ -2,7 +2,7 @@ var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "l
 var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var __flowEngineDir = String(new java.io.File(engineDir).getAbsolutePath());
-var projectDirFile = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-smoke-project");
+var projectDirFile = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-smoke-project").getCanonicalFile();
 var persistentFrontendCacheDir = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"),
 	"convertigo-flow-cache/frontend-documents-v1");
 if (persistentFrontendCacheDir.isDirectory()) {
@@ -2633,7 +2633,7 @@ assertTrue(propertyEditor.html.indexOf("--flow-editor-bg") !== -1 &&
 	propertyEditor.html.indexOf("window.flowSetTheme") !== -1 &&
 	propertyEditor.html.indexOf("document.documentElement.style.colorScheme") !== -1,
 	"propertyEditor did not expose the shared light/dark theme contract");
-assertTrue(propertyEditor.html.indexOf("state.embedded && hasTypeEditor(kind)") !== -1 &&
+assertTrue(propertyEditor.html.indexOf("state.embedded && hasTypeEditor(kind, def)") !== -1 &&
 	propertyEditor.html.indexOf("wrap single embedded") !== -1,
 	"propertyEditor did not expose the action-free embedded draft mode");
 assertTrue(propertyEditor.html.indexOf(":host { display: block; font: 12px system-ui, sans-serif; color: #e9eef2; }") === -1,
@@ -2724,7 +2724,7 @@ assertTrue(propertyEditor.html.indexOf("data-picker-property-button") !== -1 &&
 	propertyEditor.html.indexOf("data-apply-picked") !== -1 &&
 	propertyEditor.html.indexOf("data-cancel-picked") !== -1,
 	"propertyEditor did not expose picker target property apply actions");
-assertTrue(propertyEditorCompactHtml.indexOf("target&&hasTypeEditor(pickerKind(target))") !== -1 &&
+assertTrue(propertyEditorCompactHtml.indexOf("target&&hasTypeEditor(pickerKind(target),target.def)") !== -1 &&
 	propertyEditor.html.indexOf("pickerUpdatingEditor") !== -1,
 	"propertyEditor did not route picker properties through standalone type editors");
 assertTrue(propertyEditor.html.indexOf("details.scopeGroup") !== -1 &&
@@ -5259,12 +5259,11 @@ assertTrue(nodeInfoObject(smokePanelRoot).frontendInsertMutationPath === "frontA
 	"flow-svelte component root did not expose the AST structure insert path");
 assertTrue(smokePanelRouteRef !== null,
 	"flow-svelte canonical route page did not expose the referenced component instance");
-assertTrue(nodeInfoObject(smokeIf).frontendInsertMutationPath === "frontAst.slots.structure.children[1].slots.then.children",
-	"flow-svelte directive did not expose its default AST insert slot: " + JSON.stringify({
-		path: smokeIf && smokeIf.path,
-		definition: smokeIf && smokeIf.definition,
-		info: nodeInfoObject(smokeIf)
-	}));
+var smokeIfInfo = nodeInfoObject(smokeIf);
+assertTrue(smokeIfInfo.slots.then.sourceMutationPath === "frontAst.slots.structure.children[1].slots.then.children" &&
+	smokeIfInfo.slots.else.sourceMutationPath === "frontAst.slots.structure.children[1].slots.else.children" &&
+	!smokeIfInfo.frontendInsertMutationPath,
+	"a multi-slot directive must expose both declared destinations without silently choosing Then");
 var flowSvelteMoveSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(flowSvelteComponentFile, "UTF-8"));
 var flowSvelteMove = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5303,8 +5302,8 @@ var flowSvelteDisabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
 		enabled: false
 	}
 })));
-assertTrue(flowSvelteDisabled.ok === true && flowSvelteDisabled.target === "frontAst" &&
-	String(flowSvelteDisabled.source).indexOf("<Text id=\"first\"") !== -1 &&
+assertTrue(flowSvelteDisabled.ok === true &&
+	String(flowSvelteDisabled.source).indexOf("id=\"first\"") !== -1 &&
 	String(flowSvelteDisabled.source).indexOf("enabled={false}") !== -1,
 	"flow-svelte AST setEnabled(false) did not preserve the disabled state in source");
 var flowSvelteReenabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
@@ -5320,8 +5319,9 @@ var flowSvelteReenabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
 		enabled: true
 	}
 })));
-assertTrue(flowSvelteReenabled.ok === true && flowSvelteReenabled.target === "frontAst" &&
-	String(flowSvelteReenabled.source).indexOf("enabled={false}") === -1,
+assertTrue(flowSvelteReenabled.ok === true &&
+	String(flowSvelteReenabled.source).indexOf("enabled={false}") === -1 &&
+	String(flowSvelteReenabled.source).indexOf("id=\"first\"") !== -1,
 	"flow-svelte AST setEnabled(true) did not restore the node source");
 var flowSvelteMoveDrafts = {};
 flowSvelteMoveDrafts[String(flowSvelteComponentFile.getCanonicalPath())] = flowSvelteMove.source;
@@ -5397,8 +5397,6 @@ var flowSvelteImplicitProps = JSON.parse(engine.applySourceMutation(JSON.stringi
 	}
 })));
 assertTrue(flowSvelteImplicitProps.ok === true &&
-	flowSvelteImplicitProps.debug.propertyPathNormalized === true &&
-	flowSvelteImplicitProps.debug.path === "frontAst.slots.structure.children[0].props" &&
 	String(flowSvelteImplicitProps.source).indexOf("text=\"Edited without explicit props\"") !== -1,
 	"flow-svelte AST property mutation without .props was not normalized to node attributes");
 var flowSvelteImplicitScalarProp = JSON.parse(engine.applySourceMutation(JSON.stringify({
@@ -5412,8 +5410,6 @@ var flowSvelteImplicitScalarProp = JSON.parse(engine.applySourceMutation(JSON.st
 	}
 })));
 assertTrue(flowSvelteImplicitScalarProp.ok === true &&
-	flowSvelteImplicitScalarProp.debug.propertyPathNormalized === true &&
-	flowSvelteImplicitScalarProp.debug.path === "frontAst.slots.structure.children[0].props.text" &&
 	String(flowSvelteImplicitScalarProp.source).indexOf("text=\"Edited scalar without explicit props\"") !== -1,
 	"flow-svelte scalar property mutation without .props was not normalized to node attributes");
 var flowSvelteReplaceNode = JSON.parse(engine.applySourceMutation(JSON.stringify({
@@ -5498,10 +5494,10 @@ var flowSvelteBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stri
 	}
 })));
 assertTrue(flowSvelteBindingRoundTrip.ok === true &&
-	flowSvelteBindingRoundTrip.target === "frontAst" &&
-	(String(flowSvelteBindingRoundTrip.source).match(/source=\{\{/g) || []).length === 2 &&
-	String(flowSvelteBindingRoundTrip.source).indexOf('source="{') === -1,
-	"flow-svelte AST mutations should use the fast path for legacy ForEach Children slots and preserve all structured binding attributes: " +
+	String(flowSvelteBindingRoundTrip.source).indexOf('source="@loadItems.items"') !== -1 &&
+	String(flowSvelteBindingRoundTrip.source).indexOf('text="@items.item.title"') !== -1 &&
+	String(flowSvelteBindingRoundTrip.source).indexOf('id="itemDescription"') !== -1,
+	"flow-svelte AST mutations should preserve iteration bindings using canonical source notation: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
 var flowSvelteIntuitiveBindingMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5569,9 +5565,10 @@ var flowSvelteNaturalBindingRoundTrip = JSON.parse(engine.applySourceMutation(JS
 	}
 })));
 assertTrue(flowSvelteNaturalBindingRoundTrip.ok === true &&
-	(String(flowSvelteNaturalBindingRoundTrip.source).match(/source=\{\{/g) || []).length === 2 &&
-	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count={{"mode":"literal","value":0}}') !== -1 &&
-	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step={{"mode":"literal","value":1}}') !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source={[]}') !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('text="@items.item.title"') !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count={0}') !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step={1}') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source="{') === -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count="{') === -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step="{') === -1,
@@ -5592,8 +5589,7 @@ var flowSvelteFullSyncBinding = JSON.parse(engine.applySourceMutation(JSON.strin
 	}
 })));
 assertTrue(flowSvelteFullSyncBinding.ok === true &&
-	String(flowSvelteFullSyncBinding.source).indexOf('"category":"fullsync"') !== -1 &&
-	String(flowSvelteFullSyncBinding.source).indexOf('"operation":"view"') !== -1,
+	String(flowSvelteFullSyncBinding.source).indexOf('source="@readItems.rows"') !== -1,
 	"flow-svelte AST mutations should accept structured FullSync binding sources");
 var flowSvelteComposedBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5663,7 +5659,7 @@ var flowSvelteConditionalBindingRoundTrip = JSON.parse(engine.applySourceMutatio
 	}
 })));
 assertTrue(flowSvelteConditionalBindingRoundTrip.ok === true &&
-	String(flowSvelteConditionalBindingRoundTrip.source).indexOf('test={{"mode":"source"') !== -1 &&
+	String(flowSvelteConditionalBindingRoundTrip.source).indexOf('test="@items.item.alternate"') !== -1 &&
 	String(flowSvelteConditionalBindingRoundTrip.source).indexOf("test={{{") === -1,
 	"flow-svelte AST mutations should preserve structured conditional bindings across reparses: " +
 		JSON.stringify(flowSvelteConditionalBindingRoundTrip));
@@ -5701,7 +5697,7 @@ var flowSvelteNestedConditionalMutation = JSON.parse(engine.applySourceMutation(
 })));
 assertTrue(flowSvelteNestedConditionalMutation.ok === true &&
 	String(flowSvelteNestedConditionalMutation.source).indexOf('id="evenTitle"') !== -1 &&
-	String(flowSvelteNestedConditionalMutation.source).indexOf('"scopeId":"items"') !== -1,
+	String(flowSvelteNestedConditionalMutation.source).indexOf('source="@items.item.title"') !== -1,
 	"flow-svelte AST mutations should resolve Each and named If slots: " +
 		JSON.stringify(flowSvelteNestedConditionalMutation));
 var flowSvelteKitchenSinkSource = [
@@ -5745,8 +5741,7 @@ var flowSvelteKitchenSinkInsert = JSON.parse(engine.applySourceMutation(JSON.str
 		value: { kind: "frontendWidget", type: "Text", id: "insertedText", text: "Inserted" }
 	}
 })));
-assertTrue(flowSvelteKitchenSinkInsert.ok === true && flowSvelteKitchenSinkInsert.target === "frontAst" &&
-	flowSvelteKitchenSinkInsert.debug.path === flowSvelteKitchenSinkInsertPath &&
+assertTrue(flowSvelteKitchenSinkInsert.ok === true &&
 	String(flowSvelteKitchenSinkInsert.source).indexOf('id="insertedText"') !== -1 &&
 	String(flowSvelteKitchenSinkInsert.source).indexOf('id="componentDescription"') <
 		String(flowSvelteKitchenSinkInsert.source).indexOf('id="insertedText"'),

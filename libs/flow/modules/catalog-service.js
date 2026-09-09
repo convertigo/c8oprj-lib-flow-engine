@@ -101,7 +101,7 @@
 
 	function compactSlotDescriptor(slot) {
 		var out = {};
-		["name", "label", "inline", "scope", "input", "local", "current", "error", "description"].forEach(function (key) {
+		["name", "label", "inline", "scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom"].forEach(function (key) {
 			if (slot && slot[key] !== undefined && slot[key] !== null && slot[key] !== "") {
 				out[key] = slot[key];
 			}
@@ -147,6 +147,7 @@
 		if (descriptor.tags && descriptor.tags.length) {
 			out.tags = descriptor.tags;
 		}
+		if (descriptor.traits) out.traits = descriptor.traits;
 		if (descriptor.uses && descriptor.uses.length) {
 			out.uses = descriptor.uses;
 		}

@@ -894,10 +894,9 @@
 		}
 
 		function hasChildSlots(catalog) {
-			return !!(catalog && (
-				catalog.slots && Object.prototype.toString.call(catalog.slots) === "[object Array]" ||
-				catalog.children && Object.prototype.toString.call(catalog.children) === "[object Array]"
-			));
+			if (!catalog) return false;
+			var slots = catalog.slots !== undefined ? catalog.slots : catalog.children;
+			return Array.isArray(slots) && slots.length > 0;
 		}
 
 		function analyzeNodeShallow(ctx, node, path) {

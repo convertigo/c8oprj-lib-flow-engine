@@ -82,8 +82,8 @@ var pasted = service.authoringMutateRequest({ surface: "virtual", includeTree: f
 	transfer: { sourcePath: "config.service4", targetPath: "config.service4", name: "service4", value: { setting: "copy" } }
 }, {}, mutationEnv);
 var pastedConfig = JSON.parse(pasted.source).config;
-assertTrue(pastedConfig.service42.setting === "copy" && !pastedConfig.service4.service4,
-	"Pasting a service on itself must create a sibling accepted by the palette, not a nested service");
+assertTrue(pastedConfig.service4.service4.setting === "copy",
+	"Pasting a group inside a group must now follow the officially declared group slot");
 var pastedSetting = service.authoringMutateRequest({ surface: "virtual", includeTree: false, dryRun: true,
 	engineSource: JSON.stringify({ config: { service: { setting: "keep" } } }),
 	transfer: { sourcePath: "config.service.setting", targetPath: "config.service.setting", name: "setting", value: "copy" }
@@ -106,7 +106,8 @@ var config = {
 		children: []
 	}]
 };
-var tree = { ok: true, children: [config], descriptors: [] };
+var tree = service.describeTreeRequest({ target: "engine", includeFlowCatalog: false,
+	definition: { config: config.definition } }, {}, env);
 
 var rootPalette = service.authoringPaletteFromTreeRequest({
 	surface: "virtual",
@@ -116,7 +117,7 @@ var rootPalette = service.authoringPaletteFromTreeRequest({
 	definition: { config: config.definition }
 }, {}, tree, env);
 assertTrue(rootPalette.ok && rootPalette.items.length === 1, "Config root must expose one Rhino palette action");
-assertTrue(rootPalette.items[0].authoringAction.id === "virtual.create.scope",
+assertTrue(rootPalette.items[0].authoringAction.id === "config.create.group@entries",
 	"The palette must expose an opaque virtual authoring action");
 assertTrue(rootPalette.items[0].virtualPrototype.kind === "object",
 	"The service action must expose a projected virtual object prototype");
@@ -130,8 +131,9 @@ var servicePalette = service.authoringPaletteFromTreeRequest({
 	detail: "compact",
 	definition: { config: config.definition }
 }, {}, tree, env);
-assertTrue(servicePalette.ok && servicePalette.items.length === 1, "Config service must expose one Rhino palette action");
-assertTrue(servicePalette.items[0].authoringAction.id === "virtual.create.object",
+assertTrue(servicePalette.ok && servicePalette.items.length === 2, "A group must expose group and setting creation");
+servicePalette.items.sort(function (a, b) { return a.virtualPrototype.kind === "field" ? -1 : 1; });
+assertTrue(servicePalette.items[0].authoringAction.id === "config.create.value@entries",
 	"The setting palette entry must expose an opaque virtual authoring action");
 assertTrue(servicePalette.items[0].virtualPrototype.kind === "field",
 	"The setting action must expose a projected virtual field prototype");
@@ -151,8 +153,70 @@ var settingMutation = service.authoringActionMutationFromTreeRequest({
 		position: "inside"
 	}
 }, {}, tree, env);
-assertTrue(settingMutation.__engineMutationPath === "config.weather.setting",
+assertTrue(settingMutation.__engineMutationPath === "/config/weather/setting",
 	"The action must be recomputed from the current virtual target instead of trusting stale palette mutations");
+
+// The creation mechanism must not inspect a Config/backend/frontend kind or type.
+var foreignDefinition = { entries: {} };
+var foreignNode = { path: "entries", kind: "arbitraryKind", type: "arbitraryType", definition: {},
+	info: { sourceMutationPath: "entries", sourceWritable: true,
+		slots: { children: { accepts: ["example.entry"], sourceMutationPath: "entries", sourceWritable: true } },
+		creationDescriptors: [
+			{ id: "example.create", name: "entry", kind: "anotherKind", type: "anotherType",
+				traits: ["example.entry"], value: { enabled: true }, description: "An entry from an independent provider." },
+			{ id: "example.forbidden", name: "wrong", traits: ["example.other"], value: {} }
+		] }, children: [] };
+var foreignTree = { children: [foreignNode] };
+var foreignPalette = service.authoringPaletteFromTreeRequest({ surface: "virtual", focusPath: "entries",
+	definition: foreignDefinition }, {}, foreignTree, env);
+assertTrue(foreignPalette.items.length === 1 && foreignPalette.items[0].id === "example.create@children",
+	"Only accepted traits must determine a foreign provider's creation palette");
+var foreignMutation = service.authoringActionMutationFromTreeRequest({ surface: "virtual", definition: foreignDefinition,
+	action: { id: foreignPalette.items[0].id, targetPath: "entries" } }, {}, foreignTree, env);
+assertTrue(foreignMutation.__engineMutationPath === "/entries/entry" && foreignMutation.value.enabled === true,
+	"Mutation must be materialized from the same foreign provider descriptor");
+var forbiddenRejected = false;
+try {
+	service.authoringActionMutationFromTreeRequest({ surface: "virtual", definition: foreignDefinition,
+		action: { id: "example.forbidden@children", targetPath: "entries" } }, {}, foreignTree, env);
+} catch (e) { forbiddenRejected = true; }
+assertTrue(forbiddenRejected, "An action absent from the valid palette must not bypass trait validation");
+
+function foreignTransfer(traits, fixture, definition, targetSlotId) {
+	return service.authoringTransferMutationFromTreeRequest({ definition: definition || foreignDefinition,
+		transfer: { sourcePath: "external.original", targetPath: "entries", targetSlotId: targetSlotId,
+			traits: traits, name: "entry", value: { enabled: true } } }, {}, fixture || foreignTree, env);
+}
+assertTrue(foreignTransfer(["example.entry"]).__engineMutationPath === foreignMutation.__engineMutationPath,
+	"Palette and paste must resolve the same destination for an independent provider");
+assertTrue(foreignTransfer(["example.unrelated", "example.entry"]).__engineMutationPath === "/entries/entry",
+	"An object with multiple traits is accepted when one matches the slot");
+function expectTransferError(traits, fixture, definition, slotId, code) {
+	var error = "";
+	try { foreignTransfer(traits, fixture, definition, slotId); } catch (e) { error = String(e); }
+	assertTrue(error.indexOf(code + ":") >= 0, "Expected transfer error " + code + ", got " + error);
+}
+expectTransferError(["example.other"], null, null, null, "INVALID_AUTHORING_TRANSFER_TARGET");
+expectTransferError([], null, null, null, "INVALID_AUTHORING_TRANSFER");
+var readOnlyTree = clone(foreignTree);
+readOnlyTree.children[0].info.slots.children.sourceWritable = false;
+expectTransferError(["example.entry"], readOnlyTree, null, null, "INVALID_AUTHORING_TRANSFER_TARGET");
+var ambiguousTree = clone(foreignTree);
+ambiguousTree.children[0].info.slots.other = { accepts: ["example.entry"],
+	sourceMutationPath: "otherEntries", sourceWritable: true };
+expectTransferError(["example.entry"], ambiguousTree, null, null, "AMBIGUOUS_AUTHORING_TRANSFER_TARGET");
+assertTrue(foreignTransfer(["example.entry"], ambiguousTree, { entries: {}, otherEntries: {} }, "other")
+	.__engineMutationPath === "/otherEntries/entry", "Explicit destination slot must resolve ambiguity");
+expectTransferError(["example.entry"], ambiguousTree, null, "missing", "INVALID_AUTHORING_TRANSFER_TARGET");
+expectTransferError(["example.entry"], null, { entries: [] }, null, "INVALID_AUTHORING_TRANSFER_TARGET");
+var ambiguousPalette = service.authoringPaletteFromTreeRequest({ surface: "virtual", focusPath: "entries",
+	definition: { entries: {}, otherEntries: {} } }, {}, ambiguousTree, env);
+assertTrue(ambiguousPalette.items.length === 2, "A template must be materialized once per compatible slot, not cross-matched");
+var staleMutation = service.authoringActionMutationFromTreeRequest({ surface: "virtual",
+	definition: { entries: { entry: { enabled: false } } },
+	action: { id: foreignPalette.items[0].id, targetPath: "entries" } }, {}, foreignTree, env);
+assertTrue(staleMutation.__engineMutationPath === "/entries/entry2",
+	"Replaying an old palette action must recalculate the name without overwriting the existing child");
 
 var projected = service.describeTreeRequest({
 	target: "engine",

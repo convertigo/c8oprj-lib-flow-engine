@@ -30,7 +30,7 @@ try {
 	});
 
 	assertTrue(descriptor.iconify === "mdi:test-icon", "iconify id must be preserved");
-	assertTrue(String(descriptor.iconFile).indexOf(String(flowDir.getAbsolutePath())) === 0,
+	assertTrue(String(descriptor.iconFile).indexOf(String(flowDir.getCanonicalPath())) === 0,
 		"published icon paths must remain project-local for compatibility");
 	assertTrue(new java.io.File(flowDir, "icons/iconify/mdi/test-icon.svg").isFile(),
 		"the project cache must be restored from the shared workspace cache");

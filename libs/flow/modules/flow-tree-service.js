@@ -77,6 +77,8 @@
 		var virtualIcons = {};
 		var frontendAuthoringDurations = {};
 		var frontendAuthoringDepth = 0;
+		var semanticOwnerTree;
+		var semanticOwnerIndex;
 
 	function measureFrontendAuthoring(phase, callback) {
 		// Nested phase timings intentionally share the request accumulator so cold
@@ -483,6 +485,26 @@
 		return propertyDefinition(label, "Configuration", description, { kind: "text", type: "string" });
 	}
 
+	function configCreationDescriptors() {
+		return [
+			{ id: "config.create.group", label: "Add configuration group", name: "group", kind: "object", type: "config",
+				traits: ["config.group"], value: {}, icon: "mdi:cube-outline", category: "Flow configuration",
+				description: "Adds a named configuration group. Groups can contain other groups and settings." },
+			{ id: "config.create.value", label: "Add setting", name: "setting", kind: "field", type: "config",
+				traits: ["config.value"], value: "", icon: "mdi:variable", category: "Flow configuration",
+				description: "Adds an editable setting to this configuration group." }
+		];
+	}
+
+	function configContainerInfo(path, root) {
+		return {
+			traits: [root ? "config.root" : "config.group"],
+			slots: { entries: { label: "Configuration", accepts: root ? ["config.group"] : ["config.group", "config.value"],
+				sourceMutationPath: path, sourceWritable: true } },
+			creationDescriptors: configCreationDescriptors()
+		};
+	}
+
 	function configNodeInfo(name, value, path) {
 		var info = {
 			sourceMutationPath: path,
@@ -491,10 +513,14 @@
 			renameMutationOp: "renameKey"
 		};
 		if (!value || typeof value !== "object" || Object.prototype.toString.call(value) === "[object Array]") {
+			info.traits = ["config.value"];
+			info.slots = {};
 			info.propertyDefinitions = {
 				"#flow_value": resolvedPropertyDefinition(configScalarDefinition(name, value))
 			};
 			info.propertyOrder = ["#flow_value"];
+		} else {
+			Object.assign(info, configContainerInfo(path, false));
 		}
 		return info;
 	}
@@ -519,11 +545,11 @@
 		config = config && typeof config === "object" ? config : {};
 		var visibilityMap = flattenConfigVisibility(visibility || {});
 		var visibleConfig = visibleConfigObject(config, path, visibilityMap, request);
-		var folder = virtualNodeFromPlain("config", "scope", "config", path, "Config", visibleConfig, {
+		var folder = virtualNodeFromPlain("config", "scope", "config", path, "Config", visibleConfig, Object.assign(configContainerInfo(path, true), {
 			sourceMutationPath: path,
 			sourceWritable: true,
 			sourceMutationOp: "replaceVisibleConfig"
-		}, "mdi:cog-outline");
+		}), "mdi:cog-outline");
 		out.push(folder);
 		addConfigFields(folder, visibleConfig, path);
 	}
@@ -620,47 +646,22 @@
 		var source = frontendModelSource(request, file);
 		performanceMark("frontend.model.source");
 		if (isFlowSvelteModel(file)) {
-			var described;
-			try {
-				var documentRequest = {
-					sourceFile: String(file.getAbsolutePath()),
-					source: source,
-					projectDir: projectDir() ? String(projectDir().getAbsolutePath()) : "",
-					resourceRoot: settings && settings.resourceRoot || "",
-					engineSource: request && request.engineSource || "",
-					drafts: request && request.frontendSourceDrafts || {},
-					property: request && request.property || "",
-					sourceId: request && request.sourceId || "",
-					bindingTargetPath: request && request.bindingTargetPath || "",
-					bindingTargetSource: request && request.bindingTargetSource || "",
-					sourceTree: request && request.sourceTree === true,
-					includeBindings: request && request.includeBindings !== false
-				};
-				performanceMark("frontend.model.documentRequest");
-				described = describeFrontendDocument(documentRequest);
-			} catch (e) {
-				var message = String(e && e.message || e);
-				var root = /Cannot run program|ENOENT|not found/i.test(message)
-					? flowSvelteLiteComponentRoot(String(file.getAbsolutePath()), source)
-					: null;
-				if (!root) {
-					throw e;
-				}
-				var embeddedDiagnostics = flowSvelteLiteBindingDiagnostics(root);
-				embeddedDiagnostics.push({
-					level: "warning",
-					code: "FRONTEND_EMBEDDED_PROJECTION",
-					message: "Using the embedded Flow Svelte projection because the optional Node authoring service is unavailable."
-				});
-				described = {
-					model: {
-						version: 1,
-						app: { id: root.id, title: root.label }
-					},
-					tree: { children: [root] },
-					diagnostics: embeddedDiagnostics
-				};
-			}
+			var documentRequest = {
+				sourceFile: String(file.getAbsolutePath()),
+				source: source,
+				projectDir: projectDir() ? String(projectDir().getAbsolutePath()) : "",
+				resourceRoot: settings && settings.resourceRoot || "",
+				engineSource: request && request.engineSource || "",
+				drafts: request && request.frontendSourceDrafts || {},
+				property: request && request.property || "",
+				sourceId: request && request.sourceId || "",
+				bindingTargetPath: request && request.bindingTargetPath || "",
+				bindingTargetSource: request && request.bindingTargetSource || "",
+				sourceTree: request && request.sourceTree === true,
+				includeBindings: request && request.includeBindings !== false
+			};
+			performanceMark("frontend.model.documentRequest");
+			var described = describeFrontendDocument(documentRequest);
 			if (!described || !described.model) {
 				throw new Error("Frontend document service did not return a model for " + String(file.getAbsolutePath()));
 			}
@@ -2137,7 +2138,7 @@
 
 	function frontendAuthoringTraits(node) {
 		var traits = frontendArray(node && node.traits);
-		if (traits.length) {
+		if (node && node.traits !== undefined) {
 			return traits;
 		}
 		var kind = String(node && node.kind || "");
@@ -2297,7 +2298,7 @@
 			node.sourceMutationPath = root.sourceMutationPath || "frontAst";
 			node.frontendInsertSourcePath = String(sourceFile.getAbsolutePath());
 			node.frontendInsertMutationPath = frontendSlotMutationPath(root, ["structure"]) || "frontAst.slots.structure.children";
-			node.slots = Object.assign({}, node.slots || {}, root.slots || {});
+			if (node.slots === undefined) node.slots = normalizeTree(root.slots || {});
 			node.traits = node.traits || root.traits;
 			node.props = Object.assign({}, node.props || {});
 			if (root.props && root.props.label !== undefined && node.props.label === undefined) {
@@ -2424,13 +2425,16 @@
 			return frontendAuthoringDefinition(node);
 		});
 		measureFrontendAuthoring("traitsSlots", function () {
+			if (node.parentSlot !== undefined) {
+				info.parentSlot = normalizeTree(node.parentSlot);
+			}
 			var traits = frontendAuthoringTraits(node);
 			var slots = frontendAuthoringSlots(node);
-			if (traits.length) {
+			if (traits.length || node.traits !== undefined) {
 				info.traits = traits;
 				definition.traits = traits;
 			}
-			if (Object.keys(slots).length) {
+			if (Object.keys(slots).length || node.slots !== undefined) {
 				info.slots = slots;
 				definition.slots = slots;
 			}
@@ -2469,7 +2473,8 @@
 			return info;
 		}
 		var sourcePath = String(node.frontendInsertSourcePath || "");
-		var mutationPath = String(node.frontendInsertMutationPath || "");
+		var mutationPath = node.slots !== undefined ? frontendNodeInsertMutationPath(node)
+			: String(node.frontendInsertMutationPath || "");
 		if (sourcePath) {
 			info.frontendInsertSourcePath = sourcePath;
 		}
@@ -2493,6 +2498,14 @@
 	}
 
 	function frontendNodeInsertMutationPath(node) {
+		// A declared contract is authoritative, including closed and multi-slot nodes.
+		// Only a single writable destination can be exposed as a default insertion path.
+		if (node && node.slots !== undefined) {
+			var declared = Object.keys(node.slots || {}).map(function (name) { return node.slots[name]; })
+				.filter(function (slot) { return slot && slot.sourceWritable !== false && slot.sourceMutationPath
+					&& (!Array.isArray(slot.accepts) || slot.accepts.length > 0); });
+			return declared.length === 1 ? String(declared[0].sourceMutationPath) : "";
+		}
 		var kind = String(node && node.kind || "");
 		var type = String(node && node.type || "");
 		var explicitInsert = String(node && node.frontendInsertMutationPath || "");
@@ -2608,6 +2621,7 @@
 	function frontendAuthoringDefinition(node) {
 		var out = {};
 		var internal = {
+			parentSlot: true,
 			category: true,
 			descriptorId: true,
 			icon: true,
@@ -3205,8 +3219,8 @@
 			aliases: slot.aliases || [],
 			inline: slot.inline === true
 		};
-		["scope", "input", "local", "current", "error", "description"].forEach(function (key) {
-			if (slot[key] !== undefined && slot[key] !== null && String(slot[key]) !== "") {
+		["scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom"].forEach(function (key) {
+			if (slot[key] !== undefined && slot[key] !== null) {
 				out[key] = slot[key];
 			}
 		});
@@ -3233,17 +3247,11 @@
 				var name = String(names[i]);
 				var nodes = node && node[name];
 				if (nodes && Object.prototype.toString.call(nodes) === "[object Array]" && nodes.length > 0) {
-					active.push({
+					active.push(Object.assign({}, definition, {
+						id: definition.name,
 						name: name,
-						label: definition.label,
-						inline: definition.inline,
-						scope: definition.scope || "",
-						input: definition.input || "",
-						local: definition.local || "",
-						current: definition.current || "",
-						error: definition.error || "",
 						nodes: nodes
-					});
+					}));
 					break;
 				}
 			}
@@ -3270,8 +3278,9 @@
 		activeSlots(node, catalog).forEach(function (slot) {
 			var path = nodePath + "." + slot.name;
 			var slotSourcePath = sourceNodePath ? sourceNodePath + "." + slot.name : "";
+			var parentSlot = { ownerPath: parent.path, slotId: slot.id };
 			if (slot.inline) {
-				addNodeList(parent, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath);
+				addNodeList(parent, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath, parentSlot);
 			} else {
 				var slotMeta = normalizeTree(slot);
 				delete slotMeta.nodes;
@@ -3279,9 +3288,14 @@
 				Object.keys(slotMeta).forEach(function (key) {
 					slotInfo[key] = slotMeta[key];
 				});
+				if (slot.accepts !== undefined || slot.acceptsFrom !== undefined) {
+					slotInfo.parentSlot = parentSlot;
+					slotInfo.slots = { content: { acceptsFrom: "parentSlot", label: slot.label,
+						sourceMutationPath: slotSourcePath || path } };
+				}
 				var folder = virtualNode(slot.name, "slot", slot.name, path, slot.label, compact(slot.nodes), compact(slotInfo), "mdi:call-split");
 				parent.children.push(folder);
-				addNodeList(folder, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath);
+				addNodeList(folder, slot.nodes, path, blocks, analysisById, sourceInfo, slotSourcePath, parentSlot);
 			}
 		});
 	}
@@ -3308,7 +3322,21 @@
 		return info;
 	}
 
-	function addNodeList(parent, nodes, path, blocks, analysisById, sourceInfo, sourceBasePath) {
+	function projectedBackendSlots(node, catalog, path) {
+		var slots = {};
+		slotDefinitions(catalog).forEach(function (definition) {
+			// Legacy descriptors remain unmigrated until they declare an acceptance contract.
+			if (definition.accepts === undefined && definition.acceptsFrom === undefined) return;
+			var name = [definition.name].concat(definition.aliases || []).filter(function (name) {
+				return Array.isArray(node[name]);
+			})[0] || definition.name;
+			slots[definition.name] = Object.assign({}, definition, { id: definition.name,
+				sourceMutationPath: path + "." + name });
+		});
+		return slots;
+	}
+
+	function addNodeList(parent, nodes, path, blocks, analysisById, sourceInfo, sourceBasePath, parentSlot) {
 		(nodes || []).forEach(function (node, index) {
 			var id = String(node && (node.id || node.uid || node.name) || "node" + index);
 			var blockType = String(blockName(node) || "unknown");
@@ -3325,6 +3353,12 @@
 				}
 				});
 				var nodeInformation = mergeSourceInfo(nodeInfo(nodeAnalysis, catalog), sourceInfo, sourceNodePath);
+				if (parentSlot) nodeInformation.parentSlot = parentSlot;
+				if (catalog && catalog.traits) nodeInformation.traits = normalizeTree(catalog.traits);
+				var slots = projectedBackendSlots(node, catalog, sourceNodePath || nodePath);
+				if (Object.keys(slots).length || catalog && Array.isArray(catalog.slots) && !catalog.slots.length) {
+					nodeInformation.slots = slots;
+				}
 				var nodeObject = virtualNode("node_" + id + "_" + index, "node", blockType, nodePath,
 					nodeSummary(block, catalog, node, id, blockType), compact(shallow), compact(nodeInformation));
 				parent.children.push(nodeObject);
@@ -3339,7 +3373,7 @@
 						compact(graphSource), compact(sourceObjectInfo(graphSource, sourcePropertyDefinitions(),
 							["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"])), "mdi:source-branch");
 					nodeObject.children.push(implementationNode);
-					addNodeList(implementationNode, node.nodes, nodePath + ".implementation.nodes", blocks, analysisById, graphSource, "nodes");
+					addRootNodeList(implementationNode, node.nodes, nodePath + ".implementation.nodes", blocks, analysisById, graphSource, "nodes");
 				}
 				var slotNode = node;
 				if (node.__graphBlock && node.nodes) {
@@ -3350,13 +3384,22 @@
 			});
 	}
 
-	function addNodes(out, nodes, path, blocks, analysisById) {
+	function addRootNodeList(parent, nodes, path, blocks, analysisById, sourceInfo, sourceBasePath) {
+		var info = mergeSourceInfo(nodeJson(parent, "info"), sourceInfo, sourceBasePath || path);
+		info.slots = { nodes: { label: "Flow", accepts: ["flow.node"],
+			sourceMutationPath: sourceBasePath || path } };
+		parent.info = compact(info);
+		addNodeList(parent, nodes, path, blocks, analysisById, sourceInfo, sourceBasePath,
+			{ ownerPath: parent.path, slotId: "nodes" });
+	}
+
+	function addNodes(out, nodes, path, blocks, analysisById, sourceInfo) {
 		if (!nodes || Object.prototype.toString.call(nodes) !== "[object Array]") {
 			return;
 		}
 		var folder = virtualNode("flow", "folder", "flow", path, "Flow", compact(nodes), null, "mdi:sitemap-outline");
 		out.push(folder);
-		addNodeList(folder, nodes, path, blocks, analysisById);
+		addRootNodeList(folder, nodes, path, blocks, analysisById, sourceInfo, path);
 	}
 
 	function addHelpers(out, helpers, path, blocks, analysisById, sourcePath) {
@@ -3393,7 +3436,7 @@
 				compact(implementationSource), compact(sourceObjectInfo(implementationSource, sourcePropertyDefinitions(),
 					["implementationKind", "sourcePath", "sourceMutationPath", "sourceWritable"])), "mdi:source-branch");
 			helperNode.children.push(implementationNode);
-			addNodeList(implementationNode, helper.nodes || [], helperPath + ".nodes", blocks, analysisById,
+			addRootNodeList(implementationNode, helper.nodes || [], helperPath + ".nodes", blocks, analysisById,
 				implementationSource, helperPath + ".nodes");
 		});
 	}
@@ -3672,7 +3715,7 @@
 		var implementationNodes = expandFragmentNodes(blocks, nodes || [], stack || [], {
 			expandGraphBlocks: false
 		});
-		addNodeList(parent, implementationNodes, path, blocks, {}, sourceInfo, sourceBasePath || "nodes");
+		addRootNodeList(parent, implementationNodes, path, blocks, {}, sourceInfo, sourceBasePath || "nodes");
 	}
 
 	function addBlockImplementation(parent, block, descriptor, path, blocks) {
@@ -4272,7 +4315,14 @@
 				"outputs", "outputs", "Outputs");
 			addHelpers(children, definition.helpers || [], "helpers", activeBlocks, analysisById,
 				request.sourceFile || request.sourcePath || "");
-			addNodes(children, definition.nodes || [], "nodes", activeBlocks, analysisById);
+			// Instances are edited in this Flow, not in the library defining their block.
+			// Block provenance remains available separately as blockSource/blockProvider.
+			var writable = request.sourceWritable !== false && request.readOnly !== true && request.readOnlyReference !== true;
+			addNodes(children, definition.nodes || [], "nodes", activeBlocks, analysisById, {
+				sourcePath: String(request.sourceFile || request.sourcePath || ""),
+				sourceWritable: writable, writable: writable,
+				readOnly: !writable, readOnlyReference: request.readOnlyReference === true
+			});
 		} else if (target === "engine") {
 			var engine = request.definition !== undefined && request.definition !== null
 				? normalizeTree(request.definition)
@@ -4354,40 +4404,31 @@
 		var rootPath = String(request.authoringRootPath || request.rootPath || "frontAst");
 		var document = request.document || {};
 		var documentTree = request.documentTree || request.tree || document.tree || {};
-		var routeRoots = rootPath.indexOf(".routes.") >= 0
-			? request.pageNodes || document.pageNodes || documentTree.pageNodes || []
-			: [];
-		var roots = routeRoots.length ? routeRoots : documentTree.children || [];
-		var routeProjection = rootPath.indexOf(".routes.") >= 0;
-		var root = !routeProjection && roots.length === 1 ? roots[0] : null;
-		if (routeProjection) {
-			var candidates = [];
-			var normalizedSourcePath = sourcePath.replace(/\\/g, "/");
-			(function collect(nodes) {
-				(nodes || []).forEach(function (node) {
-					var kind = String(node && node.kind || "");
-					var nodeSourcePath = String(node && node.sourcePath || "").replace(/\\/g, "/");
-					var score = 0;
-					if (kind === "frontendPage" || kind === "frontendRouteLayout") {
-						score += 100;
-					}
-					if (nodeSourcePath && nodeSourcePath === normalizedSourcePath) {
-						score += 50;
-					}
-					if (String(node && node.sourceMutationPath || "") === "frontAst") {
-						score += 25;
-					}
-					if (score >= 100) {
-						candidates.push({ node: node, score: score });
+		function sourceIdentity(value) {
+			// Match the provider's lexical file identity without probing every path on NFS.
+			return value ? String(new File(value).getAbsoluteFile().toPath().normalize()) : "";
+		}
+		var normalizedSourcePath = sourceIdentity(sourcePath);
+		function matchingRoots(nodes) {
+			var matches = [];
+			function collect(items) {
+				(items || []).forEach(function (node) {
+					var nodeSource = String(node && node.sourcePath || "");
+					if (nodeSource && normalizedSourcePath &&
+							sourceIdentity(nodeSource) === normalizedSourcePath) {
+						matches.push(node);
+						return; // Descendants belong to the same source, not additional roots.
 					}
 					collect(node && node.children);
 				});
-			})(roots);
-			candidates.sort(function (left, right) {
-				return right.score - left.score;
-			});
-			root = candidates.length ? candidates[0].node : null;
+			}
+			collect(nodes);
+			return matches;
 		}
+		// Preserve navigation metadata, or use the provider's explicit isolated source roots.
+		var candidates = matchingRoots(documentTree.children);
+		if (!candidates.length) candidates = matchingRoots(document.sourceRoots);
+		var root = candidates.length === 1 ? candidates[0] : null;
 		if (!root) {
 			return {
 				ok: false,
@@ -4404,12 +4445,6 @@
 		var sourceFile = sourcePath ? new File(sourcePath) : null;
 		var projected = { children: [] };
 		root = normalizeTree(root);
-		if (root.kind === "frontendComponent" && root.type === "flow-svelte-ui-block"
-				&& root.children && root.children.length === 1
-				&& root.children[0].kind === "frontendComponent"
-				&& String(root.children[0].sourceMutationPath || "") === "frontAst") {
-			root.children = root.children[0].children || [];
-		}
 		addFrontendAuthoringNode(projected, root, rootPath, sourceFile);
 		return {
 			ok: true,
@@ -4560,44 +4595,36 @@
 		return name;
 	}
 
-	function focusedVirtualDescriptors(engine, focus) {
-		if (!focus || String(focus.type || "") !== "config") {
-			return [];
-		}
-		var path = String(nodeValue(focus, "sourceMutationPath") || focus.path || "");
-		var value = nodeJson(focus, "definition");
-		var kind = String(focus.kind || "");
-		var prefix = kind === "scope" ? "service" : kind === "object" ? "setting" : "";
-		if (!prefix || !path) {
-			return [];
-		}
-		var name = nextVirtualChildName(value, prefix);
-		var childKind = kind === "scope" ? "object" : "field";
-		var childValue = kind === "scope" ? {} : "";
-		var description = kind === "scope"
-			? "Adds a configuration service. Select the created service to add settings such as a base URL or API key."
-			: "Adds an editable setting to this configuration service.";
-		var prototype = virtualNodeFromPlain(name, childKind, "config", path + "." + name,
-			name, childValue, {
-				description: description,
-				sourceMutationPath: path + "." + name,
-				sourceWritable: true
-			}, childKind === "object" ? "mdi:cube-outline" : "mdi:variable");
-		return [{
-			id: "virtual.create." + kind,
-			label: kind === "scope" ? "Add service" : "Add setting",
-			category: "Flow configuration",
-			description: description,
-			icon: childKind === "object" ? "mdi:cube-outline" : "mdi:variable",
-			virtualPrototype: prototype,
-			targetKinds: [kind],
-			acceptedPositions: ["inside"],
-			authoringMutation: {
-				op: kind === "scope" ? "merge" : "replace",
-				__engineMutationPath: path + "." + name,
-				value: childValue
-			}
-		}];
+	function focusedVirtualDescriptors(engine, focus, tree) {
+		var definitions = nodeObjectValue(focus, "creationDescriptors");
+		if (!Array.isArray(definitions)) return [];
+		var summary = authoringNodeSummary(focus, tree);
+		var out = [];
+		authoringPaletteTargets(summary, "inside").forEach(function (target) {
+			definitions.forEach(function (definition) {
+				if (!frontendArray(definition.traits).length) {
+					raise("INVALID_AUTHORING_DESCRIPTOR", "Creation descriptor requires explicit traits: " + definition.id);
+				}
+				if (!descriptorSlotMatch(definition, summary, target)) return;
+				var path = String(target.sourceMutationPath || "");
+				if (!path) return;
+				var collection = valueAt(engine, parseMutationPath(path));
+				if (collection != null && (typeof collection !== "object" || Array.isArray(collection))) return;
+				var name = nextVirtualChildName(collection, definition.name || "item");
+				var childPath = pointerPath(parseMutationPath(path).concat([name]));
+				var descriptor = Object.assign({}, definition, {
+					id: definition.id + "@" + target.id,
+					targetSlotId: target.id,
+					acceptedPositions: ["inside"],
+					virtualPrototype: virtualNodeFromPlain(name, definition.kind, definition.type, childPath, name,
+						definition.value, { traits: definition.traits, description: definition.description,
+							sourceMutationPath: childPath, sourceWritable: target.sourceWritable }, definition.icon),
+					authoringMutation: { op: "replace", __engineMutationPath: childPath, value: definition.value }
+				});
+				out.push(descriptor);
+			});
+		});
+		return out;
 	}
 
 	function findTreeNode(root, path) {
@@ -4728,25 +4755,92 @@
 		return slots;
 	}
 
-	function normalizedAuthoringSlots(node, focus) {
+	function semanticSlotOwner(tree, reference) {
+		if (reference.sourcePath === undefined) {
+			return reference.ownerPath && findTreeNode(tree, String(reference.ownerPath));
+		}
+		if (!reference.sourcePath || !reference.ownerPath) return null;
+		if (semanticOwnerTree !== tree) {
+			semanticOwnerTree = tree;
+			semanticOwnerIndex = {};
+			function index(node) {
+				var source = nodeValue(node, "sourcePath");
+				var path = nodeValue(node, "sourceMutationPath");
+				if (source && path) {
+					var key = JSON.stringify([String(source), String(path)]);
+					(semanticOwnerIndex[key] || (semanticOwnerIndex[key] = [])).push(node);
+				}
+				(node.children || []).forEach(index);
+			}
+			index(tree);
+		}
+		var candidates = semanticOwnerIndex[JSON.stringify([String(reference.sourcePath), String(reference.ownerPath)])] || [];
+		var owner = null;
+		var contract;
+		candidates.forEach(function (candidate) {
+			var slot = nodeObjectValue(candidate, "slots")[reference.slotId];
+			if (!slot) return;
+			// Mirrors may share an AST identity, but must expose the same semantic rule.
+			var signature = JSON.stringify([slot.accepts === undefined ? null : frontendArray(slot.accepts).sort(),
+				slot.acceptsFrom || null, slot.acceptsFrom ? nodeObjectValue(candidate, "parentSlot") : null]);
+			if (owner && signature !== contract) {
+				raise("AMBIGUOUS_AUTHORING_SLOT_OWNER", "Conflicting slot contracts for " + reference.sourcePath + " / " + reference.ownerPath);
+			}
+			owner = candidate;
+			contract = signature;
+		});
+		return owner ? { node: owner } : null;
+	}
+
+	// Follow explicit semantic ownership, never the layout of visual tree folders.
+	function resolvedSlotAccepts(node, key, tree, seen) {
+		var slots = nodeObjectValue(node, "slots");
+		var slot = slots[key];
+		if (!slot || typeof slot !== "object") {
+			raise("INVALID_AUTHORING_SLOT", "Unknown semantic slot: " + node.path + " / " + key);
+		}
+		if (slot.acceptsFrom === undefined) {
+			if (slot.accepts === undefined && seen && seen.length) {
+				raise("UNRESOLVED_AUTHORING_SLOT", "Inherited slot has no explicit acceptance contract: " + node.path + " / " + key);
+			}
+			return frontendArray(slot.accepts);
+		}
+		if (slot.acceptsFrom !== "parentSlot" || slot.accepts !== undefined) {
+			raise("INVALID_AUTHORING_SLOT", "A slot must declare either accepts or acceptsFrom: parentSlot.");
+		}
+		var identity = JSON.stringify([nodeValue(node, "sourcePath") || "",
+			nodeValue(node, "sourcePath") ? nodeValue(node, "sourceMutationPath") : node.path, key]);
+		seen = seen || [];
+		if (seen.indexOf(identity) >= 0) {
+			raise("CYCLIC_AUTHORING_SLOT", "Cyclic semantic slot inheritance at " + node.path + " / " + key);
+		}
+		var parentSlot = nodeObjectValue(node, "parentSlot");
+		var owner = semanticSlotOwner(tree, parentSlot);
+		if (!owner || !parentSlot.slotId) {
+			raise("UNRESOLVED_AUTHORING_SLOT", "Missing semantic parent slot for " + node.path + " / " + key);
+		}
+		return resolvedSlotAccepts(owner.node, String(parentSlot.slotId), tree, seen.concat([identity]));
+	}
+
+	function normalizedAuthoringSlots(node, focus, tree) {
 		var raw = nodeObjectValue(node, "slots");
 		var slots = {};
 		Object.keys(raw || {}).forEach(function (key) {
 			var slot = raw[key] && typeof raw[key] === "object" ? normalizeTree(raw[key]) : {};
 			slot.id = slot.id || key;
 			slot.label = slot.label || key;
-			slot.accepts = frontendArray(slot.accepts);
+			slot.accepts = resolvedSlotAccepts(node, key, tree);
 			slot.sourceMutationPath = String(slot.sourceMutationPath || "");
 			slot.sourceWritable = inheritedWritable(slot.sourceWritable, focus.sourceWritable);
 			slots[key] = slot;
 		});
-		if (Object.keys(slots).length) {
+		if (focus.hasSlotContract) {
 			return slots;
 		}
 		return authoringDerivedSlots(focus);
 	}
 
-	function authoringNodeSummary(node) {
+	function authoringNodeSummary(node, tree) {
 		if (!node) {
 			return null;
 		}
@@ -4764,9 +4858,11 @@
 			insertSourcePath: String(nodeValue(node, "frontendInsertSourcePath") || ""),
 			sourceMutationPath: String(nodeValue(node, "sourceMutationPath") || ""),
 			insertMutationPath: String(nodeValue(node, "frontendInsertMutationPath") || ""),
-			traits: frontendArray(nodeValue(node, "traits"))
+			traits: frontendArray(nodeValue(node, "traits")),
+			parentSlot: nodeObjectValue(node, "parentSlot"),
+			hasSlotContract: nodeValue(node, "slots") !== undefined
 		};
-		summary.slots = normalizedAuthoringSlots(node, summary);
+		summary.slots = normalizedAuthoringSlots(node, summary, tree);
 		return summary;
 	}
 
@@ -4820,8 +4916,14 @@
 	}
 
 	function descriptorSlotMatch(descriptor, focus, target) {
+		if (descriptor && descriptor.targetSlotId && descriptor.targetSlotId !== target.id) {
+			return false;
+		}
 		var traits = frontendArray(descriptor && descriptor.traits);
 		var accepts = frontendArray(target && target.accepts);
+		if (target && target.contractDeclared) {
+			return arraysIntersect(traits, accepts);
+		}
 		if (traits.length && accepts.length) {
 			return arraysIntersect(traits, accepts);
 		}
@@ -4837,6 +4939,194 @@
 		return arrayContains(accepted, position);
 	}
 
+	// One private contract view for structural mutations. Provider ASTs and virtual
+	// beans share metadata; caller/cache trees remain untouched by simulations.
+	function authoringMutationTree(tree) {
+		tree = normalizeTree(tree);
+		var nodes = [];
+		function collect(node) {
+			var info = nodeJson(node, "info");
+			["sourcePath", "sourceMutationPath", "sourceWritable", "readOnly", "readOnlyReference",
+				"traits", "slots", "parentSlot"].forEach(function (key) {
+				if (info[key] === undefined && node[key] !== undefined) info[key] = node[key];
+			});
+			node.info = info;
+			nodes.push(node);
+			(node.children || []).forEach(collect);
+		}
+		if (!tree) raise("INVALID_AUTHORING_TREE", "Missing canonical authoring tree.");
+		collect(tree);
+		function path(node) { return String(nodeValue(node, "sourceMutationPath") || node.path || ""); }
+		function source(node) { return String(nodeValue(node, "sourcePath") || ""); }
+		function identity(node) { return JSON.stringify([source(node), path(node)]); }
+		function parent(node) {
+			var reference = nodeObjectValue(node, "parentSlot");
+			var found = semanticSlotOwner(tree, reference);
+			if (!found || !reference.slotId) raise("UNRESOLVED_AUTHORING_SLOT", "Missing semantic parent for " + path(node));
+			return { node: found.node, id: String(reference.slotId) };
+		}
+		function slotProjection(node) {
+			var reference = nodeObjectValue(node, "parentSlot");
+			if (!reference.ownerPath) return false;
+			var found = semanticSlotOwner(tree, reference);
+			var slot = found && nodeObjectValue(found.node, "slots")[reference.slotId];
+			return !!slot && source(node) === source(found.node) && path(node) === String(slot.sourceMutationPath || "");
+		}
+		function writable(node) {
+			return nodeFlag(node, "sourceWritable") && !nodeFlag(node, "readOnly") && !nodeFlag(node, "readOnlyReference");
+		}
+		function destination(request) {
+			var targets = [];
+			nodes.forEach(function (node) {
+				if (source(node) !== String(request.sourcePath || "") || slotProjection(node)) return;
+				var slots = nodeObjectValue(node, "slots");
+				Object.keys(slots).forEach(function (key) {
+					if (slots[key].sourceMutationPath === request.path || path(node) === request.path) {
+						targets.push({ node: node, id: key });
+					}
+				});
+			});
+			if (targets.length !== 1) raise("INVALID_AUTHORING_DESTINATION", "Choose one declared destination slot: " + request.path);
+			return targets[0];
+		}
+		function isWithin(node, ancestor) {
+			var seen = [];
+			while (node) {
+				var key = identity(node);
+				if (key === identity(ancestor)) return true;
+				if (seen.indexOf(key) >= 0) raise("CYCLIC_AUTHORING_SLOT", "Cyclic semantic ownership at " + path(node));
+				seen.push(key);
+				if (!nodeObjectValue(node, "parentSlot").ownerPath) return false;
+				node = parent(node).node;
+			}
+			return false;
+		}
+		function slotSummary(owner) {
+			var focus = authoringNodeSummary(owner.node, tree);
+			var slot = focus.slots[owner.id];
+			if (!focus.hasSlotContract || !slot) raise("INVALID_AUTHORING_SLOT", "Unknown declared slot: " + owner.id);
+			return { focus: focus, slot: slot };
+		}
+		function writableSlot(owner) {
+			var slot = slotSummary(owner).slot;
+			if (!writable(owner.node) || slot.sourceWritable !== true || !slot.sourceMutationPath) {
+				raise("READ_ONLY_AUTHORING_TARGET", "Source or destination slot is not writable.");
+			}
+			return slot;
+		}
+		function subtree(root) {
+			return nodes.filter(function (node) { return !slotProjection(node) && isWithin(node, root); });
+		}
+		function validate(subtreeNodes) {
+			subtreeNodes.forEach(function (node) {
+				var owner = parent(node);
+				var target = slotSummary(owner);
+				if (!descriptorSlotMatch({ traits: nodeValue(node, "traits") }, target.focus,
+					Object.assign({}, target.slot, { contractDeclared: true }))) {
+					raise("INCOMPATIBLE_AUTHORING_SLOT", "Object " + path(node) + " is not accepted by " + path(owner.node) + " / " + owner.id);
+				}
+				// Resolve empty inherited branches too.
+				authoringNodeSummary(node, tree);
+			});
+		}
+		function slotChildren(owner) {
+			return nodes.filter(function (node) {
+				var reference = nodeObjectValue(node, "parentSlot");
+				if (!reference.ownerPath || reference.slotId !== owner.id || slotProjection(node)) return false;
+				return identity(parent(node).node) === identity(owner.node);
+			});
+		}
+		return {
+			move: function (request) {
+				var from = String(request.from || request.source || "");
+				var fromId = String(request.fromId || "");
+				var candidates = nodes.filter(function (node) {
+					return source(node) === String(request.sourcePath || "") && !slotProjection(node)
+						&& (fromId ? String(node.id || nodeJson(node, "definition").id || "") === fromId : path(node) === from);
+				});
+				if (candidates.length !== 1) raise("INVALID_AUTHORING_MOVE", "Move source is missing or ambiguous: " + (fromId || from));
+				var moving = candidates[0];
+				var oldParent = parent(moving);
+				var target = destination(request);
+				if (isWithin(target.node, moving)) raise("INVALID_AUTHORING_MOVE", "Cannot move an object into its own subtree.");
+				writableSlot(oldParent);
+				var newSlot = writableSlot(target);
+				if (!writable(moving)) raise("READ_ONLY_AUTHORING_TARGET", "Move source is read-only.");
+				var descendants = subtree(moving);
+				moving.info.parentSlot = { ownerPath: path(target.node), slotId: target.id };
+				if (source(target.node)) moving.info.parentSlot.sourcePath = source(target.node);
+				validate(descendants);
+				return { ok: true, from: path(moving), path: newSlot.sourceMutationPath };
+			},
+			insertTarget: function (request) {
+				var target = destination(request);
+				var slot = writableSlot(target);
+				if (!slot.accepts.length) raise("INCOMPATIBLE_AUTHORING_SLOT", "The destination slot accepts no children.");
+				var count = slotChildren(target).length;
+				var index = request.op === "insert" && request.index !== undefined && request.index !== null
+					? Number(request.index) : count;
+				if (!isFinite(index) || Math.floor(index) !== index) raise("INVALID_AUTHORING_INSERT", "Insertion index must be an integer.");
+				return { ok: true, path: slot.sourceMutationPath, index: Math.max(0, Math.min(index, count)), count: count };
+			},
+			replaceSelectionTarget: function (request) {
+				var paths = request.paths || [];
+				if (!Array.isArray(paths) || !paths.length) raise("INVALID_AUTHORING_SELECTION", "Select at least one object.");
+				var selected = paths.map(function (selectedPath) {
+					var matches = nodes.filter(function (node) {
+						return source(node) === String(request.sourcePath || "") && path(node) === selectedPath && !slotProjection(node);
+					});
+					if (matches.length !== 1) raise("INVALID_AUTHORING_SELECTION", "Object is missing or ambiguous: " + selectedPath);
+					if (!writable(matches[0])) raise("READ_ONLY_AUTHORING_TARGET", "Selected object is read-only: " + selectedPath);
+					return matches[0];
+				});
+				var owner = parent(selected[0]);
+				var slot = writableSlot(owner);
+				var siblings = slotChildren(owner);
+				var indexes = selected.map(function (node) {
+					var currentOwner = parent(node);
+					if (identity(currentOwner.node) !== identity(owner.node) || currentOwner.id !== owner.id) {
+						raise("INVALID_AUTHORING_SELECTION", "Selected objects must belong to the same semantic slot.");
+					}
+					return siblings.indexOf(node);
+				}).sort(function (a, b) { return a - b; });
+				indexes.forEach(function (index, position) {
+					if (index < 0 || (position && index === indexes[position - 1])) {
+						raise("INVALID_AUTHORING_SELECTION", "Select each sibling exactly once.");
+					}
+				});
+				return { ok: true, path: slot.sourceMutationPath, index: indexes[0], count: siblings.length,
+					resultCount: siblings.length - indexes.length + 1,
+					paths: indexes.map(function (index) { return path(siblings[index]); }) };
+			},
+			proposedSubtree: function (request) {
+				var target = destination(request);
+				var children = slotChildren(target);
+				var count = request.resultCount === undefined ? request.count + 1 : request.resultCount;
+				if (children.length !== count || !children[request.index]) {
+					raise("INVALID_AUTHORING_RESULT", "The canonical projection did not produce the expected subtree replacement.");
+				}
+				var inserted = children[request.index];
+				validate(subtree(inserted));
+				return { ok: true, path: path(inserted) };
+			}
+		};
+	}
+
+	function authoringMoveFromTreeRequest(request, tree) {
+		return authoringMutationTree(tree).move(request || {});
+	}
+
+	function authoringInsertTargetFromTreeRequest(request, tree) {
+		return authoringMutationTree(tree).insertTarget(request || {});
+	}
+
+	function authoringReplaceSelectionTargetFromTreeRequest(request, tree) {
+		return authoringMutationTree(tree).replaceSelectionTarget(request || {});
+	}
+
+	function authoringProposedSubtreeFromTreeRequest(request, tree) {
+		return authoringMutationTree(tree).proposedSubtree(request || {});
+	}
 	function descriptorMatchesQuery(descriptor, query) {
 		var rawQuery = String(query || "").trim();
 		query = rawQuery.toLowerCase();
@@ -5120,6 +5410,7 @@
 			}
 			targets.push({
 				id: slot.id || key,
+				contractDeclared: focus.hasSlotContract,
 				label: slot.label || key,
 				accepts: accepts,
 				sourceMutationPath: mutationPath,
@@ -5136,7 +5427,7 @@
 	function computeAuthoringPalette(request, tree, descriptors, focusInfo) {
 		var position = String(request.position || "inside");
 		var query = String(request.query || request.q || "");
-		var focus = authoringNodeSummary(focusInfo.node);
+		var focus = authoringNodeSummary(focusInfo.node, tree);
 		var filters = {
 			targetKinds: 0,
 			acceptedPositions: 0,
@@ -5160,6 +5451,10 @@
 				return;
 			}
 			if (!targets.length) {
+				if (focus.hasSlotContract) {
+					filters.noMatchingTrait++;
+					return;
+				}
 				if (!descriptorTargetMatch(descriptor, focus)) {
 					filters.targetKinds++;
 					return;
@@ -5292,7 +5587,7 @@
 				items: []
 			};
 		}
-		descriptors = descriptors.concat(focusedVirtualDescriptors(engine, focusInfo.node));
+		descriptors = descriptors.concat(focusedVirtualDescriptors(engine, focusInfo.node, tree));
 		var result = computeAuthoringPalette(request, tree, descriptors, focusInfo);
 		if (result.eligibleCount === 0 && focusInfo.parent) {
 			var cursor = focusInfo.parent;
@@ -5316,7 +5611,7 @@
 			result.fallback = {
 				applied: applyFallback,
 				from: result.focus,
-				to: fallbackResult ? fallbackResult.focus : authoringNodeSummary(focusInfo.parent),
+				to: fallbackResult ? fallbackResult.focus : authoringNodeSummary(focusInfo.parent, tree),
 				available: !!fallbackResult,
 				eligibleCount: fallbackResult ? fallbackResult.eligibleCount : 0,
 				items: fallbackResult ? fallbackResult.items : [],
@@ -5387,7 +5682,7 @@
 		var engine = authoringEngineDefinition(request);
 		var descriptors = authoringDescriptors(request, engine, blocks).concat(tree.descriptors || []);
 		if (focusInfo) {
-			descriptors = descriptors.concat(focusedVirtualDescriptors(engine, focusInfo.node));
+			descriptors = descriptors.concat(focusedVirtualDescriptors(engine, focusInfo.node, tree));
 		}
 		var mutation = null;
 		descriptors.some(function (descriptor) {
@@ -5426,6 +5721,47 @@
 		};
 	}
 
+	function authoringTransferMutationFromTreeRequest(request, blocks, tree) {
+		var engine = authoringEngineDefinition(request);
+		var transfer = request.transfer || {};
+		var sourceNode = findTreeNode(tree, String(transfer.sourcePath || ""));
+		var traits = frontendArray(transfer.traits || sourceNode && nodeValue(sourceNode.node, "traits"));
+		if (!traits.length) {
+			raise("INVALID_AUTHORING_TRANSFER", "Copied object has no traits. Copy it again from an up-to-date tree.");
+		}
+		var targetParts = parseMutationPath(String(transfer.targetPath || ""));
+		var targetSlot = null;
+		while (targetParts.length) {
+			var targetNode = findTreeNode(tree, targetParts.join("."));
+			var summary = targetNode && authoringNodeSummary(targetNode.node, tree);
+			var slots = summary ? authoringPaletteTargets(summary, "inside").filter(function (slot) {
+				return descriptorSlotMatch({ traits: traits, targetSlotId: transfer.targetSlotId }, summary, slot)
+					&& !descriptorMutationTargetIssue({}, summary, "inside", slot);
+			}) : [];
+			if (slots.length > 1) {
+				raise("AMBIGUOUS_AUTHORING_TRANSFER_TARGET", "Several slots accept this object. Select the destination slot.");
+			}
+			if (slots.length === 1) {
+				targetSlot = slots[0];
+				break;
+			}
+			if (transfer.targetSlotId) break;
+			targetParts = targetParts.slice(0, -1);
+		}
+		if (!targetSlot) {
+			raise("INVALID_AUTHORING_TRANSFER_TARGET", "Neither this object nor its parents accept the copied object's traits.");
+		}
+		targetParts = parseMutationPath(targetSlot.sourceMutationPath);
+		var targetValue = valueAt(engine, targetParts);
+		if (targetValue != null && (typeof targetValue !== "object" || Array.isArray(targetValue))) {
+			raise("INVALID_AUTHORING_TRANSFER_TARGET", "Named insertion requires an object collection.");
+		}
+		var sourceParts = parseMutationPath(String(transfer.sourcePath || ""));
+		var name = nextVirtualChildName(targetValue, String(transfer.name || sourceParts[sourceParts.length - 1] || "item"));
+		return { op: "replace", __engineMutationPath: pointerPath(targetParts.concat([name])),
+			value: normalizeTree(transfer.value) };
+	}
+
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
 		if (request.action) {
@@ -5436,34 +5772,9 @@
 		}
 		if (request.transfer) {
 			var engine = authoringEngineDefinition(request);
-			var transfer = request.transfer || {};
-			var targetPath = String(transfer.targetPath || "");
-			var targetParts = parseMutationPath(targetPath);
-			var targetValue = valueAt(engine, targetParts);
-			var transferKind = String(transfer.kind || (transfer.value && typeof transfer.value === "object"
-				&& !Array.isArray(transfer.value) ? "object" : "field"));
 			var transferTree = describeTreeRequest({ target: "engine", definition: engine, includeFlowCatalog: false }, blocks);
-			var acceptsTransfer = false;
-			while (targetParts.length) {
-				var targetNode = findTreeNode(transferTree, targetParts.join("."));
-				acceptsTransfer = !!targetNode && focusedVirtualDescriptors(engine, targetNode.node).some(function (descriptor) {
-					return descriptor.virtualPrototype && descriptor.virtualPrototype.kind === transferKind;
-				});
-				if (acceptsTransfer) break;
-				targetParts = targetParts.slice(0, -1);
-			}
-			if (!acceptsTransfer) {
-				raise("INVALID_AUTHORING_TRANSFER_TARGET", "Neither this object nor its parents accept this kind of item in the palette.");
-			}
-			targetValue = valueAt(engine, targetParts);
-			var sourceParts = parseMutationPath(String(transfer.sourcePath || ""));
-			var sourceName = String(transfer.name || sourceParts[sourceParts.length - 1] || "item");
-			var name = nextVirtualChildName(targetValue, sourceName);
-			return applyEngineMutationRequest(request, blocks, [{
-				op: "replace",
-				__engineMutationPath: pointerPath(targetParts.concat([name])),
-				value: normalizeTree(transfer.value)
-			}]);
+			return applyEngineMutationRequest(request, blocks,
+				[authoringTransferMutationFromTreeRequest(request, blocks, transferTree)]);
 		}
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		var engineMutations = mutations.filter(function (mutation) {
@@ -7041,6 +7352,11 @@
 			authoringPaletteFromTreeRequest: authoringPaletteFromTreeRequest,
 			authoringPaletteRequest: authoringPaletteRequest,
 			authoringActionMutationFromTreeRequest: authoringActionMutationFromTreeRequest,
+			authoringTransferMutationFromTreeRequest: authoringTransferMutationFromTreeRequest,
+			authoringMoveFromTreeRequest: authoringMoveFromTreeRequest,
+			authoringInsertTargetFromTreeRequest: authoringInsertTargetFromTreeRequest,
+			authoringReplaceSelectionTargetFromTreeRequest: authoringReplaceSelectionTargetFromTreeRequest,
+			authoringProposedSubtreeFromTreeRequest: authoringProposedSubtreeFromTreeRequest,
 			authoringMutateRequest: authoringMutateRequest,
 			searchFlowRequest: searchFlowRequest,
 			applyMutationRequest: applyMutationRequest,
@@ -7103,6 +7419,21 @@
 		},
 		authoringMutateRequest: function (request, blocks, env) {
 			return create(env).authoringMutateRequest(request, blocks);
+		},
+		authoringTransferMutationFromTreeRequest: function (request, blocks, tree, env) {
+			return create(env).authoringTransferMutationFromTreeRequest(request, blocks, tree);
+		},
+		authoringMoveFromTreeRequest: function (request, tree, env) {
+			return create(env).authoringMoveFromTreeRequest(request, tree);
+		},
+		authoringInsertTargetFromTreeRequest: function (request, tree, env) {
+			return create(env).authoringInsertTargetFromTreeRequest(request, tree);
+		},
+		authoringReplaceSelectionTargetFromTreeRequest: function (request, tree, env) {
+			return create(env).authoringReplaceSelectionTargetFromTreeRequest(request, tree);
+		},
+		authoringProposedSubtreeFromTreeRequest: function (request, tree, env) {
+			return create(env).authoringProposedSubtreeFromTreeRequest(request, tree);
 		},
 		searchFlowRequest: function (request, blocks, env) {
 			return create(env).searchFlowRequest(request, blocks);

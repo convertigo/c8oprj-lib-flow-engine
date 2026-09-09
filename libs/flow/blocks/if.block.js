@@ -9,12 +9,14 @@ const _meta = {
     {
       "name": "then",
       "label": "Then",
+      "acceptsFrom": "parentSlot",
       "scope": "caller",
       "description": "Runs in the caller scope when the condition is truthy."
     },
     {
       "name": "else",
       "label": "Else",
+      "acceptsFrom": "parentSlot",
       "scope": "caller",
       "description": "Runs in the caller scope when the condition is falsy."
     }

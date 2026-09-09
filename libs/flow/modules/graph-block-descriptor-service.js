@@ -141,14 +141,21 @@
 			longDescription: definition.longDescription || definition.documentation || ""
 		};
 		descriptor.targets = normalizeTargets(definition);
+		descriptor.traits = env.normalizeTree(definition.traits || []);
+		if (descriptor.targets.indexOf("backend") !== -1) {
+			// Backend child lists execute statements. More specific constraints belong
+			// to the declared slot and to scope/resource analysis, not to Studio kinds.
+			if (descriptor.traits.indexOf("flow.node") === -1) descriptor.traits.push("flow.node");
+			slots.forEach(function (slot) {
+				if (slot.accepts === undefined && slot.acceptsFrom === undefined) slot.accepts = ["flow.node"];
+			});
+		}
 		descriptor.effects = normalizeEffects(definition);
 		descriptor.implementations = normalizeImplementations(definition, env);
 		if (config.file) {
 			descriptor.implementationFile = config.file;
 		}
-		if (slots.length > 0) {
-			descriptor.slots = slots;
-		}
+		descriptor.slots = slots;
 		if (uses.length > 0) {
 			descriptor.uses = uses;
 		}

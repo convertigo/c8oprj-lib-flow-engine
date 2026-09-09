@@ -14,6 +14,7 @@ const _meta = {
     {
       "name": "nodes",
       "label": "Flow",
+      "acceptsFrom": "parentSlot",
       "inline": true,
       "scope": "caller",
       "current": "item",

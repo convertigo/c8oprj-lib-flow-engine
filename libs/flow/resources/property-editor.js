@@ -726,7 +726,7 @@
       pickerOriginal = target.value;
       pickerLastTarget = pickerTarget;
     }
-    var custom = target && hasTypeEditor(pickerKind(target));
+    var custom = target && hasTypeEditor(pickerKind(target), target.def);
     var html =
       '<div class="picker"><div class="pickerHeader"><h1>' +
       esc(state.summary || node.id || state.virtualPath || "Flow picker") +
@@ -766,7 +766,7 @@
         "</div>";
     }
     if (custom) {
-      var tag = typeEditorTag(pickerKind(target));
+      var tag = editorTag(pickerKind(target), target.def);
       html +=
         '<div class="pickerEditor"><' +
         tag +

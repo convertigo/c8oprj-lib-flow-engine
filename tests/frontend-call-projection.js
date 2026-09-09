@@ -2,21 +2,42 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../libs/flow/Engine.js'), 'utf8');
-const start = source.indexOf('function frontAstCompatibilityActions(rootNode)');
-const end = source.indexOf('\n\tfunction frontAstVariablesFromNode', start);
-const project = vm.runInNewContext('(' + source.slice(start, end) + ')', {
-  frontAstWalkNode: (root, visit) => root.forEach(visit),
-  frontAstActionIdFromRequestable: name => name.replace(/\W/g, '_'),
-  frontAstVariablesFromNode: () => ({}),
-  frontAstMergeById: values => values,
-  frontAstClone: value => JSON.parse(JSON.stringify(value)),
-  frontAstIsObject: value => value && typeof value === 'object' && !Array.isArray(value)
-});
+const start = source.indexOf('function describeFrontendDocument(request)');
+const end = source.indexOf('\n\tfunction prewarmFrontendDocumentServer', start);
+assert.ok(start > 0 && end > start);
+assert.ok(!source.includes('function describeFrontAstDocument('), 'No second frontend document producer');
 const schema = { type: 'object', properties: { data: { type: 'string' } } };
-const model = project([{ props: { kind: 'callSequence', id: 'load', requestable: '.fetch', target: 'local.response', outputSchema: schema } }]);
-assert.equal(model.clientActions[0].target, 'local.response', 'schema enrichment must retain the result target used by binding sources');
-assert.deepEqual(model.backendCalls[0].outputSchema, schema);
-assert.deepEqual(model.clientActions[0].outputSchema, schema);
-assert.equal(model.clientActions[0].backendCall, model.backendCalls[0].id);
-assert.equal(project([{ props: { kind: 'callSequence', id: 'load', requestable: '.fetch' } }]).clientActions[0].target, 'load');
-console.log('frontend call projection tests passed');
+const document = { ok: true, model: {
+  clientActions: [{ id: 'load', target: 'local.response', backendCall: 'fetch', outputSchema: schema }],
+  backendCalls: [{ id: 'fetch', outputSchema: schema }]
+}, descriptors: [{ id: 'provider.custom' }], tree: { children: [] } };
+const file = { getAbsolutePath: () => '/fixture/Component.flow.svelte', delete() {} };
+let memory, disk, calls = 0, keys = [], failure;
+const project = vm.runInNewContext('(' + source.slice(start, end) + ')', {
+  frontendPerformanceMark() {}, frontendRequestSourceFile: () => file,
+  frontendSvelteResourceRoot: () => file, fileForProjectPath: () => file,
+  File: Object.assign(function () {}, { createTempFile: () => file }),
+  FileUtils: { writeStringToFile() {} }, projectNameForRoot: () => 'Fixture',
+  frontendSourceDrafts: () => ({}), runtimeState: { caches: { frontendDocuments: {} } },
+  frontendDocumentFingerprint: () => 'fingerprint',
+  readRuntimeMapCache: (_cache, key) => { keys.push(key); return memory; },
+  readPersistentFrontendDocument: () => disk,
+  writeRuntimeMapCache: (_cache, _key, _fingerprint, value) => (memory = value),
+  writePersistentFrontendDocument: (_key, _fingerprint, value) => (disk = value),
+  prewarmFrontendDocumentServer() {}, enrichFrontendBindingSources: value => value,
+  frontendCatalogFingerprintForRequest: () => '', frontendReferenceCliArgs: () => [],
+  frontendDescribeDocument: () => { calls++; if (failure) throw failure; return document; }
+});
+const request = { source: '<FlowComponent />', includeBindings: false };
+assert.strictEqual(project(request), document, 'Provider action targets and schemas must pass through unchanged');
+assert.equal(calls, 1);
+assert.strictEqual(project(request), document);
+assert.equal(calls, 1, 'Warm memory document must not rescan the provider');
+memory = undefined;
+assert.strictEqual(project(request), document);
+assert.equal(calls, 1, 'Persistent provider document must survive runtime recreation');
+assert.ok(keys.every(key => key.startsWith('provider-authoring-v2\n')), 'Reject old handcrafted cached documents');
+memory = disk = undefined;
+failure = new Error('provider unavailable');
+assert.throws(() => project(request), /provider unavailable/, 'Failure must not fabricate a partial success');
+console.log('frontend call projection/cache tests passed');
