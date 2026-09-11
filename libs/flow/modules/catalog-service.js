@@ -692,6 +692,7 @@
 
 	return {
 		blockDescriptor: blockDescriptor,
+		filterVisibleDescriptors: filterVisibleDescriptors,
 		typeDescriptor: typeDescriptor,
 		compactBlockDescriptor: compactBlockDescriptor,
 		signatureBlockDescriptor: signatureBlockDescriptor,

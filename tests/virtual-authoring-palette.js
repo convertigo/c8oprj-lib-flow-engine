@@ -75,7 +75,50 @@ var added = service.authoringMutateRequest({
 }, {}, mutationEnv);
 assertTrue(JSON.parse(added.source).config.unsaved.value === "keep", "Authoring must retain unsaved source values");
 assertTrue(added.selectionMutationPath === "config.added", "Creation must return its selection path");
+assertTrue(added.selectionVirtualPath === "config.added", "Engine creations must identify the projected object, not a frontend source path");
 assertTrue(added.written === false && added.children.length === 0, "Dry-run with no projection must not write or build a tree");
+var removedWithoutTree = service.applyMutationRequest({ target: "engine", includeTree: false,
+	engineSource: JSON.stringify({ config: { keep: {}, remove: {} } }),
+	mutation: { op: "delete", path: "config.remove" }
+}, {}, env);
+assertTrue(removedWithoutTree.children.length === 0, "Source-only mutations must not rebuild an unused projection");
+assertTrue(JSON.parse(removedWithoutTree.source).config.keep !== undefined
+	&& JSON.parse(removedWithoutTree.source).config.remove === undefined, "Source-only deletion must preserve other objects");
+
+var unrelatedProjectionCalls = 0;
+var focusedEnv = Object.assign({}, env, {
+	projectDir: function () { return engineDir; },
+	listProjectFragments: function () { unrelatedProjectionCalls++; return { fragments: [] }; },
+	catalogDefinition: function () { unrelatedProjectionCalls++; return { groups: [], types: [] }; },
+	frontendBlocksForSettings: function () { unrelatedProjectionCalls++; return []; }
+});
+var focusedRequest = {
+	target: "engine", projectionPaths: ["/config/service/value"],
+	engineSource: JSON.stringify({ config: { service: { value: "old" },
+		frontbuilder: { svelte: { target: "svelte" } } } }),
+	mutation: { op: "replace", path: "config.service.value", value: "new" }
+};
+var focusedResult = service.applyMutationRequest(focusedRequest, {}, focusedEnv);
+assertTrue(unrelatedProjectionCalls === 0, "A focused value mutation must not project unrelated catalog/frontend providers");
+assertTrue(focusedResult.children.length === 1 && focusedResult.children[0].path === "config",
+	"Only the requested projection branch must be returned");
+assertTrue(JSON.parse(focusedResult.source).config.frontbuilder.svelte.target === "svelte",
+	"Projection filtering must not drop unrelated source data");
+assertTrue(JSON.parse(focusedResult.source).config.service.value === "new", "The draft must include the edited value");
+delete focusedRequest.projectionPaths;
+service.applyMutationRequest(focusedRequest, {}, focusedEnv);
+assertTrue(unrelatedProjectionCalls > 0, "The fixture must exercise the unrelated providers for a full projection");
+
+unrelatedProjectionCalls = 0;
+var focusedPaste = service.authoringMutateRequest({ surface: "virtual", projectionPaths: ["config"],
+	write: false, persist: false, engineSource: focusedRequest.engineSource,
+	transfer: { sourcePath: "config.service", targetPath: "config.service", name: "service", value: { value: "copy" } }
+}, {}, focusedEnv);
+assertTrue(unrelatedProjectionCalls === 0, "Neither transfer validation nor its result may project unrelated frontend/catalog providers");
+assertTrue(focusedPaste.children.length === 1 && focusedPaste.children[0].path === "config", "Paste returns the fresh requested branch");
+assertTrue(JSON.parse(focusedPaste.source).config.service.service.value === "copy", "Paste still inserts through the slot contract");
+assertTrue(JSON.parse(focusedPaste.source).config.frontbuilder.svelte.target === "svelte", "Paste preserves the complete source");
+assertTrue(focusedPaste.written === false, "A draft paste must not write the source file");
 
 var pasted = service.authoringMutateRequest({ surface: "virtual", includeTree: false, dryRun: true,
 	engineSource: JSON.stringify({ config: { service4: { setting: "keep" } } }),
@@ -156,6 +199,25 @@ var settingMutation = service.authoringActionMutationFromTreeRequest({
 assertTrue(settingMutation.__engineMutationPath === "/config/weather/setting",
 	"The action must be recomputed from the current virtual target instead of trusting stale palette mutations");
 
+// Exercise the palette action end-to-end: actions use JSON pointers, unlike a
+// hand-written dotted mutation. Studio must receive an actual projected path.
+["config.create.group@entries", "config.create.value@entries"].forEach(function (actionId) {
+	var result = service.authoringMutateRequest({
+		surface: "virtual", includeTree: false, dryRun: true,
+		engineSource: JSON.stringify({ config: config.definition }),
+		action: { id: actionId, targetPath: "config.weather", position: "inside" }
+	}, {}, mutationEnv);
+	var projection = service.describeTreeRequest({ target: "engine", includeFlowCatalog: false,
+		definition: JSON.parse(result.source) }, {}, env);
+	function containsSelection(node) {
+		return node.path === result.selectionVirtualPath || (node.children || []).some(containsSelection);
+	}
+	assertTrue(result.selectionVirtualPath !== "config.weather" && containsSelection(projection),
+		"Palette creation must select its projected child: " + result.selectionVirtualPath);
+});
+assertTrue(pasted.selectionVirtualPath === "config.service4.service4",
+	"Clipboard insertion must use the same projected selection convention as palette insertion");
+
 // The creation mechanism must not inspect a Config/backend/frontend kind or type.
 var foreignDefinition = { entries: {} };
 var foreignNode = { path: "entries", kind: "arbitraryKind", type: "arbitraryType", definition: {},
@@ -208,7 +270,8 @@ expectTransferError(["example.entry"], ambiguousTree, null, null, "AMBIGUOUS_AUT
 assertTrue(foreignTransfer(["example.entry"], ambiguousTree, { entries: {}, otherEntries: {} }, "other")
 	.__engineMutationPath === "/otherEntries/entry", "Explicit destination slot must resolve ambiguity");
 expectTransferError(["example.entry"], ambiguousTree, null, "missing", "INVALID_AUTHORING_TRANSFER_TARGET");
-expectTransferError(["example.entry"], null, { entries: [] }, null, "INVALID_AUTHORING_TRANSFER_TARGET");
+assertTrue(foreignTransfer(["example.entry"], null, { entries: [] }).op === "insert",
+	"The same trait/slot resolver supports array collections as well as named collections");
 var ambiguousPalette = service.authoringPaletteFromTreeRequest({ surface: "virtual", focusPath: "entries",
 	definition: { entries: {}, otherEntries: {} } }, {}, ambiguousTree, env);
 assertTrue(ambiguousPalette.items.length === 2, "A template must be materialized once per compatible slot, not cross-matched");

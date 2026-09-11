@@ -458,11 +458,15 @@ assertTrue(portableTrimCatalog && portableTrimCatalog.targets.join(",") === "bac
 var portableCatalogBlocks = catalog.blocks.filter(function (block) {
 	return block.targets && block.targets.indexOf("backend") !== -1 && block.targets.indexOf("frontend") !== -1;
 });
-var portableFixtureCount = JSON.parse(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
-	new java.io.File(engineDir, "portable-axiom-fixtures.json"), "UTF-8"))).length;
-assertTrue(portableCatalogBlocks.length === portableFixtureCount && portableCatalogBlocks.every(function (block) {
+var portableFixtureBlocks = JSON.parse(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(engineDir, "portable-axiom-fixtures.json"), "UTF-8"))).map(function (fixture) { return fixture.block; });
+// Clock output is bounded by observation times below, not a constant expected value.
+var dynamicPortableFixtureBlocks = ["date.now"];
+var coveredPortableBlocks = portableFixtureBlocks.concat(dynamicPortableFixtureBlocks);
+assertTrue(portableCatalogBlocks.length === coveredPortableBlocks.length && portableCatalogBlocks.every(function (block) {
 	var relativeFile = block.implementations && block.implementations.frontend && block.implementations.frontend.file;
-	return relativeFile && new java.io.File(new java.io.File(block.file).getParentFile(), relativeFile).isFile();
+	return coveredPortableBlocks.indexOf(block.blockId) >= 0 && relativeFile
+		&& new java.io.File(new java.io.File(block.file).getParentFile(), relativeFile).isFile();
 }), "portable catalog blocks did not expose every fixture-backed browser implementation file");
 assertTrue(legacyBackendCatalog.targets.join(",") === "backend" &&
 	legacyBackendCatalog.effects.join(",") === "unspecified",
@@ -971,6 +975,11 @@ portableFixtures.forEach(function (fixture, index) {
 	assertTrue(run.ok === true && JSON.stringify(run.result.value) === JSON.stringify(fixture.expected),
 		"portable Rhino fixture mismatch for " + fixture.block + ": " + JSON.stringify(run));
 });
+var clockBefore = Date.now();
+var clockRun = JSON.parse(engine.run(JSON.stringify({ flowSource:
+	'function ClockSmoke({ result }) { date.now({ out: "result.timestamp" }) }', includeTrace: false })));
+assertTrue(clockRun.ok && clockRun.result.timestamp >= clockBefore && clockRun.result.timestamp <= Date.now(),
+	"Portable clock must execute a real timestamp, not a backend placeholder");
 var frontendTargetValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	name: "BackendOnlyTargetSmoke",
 	code: [
@@ -4975,6 +4984,7 @@ var flowSvelteLifecyclePalette = JSON.parse(engine.authoringPalette(JSON.stringi
 	projectDir: __flowProjectDir,
 	focusPath: flowSvelteEventsNode.path
 })));
+assertTrue(Array.isArray(flowSvelteLifecyclePalette.items), "Lifecycle palette response: " + JSON.stringify(flowSvelteLifecyclePalette));
 [
 	"frontbuilder.svelte.onMount",
 	"frontbuilder.svelte.onDestroy",
@@ -5255,8 +5265,9 @@ var smokeIf = findNode(flowSvelteTree, function (node) {
 	return node.kind === "frontendDirectiveBlock" && node.summary === "If" &&
 		sameCanonicalPath(nodeInfoObject(node).sourcePath, flowSvelteComponentFile);
 });
-assertTrue(nodeInfoObject(smokePanelRoot).frontendInsertMutationPath === "frontAst.slots.structure.children",
-	"flow-svelte component root did not expose the AST structure insert path");
+assertTrue(smokePanelRoot && nodeInfoObject(smokePanelRoot).slots.structure.sourceMutationPath === "frontAst.slots.structure.children"
+	&& !nodeInfoObject(smokePanelRoot).frontendInsertMutationPath,
+	"a multi-slot component root must expose its AST slots without silently choosing Structure");
 assertTrue(smokePanelRouteRef !== null,
 	"flow-svelte canonical route page did not expose the referenced component instance");
 var smokeIfInfo = nodeInfoObject(smokeIf);
@@ -5494,11 +5505,14 @@ var flowSvelteBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stri
 	}
 })));
 assertTrue(flowSvelteBindingRoundTrip.ok === true &&
-	String(flowSvelteBindingRoundTrip.source).indexOf('source="@loadItems.items"') !== -1 &&
-	String(flowSvelteBindingRoundTrip.source).indexOf('text="@items.item.title"') !== -1 &&
+	String(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("source", { category: "requestable", actionId: "loadItems" }, "items")) !== -1 &&
+	String(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
 	String(flowSvelteBindingRoundTrip.source).indexOf('id="itemDescription"') !== -1,
-	"flow-svelte AST mutations should preserve iteration bindings using canonical source notation: " +
+	"flow-svelte AST mutations should preserve complete structured iteration bindings: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
+function structuredBindingAttribute(name, source, property) {
+	return name + "={" + JSON.stringify({ mode: "source", source: source, path: [{ kind: "property", name: property }] }) + "}";
+}
 var flowSvelteIntuitiveBindingMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
 	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5566,7 +5580,7 @@ var flowSvelteNaturalBindingRoundTrip = JSON.parse(engine.applySourceMutation(JS
 })));
 assertTrue(flowSvelteNaturalBindingRoundTrip.ok === true &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source={[]}') !== -1 &&
-	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('text="@items.item.title"') !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count={0}') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step={1}') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source="{') === -1 &&
@@ -5589,8 +5603,8 @@ var flowSvelteFullSyncBinding = JSON.parse(engine.applySourceMutation(JSON.strin
 	}
 })));
 assertTrue(flowSvelteFullSyncBinding.ok === true &&
-	String(flowSvelteFullSyncBinding.source).indexOf('source="@readItems.rows"') !== -1,
-	"flow-svelte AST mutations should accept structured FullSync binding sources");
+	String(flowSvelteFullSyncBinding.source).indexOf(structuredBindingAttribute("source", { category: "fullsync", actionId: "readItems", operation: "view" }, "rows")) !== -1,
+	"flow-svelte AST mutations must preserve the FullSync operation in structured binding sources");
 var flowSvelteComposedBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
 	sourcePath: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5659,7 +5673,7 @@ var flowSvelteConditionalBindingRoundTrip = JSON.parse(engine.applySourceMutatio
 	}
 })));
 assertTrue(flowSvelteConditionalBindingRoundTrip.ok === true &&
-	String(flowSvelteConditionalBindingRoundTrip.source).indexOf('test="@items.item.alternate"') !== -1 &&
+	String(flowSvelteConditionalBindingRoundTrip.source).indexOf(structuredBindingAttribute("test", { category: "iteration", scopeId: "items", value: "item" }, "alternate")) !== -1 &&
 	String(flowSvelteConditionalBindingRoundTrip.source).indexOf("test={{{") === -1,
 	"flow-svelte AST mutations should preserve structured conditional bindings across reparses: " +
 		JSON.stringify(flowSvelteConditionalBindingRoundTrip));
@@ -5697,7 +5711,7 @@ var flowSvelteNestedConditionalMutation = JSON.parse(engine.applySourceMutation(
 })));
 assertTrue(flowSvelteNestedConditionalMutation.ok === true &&
 	String(flowSvelteNestedConditionalMutation.source).indexOf('id="evenTitle"') !== -1 &&
-	String(flowSvelteNestedConditionalMutation.source).indexOf('source="@items.item.title"') !== -1,
+	String(flowSvelteNestedConditionalMutation.source).indexOf(structuredBindingAttribute("source", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1,
 	"flow-svelte AST mutations should resolve Each and named If slots: " +
 		JSON.stringify(flowSvelteNestedConditionalMutation));
 var flowSvelteKitchenSinkSource = [

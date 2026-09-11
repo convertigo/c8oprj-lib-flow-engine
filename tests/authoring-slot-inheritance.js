@@ -37,6 +37,33 @@ function palette(focus, fixture) {
 		focusPath: focus, applyFallback: false }, {}, fixture || tree, env);
 }
 function ids(result) { return result.items.map(function (item) { return item.id; }).sort().join(","); }
+
+// Sibling insertion is defined by the semantic parent's slot, not the neighbour's traits.
+var siblingOwner = node("owner", { entries: Object.assign(explicit(["example.one", "example.two"], "values"), { collection: "array" }) });
+var siblingAnchor = node("anchor", {}, "owner", "entries");
+siblingAnchor.info.sourceMutationPath = "values[0]";
+siblingAnchor.info.traits = ["example.one"];
+var siblingTree = { children: [siblingOwner, siblingAnchor], descriptors: [
+	{ id: "one", traits: ["example.one"], insert: {} },
+	{ id: "two", traits: ["example.two"], insert: {} },
+	{ id: "foreign", traits: ["example.foreign"], insert: {} }
+] };
+function siblingPalette(fixture, position) {
+	return service.authoringPaletteFromTreeRequest({ surface: "virtual", definition: {}, focusPath: "anchor",
+		position: position, applyFallback: false }, {}, fixture, env);
+}
+["before", "after"].forEach(function (position) {
+	var result = siblingPalette(siblingTree, position);
+	assertTrue(ids(result) === "one,two", "A sibling may have a different trait accepted by the same parent slot");
+	assertTrue(result.items.every(function (item) { return item.targetSlot.id === "entries"; }), "No artificial siblings slot identity");
+	assertTrue(result.items[0].targetSlot.index === (position === "before" ? 0 : 1), "Sibling index remains relative to the anchor");
+	var readOnlyParent = clone(siblingTree);
+	readOnlyParent.children[0].info.slots.entries.sourceWritable = false;
+	assertTrue(siblingPalette(readOnlyParent, position).items.length === 0, "A read-only parent slot must reject insertion beside its child");
+	var noOwner = clone(siblingTree);
+	delete noOwner.children[1].info.parentSlot;
+	assertTrue(siblingPalette(noOwner, position).items.length === 0, "No heuristic acceptance without a semantic parent slot");
+});
 assertTrue(ids(palette("inner")) === "control,text", "Nested controls must inherit the outer semantic slot");
 assertTrue(ids(palette("event")) === "action", "An event must retain its explicit action contract");
 assertTrue(ids(palette("outer")) === "control,control,text,text", "Each control branch inherits independently");
@@ -165,4 +192,46 @@ function findPath(tree, path) {
 	assertTrue(JSON.parse(findPath(projected, "nodes[0]").info).slots.entries.sourceMutationPath === "nodes[0].nodes",
 		"The semantic slot id must stay distinct from its concrete alias mutation path");
 });
+var pasteEnv = Object.assign({}, projectionEnv, {
+	parseSource: JSON.parse, sourceForFlowRequest: function (request) { return request.flowSource; },
+	analyzeFlowSource: function () { return {}; }, nodePath: function (node) { return node.id || ""; }
+});
+var pasteBlocks = { leaf: { traits: ["flow.node"], slots: [] } };
+// Exercise the real Engine.js dispatcher too, not only the underlying tree module.
+var engineCode = String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
+var entryStart = engineCode.indexOf("function authoringMutateRequest(request, blocks) {");
+var entryEnd = engineCode.indexOf("\n\tfunction describeTreeCacheKey", entryStart);
+assertTrue(entryStart >= 0 && entryEnd > entryStart, "The production dispatcher must be found");
+var sourceDispatchCalls = 0;
+var engineAuthoringMutate = new Function("flowTreeService", "flowTreeServiceEnv", "applySourceMutationRequest",
+	"return (" + engineCode.substring(entryStart, entryEnd).trim() + ");")(
+	function () { return service; }, function () { return pasteEnv; }, function (request, blocks) {
+		sourceDispatchCalls++;
+		return service.applyMutationRequest(request, blocks, pasteEnv);
+	});
+["nodes[0]", "nodes", ""].forEach(function (destination) {
+	var result = engineAuthoringMutate({ target: "flow", flowName: "test", sourceFile: "/fixture/meteo.flow",
+		flowSource: JSON.stringify({ nodes: [{ type: "leaf", id: "original", value: "keep" }] }),
+		transfer: { sourcePath: "nodes[0]", targetPath: destination, traits: ["flow.node"],
+			value: { type: "leaf", id: "original", value: "keep" } }
+	}, pasteBlocks);
+	var nodes = JSON.parse(result.source).nodes;
+	assertTrue(nodes.length === 2 && nodes[1].value === "keep", "Backend paste must work on leaf, root slot and source owner");
+	assertTrue(nodes[0].id === "original" && nodes[1].id === "original2", "Copied node identities must not collide");
+	assertTrue(result.selectionMutationPath === "nodes[1]", "The newly inserted node must be selected");
+});
+assertTrue(sourceDispatchCalls === 0, "A backend clipboard command must be resolved before low-level source mutation dispatch");
+engineAuthoringMutate({ target: "flow", sourceFile: "/fixture/meteo.flow",
+	flowSource: JSON.stringify({ nodes: [] }), mutation: { op: "insert", path: "nodes", value: { type: "leaf" } }
+}, pasteBlocks);
+assertTrue(sourceDispatchCalls === 1, "Already resolved source mutations must keep their existing adapter");
+var emptySlotBlocks = Object.assign({}, pasteBlocks, {
+	holder: { traits: ["flow.node"], slots: [{ name: "children", accepts: ["flow.node"], label: "Children" }] }
+});
+var emptySlotResult = service.authoringMutateRequest({ target: "flow",
+	flowSource: JSON.stringify({ nodes: [{ type: "holder", id: "container" }] }),
+	transfer: { sourcePath: "external", targetPath: "nodes[0]", traits: ["flow.node"], value: { type: "leaf", id: "item" } }
+}, emptySlotBlocks, pasteEnv);
+assertTrue(JSON.parse(emptySlotResult.source).nodes[0].children[0].id === "item",
+	"The declared array slot must allow inserting its first child without a pre-existing array");
 print("authoring-slot-inheritance OK");

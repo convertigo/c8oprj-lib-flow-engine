@@ -151,6 +151,45 @@ try {
   assert.equal(fs.readFileSync(file, 'utf8'), source, 'Accepted/rejected drafts must not touch the project source');
   assert.equal(JSON.stringify(document), before, 'Insertion must preserve the initial provider tree');
   console.log('frontend-insert-gate OK (append/indexed/pasted subtree, forged traits, nested rejection, no project writes)');
+  const paste = (from, target = right.sourceMutationPath, snapshot = source, destination = source) =>
+    real.applyOneFlowSvelteSourceMutation({}, destination, {op: 'paste', path: target, from,
+      sourceSnapshot: snapshot, snapshotSourcePath: file}, sourceFile, file);
+  const copied = paste(nested.sourceMutationPath);
+  assert.equal(copied.ok, true);
+  const copiedNodes = nodes(describeSource(copied.source).tree);
+  assert.equal(copiedNodes.filter(n => n.id === 'nested2').length, 1);
+  assert.equal(copiedNodes.filter(n => n.id === 'inner2').length, 1, 'Clipboard retains descendants and renews colliding IDs');
+  assert.equal(copiedNodes.filter(n => n.id === 'inner').length, 1, 'Original is unchanged');
+  const copiedAgain = paste(nested.sourceMutationPath, right.sourceMutationPath, source, copied.source);
+  assert.equal(nodes(describeSource(copiedAgain.source).tree).filter(n => n.id === 'inner3').length, 1);
+  const snapshot = source.replace('text="Nested"', 'text={local.title}');
+  const boundCopy = paste(nested.sourceMutationPath, right.sourceMutationPath, snapshot);
+  assert.match(boundCopy.source, /id="inner2"[^>]*text=\{local.title\}/, 'Snapshot bindings survive copying');
+  const conditionalSnapshot = source.replace('<Text id="inner" text="Nested" />',
+    '<If id="condition" condition={local.visible}><Then><Text id="yes" text="Yes" /></Then>'
+      + '<Else><Text id="no" enabled={false} text="No" /></Else></If>');
+  const conditional = paste(nested.sourceMutationPath, right.sourceMutationPath, conditionalSnapshot, conditionalSnapshot);
+  const conditionalNodes = nodes(describeSource(conditional.source).tree);
+  assert.equal(conditionalNodes.filter(n => n.id === 'condition2').length, 1);
+  assert.equal(conditionalNodes.filter(n => n.id === 'yes2').length, 1, 'Named slots retain their descendants');
+  assert.match(conditional.source, /enabled=\{false\}[^>]*id="no2"|id="no2"[^>]*enabled=\{false\}/,
+    'Disabled nodes remain disabled and participate in ID renewal');
+  assert.throws(() => paste(byId('call').sourceMutationPath), {code: 'INCOMPATIBLE_AUTHORING_SLOT'});
+  const siblingCopy = paste(text.sourceMutationPath, text.sourceMutationPath);
+  assert.equal(siblingCopy.mutation.path, left.slots.children.sourceMutationPath);
+  assert.equal(nodes(describeSource(siblingCopy.source).tree).filter(n => n.id === 'text2').length, 1);
+  assert.throws(() => paste('frontAst.missing'), /Unknown clipboard source node/);
+  assert.equal(fs.readFileSync(file, 'utf8'), source, 'Clipboard tests never persist source');
+  const dispatchStart = engineSource.indexOf('function applyFlowSvelteSourceMutationRequest(');
+  real.invalidateFrontendDocumentCaches = () => {};
+  real.frontendRequestSourceFile = () => sourceFile;
+  vm.runInContext(engineSource.slice(dispatchStart, engineSource.indexOf('\n\tfunction ', dispatchStart)), real);
+  const dispatchedPaste = real.applyFlowSvelteSourceMutationRequest({source, sourceFile: file,
+    mutation: {op: 'paste', path: right.sourceMutationPath, from: nested.sourceMutationPath,
+      sourceSnapshot: source, snapshotSourcePath: file}});
+  assert.equal(dispatchedPaste.selectionMutationPath, right.slots.children.sourceMutationPath + '[0]',
+    'Java receives the inserted child path, not the original destination path');
+  console.log('frontend-clipboard-gate OK (source snapshot, descendants, unique IDs, bindings, incompatible slot rejection)');
   const mutate = mutation => real.applyOneFlowSvelteSourceMutation({}, source, mutation, sourceFile, file);
   const wrapped = mutate({op: 'wrap', paths: [nested.sourceMutationPath, text.sourceMutationPath],
     value: {tag: 'Card', id: 'wrapper'}, slot: 'children'});

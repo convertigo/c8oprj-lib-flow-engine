@@ -4386,6 +4386,7 @@
 			summaryText: summaryText,
 			blockCatalog: blockCatalog,
 			blockDescriptor: blockDescriptor,
+			filterVisibleDescriptors: catalogService().filterVisibleDescriptors,
 			typeDescriptor: typeDescriptor,
 			loadTypes: loadTypes,
 			catalogDefinition: catalogDefinition,
@@ -4754,6 +4755,9 @@
 
 	function authoringPaletteRequest(request, blocks) {
 		request = request || {};
+		if (request.target === "flow") {
+			return flowTreeService().authoringPaletteRequest(request, blocks, flowTreeServiceEnv());
+		}
 		var treeRequest = flowTreeService().authoringPaletteTreeRequest(request, flowTreeServiceEnv());
 		return flowTreeService().authoringPaletteFromTreeRequest(request, blocks,
 			cachedAuthoringTreeBase(treeRequest, blocks), flowTreeServiceEnv());
@@ -4761,7 +4765,9 @@
 
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
-		if (request.sourceFile || request.sourcePath) {
+		// A clipboard transfer is an authoring command, not yet a source mutation.
+		// Resolve its slot first even when the Flow request carries its source identity.
+		if ((request.sourceFile || request.sourcePath) && !(request.target === "flow" && (request.transfer || request.action))) {
 			return applySourceMutationRequest(request, blocks);
 		}
 		return flowTreeService().authoringMutateRequest(request, blocks, flowTreeServiceEnv());
@@ -5477,7 +5483,10 @@
 			results: results
 		};
 		if (mutations.length === 1) {
-			out.mutation = mutations[0];
+			out.mutation = results[0].mutation;
+			if (out.mutation.op === "paste") {
+				out.selectionMutationPath = out.mutation.path + "[" + out.mutation.index + "]";
+			}
 			out.target = results[0] && results[0].target || "flowSvelte";
 			if (results[0] && results[0].debug) {
 				out.debug = results[0].debug;
@@ -5533,7 +5542,7 @@
 	function applyOneFlowSvelteSourceMutation(request, source, mutation, sourceFile, sourcePath) {
 		mutation = mutation || {};
 		var op = String(mutation.op || "");
-		var inserting = (op === "append" || op === "insert") && String(mutation.path || "").indexOf("frontAst") === 0;
+		var inserting = (op === "append" || op === "insert" || op === "paste") && String(mutation.path || "").indexOf("frontAst") === 0;
 		var wrapping = op === "wrap";
 		var replacing = frontAstStructuralReplacement(mutation);
 		var editingNode = (op === "delete" || op === "remove" || op === "setEnabled")

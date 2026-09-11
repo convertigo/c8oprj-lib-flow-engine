@@ -2,9 +2,10 @@ const _meta = {
   "version": 1,
   "icon": "mdi:clock-outline",
   "description": "Returns the current Unix time in milliseconds.",
-  "targets": ["frontend"],
+  "targets": ["backend", "frontend"],
   "effects": [],
   "implementations": {
+    "backend": { "runtime": "rhino" },
     "frontend": { "runtime": "browser", "file": "now.browser.js" }
   },
   "properties": {
@@ -19,9 +20,14 @@ const _meta = {
   "outputs": {
     "out": { "type": "number" }
   },
-  "tags": ["date", "time", "now", "timestamp", "frontend", "axiom"]
+  "runtime": "rhino",
+  "tags": ["date", "time", "now", "timestamp", "portable", "axiom"]
 }
 
-function now() {
-  return 0
-}
+(function () {
+  return {
+    run: function () {
+      return Date.now()
+    }
+  }
+}())

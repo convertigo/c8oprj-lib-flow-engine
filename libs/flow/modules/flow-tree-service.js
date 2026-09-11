@@ -3290,7 +3290,7 @@
 				});
 				if (slot.accepts !== undefined || slot.acceptsFrom !== undefined) {
 					slotInfo.parentSlot = parentSlot;
-					slotInfo.slots = { content: { acceptsFrom: "parentSlot", label: slot.label,
+					slotInfo.slots = { content: { acceptsFrom: "parentSlot", label: slot.label, collection: "array",
 						sourceMutationPath: slotSourcePath || path } };
 				}
 				var folder = virtualNode(slot.name, "slot", slot.name, path, slot.label, compact(slot.nodes), compact(slotInfo), "mdi:call-split");
@@ -3330,7 +3330,7 @@
 			var name = [definition.name].concat(definition.aliases || []).filter(function (name) {
 				return Array.isArray(node[name]);
 			})[0] || definition.name;
-			slots[definition.name] = Object.assign({}, definition, { id: definition.name,
+			slots[definition.name] = Object.assign({}, definition, { id: definition.name, collection: "array",
 				sourceMutationPath: path + "." + name });
 		});
 		return slots;
@@ -3386,7 +3386,7 @@
 
 	function addRootNodeList(parent, nodes, path, blocks, analysisById, sourceInfo, sourceBasePath) {
 		var info = mergeSourceInfo(nodeJson(parent, "info"), sourceInfo, sourceBasePath || path);
-		info.slots = { nodes: { label: "Flow", accepts: ["flow.node"],
+		info.slots = { nodes: { label: "Flow", accepts: ["flow.node"], collection: "array",
 			sourceMutationPath: sourceBasePath || path } };
 		parent.info = compact(info);
 		addNodeList(parent, nodes, path, blocks, analysisById, sourceInfo, sourceBasePath,
@@ -4292,6 +4292,12 @@
 		request = request || {};
 		var target = String(request.target || "flow");
 		var children = [];
+		function wantsProjection(root) {
+			return !Array.isArray(request.projectionPaths) || request.projectionPaths.some(function (path) {
+				var parts = parseMutationPath(path);
+				return !parts.length || parts[0] === root;
+			});
+		}
 		if (target === "flow") {
 			var definition = request.definition !== undefined && request.definition !== null
 				? canonicalFlowDefinition(normalizeTree(request.definition))
@@ -4327,12 +4333,14 @@
 			var engine = request.definition !== undefined && request.definition !== null
 				? normalizeTree(request.definition)
 				: parseYamlSource(request.engineSource, "version: 1\n");
-			addEngineMetadata(children, engine, "engine");
-			addBindings(children, engine.bindings, "bindings");
-			addConfig(children, engine.config, "config", engine.configVisibility, request);
-			addFrontendModels(children, engine.config, "frontends", request, blocks);
-			if (request.includeFlowCatalog !== false) {
+			if (wantsProjection("engine")) addEngineMetadata(children, engine, "engine");
+			if (wantsProjection("bindings")) addBindings(children, engine.bindings, "bindings");
+			if (wantsProjection("config")) addConfig(children, engine.config, "config", engine.configVisibility, request);
+			if (wantsProjection("frontends")) addFrontendModels(children, engine.config, "frontends", request, blocks);
+			if (wantsProjection("fragments") && request.includeFlowCatalog !== false) {
 				addFragments(children, blocks);
+			}
+			if (wantsProjection("catalog") && request.includeFlowCatalog !== false) {
 				addCatalog(children, blocks, {
 					includePrivate: request.includePrivate !== false,
 					origin: request.flowCatalogOrigin || "",
@@ -4508,6 +4516,7 @@
 		});
 		delete baseRequest.mode;
 		delete baseRequest.maxDepth;
+		if (request.target === "flow") return describeTreeRequest(baseRequest, blocks);
 		var engine = authoringEngineDefinition(baseRequest);
 		performanceMark("frontend.base.engineDefinition");
 		var tree = authoringEngineTree(Object.assign({}, baseRequest, { definition: engine }), blocks);
@@ -4554,6 +4563,28 @@
 
 	function authoringDescriptors(request, engine, blocks) {
 		request = request || {};
+		if (request.target === "flow") {
+			var definition = request.definition || parseSource(sourceForFlowRequest(request, blocks));
+			var active = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, definition) : blocks;
+			var catalogEntries = Object.keys(active).sort().map(function (name) { return blockDescriptor(active[name]); });
+			return env.filterVisibleDescriptors(catalogEntries, request).map(function (catalog) {
+				if ((catalog.targets || ["backend"]).indexOf("backend") === -1) return null;
+				var name = catalog.blockId;
+				var value = { id: name.replace(/[^a-zA-Z0-9_]/g, "_"), block: name };
+				Object.keys(catalog.props || {}).forEach(function (key) {
+					if (catalog.props[key].default !== undefined) value[key] = normalizeTree(catalog.props[key].default);
+				});
+				return Object.assign({}, catalog, {
+					id: "flow.block." + name, label: catalog.label || name,
+					definitionPath: "",
+					category: "Flow blocks / " + (catalog.namespace || "Core"),
+					properties: catalog.props || {}, traits: catalog.traits || [],
+					acceptedPositions: ["inside", "before", "after"], insert: value,
+					virtualPrototype: { kind: "node", type: name, definition: JSON.stringify(value) },
+					authoringMutation: { op: "insert", value: value }
+				});
+			}).filter(function (descriptor) { return descriptor !== null; });
+		}
 		var surface = String(request.surface || "frontend");
 		if (surface !== "frontend") {
 			return [];
@@ -4863,6 +4894,21 @@
 			hasSlotContract: nodeValue(node, "slots") !== undefined
 		};
 		summary.slots = normalizedAuthoringSlots(node, summary, tree);
+		if (summary.parentSlot.ownerPath && summary.parentSlot.slotId) {
+			var owner = semanticSlotOwner(tree, summary.parentSlot);
+			if (!owner) raise("UNRESOLVED_AUTHORING_SLOT", "Missing semantic parent slot for " + node.path);
+			var ownerWritable = nodeValue(owner.node, "sourceWritable");
+			var parentSlots = normalizedAuthoringSlots(owner.node, {
+				hasSlotContract: true, sourceWritable: ownerWritable === undefined ? null : nodeFlag(owner.node, "sourceWritable")
+			}, tree);
+			var parentSlot = parentSlots[summary.parentSlot.slotId];
+			if (!parentSlot) raise("UNRESOLVED_AUTHORING_SLOT", "Unknown semantic parent slot for " + node.path);
+			summary.parentInsertionSlot = Object.assign({}, parentSlot, {
+				sourcePath: parentSlot.sourcePath || nodeValue(owner.node, "sourcePath") || "",
+				readOnlyReference: parentSlot.readOnlyReference === true || nodeFlag(owner.node, "readOnlyReference"),
+				sourceWritable: !nodeFlag(owner.node, "readOnly") && parentSlot.sourceWritable
+			});
+		}
 		return summary;
 	}
 
@@ -4986,6 +5032,14 @@
 					}
 				});
 			});
+			// A clipboard drop on a leaf addresses its declared parent slot, never a path inferred from its spelling.
+			if (!targets.length && request.op === "paste") {
+				var leaves = nodes.filter(function (node) {
+					return source(node) === String(request.sourcePath || "") && path(node) === request.path
+						&& !slotProjection(node) && !Object.keys(nodeObjectValue(node, "slots")).length;
+				});
+				if (leaves.length === 1) targets.push(parent(leaves[0]));
+			}
 			if (targets.length !== 1) raise("INVALID_AUTHORING_DESTINATION", "Choose one declared destination slot: " + request.path);
 			return targets[0];
 		}
@@ -5276,14 +5330,14 @@
 	function descriptorItem(descriptor, target, detail) {
 		var out = {};
 		var compact = String(detail || "") === "compact";
-		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace",
+		["id", "name", "localName", "label", "category", "kind", "icon", "description", "provider", "namespace", "file",
 			"iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32",
 			"sourceBacked", "descriptorKind", "sourceWritable", "runtime", "sourceRelativePath", "sourceOrigin"].forEach(function (key) {
 			if (descriptor[key] !== undefined && descriptor[key] !== null && descriptor[key] !== "") {
 				out[key] = descriptor[key];
 			}
 		});
-		var definitionPath = frontendDefinitionPath(descriptor);
+		var definitionPath = descriptor.definitionPath !== undefined ? descriptor.definitionPath : frontendDefinitionPath(descriptor);
 		if (definitionPath) {
 			out.definitionPath = definitionPath;
 		}
@@ -5342,48 +5396,25 @@
 		return match ? { path: match[1], index: Number(match[2]) } : null;
 	}
 
-	function siblingInsertionAccepts(focus) {
-		var traits = frontendArray(focus && focus.traits);
-		if (traits.indexOf("ui.event") !== -1) {
-			return ["ui.event"];
-		}
-		if (traits.indexOf("ui.action") !== -1) {
-			return ["ui.action"];
-		}
-		if (traits.indexOf("ui.action.variable") !== -1) {
-			return ["ui.action.variable"];
-		}
-		if (traits.indexOf("ui.table.column") !== -1) {
-			return ["ui.table.column"];
-		}
-		if (traits.indexOf("ui.data.binding") !== -1) {
-			return ["ui.data.binding"];
-		}
-		if (traits.indexOf("ui.directive.branch") !== -1) {
-			return ["ui.directive.branch"];
-		}
-		if (traits.indexOf("ui.block") !== -1 || traits.indexOf("ui.directive") !== -1) {
-			return ["ui.block", "ui.directive"];
-		}
-		return traits.length ? traits : ["ui.block", "ui.directive"];
-	}
-
 	function siblingInsertionTarget(focus, position, mode) {
 		if (position !== "before" && position !== "after") {
 			return null;
 		}
 		var indexed = indexedMutationPath(focus && focus.sourceMutationPath);
-		if (!indexed) {
+		var parentSlot = focus && focus.parentInsertionSlot;
+		if (!indexed || !parentSlot || parentSlot.sourceMutationPath !== indexed.path) {
 			return null;
 		}
 		return {
-			id: "siblings",
-			label: "Siblings",
-			accepts: siblingInsertionAccepts(focus),
-			sourceMutationPath: indexed.path,
-			sourcePath: focus.sourcePath || "",
-			sourceWritable: focus.sourceWritable,
-			readOnlyReference: focus.readOnlyReference === true,
+			id: parentSlot.id,
+			label: parentSlot.label,
+			contractDeclared: true,
+			accepts: parentSlot.accepts,
+			collection: parentSlot.collection,
+			sourceMutationPath: parentSlot.sourceMutationPath,
+			sourcePath: parentSlot.sourcePath,
+			sourceWritable: parentSlot.sourceWritable,
+			readOnlyReference: parentSlot.readOnlyReference === true || focus.readOnlyReference === true,
 			position: position,
 			mode: mode || "sibling",
 			index: position === "before" ? indexed.index : indexed.index + 1
@@ -5396,6 +5427,7 @@
 		if (siblingTarget) {
 			return [siblingTarget];
 		}
+		if (position === "before" || position === "after") return [];
 		var targets = [];
 		var slots = focus && focus.slots || {};
 		Object.keys(slots).forEach(function (key) {
@@ -5414,6 +5446,7 @@
 				label: slot.label || key,
 				accepts: accepts,
 				sourceMutationPath: mutationPath,
+				collection: slot.collection,
 				sourcePath: slot.sourcePath || focus.sourcePath || "",
 				sourceWritable: inheritedWritable(slot.sourceWritable, focus.sourceWritable),
 				readOnlyReference: slot.readOnlyReference === true || focus.readOnlyReference === true,
@@ -5451,6 +5484,10 @@
 				return;
 			}
 			if (!targets.length) {
+				if (position === "before" || position === "after") {
+					filters.noMutationPath++;
+					return;
+				}
 				if (focus.hasSlotContract) {
 					filters.noMatchingTrait++;
 					return;
@@ -5563,7 +5600,7 @@
 		var focusPath = String(request.focusPath || request.path || "");
 		if (!focusPath) {
 			var builderNode = findAuthoringBuilderNode(tree, authoringBuilderName(request, engine));
-			focusPath = builderNode ? builderNode.path : "frontends";
+			focusPath = request.target === "flow" ? "nodes" : builderNode ? builderNode.path : "frontends";
 		}
 		var focusInfo = findTreeNode(tree, focusPath);
 		if (!focusInfo) {
@@ -5667,16 +5704,20 @@
 		if (!palette || palette.ok !== true) {
 			raise("INVALID_AUTHORING_ACTION_TARGET", "The selected virtual target is not available anymore.");
 		}
-		var eligible = false;
-		(palette.items || []).some(function (candidate) {
-			if (String(candidate && candidate.id || "") === actionId) {
-				eligible = true;
-				return true;
-			}
-			return false;
+		var candidates = (palette.items || []).filter(function (candidate) {
+			return String(candidate && candidate.id || "") === actionId
+				&& (!action.targetSlotId || action.targetSlotId === (candidate.targetSlot || {}).id);
 		});
-		if (!eligible) {
+		if (!candidates.length) {
 			raise("INVALID_AUTHORING_ACTION", "The virtual authoring action is not valid for the selected target.");
+		}
+		if (request.target === "flow") {
+			if (candidates.length !== 1) raise("AMBIGUOUS_AUTHORING_ACTION_TARGET", "Select a destination slot in the tree.");
+			var selectedCandidate = candidates[0];
+			return authoringTransferMutationFromTreeRequest(Object.assign({}, request, { transfer: {
+				targetPath: action.targetPath, targetSlotId: selectedCandidate.targetSlot.id,
+				position: action.position, traits: selectedCandidate.traits, value: selectedCandidate.insert
+			} }), blocks, tree);
 		}
 		var focusInfo = findTreeNode(tree, String(action.targetPath || ""));
 		var engine = authoringEngineDefinition(request);
@@ -5722,21 +5763,32 @@
 	}
 
 	function authoringTransferMutationFromTreeRequest(request, blocks, tree) {
-		var engine = authoringEngineDefinition(request);
+		var engine = request.target === "flow" ? (request.definition || parseSource(sourceForFlowRequest(request, blocks)))
+			: authoringEngineDefinition(request);
 		var transfer = request.transfer || {};
 		var sourceNode = findTreeNode(tree, String(transfer.sourcePath || ""));
 		var traits = frontendArray(transfer.traits || sourceNode && nodeValue(sourceNode.node, "traits"));
 		if (!traits.length) {
 			raise("INVALID_AUTHORING_TRANSFER", "Copied object has no traits. Copy it again from an up-to-date tree.");
 		}
-		var targetParts = parseMutationPath(String(transfer.targetPath || ""));
+		var targetNode = findTreeNode(tree, String(transfer.targetPath || ""));
+		if (!transfer.targetPath) {
+			var roots = (tree.children || []).filter(function (node) {
+				var summary = authoringNodeSummary(node, tree);
+				return authoringPaletteTargets(summary, "inside").some(function (slot) {
+					return descriptorSlotMatch({ traits: traits }, summary, slot);
+				});
+			});
+			if (roots.length !== 1) raise("AMBIGUOUS_AUTHORING_TRANSFER_TARGET", "Select a destination slot in the tree.");
+			targetNode = findTreeNode(tree, roots[0].path);
+		}
 		var targetSlot = null;
-		while (targetParts.length) {
-			var targetNode = findTreeNode(tree, targetParts.join("."));
+		while (targetNode) {
 			var summary = targetNode && authoringNodeSummary(targetNode.node, tree);
-			var slots = summary ? authoringPaletteTargets(summary, "inside").filter(function (slot) {
+			var position = String(transfer.position || "inside");
+			var slots = summary ? authoringPaletteTargets(summary, position).filter(function (slot) {
 				return descriptorSlotMatch({ traits: traits, targetSlotId: transfer.targetSlotId }, summary, slot)
-					&& !descriptorMutationTargetIssue({}, summary, "inside", slot);
+					&& !descriptorMutationTargetIssue({}, summary, position, slot);
 			}) : [];
 			if (slots.length > 1) {
 				raise("AMBIGUOUS_AUTHORING_TRANSFER_TARGET", "Several slots accept this object. Select the destination slot.");
@@ -5746,13 +5798,37 @@
 				break;
 			}
 			if (transfer.targetSlotId) break;
-			targetParts = targetParts.slice(0, -1);
+			targetNode = targetNode.parent ? findTreeNode(tree, targetNode.parent.path) : null;
 		}
 		if (!targetSlot) {
 			raise("INVALID_AUTHORING_TRANSFER_TARGET", "Neither this object nor its parents accept the copied object's traits.");
 		}
-		targetParts = parseMutationPath(targetSlot.sourceMutationPath);
+		var targetParts = parseMutationPath(targetSlot.sourceMutationPath);
 		var targetValue = valueAt(engine, targetParts);
+		if (targetValue == null && targetSlot.collection === "array") targetValue = [];
+		if (Array.isArray(targetValue)) {
+			var copied = normalizeTree(transfer.value);
+			if (request.target === "flow") {
+				var allocated = {};
+				function renewIds(node) {
+					if (node.id) {
+						var base = String(node.id), id = base, suffix = 2;
+						while (allocated[id] || collectNodeLocations(engine, blocks, id).length) id = base + suffix++;
+						node.id = id;
+						allocated[id] = true;
+					}
+					childSlotNamesForMutation(blocks, node).forEach(function (slot) {
+						if (Array.isArray(node[slot])) node[slot].forEach(renewIds);
+					});
+				}
+				renewIds(copied);
+			}
+			var index = targetSlot.index === undefined ? targetValue.length : targetSlot.index;
+			return { op: "insert", path: pointerPath(targetParts),
+				__engineMutationPath: request.target === "flow" ? undefined : pointerPath(targetParts),
+				index: index, value: copied,
+				selectionMutationPath: targetSlot.sourceMutationPath + "[" + index + "]" };
+		}
 		if (targetValue != null && (typeof targetValue !== "object" || Array.isArray(targetValue))) {
 			raise("INVALID_AUTHORING_TRANSFER_TARGET", "Named insertion requires an object collection.");
 		}
@@ -5767,12 +5843,22 @@
 		if (request.action) {
 			var treeRequest = authoringPaletteTreeRequest(request);
 			var tree = authoringTreeBaseRequest(treeRequest, blocks);
+			if (request.target === "flow") {
+				return applyMutationRequest(Object.assign({}, request, { mutation:
+					authoringActionMutationFromTreeRequest(request, blocks, tree) }), blocks);
+			}
 			return applyEngineMutationRequest(request, blocks,
 				[authoringActionMutationFromTreeRequest(request, blocks, tree)]);
 		}
 		if (request.transfer) {
+			if (request.target === "flow") {
+				var flowTree = describeTreeRequest(request, blocks);
+				return applyMutationRequest(Object.assign({}, request, { mutation:
+					authoringTransferMutationFromTreeRequest(request, blocks, flowTree) }), blocks);
+			}
 			var engine = authoringEngineDefinition(request);
-			var transferTree = describeTreeRequest({ target: "engine", definition: engine, includeFlowCatalog: false }, blocks);
+			var transferTree = describeTreeRequest({ target: "engine", definition: engine, includeFlowCatalog: false,
+				projectionPaths: [String(request.transfer.targetPath || "")] }, blocks);
 			return applyEngineMutationRequest(request, blocks,
 				[authoringTransferMutationFromTreeRequest(request, blocks, transferTree)]);
 		}
@@ -6763,8 +6849,9 @@
 		var source = target === "flow" && renderFlowScript
 			? renderFlowScript(blocks, String(request.name || request.flowName || "Flow"), yamlSource, { includeHeader: false })
 			: yamlSource;
-		var tree = describeTreeRequest({
+		var tree = request.includeTree === false ? { children: [] } : describeTreeRequest({
 			target: target,
+			projectionPaths: request.projectionPaths,
 			flowSource: source,
 			engineSource: source,
 			flowQName: request.flowQName || "",
@@ -6805,6 +6892,8 @@
 		return {
 			op: String(embedded.__engineMutationOp || mutation.__engineMutationOp || mutation.op || "merge"),
 			path: String(path),
+			index: mutation.index,
+			selectionMutationPath: mutation.selectionMutationPath,
 			value: payload
 		};
 	}
@@ -6830,7 +6919,7 @@
 				raise("UNSUPPORTED_AUTHORING_MUTATION", "Engine authoring mutations require a palette payload with __engineMutationPath.");
 			}
 			applyOneMutation(definition, spec, blocks);
-			selectionMutationPath = spec.op === "remove" || spec.op === "delete" ? "" : spec.path;
+			selectionMutationPath = spec.op === "remove" || spec.op === "delete" ? "" : spec.selectionMutationPath || spec.path;
 		});
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;
@@ -6843,7 +6932,9 @@
 			FileUtils.forceMkdir(file.getParentFile());
 			FileUtils.writeStringToFile(file, source, "UTF-8");
 		}
-		var tree = request.includeTree === false ? {} : authoringTreeRequest({
+		var tree = request.includeTree === false ? {} : Array.isArray(request.projectionPaths)
+			? describeTreeRequest({ target: "engine", definition: definition, projectionPaths: request.projectionPaths }, blocks)
+			: authoringTreeRequest({
 			surface: request.surface || "frontend",
 			builder: request.builder || "svelte",
 			engineSource: source,
@@ -6862,6 +6953,9 @@
 			changed: oldSource !== source,
 			written: request.dryRun === true || request.write === false || request.persist === false ? false : oldSource !== source,
 			selectionMutationPath: selectionMutationPath,
+			// Mutations accept JSON pointers; projected engine nodes use dotted paths.
+			// Keep storage addressing separate from the identity consumed by Studio.
+			selectionVirtualPath: parseMutationPath(selectionMutationPath).join("."),
 			children: tree.children || []
 		};
 	}
