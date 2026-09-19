@@ -1,4 +1,31 @@
 (function () {
+	// Rewrite references, never string data. Flow expressions are a restricted
+	// expression language (not arbitrary JS); templates are lowered separately.
+	// Keep spelling/whitespace and do one pass so aliases cannot cascade.
+	function rewriteExpressionReferences(expression, replacements) {
+		var names = Object.keys(replacements || {}).sort(function (a, b) { return b.length - a.length; });
+		if (!names.length) return expression;
+		return expression.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*/g,
+			function (token, offset) {
+				if (!/^[A-Za-z_$]/.test(token)) return token;
+				if (offset && /[A-Za-z0-9_$]/.test(expression.charAt(offset - 1))) return token;
+				var before = expression.substring(0, offset).replace(/\s+$/, "");
+				if (before.slice(-1) === ".") return token;
+				var after = expression.substring(offset + token.length);
+				if (/^\s*:/.test(after) && /[{,]$/.test(before)) return token;
+				var parts = token.split(/\s*\.\s*/), normalized = parts.join(".");
+				for (var i = 0; i < names.length; i++) {
+					var name = names[i];
+					if (normalized === name || normalized.indexOf(name + ".") === 0) {
+						var count = name.split(".").length;
+						var prefix = token.match(new RegExp("^[A-Za-z_$][\\w$]*(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*){" + (count - 1) + "}"))[0];
+						return replacements[name] + token.substring(prefix.length);
+					}
+				}
+				return token;
+			});
+	}
+
 	function create(env) {
 		var flowScriptDiagnostics = [];
 		var sourceVersion = 1;
@@ -526,14 +553,11 @@
 			if (exact) {
 				expr = exact[1].trim();
 			}
-			Object.keys(locals || {}).sort(function (a, b) {
-				return b.length - a.length;
-			}).forEach(function (name) {
-				var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-				var mapped = locals[name] === true ? "local." + name : String(locals[name] || ("local." + name));
-				expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])" + escaped + "(?=\\b|\\.)", "g"), "$1" + mapped);
+			var replacements = Object.create(null);
+			Object.keys(locals || {}).forEach(function (name) {
+				replacements[name] = locals[name] === true ? "local." + name : String(locals[name] || ("local." + name));
 			});
-			return expr;
+			return rewriteExpressionReferences(expr, replacements);
 		}
 	
 		function flowScriptExpressionFromToken(token, locals) {
@@ -2307,6 +2331,7 @@
 		flowScriptPropKind: function (blocks, block, key, env) {
 			return create(env).flowScriptPropKind(blocks, block, key);
 		},
+		rewriteExpressionReferences: rewriteExpressionReferences,
 		flowScriptRewriteExpression: function (expr, locals, env) {
 			return create(env).flowScriptRewriteExpression(expr, locals);
 		},

@@ -95,14 +95,12 @@
 		if (exact) {
 			expr = exact[1].trim();
 		}
-		Object.keys(locals || {}).sort(function (a, b) {
-			return b.length - a.length;
-		}).forEach(function (name) {
+		var replacements = Object.create(null);
+		Object.keys(locals || {}).forEach(function (name) {
 			var target = locals[name] === true ? "local." + name : String(locals[name] || ("local." + name));
-			var escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			expr = expr.replace(new RegExp("(^|[^A-Za-z0-9_$\\.])" + escaped + "(?=\\b|\\.)", "g"), "$1" + name);
+			replacements[target] = name;
 		});
-		return expr;
+		return Object.keys(replacements).length ? env.rewriteExpressionReferences(expr, replacements) : expr;
 	}
 
 	function renderFlowScriptTemplate(text, locals, env) {

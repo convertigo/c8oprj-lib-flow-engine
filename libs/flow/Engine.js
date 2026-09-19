@@ -2669,6 +2669,7 @@
 
 	function flowScriptRendererEnv() {
 		return {
+			rewriteExpressionReferences: flowScriptParserService().rewriteExpressionReferences,
 			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			File: File,
 			FileUtils: FileUtils,
