@@ -59,8 +59,8 @@ const _meta = {
 			}
 			try {
 				var parsed = ctx.parseYaml(text);
-				if (props.out && ctx.learnOutputSchema) {
-					ctx.learnOutputSchema(node, "out", props.out, parsed);
+				if (ctx.outputPath(node) && ctx.learnOutputSchema) {
+					ctx.learnOutputSchema(node, "out", ctx.outputPath(node), parsed);
 				}
 				return parsed;
 			} catch (error) {

@@ -8,12 +8,12 @@
 
     analyze: function (ctx, node) {
       var props = ctx.props(node);
-      ctx.addPath(props.out);
+      ctx.addPath(ctx.outputPath(node));
       var item = ctx.itemSchemaFor(props.items || props["in"]);
       ctx.withCurrentSchema(item, function () {
         var path = String(props.path || "");
         var schema = path ? ctx.schemaForPath("current." + path) : item;
-        ctx.addArraySchema(props.out, schema);
+        ctx.addArraySchema(ctx.outputPath(node), schema);
       });
     }
   };

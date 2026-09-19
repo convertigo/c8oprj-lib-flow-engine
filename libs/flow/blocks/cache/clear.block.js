@@ -66,7 +66,7 @@ const _meta = {
 			var props = ctx.props(node);
 			var info = ctx.cacheClear();
 			info.bridgeCachesCleared = clearBridgeCaches();
-			ctx.write(props.out || "local.cache", info);
+			ctx.write(ctx.outputPath(node) || "local.cache", info);
 			return info;
 		}
 	};

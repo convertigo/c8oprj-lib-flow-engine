@@ -50,7 +50,7 @@
 
 	function assignment(node, operator, env) {
 		var props = env.nodeProps(node);
-		var path = text(props.path || props.out);
+		var path = text(props.path || env.nodeOutputPath(node, 2));
 		var inputText = input(node, env);
 		if (!path) {
 			return inputText;
@@ -59,9 +59,8 @@
 	}
 
 	function output(node, action, env) {
-		var props = env.nodeProps(node);
 		var actionText = text(action);
-		var out = text(props.out);
+		var out = text(env.nodeOutputPath(node, 2));
 		return actionText && out ? actionText + " -> " + out : actionText || out;
 	}
 

@@ -128,8 +128,8 @@ const _meta = {
 				throw new Error("xml.parse expects raw XML text, not a resource object. Use asset.read({ path: \"libs/flow/resources/...\" }) in Flow code, or pass resource.get(...).content.");
 			}
 			var parsed = documentValue(parseXml(text));
-			if (props.out && ctx.learnOutputSchema) {
-				ctx.learnOutputSchema(node, "out", props.out, parsed);
+			if (ctx.outputPath(node) && ctx.learnOutputSchema) {
+				ctx.learnOutputSchema(node, "out", ctx.outputPath(node), parsed);
 			}
 			return parsed;
 		}

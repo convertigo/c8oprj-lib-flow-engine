@@ -41,7 +41,7 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			ctx.addPath(props.out);
+			ctx.addPath(ctx.outputPath(node));
 		}
 	};
 }())

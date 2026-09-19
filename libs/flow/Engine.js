@@ -34,6 +34,8 @@
 	var cacheUtilsModule = null;
 	var fingerprintUtilsModule = null;
 	var flowNodeUtilsModule = null;
+	var sourceLayoutModule = null;
+	var currentSourcePaths = null;
 	var expressionUtilsModule = null;
 	var runtimeHandleUtilsModule = null;
 	var iconServiceModule = null;
@@ -46,7 +48,7 @@
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|type-descriptor-service.js|";
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|source-attribute-name-codec.js|source-layout.js|source-node-contract.js|type-descriptor-service.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var frontendDocumentServerStartLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var frontendProductionBuildLock = new Packages.java.util.concurrent.locks.ReentrantLock();
@@ -211,29 +213,40 @@
 		}
 	}
 
+	function sourcePaths() {
+		if (!sourceLayoutModule) sourceLayoutModule = loadEngineModule("source-layout.js");
+		if (!currentSourcePaths) {
+			// The live Java bridge owns the publication gate. Standalone/older bridges
+			// retain the staged module default; request fields never select a layout.
+			currentSourcePaths = typeof __flowSourceLayout !== "undefined"
+				? sourceLayoutModule.create(String(__flowSourceLayout)) : sourceLayoutModule.current;
+		}
+		return currentSourcePaths;
+	}
+
 	function projectBlocksDir() {
 		var dir = projectDir();
-		return dir ? new File(dir, "libs/flow/blocks") : null;
+		return dir ? new File(dir, sourcePaths().path("blocks")) : null;
 	}
 
 	function projectTypesDir() {
 		var dir = projectDir();
-		return dir ? new File(dir, "libs/flow/types") : null;
+		return dir ? new File(dir, sourcePaths().path("types")) : null;
 	}
 
 	function projectFlowsDir() {
 		var dir = projectDir();
-		return dir ? new File(dir, "libs/flows") : null;
+		return dir ? new File(dir, sourcePaths().flows) : null;
 	}
 
 	function projectFragmentsDir() {
 		var dir = projectDir();
-		return dir ? new File(dir, "libs/flow/fragments") : null;
+		return dir ? new File(dir, sourcePaths().path("fragments")) : null;
 	}
 
 	function projectLibDir() {
 		var dir = projectDir();
-		return dir ? new File(dir, "libs/flow/lib") : null;
+		return dir ? new File(dir, sourcePaths().path("lib")) : null;
 	}
 
 	function engineLibDir() {
@@ -242,7 +255,7 @@
 
 	function projectSchemasDir() {
 		var dir = projectDir();
-		return dir ? new File(dir, "libs/flow/schemas") : null;
+		return dir ? new File(dir, sourcePaths().path("schemas")) : null;
 	}
 
 	function parseRequest(requestJson) {
@@ -452,8 +465,16 @@
 		return flowNodeUtils().nodePath(node);
 	}
 
-	function nodeProps(node) {
-		return flowNodeUtils().nodeProps(node);
+	function nodeProps(node, sourceVersion) {
+		return flowNodeUtils().nodeProps(node, sourceVersion);
+	}
+
+	function nodeOutputPath(node, sourceVersion) {
+		return flowNodeUtils().nodeOutputPath(node, sourceVersion);
+	}
+
+	function nodeEngineProperties() {
+		return flowNodeUtils().engineProperties;
 	}
 
 	function isFlowNodeLike(value) {
@@ -713,6 +734,7 @@
 
 	function projectConfigEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			FileUtils: FileUtils,
 			globalScope: globalScope,
@@ -880,6 +902,8 @@
 		cacheUtilsModule = null;
 		fingerprintUtilsModule = null;
 		flowNodeUtilsModule = null;
+		sourceLayoutModule = null;
+		currentSourcePaths = null;
 		expressionUtilsModule = null;
 		runtimeHandleUtilsModule = null;
 		iconServiceModule = null;
@@ -1268,11 +1292,11 @@
 	}
 
 	function isAllowedResourcePath(path) {
-		return loadEngineModule("resource-utils.js").isAllowedPath(path);
+		return loadEngineModule("resource-utils.js").isAllowedPath(path, sourcePaths());
 	}
 
 	function resourceKind(path) {
-		return loadEngineModule("resource-utils.js").kind(path);
+		return loadEngineModule("resource-utils.js").kind(path, sourcePaths());
 	}
 
 	function resourceName(path) {
@@ -1284,7 +1308,7 @@
 	}
 
 	function resourceUri(path) {
-		return loadEngineModule("resource-utils.js").uri(path);
+		return loadEngineModule("resource-utils.js").uri(path, sourcePaths());
 	}
 
 	function firstMarkdownHeading(content, fallback) {
@@ -1296,7 +1320,7 @@
 	}
 
 	function blockIdFromResourcePath(path) {
-		return loadEngineModule("resource-utils.js").blockIdFromPath(path);
+		return loadEngineModule("resource-utils.js").blockIdFromPath(path, sourcePaths());
 	}
 
 	function projectBlockDescriptorFileForResource(path) {
@@ -1336,6 +1360,7 @@
 
 	function resourceServiceEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
 			FileUtils: FileUtils,
@@ -1498,6 +1523,7 @@
 
 	function flowLibraryServiceEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
 			FileUtils: FileUtils,
@@ -1550,6 +1576,7 @@
 
 	function catalogLoaderEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
 			FileUtils: FileUtils,
@@ -1778,7 +1805,9 @@
 	function blockCodeSourceEnv() {
 		return {
 			normalizeTree: normalizeTree,
-			parseFlowScriptObjectLiteral: parseFlowScriptObjectLiteral,
+			parseFlowScriptMetadataValue: function (text, lineNumber) {
+				return flowScriptParserService().parseFlowScriptMetadataValue(text, lineNumber, flowScriptParserEnv());
+			},
 			normalizeFlowScriptCode: normalizeFlowScriptCode,
 			safeIdentifier: safeIdentifier,
 			blockLocalName: blockLocalName,
@@ -1796,6 +1825,8 @@
 			return graphBlockRuntimeEnvInstance;
 		}
 		graphBlockRuntimeEnvInstance = {
+			nodeOutputPath: nodeOutputPath,
+			effectiveConfig: effectiveConfig,
 			File: File,
 			FileUtils: FileUtils,
 			canonicalPath: canonicalPath,
@@ -1831,7 +1862,7 @@
 		return graphBlockRuntimeService().graphBlockFromDefinition(definition, file, origin, provider, graphBlockRuntimeEnv());
 	}
 
-	function flowHelperBlockDefinition(helper) {
+	function flowHelperBlockDefinition(helper, sourceVersion) {
 		helper = normalizeTree(helper || {});
 		var name = safeIdentifier(helper.name || "helper");
 		return {
@@ -1855,6 +1886,7 @@
 			__flowHelper: true,
 			__graphDefinition: {
 				version: 1,
+				flow: { sourceVersion: sourceVersion || 1 },
 				nodes: normalizeTree(helper.nodes || [])
 			}
 		};
@@ -1873,7 +1905,7 @@
 				return;
 			}
 			var helperFile = new File(engineDir(), "helpers/" + safeIconName(name) + ".flow.js");
-			out[name] = graphBlockFromDefinition(flowHelperBlockDefinition(helper), helperFile, "helper", "Current Flow");
+			out[name] = graphBlockFromDefinition(flowHelperBlockDefinition(helper, definition.flow && definition.flow.sourceVersion), helperFile, "helper", "Current Flow");
 		});
 		return out;
 	}
@@ -2037,6 +2069,8 @@
 
 	function blockAuthoringEnv() {
 		return {
+			sourcePaths: sourcePaths(),
+			renderFlowScript: renderFlowScript,
 			File: File,
 			FileUtils: FileUtils,
 			normalizeTree: normalizeTree,
@@ -2154,6 +2188,7 @@
 
 	function typeDescriptorEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			FileUtils: FileUtils,
 			projectTypesDir: projectTypesDir,
@@ -2204,6 +2239,7 @@
 
 	function flowStorageEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
 			FileUtils: FileUtils,
@@ -2264,6 +2300,7 @@
 
 	function flowRepositoryEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
 			FileUtils: FileUtils,
@@ -2632,6 +2669,7 @@
 
 	function flowScriptRendererEnv() {
 		return {
+			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			File: File,
 			FileUtils: FileUtils,
 			normalizeTree: normalizeTree,
@@ -2754,6 +2792,7 @@
 
 	function flowScriptParserEnv() {
 		return {
+			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			parseYamlSource: parseYamlSource,
 			normalizeTree: normalizeTree,
 			raise: raise,
@@ -2766,6 +2805,10 @@
 			canonicalFlowDefinition: canonicalFlowDefinition,
 			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax
 		};
+	}
+
+	function sourceAttributeNameCodec() {
+		return loadEngineModule("source-attribute-name-codec.js");
 	}
 
 	function parseFlowScriptArgs(text, lineNumber) {
@@ -2952,8 +2995,8 @@
 		return flowScriptParserService().parseFlowScriptStatementsInto(blocks, imports, locals, root, statements, flowScriptParserEnv());
 	}
 
-	function parseFlowScript(blocks, code) {
-		return flowScriptParserService().parseFlowScript(blocks, code, flowScriptParserEnv());
+	function parseFlowScript(blocks, code, options) {
+		return flowScriptParserService().parseFlowScript(blocks, code, flowScriptParserEnv(), options);
 	}
 
 	function parseFlowScriptTopLevelObjectFromCode(code, name) {
@@ -3840,6 +3883,7 @@
 
 	function iconServiceEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
 			FileUtils: FileUtils,
@@ -4012,6 +4056,7 @@
 			return flowRuntimeServiceEnvInstance;
 		}
 		flowRuntimeServiceEnvInstance = {
+			nodeOutputPath: nodeOutputPath,
 			File: File,
 			blockName: blockName,
 			nodeProps: nodeProps,
@@ -4160,6 +4205,9 @@
 
 	function flowAnalysisServiceEnv() {
 		return {
+			nodeEngineProperties: nodeEngineProperties,
+			nodeOutputPath: nodeOutputPath,
+			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			scopeNames: scopeNames,
 			intOption: intOption,
 			nodeProps: nodeProps,
@@ -4245,6 +4293,8 @@
 
 	function frontendCatalogServiceEnv() {
 		return {
+			sourcePaths: sourcePaths(),
+			projectRootFromFlowDir: flowProjectRootFromFlowDir,
 			File: File,
 			FileUtils: FileUtils,
 			Arrays: Arrays,
@@ -4370,6 +4420,10 @@
 
 	function flowTreeServiceEnv() {
 		return {
+			sourcePaths: sourcePaths(),
+			nodeEngineProperties: nodeEngineProperties,
+			nodeOutputPath: nodeOutputPath,
+			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			File: File,
 			FileUtils: FileUtils,
 			Arrays: Arrays,
@@ -4879,7 +4933,7 @@
 		try {
 			var projectRoot = request.projectDir ? new File(String(request.projectDir)) : projectDir();
 			if (projectRoot) {
-				var blocksDir = new File(projectRoot, "libs/flow/blocks");
+				var blocksDir = new File(projectRoot, sourcePaths().path("blocks"));
 				var blocksPath = String(blocksDir.getCanonicalPath()) + String(File.separator);
 				var filePath = String(sourceFile.getCanonicalPath());
 				if (filePath.indexOf(blocksPath) === 0 && filePath.endsWith(suffix)) {
@@ -4971,7 +5025,7 @@
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path escapes the project: " + sourcePath);
 		}
 		var normalized = String(projectPath.relativize(filePath)).replace(/\\/g, "/");
-		var allowed = normalized.indexOf("libs/flow/frontbuilder/") === 0
+		var allowed = normalized.indexOf(sourcePaths().path("frontbuilder") + "/") === 0
 				&& (normalized.endsWith(".flow.svelte") || normalized.endsWith(".flow.css"));
 		if (!allowed) {
 			raise("RESOURCE_PATH_NOT_ALLOWED", "Flow frontend source path is not allowed: " + normalized);
@@ -5117,6 +5171,8 @@
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--drafts", String(draftsTemp.getAbsolutePath()),
 				"--cache-key", fingerprint,
+				"--flow-source-root", sourcePaths().root,
+				"--source-codec-file", String(engineModuleFile("source-attribute-name-codec.js").getAbsolutePath()),
 				"--resource-root", String(resourceRoot.getAbsolutePath()),
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--project-name", projectName,
@@ -5343,10 +5399,11 @@
 			return null;
 		}
 		var root = resourceRoot;
-		while (root && String(root.getName()) !== "libs") {
+		var suffix = "/" + sourcePaths().root;
+		while (root && !String(root.getAbsolutePath()).replace(/\\/g, "/").endsWith(suffix)) {
 			root = root.getParentFile();
 		}
-		return root && root.getParentFile();
+		return root && flowProjectRootFromFlowDir(root);
 	}
 
 	function frontendReferenceRoots(projectRoot, resourceRoot) {
@@ -5354,7 +5411,7 @@
 		var resourceProjectName = resourceProjectRoot
 			? String(projectNameForRoot(resourceProjectRoot) || "")
 			: "";
-		return referencedProjectRoots("libs/flow/frontbuilder/svelte", projectRoot || projectDir())
+		return referencedProjectRoots(sourcePaths().path("frontbuilder/svelte"), projectRoot || projectDir())
 			.filter(function (root) {
 				return !resourceProjectName || String(projectNameForRoot(root) || "") !== resourceProjectName;
 			});
@@ -5398,9 +5455,9 @@
 				frontendFingerprintFiles(target.root, target.suffixes, stableEntries, stableVisited);
 			});
 			referenceRoots.forEach(function (root) {
-				frontendFingerprintFiles(new File(root, "libs/flow/blocks"),
+				frontendFingerprintFiles(new File(root, sourcePaths().path("blocks")),
 					[".block.js", ".browser.js"], stableEntries, stableVisited);
-				frontendFingerprintFiles(new File(root, "libs/flow/frontbuilder/svelte/components"),
+				frontendFingerprintFiles(new File(root, sourcePaths().path("frontbuilder/svelte/components")),
 					[".flow.svelte", ".svelte"], stableEntries, stableVisited);
 			});
 			stableEntries.sort();
@@ -5414,8 +5471,8 @@
 		var mutableVisited = {};
 		[
 			{ root: sourceRoot, suffixes: [".flow.svelte", ".flow.css", ".flow-route.json"] },
-			{ root: new File(projectRoot, "libs/flow/blocks"), suffixes: [".block.js", ".browser.js"] },
-			{ root: new File(projectRoot, "libs/flow/frontbuilder/svelte/components"), suffixes: [".svelte"] }
+			{ root: new File(projectRoot, sourcePaths().path("blocks")), suffixes: [".block.js", ".browser.js"] },
+			{ root: new File(projectRoot, sourcePaths().path("frontbuilder/svelte/components")), suffixes: [".svelte"] }
 		].forEach(function (target) {
 			frontendFingerprintFiles(target.root, target.suffixes, mutableEntries, mutableVisited);
 		});
@@ -5427,6 +5484,7 @@
 		return sha256Hex([
 			source,
 			JSON.stringify(drafts || {}),
+			fileFingerprint(engineModuleFile("source-attribute-name-codec.js")),
 			frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot)
 		].join("\n"));
 	}
@@ -5585,11 +5643,19 @@
 		try {
 			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
 			FileUtils.writeStringToFile(mutationTemp, JSON.stringify(mutation), "UTF-8");
-			var output = frontendRunProviderOneShot(resourceRoot, "src-builder/sourceMutateCli.ts", [
+			var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
+			var cliArgs = [
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
-				"--mutation", String(mutationTemp.getAbsolutePath())
-			], "Svelte source mutate", "__C8O_FLOW_SOURCE_MUTATION__");
+				"--mutation", String(mutationTemp.getAbsolutePath()),
+				"--flow-source-root", sourcePaths().root,
+				"--source-codec-file", String(engineModuleFile("source-attribute-name-codec.js").getAbsolutePath()),
+				"--resource-root", String(resourceRoot.getAbsolutePath()),
+				"--project-root", String(projectRoot.getAbsolutePath()),
+				"--project-name", projectNameForRoot(projectRoot) || currentProjectName(request)
+			].concat(frontendReferenceCliArgs(projectRoot, resourceRoot));
+			var output = frontendRunProviderOneShot(resourceRoot, "src-builder/sourceMutateCli.ts", cliArgs,
+				"Svelte source mutate", "__C8O_FLOW_SOURCE_MUTATION__");
 			var result = frontendMarkedJson(output, "__C8O_FLOW_SOURCE_MUTATION__");
 			if (!result || result.ok !== true || typeof result.source !== "string") {
 				var error = new Error("Svelte source mutation did not return a valid source.");
@@ -5653,7 +5719,7 @@
 			if (target && target !== "svelte5" && name !== "svelte") {
 				continue;
 			}
-			var root = fileForProjectPath(projectRoot, settings.resourceRoot || "libs/flow/frontbuilder/svelte");
+			var root = fileForProjectPath(projectRoot, settings.resourceRoot || sourcePaths().path("frontbuilder/svelte"));
 			if (!fallback) {
 				fallback = root;
 			}
@@ -5666,7 +5732,7 @@
 			return frontendSvelteToolRoot(fallback, "src-builder/frontDocumentCli.ts");
 		}
 		return frontendSvelteToolRoot(
-			fileForProjectPath(projectRoot, "libs/flow/frontbuilder/svelte"),
+			fileForProjectPath(projectRoot, sourcePaths().path("frontbuilder/svelte")),
 			"src-builder/frontDocumentCli.ts"
 		);
 	}
@@ -6238,6 +6304,8 @@
 		}
 		if (action === "generate") {
 			var generateArgs = [
+				"--flow-source-root", sourcePaths().root,
+				"--source-codec-file", String(engineModuleFile("source-attribute-name-codec.js").getAbsolutePath()),
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--project-name", String(projectName || ""),
 				"--model", String(modelPath.getAbsolutePath()),
@@ -7628,14 +7696,14 @@
 			return root;
 		}
 		var loadedRoot = loadedProjectRootForName("lib_flow_frontbuilder_svelte");
-		root = loadedRoot ? usable(new File(loadedRoot, "libs/flow/frontbuilder/svelte")) : null;
+		root = loadedRoot ? usable(new File(loadedRoot, sourcePaths().path("frontbuilder/svelte"))) : null;
 		if (root) {
 			return root;
 		}
 		var engineFlowDir = engineDir();
-		var engineProjectDir = engineFlowDir && engineFlowDir.getParentFile() && engineFlowDir.getParentFile().getParentFile();
+		var engineProjectDir = engineFlowDir && flowProjectRootFromFlowDir(engineFlowDir);
 		var gitRoot = engineProjectDir && engineProjectDir.getParentFile();
-		root = gitRoot ? usable(new File(gitRoot, "c8oprj-lib-flow-frontbuilder-svelte/libs/flow/frontbuilder/svelte")) : null;
+		root = gitRoot ? usable(new File(gitRoot, "c8oprj-lib-flow-frontbuilder-svelte/" + sourcePaths().path("frontbuilder/svelte"))) : null;
 		return root || resourceRoot;
 	}
 
@@ -9080,6 +9148,7 @@
 
 	function catalogServiceEnv() {
 		return {
+			sourcePaths: sourcePaths(),
 			File: File,
 			engineDir: engineDir,
 			projectDir: projectDir,
@@ -9152,6 +9221,7 @@
 
 	function flowSummaryEnv() {
 		return {
+			nodeOutputPath: nodeOutputPath,
 			normalizeTree: normalizeTree,
 			nodeProps: nodeProps
 		};
@@ -9444,6 +9514,7 @@
 				}
 				var out = Object.assign({ ok: true }, catalogDefinition(blocks, {
 					detail: request.detail || request.mode || "full",
+					includeIcons: request.includeIcons !== false,
 					includePrivate: request.includePrivate === true,
 					includeInternal: request.includeInternal === true,
 					query: request.query || request.q || "",

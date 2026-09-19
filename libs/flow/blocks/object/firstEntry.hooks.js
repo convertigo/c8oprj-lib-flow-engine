@@ -19,11 +19,11 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			ctx.addPath(props.out);
+			ctx.addPath(ctx.outputPath(node));
 			if (!ctx.addSchema || !ctx.schemaForExpression) {
 				return;
 			}
-			ctx.addSchema(props.out, {
+			ctx.addSchema(ctx.outputPath(node), {
 				type: "object",
 				properties: {
 					key: {

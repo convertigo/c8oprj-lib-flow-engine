@@ -39,7 +39,10 @@
 		} else if (Object.prototype.toString.call(value) === "[object Object]") {
 			out = {};
 			Object.keys(value).forEach(function (key) {
-				out[key] = neutralClone(value[key], path + "." + key, seen);
+				var child = neutralClone(value[key], path + "." + key, seen);
+				if (key === "__proto__") {
+					Object.defineProperty(out, key, { value: child, enumerable: true, writable: true, configurable: true });
+				} else out[key] = child;
 			});
 		} else {
 			invalid("Flow execution snapshots cannot contain host or runtime objects.", path);

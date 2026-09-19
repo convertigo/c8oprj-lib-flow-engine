@@ -3,6 +3,7 @@
 		env = env || {};
 		var blockName = env.blockName;
 		var nodeProps = env.nodeProps;
+		var nodeOut = env.nodeOutputPath;
 		var raise = env.raise;
 		var nodePath = env.nodePath;
 		var normalizeTree = env.normalizeTree;
@@ -325,16 +326,6 @@
 				: block;
 		}
 
-		function nodeOut(node) {
-			if (!node || typeof node !== "object") {
-				return undefined;
-			}
-			if (node.out !== undefined) {
-				return node.out;
-			}
-			return node.props && node.props.out !== undefined ? node.props.out : undefined;
-		}
-
 		function canReuseNodeProps(block) {
 			return !!block && (String(block.__flowOrigin || "") === "core" ||
 				String(block.__blockImplementationRuntime || "") === "flow");
@@ -374,7 +365,10 @@
 				return prepared.props;
 			}
 			profileCount(this, "preparedPropsMisses");
-			return nodeProps(node);
+			return nodeProps(node, this.sourceVersion);
+		};
+		runContextPrototype.outputPath = function (node) {
+			return nodeOut(node, this.sourceVersion);
 		};
 		runContextPrototype.read = function (path) {
 			return readScopePath(this.scopes, path);
@@ -528,7 +522,7 @@
 			};
 		}
 
-		function installPreparedNode(node, blocks, preparedNodes, preparation) {
+		function installPreparedNode(node, blocks, preparedNodes, preparation, sourceVersion) {
 			if (!node || typeof node !== "object") {
 				return null;
 			}
@@ -543,12 +537,12 @@
 			var placeholder = blocks && blocks[name] && blocks[name].__flowScriptPlaceholder === true;
 			var block = name ? runtimeBlock(blocks, name) : null;
 			if (block) {
-				var reusableProps = canReuseNodeProps(block) ? nodeProps(node) : null;
+				var reusableProps = canReuseNodeProps(block) ? nodeProps(node, sourceVersion) : null;
 				if (reusableProps && typeof Object.freeze === "function") {
 					Object.freeze(reusableProps);
 				}
 				var preparedRunner = prepareNodeRunner(block, node, reusableProps);
-				var preparedOut = reusableProps ? reusableProps.out : nodeOut(node);
+				var preparedOut = nodeOut(node, sourceVersion);
 				var preparedWriter = preparedOut ? compileWriteScopePath(preparedOut) : null;
 				var preparedNode = {
 						catalog: blocks,
@@ -605,7 +599,7 @@
 			var prepared = preparedNodeFor(ctx, node);
 			return prepared && prepared.catalog === ctx.blocks
 				? prepared
-				: installPreparedNode(node, ctx.blocks, ctx.preparedNodes, ctx.preparation);
+				: installPreparedNode(node, ctx.blocks, ctx.preparedNodes, ctx.preparation, ctx.sourceVersion);
 		}
 
 		function executeNode(ctx, node) {
@@ -633,7 +627,7 @@
 					raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 				}
 				var propsStarted = profiled ? nanoTime() : 0;
-				var out = preparedHit ? prepared.out : nodeProps(node).out;
+				var out = preparedHit ? prepared.out : ctx.outputPath(node);
 				profileAdd(ctx, "executeNodePropsMs", propsStarted);
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
@@ -687,12 +681,13 @@
 			if (options.id) {
 				node.id = String(options.id);
 			}
+			if (options.out !== undefined) node.out = options.out;
 			if (!node.id) {
 				node.id = "call:" + name;
 			}
 			profileAdd(ctx, "callBlockNormalizeMs", normalizeStarted);
 			var propsStarted = profiled ? nanoTime() : 0;
-			var nodeProperties = nodeProps(node);
+			var nodeProperties = ctx.props(node);
 			profileAdd(ctx, "callBlockPropsMs", propsStarted);
 			var frameStarted = profiled ? nanoTime() : 0;
 			var previousInput = ctx.scopes.input;
@@ -724,8 +719,9 @@
 				if (ctx.returned !== undefined) {
 					result = ctx.returned;
 				}
-				if (nodeProperties.out && result !== undefined) {
-					ctx.write(nodeProperties.out, result);
+				var outputPath = ctx.outputPath(node);
+				if (outputPath && result !== undefined) {
+					ctx.write(outputPath, result);
 				}
 				if (options.trace !== false) {
 					ctx.trace(node, name, result);
@@ -1177,6 +1173,7 @@
 			var ctx = Object.create(runContextPrototype);
 			ctx.request = request;
 			ctx.definition = definition;
+			ctx.sourceVersion = definition.flow && definition.flow.sourceVersion || 1;
 			ctx.blocks = blocks;
 			ctx.preparedNodes = plan && plan.preparedNodes || null;
 			ctx.preparation = plan && plan.preparation || null;

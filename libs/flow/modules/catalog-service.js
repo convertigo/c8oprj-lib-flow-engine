@@ -1,5 +1,5 @@
 (function () {
-	function blockDescriptor(block, env) {
+	function blockDescriptor(block, env, options) {
 		var descriptor = env.blockCatalog(block);
 		descriptor.blockId = descriptor.blockId || block.name;
 		descriptor.namespace = env.blockNamespace(descriptor.blockId);
@@ -27,7 +27,9 @@
 		if (descriptor.visibility === "private") {
 			descriptor["private"] = true;
 		}
-		env.resolveBlockIcon(block, descriptor);
+		// Contract-only consumers must not materialize/download display assets
+		// while validating an immutable source/dependency snapshot.
+		if (!options || options.includeIcons !== false) env.resolveBlockIcon(block, descriptor);
 		return descriptor;
 	}
 
@@ -408,7 +410,7 @@
 
 	function catalogPage(blocks, options, mapper, env) {
 		var descriptors = Object.keys(blocks).sort().map(function (name) {
-			return blockDescriptor(blocks[name], env);
+			return blockDescriptor(blocks[name], env, options);
 		});
 		descriptors = filterVisibleDescriptors(descriptors, options);
 		descriptors = filterCatalogDescriptors(descriptors, options);
@@ -423,7 +425,8 @@
 			origin: String(options.origin || ""),
 			detail: String(options.detail || options.mode || "full"),
 			includePrivate: options.includePrivate === true,
-			includeInternal: options.includeInternal === true
+			includeInternal: options.includeInternal === true,
+			includeIcons: options.includeIcons !== false
 		};
 		var budget = env.responseBudget(options, { key: env.sha256Hex(JSON.stringify(signature)) });
 		if (!budget.enabled && String(options.cursor || "").indexOf("rb1.") !== 0) {
@@ -523,7 +526,7 @@
 		var includeLibraries = options.includeLibraries === true || String(options.includeLibraries || "") === "true";
 		var fullBlocks = includeTypes
 			? filterCatalogDescriptors(filterVisibleDescriptors(Object.keys(blocks).sort().map(function (name) {
-				return blockDescriptor(blocks[name], env);
+				return blockDescriptor(blocks[name], env, options);
 			}), options), options)
 			: [];
 		return addCatalogDocs(Object.assign({
@@ -612,7 +615,7 @@
 		});
 		if (env.projectDir()) {
 			var hasProjectGroup = false;
-			var projectProvider = env.flowProviderName(new env.File(env.projectDir(), "libs/flow"), "project");
+			var projectProvider = env.flowProviderName(new env.File(env.projectDir(), env.sourcePaths.root), "project");
 			for (var i = 0; i < groups.length; i++) {
 				if (groups[i].origin === "project") {
 					hasProjectGroup = true;

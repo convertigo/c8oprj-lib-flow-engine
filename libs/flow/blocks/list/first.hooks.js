@@ -5,8 +5,8 @@
     },
     analyze: function (ctx, node) {
       var props = ctx.props(node)
-      ctx.addPath(props.out)
-      ctx.addSchema(props.out, ctx.itemSchemaFor(props.items))
+      ctx.addPath(ctx.outputPath(node))
+      ctx.addSchema(ctx.outputPath(node), ctx.itemSchemaFor(props.items))
     }
   }
 }())

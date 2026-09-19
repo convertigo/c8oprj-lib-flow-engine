@@ -16,7 +16,7 @@
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
 			var items = props.items || props["in"];
-			if (!props.out || !items || !ctx.schemaForExpression || !ctx.addSchema) {
+			if (!ctx.outputPath(node) || !items || !ctx.schemaForExpression || !ctx.addSchema) {
 				return;
 			}
 			var schema = ctx.schemaForExpression(items);
@@ -24,13 +24,13 @@
 				return;
 			}
 			if (!isFalse(props.flatten) && schema.type === "array" && schema.items && schema.items.type === "array") {
-				ctx.addSchema(props.out, {
+				ctx.addSchema(ctx.outputPath(node), {
 					type: "array",
 					items: schema.items.items || { type: "unknown" }
 				});
 				return;
 			}
-			ctx.addSchema(props.out, schema);
+			ctx.addSchema(ctx.outputPath(node), schema);
 		}
 	};
 }())

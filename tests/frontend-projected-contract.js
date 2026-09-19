@@ -31,8 +31,23 @@ var normalized = model("normalized", "frontendComponent", {}, []);
 normalized.sourceMutationPath = "oldRoot";
 delete normalized.frontendInsertMutationPath;
 var inputs = [closed, specialized, blocked, readonly, multiple, normalized];
+var modern = model("structureId", "frontendWidget", {}, ["ui.block"]);
+modern.sourceVersion = 2;
+modern.sourceKind = "input";
+modern.disabled = false;
+modern.comment = "authoring";
+modern.out = "local.output";
+modern.props = { id: "businessId", disabled: true, kind: "businessKind", block: "businessBlock",
+	"$$id": "businessDouble", "$$$id": "businessTriple", value: { mode: "source",
+		source: { category: "fullsync", actionId: "read", operation: "get" } } };
+modern.propertyDefinitions = { value: { kind: "binding", type: "object" } };
+modern.sourcePropertyMutationPaths = {};
+Object.keys(modern.props).forEach(function (key) { modern.sourcePropertyMutationPaths[key] = modern.sourceMutationPath + ".props." + key; });
+inputs.push(modern);
 closed.parentSlot = { sourcePath: String(source), ownerPath: "frontAst.specialized", slotId: "content" };
 var env = {
+	sourceAttributeNameCodec: function () { return eval(String(files.readFileToString(new java.io.File(engineDir, "modules/source-attribute-name-codec.js"), "UTF-8"))); },
+	nodeEngineProperties: function () { return eval(String(files.readFileToString(new java.io.File(engineDir, "modules/flow-node-utils.js"), "UTF-8"))).engineProperties; },
 	File: java.io.File, FileUtils: files, projectDir: function () { return project; },
 	engineDir: function () { return engineDir; },
 	resourceRelativePath: function (root, file) {
@@ -73,6 +88,21 @@ inputs.forEach(function (input) {
 		"Default insertion must not invent a destination: " + input.id + " " + JSON.stringify(info));
 });
 assertTrue(closed.frontendInsertMutationPath === "wrong.legacy.destination", "Provider input must not be mutated");
+var modernNode = projected.structureId;
+var modernDefinition = JSON.parse(modernNode.definition);
+var modernInfo = JSON.parse(modernNode.info);
+assertTrue(JSON.stringify(modernDefinition.props) === JSON.stringify(modern.props), "V2 must not flatten business props into structural fields");
+assertTrue(modernDefinition.id === "structureId" && modernDefinition.disabled === false, "V2 structural identity and enable state");
+assertTrue(modernNode.path.indexOf("structureId") >= 0 && modernNode.path.indexOf("businessId") < 0, "Reveal path must follow structural identity");
+Object.keys(modern.props).forEach(function (key) {
+	var spelling = env.sourceAttributeNameCodec().encode("property", key);
+	assertTrue(modernInfo.propertyDefinitions[spelling].definitionPath === "props." + key, "Business definition path: " + spelling);
+	assertTrue(modernInfo.sourcePropertyMutationPaths[spelling] === modern.sourceMutationPath + ".props." + key, "Business mutation path: " + spelling);
+});
+["id", "disabled", "comment", "out"].forEach(function (key) {
+	assertTrue(modernInfo.propertyDefinitions["$$" + key].definitionPath === key, "Engine definition path: " + key);
+	assertTrue(modernInfo.sourcePropertyMutationPaths["$$" + key] === modern.sourceMutationPath + "." + key, "Engine mutation path: " + key);
+});
 var unavailable = service.describeTreeRequest({ target: "engine", includeFrontendCatalog: false, includeFlowCatalog: false,
 	definition: { config: { frontbuilder: { svelte: { modelPath: source.getName() } } } } }, {},
 	Object.assign({}, env, { describeFrontendDocument: function () { throw new Error("Cannot run program node: ENOENT"); } }));

@@ -75,9 +75,9 @@ const _meta = {
 				query: ctx.template(props.query),
 				headers: ctx.template(props.headers),
 				body: props.body === undefined ? undefined : ctx.expr(props.body),
-				bodyResolved: props.body !== undefined,
-				out: props.out
+				bodyResolved: props.body !== undefined
 			}, {
+				out: ctx.outputPath(node),
 				id: node.id || "request"
 			});
 		}

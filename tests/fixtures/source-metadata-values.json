@@ -1,0 +1,23 @@
+{
+  "valid": [
+    { "source": "null", "value": null },
+    { "source": "false", "value": false },
+    { "source": "0", "value": 0 },
+    { "source": "-2.5", "value": -2.5 },
+    { "source": "+42", "value": 42 },
+    { "source": "0x2a", "value": 42 },
+    { "source": "1.25e2", "value": 125 },
+    { "source": "''", "value": "" },
+    { "source": "'\\u00e9\\x21\\n'", "value": "é!\n" },
+    { "source": "[]", "value": [] },
+    { "source": "{__flowScriptLine:'business',__custom:'keep'}", "value": { "__flowScriptLine": "business", "__custom": "keep" } },
+    { "source": "[1, false, null,]", "value": [1, false, null] },
+    { "source": "{id:5,disabled:false,'$$id':'data','__proto__':{kept:true}}", "value": { "id": 5, "disabled": false, "$$id": "data", "__proto__": { "kept": true } } },
+    { "source": "{mode:'source',source:{category:'fullsync',scopeId:'orders',operation:'get'},path:[{kind:'property',name:'id'}]}", "value": { "mode": "source", "source": { "category": "fullsync", "scopeId": "orders", "operation": "get" }, "path": [{ "kind": "property", "name": "id" }] } }
+  ],
+  "invalid": [
+    "input.id", "undefined", "NaN", "Infinity", "1e999", "1n", "/pattern/",
+    "'a' + 'b'", "`constant`", "`hello ${input.id}`", "{...input}", "{name}",
+    "{[input.id]:1}", "{0:'number key'}", "{a:1,a:2}", "{get a(){return 1}}", "[1,,2]"
+  ]
+}

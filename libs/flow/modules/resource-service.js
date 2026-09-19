@@ -8,7 +8,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Allowed paths: libs/flow/engine.yaml, libs/flow/blocks/**/*.block.js, libs/flow/blocks/**/*.hooks.js, libs/flow/lib/**/*.js, libs/flow/resources/**/*.{md,txt,json,xml,yaml,yml}, libs/flow/resources/property-editor.{css,html,js}, resources/**/*.{md,txt,json,xml,yaml,yml}, libs/flow/frontbuilder/**/*.{flow.svelte,flow.css,front.json,uiblock.json}, libs/flow/types/**/*.{type.yaml,js}, libs/flow/types/editors/**/*.{html,css,js}.");
+				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + " or public resources/. Use flowCode* for Flow sidecars.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);
@@ -67,14 +67,14 @@
 			return [];
 		}
 		var out = [];
-		var engineConfig = new env.File(base, "libs/flow/engine.yaml");
+		var engineConfig = new env.File(base, env.sourcePaths.path("engine.yaml"));
 		if (engineConfig.isFile()) {
 			out.push({
-				path: "libs/flow/engine.yaml",
+				path: env.sourcePaths.path("engine.yaml"),
 				file: engineConfig
 			});
 		}
-		["libs/flow/blocks", "libs/flow/fragments", "libs/flow/lib", "libs/flow/resources", "libs/flow/frontbuilder", "libs/flow/types", "resources"].forEach(function (path) {
+		["blocks", "fragments", "lib", "resources", "frontbuilder", "types"].map(env.sourcePaths.path).concat(["resources"]).forEach(function (path) {
 			collectResourceFiles(new env.File(base, path), base, out, env);
 		});
 		return out;
@@ -178,11 +178,11 @@
 	function list(request, env) {
 		request = request || {};
 		var rootDir = String(request.rootDir || request.root || "").trim().replace(/\\/g, "/");
-		var patterns = env.globPatterns(request.pattern || request.glob, rootDir ? "**/*" : "libs/flow/resources/**/*");
+		var patterns = env.globPatterns(request.pattern || request.glob, rootDir ? "**/*" : env.sourcePaths.path("resources/**/*"));
 		if (rootDir) {
 			rootDir = env.normalizeResourcePath(rootDir);
 			patterns = patterns.map(function (pattern) {
-				if (pattern.indexOf("libs/flow/") === 0) {
+				if (pattern.indexOf(env.sourcePaths.root + "/") === 0) {
 					return pattern;
 				}
 				return rootDir.replace(/\/+$/, "") + "/" + pattern.replace(/^\/+/, "");
@@ -224,7 +224,7 @@
 			nextCursor: offset + limit < resources.length ? String(offset + limit) : null
 		};
 		if (request.doc !== false) {
-			out.doc = "List project-local Flow resources using glob patterns such as libs/flow/resources/**/*.md.";
+			out.doc = "List project-local Flow resources using glob patterns such as " + env.sourcePaths.path("resources/**/*.md") + ".";
 		}
 		if (request.hints !== false) {
 			out.hints = [
@@ -351,7 +351,7 @@
 			var hooksContractFile = env.projectBlockContractFileForResource(path);
 			if (!hooksContractFile || !hooksContractFile.isFile()) {
 				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.js source: " + path,
-					null, "Create or patch libs/flow/blocks/" + env.blockCodeDescriptorFileName(blockId) + " first.");
+					null, "Create or patch " + env.sourcePaths.path("blocks/" + env.blockCodeDescriptorFileName(blockId)) + " first.");
 			}
 			env.validateBlockHooksSource(blockId, content);
 		} else if (kind === "graphBlockCode") {

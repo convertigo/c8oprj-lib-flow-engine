@@ -27,10 +27,10 @@
 					ctx.addSchema(props.eof, { type: "boolean" });
 				}
 			}
-			if (props.out) {
-				ctx.addPath(props.out);
+			if (ctx.outputPath(node)) {
+				ctx.addPath(ctx.outputPath(node));
 				if (ctx.addSchema) {
-					ctx.addSchema(props.out, {
+					ctx.addSchema(ctx.outputPath(node), {
 						type: "object",
 						properties: {
 							line: { type: "string", nullable: true },

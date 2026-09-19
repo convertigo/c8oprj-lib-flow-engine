@@ -525,6 +525,8 @@ var frontendCatalogServiceSource = String(Packages.org.apache.commons.io.FileUti
 	new java.io.File(engineDir, "modules/frontend-catalog-service.js"), "UTF-8"));
 var isolatedFrontendCatalogService = eval(frontendCatalogServiceSource);
 var frontendDescriptors = isolatedFrontendCatalogService.frontendCreateDescriptorsForSettings("svelte", {}, {
+	sourcePaths: eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+		new java.io.File(engineDir, "modules/source-layout.js"), "UTF-8"))).current,
 	projectDir: function () { return null; }
 });
 var onMountDescriptor = frontendDescriptors.filter(function (descriptor) {

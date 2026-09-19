@@ -2,10 +2,10 @@
 	"use strict";
 
 	var FORMAT_VERSION = 1;
-	var BUILD_REASONS = {
+	var BUILD_REASONS = Object.freeze({
 		manual: true,
 		"no-viewer-timeout": true
-	};
+	});
 
 	function shouldBuild(reason) {
 		return BUILD_REASONS[String(reason || "")] === true;

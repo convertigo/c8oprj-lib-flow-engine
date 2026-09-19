@@ -32,7 +32,7 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			if (!props.out || !ctx.schemaForExpression || !ctx.schemaForPath || !ctx.addSchema) {
+			if (!ctx.outputPath(node) || !ctx.schemaForExpression || !ctx.schemaForPath || !ctx.addSchema) {
 				return;
 			}
 			var source = props.source || props.value || props["in"];
@@ -42,14 +42,14 @@
 			var path = props.path === undefined || props.path === null || props.path === "" ? "items" : String(props.path);
 			var selected = path ? ctx.schemaForPath(join(source, path)) : ctx.schemaForExpression(source);
 			if (selected) {
-				ctx.addSchema(props.out, arrayOf(selected));
+				ctx.addSchema(ctx.outputPath(node), arrayOf(selected));
 				return;
 			}
 			var sourceSchema = ctx.schemaForExpression(source);
 			if (sourceSchema && sourceSchema.type === "array") {
-				ctx.addSchema(props.out, sourceSchema);
+				ctx.addSchema(ctx.outputPath(node), sourceSchema);
 			} else if (sourceSchema && !isFalse(props.includeScalar)) {
-				ctx.addSchema(props.out, arrayOf(sourceSchema));
+				ctx.addSchema(ctx.outputPath(node), arrayOf(sourceSchema));
 			}
 		}
 	};

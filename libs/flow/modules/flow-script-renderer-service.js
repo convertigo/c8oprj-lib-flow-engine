@@ -6,8 +6,25 @@
 		return JSON.stringify(env.normalizeTree(value));
 	}
 
-	function flowScriptInlineValue(value, env) {
+	// Canonical source layout only. Leaf rendering stays with the value-intent
+	// writer: indentation must never be inserted into a multiline template value.
+	function flowScriptCompound(value, indent, leaf, quotedKeys) {
+		var array = Object.prototype.toString.call(value) === "[object Array]";
+		if (!value || typeof value !== "object") return leaf(value);
+		var keys = Object.keys(value);
+		var open = array ? "[" : "{", close = array ? "]" : "}";
+		if (!keys.length) return open + close;
+		return open + "\n" + keys.map(function (key) {
+			var prefix = array ? "" : (quotedKeys ? JSON.stringify(key) : flowScriptObjectKey(key)) + ": ";
+			return indent + "  " + prefix + flowScriptCompound(value[key], indent + "  ", leaf, quotedKeys) + ",";
+		}).join("\n") + "\n" + indent + close;
+	}
+
+	function flowScriptInlineValue(value, env, indent) {
 		value = env.normalizeTree(value);
+		if (env.sourceVersion === 2 && value && typeof value === "object") {
+			return flowScriptCompound(value, indent || "", JSON.stringify, true);
+		}
 		if (value && typeof value === "object") {
 			return JSON.stringify(value);
 		}
@@ -19,8 +36,13 @@
 		return key.match(/^[A-Za-z_$][\w$]*$/) ? key : JSON.stringify(key);
 	}
 
-	function renderFlowScriptTemplateValue(value, locals, env) {
+	function renderFlowScriptTemplateValue(value, locals, env, indent) {
 		value = env.normalizeTree(value);
+		if (env.sourceVersion === 2 && value && typeof value === "object") {
+			return flowScriptCompound(value, indent || "", function (item) {
+				return renderFlowScriptTemplateValue(item, locals, env);
+			}, false);
+		}
 		if (Object.prototype.toString.call(value) === "[object Array]") {
 			return "[" + value.map(function (item) {
 				return renderFlowScriptTemplateValue(item, locals, env);
@@ -49,7 +71,8 @@
 		if (!value || typeof value !== "object" || Object.keys(value).length === 0) {
 			return;
 		}
-		lines.push("const _" + name + " = " + JSON.stringify(value, null, 2));
+		lines.push("const _" + name + " = " + (env.sourceVersion === 2
+			? flowScriptCompound(value, "", JSON.stringify, true) : JSON.stringify(value, null, 2)));
 		lines.push("");
 	}
 
@@ -63,9 +86,9 @@
 		return text.match(/^(local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/) ? text : "";
 	}
 
-	function renderFlowScriptExpression(expr, locals, env) {
+	function renderFlowScriptExpression(expr, locals, env, indent) {
 		if (expr !== undefined && expr !== null && typeof expr !== "string") {
-			return flowScriptInlineValue(expr, env);
+			return flowScriptInlineValue(expr, env, indent);
 		}
 		expr = String(expr || "").trim();
 		var exact = expr.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
@@ -96,6 +119,11 @@
 	}
 
 	function renderFlowScriptTemplateLiteral(text, locals, env) {
+		// The statement parser trims physical lines. Keep embedded line endings
+		// escaped in a quoted template value so a format/reparse cannot trim data.
+		if (env.sourceVersion === 2 && /[\r\n]/.test(String(text || ""))) {
+			return JSON.stringify(renderFlowScriptTemplate(text, locals, env));
+		}
 		var out = "`";
 		var index = 0;
 		String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (match, expr, offset) {
@@ -108,10 +136,10 @@
 		return out + "`";
 	}
 
-	function renderFlowScriptValue(blocks, node, key, value, locals, env) {
+	function renderFlowScriptValue(blocks, node, key, value, locals, env, indent) {
 		var kind = env.flowScriptPropKind(blocks, env.blockName(node), key);
 		if (kind === "expression") {
-			return renderFlowScriptExpression(value, locals, env);
+			return renderFlowScriptExpression(value, locals, env, indent);
 		}
 		if (kind === "template" || kind === "value" || kind === "configOverrides") {
 			if (typeof value === "string") {
@@ -125,10 +153,10 @@
 				return JSON.stringify(value);
 			}
 			if (value && typeof value === "object") {
-				return renderFlowScriptTemplateValue(value, locals, env);
+				return renderFlowScriptTemplateValue(value, locals, env, indent);
 			}
 		}
-		return flowScriptInlineValue(value, env);
+		return flowScriptInlineValue(value, env, indent);
 	}
 
 	function flowScriptArgKeys(node, slotNames) {
@@ -142,6 +170,41 @@
 		return Object.keys(node || {}).filter(function (key) {
 			return !skip[key] && node[key] !== undefined && typeof node[key] !== "function";
 		});
+	}
+
+	function renderFlowScriptPropertyBag(blocks, node, locals, env) {
+		return "{ " + Object.keys(node.props).map(function (key) {
+			return flowScriptObjectKey(key) + ": " + renderFlowScriptValue(blocks, node, key, node.props[key], locals, env);
+		}).join(", ") + " }";
+	}
+
+	function renderFlowScriptArguments(blocks, node, args, locals, env, indent) {
+		if (env.sourceVersion === 2) {
+			var codec = env.sourceAttributeNameCodec();
+			var result = [];
+			["id", "comment", "disabled", "out"].forEach(function (name) {
+				if (node[name] !== undefined) result.push(codec.encode("engine", name) + ": " + flowScriptInlineValue(node[name], env));
+			});
+			var values = Object.create(null);
+			Object.keys(args).forEach(function (key) {
+				if (["id", "comment", "disabled", "out"].indexOf(key) === -1) values[key] = args[key];
+			});
+			Object.keys(node.props || {}).forEach(function (key) { values[key] = node.props[key]; });
+			Object.keys(values).forEach(function (key) {
+				result.push(flowScriptObjectKey(codec.encode("property", key)) + ": " + renderFlowScriptValue(blocks, node, key, values[key], locals, env, indent));
+			});
+			return result;
+		}
+		var parts = Object.keys(args).map(function (key) {
+			// Root id/comment describe the node, even when the block declares a
+			// business property with the same name and a different value intent.
+			var value = key === "id" || key === "comment"
+				? flowScriptInlineValue(args[key], env)
+				: renderFlowScriptValue(blocks, node, key, args[key], locals, env);
+			return flowScriptObjectKey(key) + ": " + value;
+		});
+		if (node.props) parts.push("props: " + renderFlowScriptPropertyBag(blocks, node, locals, env));
+		return parts;
 	}
 
 	function flowScriptSlotNames(blocks, node, env) {
@@ -171,14 +234,14 @@
 	function flowScriptCallLine(blocks, node, indent, locals, env) {
 		locals = locals || {};
 		var block = String(env.blockName(node) || node.block || "unknown.block");
-		if (block === "if") {
+		if (block === "if" && !node.props && env.sourceVersion !== 2) {
 			return indent + "if (" + renderFlowScriptExpression(node && node.condition || "true", locals, env) + ")";
 		}
-		if (block === "return") {
+		if (block === "return" && !node.props && env.sourceVersion !== 2) {
 			return indent + "return " + renderFlowScriptValue(blocks, node, "value", node && node.value, locals, env);
 		}
-		var outLocal = flowScriptLocalName(node && node.out);
-		if (block === "set" && flowScriptScopeAssignmentPath(node && node.path)) {
+		var outLocal = env.sourceVersion === 2 ? "" : flowScriptLocalName(node && node.out);
+		if (block === "set" && !node.props && env.sourceVersion !== 2 && flowScriptScopeAssignmentPath(node && node.path)) {
 			var assignmentPath = String(node.path);
 			if (assignmentPath.indexOf("local.") === 0) {
 				var localName = flowScriptLocalName(assignmentPath);
@@ -206,9 +269,7 @@
 				args[key] = node.overrides[key];
 			});
 		}
-		var parts = Object.keys(args).map(function (key) {
-			return flowScriptObjectKey(key) + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals, env);
-		});
+		var parts = renderFlowScriptArguments(blocks, node, args, locals, env);
 		var call = block + "({ " + parts.join(", ") + " })";
 		if (outLocal) {
 			locals[outLocal] = true;
@@ -219,7 +280,7 @@
 
 	function flowScriptInlineSlotCallStart(blocks, node, slotName, indent, locals, env) {
 		var block = String(env.blockName(node) || node.block || "unknown.block");
-		var outLocal = flowScriptLocalName(node && node.out);
+		var outLocal = env.sourceVersion === 2 ? "" : flowScriptLocalName(node && node.out);
 		var slotNames = flowScriptSlotNames(blocks, node, env);
 		var args = {};
 		flowScriptArgKeys(node, slotNames).forEach(function (key) {
@@ -236,9 +297,7 @@
 				args[key] = node.overrides[key];
 			});
 		}
-		var parts = Object.keys(args).map(function (key) {
-			return flowScriptObjectKey(key) + ": " + renderFlowScriptValue(blocks, node, key, args[key], locals, env);
-		});
+		var parts = renderFlowScriptArguments(blocks, node, args, locals, env);
 		parts.push(slotName + ": function () {");
 		var prefix = outLocal ? "var " + outLocal + " = " : "";
 		if (outLocal) {
@@ -261,8 +320,32 @@
 		locals = locals || {};
 		var indent = new Array(depth + 1).join("  ");
 		(nodes || []).forEach(function (node) {
-			if (node && node.disabled === true) {
+			if (node && node.disabled === true && env.sourceVersion !== 2) {
 				lines.push(indent + "// @flow-disabled");
+			}
+			if (env.sourceVersion === 2) {
+				var slotNames = flowScriptSlotNames(blocks, node, env);
+				var slots = slotNames.filter(function (slot) {
+					return Object.prototype.toString.call(node[slot]) === "[object Array]";
+				});
+				{
+					var args = Object.create(null);
+					flowScriptArgKeys(node, slotNames).forEach(function (key) { args[key] = node[key]; });
+					var parts = renderFlowScriptArguments(blocks, node, args, locals, env, indent + "  ");
+					if (!parts.length && !slots.length) {
+						lines.push(indent + env.blockName(node) + "({})");
+						return;
+					}
+					lines.push(indent + env.blockName(node) + "({");
+					parts.forEach(function (part) { lines.push(indent + "  " + part + ","); });
+					slots.forEach(function (slot) {
+						lines.push(indent + "  " + flowScriptObjectKey(env.sourceAttributeNameCodec().encode("engine", slot)) + ": function () {");
+						renderFlowScriptNodes(blocks, node[slot], depth + 2, lines, Object.assign({}, locals), env);
+						lines.push(indent + "  },");
+					});
+					lines.push(indent + "})");
+					return;
+				}
 			}
 			var defaultSlot = defaultFlowScriptSlot(blocks, node, env);
 			var renderedChildren = defaultSlot && Object.prototype.toString.call(node[defaultSlot]) === "[object Array]" && node[defaultSlot].length > 0;
@@ -309,6 +392,7 @@
 	function renderFlowScript(blocks, name, flowSource, request, env) {
 		request = request || {};
 		var definition = env.parseSource(flowSource);
+		env = Object.assign({}, env, { sourceVersion: definition.flow && definition.flow.sourceVersion || 1 });
 		var renderBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var lines = [];
 		if (request.includeHeader !== false) {
@@ -328,7 +412,8 @@
 		if (lines.length) {
 			lines.push("");
 		}
-		if (request.includeMeta !== false && request.meta !== false) {
+		if (env.sourceVersion === 2 || (definition.flow && definition.flow.config !== undefined) ||
+				(request.includeMeta !== false && request.meta !== false)) {
 			flowScriptTopLevelMeta("flow", definition.flow, lines, env);
 		}
 		renderFlowScriptHelpers(renderBlocks, definition.helpers || [], lines, env);

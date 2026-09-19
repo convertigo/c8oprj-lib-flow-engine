@@ -20,6 +20,13 @@ const auditedClosureDeclarations = {
 		"var VERSION = 1;"
 	],
 	"flow-summary-service.js": ["var SUMMARY_LIMIT = 72;"],
+	// Immutable metadata descriptors, copied by the projection/analysis readers.
+	"flow-node-utils.js": ["var engineProperties = {"],
+	"frontend-production-lifecycle.js": ["var FORMAT_VERSION = 1;", "var BUILD_REASONS = Object.freeze({"],
+	"source-node-contract.js": [
+		"var own = function (value, key) { return Object.prototype.hasOwnProperty.call(value, key); };",
+		'var array = function (value) { return Object.prototype.toString.call(value) === "[object Array]"; };'
+	],
 	"frontend-provider-service.js": [
 		'var FORMAT = "convertigo-flow-svelte-provider";',
 		"var VERSION = 1;",
@@ -50,6 +57,7 @@ for (const name of shared) {
 }
 
 for (const contract of [
+	{ variable: "sourceLayoutModule", loader: "source-layout.js" },
 	{ variable: "flowRuntimeServiceModule", loader: "flow-runtime-service.js" },
 	{ variable: "runPlanHeadServiceModule", loader: "run-plan-head-service.js" },
 ]) {

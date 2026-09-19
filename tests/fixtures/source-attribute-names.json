@@ -1,0 +1,14 @@
+[
+  { "source": "id", "namespace": "property", "name": "id" },
+  { "source": "disabled", "namespace": "property", "name": "disabled" },
+  { "source": "$id", "namespace": "property", "name": "$id" },
+  { "source": "$$id", "namespace": "engine", "name": "id" },
+  { "source": "$$disabled", "namespace": "engine", "name": "disabled" },
+  { "source": "$$$id", "namespace": "property", "name": "$$id" },
+  { "source": "$$$$id", "namespace": "property", "name": "$$$id" },
+  { "source": "$$$", "namespace": "property", "name": "$$" },
+  { "source": "out", "namespace": "property", "name": "out" },
+  { "source": "props", "namespace": "property", "name": "props" },
+  { "source": "slots", "namespace": "property", "name": "slots" },
+  { "source": "__proto__", "namespace": "property", "name": "__proto__" }
+]

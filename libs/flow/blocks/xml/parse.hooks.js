@@ -11,8 +11,8 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			var schema = ctx.schemaForOutput && ctx.schemaForOutput(node, "out", props.out);
-			ctx.addSchema(props.out, schema || { type: "object" });
+			var schema = ctx.schemaForOutput && ctx.schemaForOutput(node, "out", ctx.outputPath(node));
+			ctx.addSchema(ctx.outputPath(node), schema || { type: "object" });
 		}
 	};
 }())

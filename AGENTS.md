@@ -41,6 +41,30 @@ escaped `flowSource` content inside Convertigo YAML. Treat the Java bean
 property as an in-memory bridge for Studio/editor services; the source file is
 the human/LLM-friendly representation.
 
+Source-layout migration is staged, not active. `modules/source-layout.js`
+centralizes the project root and Flow sidecar directory. The live Java bridge
+supplies the publication gate as bootstrap-only `__flowSourceLayout` from
+`FlowSourceLayout.current()`; standalone/older bridges use the module's
+`current` default. Both remain `legacy` until the whole chain is ready.
+Backend loaders, config, resources, shared-block discovery, writers and the
+Engine-side frontend catalog consume this contract through their env.
+Do not select a layout by testing whether `_flow` exists, merge two source
+trees, or add a per-request MCP switch. A single coordinated publication will
+move `libs/flow` to `_flow` and `libs/flows` to `_flow/flows`.
+The core resource root remains explicitly supplied by the Java bridge.
+
+`tests/source-layout-contract.js` copies the Engine into a temporary fixture
+and supplies the same bootstrap-owned layout value as Java. It proves both layouts through
+standalone draft/save/reload/run, references, config mutation and resources,
+including stale-revision rejection and refusal to read the inactive tree.
+It also covers frontend creation directories, referenced component identity,
+write protection and fingerprint roots. Java working copies and the bootstrap
+handoff have separate `FlowSourceLayoutTest` coverage in Convertigo.
+Neither suite proves interactive Studio, Node frontend generation in `_flow`,
+packaging or HTTP protection. Those consumers and the `.httpignore` proof must be completed
+before enabling the new root or migrating real projects. Backend memory drafts
+are runtime-local; never add them to the shared Engine module registry.
+
 ## FlowScript Spike
 
 The `spike-flowscript` branch experiments with a code-like MCP authoring layer.
@@ -319,8 +343,41 @@ Project-wide Flow defaults are read from:
 
 This file is the sidecar source of the project `FlowEngine` DatabaseObject
 during the POC. Put project-level bindings and config defaults there. Keep
-Flow-level overrides in the Flow sidecar when a specific Flow must deviate from
-the project default.
+Flow-local fallback defaults in `_flow.config`; use explicit request config or
+`config.use` when a call must override the project configuration.
+
+`_flow.config` contains literal Flow-local **defaults**, not dynamic expressions.
+The effective root-key precedence is Flow defaults, then project `engine.yaml`
+config, then explicit request config. A winning root branch replaces the older
+branch; deep merging is an explicit `config.use` operation. A present `null`,
+`false`, `0` or empty string does not request an ambient/global fallback.
+Reusable Flow block implementations can declare their own `_flow.config`;
+caller config wins, and block-only defaults are scoped/restored even on error.
+Do not drop required config from compact source output. Picker schemas and runtime
+must use the same effective-config resolver, without sending config values in
+picker payloads. Tree property paths must address the actual metadata owner,
+for example `flow.inputs.name` and `flow.config.service`, not shadow root fields.
+
+`_flow` and `_meta` are static metadata objects: values are quoted strings,
+finite numbers, booleans, null, arrays and objects. Expressions, spreads,
+computed names and shorthand values must be rejected explicitly, never converted
+silently into text. The source-name codec only applies to block call attributes;
+keys inside metadata/config/business values retain their spelling.
+The Rhino/Svelte conformance corpus is `tests/fixtures/source-metadata-values.json`.
+Parser bookkeeping may be stripped from AST nodes, never from `flow` metadata or
+v2 `props` data. Normalization, execution snapshots and result sanitization must
+preserve own JSON keys such as `__proto__` without changing object prototypes or
+property order. Frontend metadata writers must retain the actual declaring header.
+
+In raw `.block.js` files, put the optional `_meta` declaration first, after any
+license/comments. Use a standalone literal object, preferably terminated with
+`;`. The portable reader inspects this header without executing or parsing the
+implementation body. Comments and single-quoted/unquoted-key literals are valid;
+dynamic initializers and duplicate consecutive headers are errors, not a reason
+to hide the block from discovery. Do not search for `_meta` inside function bodies
+or example strings. Boundary parity with the frontend reader is tested by
+`tests/fixtures/portable-metadata-headers.json`; both readers also run the shared
+metadata-value corpus. Header removal preserves body offsets and line breaks.
 
 Rhino implementation files are IIFEs returning runtime implementation only. They
 must not define `catalog()`, `name`, `private`, `displayName()` or `analyze()`.
@@ -379,12 +436,43 @@ ctx.runNodes(nodes)   execute child nodes
 ctx.callBlock(name, props, options) call another block as a capability
 ctx.runFlowSource(src, config, options) run another Flow source
 ctx.flowGet(name)     read a named project Flow sidecar
-ctx.props(node)       merged node properties
+ctx.props(node)       business properties (v2 excludes engine output metadata)
+ctx.outputPath(node)  engine result destination, independent of business out
 ```
 
 For generic values, expose a single `value` property. A literal string is a
 literal, mixed text can contain `{{ expression }}`, and a string containing only
 `{{ expression }}` returns the expression value with its native type.
+
+Engine output routing is not a business input. Runtime implementations and
+analysis hooks must use `ctx.outputPath(node)`, not `ctx.props(node).out`, when
+writing or publishing the block result/schema. For `ctx.callBlock`, pass an
+engine destination in `options.out`; a value in the second argument's `out`
+remains business data in source version 2. Keep `outputs.out` as the declared
+result schema contract; it is distinct from an optional business input `out`.
+The version 2 source contract is opt-in until the coordinated migration.
+
+Frontend `FlowComponent` sources use the same codec with `_flow.sourceVersion: 2`
+(or `_meta.sourceVersion` for reusable pseudo-components). The provider keeps
+business values in `props`, with structural `id`, `disabled`, `comment`, `out`
+outside that bag. Never flatten that model for Studio: property definitions
+carry explicit `definitionPath` and `sourcePropertyMutationPaths`; escaped
+business names and engine names must coexist in the property view.
+The Engine passes its exact codec file to document, mutation and generation
+entry points. Do not duplicate the codec or discover an unrelated sibling repo.
+Version 2 remains a local opt-in contract, not a completed project migration.
+
+Reusable `.block.js` implementations declare their source dialect in
+`_meta.sourceVersion`. Version 2 uses `$$id`, `$$comment`, `$$disabled` and
+`$$out` for engine attributes; unprefixed `id`/`disabled`/`out` remain business
+properties. A declared child slot uses the same engine namespace, for example
+`$$then: function () { ... }`, independent of a business property named `then`.
+Write every present slot, including empty and secondary slots; never choose
+only the first slot. AST child slots stay separate from `node.props`.
+The slot names must not collide with structural AST storage (`id`, `props`,
+etc.); reject such contracts explicitly until the storage migration.
+Helpers inherit their source's dialect. A called reusable implementation owns
+its own dialect, but caller-provided child slots keep the caller's dialect.
 
 Block descriptors should declare property kinds:
 

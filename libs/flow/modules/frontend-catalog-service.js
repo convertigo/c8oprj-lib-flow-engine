@@ -58,7 +58,7 @@
 		if (!projectRoot) {
 			return null;
 		}
-		return new env.File(projectRoot, "libs/flow/frontbuilder/" + safePathSegment(builderName || "svelte"));
+		return new env.File(projectRoot, env.sourcePaths.path("frontbuilder/" + safePathSegment(builderName || "svelte")));
 	}
 
 	function canonicalPath(file) {
@@ -138,8 +138,9 @@
 		if (!path) {
 			return null;
 		}
-		var marker = env.File.separator + "libs" + env.File.separator + "flow" + env.File.separator;
-		var index = path.indexOf(marker);
+		// Match the frontend root, not any ancestor also named _flow.
+		var marker = env.File.separator + env.sourcePaths.path("frontbuilder").split("/").join(String(env.File.separator)) + env.File.separator;
+		var index = path.lastIndexOf(marker);
 		if (index < 0) {
 			return null;
 		}
@@ -747,7 +748,7 @@
 		settings = settings || {};
 		var blocks = [
 			frontendBuilderBootstrapDescriptor(builderName, settings, env)
-		].concat(frontendSourceDefinitionDescriptors(builderName, settings));
+		].concat(frontendSourceDefinitionDescriptors(builderName, settings, env));
 		return blocks.concat([
 			frontendAuthoringDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.navigationItem",
@@ -1642,7 +1643,7 @@
 				]));
 		}
 
-	function frontendSourceDefinitionDescriptors(builderName, settings) {
+	function frontendSourceDefinitionDescriptors(builderName, settings, env) {
 		return [
 			frontendSourceDefinitionDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.page",
@@ -1656,7 +1657,7 @@
 				description: "Creates a source-backed low-code route page edited through its parsed .flow.svelte AST.",
 				baseId: "page",
 				directory: "${targetRouteDirectory}",
-				fallbackDirectory: frontendPageSourceDirectory(builderName, settings),
+				fallbackDirectory: frontendPageSourceDirectory(builderName, settings, env),
 				fileName: "+page.flow.svelte",
 				source: frontendPageSourceTemplate()
 			}),
@@ -1672,7 +1673,7 @@
 				description: "Creates a source-backed SvelteKit route layout for the selected route segment.",
 				baseId: "layout",
 				directory: "${targetRouteDirectory}",
-				fallbackDirectory: frontendPageSourceDirectory(builderName, settings),
+				fallbackDirectory: frontendPageSourceDirectory(builderName, settings, env),
 				fileName: "+layout.flow.svelte",
 				source: frontendRouteLayoutSourceTemplate()
 			}),
@@ -1735,7 +1736,7 @@
 				acceptedPositions: ["inside"],
 				description: "Creates a source-backed low-code UI block edited through its parsed .flow.svelte AST.",
 				baseId: "project.flowUiBlock",
-				directory: frontendComponentSourceDirectory(builderName, settings) + "/${namespacePath}",
+				directory: frontendComponentSourceDirectory(builderName, settings, env) + "/${namespacePath}",
 				fileName: "${tag}.flow.svelte",
 				source: frontendUiBlockSourceTemplate("flow-svelte", "Flow UI block")
 			}),
@@ -1750,7 +1751,7 @@
 				acceptedPositions: ["inside"],
 				description: "Creates a source-backed UI block implemented as pure Svelte code.",
 				baseId: "project.svelteUiBlock",
-				directory: frontendComponentSourceDirectory(builderName, settings) + "/${namespacePath}",
+				directory: frontendComponentSourceDirectory(builderName, settings, env) + "/${namespacePath}",
 				fileName: "${tag}.svelte",
 				source: frontendUiBlockSourceTemplate("svelte", "Svelte UI block")
 			}),
@@ -1765,14 +1766,14 @@
 				acceptedPositions: ["inside"],
 				description: "Creates a source-backed client action implemented as a .svelte.js module.",
 				baseId: "project.clientAction",
-				directory: frontendActionSourceDirectory(builderName, settings) + "/${namespacePath}",
+				directory: frontendActionSourceDirectory(builderName, settings, env) + "/${namespacePath}",
 				fileName: "${actionName}.svelte.js",
 				source: frontendClientActionSourceTemplate()
 			})
-		].concat(frontendTranslationSourceDefinitionDescriptors(builderName, settings));
+		].concat(frontendTranslationSourceDefinitionDescriptors(builderName, settings, env));
 	}
 
-	function frontendTranslationSourceDefinitionDescriptors(builderName, settings) {
+	function frontendTranslationSourceDefinitionDescriptors(builderName, settings, env) {
 		var locales = [
 			["en", "English"],
 			["fr", "French"],
@@ -1800,7 +1801,7 @@
 				acceptedPositions: ["inside"],
 				description: "Creates the " + language + " translation catalog.",
 				baseId: locale,
-				directory: frontendModelSourceDirectory(builderName, settings) + "/src/i18n",
+				directory: frontendModelSourceDirectory(builderName, settings, env) + "/src/i18n",
 				fileName: "${localName}.json",
 				source: "{\n}\n",
 				excludedWhenChildId: "translation_" + locale
@@ -1808,8 +1809,8 @@
 		});
 	}
 
-	function frontendModelSourceDirectory(builderName, settings) {
-		var rootPrefix = "libs/flow/frontbuilder/" + safePathSegment(builderName || "svelte") + "/";
+	function frontendModelSourceDirectory(builderName, settings, env) {
+		var rootPrefix = env.sourcePaths.path("frontbuilder/" + safePathSegment(builderName || "svelte")) + "/";
 		var modelPath = String(settings && settings.modelPath || "");
 		var rootIndex = modelPath.indexOf(rootPrefix);
 		if (rootIndex >= 0) {
@@ -1825,16 +1826,16 @@
 		return "model/" + safePathSegment(builderName || "svelte");
 	}
 
-	function frontendPageSourceDirectory(builderName, settings) {
-		return frontendModelSourceDirectory(builderName, settings) + "/src/routes";
+	function frontendPageSourceDirectory(builderName, settings, env) {
+		return frontendModelSourceDirectory(builderName, settings, env) + "/src/routes";
 	}
 
-	function frontendComponentSourceDirectory(builderName, settings) {
-		return frontendModelSourceDirectory(builderName, settings) + "/src/lib/components";
+	function frontendComponentSourceDirectory(builderName, settings, env) {
+		return frontendModelSourceDirectory(builderName, settings, env) + "/src/lib/components";
 	}
 
-	function frontendActionSourceDirectory(builderName, settings) {
-		return frontendModelSourceDirectory(builderName, settings) + "/src/lib/actions";
+	function frontendActionSourceDirectory(builderName, settings, env) {
+		return frontendModelSourceDirectory(builderName, settings, env) + "/src/lib/actions";
 	}
 
 	function frontendSourceDefinitionDescriptor(builderName, settings, options) {
@@ -2022,7 +2023,7 @@
 		if (String(builderName || "svelte") === "svelte" && env && typeof env.projectRootForName === "function") {
 			var projectRoot = env.projectRootForName("lib_flow_frontbuilder_svelte");
 			if (projectRoot) {
-				var loadedRoot = usableRoot(new env.File(projectRoot, "libs/flow/frontbuilder/svelte"));
+				var loadedRoot = usableRoot(new env.File(projectRoot, env.sourcePaths.path("frontbuilder/svelte")));
 				if (loadedRoot) {
 					return loadedRoot;
 				}
@@ -2030,16 +2031,16 @@
 		}
 		if (String(builderName || "svelte") === "svelte" && env && typeof env.engineDir === "function") {
 			var engineFlowDir = env.engineDir();
-			var engineProjectDir = engineFlowDir && engineFlowDir.getParentFile() && engineFlowDir.getParentFile().getParentFile();
+			var engineProjectDir = engineFlowDir && env.projectRootFromFlowDir(engineFlowDir);
 			var gitRoot = engineProjectDir && engineProjectDir.getParentFile();
 			if (gitRoot) {
-				var devRoot = usableRoot(new env.File(gitRoot, "c8oprj-lib-flow-frontbuilder-svelte/libs/flow/frontbuilder/svelte"));
+				var devRoot = usableRoot(new env.File(gitRoot, "c8oprj-lib-flow-frontbuilder-svelte/" + env.sourcePaths.path("frontbuilder/svelte")));
 				if (devRoot) {
 					return devRoot;
 				}
 			}
 		}
-		return "libs/flow/frontbuilder/svelte";
+		return env.sourcePaths.path("frontbuilder/svelte");
 	}
 
 	function frontendBuilderBootstrapDescriptor(builderName, settings, env) {
@@ -2061,7 +2062,7 @@
 				target: "svelte5",
 				resourceRoot: defaultBuilderResourceRoot(builderName, settings, env),
 				privateDir: "_private/svelte",
-				modelPath: "libs/flow/frontbuilder/svelte/model/SvelteFrontend/src/routes/+page.flow.svelte",
+				modelPath: env.sourcePaths.path("frontbuilder/svelte/model/SvelteFrontend/src/routes/+page.flow.svelte"),
 				buildOutput: "DisplayObjects/mobile"
 			},
 			properties: {
@@ -2135,7 +2136,7 @@
 		}
 		add(projectFrontendRootForSettings(builderName, settings, env));
 		if (env && typeof env.referencedProjectRoots === "function") {
-			var relativeRoot = "libs/flow/frontbuilder/" + safePathSegment(builderName || "svelte");
+			var relativeRoot = env.sourcePaths.path("frontbuilder/" + safePathSegment(builderName || "svelte"));
 			env.referencedProjectRoots(relativeRoot).forEach(function (projectRoot) {
 				add(new env.File(projectRoot, relativeRoot));
 			});

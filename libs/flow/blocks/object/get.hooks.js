@@ -70,7 +70,7 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			ctx.addPath(props.out);
+			ctx.addPath(ctx.outputPath(node));
 			if (!ctx.addSchema || !ctx.schemaForExpression) {
 				return;
 			}
@@ -81,12 +81,12 @@
 			if (key && ctx.schemaForPath) {
 				var selected = directPropertySchema(sourceSchema, key) ||
 					ctx.schemaForPath(String(source || "") + "." + key);
-				if (addBestSchema(ctx, props.out, selected, fallback)) {
+				if (addBestSchema(ctx, ctx.outputPath(node), selected, fallback)) {
 					return;
 				}
 			}
 			var mapSchema = mergeValueSchemas(ctx, sourceSchema);
-			addBestSchema(ctx, props.out, mapSchema, fallback);
+			addBestSchema(ctx, ctx.outputPath(node), mapSchema, fallback);
 		}
 	};
 }())

@@ -116,12 +116,12 @@
 				};
 			}
 			raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name,
-				null, "Flow sidecars are canonical FlowScript files: libs/flows/" + flowCodeFileName(name) + ".");
+				null, "Flow sidecars are canonical FlowScript files: " + env.sourcePaths.flows + "/" + flowCodeFileName(name) + ".");
 		}
 
 		function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
 			root = root ? new File(root) : null;
-			var dir = root ? new File(root, "libs/flows") : null;
+			var dir = root ? new File(root, env.sourcePaths.flows) : null;
 			if (!dir || !dir.isDirectory()) {
 				return [];
 			}

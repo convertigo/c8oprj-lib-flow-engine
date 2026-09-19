@@ -42,7 +42,7 @@
 			return env.toYamlSource(type);
 		}
 		env.raise("MISSING_TYPE_DESCRIPTOR", "Project property type \"" + name + "\" needs descriptorSource or descriptor.",
-			null, "Define the type contract in libs/flow/types/" + env.typeDescriptorFileName(name) + ".");
+			null, "Define the type contract in " + env.sourcePaths.path("types/" + env.typeDescriptorFileName(name)) + ".");
 	}
 
 	function createProjectType(types, name, request, overwrite, env) {

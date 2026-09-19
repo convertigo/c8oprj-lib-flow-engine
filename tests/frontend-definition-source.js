@@ -42,6 +42,8 @@ var definitionFile = new java.io.File(providerRoot,
 	"libs/flow/frontbuilder/svelte/components/DatePicker.flow.svelte");
 var metadata = frontendCatalogService.sourceMetadataForFile(definitionFile, "svelte", {
 	File: java.io.File,
+	sourcePaths: eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+		new java.io.File(engineDir, "modules/source-layout.js"), "UTF-8"))).current,
 	projectDir: function () {
 		return new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "flow-definition-source/sample");
 	},

@@ -1,4 +1,7 @@
 (function () {
+	function defineDataProperty(out, key, value) {
+		Object.defineProperty(out, key, { value: value, enumerable: true, configurable: true, writable: true });
+	}
 	function jsValue(value, env) {
 		if (value === undefined || value === null) {
 			return value;
@@ -82,7 +85,9 @@
 			seen.push(value);
 			var out = {};
 			Object.keys(value).forEach(function (key) {
-				out[key] = sanitizeValue(value[key], env, seen, rejectWhere);
+				var child = sanitizeValue(value[key], env, seen, rejectWhere);
+				if (key === "__proto__") defineDataProperty(out, key, child);
+				else out[key] = child;
 			});
 			seen.pop();
 			return out;
@@ -111,7 +116,9 @@
 		if (value && typeof value === "object") {
 			var out = {};
 			Object.keys(value).forEach(function (key) {
-				out[key] = normalize(value[key], env);
+				var child = normalize(value[key], env);
+				if (key === "__proto__") defineDataProperty(out, key, child);
+				else out[key] = child;
 			});
 			return out;
 		}
@@ -132,10 +139,12 @@
 	function mergedContext(base, override) {
 		var out = {};
 		Object.keys(base || {}).forEach(function (key) {
-			out[key] = base[key];
+			if (key === "__proto__") defineDataProperty(out, key, base[key]);
+			else out[key] = base[key];
 		});
 		Object.keys(override || {}).forEach(function (key) {
-			out[key] = override[key];
+			if (key === "__proto__") defineDataProperty(out, key, override[key]);
+			else out[key] = override[key];
 		});
 		return out;
 	}

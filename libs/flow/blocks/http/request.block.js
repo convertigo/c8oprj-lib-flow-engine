@@ -290,8 +290,8 @@ const _meta = {
 					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs);
 				}
 			}
-			if (props.out && response.status < 400 && ctx.learnOutputSchema) {
-				ctx.learnOutputSchema(node, "out", props.out, response);
+			if (ctx.outputPath(node) && response.status < 400 && ctx.learnOutputSchema) {
+				ctx.learnOutputSchema(node, "out", ctx.outputPath(node), response);
 			}
 			return response;
 		}

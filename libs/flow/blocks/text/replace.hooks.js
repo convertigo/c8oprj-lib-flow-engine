@@ -8,7 +8,7 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			ctx.addSchema(props.out, { type: "string" });
+			ctx.addSchema(ctx.outputPath(node), { type: "string" });
 		}
 	};
 }())

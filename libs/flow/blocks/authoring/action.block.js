@@ -121,7 +121,7 @@ const _meta = {
 				throw new Error("authoring.action requires actionId or action.id.");
 			}
 			var response = ctx.contextActionSource(args);
-			ctx.write(props.out || "local.action", response);
+			ctx.write(ctx.outputPath(node) || "local.action", response);
 			return response;
 		}
 	};

@@ -32,24 +32,99 @@
 
 	function extractMeta(code, env) {
 		var text = String(code || "");
-		var match = text.match(/\b(?:const|let|var)\s+_meta\s*=/);
-		if (!match) {
+		// Headers are declarations in the prelude, not text found inside a
+		// comment, string or implementation. The body remains opaque here.
+		var start = skipTrivia(text, 0, env);
+		var declarationEndOffset = metaDeclarationEnd(text, start, env);
+		if (declarationEndOffset < 0) {
 			return { meta: {}, code: text };
 		}
-		var start = text.indexOf("{", match.index);
-		if (start < 0) {
-			env.raise("INVALID_BLOCK_CODE", "FlowScript block _meta must be an object literal.");
+		var valueStart = skipTrivia(text, declarationEndOffset, env);
+		if (text.charAt(valueStart) !== "=") headerError(text, valueStart, env);
+		valueStart = skipTrivia(text, valueStart + 1, env);
+		if (text.charAt(valueStart) !== "{") headerError(text, valueStart, env);
+		var end = metadataObjectEnd(text, valueStart, env);
+		if (end < 0) headerError(text, valueStart, env);
+		var next = skipTrivia(text, end + 1, env);
+		var hasSemicolon = text.charAt(next) === ";";
+		var declarationEnd = hasSemicolon ? next + 1 : end + 1;
+		if (hasSemicolon) next = skipTrivia(text, next + 1, env);
+		// Do not accept an object prefix of a dynamic initializer. A newline
+		// also separates the Flow DSL header from its function/Rhino IIFE.
+		if (!hasSemicolon && next < text.length &&
+			(!/[\r\n]/.test(text.substring(end + 1, next)) ||
+			 !/^(?:function\b|flow\b|block\b|(?:const|let|var)\b|\(|[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\()/.test(text.substring(next)))) {
+			headerError(text, next, env);
 		}
-		var end = balancedObjectEnd(text, start);
-		if (end < 0) {
-			env.raise("INVALID_BLOCK_CODE", "Unclosed FlowScript block _meta object literal.");
+		if (metaDeclarationEnd(text, next, env) >= 0) {
+			env.raise("FLOWSCRIPT_DUPLICATE_METADATA", "Duplicate _meta header at line " + lineAt(text, next) + ".");
 		}
-		var metaText = text.substring(start, end + 1);
-		var rest = text.substring(0, match.index) + text.substring(end + 1).replace(/^\s*;\s*/, "");
+		// Blank the declaration rather than shifting body line numbers.
+		var rest = text.substring(0, start) + text.substring(start, declarationEnd).replace(/[^\r\n]/g, " ") + text.substring(declarationEnd);
 		return {
-			meta: env.parseFlowScriptObjectLiteral(metaText, 1).value,
+			meta: env.parseFlowScriptMetadataValue(stripMetadataComments(text.substring(valueStart, end + 1), env), lineAt(text, valueStart)),
 			code: rest
 		};
+	}
+
+	function lineAt(text, index) { return text.substring(0, index).split("\n").length; }
+
+	function metaDeclarationEnd(text, start, env) {
+		var declaration = text.substring(start).match(/^(?:const|let|var)\b/);
+		if (!declaration) return -1;
+		var name = skipTrivia(text, start + declaration[0].length, env);
+		return /^_meta(?![\w$])/.test(text.substring(name)) ? name + 5 : -1;
+	}
+
+	function headerError(text, index, env) {
+		env.raise("FLOWSCRIPT_METADATA_LITERAL_REQUIRED", "Block _meta requires a standalone object literal at line " + lineAt(text, index) + ".");
+	}
+
+	function skipTrivia(text, start, env) {
+		var i = start;
+		while (i < text.length) {
+			if (/\s/.test(text.charAt(i))) { i++; continue; }
+			if (text.substr(i, 2) === "//") {
+				while (i < text.length && text.charAt(i) !== "\n" && text.charAt(i) !== "\r") i++;
+			} else if (text.substr(i, 2) === "/*") {
+				var end = text.indexOf("*/", i + 2);
+				if (end < 0) headerError(text, i, env);
+				i = end + 2;
+			} else break;
+		}
+		return i;
+	}
+
+	function metadataObjectEnd(text, start, env) {
+		var depth = 0, quote = "";
+		for (var i = start; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === "\\") i++;
+				else if (ch === quote) quote = "";
+			} else if (ch === "\"" || ch === "'" || ch === "`") quote = ch;
+			else if (text.substr(i, 2) === "//" || text.substr(i, 2) === "/*") i = skipTrivia(text, i, env) - 1;
+			else if (ch === "{") depth++;
+			else if (ch === "}" && --depth === 0) return i;
+		}
+		return -1;
+	}
+
+	function stripMetadataComments(text, env) {
+		var out = "", quote = "";
+		for (var i = 0; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				out += ch;
+				if (ch === "\\") out += text.charAt(++i);
+				else if (ch === quote) quote = "";
+			} else if (ch === "\"" || ch === "'" || ch === "`") { quote = ch; out += ch; }
+			else if (text.substr(i, 2) === "//" || text.substr(i, 2) === "/*") {
+				var end = skipTrivia(text, i, env);
+				out += text.substring(i, end).replace(/[^\r\n]/g, " "); i = end - 1;
+			} else out += ch;
+		}
+		return out;
 	}
 
 	function unwrapFlowScriptBlockEnvelope(code) {
@@ -82,7 +157,7 @@
 
 	function ensureFlowScriptBlockFunction(name, code, env) {
 		var body = normalizeFlowScriptFunctionSyntax(unwrapFlowScriptBlockEnvelope(code));
-		if (String(body).trim().match(/^(?:flow|function)\s+/)) {
+		if (body.substring(skipTrivia(body, 0, env)).match(/^(?:(?:flow|function)\s+|(?:const|let|var)\s+_flow\s*=)/)) {
 			return env.normalizeFlowScriptCode(body);
 		}
 		var indent = String(body || "").replace(/\s+$/g, "").split(/\r?\n/).map(function (line) {

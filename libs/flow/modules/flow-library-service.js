@@ -2,7 +2,7 @@
 	function providerName(flowDir, fallback, env) {
 		try {
 			var dir = new env.File(flowDir);
-			var project = dir.getParentFile() ? dir.getParentFile().getParentFile() : null;
+			var project = projectRootFromFlowDir(dir, env);
 			var name = project && typeof env.projectNameForRoot === "function"
 				? String(env.projectNameForRoot(project) || "")
 				: project ? String(project.getName() || "") : "";
@@ -14,6 +14,9 @@
 
 	function projectRootFromFlowDir(flowDir, env) {
 		var dir = new env.File(flowDir);
+		// Resource roots are explicit (including the core provider). This does not
+		// choose between on-disk source trees or fall back to another layout.
+		if (String(dir.getName()) === "_flow") return dir.getParentFile();
 		return dir.getParentFile() ? dir.getParentFile().getParentFile() : null;
 	}
 
@@ -34,7 +37,7 @@
 			return engineFile;
 		}
 		env.raise("UNKNOWN_LIBRARY", "Unknown Flow library: " + name,
-			null, "Create libs/flow/lib/" + name + ".js in the project or engine.");
+			null, "Create " + env.sourcePaths.path("lib/" + name + ".js") + " in the project or engine.");
 	}
 
 	function collectLibraries(out, dir, origin, provider, env) {
@@ -68,7 +71,7 @@
 		var localDir = env.projectLibDir();
 		if (localDir && env.canonicalPath(localDir) !== env.canonicalPath(env.engineLibDir())) {
 			collectLibraries(libraries, localDir, "project",
-				providerName(new env.File(env.projectDir(), "libs/flow"), "project", env), env);
+				providerName(new env.File(env.projectDir(), env.sourcePaths.root), "project", env), env);
 		}
 		return Object.keys(libraries).sort().map(function (name) {
 			return libraries[name];

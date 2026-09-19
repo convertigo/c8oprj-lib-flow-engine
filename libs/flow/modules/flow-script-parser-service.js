@@ -1,6 +1,7 @@
 (function () {
 	function create(env) {
 		var flowScriptDiagnostics = [];
+		var sourceVersion = 1;
 
 		function addFlowScriptCanonicalWarning(lineNumber, original, canonical) {
 			flowScriptDiagnostics.push({
@@ -267,7 +268,8 @@
 				if (pending) {
 					var beforeClose = flowScriptBalance(pending.text);
 					if ((line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/)) &&
-							pending.text.match(/^if\s*\(/) && (beforeClose.paren > 0 || beforeClose.bracket > 0)) {
+							pending.text.match(/^if\s*\(/) && !pending.text.match(/^if\s*\(\s*\{/)
+							&& (beforeClose.paren > 0 || beforeClose.bracket > 0)) {
 						env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + pending.line
 							+ ": missing " + flowScriptMissingGroupClosers(beforeClose) + " before line " + (index + 1),
 							null, "Close the current statement before writing the next one.");
@@ -301,7 +303,7 @@
 			return String(text || "").trim().replace(/;\s*$/, "").trim();
 		}
 	
-		function splitFlowScriptTopLevel(text, separator) {
+		function splitFlowScriptTopLevel(text, separator, firstOnly) {
 			var out = [];
 			var start = 0;
 			var inString = false;
@@ -338,6 +340,9 @@
 				} else if (ch === separator && paren === 0 && brace === 0 && bracket === 0) {
 					out.push(text.substring(start, i).trim());
 					start = i + 1;
+					// An object field owns only its first colon. Later colons
+					// belong to the expression and must not be trimmed/rejoined.
+					if (firstOnly) break;
 				}
 			}
 			var last = text.substring(start).trim();
@@ -399,38 +404,85 @@
 			return text.charAt(0) === "[" && text.charAt(text.length - 1) === "]";
 		}
 	
-		function parseFlowScriptObjectLiteral(text, lineNumber) {
+		function parseFlowScriptObjectLiteral(text, lineNumber, staticMetadata) {
 			text = String(text || "").trim();
 			if (!isFlowScriptObjectLiteral(text)) {
 				env.raise("FLOWSCRIPT_INVALID_OBJECT", "Expected object literal at line " + lineNumber + ": " + text);
 			}
 			var body = text.substring(1, text.length - 1);
-			var tokens = {};
+			var tokens = Object.create(null);
+			function addToken(key, token) {
+				if (Object.prototype.hasOwnProperty.call(tokens, key)) {
+					env.raise("FLOWSCRIPT_DUPLICATE_PROPERTY", "Duplicate property '" + key + "' at line " + lineNumber + ".",
+						null, "Keep one value per property; an earlier value must not be silently overwritten.");
+				}
+				tokens[key] = token;
+			}
 			splitFlowScriptTopLevel(body, ",").forEach(function (part) {
-				var pair = splitFlowScriptTopLevel(part, ":");
+				var pair = splitFlowScriptTopLevel(part, ":", true);
 				if (pair.length < 2) {
+					if (staticMetadata) metadataLiteralError(lineNumber);
 					var shorthand = String(part || "").trim();
 					if (shorthand.match(/^[A-Za-z_$][\w$]*$/)) {
-						tokens[shorthand] = shorthand;
+						addToken(shorthand, shorthand);
 					}
 					return;
 				}
-				var key = unquoteFlowScriptString(pair.shift().trim());
-				tokens[key] = pair.join(":").trim();
+				var keyToken = pair.shift().trim();
+				var key = staticMetadata && isFlowScriptQuoted(keyToken)
+					? parseFlowScriptMetadataValue(keyToken, lineNumber) : unquoteFlowScriptString(keyToken);
+				if (staticMetadata && !isFlowScriptQuoted(keyToken) && !/^[A-Za-z_$][\w$]*$/.test(keyToken)) metadataLiteralError(lineNumber);
+				addToken(key, pair[0]);
 			});
-			var value;
-			try {
-				value = parseFlowScriptArgs(text, lineNumber);
-			} catch (_expressionObject) {
-				value = {};
-				Object.keys(tokens).forEach(function (key) {
-					value[key] = tokens[key];
-				});
-			}
+			// Source keys come from the JS-like grammar, never YAML's whitespace-
+			// sensitive mapping grammar ({id:5} must mean the same as {id: 5}).
+			var value = Object.create(null);
+			Object.keys(tokens).forEach(function (key) {
+				var literal = staticMetadata ? parseFlowScriptMetadataValue(tokens[key], lineNumber)
+					: flowScriptLiteralTokenValue(tokens[key], lineNumber);
+				value[key] = literal === undefined ? tokens[key] : literal;
+			});
 			return {
 				value: value,
 				tokens: tokens
 			};
+		}
+
+		function metadataLiteralError(lineNumber) {
+			env.raise("FLOWSCRIPT_METADATA_LITERAL_REQUIRED", "Metadata requires literal data at line " + lineNumber + ".",
+				null, "Use quoted strings, finite numbers, booleans, null, arrays or objects. Put dynamic computations in Flow nodes, not _flow/_meta.");
+		}
+
+		function parseFlowScriptMetadataValue(token, lineNumber) {
+			token = String(token || "").trim();
+			if (isFlowScriptObjectLiteral(token)) return parseFlowScriptObjectLiteral(token, lineNumber, true).value;
+			if (isFlowScriptArrayLiteral(token)) return splitFlowScriptTopLevel(token.slice(1, -1), ",").map(function (item) {
+				return parseFlowScriptMetadataValue(item, lineNumber);
+			});
+			if (isFlowScriptQuoted(token)) {
+				var quote = token.charAt(0), value = "";
+				var escapes = { "n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f", "v": "\v", "0": "\0", "\\": "\\", "\"": "\"", "'": "'", "/": "/" };
+				for (var i = 1; i < token.length - 1; i++) {
+					var ch = token.charAt(i);
+					if (ch === quote || ch === "\n" || ch === "\r") metadataLiteralError(lineNumber);
+					if (ch === "\\") {
+						var escaped = token.charAt(++i);
+						if (i >= token.length - 1) metadataLiteralError(lineNumber);
+						if (escaped === "u" || escaped === "x") {
+							var size = escaped === "u" ? 4 : 2, hex = token.substr(i + 1, size);
+							if (hex.length !== size || !/^[0-9a-fA-F]+$/.test(hex)) metadataLiteralError(lineNumber);
+							value += String.fromCharCode(parseInt(hex, 16)); i += size;
+						} else if (Object.prototype.hasOwnProperty.call(escapes, escaped)) {
+							if (escaped === "0" && /[0-9]/.test(token.charAt(i + 1))) metadataLiteralError(lineNumber);
+							value += escapes[escaped];
+						} else metadataLiteralError(lineNumber);
+					} else value += ch;
+				}
+				return value;
+			}
+			var scalar = flowScriptLiteralTokenValue(token, lineNumber);
+			if (scalar === undefined || (typeof scalar === "number" && !isFinite(scalar))) metadataLiteralError(lineNumber);
+			return scalar;
 		}
 	
 		function flowScriptPropKind(blocks, block, key) {
@@ -578,8 +630,14 @@
 			if (isFlowScriptQuoted(token)) {
 				return unquoteFlowScriptString(token);
 			}
-			if (isFlowScriptArrayLiteral(token) || isFlowScriptObjectLiteral(token)) {
-				return env.normalizeTree(env.parseYamlSource(token, "{}"));
+			if (isFlowScriptObjectLiteral(token)) {
+				return parseFlowScriptObjectLiteral(token, lineNumber).value;
+			}
+			if (isFlowScriptArrayLiteral(token)) {
+				return splitFlowScriptTopLevel(token.substring(1, token.length - 1), ",").map(function (item) {
+					var value = flowScriptLiteralTokenValue(item, lineNumber);
+					return value === undefined ? item : value;
+				});
 			}
 			if (token === "true") {
 				return true;
@@ -590,7 +648,7 @@
 			if (token === "null") {
 				return null;
 			}
-			if (token.match(/^-?\d+(?:\.\d+)?$/)) {
+			if (token.match(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/) || token.match(/^0[xX][0-9a-fA-F]+$/)) {
 				return Number(token);
 			}
 			return undefined;
@@ -600,8 +658,12 @@
 			if (!isFlowScriptObjectLiteral(token)) {
 				return undefined;
 			}
-			var out = {};
+			var out = Object.create(null);
 			naturalFlowScriptObjectFields(token).forEach(function (field) {
+				if (Object.prototype.hasOwnProperty.call(out, field.key)) {
+					env.raise("FLOWSCRIPT_DUPLICATE_PROPERTY", "Duplicate property '" + field.key + "' at line " + lineNumber + ".",
+						null, "Keep one value per property; an earlier value must not be silently overwritten.");
+				}
 				out[field.key] = flowScriptValueFromToken(field.token, locals, lineNumber);
 			});
 			return out;
@@ -706,11 +768,37 @@
 			return "{{ " + flowScriptRewriteExpression(token, locals) + " }}";
 		}
 	
-		function normalizeNaturalFlowScriptProps(blocks, block, parsed, locals, lineNumber) {
+		function normalizeNaturalFlowScriptProps(blocks, block, parsed, locals, lineNumber, businessBag) {
+			if (sourceVersion === 2 && !businessBag) {
+				var codec = env.sourceAttributeNameCodec();
+				var node = {};
+				var propertyTokens = Object.create(null);
+				Object.keys(parsed.tokens || {}).forEach(function (spelling) {
+					var attr = codec.resolve(spelling, ["id", "disabled", "comment", "out"]);
+					var token = parsed.tokens[spelling];
+					if (attr.namespace === "property") {
+						propertyTokens[attr.name] = token;
+						return;
+					}
+					var value = flowScriptLiteralTokenValue(token, lineNumber);
+					var expected = attr.name === "disabled" ? "boolean" : "string";
+					if (typeof value !== expected || (attr.name === "id" && !value.length)) {
+						env.raise("FLOW_SOURCE_ENGINE_ATTRIBUTE_TYPE", "Expected a literal " + expected + " for " + spelling + " at line " + lineNumber);
+					}
+					node[attr.name] = value;
+				});
+				node.props = normalizeNaturalFlowScriptProps(blocks, block, { tokens: propertyTokens }, locals, lineNumber, true);
+				return node;
+			}
 			var args = env.normalizeTree(parsed.value || {});
 			var tokens = parsed.tokens || {};
 			Object.keys(tokens).forEach(function (key) {
-				if (key === "id" || key === "comment") {
+				if (!businessBag && key === "props" && isFlowScriptObjectLiteral(tokens[key])) {
+					args[key] = normalizeNaturalFlowScriptProps(blocks, block,
+						parseFlowScriptObjectLiteral(tokens[key], lineNumber), locals, lineNumber, true);
+					return;
+				}
+				if (!businessBag && (key === "id" || key === "comment")) {
 					args[key] = unquoteFlowScriptString(tokens[key]);
 					return;
 				}
@@ -734,8 +822,12 @@
 			return args;
 		}
 
-		function foldConfigUseOverrides(blocks, block, node) {
+		function foldConfigUseOverrides(blocks, block, node, businessBag) {
 			if (block !== "config.use") {
+				return node;
+			}
+			if (sourceVersion === 2 && node.props && !businessBag) {
+				node.props = foldConfigUseOverrides(blocks, block, node.props, true);
 				return node;
 			}
 			var descriptor = env.blockCatalog(blocks && blocks[block]) || {};
@@ -758,7 +850,7 @@
 			};
 			var overrides = env.normalizeTree(node.overrides || {});
 			Object.keys(node || {}).forEach(function (key) {
-				if (reserved[key] || slots[key] || props[key]) {
+				if ((!businessBag && reserved[key]) || key === "overrides" || slots[key] || props[key]) {
 					return;
 				}
 				overrides[key] = node[key];
@@ -773,6 +865,9 @@
 		function flowScriptPropertyValueFromToken(blocks, block, key, token, locals, lineNumber) {
 			var kind = flowScriptPropKind(blocks, block, key);
 			if (kind === "expression") {
+				if (isFlowScriptArrayLiteral(token) || isFlowScriptObjectLiteral(token)) {
+					return flowScriptValueFromToken(token, locals, lineNumber);
+				}
 				return flowScriptExpressionFromToken(token, locals);
 			}
 			if (kind === "path") {
@@ -841,9 +936,13 @@
 			if (!slotNames.length) {
 				return { parsed: parsed, slots: {} };
 			}
-			var slotMap = {};
+			var slotMap = Object.create(null);
 			slotNames.forEach(function (slot) {
-				slotMap[slot] = true;
+				if (sourceVersion === 2 && ["id", "disabled", "comment", "out", "block", "type", "uid", "props"].indexOf(slot) !== -1) {
+					env.raise("FLOW_SOURCE_SLOT_NAME_CONFLICT", "Slot " + slot + " conflicts with structural AST storage for " + block + ".");
+				}
+				var key = sourceVersion === 2 ? env.sourceAttributeNameCodec().encode("engine", slot) : slot;
+				slotMap[key] = slot;
 			});
 			var parsedValue = env.normalizeTree(parsed.value || {});
 			var parsedTokens = Object.assign({}, parsed.tokens || {});
@@ -857,7 +956,7 @@
 					env.raise("FLOWSCRIPT_INVALID_SLOT", "Invalid inline slot \"" + key + "\" for Flow block " + block + " at line " + lineNumber + ".",
 						null, "Use " + key + ": function () { ... } inside the block argument object.");
 				}
-				slots[key] = parseFlowScriptBodyNodes(blocks, imports || {}, Object.assign({}, locals || {}), body);
+				slots[slotMap[key]] = parseFlowScriptBodyNodes(blocks, imports || {}, Object.assign({}, locals || {}), body);
 				delete parsedValue[key];
 				delete parsedTokens[key];
 			});
@@ -995,7 +1094,7 @@
 			var node = {
 				id: env.safeIdentifier(varName),
 				block: "list.take",
-				items: flowScriptRewriteExpression(itemsToken || "local.items", locals),
+				items: flowScriptPropertyValueFromToken(blocks, "list.map", "items", itemsToken || "local.items", locals, lineNumber),
 				out: "local." + env.safeIdentifier(varName),
 				__flowScriptLine: lineNumber
 			};
@@ -1068,11 +1167,11 @@
 			var fields = [];
 			var body = text.substring(1, text.length - 1);
 			splitFlowScriptTopLevel(body, ",").forEach(function (part) {
-				var pair = splitFlowScriptTopLevel(part, ":");
+				var pair = splitFlowScriptTopLevel(part, ":", true);
 				if (pair.length >= 2) {
 					fields.push({
 						key: unquoteFlowScriptString(pair.shift().trim()),
-						token: pair.join(":").trim()
+						token: pair[0]
 					});
 				} else if (part.trim() !== "") {
 					fields.push({
@@ -1132,7 +1231,7 @@
 				{
 					id: "each" + cap,
 					block: "forEach",
-					items: flowScriptRewriteExpression(itemToken, locals),
+					items: flowScriptPropertyValueFromToken(blocks, "list.map", "items", itemToken, locals, lineNumber),
 					__flowScriptLine: lineNumber,
 					nodes: [
 						mapperNode,
@@ -1206,7 +1305,7 @@
 							{
 								id: env.safeIdentifier(varName),
 								block: "list.map",
-								items: flowScriptRewriteExpression(args[0] || "local.items", locals),
+								items: flowScriptPropertyValueFromToken(blocks, "list.map", "items", args[0] || "local.items", locals, lineNumber),
 								select: flowScriptExpressionFromToken(selectToken, locals),
 								out: "local." + env.safeIdentifier(varName),
 								__flowScriptLine: lineNumber
@@ -1242,13 +1341,16 @@
 				}
 				var nestedNode = normalizeNaturalFlowScriptNode(blocks, imports, locals, nestedBlock,
 					parseFlowScriptObjectLiteral(nestedArgs[0], lineNumber), lineNumber);
+				if (sourceVersion === 2 && Object.keys(nestedNode).some(function (key) { return key !== "props"; })) {
+					env.raise("FLOW_SOURCE_INLINE_METADATA_UNSUPPORTED", "Inline block projections cannot carry engine metadata; use an explicit block node.");
+				}
 				delete nestedNode.id;
 				delete nestedNode.out;
 				delete nestedNode.block;
 				delete nestedNode.__flowScriptLine;
 				compiledProjection[field.key] = {
 					__flowBlock: nestedBlock,
-					properties: nestedNode
+					properties: sourceVersion === 2 ? nestedNode.props : nestedNode
 				};
 				hasNestedProjectionBlock = true;
 			});
@@ -1256,7 +1358,7 @@
 				return [{
 					id: env.safeIdentifier(varName),
 					block: "list.map",
-					items: flowScriptRewriteExpression(args[0], locals),
+					items: flowScriptPropertyValueFromToken(blocks, "list.map", "items", args[0], locals, lineNumber),
 					select: compiledProjection,
 					out: "local." + env.safeIdentifier(varName),
 					__flowScriptLine: lineNumber
@@ -1275,7 +1377,7 @@
 				{
 					id: "each" + cap,
 					block: "forEach",
-					items: flowScriptRewriteExpression(args[0], locals),
+					items: flowScriptPropertyValueFromToken(blocks, "list.map", "items", args[0], locals, lineNumber),
 					__flowScriptLine: lineNumber,
 					nodes: [
 						naturalFlowScriptJsonObjectNode(itemName, "local." + itemName, objectFields, locals, lineNumber),
@@ -1306,6 +1408,13 @@
 			if (block === "list.map" && args.length === 1) {
 				var mapNodes = buildNaturalListMapNodes(blocks, imports, varName, args, locals, lineNumber);
 				if (mapNodes) {
+					if (sourceVersion === 2) {
+						var mapOptions = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
+						if (Object.keys(mapOptions).some(function (key) { return key !== "props"; }) ||
+							Object.keys(mapOptions.props).some(function (key) { return key !== "items" && key !== "select"; })) {
+							env.raise("FLOW_SOURCE_LOWERING_METADATA_UNSUPPORTED", "Expanded list.map cannot discard additional attributes; use an explicit forEach for this form.");
+						}
+					}
 					return mapNodes;
 				}
 			}
@@ -1451,7 +1560,9 @@
 			if (!node.id) {
 				node.id = env.safeIdentifier(varName);
 			}
-			if (block === "set") {
+			if (sourceVersion === 2) {
+				bindVersionTwoAssignment(node, block, "local." + env.safeIdentifier(varName), lineNumber);
+			} else if (block === "set") {
 				if (!node.path) {
 					node.path = "local." + env.safeIdentifier(varName);
 				}
@@ -1461,6 +1572,15 @@
 			}
 			node.__flowScriptLine = lineNumber;
 			return [node];
+		}
+
+		function bindVersionTwoAssignment(node, block, path, lineNumber) {
+			if (node.out !== undefined && node.out !== path) {
+				env.raise("FLOW_SOURCE_OUTPUT_CONFLICT", "Assignment and $$out have different destinations at line " + lineNumber,
+					null, "Remove $$out from the assignment or use an explicit block call.");
+			}
+			if (block === "set" && node.props.path === undefined) node.props.path = path;
+			node.out = path;
 		}
 	
 		function buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, rhs, lineNumber) {
@@ -1546,7 +1666,10 @@
 				}
 				node.block = block;
 				node.__flowScriptLine = lineNumber;
-				if (block === "set") {
+				if (sourceVersion === 2) {
+					bindVersionTwoAssignment(node, block, scopePath, lineNumber);
+					if (!node.id) node.id = env.safeIdentifier(scopePath.replace(/^(local|result)\./, ""));
+				} else if (block === "set") {
 					node.path = scopePath;
 					if (node.id === undefined || node.id === null || String(node.id).trim() === "") {
 						node.id = env.safeIdentifier(scopePath.replace(/^(local|result)\./, ""));
@@ -1843,18 +1966,21 @@
 
 		function parseFlowScriptTopLevelObject(prelude, name) {
 			var out = {};
+			var seen = false;
 			var re = new RegExp("^(?:const|let|var)\\s+_" + name + "\\s*=\\s*([\\s\\S]+)$");
 			flowScriptStatements(prelude).forEach(function (statement) {
 				var match = statement.text.match(re);
 				if (!match) {
 					return;
 				}
+				if (seen) env.raise("FLOWSCRIPT_DUPLICATE_METADATA", "Duplicate _" + name + " declaration at line " + statement.line + ".");
+				seen = true;
 				var token = stripFlowScriptSemicolon(match[1]);
 				if (!isFlowScriptObjectLiteral(token)) {
 					env.raise("FLOWSCRIPT_INVALID_METADATA", "Invalid _" + name + " metadata at line " + statement.line + ".",
 						null, "Use a plain object literal, for example const _flow = { inputs: { city: { type: \"string\" } } }.");
 				}
-				out = parseFlowScriptObjectLiteral(token, statement.line).value || {};
+				out = parseFlowScriptObjectLiteral(token, statement.line, true).value;
 			});
 			return out;
 		}
@@ -1880,7 +2006,26 @@
 				return;
 			}
 			trackFlowScriptLocalWrite(locals, node.out);
-			trackFlowScriptLocalWrite(locals, node.path);
+			trackFlowScriptLocalWrite(locals, sourceVersion === 2 && node.props ? node.props.path : node.path);
+		}
+
+		function canonicalizeParsedNode(blocks, node) {
+			if (sourceVersion !== 2) return;
+			var slots = flowScriptBlockSlotNames(blocks, node.block);
+			// Natural assignments, returns and expanded projections synthesize
+			// nodes too. Lower them into the same AST as explicit $$ calls, here
+			// in the parser, never via a runtime legacy-shape fallback.
+			if (!node.props) {
+				node.props = Object.create(null);
+				Object.keys(node).forEach(function (key) {
+					if (["id", "block", "out", "comment", "disabled", "__flowScriptLine", "props"].indexOf(key) !== -1 || slots.indexOf(key) !== -1) return;
+					node.props[key] = node[key];
+					delete node[key];
+				});
+			}
+			slots.forEach(function (slot) {
+				if (Array.isArray(node[slot])) node[slot].forEach(function (child) { canonicalizeParsedNode(blocks, child); });
+			});
 		}
 	
 		function parseFlowScriptStatementsInto(blocks, imports, locals, root, statements) {
@@ -1890,6 +2035,7 @@
 				var line = statements[i].text;
 				var disabled = statements[i].disabled === true;
 				var addStatementNode = function (node) {
+					canonicalizeParsedNode(blocks, node);
 					if (disabled) {
 						node.disabled = true;
 					}
@@ -1950,7 +2096,7 @@
 					continue;
 				}
 				var ifMatch = line.match(/^if\s*\((.*)\)\s*(\{)?\s*;?$/);
-				if (ifMatch) {
+				if (ifMatch && !isFlowScriptObjectLiteral(ifMatch[1])) {
 					var ifNode = {
 						id: "if" + lineNumber,
 						block: "if",
@@ -1984,9 +2130,20 @@
 			}
 		}
 	
-		function parseFlowScript(blocks, code) {
+		function parseFlowScript(blocks, code, options) {
 			code = env.normalizeFlowScriptFunctionSyntax(code);
 			var split = splitFlowScriptFunctions(code);
+			var flowMeta = parseFlowScriptTopLevelObject(split.prelude, "flow");
+			if (options && options.sourceVersion !== undefined) {
+				if (flowMeta.sourceVersion !== undefined && flowMeta.sourceVersion !== options.sourceVersion) {
+					env.raise("FLOW_SOURCE_VERSION_CONFLICT", "The source header conflicts with the block sourceVersion.");
+				}
+				flowMeta.sourceVersion = options.sourceVersion;
+			}
+			sourceVersion = flowMeta.sourceVersion === undefined ? 1 : flowMeta.sourceVersion;
+			if (sourceVersion !== 1 && sourceVersion !== 2) {
+				env.raise("FLOW_SOURCE_VERSION_UNSUPPORTED", "Unsupported Flow sourceVersion: " + sourceVersion);
+			}
 			if (split.functions.length > 0) {
 				var mainIndex = mainFlowScriptFunctionIndex(split.functions);
 				var main = split.functions[mainIndex];
@@ -2012,7 +2169,6 @@
 						helperParamLocals(helper.params), helper.__flowScriptBody);
 				});
 				var rootFromFunctions = { version: 1, helpers: helpers, nodes: [] };
-				var flowMeta = parseFlowScriptTopLevelObject(split.prelude, "flow");
 				if (Object.keys(flowMeta).length > 0) {
 					rootFromFunctions.flow = flowMeta;
 				}
@@ -2032,6 +2188,7 @@
 	
 		return {
 			parseFlowScriptArgs: parseFlowScriptArgs,
+			parseFlowScriptMetadataValue: parseFlowScriptMetadataValue,
 			stripFlowScriptComment: stripFlowScriptComment,
 			addFlowScriptNode: addFlowScriptNode,
 			flowScriptBalance: flowScriptBalance,
@@ -2144,6 +2301,9 @@
 		parseFlowScriptObjectLiteral: function (text, lineNumber, env) {
 			return create(env).parseFlowScriptObjectLiteral(text, lineNumber);
 		},
+		parseFlowScriptMetadataValue: function (text, lineNumber, env) {
+			return create(env).parseFlowScriptMetadataValue(text, lineNumber);
+		},
 		flowScriptPropKind: function (blocks, block, key, env) {
 			return create(env).flowScriptPropKind(blocks, block, key);
 		},
@@ -2252,8 +2412,8 @@
 		parseFlowScriptStatementsInto: function (blocks, imports, locals, root, statements, env) {
 			return create(env).parseFlowScriptStatementsInto(blocks, imports, locals, root, statements);
 		},
-		parseFlowScript: function (blocks, code, env) {
-			return create(env).parseFlowScript(blocks, code);
+		parseFlowScript: function (blocks, code, env, options) {
+			return create(env).parseFlowScript(blocks, code, options);
 		}
 	};
 }())

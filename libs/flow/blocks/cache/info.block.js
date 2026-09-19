@@ -53,7 +53,7 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var info = ctx.cacheInfo();
-			ctx.write(props.out || "local.cache", info);
+			ctx.write(ctx.outputPath(node) || "local.cache", info);
 			return info;
 		}
 	};

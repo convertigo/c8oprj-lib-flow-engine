@@ -81,7 +81,18 @@
 			var meta = blockCodeMetaFromDefinition(definition);
 			if (implementation.runtime === "flow") {
 				var flowDefinition = validateBlockFlowImplementationSource(name, implementationSource);
-				return flowScriptBlockCodeSource(name, sourceFromDefinition(flowDefinition), meta);
+				var version = flowDefinition.flow && flowDefinition.flow.sourceVersion;
+				if (version !== undefined && meta.sourceVersion !== undefined && version !== meta.sourceVersion) {
+					raise("FLOW_SOURCE_VERSION_CONFLICT", "The implementation and block descriptor declare different source versions.");
+				}
+				if (version !== undefined) meta.sourceVersion = version;
+				if (meta.sourceVersion !== undefined) {
+					flowDefinition.flow = Object.assign({}, flowDefinition.flow || {}, { sourceVersion: meta.sourceVersion });
+				}
+				var code = env.renderFlowScript(blocks, name, sourceFromDefinition(flowDefinition), {
+					includeHeader: false, includeImplicitReturn: false
+				});
+				return flowScriptBlockCodeSource(name, code, meta);
 			}
 			validateBlockImplementationSource(name, implementationSource);
 			enforceRhinoImplementationPolicy(name, implementationSource);
@@ -188,7 +199,7 @@
 				delete blocks[name];
 			}
 			var loaded = publicBlockDescriptor(blockDescriptor(loadFlowScriptBlockFile(blocks, codeFile, "project",
-				flowProviderName(new File(projectDir(), "libs/flow"), "project"), projectBlocksDir())));
+				flowProviderName(new File(projectDir(), env.sourcePaths.root), "project"), projectBlocksDir())));
 			return {
 				ok: true,
 				name: name,

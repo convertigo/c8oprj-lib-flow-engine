@@ -1,13 +1,14 @@
 (function () {
-	function stripMetadata(value) {
+	function stripMetadata(value, data) {
 		if (value instanceof Array) {
-			return value.map(stripMetadata);
+			return value.map(function (item) { return stripMetadata(item, data); });
 		}
 		if (value && typeof value === "object") {
-			var out = {};
+			var out = Object.create(null);
 			Object.keys(value).forEach(function (key) {
-				if (key.indexOf("__flowScript") !== 0) {
-					out[key] = stripMetadata(value[key]);
+				if (data || key.indexOf("__flowScript") !== 0) {
+					// Headers and v2 properties are data, not parser bookkeeping.
+					out[key] = stripMetadata(value[key], data || key === "flow" || key === "props");
 				}
 			});
 			return out;

@@ -25,26 +25,26 @@
 		return dot < 0 ? "" : String(path).substring(dot + 1).toLowerCase();
 	}
 
-	function isAllowedPath(path) {
+	function isAllowedPath(path, paths) {
 		var ext = extension(path);
-		if (String(path) === "libs/flow/engine.yaml") {
+		if (String(path) === paths.path("engine.yaml")) {
 			return true;
 		}
-		if (String(path).indexOf("libs/flow/blocks/") === 0) {
+		if (String(path).indexOf(paths.path("blocks") + "/") === 0) {
 			return String(path).endsWith(".block.js") || String(path).endsWith(".hooks.js");
 		}
-		if (String(path).indexOf("libs/flow/fragments/") === 0) {
+		if (String(path).indexOf(paths.path("fragments") + "/") === 0) {
 			return String(path).endsWith(".fragment.yaml");
 		}
-		if (String(path).indexOf("libs/flow/lib/") === 0) {
+		if (String(path).indexOf(paths.path("lib") + "/") === 0) {
 			return ext === "js";
 		}
-		if (String(path).indexOf("libs/flow/resources/") === 0) {
+		if (String(path).indexOf(paths.path("resources") + "/") === 0) {
 			if ([
-				"libs/flow/resources/property-editor.css",
-				"libs/flow/resources/property-editor.html",
-				"libs/flow/resources/property-editor.js",
-				"libs/flow/resources/type-editor-chrome.css"
+				paths.path("resources/property-editor.css"),
+				paths.path("resources/property-editor.html"),
+				paths.path("resources/property-editor.js"),
+				paths.path("resources/type-editor-chrome.css")
 			].indexOf(String(path)) !== -1) {
 				return true;
 			}
@@ -53,24 +53,24 @@
 		if (String(path).indexOf("resources/") === 0) {
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
 		}
-		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
+		if (String(path).indexOf(paths.path("frontbuilder") + "/") === 0) {
 			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte")
 				|| String(path).endsWith(".flow.css") || String(path).endsWith(".uiblock.json");
 		}
-		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
+		if (String(path).indexOf(paths.path("types/editors") + "/") === 0) {
 			return ["html", "css", "js"].indexOf(ext) !== -1;
 		}
-		if (String(path).indexOf("libs/flow/types/") === 0) {
+		if (String(path).indexOf(paths.path("types") + "/") === 0) {
 			return ext === "js" || String(path).endsWith(".type.yaml");
 		}
 		return false;
 	}
 
-	function kind(path) {
-		if (String(path) === "libs/flow/engine.yaml") {
+	function kind(path, paths) {
+		if (String(path) === paths.path("engine.yaml")) {
 			return "projectConfig";
 		}
-		if (String(path).indexOf("libs/flow/blocks/") === 0) {
+		if (String(path).indexOf(paths.path("blocks") + "/") === 0) {
 			if (String(path).endsWith(".block.js")) {
 				return "graphBlockCode";
 			}
@@ -79,26 +79,26 @@
 			}
 			return "block";
 		}
-		if (String(path).indexOf("libs/flow/fragments/") === 0) {
+		if (String(path).indexOf(paths.path("fragments") + "/") === 0) {
 			return "fragment";
 		}
-		if (String(path).indexOf("libs/flow/lib/") === 0) {
+		if (String(path).indexOf(paths.path("lib") + "/") === 0) {
 			return "library";
 		}
-		if (String(path).indexOf("libs/flow/frontbuilder/") === 0) {
+		if (String(path).indexOf(paths.path("frontbuilder") + "/") === 0) {
 			return String(path).endsWith(".uiblock.json") ? "frontendBlock"
 				: String(path).endsWith(".flow.css") ? "frontendStyle" : "frontendModel";
 		}
-		if (/^libs\/flow\/resources\/(?:property-editor\.(?:css|html|js)|type-editor-chrome\.css)$/.test(String(path))) {
+		if ([paths.path("resources/property-editor.css"), paths.path("resources/property-editor.html"), paths.path("resources/property-editor.js"), paths.path("resources/type-editor-chrome.css")].indexOf(String(path)) !== -1) {
 			return "propertyEditorHost";
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return "publicResource";
 		}
-		if (String(path).indexOf("libs/flow/types/editors/") === 0) {
+		if (String(path).indexOf(paths.path("types/editors") + "/") === 0) {
 			return "typeEditor";
 		}
-		if (String(path).indexOf("libs/flow/types/") === 0) {
+		if (String(path).indexOf(paths.path("types") + "/") === 0) {
 			return String(path).endsWith(".type.yaml") ? "typeDescriptor" : "typeResource";
 		}
 		return "resource";
@@ -149,9 +149,9 @@
 		return "application/octet-stream";
 	}
 
-	function uri(path) {
+	function uri(path, paths) {
 		var text = String(path || "");
-		var prefix = "libs/flow/resources/";
+		var prefix = paths.path("resources") + "/";
 		var uriPrefix = "flow://";
 		if (text.indexOf("resources/") === 0) {
 			prefix = "resources/";
@@ -206,9 +206,9 @@
 		return "";
 	}
 
-	function blockIdFromPath(path) {
+	function blockIdFromPath(path, paths) {
 		var text = String(path || "").replace(/\\/g, "/");
-		var prefix = "libs/flow/blocks/";
+		var prefix = paths.path("blocks") + "/";
 		if (text.indexOf(prefix) === 0) {
 			text = text.substring(prefix.length);
 		}

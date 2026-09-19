@@ -9,7 +9,7 @@
 
 	function projectEngineFile(env) {
 		var dir = env.projectDir();
-		return dir ? new env.File(dir, "libs/flow/engine.yaml") : null;
+		return dir ? new env.File(dir, env.sourcePaths.path("engine.yaml")) : null;
 	}
 
 	function engineDefinitionFile(env) {
@@ -90,13 +90,23 @@
 	}
 
 	function effectiveConfig(request, definition, projectEngine, env) {
-		var config = {};
-		Object.keys(projectEngine && projectEngine.config || {}).forEach(function (key) {
-			config[key] = env.normalizeTree(projectEngine.config[key]);
+		var config = Object.create(null);
+		var meta = definition && definition.flow || {};
+		// Preserve the existing root-branch replacement contract. Deep merging is
+		// explicit in config.use, not an implicit change to project/request config.
+		[meta.config, projectEngine && projectEngine.config, request && request.config].forEach(function (layer) {
+			if (layer === undefined) return;
+			if (!layer || Object.prototype.toString.call(layer) !== "[object Object]") {
+				var error = new Error("Flow configuration must be an object of literal defaults.");
+				error.code = "FLOW_CONFIG_OBJECT_REQUIRED";
+				throw error;
+			}
+			Object.keys(layer).forEach(function (key) {
+				config[key] = layer[key];
+			});
 		});
-		Object.keys(request.config || {}).forEach(function (key) {
-			config[key] = env.normalizeTree(request.config[key]);
-		});
+		// Clone only the winning root values, not branches discarded by overrides.
+		Object.keys(config).forEach(function (key) { config[key] = env.normalizeTree(config[key]); });
 		var keys = env.collectConfigKeys(definition);
 		["bindings", "binding"].forEach(function (key) {
 			if (keys.indexOf(key) === -1) {
@@ -104,7 +114,7 @@
 			}
 		});
 		keys.forEach(function (key) {
-			if (config[key] !== undefined && config[key] !== null) {
+			if (Object.prototype.hasOwnProperty.call(config, key)) {
 				return;
 			}
 			var value = readGlobalValue(key, env);

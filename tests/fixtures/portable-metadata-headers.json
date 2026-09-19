@@ -1,0 +1,29 @@
+{
+  "valid": [
+    {"source":"const _meta = {description:'portable',properties:{id:{type:'number'}},sourceVersion:2};\nfunction Demo(){}", "meta":{"description":"portable","properties":{"id":{"type":"number"}},"sourceVersion":2}},
+    {"source":"// const _meta = {fake:true}\n/* } */\nlet _meta /* declaration */ = {description:'brace } and quote \\'', /* } */ properties:{disabled:{default:false}}, rows:[1,/* } */2,],};\nfunction Demo(){}", "meta":{"description":"brace } and quote '","properties":{"disabled":{"default":false}},"rows":[1,2]}},
+    {"source":"var _meta = {description:'// not a comment',value:{'__proto__':{kept:true},id:5,disabled:false,'$$id':'data'}}\n(function(){ return {}; }())", "meta":{"description":"// not a comment","value":{"__proto__":{"kept":true},"id":5,"disabled":false,"$$id":"data"}}},
+    {"source":"const _meta={}\nfunction Demo(){const _meta={business:true};}", "meta":{}},
+    {"source":"// const _meta={fake:true}\nfunction Demo(){ const text = 'const _meta={fake:true}'; }", "meta":{}},
+    {"source":"const _meta={};\nexport default _meta;", "meta":{}},
+    {"source":"const /* naming */ _meta={};\nfunction Demo(){}", "meta":{}},
+    {"source":"const _meta$={business:true};\nfunction Demo(){}", "meta":{}}
+  ],
+  "invalid": [
+    "const _meta = input;\nfunction Demo(){return {};}",
+    "const _meta = function(){return {};};\nfunction Demo(){}",
+    "const _meta = {description:'x'} + other;\nfunction Demo(){}",
+    "const _meta = {}\n+ other;\nfunction Demo(){}",
+    "const _meta = {}\n.description;\nfunction Demo(){}",
+    "const _meta = {}, other = {};\nfunction Demo(){}",
+    "const _meta = {};\n/* comment */ const _meta = {};\nfunction Demo(){}",
+    "const _meta = {}\nlet _meta = {};\nfunction Demo(){}",
+    "const _meta = {a:1,a:2};\nfunction Demo(){}",
+    "const _meta = {a:input.id};\nfunction Demo(){}",
+    "const _meta = {a:'unterminated};\nfunction Demo(){}",
+    "const _meta = {/* unterminated\nfunction Demo(){}",
+    "const _meta = {a:1;\nfunction Demo(){}",
+    "const _meta;\nfunction Demo(){}",
+    "const _meta={};\nlet /* duplicate */ _meta={};\nfunction Demo(){}"
+  ]
+}

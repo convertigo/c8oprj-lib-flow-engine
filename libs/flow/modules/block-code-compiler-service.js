@@ -18,6 +18,9 @@
 
 		function flowScriptBlockDescriptorFromMeta(name, meta, graphDefinition, code) {
 			meta = normalizeTree(meta || {});
+			if (meta.sourceVersion !== undefined && meta.sourceVersion !== 1 && meta.sourceVersion !== 2) {
+				raise("FLOW_SOURCE_VERSION_UNSUPPORTED", "Unsupported block sourceVersion: " + meta.sourceVersion);
+			}
 			if (meta.name && String(meta.name) !== String(name) && String(meta.name) !== blockLocalName(name)) {
 				raise("BLOCK_NAME_MISMATCH", "FlowScript block _meta declares \"" + meta.name + "\" instead of \"" + name + "\".");
 			}
@@ -45,7 +48,7 @@
 				raise("INVALID_BLOCK_RUNTIME", "Unsupported .block.js runtime: " + runtime,
 					null, "Use runtime: \"flow\" or runtime: \"rhino\" in _meta.");
 			}
-			["private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo", "targets", "effects", "implementations"].forEach(function (key) {
+			["sourceVersion", "private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo", "targets", "effects", "implementations"].forEach(function (key) {
 				if (meta[key] !== undefined) {
 					descriptor[key] = meta[key];
 				}
@@ -64,7 +67,7 @@
 				descriptor = normalizeTree(request.definition);
 			}
 			var meta = {};
-			["version", "description", "icon", "private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo", "targets", "effects", "implementations"].forEach(function (key) {
+			["version", "sourceVersion", "description", "icon", "private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo", "targets", "effects", "implementations"].forEach(function (key) {
 				if (descriptor[key] !== undefined) {
 					meta[key] = descriptor[key];
 				}
@@ -114,6 +117,7 @@
 			var validation = flowScriptValidateRequest(validationBlocks, {
 				name: blockLocalName(name) || name,
 				code: functionCode,
+				sourceVersion: meta.sourceVersion,
 				includeHeader: false,
 				blockMode: true
 			});

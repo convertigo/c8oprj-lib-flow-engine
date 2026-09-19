@@ -68,9 +68,9 @@ const _meta = {
 				method: "GET",
 				url: ctx.template(props.url),
 				query: ctx.template(props.query),
-				headers: ctx.template(props.headers),
-				out: props.out
+				headers: ctx.template(props.headers)
 			}, {
+				out: ctx.outputPath(node),
 				id: node.id || "request"
 			});
 		}

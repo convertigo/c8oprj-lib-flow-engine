@@ -68,7 +68,7 @@ const _meta = {
 			var args = argsFrom(props);
 			args.targetObject = frontendTarget(args);
 			var menu = ctx.contextMenuSource(args);
-			ctx.write(props.out || "local.menu", menu);
+			ctx.write(ctx.outputPath(node) || "local.menu", menu);
 			return menu;
 		}
 	};

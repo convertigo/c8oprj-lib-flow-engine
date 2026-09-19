@@ -4,6 +4,7 @@
 		var scopeNames = env.scopeNames;
 		var intOption = env.intOption;
 		var nodeProps = env.nodeProps;
+		var nodeOutputPath = env.nodeOutputPath;
 		var addUnique = env.addUnique;
 		var schemaPaths = env.schemaPaths;
 		var joinPath = env.joinPath;
@@ -73,7 +74,9 @@
 				errors: [],
 				returnedPathSchemas: sourceCatalog ? returnPathSchemasForSourceBlock(definition, sourceCatalog) : {}
 			};
-			ctx.props = nodeProps;
+			ctx.sourceVersion = definition.flow && definition.flow.sourceVersion || 1;
+			ctx.props = function (node) { return nodeProps(node, ctx.sourceVersion); };
+			ctx.outputPath = function (node) { return nodeOutputPath(node, ctx.sourceVersion); };
 			ctx.addPath = function (path) {
 				addUnique(ctx.paths, path);
 			};
@@ -310,16 +313,18 @@
 				});
 			}
 			function graphBlockOutputPaths(node, catalog) {
-				var props = nodeProps(node);
+				var props = ctx.props(node);
 				var out = [];
+				var route = ctx.outputPath(node);
+				if (route) out.push(route);
 				Object.keys(props || {}).forEach(function (key) {
 					var descriptor = catalog && catalog.props && catalog.props[key] || {};
 					var kind = descriptor.kind || "";
 					var mode = descriptor.mode || "";
-					if (kind === "path" && mode === "write" || key === "out" && declaredPropertyOutputSchema(catalog, key)) {
+					if (kind === "path" && mode === "write" || ctx.sourceVersion !== 2 && key === "out" && declaredPropertyOutputSchema(catalog, key)) {
 						var value = props[key];
 						if (typeof value === "string" && value !== "") {
-							out.push(value);
+							addUnique(out, value);
 						}
 					}
 				});
@@ -428,9 +433,9 @@
 					ctx.addSchema(outPath, mergeGraphBlockSchema(existing, schema));
 				});
 			}
-			ctx.withGraphBlock = function (node, block, callback) {
+			ctx.withGraphBlock = function (node, block, callback, sourceVersion) {
 				var catalog = blockCatalog(block);
-				var props = nodeProps(node);
+				var props = ctx.props(node);
 				var graphName = String(block && block.name || blockName(node) || "");
 				ctx.graphBlockStack = ctx.graphBlockStack || [];
 				var stack = ctx.graphBlockStack;
@@ -461,6 +466,7 @@
 					return undefined;
 				}
 				var snapshot = {
+					sourceVersion: ctx.sourceVersion,
 					paths: ctx.paths.slice(0),
 					reads: ctx.reads.slice(0),
 					writes: ctx.writes.slice(0),
@@ -496,9 +502,13 @@
 				var result;
 				var outputSchema = null;
 				try {
+					ctx.sourceVersion = sourceVersion === undefined
+						? block.__graphDefinition && block.__graphDefinition.flow && block.__graphDefinition.flow.sourceVersion || 1
+						: sourceVersion;
 					result = callback();
 					outputSchema = graphBlockResultSchema(snapshot);
 				} finally {
+					ctx.sourceVersion = snapshot.sourceVersion;
 					restoreArray(ctx.paths, snapshot.paths);
 					restoreArray(ctx.reads, snapshot.reads);
 					restoreArray(ctx.writes, snapshot.writes);
@@ -725,12 +735,25 @@
 			return groups;
 		}
 
-		function analyzeProps(ctx, props, catalog) {
+		function analyzeProps(ctx, props, catalog, node) {
 			var reads = [];
 			var writes = [];
 			var inputs = [];
 			var outputs = [];
 			var writeProps = catalog.writes || [];
+			function output(property, path) {
+				if (typeof path !== "string" || !path) return;
+				addUnique(writes, path);
+				ctx.addOutputPath(property, path);
+				var entry = { property: property, path: path };
+				var schema = declaredPropertyOutputSchema(catalog, property === "$$out" ? "out" : property);
+				if (schema) {
+					ctx.addSchema(path, schema);
+					entry.schema = schemaSummary(schema);
+				}
+				outputs.push(entry);
+			}
+			if (ctx.sourceVersion === 2) output("$$out", ctx.outputPath(node));
 			function isExactRefValue(value, path) {
 				if (typeof value !== "string") {
 					return false;
@@ -745,21 +768,8 @@
 				var kind = descriptor.kind || "";
 				var mode = descriptor.mode || "";
 				if (writeProps.indexOf(key) !== -1 || kind === "path" && mode === "write"
-						|| key === "out" && declaredPropertyOutputSchema(catalog, key)) {
-					if (typeof value === "string") {
-						addUnique(writes, value);
-						ctx.addOutputPath(key, value);
-						var output = {
-							property: key,
-							path: value
-						};
-						var outputSchema = declaredPropertyOutputSchema(catalog, key);
-						if (outputSchema) {
-							ctx.addSchema(value, outputSchema);
-							output.schema = schemaSummary(outputSchema);
-						}
-						outputs.push(output);
-					}
+						|| ctx.sourceVersion !== 2 && key === "out" && declaredPropertyOutputSchema(catalog, key)) {
+					output(key, value);
 					return;
 				}
 				var refs = [];
@@ -807,7 +817,7 @@
 			if (!block) {
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 			}
-			var props = nodeProps(node);
+			var props = ctx.props(node);
 			var catalog = blockCatalog(block);
 			var info = {
 				id: nodePath(node),
@@ -823,7 +833,7 @@
 			var previousNodeInfo = ctx.currentNodeInfo;
 			ctx.currentNodeInfo = info;
 			try {
-				var effects = analyzeProps(ctx, props, catalog);
+				var effects = analyzeProps(ctx, props, catalog, node);
 				info.reads = effects.reads;
 				info.writes = effects.writes;
 				info.inputs = effects.inputs;
@@ -908,7 +918,7 @@
 			if (!block) {
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 			}
-			var props = nodeProps(node);
+			var props = ctx.props(node);
 			var catalog = blockCatalog(block);
 			var info = {
 				id: nodePath(node),
@@ -925,7 +935,7 @@
 			var previousNodeInfo = ctx.currentNodeInfo;
 			ctx.currentNodeInfo = info;
 			try {
-				var effects = analyzeProps(ctx, props, catalog);
+				var effects = analyzeProps(ctx, props, catalog, node);
 				info.reads = effects.reads;
 				info.writes = effects.writes;
 				info.inputs = effects.inputs;
@@ -983,7 +993,7 @@
 			if (blockName(node) !== "config.use") {
 				return null;
 			}
-			var props = nodeProps(node);
+			var props = ctx.props(node);
 			var overrides = normalizeTree(props.overrides || {});
 			if (!overrides || typeof overrides !== "object" ||
 					Object.prototype.toString.call(overrides) === "[object Array]") {
@@ -1033,7 +1043,7 @@
 		}
 
 		function currentItemSource(ctx, node, sourceProperty) {
-			var props = nodeProps(node);
+			var props = ctx.props(node);
 			var sourceKey = String(sourceProperty || "items");
 			var items = props[sourceKey];
 			if ((items === undefined || items === null || items === "") && sourceKey === "items") {
@@ -1053,6 +1063,9 @@
 			if (!property) {
 				return null;
 			}
+			var attribute = propertyAttribute(property, ctx.sourceVersion);
+			if (attribute.namespace === "engine") return null;
+			property = attribute.name;
 			var block = ctx.blocks[blockName(node)];
 			var descriptor = blockCatalog(block);
 			var prop = descriptor && descriptor.props && descriptor.props[property];
@@ -1131,7 +1144,7 @@
 					return { found: false };
 				}
 				var slotResult = block && block.__graphDefinition && ctx.withGraphBlock
-					? ctx.withGraphBlock(node, block, walkSlots)
+					? ctx.withGraphBlock(node, block, walkSlots, ctx.sourceVersion)
 					: walkSlots();
 				if (slotResult && slotResult.found) {
 					return slotResult;
@@ -1279,10 +1292,18 @@
 			return entry;
 		}
 
-		function targetPropertyDescriptor(blocks, node, property) {
+		function propertyAttribute(property, sourceVersion) {
+			return sourceVersion === 2 ? env.sourceAttributeNameCodec().resolve(String(property), Object.keys(env.nodeEngineProperties()))
+				: { namespace: "property", name: property };
+		}
+
+		function targetPropertyDescriptor(blocks, node, property, sourceVersion) {
 			if (!node || !property) {
 				return null;
 			}
+			var attribute = propertyAttribute(property, sourceVersion);
+			if (attribute.namespace === "engine") return normalizeTree(env.nodeEngineProperties()[attribute.name]);
+			property = attribute.name;
 			var block = blocks[blockName(node)];
 			var descriptor = blockCatalog(block);
 			return descriptor && descriptor.props ? normalizeTree(descriptor.props[property] || null) : null;
@@ -1346,7 +1367,7 @@
 					block: blockName(found.node),
 					path: found.path || "",
 					property: request.property || "",
-					propertyDefinition: targetPropertyDescriptor(blocks, found.node, request.property)
+					propertyDefinition: targetPropertyDescriptor(blocks, found.node, request.property, ctx.sourceVersion)
 				};
 			}
 			return out;

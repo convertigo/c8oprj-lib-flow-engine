@@ -171,7 +171,8 @@
 				}
 			}, display));
 		}
-		return props.out ? definition.name + " -> " + props.out : definition.name;
+		var out = env.nodeOutputPath(node, 2);
+		return out ? definition.name + " -> " + out : definition.name;
 	}
 
 	function resolveGraphBlockProp(ctx, descriptor, value) {
@@ -266,7 +267,7 @@
 			}
 			return prepared.graphPropsResolver(ctx);
 		}
-		var resolver = compileGraphBlockProps(node, catalog);
+		var resolver = compileGraphBlockProps(node, catalog, ctx.props(node));
 		if (prepared) {
 			prepared.graphPropsCatalog = catalog;
 			prepared.graphPropsResolver = resolver;
@@ -312,6 +313,15 @@
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
+		var previousSourceVersion = ctx.sourceVersion;
+		var defaults = block.__graphDefinition.flow && block.__graphDefinition.flow.config;
+		var hasDefaults = defaults && Object.keys(defaults).length > 0;
+		// Default-free blocks keep the existing lazy/no-copy config fast path.
+		var previousConfig, scopedConfig;
+		if (hasDefaults) {
+			previousConfig = ctx.scopes.config;
+			scopedConfig = env.effectiveConfig({ config: previousConfig }, block.__graphDefinition, {});
+		}
 		if (graphName) {
 			ctx.graphBlockStack.push(graphName);
 		}
@@ -331,6 +341,8 @@
 		ctx.scopes.result = {};
 		ctx.returned = undefined;
 		ctx.stopped = false;
+		ctx.sourceVersion = block.__graphDefinition.flow && block.__graphDefinition.flow.sourceVersion || 1;
+		if (hasDefaults) ctx.scopes.config = scopedConfig;
 		profileAdd(ctx, "graphBlockFrameEnterMs", frameStarted);
 		try {
 			var executeStarted = profiled ? nanoTime() : 0;
@@ -354,6 +366,8 @@
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
+			ctx.sourceVersion = previousSourceVersion;
+			if (hasDefaults) ctx.scopes.config = previousConfig;
 			if (graphName) {
 				ctx.graphBlockStack.pop();
 			}
@@ -363,7 +377,7 @@
 	}
 
 	function analyzeGraphBlockDescriptor(ctx, node, catalog) {
-		var raw = nodeProps(node);
+		var raw = ctx.props(node);
 		Object.keys(catalog.props || {}).forEach(function (key) {
 			var descriptor = catalog.props[key] || {};
 			var kind = String(descriptor.kind || descriptor.type || "");

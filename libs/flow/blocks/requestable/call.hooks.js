@@ -205,11 +205,11 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			ctx.addPath(props.out);
+			ctx.addPath(ctx.outputPath(node));
 			var target = staticTarget(ctx, props);
 			var schema = target && ctx.requestableOutputSchema ? ctx.requestableOutputSchema(target) : null;
 			if (schema) {
-				ctx.addSchema(props.out, schema);
+				ctx.addSchema(ctx.outputPath(node), schema);
 			}
 		}
 	};

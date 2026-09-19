@@ -31,7 +31,7 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			ctx.addPath(props.out);
+			ctx.addPath(ctx.outputPath(node));
 			if (!ctx.schemaForPath || !ctx.addSchema) {
 				return;
 			}
@@ -47,7 +47,7 @@
 				}
 			});
 			if (Object.keys(schema.properties).length > 0) {
-				ctx.addSchema(props.out, schema);
+				ctx.addSchema(ctx.outputPath(node), schema);
 			}
 		}
 	};

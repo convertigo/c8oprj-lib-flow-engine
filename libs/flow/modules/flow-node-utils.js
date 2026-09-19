@@ -1,26 +1,44 @@
 (function () {
+	var engineProperties = {
+		id: { label: "Node ID", category: "Engine", description: "Stable authoring identity.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
+		comment: { label: "Node comment", category: "Engine", description: "Authoring comment, independent of block inputs.", kind: "text", type: "string", "default": "", definitionPath: "comment" },
+		disabled: { label: "Node disabled", category: "Engine", description: "Skip this node and its children.", kind: "boolean", type: "boolean", "default": false, definitionPath: "disabled" },
+		out: { label: "Node output path", category: "Engine", description: "Store the block result at this scope path.", kind: "path", type: "string", mode: "write", definitionPath: "out" }
+	};
+	Object.keys(engineProperties).forEach(function (key) { Object.freeze(engineProperties[key]); });
+	Object.freeze(engineProperties);
 	function nodePath(node) {
 		return node && (node.uid || node.id || node.name) ? String(node.uid || node.id || node.name) : "";
 	}
 
-	function nodeProps(node) {
-		var props = {};
+	function nodeProps(node, sourceVersion) {
+		var props = Object.create(null);
+		if (sourceVersion === 2 && node.props) {
+			Object.keys(node.props).forEach(function (key) { props[key] = node.props[key]; });
+			return props;
+		}
 		var structural = {
 			id: true, uid: true, block: true, type: true,
 			props: true, nodes: true, "do": true, then: true, "else": true,
-			disabled: true, __fragment: true, __graphBlock: true
+			disabled: true, comment: true, __fragment: true, __graphBlock: true, __flowScriptLine: true
 		};
+		Object.keys(node).forEach(function (key) {
+			if (!Object.prototype.hasOwnProperty.call(structural, key) && !(sourceVersion === 2 && key === "out")) {
+				props[key] = node[key];
+			}
+		});
 		if (node.props) {
 			Object.keys(node.props).forEach(function (key) {
 				props[key] = node.props[key];
 			});
 		}
-		Object.keys(node).forEach(function (key) {
-			if (!structural[key]) {
-				props[key] = node[key];
-			}
-		});
 		return props;
+	}
+
+	function nodeOutputPath(node, sourceVersion) {
+		if (!node) return undefined;
+		if (node.out !== undefined) return node.out;
+		return sourceVersion === 2 ? undefined : node.props && node.props.out;
 	}
 
 	function isFlowNodeLike(value) {
@@ -29,28 +47,19 @@
 	}
 
 	function canonicalFlowNode(node, env) {
-		node = env.normalizeTree(node || {});
-		if (node.props && typeof node.props === "object" && Object.prototype.toString.call(node.props) !== "[object Array]") {
-			Object.keys(node.props).forEach(function (key) {
-				if (node[key] === undefined) {
-					node[key] = node.props[key];
-				}
-			});
-			delete node.props;
-		}
-		Object.keys(node).forEach(function (key) {
-			var value = node[key];
-			if (Object.prototype.toString.call(value) === "[object Array]") {
-				node[key] = value.map(function (item) {
-					return isFlowNodeLike(item) ? canonicalFlowNode(item, env) : env.normalizeTree(item);
-				});
-			}
-		});
-		return node;
+		// normalizeTree already copies the complete value. Never flatten business
+		// properties into the node identity, or infer nodes inside business arrays.
+		return env.normalizeTree(node || {});
 	}
 
 	function canonicalFlowDefinition(definition, env) {
 		var out = env.normalizeTree(definition || {});
+		if (out.flow && Object.prototype.hasOwnProperty.call(out.flow, "config") &&
+				(!out.flow.config || Object.prototype.toString.call(out.flow.config) !== "[object Object]")) {
+			var error = new Error("_flow.config must be an object of literal defaults.");
+			error.code = "FLOW_CONFIG_OBJECT_REQUIRED";
+			throw error;
+		}
 		if (Object.prototype.toString.call(out.nodes) === "[object Array]") {
 			out.nodes = out.nodes.map(function (node) {
 				return canonicalFlowNode(node, env);
@@ -71,8 +80,10 @@
 	}
 
 	return {
+		engineProperties: engineProperties,
 		nodePath: nodePath,
 		nodeProps: nodeProps,
+		nodeOutputPath: nodeOutputPath,
 		isFlowNodeLike: isFlowNodeLike,
 		canonicalFlowNode: canonicalFlowNode,
 		canonicalFlowDefinition: canonicalFlowDefinition

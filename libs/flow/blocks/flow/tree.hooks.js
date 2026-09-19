@@ -28,7 +28,7 @@
 		},
 
 		analyze: function (ctx, node) {
-			var out = ctx.props(node).out;
+			var out = ctx.outputPath(node);
 			if (out) {
 				ctx.addPath(out);
 			}

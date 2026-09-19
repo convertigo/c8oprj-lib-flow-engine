@@ -203,6 +203,48 @@ function sourceRoot(tree, file) {
 		throw new Error("projected source did not expose the new sibling order");
 	}
 });
+// Same public path, version 2: the shared codec must reach both provider CLIs.
+var modernSource = '<script module>export const _flow = {sourceVersion:2};</script>\n'
+	+ '<FlowComponent $$id="modern"><Structure><Input $$id="editorNode" id="businessId" disabled={true} '
+	+ '$$$id="businessDouble" /></Structure></FlowComponent>';
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(model, modernSource, "UTF-8");
+engine.cacheClear();
+var modernTreeRequest = { target: "engine", engineSource: engineSource, projectDir: String(root.getAbsolutePath()),
+	detail: "full", includeBindings: false, includeFrontendCatalog: false, includeFlowCatalog: false };
+var modernTree = JSON.parse(engine.describeTree(JSON.stringify(modernTreeRequest)));
+var editor = findNode(modernTree, "editorNode");
+if (!editor) throw new Error("V2 provider identity missing: " + JSON.stringify(modernTree));
+var editorDefinition = JSON.parse(editor.definition), editorInfo = JSON.parse(editor.info);
+if (editorDefinition.props.id !== "businessId" || editorDefinition.props.disabled !== true
+		|| editorDefinition.props.$$id !== "businessDouble" || editorDefinition.disabled === true
+		|| editorInfo.propertyDefinitions.id.definitionPath !== "props.id"
+		|| editorInfo.propertyDefinitions.$$id.definitionPath !== "id"
+		|| editorInfo.propertyDefinitions.$$$id.definitionPath !== "props.$$id") {
+	throw new Error("V2 Engine property projection conflated namespaces: " + JSON.stringify({ definition: editorDefinition, info: editorInfo }));
+}
+var modernRoot = sourceRoot(modernTree, model);
+var modernEdited = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(model.getCanonicalPath()), source: modernSource,
+	engineSource: engineSource, projectDir: String(root.getAbsolutePath()), authoringRootPath: modernRoot.path,
+	mutation: { op: "replace", path: editorInfo.sourcePropertyMutationPaths.id, value: "editedBusiness" }
+})));
+if (!modernEdited.ok || !modernEdited.authoringTree || !modernEdited.authoringTree.ok
+		|| !findNode(modernEdited.authoringTree, "editorNode")
+		|| JSON.parse(findNode(modernEdited.authoringTree, "editorNode").definition).props.id !== "editedBusiness") {
+	throw new Error("V2 public mutation did not preserve identity: " + JSON.stringify(modernEdited));
+}
+var modernDisabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
+	sourceFile: String(model.getCanonicalPath()), source: modernEdited.source,
+	engineSource: engineSource, projectDir: String(root.getAbsolutePath()), authoringRootPath: modernRoot.path,
+	mutation: { op: "setEnabled", path: editorInfo.sourceMutationPath, enabled: false }
+})));
+if (!modernDisabled.ok || String(modernDisabled.source).indexOf("$$disabled={true}") < 0
+		|| String(modernDisabled.source).indexOf('id="editedBusiness"') < 0) {
+	throw new Error("V2 public disable mutation failed: " + JSON.stringify(modernDisabled));
+}
+if (String(Packages.org.apache.commons.io.FileUtils.readFileToString(model, "UTF-8")) !== modernSource) {
+	throw new Error("V2 draft mutation wrote persisted source");
+}
 engine.cacheClear();
 Packages.org.apache.commons.io.FileUtils.deleteDirectory(root);
 print("frontend-provider-engine-smoke OK " + JSON.stringify({

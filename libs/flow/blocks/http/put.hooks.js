@@ -10,11 +10,11 @@
 
 		analyze: function (ctx, node) {
 			var props = ctx.props(node);
-			ctx.addPath(props.out);
+			ctx.addPath(ctx.outputPath(node));
 			if (ctx.schemaForOutput && ctx.addSchema) {
-				var schema = ctx.schemaForOutput(node, "out", props.out);
+				var schema = ctx.schemaForOutput(node, "out", ctx.outputPath(node));
 				if (schema) {
-					ctx.addSchema(props.out, schema);
+					ctx.addSchema(ctx.outputPath(node), schema);
 				}
 			}
 		}

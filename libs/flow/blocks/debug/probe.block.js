@@ -55,8 +55,8 @@ const _meta = {
         label: String(ctx.template(props.label || "")),
         value: value
       });
-      if (props.out) {
-        ctx.write(props.out, value);
+      if (ctx.outputPath(node)) {
+        ctx.write(ctx.outputPath(node), value);
       }
       return value;
     }

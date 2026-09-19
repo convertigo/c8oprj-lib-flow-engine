@@ -202,6 +202,38 @@
 		return info;
 	}
 
+	function bindNodePropertyPaths(info, node, catalog) {
+		if (!node.props) return info;
+		var codec = env.sourceAttributeNameCodec();
+		var definitions = info.propertyDefinitions || (info.propertyDefinitions = {});
+		var order = info.propertyOrder || (info.propertyOrder = []);
+		var business = catalog && catalog.props || {};
+		var originalDefinitions = Object.assign({}, definitions);
+		var originalDefaults = Object.assign({}, info.propertyDefaults || {});
+		// Rename as a batch: $$id -> $$$id must not overwrite an existing $$$id.
+		Object.keys(business).forEach(function (name) {
+			delete definitions[name];
+			if (info.propertyDefaults) delete info.propertyDefaults[name];
+		});
+		info.propertyOrder = order = order.map(function (name) {
+			return Object.prototype.hasOwnProperty.call(business, name) ? codec.encode("property", name) : name;
+		});
+		Object.keys(business).forEach(function (name) {
+			var key = codec.encode("property", name);
+			var descriptor = definitions[key] = originalDefinitions[name];
+			if (info.propertyDefaults && Object.prototype.hasOwnProperty.call(originalDefaults, name)) info.propertyDefaults[key] = originalDefaults[name];
+			descriptor.definitionPath = "props." + name;
+		});
+		var engineFields = normalizeTree(env.nodeEngineProperties());
+		Object.keys(engineFields).forEach(function (name) {
+			var key = codec.encode("engine", name);
+			definitions[key] = engineFields[name];
+			definitions[key].definitionPath = name;
+			order.push(key);
+		});
+		return info;
+	}
+
 	function safeVirtualName(prefix, value) {
 		var name = String(value === undefined || value === null || value === "" ? prefix : value)
 			.replace(/[^A-Za-z0-9_]/g, "_")
@@ -479,7 +511,10 @@
 		if (type === "number") {
 			return propertyDefinition(label, "Configuration", description, { kind: "literal", type: "number" });
 		}
-		if (Object.prototype.toString.call(value) === "[object Array]" || value === null) {
+		if (value === null) {
+			return propertyDefinition(label, "Configuration", description, { kind: "literal", type: "null" });
+		}
+		if (Object.prototype.toString.call(value) === "[object Array]") {
 			return propertyDefinition(label, "Configuration", description, { kind: "literal", type: "array" });
 		}
 		return propertyDefinition(label, "Configuration", description, { kind: "text", type: "string" });
@@ -2310,6 +2345,7 @@
 	}
 
 	function normalizeFrontendComponentInstanceNode(node) {
+		if (node && node.sourceVersion === 2) return node;
 		if (!node || !node.sourceMutationPath) {
 			return node;
 		}
@@ -2342,7 +2378,7 @@
 
 	function frontendAuthoringPathSegment(node, index) {
 		node = node || {};
-		var stableId = node.props && node.props.id;
+		var stableId = node.sourceVersion === 2 ? node.id : node.props && node.props.id;
 		if (node.sourceExplicitId === false) {
 			stableId = null;
 		} else if (stableId === undefined || stableId === null || String(stableId) === "") {
@@ -2410,7 +2446,7 @@
 			return frontendAuthoringPropertyDefinitions(node);
 		});
 		var order = measureFrontendAuthoring("propertyOrder", function () {
-			return frontendAuthoringPropertyOrder(node);
+			return frontendAuthoringPropertyOrder(node, definitions);
 		});
 		var info = measureFrontendAuthoring("info", function () {
 			return insertMutationPath
@@ -2464,6 +2500,17 @@
 		}
 		if (node.sourcePropertyMutationPaths && typeof node.sourcePropertyMutationPaths === "object") {
 			info.sourcePropertyMutationPaths = normalizeTree(node.sourcePropertyMutationPaths);
+		}
+		if (node.sourceVersion === 2) {
+			var codec = env.sourceAttributeNameCodec();
+			var paths = {};
+			Object.keys(node.sourcePropertyMutationPaths || {}).forEach(function (name) {
+				paths[codec.encode("property", name)] = node.sourcePropertyMutationPaths[name];
+			});
+			["id", "disabled", "comment", "out"].forEach(function (name) {
+				paths[codec.encode("engine", name)] = node.sourceMutationPath + "." + name;
+			});
+			info.sourcePropertyMutationPaths = paths;
 		}
 		return info;
 	}
@@ -2639,6 +2686,10 @@
 			}
 		});
 		var props = node && node.props || {};
+		if (node.sourceVersion === 2) {
+			out.props = normalizeTree(props);
+			return out;
+		}
 		Object.keys(props).forEach(function (key) {
 			if (key !== "kind" && key !== "tag" && out[key] === undefined) {
 				out[key] = props[key];
@@ -2660,6 +2711,7 @@
 		});
 		var cacheKey = measureFrontendAuthoring("propertyDefinitions.cacheKey", function () {
 			return JSON.stringify([
+				node.sourceVersion || 1,
 				visualNode,
 				String(node && node.kind || ""),
 				String(node && node.type || ""),
@@ -2672,6 +2724,7 @@
 			return frontendAuthoringPropertyDefinitionsCache[cacheKey];
 		}
 		var definitions = measureFrontendAuthoring("propertyDefinitions.resolve", function () {
+			if (node.sourceVersion === 2) return frontendSourceV2PropertyDefinitions(node);
 			var resolved = frontendAuthoringBasePropertyDefinitions(visualNode);
 			var known = frontendKnownPropertyDefinitions();
 			Object.keys(extra || {}).forEach(function (key) {
@@ -2700,6 +2753,26 @@
 		} catch (ignored) {
 		}
 		frontendAuthoringPropertyDefinitionsCache[cacheKey] = definitions;
+		return definitions;
+	}
+
+	function frontendSourceV2PropertyDefinitions(node) {
+		var codec = env.sourceAttributeNameCodec();
+		var extra = node.propertyDefinitions || {};
+		var props = node.props || {};
+		var definitions = {};
+		Object.keys(Object.assign({}, props, extra)).forEach(function (name) {
+			var key = codec.encode("property", name);
+			var descriptor = extra[name] || { type: typeof props[name] === "boolean" ? "boolean" : "string" };
+			definitions[key] = frontendPropertyDefinition(name, descriptor);
+			definitions[key].definitionPath = "props." + name;
+		});
+		var engineFields = env.nodeEngineProperties();
+		["id", "disabled", "comment", "out"].forEach(function (name) {
+			var key = codec.encode("engine", name);
+			definitions[key] = normalizeTree(engineFields[name]);
+			definitions[key].definitionPath = name;
+		});
 		return definitions;
 	}
 
@@ -2765,6 +2838,7 @@
 	}
 
 	function frontendAuthoringPropertyVisible(node, key) {
+		if (node && node.sourceVersion === 2) return true;
 		key = String(key || "");
 		if (key !== "requestable" && key !== "parameters") {
 			return true;
@@ -2779,7 +2853,12 @@
 		return kind === "frontendBackendCall" || type === "backendCall";
 	}
 
-	function frontendAuthoringPropertyOrder(node) {
+	function frontendAuthoringPropertyOrder(node, definitions) {
+		if (node && node.sourceVersion === 2) {
+			return ["$$id", "$$disabled", "$$comment", "$$out"].concat(Object.keys(definitions).filter(function (name) {
+				return ["$$id", "$$disabled", "$$comment", "$$out"].indexOf(name) < 0;
+			}));
+		}
 		var preferred = ["id", "kind", "type", "tag", "title", "label", "text", "route", "segment", "param", "matcher",
 			"directive", "event", "clientAction", "backendCall", "requestable", "parameters", "source", "value",
 			"path", "name", "condition", "expression", "test", "context", "index",
@@ -3352,7 +3431,7 @@
 					shallow[key] = node[key];
 				}
 				});
-				var nodeInformation = mergeSourceInfo(nodeInfo(nodeAnalysis, catalog), sourceInfo, sourceNodePath);
+				var nodeInformation = mergeSourceInfo(bindNodePropertyPaths(nodeInfo(nodeAnalysis, catalog), node, catalog), sourceInfo, sourceNodePath);
 				if (parentSlot) nodeInformation.parentSlot = parentSlot;
 				if (catalog && catalog.traits) nodeInformation.traits = normalizeTree(catalog.traits);
 				var slots = projectedBackendSlots(node, catalog, sourceNodePath || nodePath);
@@ -4315,10 +4394,13 @@
 			addContracts(children, definition.contracts, "contracts");
 			addBindings(children, definition.bindings, "bindings");
 			var flowMeta = definition.flow || definition._flow || {};
-			addFlowSchema(children, definition.inputs || definition.input || flowMeta.inputs || flowMeta.input,
-				"inputs", "inputs", "Inputs");
-			addFlowSchema(children, definition.outputs || definition.output || flowMeta.outputs || flowMeta.output,
-				"outputs", "outputs", "Outputs");
+			if (flowMeta.config !== undefined) addConfig(children, flowMeta.config, "flow.config", {}, request);
+			[["inputs", "input", "Inputs"], ["outputs", "output", "Outputs"]].forEach(function (entry) {
+				var owner = flowMeta[entry[0]] || flowMeta[entry[1]] ? flowMeta : definition;
+				var key = owner[entry[0]] ? entry[0] : entry[1];
+				var path = (owner === flowMeta ? (definition.flow ? "flow." : "_flow.") : "") + key;
+				addFlowSchema(children, owner[key], path, entry[0], entry[2]);
+			});
 			addHelpers(children, definition.helpers || [], "helpers", activeBlocks, analysisById,
 				request.sourceFile || request.sourcePath || "");
 			// Instances are edited in this Flow, not in the library defining their block.
@@ -6603,6 +6685,15 @@
 		if (nodeId) {
 			var location = locateSingleNode(root, blocks, nodeId, "nodeId");
 			var property = mutationPropertyName(mutation);
+			if (property && root.flow && root.flow.sourceVersion === 2) {
+				var attribute = env.sourceAttributeNameCodec().resolve(String(property), ["id", "disabled", "comment", "out"]);
+				return location.parts.concat(attribute.namespace === "engine" ? [attribute.name] : ["props", attribute.name]);
+			}
+			// A property mutation addresses the declared payload, not a colliding
+			// node attribute. Explicit paths still address structural metadata.
+			if (property && location.node.props && Object.prototype.hasOwnProperty.call(location.node.props, property)) {
+				return location.parts.concat(["props", String(property)]);
+			}
 			return property ? location.parts.concat([String(property)]) : location.parts;
 		}
 		return [];
@@ -6904,7 +6995,7 @@
 			raise("PROJECT_RESOURCES_UNAVAILABLE", "Project Flow resources are unavailable.",
 				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
 		}
-		var file = new File(base, "libs/flow/engine.yaml");
+		var file = new File(base, env.sourcePaths.path("engine.yaml"));
 		var fallback = "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n";
 		var oldSource = request.engineSource !== undefined && request.engineSource !== null && String(request.engineSource).trim()
 			? String(request.engineSource)
@@ -6945,7 +7036,7 @@
 		return {
 			ok: true,
 			target: "engine",
-			path: "libs/flow/engine.yaml",
+			path: env.sourcePaths.path("engine.yaml"),
 			sourceFile: String(file.getAbsolutePath()),
 			source: source,
 			oldHash: env.sha256Hex ? env.sha256Hex(oldSource) : "",
@@ -7247,7 +7338,11 @@
 		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
 	}
 
-	function firstNodeOutputFromNode(node, catalog, property) {
+	function firstNodeOutputFromNode(node, catalog, property, sourceVersion) {
+		if (sourceVersion === 2 && (!property || property === "$$out" || property === "out")) {
+			var route = env.nodeOutputPath(node, 2);
+			return route ? { property: "$$out", path: route } : null;
+		}
 		var props = catalog && catalog.props || {};
 		var writes = catalog && catalog.writes || [];
 		var keys = [];
@@ -7318,10 +7413,13 @@
 		var effectiveNodeId = nodeId || nodePath(node);
 		var nodeInfo = byId[String(effectiveNodeId)] || null;
 		var property = String(request.property || request.output || "");
+		var sourceVersion = definition.flow && definition.flow.sourceVersion || 1;
+		// This API addresses output schema roles, not business inputs.
+		if (sourceVersion === 2 && property === "out") property = "$$out";
 		var output = nodePointer
-			? firstNodeOutputFromNode(node, catalog, property)
+			? firstNodeOutputFromNode(node, catalog, property, sourceVersion)
 			: firstNodeOutput(nodeInfo, property);
-		output = output || firstNodeOutput(nodeInfo, property) || firstNodeOutputFromNode(node, catalog, property);
+		output = output || firstNodeOutput(nodeInfo, property) || firstNodeOutputFromNode(node, catalog, property, sourceVersion);
 		if (!property) {
 			property = output && output.property || "out";
 		}
@@ -7330,9 +7428,10 @@
 			raise("NODE_OUTPUT_PATH_UNKNOWN", "The node output path could not be inferred.",
 				null, "Pass path/outPath or select a node property that writes to a scope path.");
 		}
-		var declaredSchema = declaredPropertyOutputSchema(catalog, property);
+		var schemaProperty = property === "$$out" ? "out" : property;
+		var declaredSchema = declaredPropertyOutputSchema(catalog, schemaProperty);
 		var staticSchema = outputPath ? schemaForAnalysisPath(analysis, outputPath) : null;
-		var learnedSchema = readOutputSchema(request, definition, node, property, outputPath);
+		var learnedSchema = readOutputSchema(request, definition, node, schemaProperty, outputPath);
 		var selected = selectedSchemaSource(request, declaredSchema, staticSchema, learnedSchema, { preferDeclared: false });
 		if (action === "adopt") {
 			var adoptedSchema = request.schema !== undefined && request.schema !== null
@@ -7342,7 +7441,7 @@
 				raise("NODE_OUTPUT_SCHEMA_EMPTY", "No usable node output schema is available to adopt.",
 					null, "Run the Flow first, choose source:\"static\" or source:\"learned\", or pass schema:{...}.");
 			}
-			var written = writeOutputSchema(request, definition, node, property, outputPath, objectSchema(adoptedSchema));
+			var written = writeOutputSchema(request, definition, node, schemaProperty, outputPath, objectSchema(adoptedSchema));
 			return {
 				ok: true,
 				action: "adopt",
@@ -7362,7 +7461,7 @@
 			};
 		}
 		if (action === "remove" || action === "reset") {
-			var removed = deleteOutputSchema(request, definition, node, property, outputPath);
+			var removed = deleteOutputSchema(request, definition, node, schemaProperty, outputPath);
 			return {
 				ok: true,
 				action: action === "reset" ? "reset" : "remove",

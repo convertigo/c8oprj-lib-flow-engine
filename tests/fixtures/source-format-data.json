@@ -1,0 +1,22 @@
+[
+  {
+    "name": "nested-data-order-and-explicit-defaults",
+    "value": {"z": 0, "a": false, "empty": "", "nil": null, "rows": [{"id": 5, "disabled": false}], "object": {}, "array": []},
+    "expected": ["{", "  \"z\": 0,", "  \"a\": false,", "  \"empty\": \"\",", "  \"nil\": null,", "  \"rows\": [", "    {", "      \"id\": 5,", "      \"disabled\": false,", "    },", "  ],", "  \"object\": {},", "  \"array\": [],", "}"]
+  },
+  {
+    "name": "complete-source-reference",
+    "value": {"mode": "source", "source": {"category": "fullsync", "actionId": "read", "scopeId": "orders", "operation": "get"}, "path": [{"kind": "property", "name": "id"}]},
+    "expected": ["{", "  \"mode\": \"source\",", "  \"source\": {", "    \"category\": \"fullsync\",", "    \"actionId\": \"read\",", "    \"scopeId\": \"orders\",", "    \"operation\": \"get\",", "  },", "  \"path\": [", "    {", "      \"kind\": \"property\",", "      \"name\": \"id\",", "    },", "  ],", "}"]
+  },
+  {
+    "name": "empty-containers",
+    "value": [{}, []],
+    "expected": ["[", "  {},", "  [],", "]"]
+  },
+  {
+    "name": "literal-escapes-are-not-reindented",
+    "value": {"$id": "first\n  second", "$$id": "\"quoted\" \\ slash ` ${raw} é"},
+    "expected": ["{", "  \"$id\": \"first\\n  second\",", "  \"$$id\": \"\\\"quoted\\\" \\\\ slash ` ${raw} é\",", "}"]
+  }
+]

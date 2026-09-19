@@ -389,7 +389,7 @@
 		var limit = Math.max(1, Math.min(Number(request.limit || 200), 500));
 		var icons = [];
 		var seen = {};
-		collectIconifyIcons(env.projectDir() ? new env.File(env.projectDir(), "libs/flow") : null, "project", provider, icons, seen, env);
+		collectIconifyIcons(env.projectDir() ? new env.File(env.projectDir(), env.sourcePaths.root) : null, "project", provider, icons, seen, env);
 		collectIconifyIcons(env.engineDir(), "core", provider, icons, seen, env);
 		icons.sort(function (a, b) {
 			return String(a.id).localeCompare(String(b.id));

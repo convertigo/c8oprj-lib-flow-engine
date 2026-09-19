@@ -9,7 +9,7 @@
 		},
 
 		analyze: function (ctx, node) {
-			var out = ctx.props(node).out || "local.text";
+			var out = ctx.outputPath(node) || "local.text";
 			ctx.addPath(out);
 			if (ctx.addSchema) {
 				ctx.addSchema(out, { type: "string" });

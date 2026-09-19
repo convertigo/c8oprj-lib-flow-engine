@@ -50,7 +50,7 @@
 			}
 		}
 		env.raise("UNKNOWN_FRAGMENT", "Unknown Flow fragment: " + name,
-			null, "Create libs/flow/fragments/" + env.fragmentFileName(name) + " in the current project.");
+			null, "Create " + env.sourcePaths.path("fragments/" + env.fragmentFileName(name)) + " in the current project.");
 	}
 
 	function readFragment(name, env) {

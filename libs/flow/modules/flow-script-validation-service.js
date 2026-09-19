@@ -10,6 +10,16 @@
 		return node ? node[key] : undefined;
 	}
 
+	function businessPropertyKeys(node, slots, env) {
+		var keys = env.flowScriptArgKeys(node, slots).filter(function (key) {
+			return key !== "id" && key !== "comment";
+		});
+		Object.keys(node.props || {}).forEach(function (key) {
+			if (keys.indexOf(key) === -1) keys.push(key);
+		});
+		return keys;
+	}
+
 	function templateExpressions(value, env) {
 		var out = [];
 		if (typeof value !== "string") {
@@ -80,7 +90,7 @@
 		env.flowScriptSlotNames(blocks, node).forEach(function (slot) {
 			slotMap[slot] = true;
 		});
-		env.flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
+		businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
 			var descriptor = props[key] || (catalog.dynamicProperties === true ? catalog.additionalProperties || {} : {});
 			var value = flowScriptPropertyValue(node, key);
 			if (descriptor.kind === "expression") {
@@ -172,8 +182,8 @@
 					env.flowScriptSlotNames(activeBlocks, node).forEach(function (slot) {
 						slotMap[slot] = true;
 					});
-					env.flowScriptArgKeys(node, Object.keys(slotMap)).forEach(function (key) {
-						if (key !== "id" && key !== "comment" && key !== "out" && !props[key] && !acceptsAdditionalProperties) {
+					businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
+						if (key !== "out" && !props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
 							diagnostics.push({
 								severity: "error",
@@ -614,7 +624,8 @@
 			var source = env.sourceForFlowRequest(request);
 			code = env.renderFlowScript(blocks, request.name || request.flowName || "Flow", source, request);
 		}
-		var definition = env.parseFlowScript(blocks, code);
+		var definition = env.parseFlowScript(blocks, code, request.blockMode === true
+			? { sourceVersion: request.sourceVersion } : undefined);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = [].concat(definition.__flowScriptDiagnostics || [], validateDefinition(blocks, definition, env, request.target || "backend"));
 		inputContractDiagnostics(definition, request).forEach(function (diagnostic) {
