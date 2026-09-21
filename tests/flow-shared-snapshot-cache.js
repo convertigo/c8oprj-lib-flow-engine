@@ -4,7 +4,7 @@ const path = require("path");
 const vm = require("vm");
 
 function load(name) {
-	return vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../libs/flow/modules", name), "utf8"), {});
+	return vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../_flow/modules", name), "utf8"), {});
 }
 
 const runtime = load("flow-runtime-service.js");

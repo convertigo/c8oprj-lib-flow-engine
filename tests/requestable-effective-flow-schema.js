@@ -8,7 +8,7 @@ const dbo = {
   getName: () => 'sample', getFlowSource: () => 'source'
 };
 const service = vm.runInNewContext(fs.readFileSync(path.join(__dirname,
-  '../libs/flow/modules/requestable-service.js'), 'utf8'), {
+  '../_flow/modules/requestable-service.js'), 'utf8'), {
   Packages: { com: { twinsoft: { convertigo: { engine: { Engine: { theApp: {
     databaseObjectsManager: { getDatabaseObjectByQName: () => dbo }
   } } } } } } }

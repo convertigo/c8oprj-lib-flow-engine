@@ -2,7 +2,7 @@
 	var File = Packages.java.io.File;
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
-	var engineDir = String(new File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+	var engineDir = String(new File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 	var runtime = eval(String(FileUtils.readFileToString(
 		new File(engineDir, "modules/flow-runtime-service.js"), "UTF-8")));
 	var snapshotService = eval(String(FileUtils.readFileToString(

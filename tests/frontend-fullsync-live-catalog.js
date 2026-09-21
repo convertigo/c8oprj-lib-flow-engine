@@ -1,4 +1,4 @@
-var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var projectDirFile = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"),
@@ -29,8 +29,8 @@ var engineSource = [
 	"  frontbuilder:",
 	"    svelte:",
 	"      target: svelte5",
-	"      resourceRoot: libs/flow/frontbuilder/svelte",
-	"      modelPath: libs/flow/frontbuilder/svelte/model/LiveFullSync.flow.svelte",
+	"      resourceRoot: _flow/frontbuilder/svelte",
+	"      modelPath: _flow/frontbuilder/svelte/model/LiveFullSync.flow.svelte",
 	""
 ].join("\n");
 var contract = JSON.parse(engine.authoringContract(JSON.stringify({

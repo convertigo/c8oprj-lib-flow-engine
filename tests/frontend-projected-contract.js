@@ -1,4 +1,4 @@
-var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsoluteFile();
+var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsoluteFile();
 var files = Packages.org.apache.commons.io.FileUtils;
 var service = eval(String(files.readFileToString(new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8")));
 var project = java.nio.file.Files.createTempDirectory("flow-projected-contract-").toFile();

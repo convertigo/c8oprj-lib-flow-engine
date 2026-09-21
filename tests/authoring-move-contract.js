@@ -1,4 +1,4 @@
-var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsoluteFile();
+var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsoluteFile();
 var service = eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/flow-tree-service.js"), "UTF-8")));
 function clone(value) { return JSON.parse(JSON.stringify(value)); }

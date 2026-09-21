@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const source = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/scope-path-utils.js"), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "../_flow/modules/scope-path-utils.js"), "utf8");
 const paths = vm.runInNewContext(source, {});
 let resultChecks = 0;
 const env = {

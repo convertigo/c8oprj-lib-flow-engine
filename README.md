@@ -5,7 +5,7 @@ Experimental Convertigo project used by the Flow POC.
 The Java kernel resolves `lib_flow_engine.Engine` to:
 
 ```text
-libs/flow/Engine.js
+_flow/Engine.js
 ```
 
 `Engine.js` exposes:
@@ -39,7 +39,7 @@ immutable execution plan instead of the authoring worker state.
 For source control, a Convertigo `Flow` should not serialize its full source as an escaped bean property. On the `spike-flowscript` branch, FlowScript is the preferred canonical sidecar in the owning project:
 
 ```text
-libs/flows/<FlowName>.flow.js
+_flow/flows/<FlowName>.flow.js
 ```
 
 The loader only accepts this `.flow.js` sidecar. Legacy `libs/flows/<FlowName>.flow.yaml` sidecars were used during the spike migration and must not be treated as a runtime fallback. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
@@ -48,7 +48,7 @@ The runtime core is intentionally small. Concrete behavior is implemented by
 block descriptors in:
 
 ```text
-libs/flow/blocks/*.block.js
+_flow/blocks/*.block.js
 ```
 
 Control flow is also implemented as blocks, for example `if` and `forEach`.
@@ -79,7 +79,7 @@ function decorate({ input, config, result }) {
 ```
 
 The block id is derived from the path, for example
-`libs/flow/blocks/demo/decorate.block.js` becomes `demo.decorate`.
+`_flow/blocks/demo/decorate.block.js` becomes `demo.decorate`.
 
 Rhino-backed blocks use the same `*.block.js` file: `_meta.runtime` declares
 `"rhino"` and the body is an IIFE returning `run`. Legacy `*.block.yaml`
@@ -97,7 +97,7 @@ composite block, then the parent Flow continues normally.
 The `fragment.use` block expands a reusable graph inline from:
 
 ```text
-<current-project>/libs/flow/fragments/<FragmentName>.fragment.yaml
+<current-project>/_flow/fragments/<FragmentName>.fragment.yaml
 ```
 
 A fragment is not a requestable and does not create a new scope. It behaves like
@@ -110,17 +110,17 @@ At runtime, the engine loads blocks and optional shared helper libraries from
 two places:
 
 ```text
-lib_flow_engine/libs/flow/blocks/**/*.block.js # core block definitions
-<current-project>/libs/flow/blocks/**/*.block.js # project-local block definitions
-<current-project>/libs/flow/fragments/*.fragment.yaml # project-local fragments
-lib_flow_engine/libs/flow/lib/*.js         # core helper libraries
-<current-project>/libs/flow/lib/*.js      # project-local helper libraries
-<current-project>/libs/flow/resources/**/* # editable docs/data resources
+lib_flow_engine/_flow/blocks/**/*.block.js # core block definitions
+<current-project>/_flow/blocks/**/*.block.js # project-local block definitions
+<current-project>/_flow/fragments/*.fragment.yaml # project-local fragments
+lib_flow_engine/_flow/lib/*.js         # core helper libraries
+<current-project>/_flow/lib/*.js      # project-local helper libraries
+<current-project>/_flow/resources/**/* # editable docs/data resources
 ```
 
 Project-local blocks are meant for application-specific vocabulary. They cannot
 silently override core blocks; a name collision is reported as an error.
-Blocks can call `ctx.lib("name")` to load `libs/flow/lib/name.js` once per Flow
+Blocks can call `ctx.lib("name")` to load `_flow/lib/name.js` once per Flow
 execution context. Blocks should declare that dependency with `uses: [name]` so
 the library is visible in the catalog/treeview and patchable through MCP. When a reusable behavior has a clear input/output contract,
 prefer a block over a helper library: blocks can be used in Flow graphs and can
@@ -142,7 +142,7 @@ It is the project anchor for:
 The Java object stays intentionally small. Its editable YAML body is stored in:
 
 ```text
-<current-project>/libs/flow/engine.yaml
+<current-project>/_flow/engine.yaml
 ```
 
 Example:
@@ -232,7 +232,7 @@ analyzing their children. This is useful for structural blocks such as
 metadata.
 
 The FlowEngine virtual tree also exposes `Catalog / Types`. Types are
-first-class engine descriptors stored as `libs/flow/types/*.type.yaml`: docs,
+first-class engine descriptors stored as `_flow/types/*.type.yaml`: docs,
 validation/read/write hooks and web editor fragments belong there. Block
 property descriptors reference this vocabulary with `kind`, and the catalog can
 still keep usage counts as secondary information.
@@ -250,8 +250,8 @@ Use `tools/migrate-flow-js-canonical.sh` during the spike to report existing
 pairs and, once a `.flow.js` sibling exists, remove obsolete YAML sidecars:
 
 ```bash
-tools/migrate-flow-js-canonical.sh /path/to/Project/libs/flows
-tools/migrate-flow-js-canonical.sh --remove-yaml /path/to/Project/libs/flows
+tools/migrate-flow-js-canonical.sh /path/to/Project/_flow/flows
+tools/migrate-flow-js-canonical.sh --remove-yaml /path/to/Project/_flow/flows
 ```
 
 Use `tools/migrate-block-js-canonical.py` to validate or migrate project-local
@@ -316,7 +316,7 @@ Compiler/debug core blocks:
 This is meant to compare `Flow MCP blocks` versus `FlowScript via MCP` on the
 same benchmark, not to freeze a final DSL.
 
-Type editors are standard web components loaded from `libs/flow/types/editors`.
+Type editors are standard web components loaded from `_flow/types/editors`.
 For a property `kind: "path"`, the host looks for `flow-path-editor`; for
 `kind: "requestable"`, it looks for `flow-requestable-editor`, and so on. The
 Java side only provides the JxBrowser host and a small bridge.
@@ -376,14 +376,14 @@ files when they exist in the provider project's cache.
 Generated icon caches are intentionally ignored by Git:
 
 ```text
-libs/flow/icons/iconify/<provider>/<name>.svg
-libs/flow/icons/iconify/<provider>/<name>_16x16.png
-libs/flow/icons/iconify/<provider>/<name>_32x32.png
-libs/flow/icons/url/<sha256>.<ext>
+_flow/icons/iconify/<provider>/<name>.svg
+_flow/icons/iconify/<provider>/<name>_16x16.png
+_flow/icons/iconify/<provider>/<name>_32x32.png
+_flow/icons/url/<sha256>.<ext>
 ```
 
 For example, `mdi:power` resolves to
-`libs/flow/icons/iconify/mdi/power_16x16.png` when the cache has been
+`_flow/icons/iconify/mdi/power_16x16.png` when the cache has been
 populated. Run `tools/generate-mdi-icon-cache.js` to populate the local cache
 from an Iconify MDI `icons.json` pack. The tool reuses Convertigo's
 `convertigo-svg-icons` Batik converter, so generated PNGs follow the same path
@@ -550,15 +550,15 @@ APIs:
 The writable surface is intentionally narrow:
 
 ```text
-libs/flow/blocks/**/*.js
-libs/flow/blocks/**/*.block.js
-libs/flow/fragments/**/*.fragment.yaml
-libs/flow/lib/**/*.js
-libs/flow/resources/**/*.{md,txt,json,yaml,yml}
-libs/flow/resources/property-editor.{css,html,js}
-libs/flow/types/**/*.type.yaml
-libs/flow/types/**/*.js
-libs/flow/types/editors/**/*.{html,css,js}
+_flow/blocks/**/*.js
+_flow/blocks/**/*.block.js
+_flow/fragments/**/*.fragment.yaml
+_flow/lib/**/*.js
+_flow/resources/**/*.{md,txt,json,yaml,yml}
+_flow/resources/property-editor.{css,html,js}
+_flow/types/**/*.type.yaml
+_flow/types/**/*.js
+_flow/types/editors/**/*.{html,css,js}
 ```
 
 Flow graph changes should still use `flow-edit`/`flow-set` mutations. Resource
@@ -645,8 +645,8 @@ that path for response bodies. Stored files contain only types and object keys,
 never response values:
 
 ```text
-libs/flow/schemas/<flowName>/result.out.schema.json
-libs/flow/schemas/<flowName>/<nodeId>.out.schema.json
+_flow/schemas/<flowName>/result.out.schema.json
+_flow/schemas/<flowName>/<nodeId>.out.schema.json
 ```
 
 If a file exists, it is reused and never overwritten by normal runtime
@@ -806,7 +806,7 @@ contract resolves to `WeatherTemperatureMock` without changing the `use` call
 site.
 
 `WeatherProjectBinding` demonstrates a project-level binding override coming
-from `libs/flow/engine.yaml`.
+from `_flow/engine.yaml`.
 
 ## Current smoke scenario
 
@@ -842,7 +842,7 @@ java -cp /Users/nicolas/git/convertigo/engine/build/libs/dependencies-8.5.0-beta
   org.mozilla.javascript.tools.shell.Main \
   -version 200 \
   /Users/nicolas/git/lib_flow_engine/tests/smoke.js \
-  /Users/nicolas/git/lib_flow_engine/libs/flow
+  /Users/nicolas/git/lib_flow_engine/_flow
 ```
 
 When the project is loaded in Convertigo, the inline runtime validation can be

@@ -1,4 +1,4 @@
-var engineDir = new java.io.File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-source-parser-").toFile();
 var __flowProjectDir = String(project.getAbsolutePath());

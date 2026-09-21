@@ -1,4 +1,4 @@
-var engineDir = arguments.length > 0 ? arguments[0] : "libs/flow";
+var engineDir = arguments.length > 0 ? arguments[0] : "_flow";
 var serviceFile = new java.io.File(engineDir, "modules/response-budget-service.js");
 var serviceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(serviceFile, "UTF-8"));
 var service = eval(serviceSource);

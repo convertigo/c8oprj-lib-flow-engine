@@ -1,0 +1,61 @@
+const _meta = {
+  "sourceVersion": 2,
+  "version": 1,
+  "private": true,
+  "icon": "mdi:cached",
+  "tags": [
+    "cache",
+    "runtime",
+    "diagnostic",
+  ],
+  "description": "Returns Flow Engine runtime cache diagnostics.",
+  "properties": {
+    "out": {
+      "label": "out",
+      "kind": "path",
+      "mode": "write",
+      "default": "local.cache",
+      "description": "Scope path receiving cache diagnostics.",
+    },
+  },
+  "outputs": {
+    "out": {
+      "type": "object",
+      "properties": {
+        "runtimeId": {
+          "type": "string",
+        },
+        "startedAt": {
+          "type": "string",
+        },
+        "threadName": {
+          "type": "string",
+        },
+        "engineDir": {
+          "type": "string",
+        },
+        "activeProjectDir": {
+          "type": "string",
+        },
+        "caches": {
+          "type": "object",
+        },
+      },
+    },
+  },
+  "runtime": "rhino",
+  "hooks": {
+    "file": "info.hooks.js",
+  },
+}
+
+(function () {
+	return {
+		run: function (ctx, node) {
+			var props = ctx.props(node);
+			var info = ctx.cacheInfo();
+			ctx.write(ctx.outputPath(node) || "local.cache", info);
+			return info;
+		}
+	};
+}())

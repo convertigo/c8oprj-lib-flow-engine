@@ -3,12 +3,12 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const engineSource = fs.readFileSync(path.join(root, "libs/flow/Engine.js"), "utf8");
+const engineSource = fs.readFileSync(path.join(root, "_flow/Engine.js"), "utf8");
 const match = engineSource.match(/var sharedEngineModuleNames = "([^"]*)";/);
 assert(match, "Engine.js must declare its explicit shared module contract");
 
 const shared = new Set(match[1].split("|").filter(Boolean));
-const modulesDir = path.join(root, "libs/flow/modules");
+const modulesDir = path.join(root, "_flow/modules");
 const moduleNames = fs.readdirSync(modulesDir).filter((name) => name.endsWith(".js")).sort();
 const stateful = new Set(["flow-code-service.js", "flow-runtime-service.js"]);
 const auditedClosureDeclarations = {

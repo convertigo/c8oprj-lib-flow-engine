@@ -19,7 +19,7 @@ const tsxCli = path.join(resourceRoot, "node_modules/tsx/dist/cli.mjs");
 assert.ok(fs.statSync(tsxCli).isFile(), "frontbuilder tsx dependency is unavailable");
 
 const serviceSource = fs.readFileSync(path.join(__dirname,
-	"../libs/flow/modules/frontend-provider-service.js"), "utf8");
+	"../_flow/modules/frontend-provider-service.js"), "utf8");
 const service = vm.runInNewContext(serviceSource, {});
 const env = {
 	canonical: (value) => fs.realpathSync(value),

@@ -1,5 +1,5 @@
 // Standalone Rhino tests of the shared AST boundary, not a new production dialect.
-var root = new java.io.File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var root = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 function module(name) {
 	return eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(root, "modules/" + name), "UTF-8")));
 }

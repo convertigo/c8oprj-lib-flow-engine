@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/runtime-handle-utils.js"), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "../_flow/modules/runtime-handle-utils.js"), "utf8");
 const runtimeHandles = vm.runInNewContext(source, {});
 const env = {
 	raise(code, message) {

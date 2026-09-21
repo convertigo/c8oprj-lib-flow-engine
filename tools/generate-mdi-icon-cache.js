@@ -6,9 +6,9 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
-const flowDir = path.join(root, "libs/flow");
+const flowDir = path.join(root, "_flow");
 const blocksDir = path.join(flowDir, "blocks");
-const outDir = path.join(root, "libs/flow/icons/iconify/mdi");
+const outDir = path.join(root, "_flow/icons/iconify/mdi");
 
 function mdiJsonPath() {
 	const explicit = process.argv[2] || process.env.ICONIFY_MDI_JSON;

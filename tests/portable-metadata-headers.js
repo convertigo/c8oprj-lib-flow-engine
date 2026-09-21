@@ -1,5 +1,5 @@
 // Same boundary/value corpus in Rhino and the frontend provider; never eval metadata.
-var root = new java.io.File(arguments[0] || 'libs/flow').getCanonicalFile();
+var root = new java.io.File(arguments[0] || '_flow').getCanonicalFile();
 var __flowEngineDir = String(root.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory('flow-portable-meta-').toFile();
 var __flowProjectDir = String(project.getAbsolutePath());

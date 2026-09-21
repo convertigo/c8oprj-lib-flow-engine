@@ -1,4 +1,4 @@
-var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var moduleFile = new java.io.File(engineDir, "modules/runtime-handle-utils.js");
 var moduleSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(moduleFile, "UTF-8"));
 var primitiveFastPath =

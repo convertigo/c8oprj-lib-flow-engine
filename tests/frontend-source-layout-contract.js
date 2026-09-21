@@ -1,7 +1,7 @@
 // Rhino -> compiled Node provider contract on isolated projects, no live migration.
 var File = java.io.File;
 var files = Packages.org.apache.commons.io.FileUtils;
-var sourceRoot = new File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var sourceRoot = new File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var providerRoot = String(java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || "");
 if (!providerRoot || !new File(providerRoot, "provider-dist/frontDocumentCli.mjs").isFile()) {
 	throw new Error("Set FLOW_FRONTBUILDER_RESOURCE_ROOT to a compiled provider before running this test.");

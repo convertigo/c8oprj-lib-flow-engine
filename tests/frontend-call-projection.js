@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync(require('node:path').join(__dirname, '../libs/flow/Engine.js'), 'utf8');
+const source = fs.readFileSync(require('node:path').join(__dirname, '../_flow/Engine.js'), 'utf8');
 const start = source.indexOf('function describeFrontendDocument(request)');
 const end = source.indexOf('\n\tfunction prewarmFrontendDocumentServer', start);
 assert.ok(start > 0 && end > start);

@@ -6,7 +6,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname,
-	"../libs/flow/modules/frontend-provider-service.js"), "utf8");
+	"../_flow/modules/frontend-provider-service.js"), "utf8");
 const service = vm.runInNewContext(source, {});
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "flow-provider-service-"));
 let clock = 1_800_000_000;

@@ -20,8 +20,8 @@ function assert(condition, message) {
 }
 
 const root = path.resolve(__dirname, "..");
-const cacheUtils = loadModule(path.join(root, "libs/flow/modules/cache-utils.js"));
-const expressions = loadModule(path.join(root, "libs/flow/modules/expression-utils.js"));
+const cacheUtils = loadModule(path.join(root, "_flow/modules/cache-utils.js"));
+const expressions = loadModule(path.join(root, "_flow/modules/expression-utils.js"));
 const tokenCache = cacheUtils.createBoundedMapState(32);
 const programCache = cacheUtils.createBoundedMapState(32);
 const env = {

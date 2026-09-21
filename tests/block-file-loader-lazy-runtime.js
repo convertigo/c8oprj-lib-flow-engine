@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const loaderSource = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/block-file-loader-service.js"), "utf8");
+const loaderSource = fs.readFileSync(path.join(__dirname, "../_flow/modules/block-file-loader-service.js"), "utf8");
 const loader = vm.runInNewContext(loaderSource, {});
 
 function file(name) {

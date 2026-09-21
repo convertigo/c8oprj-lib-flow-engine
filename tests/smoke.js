@@ -1,4 +1,4 @@
-var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var __flowEngineDir = String(new java.io.File(engineDir).getAbsolutePath());
@@ -860,9 +860,9 @@ var referencedProjectDir = new java.io.File(projectDirFile.getParentFile(), "c8o
 if (referencedProjectDir.isDirectory()) {
 	Packages.org.apache.commons.io.FileUtils.deleteDirectory(referencedProjectDir);
 }
-var referencedBlocksDir = new java.io.File(referencedProjectDir, "libs/flow/blocks/process");
+var referencedBlocksDir = new java.io.File(referencedProjectDir, "_flow/blocks/process");
 referencedBlocksDir.mkdirs();
-var referencedComponentsDir = new java.io.File(referencedProjectDir, "libs/flow/frontbuilder/svelte/components");
+var referencedComponentsDir = new java.io.File(referencedProjectDir, "_flow/frontbuilder/svelte/components");
 referencedComponentsDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	new java.io.File(referencedProjectDir, "c8oProject.yaml"),
@@ -1352,7 +1352,7 @@ var helperFlowScriptSource = [
 	"}",
 	""
 ].join("\n");
-var helperSourceFile = new java.io.File(projectDirFile, "libs/flows/HelperSyntaxSmoke.flow.js");
+var helperSourceFile = new java.io.File(projectDirFile, "_flow/flows/HelperSyntaxSmoke.flow.js");
 helperSourceFile.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(helperSourceFile, helperFlowScriptSource, "UTF-8");
 var helperValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
@@ -1471,7 +1471,7 @@ var createdResourceBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	implementationSource: resourceBlockImplementationSource
 })));
 assertTrue(createdResourceBlock.blockId === "resource.echo", "blockCreate did not prepare a resource block");
-assertTrue(new java.io.File(projectDirFile, "libs/flow/blocks/resource/echo.block.js").isFile(),
+assertTrue(new java.io.File(projectDirFile, "_flow/blocks/resource/echo.block.js").isFile(),
 	"blockCreate did not write the canonical block code file");
 var createdResourceBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
 	name: "resource.echo",
@@ -1482,7 +1482,7 @@ assertTrue(createdResourceBlockGet.format === "blockjs" &&
 	createdResourceBlockGet.implementationSource.indexOf("return \"ok\"") !== -1,
 	"blockGet did not expose canonical block code sources");
 var themeResourceFile = new java.io.File(projectDirFile,
-	"libs/flow/frontbuilder/svelte/model/Smoke/src/theme.flow.css");
+	"_flow/frontbuilder/svelte/model/Smoke/src/theme.flow.css");
 themeResourceFile.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(themeResourceFile, [
 	"@layer flow.theme {",
@@ -1491,7 +1491,7 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(themeResourceFile, [
 	""
 ].join("\n"), "UTF-8");
 var themeResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/frontbuilder/svelte/model/Smoke/src/theme.flow.css"
+	path: "_flow/frontbuilder/svelte/model/Smoke/src/theme.flow.css"
 })));
 assertTrue(themeResourceGet.kind === "frontendStyle" &&
 	themeResourceGet.content.indexOf("--flow-color-primary") !== -1,
@@ -1502,7 +1502,7 @@ var resourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	hints: false
 })));
 assertTrue(resourceSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/blocks/resource/echo.block.js";
+	return resource.path === "_flow/blocks/resource/echo.block.js";
 }), "resourceSearch did not find the project block source");
 var budgetedResourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	query: "resource",
@@ -1526,16 +1526,16 @@ var resumedResourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 assertTrue(resumedResourceSearch.ok === true,
 	"resource search did not resume from its opaque scan cursor");
 var resourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/blocks/resource/echo.block.js"
+	path: "_flow/blocks/resource/echo.block.js"
 })));
 assertTrue(resourceGet.hash && resourceGet.content.indexOf("return \"ok\";") !== -1,
 	"resourceGet did not return content and hash");
 var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
-	path: "libs/flow/blocks/resource/echo.block.js",
+	path: "_flow/blocks/resource/echo.block.js",
 	baseHash: resourceGet.hash,
 	patch: [
-		"--- a/libs/flow/blocks/resource/echo.block.js",
-		"+++ b/libs/flow/blocks/resource/echo.block.js",
+		"--- a/_flow/blocks/resource/echo.block.js",
+		"+++ b/_flow/blocks/resource/echo.block.js",
 		"@@ -13,7 +13,7 @@",
 		" \t\trun: function () {",
 		"-\t\t\treturn \"ok\";",
@@ -1548,7 +1548,7 @@ var resourcePatch = JSON.parse(engine.resourcePatch(JSON.stringify({
 assertTrue(resourcePatch.ok === true && resourcePatch.changed === true && resourcePatch.validation.ok === true,
 	"resourcePatch did not patch and validate the project block source");
 var patchedResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/blocks/resource/echo.block.js"
+	path: "_flow/blocks/resource/echo.block.js"
 })));
 assertTrue(patchedResourceGet.content.indexOf("patched ok") !== -1,
 	"resourcePatch did not persist the patched source");
@@ -1581,7 +1581,7 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: readResource",
 		"    block: resource.get",
-		"    path: libs/flow/blocks/resource/echo.block.js",
+		"    path: _flow/blocks/resource/echo.block.js",
 		"    out: result.resource",
 		""
 	].join("\n"),
@@ -1590,7 +1590,7 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 assertTrue(resourceGetRun.result.resource.content.indexOf("patched ok") !== -1,
 	"resource.get block did not read project Flow resources");
 var alternateResourceProject = new java.io.File(__flowProjectDir, ".resource-target");
-var alternateResourceFile = new java.io.File(alternateResourceProject, "libs/flow/resources/target.txt");
+var alternateResourceFile = new java.io.File(alternateResourceProject, "_flow/resources/target.txt");
 alternateResourceFile.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(alternateResourceFile, "target project resource", "UTF-8");
 var targetedResourceGetRun = JSON.parse(engine.run(JSON.stringify({
@@ -1600,7 +1600,7 @@ var targetedResourceGetRun = JSON.parse(engine.run(JSON.stringify({
 		"  - id: readTargetResource",
 		"    block: resource.get",
 		"    projectDir: " + JSON.stringify(String(alternateResourceProject.getAbsolutePath())),
-		"    path: libs/flow/resources/target.txt",
+		"    path: _flow/resources/target.txt",
 		"    out: result.resource",
 		""
 	].join("\n"),
@@ -1630,9 +1630,9 @@ var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 	includeTrace: false
 })));
 assertTrue(resourceSearchRun.result.search.resources.some(function (resource) {
-	return resource.path === "libs/flow/blocks/resource/echo.block.js";
+	return resource.path === "_flow/blocks/resource/echo.block.js";
 }), "resource.search block did not find project Flow resources");
-var docsDir = new java.io.File(projectDirFile, "libs/flow/resources/guide");
+var docsDir = new java.io.File(projectDirFile, "_flow/resources/guide");
 docsDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	new java.io.File(docsDir, "start.md"), "# Start\n\nFlow documentation resource.", "UTF-8");
@@ -1642,30 +1642,30 @@ var docResourceSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	hints: false
 })));
 assertTrue(docResourceSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/resources/guide/start.md";
+	return resource.path === "_flow/resources/guide/start.md";
 }), "resourceSearch did not include project Flow documentation resources");
 var docResourceGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/resources/guide/start.md"
+	path: "_flow/resources/guide/start.md"
 })));
 assertTrue(docResourceGet.content.indexOf("Flow documentation resource.") !== -1,
 	"resourceGet did not read project Flow documentation resources");
-var propertyEditorHostDir = new java.io.File(projectDirFile, "libs/flow/resources");
+var propertyEditorHostDir = new java.io.File(projectDirFile, "_flow/resources");
 propertyEditorHostDir.mkdirs();
 var propertyEditorHostFile = new java.io.File(propertyEditorHostDir, "property-editor.css");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	propertyEditorHostFile, ":root { --flow-editor-bg: canvas; }\n", "UTF-8");
 var propertyEditorHostGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/resources/property-editor.css"
+	path: "_flow/resources/property-editor.css"
 })));
 assertTrue(propertyEditorHostGet.kind === "propertyEditorHost" &&
 	propertyEditorHostGet.content.indexOf("--flow-editor-bg") !== -1,
 	"resourceGet did not expose the canonical property editor host assets");
 var propertyEditorHostPatch = JSON.parse(engine.resourcePatch(JSON.stringify({
-	path: "libs/flow/resources/property-editor.css",
+	path: "_flow/resources/property-editor.css",
 	baseHash: propertyEditorHostGet.hash,
 	patch: [
-		"--- a/libs/flow/resources/property-editor.css",
-		"+++ b/libs/flow/resources/property-editor.css",
+		"--- a/_flow/resources/property-editor.css",
+		"+++ b/_flow/resources/property-editor.css",
 		"@@ -1 +1 @@",
 		"-:root { --flow-editor-bg: canvas; }",
 		"+:root { --flow-editor-bg: light-dark(white, black); }"
@@ -1704,7 +1704,7 @@ var publicAssetReadOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify(
 })));
 assertTrue(publicAssetReadOutputSchema.schema.properties.content.type === "string",
 	"asset.read did not publish its textual output schema");
-var flowEngineConfigFile = new java.io.File(projectDirFile, "libs/flow/engine.yaml");
+var flowEngineConfigFile = new java.io.File(projectDirFile, "_flow/engine.yaml");
 flowEngineConfigFile.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowEngineConfigFile, [
 	"version: 1",
@@ -1719,20 +1719,20 @@ var projectConfigSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	hints: false
 })));
 assertTrue(projectConfigSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/engine.yaml" && resource.kind === "projectConfig";
+	return resource.path === "_flow/engine.yaml" && resource.kind === "projectConfig";
 }), "resourceSearch did not include project Flow engine config");
 var projectConfigGet = JSON.parse(engine.resourceGet(JSON.stringify({
-	path: "libs/flow/engine.yaml"
+	path: "_flow/engine.yaml"
 })));
 assertTrue(projectConfigGet.kind === "projectConfig" &&
 	projectConfigGet.content.indexOf("engineQName: lib_flow_engine.Engine") !== -1,
 	"resourceGet did not read project Flow engine config");
 var projectConfigPatch = JSON.parse(engine.resourcePatch(JSON.stringify({
-	path: "libs/flow/engine.yaml",
+	path: "_flow/engine.yaml",
 	baseHash: projectConfigGet.hash,
 	patch: [
-		"--- a/libs/flow/engine.yaml",
-		"+++ b/libs/flow/engine.yaml",
+		"--- a/_flow/engine.yaml",
+		"+++ b/_flow/engine.yaml",
 		"@@ -1,4 +1,6 @@",
 		" version: 1",
 		" engineQName: lib_flow_engine.Engine",
@@ -1798,7 +1798,7 @@ var canonicalHooksJs = [
 	"}())",
 	""
 ].join("\n");
-var canonicalBlocksDir = new java.io.File(projectDirFile, "libs/flow/blocks");
+var canonicalBlocksDir = new java.io.File(projectDirFile, "_flow/blocks");
 var canonicalDir = new java.io.File(canonicalBlocksDir, "canonical");
 canonicalDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
@@ -1861,7 +1861,7 @@ var createdFlowBackedBlock = JSON.parse(engine.blockCodeSet(JSON.stringify({
 })));
 assertTrue(createdFlowBackedBlock.ok === true &&
 	createdFlowBackedBlock.block && createdFlowBackedBlock.block.blockId === "smoke.flowBacked" &&
-	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/flowBacked.block.js").isFile(),
+	new java.io.File(projectDirFile, "_flow/blocks/smoke/flowBacked.block.js").isFile(),
 	"blockCreate did not write the canonical FlowScript block code file");
 var frontendOnlyCodeSource = [
 	"const _meta = {",
@@ -1924,7 +1924,7 @@ var frontendPatch = JSON.parse(engine.blockCodePatch(JSON.stringify({
 assertTrue(frontendPatch.ok === true && frontendPatch.oldRevision === frontendRead.revision,
 	"blockCodePatch did not update revision-checked browser code");
 var finalizedFrontendDescriptor = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
-	new java.io.File(projectDirFile, "libs/flow/blocks/smoke/normalize.block.js"), "UTF-8"));
+	new java.io.File(projectDirFile, "_flow/blocks/smoke/normalize.block.js"), "UTF-8"));
 assertTrue(finalizedFrontendDescriptor.indexOf('"mock": true') === -1 &&
 	finalizedFrontendDescriptor.indexOf('"mock"') === -1 &&
 	finalizedFrontendDescriptor.indexOf("Generated Flow mock") === -1,
@@ -1989,7 +1989,7 @@ assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
 	name: "smoke.sourceMutation",
 	code: sourceMutationBlockSource
 }))).ok === true, "blockCodeSet did not create sourceMutation");
-var sourceMutationFile = new java.io.File(projectDirFile, "libs/flow/blocks/smoke/sourceMutation.block.js");
+var sourceMutationFile = new java.io.File(projectDirFile, "_flow/blocks/smoke/sourceMutation.block.js");
 var sourceMutationResponse = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(sourceMutationFile.getAbsolutePath()),
 	sourcePath: String(sourceMutationFile.getAbsolutePath()),
@@ -2239,7 +2239,7 @@ assertTrue(String(xmlParseCatalogBlock.description || "").indexOf("enclosure.att
 	"xml.parse compact catalog description did not document the XML attribute shape");
 var xmlParseSchemaFlowName = "XmlParseSchemaLearn";
 var xmlParseSchemaFile = new java.io.File(projectDirFile,
-	"libs/flow/schemas/" + xmlParseSchemaFlowName + "/parseFeed.out.schema.json");
+	"_flow/schemas/" + xmlParseSchemaFlowName + "/parseFeed.out.schema.json");
 var xmlParseFlowSource = [
 		"version: 1",
 		"nodes:",
@@ -2285,7 +2285,7 @@ var xmlParseEnvelopeRun = JSON.parse(engine.run(JSON.stringify({
 		"    block: xml.parse",
 		"    text:",
 		"      content: \"<rss />\"",
-		"      path: libs/flow/resources/feed.xml",
+		"      path: _flow/resources/feed.xml",
 		"    out: local.feed",
 		""
 	].join("\n"),
@@ -2500,7 +2500,7 @@ assertTrue(callBlockRun.result.call.value === "Ada" &&
 	callBlockRun.result.call.returned === "still-running" &&
 	callBlockRun.result.call.afterReturn === undefined,
 	"ctx.callBlock did not isolate props/local/return state");
-var libDir = new java.io.File(projectDirFile, "libs/flow/lib");
+var libDir = new java.io.File(projectDirFile, "_flow/lib");
 libDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(libDir, "smoke.js"), [
 	"(function () {",
@@ -2545,7 +2545,7 @@ var createdLibBlock = JSON.parse(engine.blockCreate(JSON.stringify({
 	implementationSource: libBackedBlockImplementationSource
 })));
 assertTrue(createdLibBlock.blockId === "smoke.lib", "blockCreate did not create a library-backed block");
-var flowDir = new java.io.File(projectDirFile, "libs/flows");
+var flowDir = new java.io.File(projectDirFile, "_flow/flows");
 flowDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(flowDir, "ChildSmoke.flow.js"), [
 	"function ChildSmoke({ input, config, result }) {",
@@ -2572,7 +2572,7 @@ var flowCallRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(flowCallRun.result.child.message === "Hello from lib",
 	"flow.call did not execute a child Flow sidecar with project library support");
-var fragmentDir = new java.io.File(projectDirFile, "libs/flow/fragments");
+var fragmentDir = new java.io.File(projectDirFile, "_flow/fragments");
 fragmentDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(fragmentDir, "DecorateMessage.fragment.yaml"), [
 	"version: 1",
@@ -2620,10 +2620,10 @@ var resourceLibSearch = JSON.parse(engine.resourceSearch(JSON.stringify({
 	hints: false
 })));
 assertTrue(resourceLibSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/lib/smoke.js";
+	return resource.path === "_flow/lib/smoke.js";
 }), "resourceSearch did not include project Flow libraries");
 assertTrue(resourceLibSearch.resources.some(function (resource) {
-	return resource.path === "libs/flow/fragments/DecorateMessage.fragment.yaml";
+	return resource.path === "_flow/fragments/DecorateMessage.fragment.yaml";
 }), "resourceSearch did not include project Flow fragments");
 var propertyEditor = JSON.parse(engine.propertyEditor("{}"));
 var propertyEditorCompactHtml = propertyEditor.html.replace(/\s+/g, "");
@@ -3026,7 +3026,7 @@ var schemaChoiceFlowSource = [
 	"      - stable",
 	""
 ].join("\n");
-var schemaChoiceDir = new java.io.File(projectDirFile, "libs/flow/schemas/SchemaChoiceSmoke");
+var schemaChoiceDir = new java.io.File(projectDirFile, "_flow/schemas/SchemaChoiceSmoke");
 schemaChoiceDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(schemaChoiceDir, "result.out.schema.json"), JSON.stringify({
 	type: "object",
@@ -3280,7 +3280,7 @@ debugPrint(JSON.stringify(throwRun));
 assertTrue(throwRun.ok === false && throwRun.error.code === "WEATHER_ALERT_ERROR",
 	"Flow throw did not produce a structured error");
 
-var fixtureUrl = new java.io.File(new java.io.File(engineDir).getParentFile().getParentFile(), "fixtures/weather-alert.json").toURI().toURL().toString();
+var fixtureUrl = new java.io.File(new java.io.File(engineDir).getParentFile(), "fixtures/weather-alert.json").toURI().toURL().toString();
 var weatherUrl = new java.lang.String(fixtureUrl);
 var apiKey = new java.lang.String("demo-key");
 var threshold = new java.lang.String("35");
@@ -3399,7 +3399,7 @@ debugPrint(engine.run(JSON.stringify({
 	}
 })));
 var schemaFlowName = "WeatherSchemaLearn";
-var schemaFile = new java.io.File(projectDirFile, "libs/flow/schemas/" + schemaFlowName + "/fetchWeather.out.schema.json");
+var schemaFile = new java.io.File(projectDirFile, "_flow/schemas/" + schemaFlowName + "/fetchWeather.out.schema.json");
 assertTrue(!schemaFile.isFile(), "Learned schema should not exist before the first named run");
 var schemaLearnRun = JSON.parse(engine.run(JSON.stringify({
 	flowName: schemaFlowName,
@@ -4008,7 +4008,7 @@ assertTrue(readLineRun.ok === true &&
 	readLineRun.result.second.eof === false,
 	"file.readLine did not read individual lines from the reader handle");
 
-var smokeFlowsDir = new java.io.File(projectDirFile, "libs/flows");
+var smokeFlowsDir = new java.io.File(projectDirFile, "_flow/flows");
 smokeFlowsDir.mkdirs();
 var namedGreetingFlowSource = [
 	"function NamedGreeting({ input, config, result }) {",
@@ -4152,7 +4152,7 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	contractProjectImplementationSource,
 	"UTF-8"
 );
-var smokeFlowEngineDir = new java.io.File(projectDirFile, "libs/flow");
+var smokeFlowEngineDir = new java.io.File(projectDirFile, "_flow");
 smokeFlowEngineDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	new java.io.File(smokeFlowEngineDir, "engine.yaml"),
@@ -4167,7 +4167,7 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	].join("\n"),
 	"UTF-8"
 );
-var frontendRoot = new java.io.File(projectDirFile, "libs/flow/frontbuilder/svelte");
+var frontendRoot = new java.io.File(projectDirFile, "_flow/frontbuilder/svelte");
 var frontendUiDir = new java.io.File(frontendRoot, "ui/project");
 frontendUiDir.mkdirs();
 var frontendComponentsDir = new java.io.File(frontendRoot, "components");
@@ -4243,8 +4243,8 @@ var frontendEngineSource = [
 	"  frontbuilder:",
 	"    svelte:",
 	"      target: svelte5",
-	"      resourceRoot: libs/flow/frontbuilder/svelte",
-	"      modelPath: libs/flow/frontbuilder/svelte/model/App.front.json",
+	"      resourceRoot: _flow/frontbuilder/svelte",
+	"      modelPath: _flow/frontbuilder/svelte/model/App.front.json",
 	""
 ].join("\n");
 var bareFrontendPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
@@ -4518,8 +4518,8 @@ var flowSvelteEngineSource = [
 	"  frontbuilder:",
 	"    svelte:",
 	"      target: svelte5",
-	"      resourceRoot: libs/flow/frontbuilder/svelte",
-	"      modelPath: libs/flow/frontbuilder/svelte/model/AstSmoke/src/routes/+page.flow.svelte",
+	"      resourceRoot: _flow/frontbuilder/svelte",
+	"      modelPath: _flow/frontbuilder/svelte/model/AstSmoke/src/routes/+page.flow.svelte",
 	""
 ].join("\n");
 var flowSvelteTree = JSON.parse(engine.describeTree(JSON.stringify({
@@ -5204,8 +5204,8 @@ var configVisibilityEngineSource = [
 	"  frontbuilder:",
 	"    svelte:",
 	"      target: svelte5",
-	"      resourceRoot: libs/flow/frontbuilder/svelte",
-	"      modelPath: libs/flow/frontbuilder/svelte/model/AstSmoke/src/routes/+page.flow.svelte",
+	"      resourceRoot: _flow/frontbuilder/svelte",
+	"      modelPath: _flow/frontbuilder/svelte/model/AstSmoke/src/routes/+page.flow.svelte",
 	""
 ].join("\n");
 var configVisibilityTree = JSON.parse(engine.describeTree(JSON.stringify({

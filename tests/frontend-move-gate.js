@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
-const engine = path.resolve(__dirname, '../libs/flow');
+const engine = path.resolve(__dirname, '../_flow');
 const provider = process.env.FLOW_SVELTE_PROVIDER_ROOT;
 assert.ok(provider, 'Set FLOW_SVELTE_PROVIDER_ROOT to the built Svelte provider directory');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-move-gate-'));

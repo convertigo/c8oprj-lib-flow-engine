@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: migrate-flow-js-canonical.sh [--remove-yaml] <libs/flows-dir>
+Usage: migrate-flow-js-canonical.sh [--remove-yaml] <_flow/flows-dir>
 
 Marks existing .flow.js files as canonical for the FlowScript spike.
 Without --remove-yaml it only reports pairs. With --remove-yaml it deletes

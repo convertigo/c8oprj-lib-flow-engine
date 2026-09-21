@@ -7,7 +7,7 @@ This project is the experimental Flow runtime used by Convertigo `Flow` objects.
 Convertigo Java resolves:
 
 ```text
-lib_flow_engine.Engine -> libs/flow/Engine.js
+lib_flow_engine.Engine -> _flow/Engine.js
 ```
 
 `Engine.js` returns a JavaScript object exposing:
@@ -32,7 +32,7 @@ On the `spike-flowscript` branch, the preferred project representation is a
 FlowScript sidecar:
 
 ```text
-libs/flows/<FlowName>.flow.js
+_flow/flows/<FlowName>.flow.js
 ```
 
 Legacy `libs/flows/<FlowName>.flow.yaml` sidecars were migration artifacts and
@@ -41,16 +41,15 @@ escaped `flowSource` content inside Convertigo YAML. Treat the Java bean
 property as an in-memory bridge for Studio/editor services; the source file is
 the human/LLM-friendly representation.
 
-Source-layout migration is staged, not active. `modules/source-layout.js`
-centralizes the project root and Flow sidecar directory. The live Java bridge
-supplies the publication gate as bootstrap-only `__flowSourceLayout` from
-`FlowSourceLayout.current()`; standalone/older bridges use the module's
-`current` default. Both remain `legacy` until the whole chain is ready.
+`modules/source-layout.js` centralizes the project root and Flow sidecar
+directory. The live Java bridge supplies the bootstrap-only
+`__flowSourceLayout` from `FlowSourceLayout.current()`; standalone use follows
+the module's canonical `_flow` default.
 Backend loaders, config, resources, shared-block discovery, writers and the
 Engine-side frontend catalog consume this contract through their env.
 Do not select a layout by testing whether `_flow` exists, merge two source
-trees, or add a per-request MCP switch. A single coordinated publication will
-move `libs/flow` to `_flow` and `libs/flows` to `_flow/flows`.
+trees, or add a per-request MCP switch. Canonical source is `_flow`, with Flow
+sidecars under `_flow/flows`; legacy layout exists only in isolated fixtures.
 The core resource root remains explicitly supplied by the Java bridge.
 
 `tests/source-layout-contract.js` copies the Engine into a temporary fixture
@@ -60,9 +59,7 @@ including stale-revision rejection and refusal to read the inactive tree.
 It also covers frontend creation directories, referenced component identity,
 write protection and fingerprint roots. Java working copies and the bootstrap
 handoff have separate `FlowSourceLayoutTest` coverage in Convertigo.
-Neither suite proves interactive Studio, Node frontend generation in `_flow`,
-packaging or HTTP protection. Those consumers and the `.httpignore` proof must be completed
-before enabling the new root or migrating real projects. Backend memory drafts
+Neither suite proves interactive Studio or Node frontend generation. Backend memory drafts
 are runtime-local; never add them to the shared Engine module registry.
 
 ## FlowScript Spike
@@ -172,10 +169,10 @@ Avoid:
 
 ## Architecture
 
-Keep `libs/flow/Engine.js` small. It should:
+Keep `_flow/Engine.js` small. It should:
 
 - parse the request and FlowScript source;
-- load canonical blocks from `libs/flow/blocks/**/*.block.js`;
+- load canonical blocks from `_flow/blocks/**/*.block.js`;
 - prepare scopes;
 - execute nodes in order;
 - delegate each node to its block;
@@ -237,8 +234,8 @@ iterator blocks like `file.forEachLine` consuming the handle and exposing
 Blocks are loaded from the core engine first, then from the current project:
 
 ```text
-lib_flow_engine/libs/flow/blocks/**/*.block.js
-<current-project>/libs/flow/blocks/**/*.block.js
+lib_flow_engine/_flow/blocks/**/*.block.js
+<current-project>/_flow/blocks/**/*.block.js
 ```
 
 Use `*.block.js` for block definitions on this spike. It is the canonical
@@ -275,7 +272,7 @@ without recursively analyzing those children, put `analyzeShallow(ctx, node)` in
 the hooks file. Use it for structural blocks such as `json.object` that can
 publish their own `out` schema from direct child metadata.
 
-The block id comes from the file path: `libs/flow/blocks/demo/decorate.block.js`
+The block id comes from the file path: `_flow/blocks/demo/decorate.block.js`
 is `demo.decorate`. Legacy `*.block.yaml` descriptors were migration artifacts
 and are no longer a runtime fallback. For Rhino/native escape hatches, use the
 same `*.block.js` shape with `_meta.runtime = "rhino"` and an IIFE returning
@@ -325,10 +322,10 @@ debugging or migration only; it should not be the default authoring path because
 it weakens schemas and recreates SequenceJS-style hidden logic.
 
 Use `fragment.use` when the behavior is graph-shaped and should stay visible in
-the tree. Fragments live in `libs/flow/fragments/<Name>.fragment.yaml`, execute
+the tree. Fragments live in `_flow/fragments/<Name>.fragment.yaml`, execute
 inline in the current scopes, and are expanded by analysis/tree/picker APIs.
 
-Use `libs/flow/resources/**/*` for project-local documentation or data files
+Use `_flow/resources/**/*` for project-local documentation or data files
 that should be searchable and patchable by agents without becoming executable
 code. The `flow-resource-*` APIs accept `.md`, `.txt`, `.json`, `.yaml` and
 `.yml` files under that directory.
@@ -338,7 +335,7 @@ boundary or new input/output contract is needed.
 Project-wide Flow defaults are read from:
 
 ```text
-<current-project>/libs/flow/engine.yaml
+<current-project>/_flow/engine.yaml
 ```
 
 This file is the sidecar source of the project `FlowEngine` DatabaseObject
@@ -419,7 +416,7 @@ blocks. Use a relative file path such as `./icons/my-block.png` only for custom
 icons that ship next to a project/library block. HTTPS URLs are accepted but
 must be cached locally by the engine/tooling before Studio/Admin display. Icon
 caches are provider-local and ignored by Git, using paths such as
-`libs/flow/icons/iconify/mdi/<name>_16x16.png` plus SVG/32px variants. Generate
+`_flow/icons/iconify/mdi/<name>_16x16.png` plus SVG/32px variants. Generate
 PNG variants with `tools/generate-mdi-icon-cache.js`; it uses Convertigo's
 `convertigo-svg-icons` Batik converter, not ImageMagick.
 
@@ -491,15 +488,15 @@ props:
 
 The engine exposes those property kinds under `Catalog / Types` in the
 FlowEngine virtual tree. Keep this vocabulary small and clear. Type descriptors
-live in `libs/flow/types/*.type.yaml`, and docs, validators, readers, writers and
+live in `_flow/types/*.type.yaml`, and docs, validators, readers, writers and
 web editor fragments should hang from those types instead of one-off Java
 property hacks.
 
-The descriptor file is `libs/flow/types/<name>.type.yaml`. Optional JavaScript
-files under `libs/flow/types` are implementation resources referenced by that
+The descriptor file is `_flow/types/<name>.type.yaml`. Optional JavaScript
+files under `_flow/types` are implementation resources referenced by that
 descriptor; they are not the type contract.
 
-Type editor fragments live in `libs/flow/types/editors`. The generic host maps
+Type editor fragments live in `_flow/types/editors`. The generic host maps
 `kind: "path"` to `flow-path-editor`, `kind: "template"` to
 `flow-template-editor`, etc. Each editor must implement `setState(state)`,
 expose `value`, and emit `flow-value` with `{ value }`. The host assigns
@@ -537,10 +534,10 @@ metadata. The default position is before the target node, so values produced
 later are not suggested.
 
 Schema learning is implicit and file-based. A named Flow writes
-`libs/flow/schemas/<flowName>/result.out.schema.json` for its final result when
+`_flow/schemas/<flowName>/result.out.schema.json` for its final result when
 there is no declared output contract such as `_flow.outputs`, `flow.outputs` or
 `output`. `http.request` and `http.get` write
-`libs/flow/schemas/<flowName>/<nodeId>.out.schema.json` only when that file is
+`_flow/schemas/<flowName>/<nodeId>.out.schema.json` only when that file is
 missing and the run succeeds. These files store structure, not data. Use
 `flow-node-output-schema action:"remove"` for one stale producer schema, or
 `flow-schema-reset` / `Engine.schemaReset()` for broader cleanup before running
@@ -617,7 +614,7 @@ java -cp /Users/nicolas/git/convertigo/engine/build/libs/dependencies-8.5.0-beta
   org.mozilla.javascript.tools.shell.Main \
   -version 200 \
   /Users/nicolas/git/lib_flow_engine/tests/smoke.js \
-  /Users/nicolas/git/lib_flow_engine/libs/flow
+  /Users/nicolas/git/lib_flow_engine/_flow
 ```
 
 Use `AAAProject.WeatherAlertInline` for deterministic runtime validation. It

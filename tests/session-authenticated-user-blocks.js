@@ -6,7 +6,7 @@ const vm = require("vm");
 function implementation(name) {
 	const source = fs.readFileSync(path.join(
 		__dirname,
-		"../libs/flow/blocks/session",
+		"../_flow/blocks/session",
 		`${name}.block.js`
 	), "utf8");
 	return vm.runInNewContext(source.slice(source.indexOf("\n(function") + 1), {});

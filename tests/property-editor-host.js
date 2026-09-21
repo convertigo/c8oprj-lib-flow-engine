@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(path.join(__dirname, "../libs/flow/resources/property-editor.js"), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "../_flow/resources/property-editor.js"), "utf8");
 function host(tag) {
 	const messages = [], listeners = {}, requests = [], domListeners = {};
 	const app = { innerHTML: "", className: "" };

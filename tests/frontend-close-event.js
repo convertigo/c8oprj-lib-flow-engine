@@ -1,4 +1,4 @@
-var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var projectDirFile = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"),
@@ -47,7 +47,7 @@ function sameFile(left, right) {
 		String(new java.io.File(String(right || "")).getCanonicalPath());
 }
 
-var frontendRoot = new java.io.File(projectDirFile, "libs/flow/frontbuilder/svelte");
+var frontendRoot = new java.io.File(projectDirFile, "_flow/frontbuilder/svelte");
 var modelDir = new java.io.File(frontendRoot, "model");
 modelDir.mkdirs();
 var componentFile = new java.io.File(modelDir, "CloseProvider.flow.svelte");
@@ -70,8 +70,8 @@ var engineSource = [
 	"  frontbuilder:",
 	"    svelte:",
 	"      target: svelte5",
-	"      resourceRoot: libs/flow/frontbuilder/svelte",
-	"      modelPath: libs/flow/frontbuilder/svelte/model/CloseProvider.flow.svelte",
+	"      resourceRoot: _flow/frontbuilder/svelte",
+	"      modelPath: _flow/frontbuilder/svelte/model/CloseProvider.flow.svelte",
 	""
 ].join("\n");
 var request = {

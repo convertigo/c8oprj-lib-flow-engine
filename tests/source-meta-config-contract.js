@@ -1,5 +1,5 @@
 // Metadata is static source data; Flow config defaults must reach runtime and picker.
-var engineDir = new java.io.File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-meta-config-").toFile();
 var __flowProjectDir = String(project.getAbsolutePath());
@@ -43,7 +43,7 @@ try {
 	var again = api("flowSourceValidate", { name: "ConfigProof", flowSource: written.source });
 	assert(written.code === again.code, "Metadata writer not idempotent");
 	var projectConfig = { greeting: "Project", service: { host: "project" }, projectOnly: true };
-	files.writeStringToFile(new java.io.File(project, "libs/flow/engine.yaml"), JSON.stringify({ version: 1, config: projectConfig }), "UTF-8");
+	files.writeStringToFile(new java.io.File(project, "_flow/engine.yaml"), JSON.stringify({ version: 1, config: projectConfig }), "UTF-8");
 	engine.cacheClear();
 	var expected = JSON.parse(JSON.stringify(meta.config));
 	expected.greeting = "Request"; expected.service = { host: "project" }; expected.projectOnly = true;

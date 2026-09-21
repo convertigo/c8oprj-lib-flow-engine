@@ -1,5 +1,5 @@
 // Real Engine regression: business data must not become node metadata.
-var engineDir = new java.io.File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-property-chain-").toFile();
 var __flowProjectDir = String(project.getAbsolutePath());
@@ -14,16 +14,16 @@ try {
 		properties[name] = { kind: "value", type: "unknown" };
 	});
 	properties.source = { kind: "expression", type: "unknown" };
-	files.writeStringToFile(new java.io.File(project, "libs/flow/blocks/proof/echo.block.js"),
+	files.writeStringToFile(new java.io.File(project, "_flow/blocks/proof/echo.block.js"),
 		"const _meta = " + JSON.stringify({ version: 1, runtime: "rhino", properties: properties }) + "\n" +
 		"(function () { return { run: function (ctx, node) { var p = ctx.props(node); return { " +
 		"id: ctx.template(p.id), disabled: ctx.template(p.disabled), comment: ctx.template(p.comment), " +
 		"block: ctx.template(p.block), nodes: ctx.template(p.nodes), props: ctx.template(p.props), " +
 		"source: ctx.expr(p.source), value: ctx.template(p.value), out: ctx.template(p.out) }; } }; }())", "UTF-8");
-	files.writeStringToFile(new java.io.File(project, "libs/flow/blocks/proof/graph.block.js"),
+	files.writeStringToFile(new java.io.File(project, "_flow/blocks/proof/graph.block.js"),
 		"const _meta = " + JSON.stringify({ version: 1, runtime: "flow", properties: { id: properties.id, disabled: properties.disabled } }) + "\n" +
 		"function Graph({ input, result }) {\n result.id = input.id\n result.disabled = input.disabled\n return result\n}", "UTF-8");
-	files.writeStringToFile(new java.io.File(project, "libs/flow/blocks/proof/routed.block.js"),
+	files.writeStringToFile(new java.io.File(project, "_flow/blocks/proof/routed.block.js"),
 		"const _meta = " + JSON.stringify({ version: 1, runtime: "flow", properties: { out: properties.out } }) + "\n" +
 		"function Routed({ input, result }) {\n result.businessOut = input.out\n return result\n}", "UTF-8");
 	var engine = eval(read(new java.io.File(engineDir, "Engine.js")));

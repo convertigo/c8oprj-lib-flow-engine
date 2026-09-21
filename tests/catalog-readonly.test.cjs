@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const crypto=require('node:crypto');
-const service=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../libs/flow/modules/catalog-service.js'),'utf8'));
+const service=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../_flow/modules/catalog-service.js'),'utf8'));
 const clone=value=>JSON.parse(JSON.stringify(value));
 const block={name:'proof.item',props:{id:{type:'number'},disabled:{type:'boolean'}},slots:[{name:'then'}],icon:'mdi:variable'};
 function fixture() {

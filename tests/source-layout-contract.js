@@ -1,5 +1,5 @@
 // Exercise both layouts on temporary projects; never activate _flow in the checkout.
-var sourceRoot = new java.io.File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var sourceRoot = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var files = Packages.org.apache.commons.io.FileUtils;
 var File = java.io.File;
 var temp = java.nio.file.Files.createTempDirectory("flow-source-layout-").toFile();
@@ -14,7 +14,7 @@ function write(file, text) { files.forceMkdir(file.getParentFile()); files.write
 function module(name) { return eval(read(new File(sourceRoot, "modules/" + name))); }
 var layouts = module("source-layout.js");
 try {
-	assert(layouts.current.root === "libs/flow", "Migration must not be globally active");
+	assert(layouts.current.root === "_flow", "Canonical layout must be the standalone default");
 	assert(Object.isFrozen(layouts.current), "Layout is immutable shared metadata");
 	var unknownRejected = false;
 	try { layouts.create("_flows"); } catch (e) { unknownRejected = true; }

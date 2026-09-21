@@ -1,7 +1,7 @@
 (function () {
 	var File = Packages.java.io.File;
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
-	var moduleFile = new File(String(arguments[0] || "libs/flow/modules/flow-execution-snapshot-service.js"));
+	var moduleFile = new File(String(arguments[0] || "_flow/modules/flow-execution-snapshot-service.js"));
 	var service = eval(String(FileUtils.readFileToString(moduleFile, "UTF-8")));
 	var snapshot = service.create({
 		flowQName: "Sample.Counter",

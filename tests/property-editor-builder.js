@@ -5,13 +5,13 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname,
-	"../libs/flow/modules/property-editor-builder.js"), "utf8");
+	"../_flow/modules/property-editor-builder.js"), "utf8");
 const builder = vm.runInNewContext(source, {});
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "flow-property-editor-builder-"));
-const bindingEditor = fs.readFileSync(path.join(__dirname, "../libs/flow/types/editors/binding.html"), "utf8");
-const colorEditor = fs.readFileSync(path.join(__dirname, "../libs/flow/types/editors/color.html"), "utf8");
-const themeEditor = fs.readFileSync(path.join(__dirname, "../libs/flow/types/editors/theme.html"), "utf8");
-const propertyEditor = fs.readFileSync(path.join(__dirname, "../libs/flow/resources/property-editor.js"), "utf8");
+const bindingEditor = fs.readFileSync(path.join(__dirname, "../_flow/types/editors/binding.html"), "utf8");
+const colorEditor = fs.readFileSync(path.join(__dirname, "../_flow/types/editors/color.html"), "utf8");
+const themeEditor = fs.readFileSync(path.join(__dirname, "../_flow/types/editors/theme.html"), "utf8");
+const propertyEditor = fs.readFileSync(path.join(__dirname, "../_flow/resources/property-editor.js"), "utf8");
 
 function write(relativePath, content) {
 	const file = path.join(root, relativePath);

@@ -1,5 +1,5 @@
 // Traverse the real Engine: engine output routing must not become business input.
-var engineDir = new java.io.File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-output-contract-").toFile();
 var __flowProjectDir = String(project.getAbsolutePath());
@@ -9,15 +9,15 @@ function assert(value, message) { checks++; if (!value) throw new Error(message)
 function same(actual, expected, message) { assert(JSON.stringify(actual) === JSON.stringify(expected), message + ": " + JSON.stringify(actual)); }
 function write(path, text) { files.writeStringToFile(new java.io.File(project, path), text, "UTF-8"); }
 try {
-	write("libs/flow/blocks/proof/record.block.js", 'const _meta = ' + JSON.stringify({
+	write("_flow/blocks/proof/record.block.js", 'const _meta = ' + JSON.stringify({
 		runtime: "rhino", properties: { id: { kind: "value", type: "number" }, out: { kind: "value", type: "string" }, "$$id": { kind: "value", type: "number" } },
 		outputs: { out: { type: "object", properties: { id: { type: "number" }, out: { type: "string" } } } }
 	}) + '\n(function () { return { run: function (ctx, node) { return ctx.template(ctx.props(node)); } }; }())');
-	write("libs/flow/blocks/proof/invoke.block.js", 'const _meta = { runtime: "rhino", properties: {} }\n' +
+	write("_flow/blocks/proof/invoke.block.js", 'const _meta = { runtime: "rhino", properties: {} }\n' +
 		'(function () { return { run: function (ctx) { var value = ctx.callBlock("proof.record", { id: 7, out: "result.decoy" }, { out: "result.real" }); return value; } }; }())');
-	write("libs/flow/blocks/proof/legacy.block.js", 'const _meta = { runtime: "flow", properties: {} }\n' +
+	write("_flow/blocks/proof/legacy.block.js", 'const _meta = { runtime: "flow", properties: {} }\n' +
 		'function Legacy() {\nresult.id = 7\n}');
-	write("libs/flow/blocks/proof/holder.block.js", 'const _meta = { runtime: "flow", properties: {}, slots: { nodes: { accepts: ["flow.node"] } } }\n' +
+	write("_flow/blocks/proof/holder.block.js", 'const _meta = { runtime: "flow", properties: {}, slots: { nodes: { accepts: ["flow.node"] } } }\n' +
 		'function Holder() {\nresult.id = 7\n}');
 	var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 	function api(name, request) { request.flowName = "OutputProof"; return JSON.parse(engine[name](JSON.stringify(request))); }

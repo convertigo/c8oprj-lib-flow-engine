@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const source = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/flow-runtime-service.js"), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "../_flow/modules/flow-runtime-service.js"), "utf8");
 const runtime = vm.runInNewContext(source, {});
 
 class FakeFile {

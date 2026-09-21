@@ -1,4 +1,4 @@
-var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsoluteFile();
+var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsoluteFile();
 var serviceFile = new java.io.File(engineDir, "modules/icon-service.js");
 var service = eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(serviceFile, "UTF-8")));
 var FileUtils = Packages.org.apache.commons.io.FileUtils;
@@ -9,7 +9,7 @@ function assertTrue(value, message) {
 }
 
 try {
-	var flowDir = new java.io.File(root, "project/libs/flow");
+	var flowDir = new java.io.File(root, "project/_flow");
 	var blockFile = new java.io.File(flowDir, "virtual-icons.js");
 	blockFile.getParentFile().mkdirs();
 	FileUtils.writeStringToFile(blockFile, "", "UTF-8");
@@ -37,7 +37,7 @@ try {
 	assertTrue(new java.io.File(flowDir, "icons/iconify/mdi/test-icon_16x16.png").isFile(),
 		"the restored cache must include the Studio bitmap variant");
 
-	var generatedBlockFile = new java.io.File(root, "second-project/libs/flow/virtual-icons.js");
+	var generatedBlockFile = new java.io.File(root, "second-project/_flow/virtual-icons.js");
 	generatedBlockFile.getParentFile().mkdirs();
 	FileUtils.writeStringToFile(generatedBlockFile, "", "UTF-8");
 	var generatedDescriptor = { icon: "mdi:generated-icon" };

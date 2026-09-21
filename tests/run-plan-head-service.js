@@ -3,8 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const cacheUtilsSource = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/cache-utils.js"), "utf8");
-const serviceSource = fs.readFileSync(path.join(__dirname, "../libs/flow/modules/run-plan-head-service.js"), "utf8");
+const cacheUtilsSource = fs.readFileSync(path.join(__dirname, "../_flow/modules/cache-utils.js"), "utf8");
+const serviceSource = fs.readFileSync(path.join(__dirname, "../_flow/modules/run-plan-head-service.js"), "utf8");
 const cacheUtils = vm.runInNewContext(cacheUtilsSource, {});
 const service = vm.runInNewContext(serviceSource, {});
 

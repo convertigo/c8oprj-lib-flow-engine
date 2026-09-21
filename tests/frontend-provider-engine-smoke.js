@@ -1,4 +1,4 @@
-var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var __flowEngineDir = engineDir;
 var resourceRoot = String(Packages.java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || "");
 if (!resourceRoot) {
@@ -12,7 +12,7 @@ if (root.isDirectory()) {
 	Packages.org.apache.commons.io.FileUtils.deleteDirectory(root);
 }
 var model = new java.io.File(root,
-	"libs/flow/frontbuilder/svelte/model/ProviderSmoke/src/routes/+page.flow.svelte");
+	"_flow/frontbuilder/svelte/model/ProviderSmoke/src/routes/+page.flow.svelte");
 model.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(model, [
 	'<FlowComponent id="home" label="Home">',

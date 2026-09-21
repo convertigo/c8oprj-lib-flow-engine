@@ -1,4 +1,4 @@
-var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsoluteFile();
+var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsoluteFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var __flowProjectDir = String(java.nio.file.Files.createTempDirectory("flow-backend-authoring-").toAbsolutePath());
 function read(name) { return String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, name), "UTF-8")); }

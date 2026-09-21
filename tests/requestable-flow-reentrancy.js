@@ -1,4 +1,4 @@
-var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "libs/flow").getAbsolutePath());
+var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var blockFile = new java.io.File(engineDir, "blocks/requestable/call.block.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(blockFile, "UTF-8"));
 var runtimeSource = source.substring(source.indexOf("\n(function ()"));

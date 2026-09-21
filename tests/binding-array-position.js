@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const html = fs.readFileSync(path.join(__dirname, '../libs/flow/types/editors/binding.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../_flow/types/editors/binding.html'), 'utf8');
 let Editor;
 vm.runInNewContext(html.match(/<script>([\s\S]*)<\/script>/)[1], {
   HTMLElement: class {},

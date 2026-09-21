@@ -1,5 +1,5 @@
 // The dialect belongs to each source, including reusable block implementations.
-var engineDir = new java.io.File(arguments.length ? arguments[0] : "libs/flow").getCanonicalFile();
+var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-block-dialect-").toFile();
 var __flowProjectDir = String(project.getAbsolutePath());
