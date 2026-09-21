@@ -5412,7 +5412,19 @@
 		var resourceProjectName = resourceProjectRoot
 			? String(projectNameForRoot(resourceProjectRoot) || "")
 			: "";
-		return referencedProjectRoots(sourcePaths().path("frontbuilder/svelte"), projectRoot || projectDir())
+		// Supply all portable-block providers explicitly. Their locations need not
+		// be adjacent to the frontend provider (Eclipse links and Git worktrees).
+		var roots = [flowProjectRootFromFlowDir(engineDir())]
+			.concat(referencedProjectRoots(sourcePaths().path("blocks"), projectRoot || projectDir()))
+			.concat(referencedProjectRoots(sourcePaths().path("frontbuilder/svelte"), projectRoot || projectDir()));
+		var seen = {};
+		return roots.filter(function (root) {
+			if (!root) return false;
+			var key = canonicalPath(root);
+			if (seen[key]) return false;
+			seen[key] = true;
+			return true;
+		})
 			.filter(function (root) {
 				return !resourceProjectName || String(projectNameForRoot(root) || "") !== resourceProjectName;
 			});
