@@ -5467,6 +5467,21 @@
 		if (Object.keys(properties).length) {
 			out.properties = properties;
 		}
+		// Documentation travels with every palette item, compact or not: the host only
+		// renders it. One list of properties with label and description, no editor schema.
+		var documentedProperties = [];
+		Object.keys(descriptor.properties || {}).forEach(function (key) {
+			var property = descriptor.properties[key];
+			if (!property || typeof property !== "object" || property.hidden === true) return;
+			documentedProperties.push({
+				name: key,
+				label: String(property.label || key),
+				description: String(property.description || property.shortDescription || "")
+			});
+		});
+		if (documentedProperties.length) {
+			out.documentation = { properties: documentedProperties };
+		}
 		if (!compact) {
 			out.traits = frontendArray(descriptor.traits);
 			out.slots = descriptor.slots || {};
