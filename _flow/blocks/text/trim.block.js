@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-text",
   "description": "Trims leading and trailing whitespace from a scalar value.",
+  "summary": "trim {{text}}",
   "targets": [
     "backend",
     "frontend",

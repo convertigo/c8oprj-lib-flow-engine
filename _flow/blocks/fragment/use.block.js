@@ -6,6 +6,7 @@ const _meta = {
     "composition",
   ],
   "description": "Expands and runs a reusable Flow fragment in the current scopes.",
+  "summary": "use fragment {{fragment}}",
   "longDescription": "A fragment is stored in _flow/fragments/<name>.fragment.yaml and behaves like the nodes were written inline. It has closure-style access to input, config, local, result and current.",
   "slots": [
     {

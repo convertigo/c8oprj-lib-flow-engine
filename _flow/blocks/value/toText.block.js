@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-text",
   "description": "Converts a JSON scalar to text. Null and undefined use the fallback.",
+  "summary": "{{value}} as text",
   "targets": [
     "backend",
     "frontend",

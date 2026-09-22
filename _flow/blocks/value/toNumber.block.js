@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:numeric",
   "description": "Converts a JSON scalar to a finite number, using a fallback when conversion fails.",
+  "summary": "{{value}} as number",
   "targets": [
     "backend",
     "frontend",

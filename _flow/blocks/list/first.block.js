@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-numbered",
   "description": "Returns the first item of an array or a fallback.",
+  "summary": "first of {{items}}",
   "targets": [
     "backend",
     "frontend",

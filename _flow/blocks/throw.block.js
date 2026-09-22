@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:alert-circle-outline",
   "description": "Stops the Flow with a structured error.",
+  "summary": "throw {{code}}: {{message}}",
   "properties": {
     "code": {
       "kind": "text",

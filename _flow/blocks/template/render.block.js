@@ -6,6 +6,7 @@ const _meta = {
     "text",
   ],
   "description": "Renders a text template with Flow expressions.",
+  "summary": "render {{template}}",
   "longDescription": "Replaces {{ expression }} placeholders with values from the current Flow scopes. An exact {{ expression }} keeps the native value type; mixed text produces a string.",
   "properties": {
     "template": {

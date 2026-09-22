@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:key-outline",
   "description": "Reads a value from the current HTTP session.",
+  "summary": "session {{key}}",
   "properties": {
     "key": {
       "label": "key",

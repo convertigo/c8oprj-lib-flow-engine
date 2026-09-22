@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:account-key-outline",
   "description": "Writes a value into the current HTTP session.",
+  "summary": "session {{key}} = {{value}}",
   "properties": {
     "key": {
       "label": "key",

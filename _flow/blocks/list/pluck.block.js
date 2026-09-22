@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-bulleted-type",
   "description": "Extracts one field from each item of an array.",
+  "summary": "{{items}} . {{path}}",
   "targets": [
     "backend",
     "frontend",

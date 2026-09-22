@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:plus",
   "description": "Adds two numbers.",
+  "summary": "{{left}} + {{right}}",
   "targets": [
     "backend",
     "frontend",

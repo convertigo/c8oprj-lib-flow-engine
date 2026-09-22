@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:counter",
   "description": "Adds the numeric values in an array.",
+  "summary": "sum of {{items}}",
   "targets": [
     "backend",
     "frontend",

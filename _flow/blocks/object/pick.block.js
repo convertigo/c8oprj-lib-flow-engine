@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:select-group",
   "description": "Builds an object from selected fields.",
+  "summary": "pick {{keys}} from {{source}}",
   "targets": [
     "backend",
     "frontend",

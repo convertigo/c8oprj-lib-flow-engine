@@ -9,6 +9,7 @@ const _meta = {
     "shortcut",
   ],
   "description": "Shortcut for http.request with method POST.",
+  "summary": "POST {{url}}",
   "outputs": {
     "out": {
       "type": "object",

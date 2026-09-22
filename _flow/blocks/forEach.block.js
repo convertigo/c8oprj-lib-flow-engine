@@ -11,6 +11,7 @@ const _meta = {
     "current",
   ],
   "description": "Runs child nodes once per item and exposes the item as current.",
+  "summary": "for each of {{items}}",
   "slots": [
     {
       "name": "nodes",

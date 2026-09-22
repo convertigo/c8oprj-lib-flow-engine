@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:bug-check-outline",
   "description": "Inspects a value while developing a Flow without changing the final result contract.",
+  "summary": "probe {{label}}",
   "longDescription": "Use this as a temporary probe: it evaluates value, writes it to out when out is set, and returns the same value so code-run traces can show it. Remove probes once the Flow is stable.",
   "properties": {
     "value": {

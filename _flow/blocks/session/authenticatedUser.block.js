@@ -9,6 +9,7 @@ const _meta = {
     "acl",
   ],
   "description": "Reads the authenticated Convertigo user from the current HTTP session.",
+  "summary": "authenticated user",
   "properties": {
     "out": {
       "label": "out",

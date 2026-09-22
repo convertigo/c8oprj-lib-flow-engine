@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:call-split",
   "description": "Chooses one of two numbers from a boolean condition.",
+  "summary": "{{whenTrue}} or {{whenFalse}} when {{condition}}",
   "targets": [
     "backend",
     "frontend",

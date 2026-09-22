@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:trash-can-outline",
   "description": "Removes a value from the current HTTP session.",
+  "summary": "remove session {{key}}",
   "properties": {
     "key": {
       "label": "key",

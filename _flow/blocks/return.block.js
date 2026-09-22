@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:keyboard-return",
   "description": "Stops the Flow and returns a value. Without this block, result is returned implicitly.",
+  "summary": "return {{value}}",
   "longDescription": "Most flows do not need this block because result is returned at the end. Use it only to return early from a branch.",
   "properties": {
     "value": {

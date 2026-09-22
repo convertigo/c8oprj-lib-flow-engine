@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:file-code-outline",
   "description": "Parses YAML text into a native value.",
+  "summary": "parse YAML {{text}}",
   "longDescription": "Parses mappings, lists and scalars without creating Java objects. The result can be consumed directly by standard object and list blocks.",
   "targets": [
     "backend",

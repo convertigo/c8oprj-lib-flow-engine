@@ -6,6 +6,7 @@ const _meta = {
     "control",
   ],
   "description": "Runs the implementation bound to a contract. Falls back to contract.defaultImplementation.",
+  "summary": "use {{contract}}",
   "properties": {
     "contract": {
       "label": "contract",

@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-numbered",
   "description": "Returns the last item of an array or a fallback.",
+  "summary": "last of {{items}}",
   "targets": [
     "backend",
     "frontend",

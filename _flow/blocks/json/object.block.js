@@ -9,6 +9,7 @@ const _meta = {
     "response",
   ],
   "description": "Builds a JSON object from child fields.",
+  "summary": "build object {{out}}",
   "longDescription": "Child json.field nodes write keys into the object. This keeps response structures visible in the Flow tree instead of hiding them in a JSON string.",
   "slots": [
     {

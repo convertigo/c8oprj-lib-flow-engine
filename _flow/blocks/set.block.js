@@ -10,6 +10,7 @@ const _meta = {
     "variable",
   ],
   "description": "Writes a value to a scope path.",
+  "summary": "{{path}} = {{value}}",
   "longDescription": "Use path to choose the destination and value for the content. A value containing only {{ expression }} keeps the native expression type.",
   "properties": {
     "path": {

@@ -9,6 +9,7 @@ const _meta = {
     "error",
   ],
   "description": "Runs child nodes and prevents CacheManager storage if they throw.",
+  "summary": "protect cache",
   "longDescription": "Wrap network and parsing work in this block. If any child throws, the current Flow or Sequence execution is marked unsafe for CacheManager storage before the original error is rethrown. Use cache.preventStore separately for invalid successful responses such as HTTP 403, 429 or 5xx and invalid business contracts.",
   "slots": [
     {

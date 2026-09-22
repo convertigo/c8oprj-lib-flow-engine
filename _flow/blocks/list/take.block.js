@@ -11,6 +11,7 @@ const _meta = {
     "top",
   ],
   "description": "Returns a slice of an array, typically the first N items.",
+  "summary": "take {{count}} of {{items}}",
   "targets": [
     "backend",
     "frontend",

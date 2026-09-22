@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:select-search",
   "description": "Reads a nested value from a JSON object.",
+  "summary": "{{source}} . {{path}}",
   "targets": [
     "backend",
     "frontend",

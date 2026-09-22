@@ -3346,7 +3346,29 @@
 		return active;
 	}
 
+	// Human display of a node in the tree: what the block does with its inputs, not
+	// its technical name. A block declares `_meta.summary` as a template over its
+	// properties ("{{left}} equals {{right}}"); without a template the display is the
+	// block local name followed by the node identity. The icon already tells the family.
+	function summaryPropertyText(value) {
+		if (value === undefined || value === null) return "";
+		if (typeof value === "object") {
+			try { return JSON.stringify(normalizeTree(value)); } catch (e) { return String(value); }
+		}
+		return String(value);
+	}
+
 	function nodeSummary(block, catalog, node, id, blockName) {
+		var props = node && node.props && typeof node.props === "object" ? node.props : {};
+		var template = catalog && typeof catalog.summary === "string" ? catalog.summary : "";
+		if (template) {
+			var rendered = template.replace(/\{\{\s*([A-Za-z0-9_.$]+)\s*\}\}/g, function (match, key) {
+				if (key === "$$id" || key === "id" && props.id === undefined) return String(id);
+				var value = props[key];
+				return value === undefined || value === null || value === "" ? "" : summaryPropertyText(value);
+			}).replace(/\s+/g, " ").trim();
+			if (rendered) return summaryText(rendered);
+		}
 		var label = id;
 		try {
 			if (block && typeof block.displayName === "function") {
@@ -3357,8 +3379,8 @@
 		} catch (e) {
 			label = id;
 		}
-		return "[" + blockName + "] " + summaryText(
-			label && typeof label === "object" ? JSON.stringify(normalizeTree(label)) : label);
+		var localName = String(blockName || "").split(".").pop();
+		return summaryText(localName + " " + summaryPropertyText(label));
 	}
 
 	function addNodeSlots(parent, node, nodePath, catalog, blocks, analysisById, sourceInfo, sourceNodePath) {
@@ -3446,7 +3468,9 @@
 				if (Object.keys(slots).length || catalog && Array.isArray(catalog.slots) && !catalog.slots.length) {
 					nodeInformation.slots = slots;
 				}
-				var nodeObject = virtualNode("node_" + id + "_" + index, "node", blockType, nodePath,
+				// The Studio name of a node is its identity ($$id, unique inside the Flow), as
+				// for any Convertigo object; the positional prefix is only a fallback.
+				var nodeObject = virtualNode(node && node.id ? safeVirtualName("node_" + index, node.id) : "node_" + index, "node", blockType, nodePath,
 					nodeSummary(block, catalog, node, id, blockType), compact(shallow), compact(nodeInformation));
 				parent.children.push(nodeObject);
 				if (node.__graphBlock && node.nodes) {

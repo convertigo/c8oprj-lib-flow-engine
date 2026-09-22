@@ -93,7 +93,7 @@
 
 	function compactPropertyDescriptor(property) {
 		var out = {};
-		["kind", "type", "literalType", "literalOptions", "items", "mode", "default", "description", "properties", "required", "additionalProperties", "enum", "suggestions", "oneOf", "anyOf"].forEach(function (key) {
+		["label", "kind", "type", "literalType", "literalOptions", "items", "mode", "default", "description", "properties", "required", "additionalProperties", "enum", "suggestions", "oneOf", "anyOf"].forEach(function (key) {
 			if (property && property[key] !== undefined && property[key] !== null && property[key] !== "") {
 				out[key] = property[key];
 			}

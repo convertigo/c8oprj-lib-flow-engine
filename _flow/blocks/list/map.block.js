@@ -11,6 +11,7 @@ const _meta = {
     "current",
   ],
   "description": "Builds a new array by evaluating one expression for each current item.",
+  "summary": "{{items}} -> {{select}}",
   "outputs": {
     "out": {
       "type": "array",

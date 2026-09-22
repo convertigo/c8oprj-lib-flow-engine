@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:email-outline",
   "description": "Creates a mock email result without sending anything.",
+  "summary": "mock email to {{to}}",
   "properties": {
     "to": {
       "kind": "template",

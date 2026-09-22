@@ -9,6 +9,7 @@ const _meta = {
     "acl",
   ],
   "description": "Sets the authenticated Convertigo user for the current HTTP session. An empty user clears the identity.",
+  "summary": "authenticate {{user}}",
   "properties": {
     "user": {
       "label": "user",

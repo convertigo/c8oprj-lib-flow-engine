@@ -2,6 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "description": "Parses JSON text without throwing and returns a structured parse result.",
+  "summary": "safely parse {{text}}",
   "targets": [
     "backend",
     "frontend",

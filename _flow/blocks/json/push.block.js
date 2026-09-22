@@ -10,6 +10,7 @@ const _meta = {
     "add",
   ],
   "description": "Pushes a value into an array stored in a scope path.",
+  "summary": "push {{value}} into {{path}}",
   "longDescription": "Use path for the target array and value for the pushed content. A value containing only {{ expression }} keeps the native expression type.",
   "slots": [
     {

@@ -9,6 +9,7 @@ const _meta = {
     "shortcut",
   ],
   "description": "Shortcut for http.request with method PUT.",
+  "summary": "PUT {{url}}",
   "outputs": {
     "out": {
       "type": "object",

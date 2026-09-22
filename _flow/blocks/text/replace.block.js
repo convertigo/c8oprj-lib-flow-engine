@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:find-replace",
   "description": "Replaces literal text without interpreting the search as a regular expression.",
+  "summary": "replace {{search}} by {{replacement}} in {{text}}",
   "targets": [
     "backend",
     "frontend",

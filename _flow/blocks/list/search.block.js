@@ -2,6 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "description": "Keeps array items whose text representation contains a query, with optional limit.",
+  "summary": "search {{query}} in {{items}}",
   "targets": [
     "backend",
     "frontend",

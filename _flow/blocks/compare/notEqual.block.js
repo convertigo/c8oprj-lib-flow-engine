@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:not-equal-variant",
   "description": "Tests strict inequality between two JSON scalar values.",
+  "summary": "{{left}} differs from {{right}}",
   "targets": [
     "backend",
     "frontend",

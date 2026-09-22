@@ -8,6 +8,7 @@ const _meta = {
     "scope",
   ],
   "description": "Runs child nodes with temporary config overrides.",
+  "summary": "with config {{overrides}}",
   "longDescription": "Override config branches for the child slot only. Root keys in the argument object are config branches; then is the child slot. Overrides are deep-merged and the previous config is restored after execution.",
   "slots": [
     {

@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:web",
   "description": "Calls an HTTP endpoint with method, query, headers and optional body.",
+  "summary": "{{method}} {{url}}",
   "outputs": {
     "out": {
       "type": "object",

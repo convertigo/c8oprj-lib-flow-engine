@@ -10,6 +10,7 @@ const _meta = {
     "current",
   ],
   "description": "Keeps only array items matching a boolean expression evaluated with current.*.",
+  "summary": "{{items}} where {{where}}",
   "outputs": {
     "out": {
       "type": "array",

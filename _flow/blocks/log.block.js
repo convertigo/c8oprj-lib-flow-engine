@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:console",
   "description": "Writes a diagnostic message to a Convertigo logger.",
+  "summary": "log {{level}}: {{message}}",
   "properties": {
     "level": {
       "label": "level",

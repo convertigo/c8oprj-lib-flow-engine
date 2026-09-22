@@ -10,6 +10,7 @@ const _meta = {
     "response",
   ],
   "description": "Adds one field to the nearest parent JSON object.",
+  "summary": "{{key}} = {{value}}",
   "slots": [
     {
       "name": "nodes",

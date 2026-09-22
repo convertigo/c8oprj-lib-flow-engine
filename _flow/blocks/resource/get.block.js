@@ -10,6 +10,7 @@ const _meta = {
     "read",
   ],
   "description": "Reads a project-local Flow source resource.",
+  "summary": "read {{path}}",
   "properties": {
     "path": {
       "label": "path",

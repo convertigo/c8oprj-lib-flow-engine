@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:greater-than",
   "description": "Tests whether the left JSON scalar is greater than the right scalar.",
+  "summary": "{{left}} greater than {{right}}",
   "targets": [
     "backend",
     "frontend",

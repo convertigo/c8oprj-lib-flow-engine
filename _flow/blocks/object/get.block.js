@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:key-arrow-right",
   "description": "Reads one value from an object by key or nested path.",
+  "summary": "{{source}} [ {{key}} ]",
   "targets": [
     "backend",
     "frontend",

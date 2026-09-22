@@ -6,6 +6,7 @@ const _meta = {
     "control",
   ],
   "description": "Runs then when condition is truthy, else otherwise.",
+  "summary": "if {{condition}}",
   "slots": [
     {
       "name": "then",

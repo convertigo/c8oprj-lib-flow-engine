@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:counter",
   "description": "Returns the number of items in an array.",
+  "summary": "count {{items}}",
   "targets": [
     "backend",
     "frontend",

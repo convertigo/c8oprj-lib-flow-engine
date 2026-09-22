@@ -6,6 +6,7 @@ const _meta = {
     "flow",
   ],
   "description": "Calls another Flow sidecar without going through Convertigo requestable/XML execution.",
+  "summary": "call {{flow}}",
   "properties": {
     "flow": {
       "label": "flow",

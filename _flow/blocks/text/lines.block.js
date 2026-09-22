@@ -2,6 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "description": "Splits text into clean lines.",
+  "summary": "lines of {{text}}",
   "targets": [
     "backend",
     "frontend",

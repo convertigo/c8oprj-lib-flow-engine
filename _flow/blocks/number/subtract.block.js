@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:minus",
   "description": "Subtracts one number from another.",
+  "summary": "{{left}} - {{right}}",
   "targets": [
     "backend",
     "frontend",

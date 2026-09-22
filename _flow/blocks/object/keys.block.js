@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:key-chain",
   "description": "Returns the keys of an object as an array of strings.",
+  "summary": "keys of {{source}}",
   "targets": [
     "backend",
     "frontend",

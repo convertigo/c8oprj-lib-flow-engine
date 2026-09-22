@@ -48,7 +48,7 @@
 				raise("INVALID_BLOCK_RUNTIME", "Unsupported .block.js runtime: " + runtime,
 					null, "Use runtime: \"flow\" or runtime: \"rhino\" in _meta.");
 			}
-			["sourceVersion", "private", "visibility", "tags", "label", "display", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo", "targets", "effects", "implementations"].forEach(function (key) {
+			["sourceVersion", "private", "visibility", "tags", "label", "display", "summary", "longDescription", "documentation", "slots", "uses", "hooks", "additionalProperties", "dynamicProperties", "mock", "todo", "targets", "effects", "implementations"].forEach(function (key) {
 				if (meta[key] !== undefined) {
 					descriptor[key] = meta[key];
 				}

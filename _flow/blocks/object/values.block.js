@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-bulleted-square",
   "description": "Returns the values of an object as an array.",
+  "summary": "values of {{source}}",
   "targets": [
     "backend",
     "frontend",

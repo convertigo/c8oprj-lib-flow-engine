@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:xml",
   "description": "Parses raw XML text into the Convertigo JSON shape; XML attributes are exposed under attr (for example enclosure.attr.url).",
+  "summary": "parse XML {{text}}",
   "longDescription": "Pass the text returned by asset.read or the content field of a resource envelope. Element attributes are grouped under attr, for example <enclosure url=\"...\"> becomes enclosure.attr.url. This block rejects resource metadata objects so path and content mistakes fail explicitly.",
   "properties": {
     "text": {

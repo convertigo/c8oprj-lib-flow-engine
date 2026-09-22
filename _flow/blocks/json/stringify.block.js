@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:code-json",
   "description": "Serializes a native value as JSON text.",
+  "summary": "stringify {{value}}",
   "targets": [
     "backend",
     "frontend",

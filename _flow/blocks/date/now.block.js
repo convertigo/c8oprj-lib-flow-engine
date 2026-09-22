@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:clock-outline",
   "description": "Returns the current Unix time in milliseconds.",
+  "summary": "now",
   "targets": [
     "backend",
     "frontend",

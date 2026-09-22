@@ -8,6 +8,7 @@ const _meta = {
     "safety",
   ],
   "description": "Prevents the current response from being stored in Convertigo CacheManager.",
+  "summary": "do not cache",
   "longDescription": "Use this explicit safety action before returning or throwing when an HTTP response, parsed payload, output contract or business result is not safe to cache. It only affects the current Flow or Sequence execution; a previously healthy cache entry is preserved.",
   "outputs": {
     "out": {

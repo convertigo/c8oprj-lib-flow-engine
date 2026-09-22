@@ -12,6 +12,7 @@ const _meta = {
     "sdk",
   ],
   "description": "Calls a Convertigo sequence, Flow or transaction through the regular requestable path.",
+  "summary": "call {{requestable}}",
   "properties": {
     "requestable": {
       "label": "requestable",

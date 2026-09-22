@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:merge",
   "description": "Creates a shallow object merge.",
+  "summary": "merge {{source}} into {{target}}",
   "targets": [
     "backend",
     "frontend",

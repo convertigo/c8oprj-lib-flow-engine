@@ -2,6 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "description": "Returns a normalized array from a JSON value, using source.items when present or the source value as one item.",
+  "summary": "items of {{source}}",
   "targets": [
     "backend",
     "frontend",

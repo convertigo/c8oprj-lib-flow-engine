@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:calendar-clock-outline",
   "description": "Formats a date or timestamp with the browser locale.",
+  "summary": "format {{value}}",
   "targets": [
     "frontend",
   ],

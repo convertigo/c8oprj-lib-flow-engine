@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:toggle-switch-outline",
   "description": "Converts a JSON scalar to a boolean using stable text and number rules.",
+  "summary": "{{value}} as boolean",
   "targets": [
     "backend",
     "frontend",

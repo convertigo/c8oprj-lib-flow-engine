@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:code-json",
   "description": "Parses JSON text into a native value.",
+  "summary": "parse {{text}}",
   "targets": [
     "backend",
     "frontend",

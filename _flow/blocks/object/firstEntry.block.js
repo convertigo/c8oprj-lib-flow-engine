@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:format-list-bulleted-square",
   "description": "Returns the first object entry as { key, value }.",
+  "summary": "first entry of {{source}}",
   "targets": [
     "backend",
     "frontend",

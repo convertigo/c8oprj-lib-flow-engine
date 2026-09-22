@@ -10,6 +10,7 @@ const _meta = {
     "current",
   ],
   "description": "Sorts an array copy by a current.* expression.",
+  "summary": "sort {{items}} by {{by}} {{direction}}",
   "outputs": {
     "out": {
       "type": "array",

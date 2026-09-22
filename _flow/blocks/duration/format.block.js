@@ -3,6 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:timer-outline",
   "description": "Formats a duration in milliseconds as a clock value.",
+  "summary": "format {{milliseconds}} ms",
   "targets": [
     "backend",
     "frontend",
