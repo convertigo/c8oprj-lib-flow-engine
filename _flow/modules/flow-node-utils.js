@@ -3,7 +3,7 @@
 		// Harmonised with Convertigo objects: Name, Comment, Is active, Output. One
 		// category vocabulary for every surface: "Base properties" and "Expert" are
 		// editable, "Information" is read-only. No technical prefix in a label.
-		id: { label: "Name", category: "Base properties", description: "Node name inside its Flow. Use Rename to change it; references are updated.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
+		id: { label: "Name", category: "Information", description: "Node name inside its Flow. Use Rename to change it; references are updated.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
 		// The standard Convertigo "Comment" row (DatabaseObject) already reads and writes
 		// this attribute through the bridge; the engine row stays hidden to avoid a duplicate.
 		comment: { label: "Comment", category: "Base properties", description: "Free comment about this node.", kind: "text", type: "string", "default": "", hidden: true, definitionPath: "comment" },
