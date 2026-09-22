@@ -1,9 +1,12 @@
 (function () {
 	var engineProperties = {
-		id: { label: "Node ID", category: "Engine", description: "Stable authoring identity.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
-		comment: { label: "Node comment", category: "Engine", description: "Authoring comment, independent of block inputs.", kind: "text", type: "string", "default": "", definitionPath: "comment" },
-		disabled: { label: "Node disabled", category: "Engine", description: "Skip this node and its children.", kind: "boolean", type: "boolean", "default": false, definitionPath: "disabled" },
-		out: { label: "Node output path", category: "Engine", description: "Store the block result at this scope path.", kind: "path", type: "string", mode: "write", definitionPath: "out" }
+		// Harmonised with Convertigo objects: Name, Comment, Is active, Output. One
+		// category vocabulary for every surface: "Base properties" and "Expert" are
+		// editable, "Information" is read-only. No technical prefix in a label.
+		id: { label: "Name", category: "Base properties", description: "Node name inside its Flow. Use Rename to change it; references are updated.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
+		comment: { label: "Comment", category: "Base properties", description: "Free comment about this node.", kind: "text", type: "string", "default": "", definitionPath: "comment" },
+		disabled: { label: "Is active", category: "Base properties", description: "Uncheck to skip this node and its children at runtime.", kind: "boolean", type: "boolean", "default": false, invert: true, definitionPath: "disabled" },
+		out: { label: "Output", category: "Base properties", description: "Scope path receiving the block result, for example local.result.", kind: "path", type: "string", mode: "write", definitionPath: "out" }
 	};
 	Object.keys(engineProperties).forEach(function (key) { Object.freeze(engineProperties[key]); });
 	Object.freeze(engineProperties);

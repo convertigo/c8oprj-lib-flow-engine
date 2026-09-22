@@ -229,6 +229,11 @@
 			var key = codec.encode("engine", name);
 			definitions[key] = engineFields[name];
 			definitions[key].definitionPath = name;
+			// A block declaring its own "out" property already shows one Output row;
+			// the engine output path is then the same intent and must not duplicate it.
+			if (name === "out" && Object.prototype.hasOwnProperty.call(business, "out")) {
+				definitions[key].hidden = true;
+			}
 			order.push(key);
 		});
 		return info;
@@ -2772,6 +2777,9 @@
 			var key = codec.encode("engine", name);
 			definitions[key] = normalizeTree(engineFields[name]);
 			definitions[key].definitionPath = name;
+			if (name === "out" && Object.prototype.hasOwnProperty.call(props, "out")) {
+				definitions[key].hidden = true;
+			}
 		});
 		return definitions;
 	}
