@@ -159,7 +159,7 @@
 		if (uses.length > 0) {
 			descriptor.uses = uses;
 		}
-		["private", "visibility", "label", "display", "hooks", "additionalProperties", "dynamicProperties"].forEach(function (key) {
+		["private", "visibility", "label", "display", "summary", "hooks", "additionalProperties", "dynamicProperties"].forEach(function (key) {
 			if (definition[key] !== undefined) {
 				descriptor[key] = definition[key];
 			}
