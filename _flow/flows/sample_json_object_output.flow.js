@@ -14,10 +14,8 @@ function sample_json_object_output({ input, config, result }) {
       count: 3,
     },
   })
-  json.object({
+  result.payload = json.object({
     $$id: "response",
-    $$out: "result.payload",
-    out: "result.payload",
     $$fields: function () {
       json.field({
         $$id: "title",
@@ -36,5 +34,4 @@ function sample_json_object_output({ input, config, result }) {
       })
     },
   })
-  return result
 }

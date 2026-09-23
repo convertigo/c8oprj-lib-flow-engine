@@ -32,6 +32,7 @@ const _meta = {
     },
   },
   "runtime": "rhino",
+  "outputs": { "out": { "type": "array", "items": { "type": "unknown" }, "hidden": true } },
   "hooks": {
     "file": "forEach.hooks.js",
   },

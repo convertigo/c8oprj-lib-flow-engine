@@ -33,13 +33,6 @@ const _meta = {
       "default": 0,
       "description": "Number to add.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.sum",
-      "description": "Path receiving the sum.",
-    },
   },
   "outputs": {
     "out": {

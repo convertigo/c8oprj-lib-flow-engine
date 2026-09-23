@@ -114,6 +114,15 @@
 		if (type) {
 			var descriptor = typeDescriptor(type);
 			var editor = descriptor && descriptor.editor;
+			if (definition.enum === undefined && descriptor.enum !== undefined) {
+				definition.enum = normalizeTree(descriptor.enum);
+			}
+			// Hosts consume the resolved editor contract, never a private list of kinds.
+			if (!definition.editorMode) {
+				definition.editorMode = definition.editorClass || definition.editorResource || definition.editor
+					? "custom" : editor && editor.native || "custom";
+				if (definition.editorMode === "text" && definition.enum) definition.editorMode = "choice";
+			}
 			if (editor && editor.component && !definition.editorClass) {
 				definition.editorClass = String(editor.component);
 			}
@@ -122,6 +131,10 @@
 			}
 		}
 		var literalTypeName = String(definition.literalType || "");
+		if (!definition.editorMode) {
+			definition.editorMode = definition.editorClass || definition.editorResource || definition.editor
+				? "custom" : definition.enum ? "choice" : "text";
+		}
 		var literalType = flowTypes()[literalTypeName];
 		if (literalType) {
 			var literalDescriptor = typeDescriptor(literalType);
@@ -150,6 +163,13 @@
 		var propertyDefinitions = {};
 		var propertyOrder = [];
 		var defaults = {};
+		function information(name, label, description, value) {
+			// Information must not overwrite an identically named business property.
+			while (Object.prototype.hasOwnProperty.call(propertyDefinitions, name)) name = "_" + name;
+			info[name] = value;
+			propertyDefinitions[name] = propertyDefinition(label, "Information", description, { readOnly: true });
+			propertyOrder.push(name);
+		}
 		Object.keys(props).forEach(function (key) {
 			var descriptor = props[key];
 			propertyOrder.push(key);
@@ -162,6 +182,8 @@
 			info.propertyDefaults = defaults;
 		}
 		if (catalog) {
+			information("blockType", "Block type", "Public identifier of the block contract.",
+				String(catalog.blockId || catalog.name || ""));
 			["icon", "iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"].forEach(function (key) {
 				if (catalog[key] !== undefined && catalog[key] !== null && String(catalog[key]) !== "") {
 					info[key] = String(catalog[key]);
@@ -180,18 +202,12 @@
 				}
 			}
 			if (catalog.provider) {
-				info.blockProvider = String(catalog.provider);
-				propertyDefinitions.blockProvider = propertyDefinition("Block provider", "Information",
-					"Project or library providing this block.", { readOnly: true });
-				propertyOrder.push("blockProvider");
+				information("blockProvider", "Block provider", "Project or library providing this block.", String(catalog.provider));
 			}
 			if (catalog.file) {
 				var blockSource = sourceDefinitionForFile(catalog.file, catalog.implementation || "");
 				if (blockSource.sourceRelativePath) {
-					info.blockSource = blockSource.sourceRelativePath;
-					propertyDefinitions.blockSource = propertyDefinition("Block source", "Information",
-						"Descriptor source for this block.", { readOnly: true });
-					propertyOrder.push("blockSource");
+					information("blockSource", "Block source", "Descriptor source for this block.", blockSource.sourceRelativePath);
 				}
 			}
 		}
@@ -224,16 +240,13 @@
 			if (info.propertyDefaults && Object.prototype.hasOwnProperty.call(originalDefaults, name)) info.propertyDefaults[key] = originalDefaults[name];
 			descriptor.definitionPath = "props." + name;
 		});
-		var engineFields = normalizeTree(env.nodeEngineProperties());
+		var engineFields = env.nodeEngineProperties(node, catalog && catalog.outputs);
 		Object.keys(engineFields).forEach(function (name) {
 			var key = codec.encode("engine", name);
-			definitions[key] = engineFields[name];
+			definitions[key] = resolvedPropertyDefinition(engineFields[name]);
 			definitions[key].definitionPath = name;
-			// A block declaring its own "out" property already shows one Output row;
-			// the engine output path is then the same intent and must not duplicate it.
-			if (name === "out" && Object.prototype.hasOwnProperty.call(business, "out")) {
-				definitions[key].hidden = true;
-			}
+			// Business property names never determine engine-field semantics.
+			// Capture visibility is declared by outputs.out, independently of props.out.
 			order.push(key);
 		});
 		return info;
@@ -550,7 +563,8 @@
 			sourceMutationPath: path,
 			sourceWritable: true,
 			deletable: true,
-			renameMutationOp: "renameKey"
+			renameValue: String(name),
+			renameMutation: { op: "renameKey", path: path }
 		};
 		if (!value || typeof value !== "object" || Object.prototype.toString.call(value) === "[object Array]") {
 			info.traits = ["config.value"];
@@ -943,16 +957,16 @@
 			};
 			Object.keys(descriptor.props || {}).forEach(function (propertyName) {
 				var definition = normalizeTree(descriptor.props[propertyName] || {});
-				if (definition.mode === "write" ||
-						definition.kind === "path" && definition.mode !== "read") {
+				if (frontendArray(frontend.capabilities).indexOf("collections") < 0 && (definition.mode === "write" ||
+						definition.kind === "path" && definition.mode !== "read")) {
 					return;
 				}
 				properties[propertyName] = Object.assign({}, definition, {
-					kind: "binding",
-					type: String(definition.type || "unknown")
+					kind: definition.mode === "write" || definition.kind === "schema" ? definition.kind : "binding",
+					type: String(definition.type || (definition.kind === "path" ? "string" : "unknown"))
 				});
 				if (definition["default"] !== undefined) {
-					insert[propertyName] = {
+					insert[propertyName] = definition.mode === "write" || definition.kind === "schema" ? definition["default"] : {
 						mode: "literal",
 						value: definition["default"]
 					};
@@ -2465,6 +2479,12 @@
 		var definition = measureFrontendAuthoring("definition", function () {
 			return frontendAuthoringDefinition(node);
 		});
+		// sourceKind identifies an authored AST node, unlike navigation and slot wrappers.
+		if (node.sourceKind && node.id && mutationPath && info.sourceWritable !== false) {
+			info.renameValue = String(node.id);
+			info.renameMutation = { op: "replace", path: mutationPath + ".id",
+				selectionMutationPath: mutationPath };
+		}
 		measureFrontendAuthoring("traitsSlots", function () {
 			if (node.parentSlot !== undefined) {
 				info.parentSlot = normalizeTree(node.parentSlot);
@@ -2772,10 +2792,10 @@
 			definitions[key] = frontendPropertyDefinition(name, descriptor);
 			definitions[key].definitionPath = "props." + name;
 		});
-		var engineFields = env.nodeEngineProperties();
+		var engineFields = env.nodeEngineProperties(node, node.outputs);
 		["id", "disabled", "comment", "out"].forEach(function (name) {
 			var key = codec.encode("engine", name);
-			definitions[key] = normalizeTree(engineFields[name]);
+			definitions[key] = resolvedPropertyDefinition(engineFields[name]);
 			definitions[key].definitionPath = name;
 			if (name === "out" && Object.prototype.hasOwnProperty.call(props, "out")) {
 				definitions[key].hidden = true;
@@ -3242,6 +3262,9 @@
 		if (value.catalogProperty === true) {
 			definition.catalogProperty = true;
 		}
+		["mode", "targetType", "required", "editorContext"].forEach(function (key) {
+			if (value[key] !== undefined) definition[key] = normalizeTree(value[key]);
+		});
 		return resolvedPlainPropertyDefinition(definition);
 	}
 
@@ -3462,6 +3485,11 @@
 				}
 				});
 				var nodeInformation = mergeSourceInfo(bindNodePropertyPaths(nodeInfo(nodeAnalysis, catalog), node, catalog), sourceInfo, sourceNodePath);
+				if (node.id && nodeInformation.sourceWritable !== false) {
+					nodeInformation.renameValue = String(node.id);
+					nodeInformation.renameMutation = { op: "replace", path: (sourceNodePath || nodePath) + ".id",
+						selectionMutationPath: sourceNodePath || nodePath };
+				}
 				if (parentSlot) nodeInformation.parentSlot = parentSlot;
 				if (catalog && catalog.traits) nodeInformation.traits = normalizeTree(catalog.traits);
 				var slots = projectedBackendSlots(node, catalog, sourceNodePath || nodePath);

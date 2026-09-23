@@ -27,13 +27,6 @@ const _meta = {
       "default": "",
       "description": "Scalar value to convert to text and trim. Null and undefined become an empty string.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.text",
-      "description": "Scope path receiving the trimmed string.",
-    },
   },
   "outputs": {
     "out": {

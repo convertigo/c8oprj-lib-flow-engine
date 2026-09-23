@@ -26,13 +26,6 @@ const _meta = {
       "default": "local.object",
       "description": "Object expression whose values are returned.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.values",
-      "description": "Scope path receiving the value array.",
-    },
   },
   "outputs": {
     "out": {

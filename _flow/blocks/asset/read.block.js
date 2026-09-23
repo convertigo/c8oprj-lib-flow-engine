@@ -15,13 +15,6 @@ const _meta = {
       "default": "_flow/resources/asset.txt",
       "description": "Project-local textual asset under _flow/resources or resources.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.asset",
-      "description": "Scope path receiving the asset text.",
-    },
   },
   "outputs": {
     "out": {

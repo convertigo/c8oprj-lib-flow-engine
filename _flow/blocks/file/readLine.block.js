@@ -26,12 +26,6 @@ const _meta = {
       "mode": "write",
       "description": "Optional scope path receiving true when the reader reached EOF.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Optional scope path receiving {line, eof}.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

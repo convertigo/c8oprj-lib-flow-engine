@@ -25,13 +25,6 @@ const _meta = {
       "type": "unknown",
       "description": "JSON scalar to convert.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.boolean",
-      "description": "Path receiving the boolean.",
-    },
   },
   "outputs": {
     "out": {

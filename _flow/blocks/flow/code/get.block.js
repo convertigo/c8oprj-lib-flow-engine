@@ -35,12 +35,6 @@ const _meta = {
       "default": false,
       "description": "Read the in-memory FlowScript working copy when present.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving {code, revision}.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

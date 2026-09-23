@@ -17,36 +17,27 @@ function QualifCoreData({ input, config, result }) {
       },
     },
   })
-  object.pick({
+  local.selected = object.pick({
     $$id: "pickFields",
-    $$out: "local.selected",
     source: local.profile,
     keys: [
       "city",
       "metrics.temperature",
     ],
-    out: "local.selected",
   })
-  object.merge({
+  result.payload = object.merge({
     $$id: "mergeAlert",
-    $$out: "result.payload",
     target: local.selected,
     source: {
       "alert": true,
     },
-    out: "result.payload",
   })
-  json.stringify({
+  local.payloadText = json.stringify({
     $$id: "stringify",
-    $$out: "local.payloadText",
     value: result.payload,
-    out: "local.payloadText",
   })
-  json.parse({
+  result.roundtrip = json.parse({
     $$id: "parse",
-    $$out: "result.roundtrip",
     text: local.payloadText,
-    out: "result.roundtrip",
   })
-  return result
 }

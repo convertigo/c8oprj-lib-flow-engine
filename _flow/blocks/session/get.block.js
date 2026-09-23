@@ -18,13 +18,6 @@ const _meta = {
       "type": "unknown",
       "description": "Value returned when the session key is missing.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.sessionValue",
-      "description": "Scope path receiving the session value.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

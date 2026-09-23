@@ -32,13 +32,6 @@ const _meta = {
       "type": "unknown",
       "description": "Value returned for an empty array.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.item",
-      "description": "Path receiving the item.",
-    },
   },
   "outputs": {
     "out": {

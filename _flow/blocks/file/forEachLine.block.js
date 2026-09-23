@@ -21,12 +21,6 @@ const _meta = {
       "default": "local.reader",
       "description": "Reader handle produced by file.withReader.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Optional scope path receiving {count}.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

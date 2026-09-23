@@ -33,13 +33,6 @@ const _meta = {
       "default": "local.patch",
       "description": "Object expression overriding target keys.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.merged",
-      "description": "Scope path receiving the merged object.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

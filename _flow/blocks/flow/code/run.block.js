@@ -71,12 +71,6 @@ const _meta = {
       "type": "string",
       "description": "Optional logical project name used for relative requestables.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving execution result.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

@@ -7,6 +7,7 @@
     pickerTarget = "",
     pickerOriginal = "",
     pickerLastTarget = "",
+	pickerValid = true,
     pickerUpdatingEditor = false;
   function applyTheme(value) {
     var theme = value === "light" || value === "dark" ? value : "";
@@ -129,9 +130,9 @@
   }
   function propValue(node, key) {
     var v = node[key];
-    if ((v === undefined || v === null) && node && node.props)
+    if (v === undefined && node && node.props)
       v = node.props[key];
-    if (v === undefined || v === null) return "";
+    if (v === undefined) return "";
     return typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
   }
   function templateLike(kind) {
@@ -152,7 +153,15 @@
   }
   function setDraft(v, valid, error) {
     draft = v == null ? "" : String(v);
+    var conversionError = propertyValueError(draft, state && state.propertyDefinition);
+    if (conversionError) { valid = false; error = conversionError; }
     send({ type: "value", value: draft, valid: valid !== false, error: error || "" });
+  }
+  function propertyValueError(value, definition) {
+    if (!window.FlowPropertyValueCodec || !definition) return "";
+    var type = (window.FlowPropertyValueTypes || {})[definition.kind || definition.type] || {};
+    try { window.FlowPropertyValueCodec.decode(value, definition, type); return ""; }
+    catch (error) { return error.message || String(error); }
   }
   function syncSimple() {
     var el = document.querySelector("[data-key]");
@@ -302,6 +311,11 @@
       : String(entry.type || "unknown").toLowerCase();
   }
   function acceptsPath(prop, entry) {
+	if (prop && prop.def && prop.def.mode === "write") {
+		var path = typeof entry === "string" ? entry : entry.path;
+		return !!window.FlowDestinationContract && window.FlowDestinationContract.validate(path,
+			state && state.context && state.context.destinationPolicy || window.FlowDestinationContract.policy()).valid;
+	}
     if (!prop || pickerKind(prop) === "path") return true;
     var wanted = targetType(prop);
     if (!wanted || wanted === "unknown") return true;
@@ -326,7 +340,7 @@
     if (editor && editor.setState && editor.value !== pickerValue) {
       pickerUpdatingEditor = true;
       editor.setState(
-        pickerEditorState(
+        typeEditorState(pickerEditorState(
           pickerProperty(
             pickerProps(
               (state && state.info) || {},
@@ -334,11 +348,27 @@
               stateDefinition(),
             ),
           ),
-        ),
+        )),
       );
       pickerUpdatingEditor = false;
+	  updatePickerValidation(editor.valid);
     }
   }
+	function updatePickerValidation(valid) {
+		var definition = state && state.info && state.info.propertyDefinitions && state.info.propertyDefinitions[pickerTarget];
+		var error = propertyValueError(pickerValue, definition);
+		pickerValid = valid !== false && !error;
+		var apply = document.querySelector("[data-apply-picked]");
+		if (apply) apply.disabled = !pickerValid;
+		var feedback = document.querySelector("[data-value-error]");
+		if (!feedback && apply) {
+			feedback = document.createElement("div");
+			feedback.setAttribute("data-value-error", "");
+			feedback.setAttribute("role", "alert");
+			apply.parentNode.appendChild(feedback);
+		}
+		if (feedback) feedback.textContent = error;
+	}
   function resetPickerValue() {
     updatePickerValue(pickerOriginal);
   }
@@ -358,7 +388,9 @@
     keys(source || {}).forEach(function (key) {
       next[key] = source[key];
     });
-    var nodePath = flowNodePath(next.virtualPath);
+    var suppliedContext = next.propertyDefinition && next.propertyDefinition.editorContext;
+    var nodePath = suppliedContext ? "" : flowNodePath(next.virtualPath);
+    if (suppliedContext) next.context = suppliedContext;
     if (nodePath && next.property) {
       var response = hostRequest("context", {
         path: nodePath,
@@ -447,9 +479,12 @@
       };
       editor.flowHost = window.flowHost;
       editor.setState(typeEditorState(pickerEditorState(prop)));
+	  updatePickerValidation(editor.valid);
       editor.addEventListener("flow-value", function (e) {
-        if (!pickerUpdatingEditor)
+        if (!pickerUpdatingEditor) {
           updatePickerValue(e.detail && e.detail.value, false);
+		  updatePickerValidation(e.detail && e.detail.valid !== undefined ? e.detail.valid : editor.valid);
+		}
       });
       return true;
     }
@@ -714,6 +749,7 @@
     }
   }
   function renderPicker(app) {
+	pickerValid = true;
     var node = stateDefinition();
     var info = state.info || {};
     var defs = info.propertyDefinitions || {};
@@ -865,7 +901,9 @@
   }
   function changeValue(el) {
     if (state && state.mode === "property" && el) {
-      setDraft(el.value);
+      // Composed native input events also reach the host through a custom
+      // editor's shadow root. Preserve its validation on that second path.
+      setDraft(el.value, el.valid, el.validationError);
     }
   }
   document.addEventListener("focusin", function (e) {
@@ -919,6 +957,7 @@
       return;
     }
     if (e.target.getAttribute && e.target.getAttribute("data-apply-picked")) {
+	  if (!pickerValid) return;
       var val = document.querySelector("[data-picker-value]");
       var value = val ? val.value : pickerValue;
       if (pickerTarget)
@@ -988,12 +1027,29 @@
     }
   });
   window.flowSetTheme = applyTheme;
+  function refreshCurrentTypeEditor() {
+    var next = state;
+    var picker = state.mode === "picker";
+    if (picker) {
+      var info = state.info || {};
+      var prop = pickerProperty(pickerProps(info, info.propertyDefinitions || {}, stateDefinition()));
+      if (!prop) return;
+      next = pickerEditorState(prop);
+    } else {
+      next = Object.assign({}, state, { value: draft });
+    }
+    var editor = document.querySelector(picker ? "[data-picker-editor]" : "[data-key]");
+    if (editor && editor.setState) {
+      pickerUpdatingEditor = picker;
+      try { editor.setState(typeEditorState(next)); }
+      finally { pickerUpdatingEditor = false; }
+      if (picker) updatePickerValidation(editor.valid);
+    }
+  }
   window.flowSetContext = function (context) {
     if (!state) return;
     state.themeContext = objectValue(context);
-    state.value = draft;
-    var editor = document.querySelector("[data-key]");
-    if (editor && editor.setState) editor.setState(typeEditorState(state));
+    refreshCurrentTypeEditor();
   };
   window.receiveFromJava = function (message) {
     applyTheme(message && message.theme);
@@ -1019,8 +1075,6 @@
     keys(message).forEach(function (key) {
       state[key] = message[key];
     });
-    state.value = draft;
-    var editor = document.querySelector("[data-key]");
-    if (editor && editor.setState) editor.setState(typeEditorState(state));
+    refreshCurrentTypeEditor();
   };
 })();

@@ -5,6 +5,7 @@ icon: "mdi:function-variant"
 type: "string"
 description: "Flow expression evaluated against the current scopes. Scope paths are null-safe; array indexes like local.feed.rss.channel.item[0] are supported."
 editor:
+  valueEncoding: text
   label: "Expression editor"
   kind: "webcomponent"
   component: "flow-expression-editor"

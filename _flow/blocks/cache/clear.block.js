@@ -10,13 +10,6 @@ const _meta = {
   ],
   "description": "Debug only: clears Flow Engine runtime descriptor caches and returns fresh diagnostics when automatic invalidation is suspected stale.",
   "properties": {
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.cache",
-      "description": "Scope path receiving cache diagnostics after clear.",
-    },
   },
   "outputs": {
     "out": {

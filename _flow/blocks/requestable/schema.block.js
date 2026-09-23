@@ -50,12 +50,6 @@ const _meta = {
       "type": "string",
       "description": "Optional project directory override.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving schema and paths.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

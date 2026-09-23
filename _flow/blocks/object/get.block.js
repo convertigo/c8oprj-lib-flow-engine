@@ -42,13 +42,6 @@ const _meta = {
       "expert": true,
       "description": "Fallback value used when the key is missing.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.value",
-      "description": "Scope path receiving the selected value.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

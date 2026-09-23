@@ -27,13 +27,6 @@ const _meta = {
       "type": "object",
       "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.requestable",
-      "description": "Scope path receiving the requestable JSON response.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

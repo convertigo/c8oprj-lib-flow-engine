@@ -1,6 +1,9 @@
 const _meta = {
   "sourceVersion": 2,
   "version": 1,
+  "targets": ["backend", "frontend"],
+  "effects": ["state"],
+  "implementations": {"backend": {"runtime": "rhino"}, "frontend": {"runtime": "browser", "file": "push.browser.js", "capabilities": ["collections"]}},
   "icon": "mdi:playlist-plus",
   "tags": [
     "json",
@@ -24,6 +27,7 @@ const _meta = {
       "label": "path",
       "kind": "path",
       "mode": "write",
+      "targetType": "array",
       "default": "result.items",
       "description": "Array scope path receiving the pushed value.",
     },
@@ -52,13 +56,8 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			var array = ctx.read(props.path);
-			if (!array) {
-				array = ctx.write(props.path, []);
-			}
 			var value = node.nodes && node.nodes.length ? ctx.runNodes(node.nodes) : ctx.input(props);
-			array.push(value);
-			return array;
+			return ctx.collections.append(props.path, value);
 		}
 	};
 }())

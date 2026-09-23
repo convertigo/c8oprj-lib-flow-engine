@@ -31,12 +31,6 @@ const _meta = {
       "default": false,
       "description": "Include provider, origin and source sizes in compact responses.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving descriptor and implementation sources.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

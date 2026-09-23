@@ -22,13 +22,6 @@ const _meta = {
       "default": "{{ local.text }}",
       "description": "YAML text to parse.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.yaml",
-      "description": "Scope path receiving the parsed value.",
-    },
   },
   "outputs": {
     "out": {

@@ -33,13 +33,6 @@ const _meta = {
       "default": 0,
       "description": "Number to subtract.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.difference",
-      "description": "Path receiving the difference.",
-    },
   },
   "outputs": {
     "out": {

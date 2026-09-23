@@ -64,6 +64,9 @@ function catalog(label) {
 
 function environment(stats, catalogFingerprint = "catalog-1") {
 	return {
+		destinationContract: load("destination-contract.js"),
+		nodeProps: (node) => node.props || {},
+		nodeOutputPath: (node) => node.out,
 		blockName: (node) => node?.block || "",
 		raise(code, message) {
 			const error = new Error(message);

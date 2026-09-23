@@ -50,6 +50,7 @@
 		var readObjectPath = env.readObjectPath;
 		var writeScopePath = env.writeScopePath;
 		var compileWriteScopePath = env.compileWriteScopePath;
+		var destinations = env.destinationContract;
 		var evaluateExpression = env.evaluateExpression;
 		var compileExpression = env.compileExpression;
 		var compileTemplateTree = env.compileTemplateTree;
@@ -120,6 +121,18 @@
 			return blocks && blocks[name];
 		};
 		var runContextPrototype = {};
+		Object.defineProperty(runContextPrototype, "collections", { get: function () {
+			var ctx = this;
+			var api = env.typedScopeContract.create({
+				schemas: env.schemaContract, destinations: destinations, raise: raise,
+				scopes: function () { return ctx.scopes; },
+				preflight: function (path, value) { if (path.indexOf("result.") === 0) assertNoRuntimeHandle(value, "result"); },
+				read: function (path) { return ctx.read(path); },
+				write: function (path, value) { return ctx.write(path, value); }
+			});
+			Object.defineProperty(ctx, "collections", {value: api, enumerable: false});
+			return api;
+		} });
 		var coldContextMethodNames = [
 			"cacheInfo", "cacheClear", "withProjectDir", "analyzeFlowSource", "contextFlowSource",
 			"searchFlow", "describeTreeSource", "applyMutationSource", "authoringTreeSource",
@@ -482,6 +495,14 @@
 		};
 		runContextPrototype.raise = raise;
 
+		function validateNodeDestinations(block, node, sourceVersion, props) {
+			destinations.entries(blockCatalog(block), props || nodeProps(node, sourceVersion), nodeOut(node, sourceVersion), sourceVersion)
+				.forEach(function (entry) {
+					var checked = destinations.validate(entry.value);
+					if (!checked.valid) raise(checked.code, entry.property + ": " + checked.message, node);
+				});
+		}
+
 		function prepareNodeRunner(block, node, props) {
 			var trustedRuntime = String(block && block.__flowOrigin || "") === "core" ||
 				String(block && block.__blockImplementationRuntime || "") === "flow";
@@ -537,7 +558,9 @@
 			var placeholder = blocks && blocks[name] && blocks[name].__flowScriptPlaceholder === true;
 			var block = name ? runtimeBlock(blocks, name) : null;
 			if (block) {
-				var reusableProps = canReuseNodeProps(block) ? nodeProps(node, sourceVersion) : null;
+				var properties = nodeProps(node, sourceVersion);
+				validateNodeDestinations(block, node, sourceVersion, properties);
+				var reusableProps = canReuseNodeProps(block) ? properties : null;
 				if (reusableProps && typeof Object.freeze === "function") {
 					Object.freeze(reusableProps);
 				}
@@ -628,6 +651,7 @@
 				}
 				var propsStarted = profiled ? nanoTime() : 0;
 				var out = preparedHit ? prepared.out : ctx.outputPath(node);
+				if (!preparedHit) validateNodeDestinations(block, node, ctx.sourceVersion);
 				profileAdd(ctx, "executeNodePropsMs", propsStarted);
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
@@ -688,6 +712,7 @@
 			profileAdd(ctx, "callBlockNormalizeMs", normalizeStarted);
 			var propsStarted = profiled ? nanoTime() : 0;
 			var nodeProperties = ctx.props(node);
+			validateNodeDestinations(block, node, ctx.sourceVersion, nodeProperties);
 			profileAdd(ctx, "callBlockPropsMs", propsStarted);
 			var frameStarted = profiled ? nanoTime() : 0;
 			var previousInput = ctx.scopes.input;

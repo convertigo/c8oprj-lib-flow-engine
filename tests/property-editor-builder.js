@@ -25,6 +25,9 @@ try {
 		"<style><!-- FLOW_PROPERTY_EDITOR_STYLE --></style><!-- FLOW_TYPE_EDITOR_FRAGMENTS --><script><!-- FLOW_PROPERTY_EDITOR_SCRIPT --></script>");
 	write("resources/property-editor.css", ":root { font-size: 12px; }");
 	write("resources/property-editor.js", "window.ready = true;");
+	write("destination-contract.js", fs.readFileSync(path.join(__dirname, "../_flow/modules/destination-contract.js"), "utf8"));
+	write("schema-contract.js", fs.readFileSync(path.join(__dirname, "../_flow/modules/schema-contract.js"), "utf8"));
+	write("property-value-codec.js", fs.readFileSync(path.join(__dirname, "../_flow/modules/property-value-codec.js"), "utf8"));
 	write("resources/type-editor-chrome.css",
 		":host { font-size: 12px; }\n@media (pointer: fine) { input { min-height: 32px; } }");
 	const editorFile = write("editors/test.html",
@@ -43,7 +46,7 @@ try {
 		},
 		FileUtils: { readFileToString: (file) => fs.readFileSync(file.path || file, "utf8") },
 		engineResourceFile: (name) => new env.File(path.join(root, "resources", name)),
-		engineModuleFile: () => new env.File(path.join(root, "builder.js")),
+		engineModuleFile: (name) => new env.File(path.join(root, name === "property-editor-builder.js" ? "builder.js" : name)),
 		engineDir: () => new env.File(root),
 		loadTypes: () => ({
 			plain: { editor: { file: plainEditorFile } },
@@ -66,6 +69,8 @@ try {
 	assert.equal((html.match(/Shared Flow type editor chrome/g) || []).length, 2,
 		"every type editor template must receive the shared chrome, including style-less editors");
 	assert.match(html, /window\.ready = true/);
+	assert.match(html, /window\.FlowDestinationContract = /);
+	assert.match(html, /window\.FlowSchemaContract = /);
 	assert.match(bindingEditor, /data-part-literal-custom/,
 		"Compose must host the custom literal editor declared by literalType");
 	assert.match(colorEditor, /data-custom-mode="auto"/);
@@ -83,6 +88,8 @@ try {
 	write("resources/type-editor-chrome.css", ":host { font-size: 13px; }");
 	const after = builder.cacheKey(env);
 	assert.notEqual(after, before, "shared chrome changes must invalidate the property editor cache");
+	write("destination-contract.js", "({validate: function () {return {valid:false};}})");
+	assert.notEqual(builder.cacheKey(env), after, "destination policy changes must invalidate editor HTML");
 
 	console.log("property-editor-builder tests passed");
 } finally {

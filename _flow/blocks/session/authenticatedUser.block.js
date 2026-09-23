@@ -11,13 +11,6 @@ const _meta = {
   "description": "Reads the authenticated Convertigo user from the current HTTP session.",
   "summary": "authenticated user",
   "properties": {
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.authenticatedUser",
-      "description": "Scope path receiving the authenticated user id, or null when anonymous.",
-    },
   },
   "outputs": {
     "out": {

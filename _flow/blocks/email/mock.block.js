@@ -23,12 +23,6 @@ const _meta = {
       "default": "",
       "description": "Email body template.",
     },
-    "out": {
-      "kind": "path",
-      "mode": "write",
-      "default": "local.email",
-      "description": "Scope path receiving the mock send result.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

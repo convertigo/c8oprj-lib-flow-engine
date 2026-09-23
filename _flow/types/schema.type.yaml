@@ -1,0 +1,13 @@
+version: 1
+name: "schema"
+label: "Data type"
+icon: "mdi:file-tree"
+type: "object"
+description: "Explicit data shape, including object fields, array items and map values. Available even when a collection is empty."
+editor:
+  valueEncoding: json
+  label: "Data type editor"
+  kind: "webcomponent"
+  component: "flow-schema-editor"
+  file: "editors/schema.html"
+  icon: "mdi:file-tree"

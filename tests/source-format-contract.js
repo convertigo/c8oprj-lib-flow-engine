@@ -17,7 +17,7 @@ function stable(value) {
 }
 try {
   var renderer = eval(read(new java.io.File(engineDir, "modules/flow-script-renderer-service.js")));
-  var fixtures = JSON.parse(read(new java.io.File(engineDir, "../../tests/fixtures/source-format-data.json")));
+  var fixtures = JSON.parse(read(new java.io.File(engineDir, "../tests/fixtures/source-format-data.json")));
   var env = { sourceVersion: 2, normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); } };
   fixtures.forEach(function (fixture) {
     var text = renderer.flowScriptInlineValue(fixture.value, env);
@@ -37,7 +37,7 @@ try {
   }
   function write(source) {
     var result = api("flowSourceValidate", { name: "FormatProof", flowSource: source, includeHeader: false, includeImplicitReturn: false });
-    assert(result.ok, "Write failed: " + JSON.stringify(result.diagnostics));
+    assert(result.ok, "Write failed: " + JSON.stringify(result));
     return result;
   }
   function run(code) {

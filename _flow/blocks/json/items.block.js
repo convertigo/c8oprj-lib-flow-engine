@@ -42,14 +42,6 @@ const _meta = {
       "expert": true,
       "description": "When true, a non-array source becomes a single-item array.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.items",
-      "description": "Scope path receiving the normalized item array.",
-    },
   },
   "outputs": {
     "out": {

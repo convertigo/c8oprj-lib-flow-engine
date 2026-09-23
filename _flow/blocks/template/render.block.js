@@ -16,13 +16,6 @@ const _meta = {
       "default": "",
       "description": "Template text containing optional {{ expression }} placeholders.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.text",
-      "description": "Scope path receiving the rendered text.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

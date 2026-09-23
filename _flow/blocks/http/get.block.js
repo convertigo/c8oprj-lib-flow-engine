@@ -49,12 +49,6 @@ const _meta = {
       "type": "object",
       "description": "Optional query parameters object.",
     },
-    "out": {
-      "kind": "path",
-      "mode": "write",
-      "default": "local.response",
-      "description": "Scope path receiving status, contentType, headers, body and text.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

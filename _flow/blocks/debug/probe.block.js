@@ -4,13 +4,13 @@ const _meta = {
   "icon": "mdi:bug-check-outline",
   "description": "Inspects a value while developing a Flow without changing the final result contract.",
   "summary": "probe {{label}}",
-  "longDescription": "Use this as a temporary probe: it evaluates value, writes it to out when out is set, and returns the same value so code-run traces can show it. Remove probes once the Flow is stable.",
+  "longDescription": "Use this as a development inspection point. Pick a Value (for example {{ local.total }}) and optionally compose a Label (for example Total for {{ input.city }}). The observation is added to trace.probes; it does not replace the Flow's final result. An optional engine Output captures the same value. Unlike log, this block records a structured observation instead of writing a Convertigo log message. Remove probes once the Flow is stable.",
   "properties": {
     "value": {
       "label": "Value",
       "kind": "value",
       "type": "unknown",
-      "description": "Value to inspect. Use a scope path or any Flow expression.",
+      "description": "Value to inspect. Pick a source or use {{ expression }} to evaluate it; plain text stays text.",
     },
     "label": {
       "label": "Label",
@@ -18,16 +18,9 @@ const _meta = {
       "type": "string",
       "description": "Optional label shown in the tree and trace.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "expert": true,
-      "description": "Optional scratch scope path receiving the inspected value.",
-    },
   },
   "outputs": {
-    "value": {
+    "out": {
       "type": "unknown",
     },
   },

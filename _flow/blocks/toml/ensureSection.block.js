@@ -36,13 +36,6 @@ const _meta = {
       "default": false,
       "description": "Preview the patch without writing the file.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.toml",
-      "description": "Scope path receiving patch status.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

@@ -29,13 +29,6 @@ const _meta = {
       "default": false,
       "description": "Preview the write without touching the file.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.fileWrite",
-      "description": "Scope path receiving write status.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

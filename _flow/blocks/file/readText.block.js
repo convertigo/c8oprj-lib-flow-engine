@@ -27,13 +27,6 @@ const _meta = {
       "default": 16777216,
       "description": "Reject files larger than this limit before reading them.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.text",
-      "description": "Scope path receiving the complete text.",
-    },
   },
   "outputs": {
     "out": {

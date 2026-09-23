@@ -834,10 +834,12 @@
 							args[key] = flowScriptExpressionFromToken(tokens[key], locals);
 						}
 				} else if (kind === "path") {
-					args[key] = flowScriptPathFromToken(tokens[key], locals);
+					args[key] = propertyPathFromToken(blocks, block, key, tokens[key], locals, lineNumber);
 				} else if (kind === "template" || kind === "value") {
 					args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
-				} else if (kind === "text" || kind === "schema" || kind === "secret") {
+				} else if (kind === "schema") {
+					args[key] = parseFlowScriptMetadataValue(tokens[key], lineNumber);
+				} else if (kind === "text" || kind === "secret") {
 					args[key] = unquoteFlowScriptString(tokens[key]);
 				} else {
 					args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
@@ -886,6 +888,23 @@
 			return node;
 		}
 
+		function propertyPathFromToken(blocks, block, key, token, locals, lineNumber) {
+			var catalog = env.blockCatalog(blocks && blocks[block]) || {};
+			if (env.destinationContract.isWriteProperty(catalog, key, sourceVersion)) {
+				// Literal destinations must round-trip exactly, including invalid ones:
+				// do not turn false into local.false or strip {{ }} from a template.
+				var literal = flowScriptLiteralTokenValue(token, lineNumber);
+				if (literal === undefined) {
+					literal = isFlowScriptTemplateLiteral(token) || isFlowScriptObjectLiteral(token) || isFlowScriptArrayLiteral(token)
+						? flowScriptValueFromToken(token, locals, lineNumber) : flowScriptPathFromToken(token, locals);
+				}
+				var checked = env.destinationContract.validate(literal);
+				if (!checked.valid) env.raise(checked.code, key + " at line " + lineNumber + ": " + checked.message);
+				return literal;
+			}
+			return flowScriptPathFromToken(token, locals);
+		}
+
 		function flowScriptPropertyValueFromToken(blocks, block, key, token, locals, lineNumber) {
 			var kind = flowScriptPropKind(blocks, block, key);
 			if (kind === "expression") {
@@ -895,12 +914,13 @@
 				return flowScriptExpressionFromToken(token, locals);
 			}
 			if (kind === "path") {
-				return flowScriptPathFromToken(token, locals);
+				return propertyPathFromToken(blocks, block, key, token, locals, lineNumber);
 			}
 			if (kind === "template" || kind === "value") {
 				return flowScriptValueFromToken(token, locals, lineNumber);
 			}
-			if (kind === "text" || kind === "schema" || kind === "secret") {
+			if (kind === "schema") return parseFlowScriptMetadataValue(token, lineNumber);
+			if (kind === "text" || kind === "secret") {
 				return unquoteFlowScriptString(token);
 			}
 			return flowScriptValueFromToken(token, locals, lineNumber);
@@ -1668,7 +1688,7 @@
 			var call = parseNaturalFlowScriptCall(rhs);
 			if (call) {
 				var block = resolveFlowScriptName(call.name, imports);
-				if (isFlowScriptExpressionCallName(block)) {
+				if (!(blocks && blocks[block]) && isFlowScriptExpressionCallName(block)) {
 					return [{
 						id: env.safeIdentifier(scopePath.replace(/^(local|result)\./, "")),
 						block: "set",

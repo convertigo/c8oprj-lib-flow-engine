@@ -3,8 +3,10 @@ name: "boolean"
 label: "Boolean"
 icon: "mdi:toggle-switch-outline"
 type: "boolean"
+enum: [false, true]
 description: "Boolean true or false value."
 editor:
+  native: "choice"
   label: "Boolean editor"
   kind: "webcomponent"
   component: "flow-boolean-editor"

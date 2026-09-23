@@ -5,6 +5,7 @@ icon: "mdi:cog-outline"
 type: "object"
 description: "Named project-wide configuration branches exposed to Flow as config.*."
 editor:
+  valueEncoding: json
   label: "Project configuration editor"
   kind: "webcomponent"
   component: "flow-project-config-editor"

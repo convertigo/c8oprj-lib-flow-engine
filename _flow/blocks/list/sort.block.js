@@ -41,12 +41,6 @@ const _meta = {
       "default": "asc",
       "description": "Sort direction: asc or desc.",
     },
-    "out": {
-      "kind": "path",
-      "mode": "write",
-      "default": "local.sorted",
-      "description": "Scope path receiving the sorted array.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

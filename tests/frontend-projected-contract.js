@@ -58,6 +58,12 @@ var env = {
 	blockCatalog: function () { return []; }, catalogDefinition: function () { return { groups: [], types: [] }; },
 	listFlowLibraries: function () { return []; }, listProjectFragments: function () { return { fragments: [] }; },
 	resolveBlockIcon: function () {}, typeDescriptor: function (value) { return value || {}; },
+	loadTypes: function () { return {
+		binding: { editor: { component: "flow-binding-editor" } },
+		path: { editor: { component: "flow-path-editor" } },
+		text: { editor: { native: "text", component: "flow-text-editor" } },
+		boolean: { enum: [false, true], editor: { native: "choice", component: "flow-boolean-editor" } }
+	}; },
 	describeFrontendDocument: function () { return { model: { version: 1 }, tree: { children: clone(inputs) } }; },
 	raise: function (code, message) { throw new Error(code + ": " + message); }
 };
@@ -91,6 +97,13 @@ assertTrue(closed.frontendInsertMutationPath === "wrong.legacy.destination", "Pr
 var modernNode = projected.structureId;
 var modernDefinition = JSON.parse(modernNode.definition);
 var modernInfo = JSON.parse(modernNode.info);
+assertTrue(modernInfo.propertyDefinitions.value.editorMode === "custom", "Frontend binding uses the shared editor contract");
+assertTrue(modernInfo.propertyDefinitions.$$comment.editorMode === "text", "Frontend Comment stays native text");
+assertTrue(modernInfo.propertyDefinitions.$$disabled.editorMode === "choice", "Frontend Is active stays a declared choice");
+assertTrue(modernInfo.renameValue === "structureId", "Rename edits structural identity, not a colliding business id");
+assertTrue(modernInfo.renameMutation.op === "replace" && modernInfo.renameMutation.path === modern.sourceMutationPath + ".id",
+	"Frontend identity exposes its mutation through the same provider capability as backend and config");
+assertTrue(modernInfo.renameMutation.selectionMutationPath === modern.sourceMutationPath, "Rename retains a precise selection after the virtual path changes");
 assertTrue(JSON.stringify(modernDefinition.props) === JSON.stringify(modern.props), "V2 must not flatten business props into structural fields");
 assertTrue(modernDefinition.id === "structureId" && modernDefinition.disabled === false, "V2 structural identity and enable state");
 assertTrue(modernNode.path.indexOf("structureId") >= 0 && modernNode.path.indexOf("businessId") < 0, "Reveal path must follow structural identity");

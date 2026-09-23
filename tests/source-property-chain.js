@@ -128,7 +128,12 @@ try {
 	var v2written = api("flowSourceValidate", { name: "PropertyChain", flowSource: v2.source, includeMeta: false });
 	assert(v2written.code.indexOf('"sourceVersion": 2') !== -1, "Writer omitted required dialect marker");
 	assert(v2written.code.indexOf('$$disabled: false') !== -1, "Writer lost explicit engine false");
-	equal(v2written.definition.nodes[0], v2node, "Version 2 writer changed node");
+	// Captures written on the left are parsed after the argument bag; structural
+	// key insertion order is irrelevant, unlike the order inside business data.
+	equal(Object.keys(v2written.definition.nodes[0]).sort(), Object.keys(v2node).sort(), "Version 2 writer changed node fields");
+	Object.keys(v2node).forEach(function (key) {
+		equal(v2written.definition.nodes[0][key], v2node[key], "Version 2 writer changed node field " + key);
+	});
 	var v2edited = api("applyMutation", { target: "flow", flowSource: versionTwo, mutation: { op: "replace", nodeId: "row", property: "id", value: 7 } });
 	assert(run(v2edited.source).result.row.id === 7, "Version 2 property mutation");
 	var v2escaped = api("applyMutation", { target: "flow", flowSource: versionTwo, mutation: { op: "replace", nodeId: "row", property: "$$$id", value: 9 } });

@@ -26,13 +26,6 @@ const _meta = {
       "default": "local.object",
       "description": "Object expression to inspect.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.keys",
-      "description": "Scope path receiving the key array.",
-    },
   },
   "outputs": {
     "out": {

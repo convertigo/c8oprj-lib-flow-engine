@@ -40,14 +40,6 @@ const _meta = {
       "expert": true,
       "description": "Adds a truncation hint to the error message when parsing fails.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.parsed",
-      "description": "Scope path receiving { ok, value, error }.",
-    },
   },
   "outputs": {
     "out": {

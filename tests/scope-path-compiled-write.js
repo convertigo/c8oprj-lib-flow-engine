@@ -7,6 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, "../_flow/modules/scope-path
 const paths = vm.runInNewContext(source, {});
 let resultChecks = 0;
 const env = {
+	destinationContract: vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../_flow/modules/destination-contract.js"), "utf8"), {}),
 	scopeNames: ["input", "local", "result"],
 	assertNoRuntimeHandle() {
 		resultChecks += 1;

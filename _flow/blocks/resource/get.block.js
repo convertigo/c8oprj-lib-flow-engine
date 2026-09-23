@@ -36,12 +36,6 @@ const _meta = {
       "type": "boolean",
       "description": "Allow returning a resource larger than maxBytes.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving the resource content and metadata.",
-    },
   },
   "outputs": {
     "out": {

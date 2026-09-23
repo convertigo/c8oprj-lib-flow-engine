@@ -33,13 +33,6 @@ const _meta = {
       "default": false,
       "description": "Write indented JSON when true.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.text",
-      "description": "Scope path receiving the JSON text.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

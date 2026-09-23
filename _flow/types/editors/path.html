@@ -21,6 +21,7 @@
 		<div data-path-input>
 			<input part="input" spellcheck="false" placeholder="result.value">
 			<div class="hint">Pick a known scope path or type a target path.</div>
+			<div role="alert" class="validation"></div>
 		</div>
 		<div class="picker" part="picker"></div>
 	</div>
@@ -50,6 +51,23 @@
 
 		function pathOf(entry) {
 			return typeof entry === "string" ? entry : entry && entry.path || "";
+		}
+
+		function isDestination(state) {
+			return (state && state.propertyDefinition || {}).mode === "write";
+		}
+
+		function destinationCheck(value, state) {
+			if (!isDestination(state)) return { valid: true };
+			var contract = window.FlowDestinationContract;
+			if (!contract) return { valid: false, message: "Destination contract is unavailable. Reload this editor." };
+			var def = state.propertyDefinition || {};
+			var checked = contract.validate(value, Object.assign({}, state.context && state.context.destinationPolicy || contract.policy(), {required:def.required === true}));
+			if (!checked.valid || !def.targetType) return checked;
+			var actual = "";
+			groups(state.context).forEach(function (group) { group.paths.forEach(function (entry) { if (pathOf(entry) === value) actual = typeOf(entry); }); });
+			return actual && actual !== "unknown" && actual !== def.targetType
+				? {valid:false, message:"Choose a " + def.targetType + " destination; this path contains " + actual + "."} : checked;
 		}
 
 		function typeOf(entry) {
@@ -172,6 +190,9 @@
 
 		function pickerEntry(entry, state, arrays) {
 			var fullPath = pathOf(entry);
+			if (isDestination(state)) {
+				return { fullPath: fullPath, value: destinationCheck(fullPath, state).valid ? fullPath : "", type: typeOf(entry) };
+			}
 			var fullParts = objectPathParts(fullPath);
 			var base = sourceBase(state);
 			var baseParts = objectPathParts(base);
@@ -248,13 +269,17 @@
 						this._state.context = response.context;
 					}
 				}
-				this.value = this._state.value == null ? "" : bracketPath(objectPathParts(this._state.value), {});
+				this.value = this._state.value == null ? "" : isDestination(this._state)
+					? this._state.value : bracketPath(objectPathParts(this._state.value), {});
 				this.render();
 			}
 
 			get value() {
 				return this._value || "";
 			}
+
+			get valid() { return destinationCheck(this.value, this._state).valid; }
+			get validationError() { return destinationCheck(this.value, this._state).message || ""; }
 
 			set value(value) {
 				this._value = value == null ? "" : String(value);
@@ -267,6 +292,7 @@
 			handleEvent(event) {
 				if (event.type === "input" && event.target && event.target.matches("input")) {
 					this._value = event.target.value;
+					this.renderValidation();
 					this.emit();
 					return;
 				}
@@ -284,8 +310,18 @@
 			emit() {
 				this.dispatchEvent(new CustomEvent("flow-value", {
 					bubbles: true,
-					detail: { value: this.value }
+					detail: { value: this.value, valid: this.valid, error: this.validationError }
 				}));
+			}
+
+			renderValidation() {
+				if (!this.shadowRoot) return;
+				this.shadowRoot.querySelector(".validation").textContent = this.validationError;
+				this.shadowRoot.querySelector("input").setAttribute("aria-invalid", String(!this.valid));
+				this.shadowRoot.querySelector(".hint").textContent = isDestination(this._state)
+					? "Choose or name a destination under " + ((this._state.context && this._state.context.destinationPolicy || window.FlowDestinationContract && window.FlowDestinationContract.policy() || {}).roots || []).join(" or ")
+						+ ". Use collection blocks to add items or map entries."
+					: "Pick a known scope path or type a source path.";
 			}
 
 			render() {
@@ -298,6 +334,7 @@
 				if (input && input.value !== this.value) {
 					input.value = this.value;
 				}
+				this.renderValidation();
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
 					picker.innerHTML = renderPicker(this._state, this.value);

@@ -12,7 +12,7 @@
 
 	function businessPropertyKeys(node, slots, env) {
 		var keys = env.flowScriptArgKeys(node, slots).filter(function (key) {
-			return key !== "id" && key !== "comment";
+			return key !== "id" && key !== "comment" && key !== "out";
 		});
 		Object.keys(node.props || {}).forEach(function (key) {
 			if (keys.indexOf(key) === -1) keys.push(key);
@@ -183,7 +183,7 @@
 						slotMap[slot] = true;
 					});
 					businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
-						if (key !== "out" && !props[key] && !acceptsAdditionalProperties) {
+						if (!props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
 							diagnostics.push({
 								severity: "error",

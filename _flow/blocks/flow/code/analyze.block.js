@@ -40,12 +40,6 @@ const _meta = {
       "type": "string",
       "description": "Optional logical project name used for relative requestables.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving reads, writes, nodes and schemas.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

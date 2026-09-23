@@ -54,13 +54,6 @@ const _meta = {
       "default": true,
       "description": "Match letter case. Disable for case-insensitive matching.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.text",
-      "description": "Scope path receiving the replaced string.",
-    },
   },
   "outputs": {
     "out": {

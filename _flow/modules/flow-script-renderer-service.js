@@ -176,11 +176,12 @@
 		}).join(", ") + " }";
 	}
 
-	function renderFlowScriptArguments(blocks, node, args, locals, env, indent) {
+	function renderFlowScriptArguments(blocks, node, args, locals, env, indent, assignedOutput) {
 		if (env.sourceVersion === 2) {
 			var codec = env.sourceAttributeNameCodec();
 			var result = [];
 			["id", "comment", "disabled", "out"].forEach(function (name) {
+				if (name === "out" && assignedOutput) return;
 				if (node[name] !== undefined) result.push(codec.encode("engine", name) + ": " + flowScriptInlineValue(node[name], env));
 			});
 			var values = Object.create(null);
@@ -322,6 +323,11 @@
 				lines.push(indent + "// @flow-disabled");
 			}
 			if (env.sourceVersion === 2) {
+				// A capture belongs on the left of the call, not in its business
+				// arguments. Keep explicit metadata for non-assignable values so
+				// rendering never drops data from an invalid/unfinished AST.
+				var assignedOutput = typeof node.out === "string" && /^(local|result)(\.[A-Za-z_$][\w$]*)+$/.test(node.out) ? node.out : "";
+				var callPrefix = assignedOutput ? assignedOutput + " = " : "";
 				var slotNames = flowScriptSlotNames(blocks, node, env);
 				var slots = slotNames.filter(function (slot) {
 					return Object.prototype.toString.call(node[slot]) === "[object Array]";
@@ -329,12 +335,12 @@
 				{
 					var args = Object.create(null);
 					flowScriptArgKeys(node, slotNames).forEach(function (key) { args[key] = node[key]; });
-					var parts = renderFlowScriptArguments(blocks, node, args, locals, env, indent + "  ");
+					var parts = renderFlowScriptArguments(blocks, node, args, locals, env, indent + "  ", assignedOutput);
 					if (!parts.length && !slots.length) {
-						lines.push(indent + env.blockName(node) + "({})");
+						lines.push(indent + callPrefix + env.blockName(node) + "({})");
 						return;
 					}
-					lines.push(indent + env.blockName(node) + "({");
+					lines.push(indent + callPrefix + env.blockName(node) + "({");
 					parts.forEach(function (part) { lines.push(indent + "  " + part + ","); });
 					slots.forEach(function (slot) {
 						lines.push(indent + "  " + flowScriptObjectKey(env.sourceAttributeNameCodec().encode("engine", slot)) + ": function () {");

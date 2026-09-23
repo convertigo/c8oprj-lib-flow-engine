@@ -31,13 +31,6 @@ const _meta = {
       "type": "unknown",
       "description": "Scalar value used as the lower comparison operand.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.less",
-      "description": "Path receiving the result.",
-    },
   },
   "outputs": {
     "out": {

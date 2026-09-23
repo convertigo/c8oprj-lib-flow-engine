@@ -10,13 +10,6 @@ const _meta = {
   ],
   "description": "Returns Flow Engine runtime cache diagnostics.",
   "properties": {
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.cache",
-      "description": "Scope path receiving cache diagnostics.",
-    },
   },
   "outputs": {
     "out": {

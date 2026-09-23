@@ -5,6 +5,8 @@ icon: "mdi:form-textbox"
 type: "string"
 description: "Plain text value with no expression evaluation."
 editor:
+  valueEncoding: text
+  native: "text"
   label: "Text editor"
   kind: "webcomponent"
   component: "flow-text-editor"

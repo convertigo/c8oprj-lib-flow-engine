@@ -6,45 +6,34 @@ const _flow = {
 }
 
 function QualifWeatherInline({ input, config, result }) {
-  http.request({
+  local.weather = http.request({
     $$id: "fetchWeather",
-    $$out: "local.weather",
     method: "GET",
     url: `file://${request.engineProjectDir}/fixtures/weather-alert.json`,
-    out: "local.weather",
   })
-  json.select({
+  local.metropoles = json.select({
     $$id: "selectMetropoles",
-    $$out: "local.metropoles",
     source: local.weather,
     path: "body.metropoles",
-    out: "local.metropoles",
   })
-  list.filter({
+  local.hotMetropoles = list.filter({
     $$id: "filterHot",
-    $$out: "local.hotMetropoles",
     items: local.metropoles,
     where: current.temperature >= 35,
-    out: "local.hotMetropoles",
   })
-  list.sort({
+  local.sortedHotMetropoles = list.sort({
     $$id: "sortHot",
-    $$out: "local.sortedHotMetropoles",
     items: local.hotMetropoles,
     by: current.city,
-    out: "local.sortedHotMetropoles",
   })
-  list.map({
+  result.hotCities = list.map({
     $$id: "mapCities",
-    $$out: "result.hotCities",
     items: local.sortedHotMetropoles,
     select: current.city,
-    out: "result.hotCities",
   })
   set({
     $$id: "message",
     path: "result.message",
     value: "Flow engine qualification passed",
   })
-  return result
 }

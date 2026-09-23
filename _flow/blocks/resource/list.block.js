@@ -31,12 +31,6 @@ const _meta = {
       "type": "number",
       "description": "Number of matching resources to skip.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving listed resources.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

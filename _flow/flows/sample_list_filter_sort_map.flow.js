@@ -24,31 +24,24 @@ function sample_list_filter_sort_map({ input, config, result }) {
       },
     ],
   })
-  list.filter({
+  local.hotCities = list.filter({
     $$id: "keepHotCities",
-    $$out: "local.hotCities",
     items: local.cities,
     where: current.temperature >= 35,
-    out: "local.hotCities",
   })
-  list.sort({
+  local.sortedHotCities = list.sort({
     $$id: "sortByCity",
-    $$out: "local.sortedHotCities",
     items: local.hotCities,
     by: current.city,
-    out: "local.sortedHotCities",
   })
-  list.map({
+  result.cities = list.map({
     $$id: "names",
-    $$out: "result.cities",
     items: local.sortedHotCities,
     select: current.city,
-    out: "result.cities",
   })
   set({
     $$id: "count",
     path: "result.count",
     value: result.cities.length,
   })
-  return result
 }

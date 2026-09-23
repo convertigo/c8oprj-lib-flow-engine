@@ -26,13 +26,6 @@ const _meta = {
       "default": "local.items",
       "description": "Array of numeric values. Non-numeric values are ignored.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.total",
-      "description": "Path receiving the total.",
-    },
   },
   "outputs": {
     "out": {

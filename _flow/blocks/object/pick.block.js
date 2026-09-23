@@ -33,13 +33,6 @@ const _meta = {
       "default": "",
       "description": "Comma-separated list or array of fields to copy. Nested paths are supported.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.picked",
-      "description": "Scope path receiving the selected fields.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

@@ -5,6 +5,7 @@ icon: "mdi:language-markdown-outline"
 type: "string"
 description: "Markdown text value."
 editor:
+  valueEncoding: text
   label: "Markdown editor"
   kind: "webcomponent"
   component: "flow-markdown-editor"

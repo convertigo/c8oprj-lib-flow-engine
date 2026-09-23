@@ -26,13 +26,6 @@ const _meta = {
       "default": "local.items",
       "description": "Source array.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.count",
-      "description": "Path receiving the count.",
-    },
   },
   "outputs": {
     "out": {

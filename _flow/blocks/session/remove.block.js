@@ -12,12 +12,6 @@ const _meta = {
       "default": "",
       "description": "HTTP session attribute name to remove.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Optional scope path receiving true when the key was removed.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

@@ -3,8 +3,9 @@ name: "path"
 label: "Scope path"
 icon: "mdi:map-marker-path"
 type: "string"
-description: "Path inside request, input, config, local, result, trace or current scopes."
+description: "Read a value from the available scopes. Write mode selects a static named destination in a writable scope (local or result for backend flows), never an expression or an array index."
 editor:
+  valueEncoding: text
   label: "Path picker"
   kind: "webcomponent"
   component: "flow-path-editor"

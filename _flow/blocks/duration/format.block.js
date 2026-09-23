@@ -40,13 +40,6 @@ const _meta = {
       "default": 1,
       "description": "Number of millisecond digits, from 0 to 3.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.duration",
-      "description": "Path receiving the formatted duration.",
-    },
   },
   "outputs": {
     "out": {

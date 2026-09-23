@@ -5,6 +5,7 @@ icon: "mdi:database-arrow-right-outline"
 type: "object"
 description: "Literal, contextual source or validated expression bound to a frontend property."
 editor:
+  valueEncoding: json
   label: "Binding editor"
   kind: "webcomponent"
   component: "flow-binding-editor"

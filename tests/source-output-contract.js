@@ -24,6 +24,19 @@ try {
 	function source(call) { return 'const _flow = { sourceVersion: 2 }\nfunction OutputProof() {\n' + call + '\nobject.keys({ $$id: "keys", $$out: "result.keys", source: local.record })\n}'; }
 	var code = source('proof.record({ $$id: "record", $$out: "local.record", id: 5, out: "result.decoy" })');
 	var analyzed = api("analyze", { flowSource: code });
+	var tree = api("describeTree", { target: "flow", flowSource: code });
+	function findNode(value, path) {
+		if (value.path === path) return value;
+		for (var i = 0; i < (value.children || []).length; i++) {
+			var found = findNode(value.children[i], path);
+			if (found) return found;
+		}
+	}
+	var projection = JSON.parse(findNode(tree, "nodes[0]").info);
+	assert(projection.propertyDefinitions.out.definitionPath === "props.out", "Business out must retain its own editor");
+	assert(projection.propertyDefinitions.$$out.definitionPath === "out"
+		&& projection.propertyDefinitions.$$out.hidden !== true,
+		"A business out property must not hide the independent engine capture");
 	assert(analyzed.ok, "Analysis failed: " + JSON.stringify(analyzed));
 	assert(analyzed.writes.indexOf("local.record") !== -1, "Analysis lost engine output: " + JSON.stringify(analyzed));
 	assert(analyzed.writes.indexOf("result.decoy") === -1, "Analysis wrote business output: " + JSON.stringify(analyzed));

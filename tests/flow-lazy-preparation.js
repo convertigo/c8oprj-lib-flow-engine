@@ -12,6 +12,8 @@ class FakeFile {
 
 let runnerBuilds = 0;
 const env = {
+	destinationContract: vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../_flow/modules/destination-contract.js"), "utf8"), {}),
+	nodeOutputPath: (node) => node.out || node.props && node.props.out,
 	File: FakeFile,
 	blockName: (node) => node && node.block || "",
 	nodeProps: (node) => Object.assign({}, node && node.props || {}),

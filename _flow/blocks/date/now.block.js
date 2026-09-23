@@ -19,13 +19,6 @@ const _meta = {
     },
   },
   "properties": {
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.now",
-      "description": "Path receiving the current Unix time in milliseconds.",
-    },
   },
   "outputs": {
     "out": {

@@ -58,12 +58,6 @@ const _meta = {
       "default": "0",
       "description": "Zero-based index of the first item to keep.",
     },
-    "out": {
-      "kind": "path",
-      "mode": "write",
-      "default": "local.items",
-      "description": "Scope path receiving the sliced array.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

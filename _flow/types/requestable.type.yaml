@@ -5,6 +5,7 @@ icon: "mdi:link-variant"
 type: "string"
 description: "Sequence, Flow or Transaction target using SDK-like Convertigo qname syntax."
 editor:
+  valueEncoding: text
   label: "Requestable picker"
   kind: "webcomponent"
   component: "flow-requestable-editor"

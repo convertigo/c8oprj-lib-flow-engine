@@ -5,6 +5,7 @@ icon: "mdi:palette-outline"
 type: "string"
 description: "Semantic theme token or exact CSS color, with light/dark previews and a native color picker."
 editor:
+  valueEncoding: text
   label: "Color picker"
   kind: "webcomponent"
   component: "flow-color-editor"

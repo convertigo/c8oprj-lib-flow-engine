@@ -15,13 +15,6 @@ const _meta = {
       "default": "/api/flow-mcp",
       "description": "Endpoint path appended to the Convertigo base URL for the Flow MCP endpoint.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.endpoint",
-      "description": "Scope path receiving endpoint information.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

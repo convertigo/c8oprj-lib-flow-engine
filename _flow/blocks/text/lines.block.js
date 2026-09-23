@@ -40,14 +40,6 @@ const _meta = {
       "default": true,
       "description": "Remove empty lines after optional trimming.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.lines",
-      "description": "Scope path receiving the array of lines.",
-    },
   },
   "outputs": {
     "out": {

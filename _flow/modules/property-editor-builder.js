@@ -55,6 +55,15 @@
 		return out;
 	}
 
+	function valueTypes(env) {
+		var out = {}, types = env.loadTypes();
+		Object.keys(types).forEach(function (name) {
+			var type = env.typeDescriptor(types[name]), editor = type.editor || {};
+			out[name] = { type: type.type, editor: { valueEncoding: editor.valueEncoding, expressions: editor.expressions } };
+		});
+		return JSON.stringify(out).replace(/</g, "\\u003c");
+	}
+
 	return {
 		cacheKey: function (env) {
 			return [
@@ -65,6 +74,9 @@
 				"typeEditorChrome", env.fileFingerprint(resourceFile(env, "type-editor-chrome.css")),
 				"script", env.fileFingerprint(resourceFile(env, "property-editor.js")),
 				"builder", env.fileFingerprint(env.engineModuleFile("property-editor-builder.js")),
+				"destinations", env.fileFingerprint(env.engineModuleFile("destination-contract.js")),
+				"schemas", env.fileFingerprint(env.engineModuleFile("schema-contract.js")),
+				"values", env.fileFingerprint(env.engineModuleFile("property-value-codec.js")),
 				"types", env.typesCacheKey()
 			].join("\n");
 		},
@@ -73,7 +85,14 @@
 			var typeEditorChrome = resourceSource(env, "type-editor-chrome.css");
 			return resourceSource(env, "property-editor.html")
 				.replace("<!-- FLOW_PROPERTY_EDITOR_STYLE -->", resourceSource(env, "property-editor.css"))
-				.replace("<!-- FLOW_TYPE_EDITOR_FRAGMENTS -->", typeEditorFragmentsHtml(env, typeEditorChrome))
+				.replace("<!-- FLOW_TYPE_EDITOR_FRAGMENTS -->", "<script>window.FlowDestinationContract = "
+					+ String(env.FileUtils.readFileToString(env.engineModuleFile("destination-contract.js"), "UTF-8"))
+					+ ";window.FlowSchemaContract = "
+					+ String(env.FileUtils.readFileToString(env.engineModuleFile("schema-contract.js"), "UTF-8"))
+					+ ";window.FlowPropertyValueCodec = "
+					+ String(env.FileUtils.readFileToString(env.engineModuleFile("property-value-codec.js"), "UTF-8"))
+					+ ";window.FlowPropertyValueTypes = " + valueTypes(env)
+					+ ";</script>\n" + typeEditorFragmentsHtml(env, typeEditorChrome))
 				.replace("<!-- FLOW_PROPERTY_EDITOR_SCRIPT -->", resourceSource(env, "property-editor.js"));
 		}
 	};

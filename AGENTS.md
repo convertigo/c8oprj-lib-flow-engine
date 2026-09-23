@@ -122,20 +122,31 @@ writes to `local.name`, unqualified local variables are rewritten to `local.*`,
 `forEach/json.object/json.push` graph, and `result.key = value` writes the
 response scope.
 
-The canonical syntax remains available:
+Canonical source uses explicit scope assignments and multiline named arguments:
 
 ```javascript
+const _flow = { sourceVersion: 2 }
 function MyFlow({ input, config, result }) {
-  requestable.call({ id: "getFeed", requestable: ".RSSConnector.GetFeed", out: "local.feed" })
-  list.sort({ id: "sort", items: "local.feed.rss.channel.item", by: "current.title", out: "local.sorted" })
-  forEach({ id: "each", items: "local.sorted" }) {
-    json.object({ id: "item", out: "local.item" }) {
-      json.field({ id: "title", key: "title", value: "{{ current.title }}" })
-    }
-    json.push({ id: "push", path: "result.news", value: "{{ local.item }}" })
-  }
+  local.feed = requestable.call({
+    $$id: "getFeed",
+    requestable: ".RSSConnector.GetFeed"
+  })
+  result.news = list.sort({
+    $$id: "sort",
+    items: local.feed.rss.channel.item,
+    by: current.title
+  })
 }
 ```
+
+The left-hand assignment and an explicit `$$out` encode the same AST capture.
+The canonical writer prefers the assignment; `out` without the prefix is only
+a business property when the block actually declares it. Never reintroduce a
+runtime fallback from a business `out` to the engine capture. Expressions such
+as `2 + 3` stay expressions; do not lower them into arithmetic blocks.
+Formatting must preserve the AST, metadata, slots, literal string content and
+business property order. Workspace migrations are one-off offline tools, not
+startup/runtime compatibility code.
 
 Do not broaden this into full JavaScript during the spike. Add syntax only when
 it demonstrably reduces LLM retries on the benchmark. Do not add native JS

@@ -20,12 +20,6 @@ const _meta = {
       "type": "object",
       "description": "Object passed as input to the called Flow.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving the called Flow result.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

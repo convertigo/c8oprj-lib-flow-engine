@@ -26,6 +26,8 @@ let canonicalPathCalls = 0;
 let schemaRead = null;
 let blockCatalogReads = 0;
 const env = {
+	destinationContract: vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../_flow/modules/destination-contract.js"), "utf8"), {}),
+	nodeOutputPath: (node) => node.out || node.props && node.props.out,
 	File: FakeFile,
 	nodeProps: (node) => Object.assign({}, node.props || node || {}),
 	nodePath: (node) => String(node && node.id || ""),
@@ -262,12 +264,12 @@ assert.strictEqual(envelopeResult.profile.blocks, undefined,
 	"envelope profiling must not allocate deep per-block samples");
 assert.strictEqual(envelopeResult.profile.hotPath, undefined,
 	"envelope profiling must not allocate deep hot-path counters");
-assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 9);
+assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 10); // includes sourceVersion
 assert.strictEqual(envelopeResult.profile.frameBefore.scopesOwnSlotCount, 8);
 assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 5);
 assert.strictEqual(envelopeResult.profile.frameBefore.frameStateOwnSlotCount, 4);
 assert.strictEqual(envelopeResult.profile.frameBefore.frameStateIsContext, false);
-assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 13,
+assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 14,
 	"the profile should expose all slots retained by the frame and its private lazy state");
 for (const name of ["createContextMs", "executeNodesMs", "runFlowRequestMs"]) {
 	assert.ok(envelopeResult.profile[name] > 0, `missing envelope phase ${name}`);

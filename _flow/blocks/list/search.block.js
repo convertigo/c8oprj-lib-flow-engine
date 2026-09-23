@@ -46,14 +46,6 @@ const _meta = {
       "expert": true,
       "description": "When true, query matching keeps case.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.items",
-      "description": "Scope path receiving matching items.",
-    },
   },
   "outputs": {
     "out": {

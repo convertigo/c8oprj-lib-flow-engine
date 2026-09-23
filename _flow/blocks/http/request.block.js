@@ -66,12 +66,6 @@ const _meta = {
       "default": 60000,
       "description": "Socket read timeout in milliseconds.",
     },
-    "out": {
-      "kind": "path",
-      "mode": "write",
-      "default": "local.response",
-      "description": "Scope path receiving status, contentType, headers, body and text.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

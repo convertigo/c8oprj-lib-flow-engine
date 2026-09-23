@@ -31,13 +31,6 @@ const _meta = {
       "type": "unknown",
       "description": "Second scalar value used by the strict equality comparison.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.equal",
-      "description": "Path receiving the result.",
-    },
   },
   "outputs": {
     "out": {

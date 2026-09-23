@@ -50,14 +50,6 @@ const _meta = {
       "expert": true,
       "description": "Value used when the item path is missing and skipMissing is false.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.values",
-      "description": "Scope path receiving extracted values.",
-    },
   },
   "outputs": {
     "out": {

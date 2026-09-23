@@ -5,6 +5,7 @@ icon: "mdi:format-list-bulleted"
 type: "array"
 description: "Ordered list of values. The item type is declared by the property descriptor."
 editor:
+  valueEncoding: json
   label: "Array editor"
   kind: "webcomponent"
   component: "flow-array-editor"

@@ -20,13 +20,6 @@ const _meta = {
       "type": "string",
       "description": "Optional child path appended after the base path is resolved.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.path",
-      "description": "Scope path receiving the canonical absolute path.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

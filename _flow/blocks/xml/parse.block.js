@@ -13,13 +13,6 @@ const _meta = {
       "default": "{{ local.text }}",
       "description": "XML text to parse.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.xml",
-      "description": "Scope path receiving the parsed XML object.",
-    },
   },
   "outputs": {
     "out": {

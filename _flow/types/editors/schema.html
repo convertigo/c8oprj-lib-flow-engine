@@ -1,0 +1,162 @@
+<template id="flow-schema-editor-template">
+  <style>
+    :host { display:block; color:var(--flow-editor-text, #203040); font:13px system-ui; }
+    .row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; }
+    .children { border-left:2px solid var(--flow-editor-border, #ccd6df); padding-left:16px; margin-left:8px; }
+    label { display:inline-flex; align-items:center; gap:6px; }
+    input, select, button { font:inherit; padding:6px 8px; border:1px solid var(--flow-editor-border-strong, #b4bfca); border-radius:4px; color:inherit; background:var(--flow-editor-input-bg, #fff); }
+    button { cursor:pointer; }
+    .hint { color:var(--flow-editor-text-muted, #657080); }
+    [role=alert] { color:var(--flow-editor-danger-text, #b22); }
+  </style>
+  <label>Copy type from <select data-source-schema aria-label="Copy type from"><option value="">Choose known data…</option></select></label>
+  <div part="fields"></div>
+  <p class="hint">Describe the data, not an example value. Array items and map values keep this type even when empty.</p>
+  <p role="alert"></p>
+</template>
+<script>
+(function () {
+  if (customElements.get('flow-schema-editor')) return;
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+  const typeChoices = {string:'Text', number:'Number', integer:'Integer', boolean:'Yes / No', object:'Object', array:'Array', map:'Map', null:'Null', unknown:'Unknown'};
+  function initial(type) {
+    if (type === 'map') return {type:'object', additionalProperties:{type:'string'}};
+    if (type === 'array') return {type:'array', items:{type:'string'}};
+    if (type === 'object') return {type:'object', properties:{}, additionalProperties:false};
+    return {type};
+  }
+  customElements.define('flow-schema-editor', class extends HTMLElement {
+    constructor() { super(); this._schema = initial('string'); this._error = ''; }
+    connectedCallback() {
+      if (!this.shadowRoot) this.attachShadow({mode:'open'}).append(document.getElementById('flow-schema-editor-template').content.cloneNode(true));
+      this.render();
+    }
+    setState(state) {
+	  this._sources = state && state.context && state.context.schemaSources || [];
+      this._error = '';
+      this._unparsed = undefined;
+      try {
+        const value = state && state.value;
+        this._schema = value === undefined || value === '' ? initial('string') : clone(typeof value === 'string' ? JSON.parse(value) : value);
+      } catch (_) {
+        this._unparsed = state.value;
+        this._schema = null;
+        this._error = 'This existing type cannot be read. It has not been changed.';
+      }
+      this.render(); this.emit();
+    }
+    get value() { return this._unparsed !== undefined ? this._unparsed : JSON.stringify(this._schema); }
+    get validationError() {
+      if (this._error) return this._error;
+      const check = window.FlowSchemaContract.definition(this._schema);
+      return check.valid ? '' : check.errors.map(error => error.path + ': ' + error.message).join('\n');
+    }
+    get valid() { return !this.validationError; }
+    emit() {
+      const alert = this.shadowRoot && this.shadowRoot.querySelector('[role=alert]');
+      if (alert) alert.textContent = this.validationError;
+      this.dispatchEvent(new CustomEvent('flow-value', {bubbles:true, detail:{value:this.value, valid:this.valid, error:this.validationError}}));
+    }
+    render() {
+      if (!this.shadowRoot) return;
+      const container = this.shadowRoot.querySelector('[part=fields]');
+      container.replaceChildren();
+      const sourcePicker = this.shadowRoot.querySelector('[data-source-schema]');
+      sourcePicker.replaceChildren(new Option('Choose known data…', ''));
+      const choices = [];
+      (this._sources || []).forEach(source => {
+        if (!source.schema || window.FlowSchemaContract.compare(source.schema, source.schema).status !== 'compatible') return;
+        choices.push(source);
+        if (source.schema.type === 'array') choices.push({path:source.path + ' — item type', schema:source.schema.items});
+      });
+      choices.forEach((choice,index) => sourcePicker.append(new Option(choice.path, String(index))));
+      sourcePicker.disabled = !choices.length;
+      sourcePicker.onchange = () => {
+        if (sourcePicker.value === '') return;
+        this._schema=clone(choices[Number(sourcePicker.value)].schema); this._error=''; this._unparsed=undefined; this.render();
+      };
+      if (this._schema && typeof this._schema === 'object' && !Array.isArray(this._schema)) {
+        this.renderType(container, this._schema, 'Type', next => { this._schema = next; }, '', 0);
+      }
+      this.emit();
+    }
+    element(tag, text) {
+      const element = document.createElement(tag);
+      if (text !== undefined) element.textContent = text;
+      return element;
+    }
+    checkbox(parent, text, checked, change) {
+      const label = this.element('label', text), input = this.element('input');
+      input.type = 'checkbox'; input.checked = checked; input.setAttribute('aria-label', text);
+      input.addEventListener('change', () => { change(input.checked); this.emit(); });
+      label.prepend(input); parent.append(label);
+    }
+    renderType(parent, schema, label, replace, path, depth) {
+      if (depth > 32) return;
+      const row = this.element('div'); row.className = 'row';
+      const title = this.element('label', label), select = this.element('select');
+      select.dataset.typePath = path; select.setAttribute('aria-label', label);
+      const kind = schema.type === 'object' && schema.additionalProperties && typeof schema.additionalProperties === 'object' && !Object.keys(schema.properties || {}).length ? 'map' : schema.type;
+      Object.entries(typeChoices).forEach(([value, text]) => { const option = this.element('option', text); option.value = value; select.append(option); });
+      if (!own(typeChoices, kind)) { const option = this.element('option', 'Unsupported: ' + String(kind)); option.value = String(kind); select.append(option); }
+      select.value = kind;
+      select.addEventListener('change', () => {
+        const next = initial(select.value);
+        // Changing the type is explicit; preserve annotations, not stale constraints.
+        ['title','description','default','example','examples','nullable'].forEach(key => { if (own(schema, key)) next[key] = clone(schema[key]); });
+        replace(next); this._error = ''; this.render();
+      });
+      title.append(select); row.append(title);
+      this.checkbox(row, 'Allow null', schema.nullable === true, value => { if (value) schema.nullable = true; else delete schema.nullable; });
+      parent.append(row);
+      if (schema.enum) { const note = this.element('p', 'Allowed choices: ' + JSON.stringify(schema.enum)); note.className='hint'; parent.append(note); }
+      const children = this.element('div'); children.className='children'; parent.append(children);
+      if (schema.type === 'array') this.renderType(children, schema.items || {}, 'Item type', value => { schema.items = value; }, path + '/items', depth + 1);
+      if (schema.type !== 'object') return;
+      if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+        this.renderType(children, schema.additionalProperties, 'Value type', value => { schema.additionalProperties=value; }, path + '/values', depth + 1);
+      }
+      if (kind === 'map') return;
+      Object.keys(schema.properties || {}).forEach(key => {
+        const field = this.element('div'), fieldRow = this.element('div'); fieldRow.className='row';
+        const name = this.element('input'); name.value=key; name.dataset.fieldPath = path + '/' + key; name.setAttribute('aria-label', 'Field name');
+        name.addEventListener('change', () => {
+          const next = name.value.trim();
+          if (!next || next !== key && own(schema.properties, next)) {
+            this._error = !next ? 'A field needs a name.' : 'A field with this name already exists.'; this.emit(); return;
+          }
+          if (next !== key) {
+            const renamed = {};
+            Object.keys(schema.properties).forEach(old => Object.defineProperty(renamed, old === key ? next : old, {value:schema.properties[old], enumerable:true, writable:true, configurable:true}));
+            schema.properties = renamed;
+            if (schema.required) schema.required = schema.required.map(old => old === key ? next : old);
+          }
+          this._error=''; this.render();
+        });
+        fieldRow.append(name);
+        this.checkbox(fieldRow, 'Required', (schema.required || []).includes(key), checked => {
+          const required = (schema.required || []).filter(value => value !== key);
+          if (checked) required.push(key);
+          if (required.length) schema.required=required; else delete schema.required;
+        });
+        const remove = this.element('button', 'Remove field'); remove.type='button'; remove.dataset.removeField=path+'/'+key;
+        remove.addEventListener('click', () => { delete schema.properties[key]; if (schema.required) schema.required=schema.required.filter(value => value !== key); this._error=''; this.render(); });
+        fieldRow.append(remove); field.append(fieldRow);
+        this.renderType(field, schema.properties[key], 'Field type', value => { Object.defineProperty(schema.properties, key, {value, enumerable:true, writable:true, configurable:true}); }, path + '/' + key, depth + 1);
+        children.append(field);
+      });
+      const add = this.element('button', 'Add field'); add.type='button'; add.dataset.addField=path;
+      add.addEventListener('click', () => {
+        schema.properties = schema.properties || {};
+        let name='field', count=2; while (own(schema.properties, name)) name='field'+count++;
+        schema.properties[name]=initial('string'); this._error=''; this.render();
+        const input = Array.from(this.shadowRoot.querySelectorAll('[data-field-path]')).find(el => el.dataset.fieldPath === path + '/' + name);
+        if (input) { input.focus(); input.select(); }
+      });
+      children.append(add);
+      if (typeof schema.additionalProperties !== 'object') this.checkbox(children, 'Allow additional fields', schema.additionalProperties !== false, value => { schema.additionalProperties=value; });
+    }
+  });
+}());
+</script>

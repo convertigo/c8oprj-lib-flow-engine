@@ -42,13 +42,6 @@ const _meta = {
       "default": "",
       "description": "Text returned when the value is not a valid date.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.formattedDate",
-      "description": "Path receiving the formatted date.",
-    },
   },
   "outputs": {
     "out": {

@@ -4,14 +4,26 @@
 		// category vocabulary for every surface: "Base properties" and "Expert" are
 		// editable, "Information" is read-only. No technical prefix in a label.
 		id: { label: "Name", category: "Information", description: "Node name inside its Flow. Use Rename to change it; references are updated.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
-		// The standard Convertigo "Comment" row (DatabaseObject) already reads and writes
-		// this attribute through the bridge; the engine row stays hidden to avoid a duplicate.
-		comment: { label: "Comment", category: "Base properties", description: "Free comment about this node.", kind: "text", type: "string", "default": "", hidden: true, definitionPath: "comment" },
+		// Every host displays the same declared property; no native-row fallback.
+		comment: { label: "Comment", category: "Base properties", description: "Free comment about this node.", kind: "text", type: "string", "default": "", definitionPath: "comment" },
 		disabled: { label: "Is active", category: "Base properties", description: "Uncheck to skip this node and its children at runtime.", kind: "boolean", type: "boolean", "default": false, invert: true, definitionPath: "disabled" },
 		out: { label: "Output", category: "Base properties", description: "Scope path receiving the block result, for example local.result.", kind: "path", type: "string", mode: "write", definitionPath: "out" }
 	};
 	Object.keys(engineProperties).forEach(function (key) { Object.freeze(engineProperties[key]); });
 	Object.freeze(engineProperties);
+	function enginePropertiesFor(node, outputs) {
+		var fields = {};
+		Object.keys(engineProperties).forEach(function (name) {
+			fields[name] = Object.assign({}, engineProperties[name]);
+		});
+		var result = outputs && outputs.out;
+		if (result && (result.hidden || result.expert)) {
+			// Never make an existing assignment inaccessible when a contract changes.
+			fields.out.hidden = result.hidden === true && !(node && node.out);
+			fields.out.category = "Expert";
+		}
+		return fields;
+	}
 	function nodePath(node) {
 		return node && (node.uid || node.id || node.name) ? String(node.uid || node.id || node.name) : "";
 	}
@@ -86,6 +98,7 @@
 
 	return {
 		engineProperties: engineProperties,
+		enginePropertiesFor: enginePropertiesFor,
 		nodePath: nodePath,
 		nodeProps: nodeProps,
 		nodeOutputPath: nodeOutputPath,

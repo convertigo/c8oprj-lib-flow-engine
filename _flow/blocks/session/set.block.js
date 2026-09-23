@@ -19,12 +19,6 @@ const _meta = {
       "default": "",
       "description": "Value stored in the session. Non-string values are stored as JSON text.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Optional scope path receiving the stored value.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

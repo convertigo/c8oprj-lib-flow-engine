@@ -41,14 +41,6 @@ const _meta = {
       "expert": true,
       "description": "When true, blank strings are omitted.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.items",
-      "description": "Scope path receiving the compacted array.",
-    },
   },
   "outputs": {
     "out": {

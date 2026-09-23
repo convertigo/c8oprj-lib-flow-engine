@@ -32,13 +32,6 @@ const _meta = {
       "default": 0,
       "description": "Number returned when conversion fails.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.number",
-      "description": "Path receiving the number.",
-    },
   },
   "outputs": {
     "out": {

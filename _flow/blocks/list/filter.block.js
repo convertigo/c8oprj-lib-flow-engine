@@ -37,14 +37,6 @@ const _meta = {
       "default": "true",
       "description": "Boolean expression evaluated for each item. Use current to read the item, for example current.phase == \"Running\" or current.name.includes(\"api\").",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.filtered",
-      "description": "Scope path receiving the filtered array.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

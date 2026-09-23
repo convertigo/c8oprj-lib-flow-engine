@@ -1,0 +1,47 @@
+const assert=require('node:assert/strict'), fs=require('node:fs'), path=require('node:path');
+const {JSDOM}=require(process.argv[2] || 'jsdom');
+const root=path.join(__dirname,'../_flow');
+const html='<script>window.FlowSchemaContract='+fs.readFileSync(path.join(root,'modules/schema-contract.js'),'utf8')+';</script>'+fs.readFileSync(path.join(root,'types/editors/schema.html'),'utf8');
+const dom=new JSDOM(html,{runScripts:'dangerously'}), {document,Event}=dom.window;
+const editor=document.createElement('flow-schema-editor'); document.body.append(editor);
+const type=(path,value)=>{const select=Array.from(editor.shadowRoot.querySelectorAll('[data-type-path]')).find(el=>el.dataset.typePath===path); assert.ok(select,path);select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));};
+editor.setState({value:{type:'array',items:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}});
+assert.equal(editor.valid,true);
+assert.equal(editor.shadowRoot.querySelector('textarea'),null,'no JSON entry required');
+type('/items/name','number');
+assert.equal(JSON.parse(editor.value).items.properties.name.type,'number');
+const name=editor.shadowRoot.querySelector('[data-field-path="/items/name"]');name.value='temperature';name.dispatchEvent(new Event('change'));
+assert.deepEqual(JSON.parse(editor.value).items.required,['temperature']);
+editor.shadowRoot.querySelector('[data-add-field="/items"]').click();
+assert.equal(editor.shadowRoot.activeElement.value,'field','new field is focused for naming');
+const duplicate=editor.shadowRoot.activeElement;duplicate.value='temperature';duplicate.dispatchEvent(new Event('change'));
+assert.equal(editor.valid,false,'duplicate fields cannot silently overwrite another type');
+duplicate.value='city';duplicate.dispatchEvent(new Event('change'));
+assert.equal(editor.valid,true);
+type('/items/city','map');type('/items/city/values','boolean');
+assert.deepEqual(JSON.parse(editor.value).items.properties.city,{type:'object',additionalProperties:{type:'boolean'}});
+const saved=editor.value;editor.setState({value:saved});assert.equal(editor.value,saved,'reopening preserves nested contract');
+editor.setState({value:saved, context:{schemaSources:[{path:'local.names',schema:{type:'array',items:{type:'string'}}},{path:'local.missing',schema:{type:'unknown'}}]}});
+const picker=editor.shadowRoot.querySelector('[data-source-schema]');
+assert.equal(picker.options.length,3,'known array and item type offered; unknown not presented as proof');
+picker.value='1';picker.dispatchEvent(new Event('change'));
+assert.deepEqual(JSON.parse(editor.value),{type:'string'});
+editor.setState({value:{type:'string',pattern:'^x',description:'keep me'}});
+assert.equal(editor.valid,false);assert.equal(JSON.parse(editor.value).pattern,'^x','unsupported constraints are not dropped');
+editor.setState({value:'{bad json'});assert.equal(editor.valid,false);assert.equal(editor.value,'{bad json');
+dom.window.close();
+// Same real host used by both Studio surfaces: invalid editor state blocks Apply.
+const messages=[];
+const host=new JSDOM('<div id="app"></div>'+html+'<script>'+fs.readFileSync(path.join(root,'resources/property-editor.js'),'utf8')+'</script>',{
+ runScripts:'dangerously',beforeParse(window){window.HTMLElement.prototype.scrollIntoView=function(){};window.flowEditor={receive(value){messages.push(JSON.parse(value));}};}
+});
+host.window.receiveFromJava({mode:'picker',property:'itemType',singleProperty:true,definition:{itemType:{type:'string',pattern:'x'}},info:{propertyDefinitions:{itemType:{kind:'schema',type:'object',editorClass:'flow-schema-editor'}}}});
+const apply=host.window.document.querySelector('[data-apply-picked]');
+assert.equal(apply.disabled,true);
+apply.dispatchEvent(new host.window.Event('click',{bubbles:true}));assert.equal(messages.length,0);
+const hosted=host.window.document.querySelector('flow-schema-editor');
+hosted.setState({value:{type:'array',items:{type:'integer'}}});
+assert.equal(apply.disabled,false);apply.click();
+assert.deepEqual(JSON.parse(messages.at(-1).value),{type:'array',items:{type:'integer'}});
+host.window.close();
+console.log('schema editor DOM: nested type form, required rename, duplicate protection and lossless reopen OK');

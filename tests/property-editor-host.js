@@ -69,4 +69,20 @@ for (const definition of [
 	picker.domListeners.click({ target: { getAttribute(name) { return name === "data-apply-picked" ? "true" : null; } } });
 	assert.deepEqual(picker.messages.at(-1), { type: "setProperty", property: "value", value: "Picked draft" });
 }
+// The same host consumes the frontend provider's context instead of asking the
+// backend context service to interpret a frontend AST path.
+for (const mode of ["property", "picker"]) {
+	const h = host("flow-path-editor");
+	const context = { destinationPolicy: { roots: ["local"], bases: ["local.items"] },
+		scopes: { local: { paths: [{ path: "local.items", schema: { type: "array", items: { type: "integer" } } }] } } };
+	const definition = { kind: "path", mode: "write", editorContext: context };
+	h.window.receiveFromJava({ mode, embedded: true, virtualPath: "nodes[0]", property: "path", value: "local.items",
+		propertyDefinition: definition, definition: { props: { path: "local.items" } }, info: { propertyDefinitions: { path: definition } } });
+	assert.deepEqual(JSON.parse(JSON.stringify(h.editor.state.context)), context);
+	assert.equal(h.requests.length, 0, "a supplied provider context needs no backend context request");
+	h.listeners["flow-value"]({ detail: { value: "local.entries", valid: false, error: "Unavailable State" } });
+	h.window.flowSetContext({ tokens: [] });
+	assert.equal(h.editor.state.value, "local.entries", "refresh must preserve the pending draft");
+	assert.deepEqual(JSON.parse(JSON.stringify(h.editor.state.context.destinationPolicy)), context.destinationPolicy);
+}
 console.log("property-editor-host tests passed");

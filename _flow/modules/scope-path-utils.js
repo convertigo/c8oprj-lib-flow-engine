@@ -103,42 +103,34 @@
 	}
 
 	function writeScopePath(scopes, path, value, env) {
-		var parts = String(path || "").split(".");
-		if (parts.length === 0 || env.scopeNames.indexOf(parts[0]) === -1) {
-			env.raise("INVALID_SCOPE_PATH", "Invalid scope path: " + path);
-		}
-		if (parts[0] === "result") {
-			env.assertNoRuntimeHandle(value, "result");
-		}
-		var current = scopes[parts[0]];
-		for (var i = 1; i < parts.length - 1; i++) {
-			var part = parts[i];
-			if (current[part] === undefined || current[part] === null) {
-				current[part] = {};
-			}
-			current = current[part];
-		}
-		current[parts[parts.length - 1]] = value;
-		return value;
+		return compileWriteScopePath(path, env)(scopes, value);
 	}
 
 	function compileWriteScopePath(path, env) {
-		var parts = String(path || "").split(".");
-		if (parts.length === 0 || env.scopeNames.indexOf(parts[0]) === -1) {
-			env.raise("INVALID_SCOPE_PATH", "Invalid scope path: " + path);
-		}
+		// Internal writes may use engine scopes (e.g. trace.probes). Public node
+		// destinations are checked against their narrower policy before execution.
+		var checked = env.destinationContract.validate(path, { roots: env.scopeNames, required: true });
+		if (!checked.valid) env.raise("INVALID_SCOPE_PATH", checked.message);
+		var parts = checked.parts;
 		var writesResult = parts[0] === "result";
 		return function (scopes, value) {
+			if (scopes.__flowTypeContracts) scopes.__flowTypeContracts.validateWrite(scopes, path, value);
 			if (writesResult) {
 				env.assertNoRuntimeHandle(value, "result");
 			}
 			var current = scopes[parts[0]];
 			for (var i = 1; i < parts.length - 1; i++) {
 				var part = parts[i];
-				if (current[part] === undefined || current[part] === null) {
+				if (!current || typeof current !== "object" || Object.prototype.toString.call(current) === "[object Array]") {
+					env.raise("INVALID_SCOPE_PATH", "Destination parent must be an object: " + path);
+				}
+				if (!Object.prototype.hasOwnProperty.call(current, part) || current[part] === undefined || current[part] === null) {
 					current[part] = {};
 				}
 				current = current[part];
+			}
+			if (!current || typeof current !== "object" || Object.prototype.toString.call(current) === "[object Array]") {
+				env.raise("INVALID_SCOPE_PATH", "Destination parent must be an object: " + path);
 			}
 			current[parts[parts.length - 1]] = value;
 			return value;

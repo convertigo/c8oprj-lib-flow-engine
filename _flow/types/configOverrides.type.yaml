@@ -5,6 +5,7 @@ icon: "mdi:cog-transfer-outline"
 type: "object"
 description: "Temporary config branch overrides deep-merged while a scoped child slot runs."
 editor:
+  valueEncoding: json
   label: "Config overrides editor"
   kind: "webcomponent"
   component: "flow-config-overrides-editor"

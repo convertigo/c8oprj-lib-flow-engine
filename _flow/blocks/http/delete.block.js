@@ -54,12 +54,6 @@ const _meta = {
       "type": "unknown",
       "description": "Optional request body expression.",
     },
-    "out": {
-      "kind": "path",
-      "mode": "write",
-      "default": "local.response",
-      "description": "Scope path receiving status, contentType, headers, body and text.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

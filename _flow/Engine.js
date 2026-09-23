@@ -48,7 +48,7 @@
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|source-attribute-name-codec.js|source-layout.js|source-node-contract.js|type-descriptor-service.js|";
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|destination-contract.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-contract.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|source-attribute-name-codec.js|source-layout.js|source-node-contract.js|type-descriptor-service.js|typed-scope-contract.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var frontendDocumentServerStartLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	var frontendProductionBuildLock = new Packages.java.util.concurrent.locks.ReentrantLock();
@@ -473,8 +473,8 @@
 		return flowNodeUtils().nodeOutputPath(node, sourceVersion);
 	}
 
-	function nodeEngineProperties() {
-		return flowNodeUtils().engineProperties;
+	function nodeEngineProperties(node, outputs) {
+		return flowNodeUtils().enginePropertiesFor(node, outputs);
 	}
 
 	function isFlowNodeLike(value) {
@@ -513,6 +513,16 @@
 			raise: raise,
 			assertNoRuntimeHandle: assertNoRuntimeHandle
 		};
+	}
+
+	function destinationContract() {
+		return loadEngineModule("destination-contract.js");
+	}
+
+	function scopeWriteEnv() {
+		var env = scopePathEnv();
+		env.destinationContract = destinationContract();
+		return env;
 	}
 
 	function isScopePath(value) {
@@ -636,11 +646,11 @@
 	}
 
 	function writeScopePath(scopes, path, value) {
-		return scopePathUtils().writeScopePath(scopes, path, value, scopePathEnv());
+		return scopePathUtils().writeScopePath(scopes, path, value, scopeWriteEnv());
 	}
 
 	function compileWriteScopePath(path) {
-		var write = scopePathUtils().compileWriteScopePath(path, scopePathEnv());
+		var write = scopePathUtils().compileWriteScopePath(path, scopeWriteEnv());
 		return function (ctx, value) {
 			return write(ctx.scopes, value);
 		};
@@ -1020,6 +1030,10 @@
 		runtimeState.flowPlanCompilerFingerprint = [
 			"flow-execution-snapshot-service.js",
 			"flow-runtime-service.js",
+			"destination-contract.js",
+			"schema-contract.js",
+			"typed-scope-contract.js",
+			"scope-path-utils.js",
 			"flow-script-parser-service.js",
 			"flow-repository-service.js",
 			"flow-source-service.js"
@@ -1072,6 +1086,7 @@
 	function schemaUtils() {
 		return loadEngineModule("schema-utils.js");
 	}
+	function schemaContract() { return loadEngineModule("schema-contract.js"); }
 
 	function schemaUtilsEnv() {
 		return {
@@ -2793,6 +2808,7 @@
 
 	function flowScriptParserEnv() {
 		return {
+			destinationContract: destinationContract(),
 			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			parseYamlSource: parseYamlSource,
 			normalizeTree: normalizeTree,
@@ -4057,6 +4073,8 @@
 			return flowRuntimeServiceEnvInstance;
 		}
 		flowRuntimeServiceEnvInstance = {
+			schemaContract: schemaContract(),
+			typedScopeContract: loadEngineModule("typed-scope-contract.js"),
 			nodeOutputPath: nodeOutputPath,
 			File: File,
 			blockName: blockName,
@@ -4106,6 +4124,7 @@
 			readObjectPath: readObjectPath,
 			writeScopePath: writeScopePath,
 			compileWriteScopePath: compileWriteScopePath,
+			destinationContract: destinationContract(),
 			evaluateExpression: evaluateExpression,
 			compileExpression: compileExpression,
 			compileTemplateTree: compileTemplateTree,
@@ -4206,6 +4225,8 @@
 
 	function flowAnalysisServiceEnv() {
 		return {
+			schemaContract: schemaContract(),
+			destinationContract: destinationContract(),
 			nodeEngineProperties: nodeEngineProperties,
 			nodeOutputPath: nodeOutputPath,
 			sourceAttributeNameCodec: sourceAttributeNameCodec,
@@ -5567,6 +5588,9 @@
 			try {
 				var projectionDrafts = Object.assign({}, frontendSourceDrafts(request));
 				projectionDrafts[String(sourceFile.getCanonicalPath())] = source;
+				// The provider uses lexical file identities (also through workspace links).
+				// Its project scan must see the draft under the identity sent to the CLI.
+				projectionDrafts[String(sourceFile.getAbsoluteFile().toPath().normalize())] = source;
 				var projectionSourceFile = sourceFile;
 				if (String(sourceFile.getName()).endsWith(".flow.css")) {
 					var projectionInfo = frontbuilderSettingsForRequest(request);
@@ -9498,6 +9522,18 @@
 		propertyEditor: function () {
 			return staticCall("propertyEditor", function () {
 				return { ok: true, html: propertyEditorHtml() };
+			});
+		},
+
+		propertyValue: function (requestJson) {
+			return engineCall("propertyValue", requestJson, function (request) {
+				var definition = request.propertyDefinition || {};
+				var type = loadTypes()[String(definition.kind || definition.type || "")] || {};
+				try {
+					return { ok: true, value: loadEngineModule("property-value-codec.js").decode(request.text, definition, type) };
+				} catch (error) {
+					raise("INVALID_PROPERTY_VALUE", String(error.message || error));
+				}
 			});
 		},
 

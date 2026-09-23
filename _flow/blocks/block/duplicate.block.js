@@ -29,12 +29,6 @@ const _meta = {
       "type": "string",
       "description": "Optional project directory override.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving duplicate result.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

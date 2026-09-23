@@ -5,6 +5,7 @@ icon: "mdi:code-braces"
 type: "string"
 description: "Text with embedded {{ expression }} fragments."
 editor:
+  valueEncoding: text
   label: "Template editor"
   kind: "webcomponent"
   component: "flow-template-editor"

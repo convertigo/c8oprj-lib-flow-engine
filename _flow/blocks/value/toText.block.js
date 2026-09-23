@@ -32,13 +32,6 @@ const _meta = {
       "default": "",
       "description": "Text returned for null or undefined.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.text",
-      "description": "Path receiving the text.",
-    },
   },
   "outputs": {
     "out": {

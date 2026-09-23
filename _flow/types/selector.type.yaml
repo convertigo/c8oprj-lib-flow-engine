@@ -5,6 +5,7 @@ icon: "mdi:source-branch"
 type: "string"
 description: "Structured data selector backed by a source expression and a relative path."
 editor:
+  valueEncoding: text
   label: "Data selector"
   kind: "webcomponent"
   component: "flow-selector-editor"

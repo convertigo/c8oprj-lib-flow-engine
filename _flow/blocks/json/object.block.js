@@ -19,12 +19,6 @@ const _meta = {
     },
   ],
   "properties": {
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Optional scope path receiving the built object.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

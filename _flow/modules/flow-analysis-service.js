@@ -2,6 +2,7 @@
 	function create(env) {
 		env = env || {};
 		var scopeNames = env.scopeNames;
+		var destinations = env.destinationContract;
 		var intOption = env.intOption;
 		var nodeProps = env.nodeProps;
 		var nodeOutputPath = env.nodeOutputPath;
@@ -64,6 +65,7 @@
 				writes: [],
 				providers: {},
 				schemas: {},
+				declaredSchemas: {},
 				scopedSchemas: {},
 				returnSchemas: [],
 				currentSources: [],
@@ -77,6 +79,45 @@
 			ctx.sourceVersion = definition.flow && definition.flow.sourceVersion || 1;
 			ctx.props = function (node) { return nodeProps(node, ctx.sourceVersion); };
 			ctx.outputPath = function (node) { return nodeOutputPath(node, ctx.sourceVersion); };
+			function reportType(checked, property) {
+				if (checked.status === "compatible") return;
+				ctx.errors.push({ severity: checked.status === "incompatible" ? "error" : "warning",
+					code: checked.status === "incompatible" ? "VALUE_TYPE_MISMATCH" : "UNKNOWN_VALUE_TYPE", property: property,
+					path: ctx.currentNodeInfo && ctx.currentNodeInfo.id || "", block: ctx.currentNodeInfo && ctx.currentNodeInfo.block || "",
+					message: checked.issues.map(function (error) { return error.path + " " + error.message; }).join("; ") });
+			}
+			ctx.declaredSchema = function (path) { return ctx.declaredSchemas[path] || null; };
+			ctx.declareSchema = function (path, schema) {
+				var checked = env.schemaContract.definition(schema);
+				if (!checked.valid) { reportType({status:"incompatible", issues:checked.errors}, "type"); return; }
+				var known = env.schemaContract.compare(schema, schema);
+				if (known.status !== "compatible") { reportType(known, "type"); return; }
+				if (ctx.declaredSchemas[path]) {
+					var same = env.schemaContract.compare(ctx.declaredSchemas[path], schema);
+					if (same.status !== "compatible") { reportType(same, "type"); return; }
+				}
+				// Declarations replace inferred/learned evidence, not the other way round.
+				ctx.schemas[path] = normalizeTree(schema);
+				ctx.declaredSchemas[path] = normalizeTree(schema);
+				ctx.addSchema(path, schema);
+			};
+			ctx.checkValueType = function (expected, value, property) {
+				var dynamic = false;
+				function inspect(value) {
+					if (typeof value === "string" && value.indexOf("{{") >= 0) dynamic = true;
+					else if (value && typeof value === "object") Object.keys(value).forEach(function (key) { inspect(value[key]); });
+				}
+				inspect(value);
+				var checked;
+				if (!dynamic && value !== undefined) checked = env.schemaContract.validate(expected, value);
+				else {
+					var expression = exactTemplateExpression(value), refs = expression ? collectExpressionRefs(expression, []) : [];
+					var actual = refs.length === 1 && expression.trim() === refs[0] ? ctx.schemaForPath(refs[0]) : null;
+					checked = env.schemaContract.compare(expected, actual || {type:"unknown"});
+				}
+				reportType(checked, property);
+				return checked;
+			};
 			ctx.addPath = function (path) {
 				addUnique(ctx.paths, path);
 			};
@@ -118,10 +159,15 @@
 					return;
 				}
 				var normalized = normalizeTree(schema);
+				var declared = ctx.declaredSchemas[basePath];
+				if (declared) {
+					reportType(env.schemaContract.compare(declared, normalized), basePath);
+					normalized = declared;
+				}
 				if (ctx.returnedPathSchemas && ctx.returnedPathSchemas[basePath]) {
 					normalized = mergeGraphBlockSchema(normalized, ctx.returnedPathSchemas[basePath]) || normalized;
 				}
-				if (basePath !== "current" && ctx.schemas[basePath]) {
+				if (!declared && basePath !== "current" && ctx.schemas[basePath]) {
 					normalized = mergeSchema(ctx.schemas[basePath], normalized) || normalized;
 				}
 				ctx.schemas[basePath] = normalized;
@@ -466,6 +512,7 @@
 					return undefined;
 				}
 				var snapshot = {
+					declaredSchemas: ctx.declaredSchemas,
 					sourceVersion: ctx.sourceVersion,
 					paths: ctx.paths.slice(0),
 					reads: ctx.reads.slice(0),
@@ -476,6 +523,7 @@
 					returnSchemas: ctx.returnSchemas.slice(0),
 					currentSources: ctx.currentSources.slice(0)
 				};
+				ctx.declaredSchemas = {};
 				ctx.addPath("input");
 				ctx.addPath("local");
 				Object.keys(catalog.props || {}).forEach(function (key) {
@@ -509,6 +557,7 @@
 					outputSchema = graphBlockResultSchema(snapshot);
 				} finally {
 					ctx.sourceVersion = snapshot.sourceVersion;
+					ctx.declaredSchemas = snapshot.declaredSchemas;
 					restoreArray(ctx.paths, snapshot.paths);
 					restoreArray(ctx.reads, snapshot.reads);
 					restoreArray(ctx.writes, snapshot.writes);
@@ -740,8 +789,15 @@
 			var writes = [];
 			var inputs = [];
 			var outputs = [];
-			var writeProps = catalog.writes || [];
+			var valid = true;
 			function output(property, path) {
+				var checked = destinations.validate(path);
+				if (!checked.valid) {
+					valid = false;
+					ctx.errors.push({ severity: "error", code: checked.code, property: property,
+						path: nodePath(node), block: blockName(node), message: checked.message });
+					return;
+				}
 				if (typeof path !== "string" || !path) return;
 				addUnique(writes, path);
 				ctx.addOutputPath(property, path);
@@ -753,7 +809,9 @@
 				}
 				outputs.push(entry);
 			}
-			if (ctx.sourceVersion === 2) output("$$out", ctx.outputPath(node));
+			destinations.entries(catalog, props, ctx.outputPath(node), ctx.sourceVersion).forEach(function (entry) {
+				output(entry.property, entry.value);
+			});
 			function isExactRefValue(value, path) {
 				if (typeof value !== "string") {
 					return false;
@@ -766,10 +824,7 @@
 				var descriptor = catalog.props && !Object.prototype.toString.call(catalog.props).match(/Array/) ?
 					catalog.props[key] || {} : {};
 				var kind = descriptor.kind || "";
-				var mode = descriptor.mode || "";
-				if (writeProps.indexOf(key) !== -1 || kind === "path" && mode === "write"
-						|| ctx.sourceVersion !== 2 && key === "out" && declaredPropertyOutputSchema(catalog, key)) {
-					output(key, value);
+				if (destinations.isWriteProperty(catalog, key, ctx.sourceVersion)) {
 					return;
 				}
 				var refs = [];
@@ -801,6 +856,7 @@
 					});
 			});
 			return {
+				valid: valid,
 				reads: reads,
 				writes: writes,
 				inputs: inputs,
@@ -839,7 +895,7 @@
 				info.inputs = effects.inputs;
 				info.outputs = effects.outputs;
 				ctx.nodes.push(info);
-				if (typeof block.analyze === "function") {
+				if (effects.valid && typeof block.analyze === "function") {
 					block.analyze(ctx, node);
 				}
 			} finally {
@@ -941,9 +997,9 @@
 				info.inputs = effects.inputs;
 				info.outputs = effects.outputs;
 				ctx.nodes.push(info);
-				if (hasChildSlots(catalog) && typeof block.analyzeShallow === "function") {
+				if (effects.valid && hasChildSlots(catalog) && typeof block.analyzeShallow === "function") {
 					block.analyzeShallow(ctx, node);
-				} else if (!hasChildSlots(catalog) && typeof block.analyze === "function") {
+				} else if (effects.valid && !hasChildSlots(catalog) && typeof block.analyze === "function") {
 					block.analyze(ctx, node);
 				}
 			} finally {
@@ -1332,13 +1388,17 @@
 					(contextTargetValue(request) || request.path || request.nodePath));
 			}
 			var scopes = {};
+			var propertyDefinition = targetPropertyDescriptor(blocks, found.node, request.property, ctx.sourceVersion);
+			var mode = request.mode || propertyDefinition && propertyDefinition.mode || "read";
+			var destinationPolicy = mode === "write" ? destinations.policy() : null;
+			if (destinationPolicy) include = include.filter(function (scope) { return destinationPolicy.roots.indexOf(scope) >= 0; });
 			var currentSource = found.currentSource || null;
 			var scopedSchemas = found.scopedSchemas || {};
 			include.forEach(function (scope) {
 				var paths = ctx.paths.filter(function (path) {
-					return scopeRoot(path) === scope;
+					return scopeRoot(path) === scope && (!destinationPolicy || path !== scope && destinations.validate(path).valid);
 				});
-				if (paths.length === 0 && ctx.paths.indexOf(scope) !== -1) {
+				if (!destinationPolicy && paths.length === 0 && ctx.paths.indexOf(scope) !== -1) {
 					paths = [scope];
 				}
 				if (detail === "compact") {
@@ -1356,18 +1416,24 @@
 				node: found.node ? nodePath(found.node) : "",
 				path: found.path || "",
 				property: request.property || "",
-				mode: request.mode || "read",
+				mode: mode,
 				include: include,
 				detail: detail,
 				scopes: scopes
 			};
+			if (destinationPolicy) out.destinationPolicy = destinationPolicy;
+			if (propertyDefinition && propertyDefinition.kind === "schema") {
+				out.schemaSources = Object.keys(ctx.schemas).filter(function (path) {
+					return include.indexOf(scopeRoot(path)) >= 0 && env.schemaContract.compare(ctx.schemas[path], ctx.schemas[path]).status === "compatible";
+				}).map(function (path) { return {path:path, schema:normalizeTree(ctx.schemas[path])}; });
+			}
 			if (found.node) {
 				out.target = {
 					id: nodePath(found.node),
 					block: blockName(found.node),
 					path: found.path || "",
 					property: request.property || "",
-					propertyDefinition: targetPropertyDescriptor(blocks, found.node, request.property, ctx.sourceVersion)
+					propertyDefinition: propertyDefinition
 				};
 			}
 			return out;

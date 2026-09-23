@@ -6,6 +6,7 @@ const _meta = {
     "control",
   ],
   "description": "Runs the implementation bound to a contract. Falls back to contract.defaultImplementation.",
+  "longDescription": "Use invokes a named contract, not an arbitrary block. The contract describes the expected inputs and result; a binding selects its implementation Flow. Resolution uses the explicit implementation override, then the configured binding, then the contract's defaultImplementation. Use flow.call to invoke a particular Flow directly, or pick a block from the palette to invoke that block.",
   "summary": "use {{contract}}",
   "properties": {
     "contract": {
@@ -26,13 +27,6 @@ const _meta = {
       "kind": "expression",
       "type": "object",
       "description": "Object expression passed to the implementation flow.",
-    },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.value",
-      "description": "Scope path receiving the implementation result.",
     },
   },
   "runtime": "rhino",

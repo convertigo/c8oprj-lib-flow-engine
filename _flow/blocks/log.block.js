@@ -7,17 +7,19 @@ const _meta = {
   "properties": {
     "level": {
       "label": "level",
-      "kind": "text",
+      "kind": "literal",
       "type": "string",
+      "enum": ["error", "warn", "info", "debug", "trace"],
       "default": "info",
       "description": "Log level: error, warn, info, debug or trace.",
     },
     "logger": {
       "label": "logger",
-      "kind": "text",
+      "kind": "literal",
       "type": "string",
+      "enum": ["context", "engine", "user", "audit", "beans"],
       "default": "context",
-      "description": "Convertigo logger: context, engine, user, audit or beans.",
+      "description": "Choose a Convertigo logger. Other names in existing projects use context; they do not create a custom logger.",
     },
     "message": {
       "label": "message",
@@ -34,6 +36,9 @@ const _meta = {
     },
   },
   "runtime": "rhino",
+  "outputs": { "out": { "type": "object", "hidden": true, "properties": {
+    "level": { "type": "string" }, "message": { "type": "string" }
+  } } },
   "hooks": {
     "file": "log.hooks.js",
   },

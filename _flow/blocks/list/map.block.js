@@ -37,14 +37,6 @@ const _meta = {
       "default": "current",
       "description": "Expression evaluated for each item. Use current to read the item, for example current.name to extract pod names.",
     },
-    "out": {
-      "label": "Output",
-      "kind": "path",
-      "mode": "write",
-      "category": "Output",
-      "default": "local.mapped",
-      "description": "Scope path receiving the mapped array.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

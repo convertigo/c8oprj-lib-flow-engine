@@ -18,12 +18,6 @@ const _meta = {
       "default": "",
       "description": "Authenticated user id. An empty value logs the current session out.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Optional scope path receiving the authenticated user id, or null after logout.",
-    },
   },
   "outputs": {
     "out": {

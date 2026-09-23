@@ -26,13 +26,6 @@ const _meta = {
       "default": "{{ local.text }}",
       "description": "JSON text to parse.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "default": "local.json",
-      "description": "Scope path receiving the parsed value.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

@@ -113,7 +113,8 @@
 			example: true,
 			examples: true,
 			items: true,
-			properties: true
+			properties: true,
+			additionalProperties: true
 		}[key] === true;
 	}
 
@@ -267,7 +268,8 @@
 				}
 			}
 			var source = current.properties || current;
-			current = source[parts[i]];
+			current = Object.prototype.hasOwnProperty.call(source, parts[i]) ? source[parts[i]]
+				: current.type === "object" && current.additionalProperties && typeof current.additionalProperties === "object" ? current.additionalProperties : null;
 		}
 		return current || null;
 	}

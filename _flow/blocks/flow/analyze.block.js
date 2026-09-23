@@ -23,12 +23,6 @@ const _meta = {
       "type": "string",
       "description": "Optional project directory override.",
     },
-    "out": {
-      "label": "out",
-      "kind": "path",
-      "mode": "write",
-      "description": "Scope path receiving reads, writes and nodes.",
-    },
   },
   "runtime": "rhino",
   "hooks": {

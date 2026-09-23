@@ -30,9 +30,11 @@
 	<div class="layout">
 		<div>
 			<div class="modebar">
-				<button data-mode="simple">Compose</button>
-				<button data-mode="custom">Raw</button>
+				<button data-mode="literal">Value</button>
+				<button data-mode="simple">Expression</button>
+				<button data-mode="custom">Advanced</button>
 			</div>
+			<flow-literal-editor class="literal" part="literal"></flow-literal-editor>
 			<div class="simple" part="simple">
 				<label>
 					<span class="simpleLabel">Expression</span>
@@ -162,10 +164,6 @@
 			return { expression: "", path: "" };
 		}
 
-		function canUseSimple(value, context, propertyDefinition) {
-			return String(value || "").trim() === "" || /^\s*\{\{[\s\S]*\}\}\s*$/.test(String(value || ""));
-		}
-
 		customElements.define("flow-value-editor", class extends HTMLElement {
 			constructor() {
 				super();
@@ -180,6 +178,7 @@
 						.append(document.getElementById("flow-value-editor-template").content.cloneNode(true));
 					this.shadowRoot.addEventListener("input", this);
 					this.shadowRoot.addEventListener("click", this);
+					this.shadowRoot.addEventListener("flow-value", this);
 				}
 				this.render();
 			}
@@ -193,7 +192,8 @@
 					}
 				}
 				this._value = this._state.value == null ? "" : String(this._state.value);
-				this._mode = canUseSimple(this._value, this._state.context, this._state.propertyDefinition) ? "simple" : "custom";
+				this._mode = /^\s*\{\{[\s\S]*\}\}\s*$/.test(this._value) ? "simple"
+					: this._value.indexOf("{{") >= 0 ? "custom" : "literal";
 				this.render();
 				this.emit();
 			}
@@ -203,6 +203,14 @@
 			}
 
 			handleEvent(event) {
+				if (event.type === "flow-value" && event.target !== this) {
+					event.stopPropagation();
+					if (!this._renderingLiteral) {
+						this._value = event.detail.value;
+						this.emit();
+					}
+					return;
+				}
 				if (event.type === "input") {
 					if (event.target && event.target.matches("[data-simple]")) {
 						this.syncSimple();
@@ -216,9 +224,7 @@
 					var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
 					if (mode) {
 						this._mode = mode;
-						if (mode === "simple") {
-							this.syncSimple();
-						}
+						// Choosing an editor is not a value mutation. Wait for typing/picking.
 						this.render();
 						return;
 					}
@@ -237,6 +243,13 @@
 			}
 
 			pick(path) {
+				if (this._mode === "literal") {
+					this._mode = "simple";
+					this._value = "{{ " + path + " }}";
+					this.render();
+					this.emit();
+					return;
+				}
 				if (this._mode === "simple") {
 					var input = this.shadowRoot.querySelector("[data-simple=expression]");
 					if (input) {
@@ -251,7 +264,7 @@
 					}
 					return;
 				}
-				var textarea = this.shadowRoot.querySelector("textarea");
+				var textarea = this.shadowRoot.querySelector('textarea[part="input"]');
 				var text = "{{ " + path + " }}";
 				var start = textarea.selectionStart || 0;
 				var end = textarea.selectionEnd || start;
@@ -275,7 +288,7 @@
 				}
 				var p = parts(this._value, this._state.context, this._state.propertyDefinition);
 				var simple = this.shadowRoot.querySelector(".simple");
-				var textarea = this.shadowRoot.querySelector("textarea");
+				var textarea = this.shadowRoot.querySelector('textarea[part="input"]');
 				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) {
 					button.classList.toggle("active", button.getAttribute("data-mode") === this._mode);
 				}, this);
@@ -283,12 +296,21 @@
 					simple.classList.toggle("hidden", this._mode !== "simple");
 				}
 				if (textarea) {
-					textarea.classList.toggle("hidden", this._mode === "simple");
+					textarea.classList.toggle("hidden", this._mode !== "custom");
 					if (textarea.value !== this._value) {
 						textarea.value = this._value;
 					}
 				}
 				var expression = this.shadowRoot.querySelector("[data-simple=expression]");
+				var literal = this.shadowRoot.querySelector(".literal");
+				if (literal) {
+					literal.classList.toggle("hidden", this._mode !== "literal");
+					if (this._mode === "literal" && literal.setState) {
+						this._renderingLiteral = true;
+						try { literal.setState(Object.assign({}, this._state, { value: this.value })); }
+						finally { this._renderingLiteral = false; }
+					}
+				}
 				if (expression && expression.value !== p.expression) expression.value = p.expression;
 				var picker = this.shadowRoot.querySelector(".picker");
 				if (picker) {
