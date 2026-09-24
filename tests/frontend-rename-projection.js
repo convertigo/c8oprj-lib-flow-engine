@@ -32,15 +32,37 @@ function find(node, predicate) {
 var request = { target: "engine", engineSource: engineSource, projectDir: __flowProjectDir,
 	detail: "full", includeFrontendCatalog: false, includeFlowCatalog: false };
 var tree = call("describeTree", request);
+var routes = find(tree, function (node) { return node.type === "routes"; });
+assert(routes && !JSON.parse(routes.info).propertyDefinitions.root,
+	"Routes must not infer an editable property from its internal root flag");
+find(tree, function (node) {
+	var definitions = JSON.parse(node.info || "{}").propertyDefinitions || {};
+	Object.keys(definitions).forEach(function (key) {
+		var definition = definitions[key];
+		if (definition.hidden) return;
+		assert(["Base properties", "Expert", "Information"].indexOf(definition.category) >= 0
+			&& (definition.readOnly === true) === (definition.category === "Information"),
+			"Property presentation follows the declared contract: " + node.path + ":" + key);
+	});
+	return false;
+});
 var page = find(tree, function (node) { return JSON.parse(node.info || "{}").sourceMutationPath === "frontAst"; });
 var before = find(tree, function (node) { return JSON.parse(node.info || "{}").renameValue === "before"; });
 assert(page && before, "Real provider must expose page and rename capability");
-assert(!JSON.parse(page.info).renameMutation, "Navigation identity is not an authored node identity");
+assert(JSON.parse(page.info).renameValue === "home", "Name exposes the authored root identity, not the navigation key");
+assert(JSON.parse(page.info).renameMutation.path === "frontAst.id", "Root rename follows the generic authored-node contract");
+assert(!Object.prototype.hasOwnProperty.call(JSON.parse(page.definition), "projectionId"),
+	"Navigation bookkeeping must not enter the authored definition");
 var slot = find(tree, function (node) { return JSON.parse(node.info || "{}").sourceMutationPath === "frontAst.slots.structure.children"; });
 assert(slot && !JSON.parse(slot.info).renameMutation, "Slot wrappers must not advertise node rename");
 var info = JSON.parse(before.info);
 assert(info.propertyDefinitions.$$comment && !info.propertyDefinitions.$$comment.hidden,
 	"Frontend comment is a visible provider property");
+assert(info.propertyDefinitions.$$out.hidden, "A visual Text has no Output destination");
+assert(info.propertyDefinitions.sourceKind.readOnly && info.propertyDefinitions.sourceKind.category === "Information",
+	"Real frontend metadata is explicitly declared read-only");
+assert(info.propertyDefinitions.traits.hidden && info.propertyDefinitions.slots.hidden,
+	"Real frontend traits and slots are not human-editable properties");
 var result = call("applySourceMutation", { sourceFile: String(sourceFile.getAbsolutePath()), source: source,
 	engineSource: engineSource, projectDir: __flowProjectDir, authoringRootPath: page.path,
 	mutation: Object.assign({}, info.renameMutation, { value: "after" }) });
@@ -57,4 +79,12 @@ var commented = call("applySourceMutation", { sourceFile: String(sourceFile.getA
 var commentedNode = find(commented.authoringTree, function (node) { return JSON.parse(node.info || "{}").renameValue === "after"; });
 assert(commentedNode && commentedNode.summary === after.summary, "Frontend comment preserves provider summary");
 assert(JSON.parse(commentedNode.definition).comment === "Human note", "Frontend comment is reprojected");
+var renamedRoot = call("applySourceMutation", { sourceFile: String(sourceFile.getAbsolutePath()), source: commented.source,
+	engineSource: engineSource, projectDir: __flowProjectDir, authoringRootPath: page.path,
+	mutation: Object.assign({}, JSON.parse(page.info).renameMutation, { value: "renamedHome" }) });
+var rootAfter = find(renamedRoot.authoringTree, function (node) { return JSON.parse(node.info || "{}").renameValue === "renamedHome"; });
+assert(rootAfter && rootAfter.path === page.path, "Source navigation identity remains stable after authored root rename");
+assert(JSON.parse(rootAfter.definition).id === "renamedHome", "Reprojected Name uses the authored identity");
+assert(renamedRoot.source.indexOf('$$id="renamedHome"') >= 0, "Root rename is persisted in the returned source");
+assert(String(files.readFileToString(sourceFile, "UTF-8")) === source, "All renames remain draft-only");
 print("frontend-rename-projection OK");

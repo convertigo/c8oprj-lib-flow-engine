@@ -13,7 +13,7 @@ try {
 		runtime: "rhino", properties: { id: { kind: "value", type: "number" }, out: { kind: "value", type: "string" }, "$$id": { kind: "value", type: "number" } },
 		outputs: { out: { type: "object", properties: { id: { type: "number" }, out: { type: "string" } } } }
 	}) + '\n(function () { return { run: function (ctx, node) { return ctx.template(ctx.props(node)); } }; }())');
-	write("_flow/blocks/proof/invoke.block.js", 'const _meta = { runtime: "rhino", properties: {} }\n' +
+	write("_flow/blocks/proof/invoke.block.js", 'const _meta = { runtime: "rhino", properties: {}, outputs: { out: { hidden: true } } }\n' +
 		'(function () { return { run: function (ctx) { var value = ctx.callBlock("proof.record", { id: 7, out: "result.decoy" }, { out: "result.real" }); return value; } }; }())');
 	write("_flow/blocks/proof/legacy.block.js", 'const _meta = { runtime: "flow", properties: {} }\n' +
 		'function Legacy() {\nresult.id = 7\n}');
@@ -59,6 +59,16 @@ try {
 	same(afterLegacy.result.keys, ["id"], "Nested Flow did not restore caller dialect");
 	var metadataPicker = api("context", { flowSource: code, node: "record", property: "$$out", detail: "compact" });
 	assert(metadataPicker.target.propertyDefinition.kind === "path" && metadataPicker.target.propertyDefinition.mode === "write", "Output picker lost its path editor");
+	assert(metadataPicker.target.propertyDefinition.hidden !== true,
+		"Picker and tree must both expose a declared block output");
+	var effectDefinition = { flow: { sourceVersion: 2 }, nodes: [{ block: "proof.invoke", id: "effect", props: {} }] };
+	var effectPicker = api("context", { definition: effectDefinition, node: "effect", property: "$$out", detail: "compact" });
+	assert(effectPicker.target.propertyDefinition.hidden === true,
+		"Picker and tree must both respect a hidden result: " + JSON.stringify(effectPicker.target.propertyDefinition));
+	effectDefinition.nodes[0].out = "local.saved";
+	var savedPicker = api("context", { definition: effectDefinition, node: "effect", property: "$$out", detail: "compact" });
+	assert(savedPicker.target.propertyDefinition.hidden !== true && savedPicker.target.propertyDefinition.category === "Expert",
+		"An existing capture remains accessible consistently in picker and tree");
 	var businessPicker = api("context", { flowSource: code, node: "record", property: "out", detail: "compact" });
 	assert(businessPicker.target.propertyDefinition.kind === "value", "Business output picker uses engine editor");
 	var escapedPicker = api("context", { flowSource: code, node: "record", property: "$$$id", detail: "compact" });

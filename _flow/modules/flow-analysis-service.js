@@ -1358,10 +1358,10 @@
 				return null;
 			}
 			var attribute = propertyAttribute(property, sourceVersion);
-			if (attribute.namespace === "engine") return normalizeTree(env.nodeEngineProperties()[attribute.name]);
-			property = attribute.name;
 			var block = blocks[blockName(node)];
 			var descriptor = blockCatalog(block);
+			if (attribute.namespace === "engine") return normalizeTree(env.nodeEngineProperties(node, descriptor && descriptor.outputs)[attribute.name]);
+			property = attribute.name;
 			return descriptor && descriptor.props ? normalizeTree(descriptor.props[property] || null) : null;
 		}
 

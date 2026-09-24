@@ -17,9 +17,9 @@
 			fields[name] = Object.assign({}, engineProperties[name]);
 		});
 		var result = outputs && outputs.out;
-		if (result && (result.hidden || result.expert)) {
+		if (!result || result.hidden || result.expert) {
 			// Never make an existing assignment inaccessible when a contract changes.
-			fields.out.hidden = result.hidden === true && !(node && node.out);
+			fields.out.hidden = (!result || result.hidden === true) && !(node && node.out);
 			fields.out.category = "Expert";
 		}
 		return fields;

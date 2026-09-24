@@ -147,7 +147,7 @@
 
 		function normalize(value) {
 			var parsed = record(value);
-			if (parsed && ["literal", "source", "expression"].indexOf(parsed.mode) !== -1) return parsed;
+			if (parsed && ["literal", "source", "expression"].indexOf(parsed.mode) !== -1) return copy(parsed);
 			if (value !== undefined && value !== null && value !== "") return { mode: "literal", value: value };
 			return { mode: "source", source: { category: "requestable", actionId: "" }, path: [] };
 		}
@@ -282,7 +282,8 @@
 
 		function sourceKey(source) {
 			source = source || {};
-			return [source.category || "", sourceId(source), source.value || "", source.operation || ""].join("|");
+			return [source.category || "", sourceId(source), source.value || "", source.operation || "",
+				source.category === "local" ? source.scopeId || "" : ""].join("|");
 		}
 
 		function sourceCategory(candidate) {
@@ -319,7 +320,10 @@
 
 		function sourceExpression(candidate, binding) {
 			var path = pathText(binding && binding.path);
-			var label = candidate ? sourceLabel(candidate) : "Saved source";
+			var source = binding && binding.source || {};
+			var label = candidate ? sourceLabel(candidate)
+				: source.category === "local" ? "local." + sourceId(source)
+				: sourceId(source) || "Saved source";
 			return label + (path ? (path.charAt(0) === "[" ? path : "." + path) : "");
 		}
 
@@ -848,14 +852,18 @@
 				var available = allSources.filter(function (candidate) { return sourceCategory(candidate) === currentCategory; });
 				this._visibleSources = available;
 				var sourceSelect = this.shadowRoot.querySelector("[data-source]");
-				sourceSelect.innerHTML = available.length ? available.map(function (entry, index) {
+				var missingSource = !currentCandidate && !!(sourceId(this._selection.source) || this._selection.source.value);
+				var retainedOption = missingSource ? '<option value="" selected disabled>' +
+					esc(sourceExpression(null, this._selection)) + ' — unavailable</option>' : "";
+				sourceSelect.innerHTML = retainedOption + (available.length ? available.map(function (entry, index) {
 					var selected = sourceKey(entry.source || entry) === sourceKey(self._selection.source);
 					var type = entry.schema && entry.schema.type ? " — " + entry.schema.type : "";
 					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(sourceLabel(entry) + type) + '</option>';
-				}).join("") : '<option value="">No source available</option>';
+				}).join("") : missingSource ? "" : '<option value="">No source available</option>');
 				sourceSelect.disabled = available.length === 0;
 				var selectedSource = available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._selection.source); });
-				var context = selectedSource && selectedSource.context || this._state.context || {};
+				// Paths here are relative to this source, not the host's global scopes.
+				var context = selectedSource && selectedSource.context || {};
 				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };
 				var path = this.shadowRoot.querySelector('[data-child="path"]');
 				var pathContainer = this.shadowRoot.querySelector(".path");
@@ -863,7 +871,7 @@
 				var hint = this.shadowRoot.querySelector("[data-source-hint]");
 				var hasPaths = !!(selectedSource && Array.isArray(selectedSource.paths) && selectedSource.paths.length);
 				var hasSelectedPath = !!pathText(this._selection.path);
-				var showPath = hasPaths || hasSelectedPath;
+				var showPath = hasPaths || hasSelectedPath || missingSource;
 				pathContainer.classList.toggle("hidden", !showPath);
 				direct.classList.toggle("hidden", !selectedSource || showPath);
 				direct.textContent = selectedSource && !showPath ? directSourceText(selectedSource) : "";
@@ -872,11 +880,13 @@
 				else if (selectedSource) hint.textContent = hasPaths
 					? "Choose a property from this source, or keep its root value."
 					: hasSelectedPath ? "Schema unavailable; the existing property path is preserved and can be edited manually." : "";
-				else hint.textContent = available.length ? "Choose a source." : "No value of this category is available here.";
+				else hint.textContent = missingSource
+					? "The saved source is unavailable here. Its value is preserved; choose another source or edit its property path."
+					: available.length ? "Choose a source." : "No value of this category is available here.";
 				if (showPath && path && path.setState) path.setState(Object.assign({}, this._state, {
 					context: context,
 					value: pathText(this._selection.path),
-					pickerOnly: true
+					pickerOnly: false
 				}));
 			}
 		});

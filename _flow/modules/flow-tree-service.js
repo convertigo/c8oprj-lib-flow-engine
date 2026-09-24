@@ -65,7 +65,6 @@
 		var resolvedTypes;
 		var frontendBaseDefinitions;
 		var frontendVisualBaseDefinitions;
-		var frontendKnownDefinitions;
 		var frontendAuthoringPropertyDefinitionsCache = {};
 		var frontendSourceInfoCache = {};
 		// A provider tree commonly assigns the same source path to hundreds of
@@ -109,6 +108,7 @@
 	}
 
 	function applyResolvedPropertyEditor(definition) {
+		normalizePropertyPresentation(definition);
 		var typeName = String(definition.kind || definition.type || "");
 		var type = flowTypes()[typeName];
 		if (type) {
@@ -155,6 +155,18 @@
 
 	function resolvedPlainPropertyDefinition(value) {
 		return applyResolvedPropertyEditor(value || {});
+	}
+
+	// Presentation follows editability, never the object's family or a field name.
+	function normalizePropertyPresentation(definition) {
+		if (definition.readOnly === true || definition.category === "Information") {
+			definition.readOnly = true;
+			definition.category = "Information";
+		} else {
+			definition.category = definition.expert === true || definition.category === "Expert"
+				? "Expert" : "Base properties";
+		}
+		return definition;
 	}
 
 	function nodeInfo(nodeAnalysis, catalog) {
@@ -2397,6 +2409,7 @@
 
 	function frontendAuthoringPathSegment(node, index) {
 		node = node || {};
+		if (node.projectionId) return safeVirtualName("node", node.projectionId);
 		var stableId = node.sourceVersion === 2 ? node.id : node.props && node.props.id;
 		if (node.sourceExplicitId === false) {
 			stableId = null;
@@ -2476,6 +2489,7 @@
 			applyFrontendAuthoringSourcePath(info, node);
 			applyFrontendAuthoringInsertTarget(info, node);
 		});
+		if (node.descriptorId) info.descriptorId = String(node.descriptorId);
 		var definition = measureFrontendAuthoring("definition", function () {
 			return frontendAuthoringDefinition(node);
 		});
@@ -2694,6 +2708,7 @@
 		var out = {};
 		var internal = {
 			parentSlot: true,
+			projectionId: true,
 			category: true,
 			descriptorId: true,
 			icon: true,
@@ -2728,9 +2743,7 @@
 		var visualNode = String(node && node.kind || "") === "frontendWidget";
 		var props = node && node.props || {};
 		var visibleProps = measureFrontendAuthoring("propertyDefinitions.visibleProps", function () {
-			return Object.keys(props).filter(function (key) {
-				return frontendAuthoringPropertyVisible(node, key);
-			}).map(function (key) {
+			return Object.keys(props).map(function (key) {
 				return key + ":" + (typeof props[key] === "boolean" ? "boolean" : "string");
 			});
 		});
@@ -2741,6 +2754,10 @@
 				String(node && node.kind || ""),
 				String(node && node.type || ""),
 				String(node && node.descriptorId || ""),
+				node.outputs,
+				!!node.out,
+				["sourceKind", "sourceVersion", "sourceRelativePath", "sourceWritable", "traits", "slots"]
+					.filter(function (name) { return node[name] !== undefined; }),
 				extra,
 				visibleProps
 			]);
@@ -2751,21 +2768,11 @@
 		var definitions = measureFrontendAuthoring("propertyDefinitions.resolve", function () {
 			if (node.sourceVersion === 2) return frontendSourceV2PropertyDefinitions(node);
 			var resolved = frontendAuthoringBasePropertyDefinitions(visualNode);
-			var known = frontendKnownPropertyDefinitions();
 			Object.keys(extra || {}).forEach(function (key) {
 				resolved[key] = frontendPropertyDefinition(key, extra[key]);
 			});
-			Object.keys(props).forEach(function (key) {
-				if (!frontendAuthoringPropertyVisible(node, key)) {
-					return;
-				}
-				if (!resolved[key]) {
-					resolved[key] = known[key] || frontendPropertyDefinition(key, { type: typeof props[key] === "boolean" ? "boolean" : "string" });
-					if (!known[key]) {
-						resolved[key].inferredFromSource = true;
-					}
-				}
-			});
+			// Raw projection data (counts, route flags, paths...) is not an editor
+			// contract. Only the owning provider may declare editable properties.
 			return frontendSourceTargetPropertyDefinitions(resolved);
 		});
 		try {
@@ -2797,9 +2804,18 @@
 			var key = codec.encode("engine", name);
 			definitions[key] = resolvedPropertyDefinition(engineFields[name]);
 			definitions[key].definitionPath = name;
-			if (name === "out" && Object.prototype.hasOwnProperty.call(props, "out")) {
-				definitions[key].hidden = true;
-			}
+		});
+		// Technical data is explicitly described by the provider, never inferred
+		// as an editable property by a Studio host. Keep business names independent.
+		var information = frontendAuthoringBasePropertyDefinitions(false);
+		information.sourceKind = propertyDefinition("Source kind", "Information", "Source AST kind.", { readOnly: true });
+		information.sourceVersion = propertyDefinition("Source version", "Information", "Source format version.", { readOnly: true });
+		Object.keys(information).forEach(function (name) {
+			if (name === "id" || node[name] === undefined) return;
+			var key = name;
+			while (Object.prototype.hasOwnProperty.call(definitions, key)) key = "_" + key;
+			definitions[key] = resolvedPropertyDefinition(information[name]);
+			definitions[key].definitionPath = name;
 		});
 		return definitions;
 	}
@@ -2808,7 +2824,7 @@
 		var cache = visualNode ? frontendVisualBaseDefinitions : frontendBaseDefinitions;
 		if (!cache) {
 			cache = {
-				id: propertyDefinition("Id", "Information", "Generated low-code object id.", { readOnly: true, hidden: visualNode }),
+				id: propertyDefinition("Name", "Information", "Projected object name.", { readOnly: true, hidden: visualNode }),
 				kind: propertyDefinition("Kind", "Information", "Low-code object kind.", { readOnly: true, hidden: true }),
 				sourceRelativePath: propertyDefinition("Relative path", "Information", "Project-relative source path.", { readOnly: true }),
 				sourceWritable: propertyDefinition("Writable", "Information", "Whether this source can be edited.", { readOnly: true }),
@@ -2829,88 +2845,10 @@
 		return definitions;
 	}
 
-	function frontendKnownPropertyDefinitions() {
-		if (!frontendKnownDefinitions) {
-			frontendKnownDefinitions = {
-			type: propertyDefinition("Type", "Information", "Source or AST node type.", { readOnly: true, hidden: true }),
-			tag: propertyDefinition("Tag", "Information", "Svelte component or HTML tag.", { readOnly: true, hidden: true }),
-			role: propertyDefinition("Role", "Routing", "Route file or library role.", { readOnly: true }),
-			segment: propertyDefinition("Segment", "Routing", "SvelteKit route segment directory.", { readOnly: true }),
-			pathless: propertyDefinition("Pathless", "Routing", "Whether this route segment contributes to the URL path.", { readOnly: true }),
-			param: propertyDefinition("Parameter", "Routing", "SvelteKit parameter name.", { readOnly: true }),
-			matcher: propertyDefinition("Matcher", "Routing", "SvelteKit parameter matcher.", { readOnly: true }),
-			route: propertyDefinition("Route", "Routing", "Declared route path.", { kind: "text", type: "string" }),
-			title: propertyDefinition("Title", "Base properties", "Visible title.", { kind: "text", type: "string" }),
-			text: propertyDefinition("Text", "Base properties", "Text rendered by the component.", { kind: "text", type: "string" }),
-			label: propertyDefinition("Label", "Base properties", "Visible label.", { kind: "text", type: "string" }),
-			directive: propertyDefinition("Directive", "Logic", "Frontend directive kind.", { readOnly: true }),
-			event: propertyDefinition("Event", "Event", "Frontend event name.", { readOnly: true }),
-			clientAction: propertyDefinition("Client action", "Information", "Internal event action link.", { kind: "text", type: "string", readOnly: true, hidden: true }),
-			backendCall: propertyDefinition("Backend call", "Information", "Internal backend call link.", { kind: "text", type: "string", readOnly: true, hidden: true }),
-			requestable: propertyDefinition("Requestable", "Action", "Convertigo requestable called by this action.", { kind: "requestable", type: "requestable" }),
-			parameters: propertyDefinition("Parameters", "Action", "Request parameters.", { kind: "literal", type: "object" }),
-			name: propertyDefinition("Name", "Variable", "Variable name.", { kind: "text", type: "string", readOnly: true }),
-			path: propertyDefinition("Path", "Data", "Data path.", { kind: "path", type: "string" }),
-			source: propertyDefinition("Source", "Data", "Data source path.", { kind: "path", type: "string" }),
-			value: propertyDefinition("Value", "Data", "Data value or binding path.", { kind: "path", type: "string" }),
-			condition: propertyDefinition("Condition", "Logic", "Frontend condition expression.", { kind: "expression", type: "string" }),
-			expression: propertyDefinition("Expression", "Logic", "Svelte expression.", { kind: "expression", type: "string" }),
-			test: propertyDefinition("Test", "Logic", "Svelte condition expression.", { kind: "expression", type: "string" }),
-			context: propertyDefinition("Context", "Logic", "Svelte each context.", { kind: "text", type: "string" }),
-			index: propertyDefinition("Index", "Logic", "Svelte each index.", { kind: "text", type: "string" }),
-			inferred: propertyDefinition("Inferred", "Information", "Whether this node is derived from another source object.", { kind: "boolean", type: "boolean", readOnly: true }),
-				readOnly: propertyDefinition("Read only", "Information", "Whether this node is informative and cannot be edited directly.", { kind: "boolean", type: "boolean", readOnly: true })
-			};
-		}
-		return frontendKnownDefinitions;
-	}
-
-	function frontendAuthoringPropertyVisible(node, key) {
-		if (node && node.sourceVersion === 2) return true;
-		key = String(key || "");
-		if (key !== "requestable" && key !== "parameters") {
-			return true;
-		}
-		var kind = String(node && node.kind || "");
-		var type = String(node && node.type || "");
-		var props = node && node.props || {};
-		var semanticKind = String(props.kind || "");
-		if (key === "requestable") {
-			return kind === "frontendActionBlock" || type === "CallSequence" || semanticKind === "callSequence";
-		}
-		return kind === "frontendBackendCall" || type === "backendCall";
-	}
-
 	function frontendAuthoringPropertyOrder(node, definitions) {
-		if (node && node.sourceVersion === 2) {
-			return ["$$id", "$$disabled", "$$comment", "$$out"].concat(Object.keys(definitions).filter(function (name) {
-				return ["$$id", "$$disabled", "$$comment", "$$out"].indexOf(name) < 0;
-			}));
-		}
-		var preferred = ["id", "kind", "type", "tag", "title", "label", "text", "route", "segment", "param", "matcher",
-			"directive", "event", "clientAction", "backendCall", "requestable", "parameters", "source", "value",
-			"path", "name", "condition", "expression", "test", "context", "index",
-			"inferred", "readOnly", "sourceRelativePath", "sourceWritable"];
-		var order = [];
-		var props = node && node.props || {};
-		preferred.forEach(function (key) {
-			if (!frontendAuthoringPropertyVisible(node, key)) {
-				return;
-			}
-			if (key === "id" || key === "kind" || key === "sourceRelativePath" || key === "sourceWritable"
-					|| props[key] !== undefined || node && node[key] !== undefined) {
-				order.push(key);
-			}
-		});
-		Object.keys(props).forEach(function (key) {
-			if (!frontendAuthoringPropertyVisible(node, key)) {
-				return;
-			}
-			if (order.indexOf(key) === -1) {
-				order.push(key);
-			}
-		});
-		return order;
+		var preferred = node && node.sourceVersion === 2 ? ["$$id", "$$disabled", "$$comment", "$$out"] : ["id"];
+		return preferred.filter(function (name) { return definitions[name] !== undefined; })
+			.concat(Object.keys(definitions).filter(function (name) { return preferred.indexOf(name) < 0; }));
 	}
 
 	function frontendAuthoringIcon(node) {
@@ -3237,10 +3175,9 @@
 
 	function frontendPropertyDefinition(key, value) {
 		value = value && typeof value === "object" ? value : {};
-		var internalActionLink = key === "clientAction" || key === "backendCall";
 		var definition = propertyDefinition(
 			value.label || key,
-			internalActionLink ? "Information" : value.category || "Base properties",
+			value.category || "Base properties",
 			value.description || "",
 			{
 				kind: value.kind || value.editor || value.type || "text",
@@ -3252,8 +3189,9 @@
 				items: value.items,
 				bindingSources: value.bindingSources,
 				defaultValue: value["default"],
-				readOnly: internalActionLink || value.readOnly === true,
-				hidden: internalActionLink || value.hidden === true
+				readOnly: value.readOnly === true,
+				hidden: value.hidden === true,
+				expert: value.expert === true
 			}
 		);
 		if (value.inferredFromSource === true) {
@@ -3662,7 +3600,7 @@
 		if (options.editorResource) {
 			definition.editorResource = String(options.editorResource);
 		}
-		return definition;
+		return normalizePropertyPresentation(definition);
 	}
 
 	function sourceObjectInfo(sourceInfo, propertyDefinitions, propertyOrder) {
@@ -5380,6 +5318,9 @@
 
 	function descriptorMutationTargetIssue(descriptor, focus, position, target) {
 		var insert = descriptor && descriptor.insert || {};
+		if (focus.readOnlyReference || target && target.readOnlyReference) {
+			return "readOnlyReference";
+		}
 		var writable = target && target.sourceWritable !== undefined && target.sourceWritable !== null
 			? target.sourceWritable
 			: focus.sourceWritable;
@@ -5388,9 +5329,6 @@
 		}
 		if (insert.__frontendCreateSource) {
 			return writable === false ? "noWritableSource" : null;
-		}
-		if (focus.readOnlyReference || target && target.readOnlyReference) {
-			return "readOnlyReference";
 		}
 		if (writable === false) {
 			return "noWritableSource";
@@ -5539,7 +5477,9 @@
 				out.insert.__frontendCreateSource.targetSourcePath = target.sourcePath;
 			}
 		}
-		if (descriptor.virtualPrototype && descriptor.authoringMutation) {
+		if (descriptor.insert && descriptor.insert.__frontendCreateSource) {
+			out.authoringAction = { id: String(descriptor.id || ""), surface: "frontend", builder: String(descriptor.builder || "") };
+		} else if (descriptor.virtualPrototype && descriptor.authoringMutation) {
 			out.authoringAction = { id: String(descriptor.id || "") };
 		} else if (descriptor.authoringMutation) {
 			out.authoringMutation = normalizeTree(descriptor.authoringMutation);
@@ -5850,7 +5790,8 @@
 		var action = request.action || {};
 		var actionId = String(action.id || "");
 		var paletteRequest = Object.assign({}, request, {
-			surface: String(request.surface || "virtual"),
+			surface: String(action.surface || request.surface || "virtual"),
+			builder: String(action.builder || request.builder || ""),
 			focusPath: String(action.targetPath || ""),
 			position: String(action.position || "inside"),
 			detail: "normal",
@@ -5867,6 +5808,25 @@
 		});
 		if (!candidates.length) {
 			raise("INVALID_AUTHORING_ACTION", "The virtual authoring action is not valid for the selected target.");
+		}
+		if (candidates.length !== 1) raise("AMBIGUOUS_AUTHORING_ACTION_TARGET", "Select a destination slot in the tree.");
+		var selected = candidates[0];
+		var recipe = selected.insert && selected.insert.__frontendCreateSource;
+		if (recipe) {
+			var builder = authoringBuilderName(paletteRequest, authoringEngineDefinition(request));
+			if (!builder || !/^[a-zA-Z0-9_-]+$/.test(builder)) raise("INVALID_SOURCE_CREATION_TARGET", "Select one source builder.");
+			var targetDirectory = String((selected.targetSlot || {}).sourcePath || "");
+			var namespace = "";
+			var cursor = findTreeNode(tree, String(action.targetPath || ""));
+			while (cursor) {
+				if (!targetDirectory) targetDirectory = String(nodeValue(cursor.node, "sourcePath") || "");
+				if (!namespace) namespace = String(nodeValue(cursor.node, "namespace") || "");
+				cursor = cursor.parent ? findTreeNode(tree, cursor.parent.path) : null;
+			}
+			return env.planSourceCreation(recipe, { builder: builder, targetDirectory: targetDirectory,
+				namespace: namespace, drafts: request.frontendSourceDrafts || {},
+				usedIds: authoringDescriptors(paletteRequest, authoringEngineDefinition(request), blocks)
+					.map(function (descriptor) { return String(descriptor.id || ""); }) });
 		}
 		if (request.target === "flow") {
 			if (candidates.length !== 1) raise("AMBIGUOUS_AUTHORING_ACTION_TARGET", "Select a destination slot in the tree.");
@@ -5998,14 +5958,19 @@
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
 		if (request.action) {
+			request = Object.assign({}, request, {
+				surface: request.action.surface || request.surface,
+				builder: request.action.builder || request.builder
+			});
 			var treeRequest = authoringPaletteTreeRequest(request);
 			var tree = authoringTreeBaseRequest(treeRequest, blocks);
 			if (request.target === "flow") {
 				return applyMutationRequest(Object.assign({}, request, { mutation:
 					authoringActionMutationFromTreeRequest(request, blocks, tree) }), blocks);
 			}
-			return applyEngineMutationRequest(request, blocks,
-				[authoringActionMutationFromTreeRequest(request, blocks, tree)]);
+			var actionResult = authoringActionMutationFromTreeRequest(request, blocks, tree);
+			if (actionResult.sourceChanges) return actionResult;
+			return applyEngineMutationRequest(request, blocks, [actionResult]);
 		}
 		if (request.transfer) {
 			if (request.target === "flow") {

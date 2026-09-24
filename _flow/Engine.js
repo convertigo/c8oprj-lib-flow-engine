@@ -4505,6 +4505,10 @@
 				frontendBlocksForSettings: frontendBlocksForSettings,
 				frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,
 				frontendCreateDescriptorsForConfig: frontendCreateDescriptorsForConfig,
+				planSourceCreation: function (recipe, context) {
+					context.root = String(new File(projectDir(), sourcePaths().path("frontbuilder/" + context.builder)).getAbsolutePath());
+					return loadEngineModule("source-creation-plan.js").plan(recipe, context, { File: File, raise: raise });
+				},
 				sha256Hex: sha256Hex,
 				responseBudget: responseBudget,
 				describeFrontendDocument: describeFrontendDocument,
