@@ -1740,8 +1740,11 @@
 			if (expr === "result" && !nested) {
 				return [];
 			}
-			if (isFlowScriptObjectLiteral(expr)) {
-				return naturalFlowScriptObjectFields(expr).map(function (field) {
+			var fields = isFlowScriptObjectLiteral(expr) ? naturalFlowScriptObjectFields(expr) : null;
+			// Only identifier keys lower to named result destinations (destination-contract);
+			// other keys keep the object as one return value.
+			if (fields && fields.every(function (field) { return /^[A-Za-z_$][\w$]*$/.test(String(field.key)); })) {
+				return fields.map(function (field) {
 					return {
 						id: "return" + capitalizedIdentifier(field.key),
 						block: "set",

@@ -48,7 +48,7 @@
 	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
 	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
 	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|destination-contract.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-contract.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|source-attribute-name-codec.js|source-layout.js|source-node-contract.js|type-descriptor-service.js|typed-scope-contract.js|";
+	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|destination-contract.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|property-value-codec.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-contract.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|source-attribute-name-codec.js|source-creation-plan.js|source-layout.js|source-node-contract.js|type-descriptor-service.js|typed-scope-contract.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// One frontbuilder companion (document server) per provider for the whole
 	// Convertigo server, shared by every Rhino scope that evaluates this engine. The
@@ -4072,6 +4072,15 @@
 		return iconServiceModule;
 	}
 
+	function sharedIconCacheRoot() {
+		// Without the Convertigo Engine class (standalone Rhino) the static field is a
+		// JavaPackage whose toString() would become a directory under the cwd.
+		var workspace = Packages.com.twinsoft.convertigo.engine.Engine.USER_WORKSPACE_PATH;
+		return typeof workspace === "string" || workspace instanceof Packages.java.lang.String
+			? new File(String(workspace), "cache/flow-icons-v1")
+			: new File(Packages.java.lang.System.getProperty("java.io.tmpdir"), "convertigo-flow-cache/flow-icons-v1");
+	}
+
 	function iconServiceEnv() {
 		return {
 			sourcePaths: sourcePaths(),
@@ -4082,9 +4091,7 @@
 			canonicalPath: canonicalPath,
 			engineDir: engineDir,
 			projectDir: projectDir,
-			sharedIconCacheRoot: new File(
-				Packages.com.twinsoft.convertigo.engine.Engine.USER_WORKSPACE_PATH,
-				"cache/flow-icons-v1"),
+			sharedIconCacheRoot: sharedIconCacheRoot(),
 			sha256Hex: sha256Hex
 		};
 	}

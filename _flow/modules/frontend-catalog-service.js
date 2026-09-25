@@ -189,7 +189,9 @@
 		if (typeof env.resourceRelativePath === "function") {
 			var relativeRoot = providerProjectRoot || (writable ? env.projectDir() : null);
 			if (relativeRoot) {
-				metadata.sourceRelativePath = env.resourceRelativePath(relativeRoot, file);
+				// Roots are canonical (projectRootForResourceRoot); relativize the canonical file too.
+				metadata.sourceRelativePath = env.resourceRelativePath(
+					new env.File(canonicalPath(relativeRoot)), new env.File(canonicalPath(file)));
 			}
 		}
 		return metadata;

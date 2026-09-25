@@ -3474,7 +3474,12 @@
 				}
 				// The Studio name of a node is its identity ($$id, unique inside the Flow), as
 				// for any Convertigo object; the positional prefix is only a fallback.
-				var nodeObject = virtualNode(node && node.id ? safeVirtualName("node_" + index, node.id) : "node_" + index, "node", blockType, nodePath,
+				var nodeName = node && node.id ? safeVirtualName("node_" + index, node.id) : "node_" + index;
+				if (parent.children.some(function (sibling) { return sibling.name === nodeName; })) {
+					// Duplicate $$id: keep sibling QNames unique with the positional fallback.
+					nodeName = nodeName + "_" + index;
+				}
+				var nodeObject = virtualNode(nodeName, "node", blockType, nodePath,
 					nodeSummary(block, catalog, node, id, blockType), compact(shallow), compact(nodeInformation));
 				parent.children.push(nodeObject);
 				if (node.__graphBlock && node.nodes) {
