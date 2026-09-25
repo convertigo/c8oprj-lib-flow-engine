@@ -303,12 +303,36 @@
 		return type;
 	}
 
-	function loadTypeDir(types, typesDir, origin, env) {
+	function loadTypeDir(types, typesDir, origin, env, provider) {
 		sortedFiles(typesDir, env).forEach(function (file) {
 			if (!file.isFile() || !String(file.getName()).endsWith(".type.yaml")) {
 				return;
 			}
+			if (origin === "reference") {
+				// A referenced project shares its types (e.g. the editor of its components'
+				// properties); the core, this project and earlier references take precedence.
+				var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
+				var type = env.validateTypeDescriptorSource(env.resourceName(file.getName()), source);
+				if (types[type.name]) return;
+				type.__flowOrigin = origin;
+				type.__flowProvider = provider || "";
+				type.__flowFile = file.getAbsolutePath();
+				types[type.name] = type;
+				return;
+			}
 			loadTypeDescriptorFile(types, file, origin, env);
+		});
+	}
+
+	function referencedTypeDirs(env) {
+		var coreTypesDir = new env.File(env.engineDir(), "types");
+		var localTypesDir = env.projectTypesDir();
+		return referencedProjectRoots(env, env.sourcePaths.path("types")).map(function (root) {
+			return { root: root, dir: new env.File(root, env.sourcePaths.path("types")) };
+		}).filter(function (entry) {
+			var path = env.canonicalPath(entry.dir);
+			return entry.dir.isDirectory() && path !== env.canonicalPath(coreTypesDir)
+				&& !(localTypesDir && path === env.canonicalPath(localTypesDir));
 		});
 	}
 
@@ -322,6 +346,9 @@
 		if (localTypesDir && env.canonicalPath(localTypesDir) !== env.canonicalPath(coreTypesDir)) {
 			key.push("project", env.canonicalPath(env.projectDir()), env.directoryFingerprint(localTypesDir));
 		}
+		referencedTypeDirs(env).forEach(function (entry) {
+			key.push("reference", env.canonicalPath(entry.dir), env.directoryFingerprint(entry.dir));
+		});
 		return key.join("\n");
 	}
 
@@ -333,6 +360,9 @@
 		if (localTypesDir && env.canonicalPath(localTypesDir) !== env.canonicalPath(coreTypesDir)) {
 			loadTypeDir(types, localTypesDir, "project", env);
 		}
+		referencedTypeDirs(env).forEach(function (entry) {
+			loadTypeDir(types, entry.dir, "reference", env, projectNameFromRoot(entry.root, env));
+		});
 		return types;
 	}
 

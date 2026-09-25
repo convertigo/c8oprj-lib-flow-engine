@@ -32,6 +32,19 @@ write("_flow/frontbuilder/svelte/components/Gauge.flow.svelte", [
 	""
 ].join("\n"));
 
+write("_flow/types/demo.colorPicker.type.yaml", [
+	"name: demo.colorPicker",
+	"label: Color picker",
+	"description: Picks a color from the library palette.",
+	"type: string",
+	""
+].join("\n"));
+// A consumer project referencing the component library.
+var consumer = new java.io.File(temp, "DemoApp");
+files.writeStringToFile(new java.io.File(consumer, "c8oProject.yaml"),
+	"↑DemoApp [core.Project]:\n  ↓lib_flow_frontend_demo_reference [references.ProjectSchemaReference]: \n    projectName: lib_flow_frontend_demo\n", "UTF-8");
+files.writeStringToFile(new java.io.File(consumer, "_flow/engine.yaml"), "version: 1\nconfig: {}\n", "UTF-8");
+
 var __flowEngineDir = engineDir;
 var __flowProjectDir = String(project.getAbsolutePath());
 var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
@@ -68,6 +81,24 @@ try {
 	var item = palette.items.filter(function (candidate) { return candidate.id === "frontbuilder.svelte.flowUiBlock"; })[0];
 	assertTrue(item.insert.__frontendCreateSource.directory === "components/${namespacePath}",
 		"Components are created in the builder components directory of the defining project");
+	var ownTypes = find(tree, "catalog.types");
+	assertTrue(JSON.stringify(ownTypes).indexOf("demo.colorPicker") >= 0,
+		"The library lists the types it defines for its components in its own Catalog");
+
+	var consumerEngine = (function () {
+		var __flowEngineDir = engineDir;
+		var __flowProjectDir = String(consumer.getAbsolutePath());
+		return eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
+	}());
+	var consumerTree = JSON.parse(consumerEngine.describeTree(JSON.stringify({ target: "engine", engineSource: engineSource,
+		includeFlowCatalog: true, includeCatalogLibraries: false })));
+	var consumerTypes = find(consumerTree, "catalog.types");
+	assertTrue(JSON.stringify(consumerTypes).indexOf("demo.colorPicker") >= 0,
+		"A project referencing the library can use the types it shares");
+	var consumerOwnTypes = find(JSON.parse(consumerEngine.describeTree(JSON.stringify({ target: "engine", engineSource: engineSource,
+		includeFlowCatalog: true, flowCatalogOrigin: "project", includeCatalogLibraries: false }))), "catalog.types");
+	assertTrue(JSON.stringify(consumerOwnTypes || {}).indexOf("demo.colorPicker") < 0,
+		"A shared type stays defined (and edited) in the library, not in the consumer's own Catalog");
 } finally {
 	files.deleteQuietly(temp);
 }
