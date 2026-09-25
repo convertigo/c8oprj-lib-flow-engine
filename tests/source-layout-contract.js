@@ -1,4 +1,4 @@
-// Exercise both layouts on temporary projects; never activate _flow in the checkout.
+// Exercise the _flow layout on temporary projects; never activate it in the checkout.
 var sourceRoot = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var files = Packages.org.apache.commons.io.FileUtils;
 var File = java.io.File;
@@ -21,11 +21,12 @@ try {
 	assert(unknownRejected, "Unknown bootstrap layout must fail explicitly");
 	["_flow"].forEach(function (mode) {
 		var paths = layouts.create(mode);
-		var other = layouts.create(mode === "legacy" ? "_flow" : "legacy");
+		// Any other tree beside _flow is ignored, never merged or used as a fallback.
+		var other = { root: "flow-other", flows: "flow-other/flows", path: function (relative) { return "flow-other/" + relative; } };
 		var resources = module("resource-utils.js");
 		["engine.yaml", "blocks/demo.block.js", "blocks/demo.hooks.js", "fragments/demo.fragment.yaml", "lib/demo.js", "resources/demo.md", "resources/property-editor.js", "frontbuilder/svelte/demo.flow.svelte", "types/text.type.yaml", "types/editors/text.html"].forEach(function (relative) {
 			assert(resources.isAllowedPath(paths.path(relative), paths), "Resource allowlist missed " + relative);
-			assert(!resources.isAllowedPath(other.path(relative), paths), "Resource allowlist accepts obsolete layout " + relative);
+			assert(!resources.isAllowedPath(other.path(relative), paths), "Resource allowlist accepts another tree " + relative);
 		});
 		assert(resources.kind(paths.path("resources/property-editor.js"), paths) === "propertyEditorHost", "Editor host classification");
 		assert(resources.blockIdFromPath(paths.path("blocks/demo/item.block.js"), paths) === "demo.item", "Block id depends on disk layout");

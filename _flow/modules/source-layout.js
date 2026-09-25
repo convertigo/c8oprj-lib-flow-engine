@@ -3,13 +3,13 @@
 	// current is the standalone default and therefore follows the committed
 	// canonical source root. No directory sniffing or per-request dialect.
 	function create(layout) {
-		if (layout !== "legacy" && layout !== "_flow") {
+		if (layout !== "_flow") {
 			throw new Error("Unknown Flow source layout: " + layout);
 		}
-		var root = layout === "_flow" ? "_flow" : "libs/flow";
+		var root = "_flow";
 		return Object.freeze({
 			root: root,
-			flows: layout === "_flow" ? "_flow/flows" : "libs/flows",
+			flows: "_flow/flows",
 			path: function (relative) {
 				var text = String(relative || "");
 				if (!text) return root;
