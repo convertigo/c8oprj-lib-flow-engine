@@ -4076,6 +4076,7 @@
 				addBlockUses(blockNode, blockDefinition, blockPath);
 			});
 		});
+		addCatalogFrontendComponents(catalog, options || {});
 		addCatalogLibraries(catalog, options);
 		var typesFolder = virtualNode("types", "folder", "types", "catalog.types", "Types", compact({}), null, "mdi:shape-outline");
 		catalog.children.push(typesFolder);
@@ -4118,6 +4119,38 @@
 			});
 		});
 		out.push(catalog);
+	}
+
+	// Shared frontend components belong to the project that defines them, like its
+	// blocks: the Catalog lists the project's own components, with or without a builder
+	// configuration (a component library has none), where they are edited and created.
+	function addCatalogFrontendComponents(catalog, options) {
+		var builders = frontbuilderSettings(options.frontendConfig || {});
+		if (!builders.length) builders = [{ name: "svelte", settings: {} }];
+		var projectProvider = currentFrontendProjectProvider();
+		builders.forEach(function (builder) {
+			var own = (frontendBlocksForSettings(builder.name, builder.settings) || []).filter(function (block) {
+				return frontendCatalogProvider(block) === projectProvider;
+			});
+			if (!own.length) return;
+			var path = "catalog.components" + (builders.length > 1 ? "." + safeVirtualName("builder", builder.name) : "");
+			var definition = { builder: builder.name, count: own.length, sourceWritable: true };
+			var info = { frontendBuilder: builder.name };
+			var folder = virtualNode(builders.length > 1 ? "components_" + safeVirtualName("builder", builder.name) : "components",
+				"folder", "frontendCatalogComponents", path,
+				builders.length > 1 ? "Components (" + builder.name + ")" : "Components",
+				compact(definition), compact(info), "mdi:widgets-outline");
+			catalog.children.push(folder);
+			var namespaces = {};
+			own.forEach(function (block) {
+				var namespace = frontendCatalogNamespace(block);
+				(namespaces[namespace] = namespaces[namespace] || []).push(block);
+			});
+			Object.keys(namespaces).sort().forEach(function (namespace) {
+				addFrontendNamespaceCatalog(folder, builder.name, namespace, namespaces[namespace],
+					path + "." + safeVirtualName("namespace", namespace), builder.settings, true, options.request || {}, false);
+			});
+		});
 	}
 
 	function addFragments(out, blocks) {
@@ -4450,7 +4483,9 @@
 				addCatalog(children, blocks, {
 					includePrivate: request.includePrivate !== false,
 					origin: request.flowCatalogOrigin || "",
-					includeLibraries: request.includeCatalogLibraries !== false
+					includeLibraries: request.includeCatalogLibraries !== false,
+					frontendConfig: engine.config || {},
+					request: request
 				});
 			}
 		} else {
@@ -4693,7 +4728,8 @@
 		}
 		var surface = String(request.surface || "frontend");
 		if (surface !== "frontend") {
-			return [];
+			var componentsBuilder = catalogComponentsBuilder(request, engine);
+			return componentsBuilder ? catalogComponentCreateDescriptors(componentsBuilder, engine) : [];
 		}
 		var builder = authoringBuilderName(request, engine);
 		var entries = frontbuilderSettings(engine && engine.config || {});
@@ -5860,6 +5896,32 @@
 			authoringTreeBaseRequest(treeRequest, blocks));
 	}
 
+	// Catalog > Components creates shared components in the project that defines them:
+	// <builder root>/components/<namespace>, even for a library without builder settings.
+	function catalogComponentsBuilder(request, engine) {
+		var focus = String(request && (request.focusPath || request.path) || "");
+		if (focus !== "catalog.components" && focus.indexOf("catalog.components.") !== 0) {
+			return "";
+		}
+		var entries = frontbuilderSettings(engine && engine.config || {});
+		return String(request.builder || entries.length && entries[0].name || "svelte");
+	}
+
+	function catalogComponentCreateDescriptors(builder, engine) {
+		var entry = frontbuilderSettings(engine && engine.config || {}).filter(function (candidate) {
+			return candidate.name === builder;
+		})[0];
+		return (frontendCreateDescriptorsForSettings(builder, entry ? entry.settings : {}) || []).filter(function (descriptor) {
+			var recipe = descriptor && descriptor.insert && descriptor.insert.__frontendCreateSource;
+			return recipe && String(descriptor.kind || "") === "frontendUiBlockDefinition";
+		}).map(function (descriptor) {
+			var copy = normalizeTree(descriptor);
+			copy.targetKinds = (copy.targetKinds || []).concat(["frontendCatalogComponents"]);
+			copy.insert.__frontendCreateSource.directory = "components/${namespacePath}";
+			return copy;
+		});
+	}
+
 	function authoringActionMutationFromTreeRequest(request, blocks, tree) {
 		request = request || {};
 		var action = request.action || {};
@@ -5888,7 +5950,8 @@
 		var selected = candidates[0];
 		var recipe = selected.insert && selected.insert.__frontendCreateSource;
 		if (recipe) {
-			var builder = authoringBuilderName(paletteRequest, authoringEngineDefinition(request));
+			var builder = authoringBuilderName(paletteRequest, authoringEngineDefinition(request))
+				|| catalogComponentsBuilder(paletteRequest, authoringEngineDefinition(request));
 			if (!builder || !/^[a-zA-Z0-9_-]+$/.test(builder)) raise("INVALID_SOURCE_CREATION_TARGET", "Select one source builder.");
 			var targetDirectory = String((selected.targetSlot || {}).sourcePath || "");
 			var namespace = "";
