@@ -182,14 +182,21 @@ assertTrue(modernInfo.renameMutation.selectionMutationPath === modern.sourceMuta
 assertTrue(JSON.stringify(modernDefinition.props) === JSON.stringify(modern.props), "V2 must not flatten business props into structural fields");
 assertTrue(modernDefinition.id === "structureId" && modernDefinition.disabled === false, "V2 structural identity and enable state");
 assertTrue(modernNode.path.indexOf("structureId") >= 0 && modernNode.path.indexOf("businessId") < 0, "Reveal path must follow structural identity");
+// A property mutation path equal to the node path plus its definitionPath is the
+// derived default: the projection omits it and consumers (FlowVirtualObject) derive it.
+function propertyMutationPath(info, spelling) {
+	var explicit = info.sourcePropertyMutationPaths && info.sourcePropertyMutationPaths[spelling];
+	return explicit || info.sourceMutationPath + "." + info.propertyDefinitions[spelling].definitionPath;
+}
+assertTrue(!modernInfo.sourcePropertyMutationPaths, "Derived property mutation paths are not serialized");
 Object.keys(modern.props).forEach(function (key) {
 	var spelling = env.sourceAttributeNameCodec().encode("property", key);
 	assertTrue(modernInfo.propertyDefinitions[spelling].definitionPath === "props." + key, "Business definition path: " + spelling);
-	assertTrue(modernInfo.sourcePropertyMutationPaths[spelling] === modern.sourceMutationPath + ".props." + key, "Business mutation path: " + spelling);
+	assertTrue(propertyMutationPath(modernInfo, spelling) === modern.sourceMutationPath + ".props." + key, "Business mutation path: " + spelling);
 });
 ["id", "disabled", "comment", "out"].forEach(function (key) {
 	assertTrue(modernInfo.propertyDefinitions["$$" + key].definitionPath === key, "Engine definition path: " + key);
-	assertTrue(modernInfo.sourcePropertyMutationPaths["$$" + key] === modern.sourceMutationPath + "." + key, "Engine mutation path: " + key);
+	assertTrue(propertyMutationPath(modernInfo, "$$" + key) === modern.sourceMutationPath + "." + key, "Engine mutation path: " + key);
 });
 var unavailable = service.describeTreeRequest({ target: "engine", includeFrontendCatalog: false, includeFlowCatalog: false,
 	definition: { config: { frontbuilder: { svelte: { modelPath: source.getName() } } } } }, {},
