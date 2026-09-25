@@ -57,7 +57,10 @@
 	var SHARED_DOCUMENT_SERVERS_KEY = "flow.frontbuilder.documentServers";
 	var localDocumentServerRegistry = new Packages.java.util.concurrent.ConcurrentHashMap();
 
-	function sharedDocumentServerRegistry() {
+	// A Java ConcurrentHashMap published once under key in the generic Convertigo
+	// shared server map (created synchronized on that map, so two scopes cannot publish
+	// competing instances). Standalone engines (tests) get the local fallback.
+	function sharedServerJavaMap(key, fallback, initialize) {
 		var shared = null;
 		try {
 			var app = Packages.com.twinsoft.convertigo.engine.Engine.theApp;
@@ -66,24 +69,27 @@
 			shared = null;
 		}
 		if (!shared) {
-			return localDocumentServerRegistry;
+			return fallback;
 		}
-		var registry = shared.get(SHARED_DOCUMENT_SERVERS_KEY);
-		if (registry == null) {
-			// Create once for all scopes: the check-and-set runs synchronized on the
-			// shared map instance so two engines cannot publish competing registries.
-			var createOnce = new Packages.org.mozilla.javascript.Synchronizer(function () {
-				var current = shared.get(SHARED_DOCUMENT_SERVERS_KEY);
+		var map = shared.get(key);
+		if (map == null) {
+			map = new Packages.org.mozilla.javascript.Synchronizer(function () {
+				var current = shared.get(key);
 				if (current == null) {
 					current = new Packages.java.util.concurrent.ConcurrentHashMap();
-					current.put("__startLock", new Packages.java.util.concurrent.locks.ReentrantLock());
-					shared.set(SHARED_DOCUMENT_SERVERS_KEY, current);
+					if (initialize) initialize(current);
+					shared.set(key, current);
 				}
 				return current;
-			}, shared);
-			registry = createOnce();
+			}, shared)();
 		}
-		return registry;
+		return map;
+	}
+
+	function sharedDocumentServerRegistry() {
+		return sharedServerJavaMap(SHARED_DOCUMENT_SERVERS_KEY, localDocumentServerRegistry, function (registry) {
+			registry.put("__startLock", new Packages.java.util.concurrent.locks.ReentrantLock());
+		});
 	}
 
 	function sharedDocumentServerStartLock(registry) {
@@ -3926,28 +3932,29 @@
 
 	// Property definitions are shared by every node of the same shape, as a class is
 	// shared by its instances: a node info only carries a content-derived definitionRef
-	// and its own values. Each distinct entry is registered once in the Java
-	// FlowVirtualDefinitions registry, read by the Studio and by every engine scope.
-	// Without that registry (older Convertigo) infos keep their definitions inline.
+	// and its own values. Each distinct entry (JSON string) is published once in the
+	// Convertigo shared server map, read by every engine scope and by the Studio proxy
+	// objects. Convertigo versions whose FlowVirtualObject cannot resolve a ref keep
+	// receiving inline definitions.
+	var SHARED_VIRTUAL_DEFINITIONS_KEY = "flow.virtualDefinitions";
 	var DETACHED_DEFINITION_KEYS = ["propertyDefinitions", "propertyOrder", "propertyDefaults"];
 	var VIRTUAL_DEFINITION_MEMO_LIMIT = 20000;
 	var virtualDefinitionRefs = {};
 	var virtualDefinitionEntries = {};
 	var virtualDefinitionCount = 0;
-	var virtualDefinitionRegistry;
+	var virtualDefinitionsResolvable;
 
 	function virtualDefinitionsRegistry() {
-		if (virtualDefinitionRegistry === undefined) {
-			var registry = null;
+		if (virtualDefinitionsResolvable === undefined) {
+			var resolver = null;
 			try {
-				registry = Packages.com.twinsoft.convertigo.engine.flow.FlowVirtualDefinitions;
+				resolver = Packages.com.twinsoft.convertigo.beans.flow.FlowVirtualObject.resolveSharedDefinitions;
 			} catch (e) {
-				registry = null;
+				resolver = null;
 			}
-			// A missing class resolves to a Java package object, not to a callable class.
-			virtualDefinitionRegistry = typeof registry === "function" ? registry : null;
+			virtualDefinitionsResolvable = typeof resolver === "function";
 		}
-		return virtualDefinitionRegistry;
+		return virtualDefinitionsResolvable ? sharedServerJavaMap(SHARED_VIRTUAL_DEFINITIONS_KEY, null) : null;
 	}
 
 	function detachVirtualDefinitions(info, definitionsJson) {
@@ -3980,9 +3987,9 @@
 			virtualDefinitionRefs[entry] = ref;
 			virtualDefinitionEntries[ref] = entry;
 			virtualDefinitionCount++;
-			registry.register(ref, entry);
-		} else if (!registry.has(ref)) {
-			registry.register(ref, entry);
+			registry.putIfAbsent(ref, entry);
+		} else if (!registry.containsKey(ref)) {
+			registry.putIfAbsent(ref, entry);
 		}
 		DETACHED_DEFINITION_KEYS.forEach(function (key) {
 			delete info[key];
@@ -3999,7 +4006,7 @@
 		var json = virtualDefinitionEntries[ref];
 		if (!json) {
 			var registry = virtualDefinitionsRegistry();
-			var registered = registry ? registry.json(ref) : null;
+			var registered = registry ? registry.get(ref) : null;
 			json = registered === null || registered === undefined ? "" : String(registered);
 		}
 		if (!json) {
