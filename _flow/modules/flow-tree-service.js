@@ -5818,6 +5818,14 @@
 		if (treeRequest.includeBindings === undefined || treeRequest.includeBindings === null) {
 			treeRequest.includeBindings = false;
 		}
+		// A frontend focus names its builder (frontends.<builder>...): the palette then
+		// shares the builder tree the Studio projection already described.
+		if (surface === "frontend" && !String(treeRequest.builder || "")) {
+			var focusSegments = focusPath.split(".");
+			if (focusSegments.length > 1 && focusSegments[0] === "frontends") {
+				treeRequest.builder = focusSegments[1];
+			}
+		}
 		// An engine-backed palette targets a node of the Studio projection (its
 		// focusPath comes from there). Describe the engine with the projection's
 		// catalog options so both share one cached tree instead of building two.

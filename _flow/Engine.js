@@ -4740,9 +4740,94 @@
 			return normalizeTree(cached);
 		}
 		pruneDescribeTreeCacheFamily(cache, request);
-		var tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+		var shareable = String(request.target || "") === "engine";
+		var tree = shareable ? readSharedEngineTree(key, fingerprint) : null;
+		if (!tree) {
+			tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+			if (shareable) {
+				writeSharedEngineTree(key, fingerprint, tree);
+			}
+		}
 		seedAuthoringTreeCandidate(request, tree);
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
+	}
+
+	// Engine trees are shared by every scope of the pool through the Convertigo shared
+	// server map, as JSON strings: the tree a Studio refresh described in one scope serves
+	// the palette running in another. Entries are keyed by the engine code version too,
+	// since a shared entry outlives the scope that wrote it. Few large entries: LRU bound.
+	var SHARED_ENGINE_TREES_KEY = "flow.engine.treeSnapshots";
+	var SHARED_ENGINE_TREES_LIMIT = 4;
+	var engineCodeFingerprintValue = "";
+	var engineCodeFingerprintAt = 0;
+
+	function engineCodeFingerprint() {
+		var now = JavaSystem.currentTimeMillis();
+		if (!engineCodeFingerprintValue || now - engineCodeFingerprintAt > 1000) {
+			var parts = [];
+			var engineFile = new File(engineDir(), "Engine.js");
+			parts.push(engineFile.lastModified() + ":" + engineFile.length());
+			var modules = new File(engineDir(), "modules").listFiles();
+			for (var i = 0; modules && i < modules.length; i++) {
+				parts.push(String(modules[i].getName()) + ":" + modules[i].lastModified() + ":" + modules[i].length());
+			}
+			parts.sort();
+			engineCodeFingerprintValue = sha256Hex(parts.join("|"));
+			engineCodeFingerprintAt = now;
+		}
+		return engineCodeFingerprintValue;
+	}
+
+	function sharedEngineTreeKey(key, fingerprint) {
+		return sha256Hex(engineCodeFingerprint() + "\n" + key + "\n" + fingerprint);
+	}
+
+	function readSharedEngineTree(key, fingerprint) {
+		try {
+			var trees = sharedServerJavaMap(SHARED_ENGINE_TREES_KEY, null);
+			var entry = trees ? trees.get(sharedEngineTreeKey(key, fingerprint)) : null;
+			if (entry == null) {
+				return null;
+			}
+			entry.put("usedAt", JavaSystem.nanoTime());
+			var startedAt = JavaSystem.nanoTime();
+			var tree = JSON.parse(String(entry.get("json")));
+			frontendPerformanceDuration("cache.sharedEngineTree.parse", JavaSystem.nanoTime() - startedAt);
+			return tree;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function writeSharedEngineTree(key, fingerprint, tree) {
+		try {
+			var trees = sharedServerJavaMap(SHARED_ENGINE_TREES_KEY, null);
+			if (!trees || !tree || tree.ok === false) {
+				return;
+			}
+			var startedAt = JavaSystem.nanoTime();
+			var entry = new Packages.java.util.concurrent.ConcurrentHashMap();
+			entry.put("json", JSON.stringify(tree));
+			entry.put("usedAt", JavaSystem.nanoTime());
+			frontendPerformanceDuration("cache.sharedEngineTree.stringify", JavaSystem.nanoTime() - startedAt);
+			trees.put(sharedEngineTreeKey(key, fingerprint), entry);
+			while (trees.size() > SHARED_ENGINE_TREES_LIMIT) {
+				var oldestKey = null;
+				var oldestUsedAt = 0;
+				var entries = trees.entrySet().iterator();
+				while (entries.hasNext()) {
+					var item = entries.next();
+					var usedAt = Number(item.getValue().get("usedAt"));
+					if (oldestKey === null || usedAt < oldestUsedAt) {
+						oldestKey = item.getKey();
+						oldestUsedAt = usedAt;
+					}
+				}
+				trees.remove(oldestKey);
+			}
+		} catch (e) {
+			// Sharing is an optimization: the scope keeps its own snapshot.
+		}
 	}
 
 	function authoringTreeBaseRequest(request) {
@@ -4889,13 +4974,35 @@
 				if (candidate) {
 					frontendPerformanceMark("frontend.base.sharedCandidateRejected");
 				}
-				cached = flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
-				frontendPerformanceMark("frontend.base.generate");
+				cached = engineTreeAuthoringBase(baseRequest, blocks);
+				if (cached) {
+					frontendPerformanceMark("frontend.base.engineTreeSnapshot");
+				} else {
+					cached = flowTreeService().authoringTreeBaseRequest(baseRequest, blocks, flowTreeServiceEnv());
+					frontendPerformanceMark("frontend.base.generate");
+				}
 			}
 			cached = writeRuntimeMapCache(cache, key, fingerprint, cached, "Flow authoring tree snapshots");
 			frontendPerformanceMark("frontend.base.cacheStore");
 		}
 		return cached;
+	}
+
+	// Outside a frontend builder, the authoring base is the engine tree itself: derive
+	// it from the cached engine snapshot the Studio projection already described.
+	function engineTreeAuthoringBase(baseRequest, blocks) {
+		if (String(baseRequest.surface || "frontend") === "frontend"
+				|| String(baseRequest.target || "") !== "engine" || !String(baseRequest.engineSource || "")) {
+			return null;
+		}
+		var engineTree = describeTreeRequest(Object.assign({}, baseRequest, {
+			target: "engine",
+			detail: "full"
+		}), blocks);
+		if (!engineTree || engineTree.ok === false) {
+			return null;
+		}
+		return flowTreeService().authoringTreeBaseFromEngineTree(baseRequest, engineTree, flowTreeServiceEnv());
 	}
 
 	function authoringTreeRequest(request, blocks) {
