@@ -94,10 +94,6 @@ try {
 	assert(outputChecked.ok && outputChecked.definition.flow.outputs.type === "array", "Output declaration edit lost");
 	assert(JSON.stringify(context).indexOf('business-dollar') === -1 && JSON.stringify(context).indexOf('"Project"') === -1,
 		"Picker leaked config values instead of publishing schemas");
-	var legacy = source.replace('"sourceVersion":2,', '').replace(/\$\$id:/g, 'id:');
-	var legacyParsed = api("flowSourceValidate", { code: legacy });
-	var legacyWritten = api("flowSourceValidate", { flowSource: legacyParsed.source, includeMeta: false });
-	assert(legacyWritten.ok && legacyWritten.code.indexOf('"config"') !== -1, "Required config removed by compact v1 writer");
 	function rejects(code, expectedCode) {
 		var invalid = api("flowSourceValidate", { code: code });
 		assert(!invalid.ok && JSON.stringify(invalid).indexOf(expectedCode) !== -1, "Expected " + expectedCode + ": " + JSON.stringify(invalid));

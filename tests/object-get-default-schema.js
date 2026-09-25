@@ -43,7 +43,7 @@ var validation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	code: flowCode
 })));
 assertTrue(validation.ok === true, "FlowScript validation failed: " + JSON.stringify(validation));
-assertTrue(validation.definition.nodes[2].items === "local.items",
+assertTrue(validation.definition.nodes[2].props.items === "local.items",
 	"FlowScript shorthand property did not resolve to the local value: " + JSON.stringify(validation.definition.nodes[2]));
 assertTrue(!validation.diagnostics.some(function (diagnostic) {
 	return diagnostic.code === "FLOWSCRIPT_EXPECTED_ARRAY";

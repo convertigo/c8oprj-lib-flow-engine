@@ -627,7 +627,7 @@
 		var definition = env.parseFlowScript(blocks, code, request.blockMode === true
 			? { sourceVersion: request.sourceVersion } : undefined);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
-		var diagnostics = [].concat(definition.__flowScriptDiagnostics || [], validateDefinition(blocks, definition, env, request.target || "backend"));
+		var diagnostics = [].concat(validateDefinition(blocks, definition, env, request.target || "backend"));
 		inputContractDiagnostics(definition, request).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});

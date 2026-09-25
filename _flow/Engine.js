@@ -449,12 +449,12 @@
 		return flowNodeUtils().nodePath(node);
 	}
 
-	function nodeProps(node, sourceVersion) {
-		return flowNodeUtils().nodeProps(node, sourceVersion);
+	function nodeProps(node) {
+		return flowNodeUtils().nodeProps(node);
 	}
 
-	function nodeOutputPath(node, sourceVersion) {
-		return flowNodeUtils().nodeOutputPath(node, sourceVersion);
+	function nodeOutputPath(node) {
+		return flowNodeUtils().nodeOutputPath(node);
 	}
 
 	function nodeEngineProperties(node, outputs) {
@@ -1844,7 +1844,7 @@
 		return graphBlockRuntimeService().graphBlockFromDefinition(definition, file, origin, provider, graphBlockRuntimeEnv());
 	}
 
-	function flowHelperBlockDefinition(helper, sourceVersion) {
+	function flowHelperBlockDefinition(helper) {
 		helper = normalizeTree(helper || {});
 		var name = safeIdentifier(helper.name || "helper");
 		return {
@@ -1868,7 +1868,6 @@
 			__flowHelper: true,
 			__graphDefinition: {
 				version: 1,
-				flow: { sourceVersion: sourceVersion || 1 },
 				nodes: normalizeTree(helper.nodes || [])
 			}
 		};
@@ -1887,7 +1886,7 @@
 				return;
 			}
 			var helperFile = new File(engineDir(), "helpers/" + safeIconName(name) + ".flow.js");
-			out[name] = graphBlockFromDefinition(flowHelperBlockDefinition(helper, definition.flow && definition.flow.sourceVersion), helperFile, "helper", "Current Flow");
+			out[name] = graphBlockFromDefinition(flowHelperBlockDefinition(helper), helperFile, "helper", "Current Flow");
 		});
 		return out;
 	}
@@ -2681,14 +2680,6 @@
 		return flowScriptRendererService().flowScriptInlineValue(value, flowScriptRendererEnv());
 	}
 
-	function flowScriptLocalName(path) {
-		return flowScriptRendererService().flowScriptLocalName(path);
-	}
-
-	function flowScriptScopeAssignmentPath(path) {
-		return flowScriptRendererService().flowScriptScopeAssignmentPath(path);
-	}
-
 	function renderFlowScriptExpression(expr, locals) {
 		return flowScriptRendererService().renderFlowScriptExpression(expr, locals, flowScriptRendererEnv());
 	}
@@ -2715,14 +2706,6 @@
 
 	function flowScriptSlotNames(blocks, node) {
 		return flowScriptRendererService().flowScriptSlotNames(blocks, node, flowScriptRendererEnv());
-	}
-
-	function defaultFlowScriptSlot(blocks, node) {
-		return flowScriptRendererService().defaultFlowScriptSlot(blocks, node, flowScriptRendererEnv());
-	}
-
-	function flowScriptCallLine(blocks, node, indent, locals) {
-		return flowScriptRendererService().flowScriptCallLine(blocks, node, indent, locals, flowScriptRendererEnv());
 	}
 
 	function flowScriptHasTopLevelReturn(nodes) {

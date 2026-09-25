@@ -363,9 +363,9 @@
 
 		// Unshrink: a canonical source omits a property equal to its declared default
 		// (as Convertigo project YAML does); the block receives the default back.
-		function nodePropsWithDefaults(node, sourceVersion, block) {
-			var props = nodeProps(node, sourceVersion);
-			if (sourceVersion !== 2 || !block) {
+		function nodePropsWithDefaults(node, block) {
+			var props = nodeProps(node);
+			if (!block) {
 				return props;
 			}
 			var declared = (blockCatalog(block) || {}).props || {};
@@ -386,10 +386,10 @@
 			}
 			profileCount(this, "preparedPropsMisses");
 			var name = blockName(node);
-			return nodePropsWithDefaults(node, this.sourceVersion, name ? runtimeBlock(this.blocks, name) : null);
+			return nodePropsWithDefaults(node, name ? runtimeBlock(this.blocks, name) : null);
 		};
 		runContextPrototype.outputPath = function (node) {
-			return nodeOut(node, this.sourceVersion);
+			return nodeOut(node);
 		};
 		runContextPrototype.read = function (path) {
 			return readScopePath(this.scopes, path);
@@ -503,8 +503,8 @@
 		};
 		runContextPrototype.raise = raise;
 
-		function validateNodeDestinations(block, node, sourceVersion, props) {
-			destinations.entries(blockCatalog(block), props || nodePropsWithDefaults(node, sourceVersion, block), nodeOut(node, sourceVersion), sourceVersion)
+		function validateNodeDestinations(block, node, props) {
+			destinations.entries(blockCatalog(block), props || nodePropsWithDefaults(node, block), nodeOut(node))
 				.forEach(function (entry) {
 					var checked = destinations.validate(entry.value);
 					if (!checked.valid) raise(checked.code, entry.property + ": " + checked.message, node);
@@ -551,7 +551,7 @@
 			};
 		}
 
-		function installPreparedNode(node, blocks, preparedNodes, preparation, sourceVersion) {
+		function installPreparedNode(node, blocks, preparedNodes, preparation) {
 			if (!node || typeof node !== "object") {
 				return null;
 			}
@@ -566,14 +566,14 @@
 			var placeholder = blocks && blocks[name] && blocks[name].__flowScriptPlaceholder === true;
 			var block = name ? runtimeBlock(blocks, name) : null;
 			if (block) {
-				var properties = nodePropsWithDefaults(node, sourceVersion, block);
-				validateNodeDestinations(block, node, sourceVersion, properties);
+				var properties = nodePropsWithDefaults(node, block);
+				validateNodeDestinations(block, node, properties);
 				var reusableProps = canReuseNodeProps(block) ? properties : null;
 				if (reusableProps && typeof Object.freeze === "function") {
 					Object.freeze(reusableProps);
 				}
 				var preparedRunner = prepareNodeRunner(block, node, reusableProps);
-				var preparedOut = nodeOut(node, sourceVersion);
+				var preparedOut = nodeOut(node);
 				var preparedWriter = preparedOut ? compileWriteScopePath(preparedOut) : null;
 				var preparedNode = {
 						catalog: blocks,
@@ -631,7 +631,7 @@
 			var prepared = preparedNodeFor(ctx, node);
 			return prepared && prepared.catalog === ctx.blocks
 				? prepared
-				: installPreparedNode(node, ctx.blocks, ctx.preparedNodes, ctx.preparation, ctx.sourceVersion);
+				: installPreparedNode(node, ctx.blocks, ctx.preparedNodes, ctx.preparation);
 		}
 
 		function executeNode(ctx, node) {
@@ -660,7 +660,7 @@
 				}
 				var propsStarted = profiled ? nanoTime() : 0;
 				var out = preparedHit ? prepared.out : ctx.outputPath(node);
-				if (!preparedHit) validateNodeDestinations(block, node, ctx.sourceVersion);
+				if (!preparedHit) validateNodeDestinations(block, node);
 				profileAdd(ctx, "executeNodePropsMs", propsStarted);
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
@@ -721,7 +721,7 @@
 			profileAdd(ctx, "callBlockNormalizeMs", normalizeStarted);
 			var propsStarted = profiled ? nanoTime() : 0;
 			var nodeProperties = ctx.props(node);
-			validateNodeDestinations(block, node, ctx.sourceVersion, nodeProperties);
+			validateNodeDestinations(block, node, nodeProperties);
 			profileAdd(ctx, "callBlockPropsMs", propsStarted);
 			var frameStarted = profiled ? nanoTime() : 0;
 			var previousInput = ctx.scopes.input;
@@ -1073,7 +1073,6 @@
 			var ctx = Object.create(runContextPrototype);
 			ctx.request = request;
 			ctx.definition = definition;
-			ctx.sourceVersion = definition.flow && definition.flow.sourceVersion || 1;
 			ctx.blocks = blocks;
 			ctx.preparedNodes = plan && plan.preparedNodes || null;
 			ctx.preparation = plan && plan.preparation || null;

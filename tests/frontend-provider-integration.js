@@ -9,6 +9,7 @@ const readline = require("node:readline");
 const vm = require("node:vm");
 
 const documentMarker = "__C8O_FRONT_DOCUMENT__";
+const sourceCodecFile = path.resolve(__dirname, "../_flow/modules/source-attribute-name-codec.js");
 const mutationMarker = "__C8O_FLOW_SOURCE_MUTATION__";
 const resourceRoot = path.resolve(process.env.FLOW_FRONTBUILDER_RESOURCE_ROOT || process.argv[2] || "");
 assert.ok(resourceRoot && fs.statSync(resourceRoot).isDirectory(),
@@ -150,12 +151,12 @@ async function copyProviderRoot() {
 	}
 	const sourceFile = path.join(root, "fixture", "+page.flow.svelte");
 	const sourceText = [
-		'<FlowComponent id="home" label="Home">',
+		'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="home" label="Home">',
 		"  <Variables>",
-		'    <State id="message" type="string" value="Hello" />',
+		'    <State $$id="message" type="string" value="Hello" />',
 		"  </Variables>",
 		"  <Structure>",
-		'    <Text id="title" text="@local.message" />',
+		'    <Text $$id="title" text="@local.message" />',
 		"  </Structure>",
 		"</FlowComponent>",
 		""
@@ -179,6 +180,7 @@ function requestsFor(fixture) {
 		"--project-root", fixture.root,
 		"--project-name", "ProviderContract",
 		"--resource-root", resourceRoot,
+		"--source-codec-file", sourceCodecFile,
 		"--cache-key", "provider-integration"
 	];
 	return {
@@ -198,6 +200,7 @@ function mutationArgs(fixture) {
 	return [
 		"--source-file", fixture.sourceFile,
 		"--source-input", fixture.sourceInput,
+		"--source-codec-file", sourceCodecFile,
 		"--mutation", fixture.mutationFile
 	];
 }

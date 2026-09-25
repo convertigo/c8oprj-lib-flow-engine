@@ -63,11 +63,11 @@ var validation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 assertTrue(validation.ok === true && !validation.diagnostics.some(function (diagnostic) {
 	return diagnostic.code === "INVALID_EXPRESSION";
 }), "literal object keys were rejected as expressions: " + JSON.stringify(validation.diagnostics));
-assertTrue(validation.definition.nodes[0].key === "\u2191convertigo" &&
-	validation.definition.nodes[1].key === "display name" &&
-	validation.definition.nodes[2].key === "x-y" &&
-	validation.definition.nodes[3].key === "data.items" &&
-	validation.definition.nodes[5].key === "{{ input.dynamicKey }}",
+assertTrue(validation.definition.nodes[0].props.key === "\u2191convertigo" &&
+	validation.definition.nodes[1].props.key === "display name" &&
+	validation.definition.nodes[2].props.key === "x-y" &&
+	validation.definition.nodes[3].props.key === "data.items" &&
+	validation.definition.nodes[5].props.key === "{{ input.dynamicKey }}",
 	"object.get keys did not preserve literal/dynamic intent: " + JSON.stringify(validation.definition.nodes));
 
 var run = JSON.parse(engine.run(JSON.stringify({
@@ -104,7 +104,8 @@ var legacyDynamic = JSON.parse(engine.run(JSON.stringify({
 		nodes: [{
 			id: "legacyDynamic",
 			block: "object.get",
-			props: { source: "input.metadata", key: "input.dynamicKey", out: "result.value" }
+			props: { source: "input.metadata", key: "input.dynamicKey" },
+			out: "result.value"
 		}]
 	},
 	input: { dynamicKey: "dynamic-value", metadata: { "dynamic-value": "legacy dynamic key" } },

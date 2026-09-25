@@ -28,15 +28,14 @@
 		}
 		return { valid: true, parts: parts };
 	}
-	function isWriteProperty(catalog, key, sourceVersion) {
+	function isWriteProperty(catalog, key) {
 		var descriptor = catalog.props && catalog.props[key] || {};
-		return (catalog.writes || []).indexOf(key) >= 0 || descriptor.kind === "path" && descriptor.mode === "write"
-			|| sourceVersion !== 2 && key === "out" && !!(catalog.outputs && catalog.outputs.out);
+		return (catalog.writes || []).indexOf(key) >= 0 || descriptor.kind === "path" && descriptor.mode === "write";
 	}
-	function entries(catalog, props, out, sourceVersion) {
-		var result = [{ property: sourceVersion === 2 ? "$$out" : "out", value: out }];
+	function entries(catalog, props, out) {
+		var result = [{ property: "$$out", value: out }];
 		Object.keys(props || {}).forEach(function (key) {
-			if (isWriteProperty(catalog || {}, key, sourceVersion) && !(sourceVersion !== 2 && key === "out")) {
+			if (isWriteProperty(catalog || {}, key)) {
 				result.push({ property: key, value: props[key] });
 			}
 		});

@@ -2388,21 +2388,6 @@
 		return node;
 	}
 
-	function normalizeFrontendComponentInstanceNode(node) {
-		if (node && node.sourceVersion === 2) return node;
-		if (!node || !node.sourceMutationPath) {
-			return node;
-		}
-		var tag = String(node.tag || node.type || "");
-		var props = node.props || {};
-		var traits = frontendArray(node.traits);
-		if (traits.indexOf("ui.directive") === -1 && /^[A-Z]/.test(tag) &&
-				props.id !== undefined && String(node.label || "") === tag) {
-			node.label = String(props.id);
-		}
-		return node;
-	}
-
 	function normalizeFrontendRouteSourceNode(node, sourceFile) {
 		if (!node) {
 			return node;
@@ -2423,12 +2408,7 @@
 	function frontendAuthoringPathSegment(node, index) {
 		node = node || {};
 		if (node.projectionId) return safeVirtualName("node", node.projectionId);
-		var stableId = node.sourceVersion === 2 ? node.id : node.props && node.props.id;
-		if (node.sourceExplicitId === false) {
-			stableId = null;
-		} else if (stableId === undefined || stableId === null || String(stableId) === "") {
-			stableId = node.id;
-		}
+		var stableId = node.sourceExplicitId === false ? null : node.id;
 		if (stableId !== undefined && stableId !== null && String(stableId) !== "") {
 			return safeVirtualName("node", stableId);
 		}
@@ -2480,7 +2460,6 @@
 		});
 		measureFrontendAuthoring("normalize", function () {
 			normalizeFrontendFlowSvelteRootNode(node, sourceFile);
-			normalizeFrontendComponentInstanceNode(node);
 			normalizeFrontendRouteSourceNode(node, sourceFile);
 		});
 		var mutationPath = String(node.sourceMutationPath || "");
@@ -2787,7 +2766,7 @@
 		});
 		var cacheKey = measureFrontendAuthoring("propertyDefinitions.cacheKey", function () {
 			return JSON.stringify([
-				node.sourceVersion || 1,
+				node.sourceVersion === 2,
 				visualNode,
 				String(node && node.kind || ""),
 				String(node && node.type || ""),
@@ -6823,16 +6802,9 @@
 		if (nodeId) {
 			var location = locateSingleNode(root, blocks, nodeId, "nodeId");
 			var property = mutationPropertyName(mutation);
-			if (property && root.flow && root.flow.sourceVersion === 2) {
-				var attribute = env.sourceAttributeNameCodec().resolve(String(property), ["id", "disabled", "comment", "out"]);
-				return location.parts.concat(attribute.namespace === "engine" ? [attribute.name] : ["props", attribute.name]);
-			}
-			// A property mutation addresses the declared payload, not a colliding
-			// node attribute. Explicit paths still address structural metadata.
-			if (property && location.node.props && Object.prototype.hasOwnProperty.call(location.node.props, property)) {
-				return location.parts.concat(["props", String(property)]);
-			}
-			return property ? location.parts.concat([String(property)]) : location.parts;
+			if (!property) return location.parts;
+			var attribute = env.sourceAttributeNameCodec().resolve(String(property), ["id", "disabled", "comment", "out"]);
+			return location.parts.concat(attribute.namespace === "engine" ? [attribute.name] : ["props", attribute.name]);
 		}
 		return [];
 	}
@@ -7494,9 +7466,9 @@
 		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
 	}
 
-	function firstNodeOutputFromNode(node, catalog, property, sourceVersion) {
-		if (sourceVersion === 2 && (!property || property === "$$out" || property === "out")) {
-			var route = env.nodeOutputPath(node, 2);
+	function firstNodeOutputFromNode(node, catalog, property) {
+		if (!property || property === "$$out" || property === "out") {
+			var route = env.nodeOutputPath(node);
 			return route ? { property: "$$out", path: route } : null;
 		}
 		var props = catalog && catalog.props || {};
@@ -7569,13 +7541,12 @@
 		var effectiveNodeId = nodeId || nodePath(node);
 		var nodeInfo = byId[String(effectiveNodeId)] || null;
 		var property = String(request.property || request.output || "");
-		var sourceVersion = definition.flow && definition.flow.sourceVersion || 1;
 		// This API addresses output schema roles, not business inputs.
-		if (sourceVersion === 2 && property === "out") property = "$$out";
+		if (property === "out") property = "$$out";
 		var output = nodePointer
-			? firstNodeOutputFromNode(node, catalog, property, sourceVersion)
+			? firstNodeOutputFromNode(node, catalog, property)
 			: firstNodeOutput(nodeInfo, property);
-		output = output || firstNodeOutput(nodeInfo, property) || firstNodeOutputFromNode(node, catalog, property, sourceVersion);
+		output = output || firstNodeOutput(nodeInfo, property) || firstNodeOutputFromNode(node, catalog, property);
 		if (!property) {
 			property = output && output.property || "out";
 		}

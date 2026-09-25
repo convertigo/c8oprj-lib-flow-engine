@@ -31,8 +31,9 @@ try {
 	function check(code) { return api("flowSourceValidate", { name: "PropertyChain", code: code }); }
 	function run(source) { return api("run", { flowSource: source, input: { id: 5, locked: true }, includeTrace: false }); }
 	var source = [
+		"const _flow = { sourceVersion: 2 }",
 		"function PropertyChain({ input, result }) {",
-		'proof.echo({ id: "readRow", comment: "engine comment", out: "result.row", props: { id: input.id, disabled: input.locked, comment: "business", block: "business.block", source: input.id, nodes: [{ id: 7, props: { id: 8 } }], props: { id: 9 }, value: { kind: "source", value: { scopeId: "orders", path: ["rows", "id"], operation: "fullsync.get" } } } })',
+		'proof.echo({ $$id: "readRow", $$comment: "engine comment", $$out: "result.row", id: input.id, disabled: input.locked, comment: "business", block: "business.block", source: input.id, nodes: [{ id: 7, props: { id: 8 } }], props: { id: 9 }, value: { kind: "source", value: { scopeId: "orders", path: ["rows", "id"], operation: "fullsync.get" } } })',
 		"return result",
 		"}"
 	].join("\n");
@@ -55,7 +56,7 @@ try {
 	equal(run(written.code).result, executed.result, "Writer changed runtime result");
 	var writtenAgain = api("flowSourceValidate", { name: "PropertyChain", flowSource: written.source });
 	assert(writtenAgain.code === written.code, "Writer is not idempotent");
-	var invalid = check(source.replace('props: { id: input.id', 'props: { unknownProperty: 1, id: input.id'));
+	var invalid = check(source.replace(', id: input.id', ', unknownProperty: 1, id: input.id'));
 	assert(!invalid.ok && JSON.stringify(invalid.diagnostics).indexOf("UNKNOWN_BLOCK_PROPERTY") !== -1, "Nested property validation skipped");
 	var invalidExpression = check(source.replace('source: input.id', 'source: input.id @'));
 	assert(!invalidExpression.ok, "Expression validation skipped inside props");
@@ -74,12 +75,12 @@ try {
 	var copiedNode = check(copied.source).definition.nodes.filter(function (n) { return n.id === "copied"; })[0];
 	assert(copiedNode, "Copy identity missing: " + copied.source);
 	equal(copiedNode.props, node.props, "Copy altered business properties");
-	var controlSource = ['function PropertyChain() {',
-		'if({ id: "branch", props: { condition: input.locked } }) {',
-		'set({ id: "setId", props: { path: "result.value", value: input.id } })',
-		'} else {',
-		'set({ id: "elseId", props: { path: "result.value", value: 0 } })',
-		'}', 'return({ id: "returnId", props: { value: result } })', '}'].join("\n");
+	var controlSource = ['const _flow = { sourceVersion: 2 }', 'function PropertyChain() {',
+		'if({ $$id: "branch", condition: input.locked, $$then: function () {',
+		'set({ $$id: "setId", path: "result.value", value: input.id })',
+		'}, $$else: function () {',
+		'set({ $$id: "elseId", path: "result.value", value: 0 })',
+		'} })', 'return({ $$id: "returnId", value: result })', '}'].join("\n");
 	var control = check(controlSource);
 	assert(control.ok, "Control blocks: " + JSON.stringify(control.diagnostics));
 	equal(run(controlSource).result, { value: 5 }, "Enveloped control block execution");
@@ -95,7 +96,7 @@ try {
 	assert(promoted.ok, "Promotion: " + JSON.stringify(promoted));
 	var saved = api("flowCodeGet", { name: "PropertyChain", draft: false });
 	equal(run(saved.code).result, executed.result, "Saved code lost payload");
-	var graphSource = 'function PropertyChain() {\nproof.graph({ id: "callGraph", out: "result.row", props: { id: input.id, disabled: input.locked } })\n}';
+	var graphSource = 'const _flow = { sourceVersion: 2 }\nfunction PropertyChain() {\nproof.graph({ $$id: "callGraph", $$out: "result.row", id: input.id, disabled: input.locked })\n}';
 	var graphRun = run(graphSource);
 	assert(graphRun.ok, "Graph block failed: " + JSON.stringify(graphRun));
 	equal(graphRun.result.row, { id: 5, disabled: true }, "Graph block input confused identity and business id");

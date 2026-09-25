@@ -18,7 +18,7 @@ function stable(value) {
 try {
   var renderer = eval(read(new java.io.File(engineDir, "modules/flow-script-renderer-service.js")));
   var fixtures = JSON.parse(read(new java.io.File(engineDir, "../tests/fixtures/source-format-data.json")));
-  var env = { sourceVersion: 2, normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); } };
+  var env = { normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); } };
   fixtures.forEach(function (fixture) {
     var text = renderer.flowScriptInlineValue(fixture.value, env);
     equal(text, fixture.expected.join("\n"), fixture.name + " golden");
@@ -71,16 +71,11 @@ try {
   assert(slotWritten.code.indexOf('    $$then: function () {\n      set({\n') !== -1, "Slot indentation");
   equal(run(slotWritten.code), { ok: true }, "Trailing slot commas changed execution");
   equal(write(slotWritten.source).code, slotWritten.code, "Slots not stable");
-  var legacy = 'function FormatProof(){set({id:"capture",path:"result.value",value:5})}';
-  var oldWritten = write(validate(legacy).source);
-  assert(oldWritten.code.indexOf('  result.value = 5\n') !== -1, "Legacy assignment writer was reformatted: " + oldWritten.code);
-  equal(renderer.flowScriptInlineValue(fixtures[0].value, Object.assign({}, env, { sourceVersion: 1 })),
-    JSON.stringify(fixtures[0].value), "Legacy data writer was reformatted");
   // Splitting a property at ':' must not trim/rejoin later ternary colons.
   // Exercise both call properties and natural return-object fields.
-  [1, 2].forEach(function (version) {
-    var marker = version === 2 ? '$$id' : 'id';
-    var header = 'const _flow={sourceVersion:' + version + '};\n';
+  (function () {
+    var marker = '$$id';
+    var header = 'const _flow={sourceVersion:2};\n';
     var ternary = 'input.name ? true ? "a:b" : "no" : "empty"';
     [
       'var selected = ' + ternary + '\nset({' + marker + ':"value",path:"result.value",value:selected})',
@@ -94,7 +89,7 @@ try {
       equal(run(output.code), run(input), 'Ternary runtime changed');
       equal(write(output.source).code, output.code, 'Ternary writer not stable');
     });
-  });
+  }());
   [
     { body: 'if (input.name) {\nvar selected = "yes"\nresult.value = selected\n}', expected: {value:'yes'} },
     { body: 'set({$$id:"localWrite",path:"local.selected",value:"yes"})\nresult.value = selected', expected: {value:'yes'} },

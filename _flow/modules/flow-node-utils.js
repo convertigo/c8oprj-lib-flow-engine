@@ -28,34 +28,18 @@
 		return node && (node.uid || node.id || node.name) ? String(node.uid || node.id || node.name) : "";
 	}
 
-	function nodeProps(node, sourceVersion) {
+	// Business values live in node.props; id/disabled/comment/out are engine fields.
+	function nodeProps(node) {
 		var props = Object.create(null);
-		if (sourceVersion === 2 && node.props) {
-			Object.keys(node.props).forEach(function (key) { props[key] = node.props[key]; });
-			return props;
-		}
-		var structural = {
-			id: true, uid: true, block: true, type: true,
-			props: true, nodes: true, "do": true, then: true, "else": true,
-			disabled: true, comment: true, __fragment: true, __graphBlock: true, __flowScriptLine: true
-		};
-		Object.keys(node).forEach(function (key) {
-			if (!Object.prototype.hasOwnProperty.call(structural, key) && !(sourceVersion === 2 && key === "out")) {
-				props[key] = node[key];
-			}
-		});
-		if (node.props) {
-			Object.keys(node.props).forEach(function (key) {
-				props[key] = node.props[key];
-			});
+		var source = node && node.props;
+		if (source) {
+			Object.keys(source).forEach(function (key) { props[key] = source[key]; });
 		}
 		return props;
 	}
 
-	function nodeOutputPath(node, sourceVersion) {
-		if (!node) return undefined;
-		if (node.out !== undefined) return node.out;
-		return sourceVersion === 2 ? undefined : node.props && node.props.out;
+	function nodeOutputPath(node) {
+		return node ? node.out : undefined;
 	}
 
 	function isFlowNodeLike(value) {
@@ -76,6 +60,13 @@
 			var error = new Error("_flow.config must be an object of literal defaults.");
 			error.code = "FLOW_CONFIG_OBJECT_REQUIRED";
 			throw error;
+		}
+		// Version 2 is the only Flow dialect; a definition without it is version 2.
+		if (out.flow && out.flow.sourceVersion !== undefined && out.flow.sourceVersion !== 2) {
+			var versionError = new Error("Unsupported Flow sourceVersion: " + out.flow.sourceVersion);
+			versionError.code = "FLOW_SOURCE_VERSION_UNSUPPORTED";
+			versionError.hint = "Flow sources use sourceVersion 2.";
+			throw versionError;
 		}
 		if (Object.prototype.toString.call(out.nodes) === "[object Array]") {
 			out.nodes = out.nodes.map(function (node) {

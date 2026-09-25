@@ -85,7 +85,7 @@ host Apply guard), lazy preparation, runtime service reuse, shared snapshots,
 shared module contract, editor host/builder and scope writer. Real Rhino
 destination-runtime-contract covers interpreted/prepared/profiled execution,
 parser/analysis/context, pre-effect rejection, ctx.callBlock, internal trace and
-v1/v2/business out. Property-editor-contract, source-expression-references (32),
+business out. Property-editor-contract, source-expression-references (32),
 source-parser-properties, source-block-dialect (23), backend-provider-authoring,
 runtime-response-safety and frontend-projected-contract pass.
 The old runtime-reuse fixture lacked nodeOutputPath and still counted the frame

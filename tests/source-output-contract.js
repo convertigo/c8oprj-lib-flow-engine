@@ -55,8 +55,8 @@ try {
 	var invoke = api("run", { flowSource: source('proof.invoke({ $$id: "record", $$out: "local.record" })'), includeTrace: false });
 	assert(invoke.ok && invoke.result.real.id === 7 && invoke.result.real.out === "result.decoy" && !invoke.result.decoy, "callBlock options/payload collision: " + JSON.stringify(invoke));
 	var afterLegacy = api("run", { flowSource: code.replace('proof.record(', function () { return 'proof.legacy({ $$id: "legacy", $$out: "result.legacy" })\nproof.record('; }).replace(', out: "result.decoy"', ''), includeTrace: false });
-	assert(afterLegacy.ok && afterLegacy.result.legacy.id === 7, "Nested legacy Flow failed: " + JSON.stringify(afterLegacy));
-	same(afterLegacy.result.keys, ["id"], "Nested Flow did not restore caller dialect");
+	assert(afterLegacy.ok && afterLegacy.result.legacy.id === 7, "Nested block without an explicit sourceVersion failed: " + JSON.stringify(afterLegacy));
+	same(afterLegacy.result.keys, ["id"], "Nested Flow did not restore caller properties");
 	var metadataPicker = api("context", { flowSource: code, node: "record", property: "$$out", detail: "compact" });
 	assert(metadataPicker.target.propertyDefinition.kind === "path" && metadataPicker.target.propertyDefinition.mode === "write", "Output picker lost its path editor");
 	assert(metadataPicker.target.propertyDefinition.hidden !== true,
@@ -85,7 +85,7 @@ try {
 	var noNodeSchema = api("nodeOutputSchema", { flowSource: source('proof.record({ $$id: "record", id: 5, out: "result.decoy" })'), nodeId: "record" });
 	assert(noNodeSchema.ok && noNodeSchema.target.path === "", "Node output schema guessed a business route: " + JSON.stringify(noNodeSchema));
 	var aliasSchema = api("nodeOutputSchema", { flowSource: code, nodeId: "record", property: "out" });
-	assert(aliasSchema.ok && aliasSchema.target.path === "local.record" && aliasSchema.target.property === "$$out", "Legacy output role alias differs from engine route");
+	assert(aliasSchema.ok && aliasSchema.target.path === "local.record" && aliasSchema.target.property === "$$out", "Output role alias out differs from engine route");
 	var learnedCode = 'const _flow = { sourceVersion: 2 }\nfunction OutputProof() {\nyaml.parse({ $$id: "parse", $$out: "result.document", text: "id: 5" })\n}';
 	var parsedYaml = api("run", { flowSource: learnedCode, includeTrace: false });
 	assert(parsedYaml.ok && parsedYaml.result.document.id === 5, "Native parser did not route result: " + JSON.stringify(parsedYaml));
@@ -102,9 +102,6 @@ try {
 	var normalBytes = new java.lang.String(JSON.stringify(normalPicker)).getBytes("UTF-8").length;
 	assert(compactBytes < normalBytes, "Compact context became larger than normal context");
 	print("picker payload UTF-8: compact=" + compactBytes + " normal=" + normalBytes);
-	var legacyCode = code.replace('const _flow = { sourceVersion: 2 }\n', '').replace(/\$\$id/g, 'id').replace(/\$\$out/g, 'out').replace(', id: 5, out: "result.decoy"', ', props: { id: 5 }');
-	var legacy = api("run", { flowSource: legacyCode, includeTrace: false });
-	assert(legacy.ok && legacy.result.keys.indexOf("id") !== -1, "Legacy flat source changed");
 	print("source-output-contract OK (" + checks + " checks)");
 } finally {
 	files.deleteDirectory(project);

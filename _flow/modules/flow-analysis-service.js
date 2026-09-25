@@ -76,9 +76,8 @@
 				errors: [],
 				returnedPathSchemas: sourceCatalog ? returnPathSchemasForSourceBlock(definition, sourceCatalog) : {}
 			};
-			ctx.sourceVersion = definition.flow && definition.flow.sourceVersion || 1;
-			ctx.props = function (node) { return nodeProps(node, ctx.sourceVersion); };
-			ctx.outputPath = function (node) { return nodeOutputPath(node, ctx.sourceVersion); };
+			ctx.props = nodeProps;
+			ctx.outputPath = nodeOutputPath;
 			function reportType(checked, property) {
 				if (checked.status === "compatible") return;
 				ctx.errors.push({ severity: checked.status === "incompatible" ? "error" : "warning",
@@ -367,7 +366,7 @@
 					var descriptor = catalog && catalog.props && catalog.props[key] || {};
 					var kind = descriptor.kind || "";
 					var mode = descriptor.mode || "";
-					if (kind === "path" && mode === "write" || ctx.sourceVersion !== 2 && key === "out" && declaredPropertyOutputSchema(catalog, key)) {
+					if (kind === "path" && mode === "write") {
 						var value = props[key];
 						if (typeof value === "string" && value !== "") {
 							addUnique(out, value);
@@ -479,7 +478,7 @@
 					ctx.addSchema(outPath, mergeGraphBlockSchema(existing, schema));
 				});
 			}
-			ctx.withGraphBlock = function (node, block, callback, sourceVersion) {
+			ctx.withGraphBlock = function (node, block, callback) {
 				var catalog = blockCatalog(block);
 				var props = ctx.props(node);
 				var graphName = String(block && block.name || blockName(node) || "");
@@ -513,7 +512,6 @@
 				}
 				var snapshot = {
 					declaredSchemas: ctx.declaredSchemas,
-					sourceVersion: ctx.sourceVersion,
 					paths: ctx.paths.slice(0),
 					reads: ctx.reads.slice(0),
 					writes: ctx.writes.slice(0),
@@ -550,13 +548,9 @@
 				var result;
 				var outputSchema = null;
 				try {
-					ctx.sourceVersion = sourceVersion === undefined
-						? block.__graphDefinition && block.__graphDefinition.flow && block.__graphDefinition.flow.sourceVersion || 1
-						: sourceVersion;
 					result = callback();
 					outputSchema = graphBlockResultSchema(snapshot);
 				} finally {
-					ctx.sourceVersion = snapshot.sourceVersion;
 					ctx.declaredSchemas = snapshot.declaredSchemas;
 					restoreArray(ctx.paths, snapshot.paths);
 					restoreArray(ctx.reads, snapshot.reads);
@@ -809,7 +803,7 @@
 				}
 				outputs.push(entry);
 			}
-			destinations.entries(catalog, props, ctx.outputPath(node), ctx.sourceVersion).forEach(function (entry) {
+			destinations.entries(catalog, props, ctx.outputPath(node)).forEach(function (entry) {
 				output(entry.property, entry.value);
 			});
 			function isExactRefValue(value, path) {
@@ -824,7 +818,7 @@
 				var descriptor = catalog.props && !Object.prototype.toString.call(catalog.props).match(/Array/) ?
 					catalog.props[key] || {} : {};
 				var kind = descriptor.kind || "";
-				if (destinations.isWriteProperty(catalog, key, ctx.sourceVersion)) {
+				if (destinations.isWriteProperty(catalog, key)) {
 					return;
 				}
 				var refs = [];
@@ -1119,7 +1113,7 @@
 			if (!property) {
 				return null;
 			}
-			var attribute = propertyAttribute(property, ctx.sourceVersion);
+			var attribute = propertyAttribute(property);
 			if (attribute.namespace === "engine") return null;
 			property = attribute.name;
 			var block = ctx.blocks[blockName(node)];
@@ -1200,7 +1194,7 @@
 					return { found: false };
 				}
 				var slotResult = block && block.__graphDefinition && ctx.withGraphBlock
-					? ctx.withGraphBlock(node, block, walkSlots, ctx.sourceVersion)
+					? ctx.withGraphBlock(node, block, walkSlots)
 					: walkSlots();
 				if (slotResult && slotResult.found) {
 					return slotResult;
@@ -1348,16 +1342,15 @@
 			return entry;
 		}
 
-		function propertyAttribute(property, sourceVersion) {
-			return sourceVersion === 2 ? env.sourceAttributeNameCodec().resolve(String(property), Object.keys(env.nodeEngineProperties()))
-				: { namespace: "property", name: property };
+		function propertyAttribute(property) {
+			return env.sourceAttributeNameCodec().resolve(String(property), Object.keys(env.nodeEngineProperties()));
 		}
 
-		function targetPropertyDescriptor(blocks, node, property, sourceVersion) {
+		function targetPropertyDescriptor(blocks, node, property) {
 			if (!node || !property) {
 				return null;
 			}
-			var attribute = propertyAttribute(property, sourceVersion);
+			var attribute = propertyAttribute(property);
 			var block = blocks[blockName(node)];
 			var descriptor = blockCatalog(block);
 			if (attribute.namespace === "engine") return normalizeTree(env.nodeEngineProperties(node, descriptor && descriptor.outputs)[attribute.name]);
@@ -1388,7 +1381,7 @@
 					(contextTargetValue(request) || request.path || request.nodePath));
 			}
 			var scopes = {};
-			var propertyDefinition = targetPropertyDescriptor(blocks, found.node, request.property, ctx.sourceVersion);
+			var propertyDefinition = targetPropertyDescriptor(blocks, found.node, request.property);
 			var mode = request.mode || propertyDefinition && propertyDefinition.mode || "read";
 			var destinationPolicy = mode === "write" ? destinations.policy() : null;
 			if (destinationPolicy) include = include.filter(function (scope) { return destinationPolicy.roots.indexOf(scope) >= 0; });

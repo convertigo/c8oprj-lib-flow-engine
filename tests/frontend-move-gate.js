@@ -5,21 +5,23 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const engine = path.resolve(__dirname, '../_flow');
+const codecFile = path.join(engine, 'modules/source-attribute-name-codec.js');
 const provider = process.env.FLOW_SVELTE_PROVIDER_ROOT;
 assert.ok(provider, 'Set FLOW_SVELTE_PROVIDER_ROOT to the built Svelte provider directory');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-move-gate-'));
 const file = path.join(tmp, 'Example.flow.svelte');
-const source = '<FlowComponent id="example"><Events><OnMount id="mount"><Actions>'
-  + '<CallSequence id="call" requestable=".fetch" /></Actions></OnMount></Events>'
-  + '<Structure><Card id="left"><Text id="text" text="Hello" />'
-  + '<Card id="nested"><Text id="inner" text="Nested" /></Card></Card><Card id="right" />'
-  + '<Image id="image" src="old.png" /><Button id="button" label="Before" />'
+const source = '<script module>export const _flow = { sourceVersion: 2 };</script>'
+  + '<FlowComponent $$id="example"><Events><OnMount $$id="mount"><Actions>'
+  + '<CallSequence $$id="call" requestable=".fetch" /></Actions></OnMount></Events>'
+  + '<Structure><Card $$id="left"><Text $$id="text" text="Hello" />'
+  + '<Card $$id="nested"><Text $$id="inner" text="Nested" /></Card></Card><Card $$id="right" />'
+  + '<Image $$id="image" src="old.png" /><Button $$id="button" label="Before" />'
   + '</Structure></FlowComponent>';
 try {
   fs.writeFileSync(file, source);
   const result = spawnSync(process.execPath, [path.join(provider, 'provider-dist/frontDocumentCli.mjs'),
     '--source-file', file, '--project-root', tmp, '--resource-root', provider,
-    '--reference-root', path.resolve(engine, '../..'), '--project-name', 'MoveTest',
+    '--reference-root', path.resolve(engine, '../..'), '--source-codec-file', codecFile, '--project-name', 'MoveTest',
     '--engine-model', '--without-bindings', '--source-tree'], { encoding: 'utf8', timeout: 30000 });
   assert.equal(result.status, 0, result.stderr);
   const marker = '__C8O_FRONT_DOCUMENT__';
@@ -34,7 +36,7 @@ try {
     fs.writeFileSync(draft, text);
     const parsed = spawnSync(process.execPath, [path.join(provider, 'provider-dist/frontDocumentCli.mjs'),
       '--source-file', file, '--source-input', draft, '--project-root', tmp, '--resource-root', provider,
-      '--reference-root', path.resolve(engine, '../..'), '--project-name', 'MoveTest',
+      '--reference-root', path.resolve(engine, '../..'), '--source-codec-file', codecFile, '--project-name', 'MoveTest',
       '--engine-model', '--without-bindings', '--source-tree'], {encoding: 'utf8', timeout: 30000});
     assert.equal(parsed.status, 0, parsed.stderr);
     const doc = JSON.parse(parsed.stdout.split('\n').find(line => line.startsWith(marker)).slice(marker.length));
@@ -110,7 +112,7 @@ try {
   fs.writeFileSync(draft, moved.source);
   const reparsed = spawnSync(process.execPath, [path.join(provider, 'provider-dist/frontDocumentCli.mjs'),
     '--source-file', file, '--source-input', draft, '--project-root', tmp, '--resource-root', provider,
-    '--reference-root', path.resolve(engine, '../..'), '--project-name', 'MoveTest',
+    '--reference-root', path.resolve(engine, '../..'), '--source-codec-file', codecFile, '--project-name', 'MoveTest',
     '--engine-model', '--without-bindings', '--source-tree'], { encoding: 'utf8', timeout: 30000 });
   assert.equal(reparsed.status, 0, reparsed.stderr);
   const after = JSON.parse(reparsed.stdout.split('\n').find(line => line.startsWith(marker)).slice(marker.length));
@@ -173,15 +175,15 @@ try {
   assert.equal(nodes(describeSource(copiedAgain.source).tree).filter(n => n.id === 'inner3').length, 1);
   const snapshot = source.replace('text="Nested"', 'text={local.title}');
   const boundCopy = paste(nested.sourceMutationPath, right.sourceMutationPath, snapshot);
-  assert.match(boundCopy.source, /id="inner2"[^>]*text=\{local.title\}/, 'Snapshot bindings survive copying');
-  const conditionalSnapshot = source.replace('<Text id="inner" text="Nested" />',
-    '<If id="condition" condition={local.visible}><Then><Text id="yes" text="Yes" /></Then>'
-      + '<Else><Text id="no" enabled={false} text="No" /></Else></If>');
+  assert.match(boundCopy.source, /\$\$id="inner2"[^>]*text=\{local.title\}/, 'Snapshot bindings survive copying');
+  const conditionalSnapshot = source.replace('<Text $$id="inner" text="Nested" />', () =>
+    '<If $$id="condition" condition={local.visible}><Then><Text $$id="yes" text="Yes" /></Then>'
+      + '<Else><Text $$id="no" $$disabled={true} text="No" /></Else></If>');
   const conditional = paste(nested.sourceMutationPath, right.sourceMutationPath, conditionalSnapshot, conditionalSnapshot);
   const conditionalNodes = nodes(describeSource(conditional.source).tree);
   assert.equal(conditionalNodes.filter(n => n.id === 'condition2').length, 1);
   assert.equal(conditionalNodes.filter(n => n.id === 'yes2').length, 1, 'Named slots retain their descendants');
-  assert.match(conditional.source, /enabled=\{false\}[^>]*id="no2"|id="no2"[^>]*enabled=\{false\}/,
+  assert.match(conditional.source, /\$\$disabled=\{true\}[^>]*\$\$id="no2"|\$\$id="no2"[^>]*\$\$disabled=\{true\}/,
     'Disabled nodes remain disabled and participate in ID renewal');
   assert.throws(() => paste(byId('call').sourceMutationPath), {code: 'INCOMPATIBLE_AUTHORING_SLOT'});
   const siblingCopy = paste(text.sourceMutationPath, text.sourceMutationPath);
@@ -243,10 +245,10 @@ try {
   }
   const merged = mutate({op: 'merge', path: text.sourceMutationPath, value: {text: 'Merged'}});
   assert.deepEqual(nodes(describeSource(merged.source).tree).find(n => n.id === 'text').props.text, {mode: 'literal', value: 'Merged'});
-  const bagReplaced = mutate({op: 'set', path: text.sourceMutationPath, value: {id: 'newText', text: 'Replacement properties'}});
+  // A tagless value is a business property bag: it replaces properties, never the engine identity.
+  const bagReplaced = mutate({op: 'set', path: text.sourceMutationPath, value: {text: 'Replacement properties'}});
   const bagNodes = nodes(describeSource(bagReplaced.source).tree);
-  assert.equal(bagNodes.some(n => n.id === 'text'), false);
-  assert.deepEqual(bagNodes.find(n => n.id === 'newText').props.text, {mode: 'literal', value: 'Replacement properties'});
+  assert.deepEqual(bagNodes.find(n => n.id === 'text').props.text, {mode: 'literal', value: 'Replacement properties'});
   const binding = {mode: 'source', source: {category: 'route', value: 'route'}, path: [{kind: 'property', name: 'path'}]};
   const picked = mutate({op: 'replace', path: text.sourceMutationPath + '.props.text', value: binding});
   const pickedText = nodes(describeSource(picked.source).tree).find(n => n.id === 'text');

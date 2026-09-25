@@ -17,9 +17,9 @@ function parseNode(id, text, out) {
 		id: id,
 		block: "yaml.parse",
 		props: {
-			text: text,
-			out: out
-		}
+			text: text
+		},
+		out: out
 	};
 }
 
@@ -47,12 +47,14 @@ var run = JSON.parse(engine.run(JSON.stringify({
 			{
 				id: "mappingName",
 				block: "object.get",
-				props: { source: "result.mapping", key: "name", out: "result.mappingName" }
+				props: { source: "result.mapping", key: "name" },
+				out: "result.mappingName"
 			},
 			{
 				id: "listCount",
 				block: "list.count",
-				props: { items: "result.list", out: "result.listCount" }
+				props: { items: "result.list" },
+				out: "result.listCount"
 			}
 		]
 	},

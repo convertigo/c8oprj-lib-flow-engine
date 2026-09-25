@@ -16,7 +16,7 @@ var items = [2, "3.5", null, "not-a-number", -1];
 var run = JSON.parse(engine.run(JSON.stringify({
 	definition: {
 		version: 1,
-		nodes: [{ id: "total", block: "list.sum", props: { items: items, out: "result.total" } }]
+		nodes: [{ id: "total", block: "list.sum", props: { items: items }, out: "result.total" }]
 	},
 	includeTrace: false
 })));

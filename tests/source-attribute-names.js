@@ -1,4 +1,4 @@
-// Standalone Rhino contract test; does not activate the new source dialect.
+// Standalone Rhino contract test of the source attribute name codec.
 var root = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 function read(file) {
 	return String(Packages.org.apache.commons.io.FileUtils.readFileToString(file, "UTF-8"));

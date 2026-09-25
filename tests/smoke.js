@@ -205,8 +205,8 @@ assertTrue(propertyEditorSource.indexOf("props.length && !state.singleProperty")
 	"embedded property pickers should not render sibling-property navigation");
 var isolatedFlowTreeService = eval(flowTreeServiceSource);
 var embeddedInvalidBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-	'<FlowComponent id="smoke" label="Smoke">',
-	'  <Structure><PageShell id="page"><Children><ForEach id="rows" source={{ mode: "action", actionId: "load", path: "news" }} /></Children></PageShell></Structure>',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+	'  <Structure><PageShell $$id="page"><Children><ForEach $$id="rows" source={{ mode: "action", actionId: "load", path: "news" }} /></Children></PageShell></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedInvalidBinding.diagnostics.length === 1 &&
@@ -215,31 +215,31 @@ assertTrue(embeddedInvalidBinding.diagnostics.length === 1 &&
 	embeddedInvalidBinding.diagnostics[0].suggestedReference === "@load.news",
 	"Embedded Flow Svelte projection did not reject and migrate an ad hoc action binding");
 var embeddedCanonicalBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-	'<FlowComponent id="smoke" label="Smoke">',
-	'  <Structure><PageShell id="page"><Children><ForEach id="rows" source={{ mode: "source", source: { category: "requestable", actionId: "load" }, path: [{ kind: "property", name: "news" }] }} /></Children></PageShell></Structure>',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+	'  <Structure><PageShell $$id="page"><Children><ForEach $$id="rows" source={{ mode: "source", source: { category: "requestable", actionId: "load" }, path: [{ kind: "property", name: "news" }] }} /></Children></PageShell></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedCanonicalBinding.diagnostics.length === 0,
 	"Embedded Flow Svelte projection rejected a canonical structured binding");
 var embeddedIntuitiveBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-	'<FlowComponent id="smoke" label="Smoke">',
-	'  <Structure><CallSequence id="load" requestable=".Load" /><ForEach id="rows" source="@load.news" context="row"><Children>',
-	'    <Text id="title" source="@row.title" />',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+	'  <Structure><CallSequence $$id="load" requestable=".Load" /><ForEach $$id="rows" source="@load.news" context="row"><Children>',
+	'    <Text $$id="title" source="@row.title" />',
 	'  </Children></ForEach></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedIntuitiveBinding.diagnostics.length === 0,
 	"Embedded Flow Svelte projection rejected intuitive action or lexical bindings");
 var embeddedLiteralBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-	'<FlowComponent id="smoke" label="Smoke">',
-	'  <Structure><ForEach id="rows" source={[{id: "p1"}]} context="item"><Children><Text id="title" source="Static" /></Children></ForEach></Structure>',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+	'  <Structure><ForEach $$id="rows" source={[{id: "p1"}]} context="item"><Children><Text $$id="title" source="Static" /></Children></ForEach></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedLiteralBinding.diagnostics.length === 0,
 	"Embedded Flow Svelte projection rejected literal binding attributes");
 var embeddedActionExpression = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-	'<FlowComponent id="smoke" label="Smoke">',
-	'  <Structure><CallSequence id="load" requestable=".Load"><Variables><Variable name="id" value={item.id} /></Variables></CallSequence></Structure>',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+	'  <Structure><CallSequence $$id="load" requestable=".Load"><Variables><Variable name="id" value={item.id} /></Variables></CallSequence></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedActionExpression.diagnostics.length === 1 &&
@@ -247,8 +247,8 @@ assertTrue(embeddedActionExpression.diagnostics.length === 1 &&
 	embeddedActionExpression.diagnostics[0].suggestedReference === "@item.id",
 	"Embedded Flow Svelte projection did not reject a client action expression with a source correction");
 var embeddedDynamicMarker = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-	'<FlowComponent id="smoke" label="Smoke">',
-	'  <Structure><CallSequence id="load" requestable=".Load" marker={item.id} /></Structure>',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+	'  <Structure><CallSequence $$id="load" requestable=".Load" marker={item.id} /></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedDynamicMarker.diagnostics.length === 1 &&
@@ -256,15 +256,15 @@ assertTrue(embeddedDynamicMarker.diagnostics.length === 1 &&
 	embeddedDynamicMarker.diagnostics[0].fix.value === "load",
 	"Embedded Flow Svelte projection did not reject a dynamic CallSequence marker with a literal correction");
 var embeddedUnknownBinding = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-	'<FlowComponent id="smoke" label="Smoke">',
-	'  <Structure><Text id="title" source="@missing.title" /></Structure>',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+	'  <Structure><Text $$id="title" source="@missing.title" /></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedUnknownBinding.diagnostics.length === 1 &&
 	embeddedUnknownBinding.diagnostics[0].code === "FRONTEND_BINDING_REFERENCE_UNKNOWN",
 	"Embedded Flow Svelte projection did not reject an unknown intuitive binding reference");
 var embeddedStructuredLabels = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/Shared.flow.svelte", [
-	'<FlowComponent id="shared" label="Shared">',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="shared" label="Shared">',
 	'  <Structure>',
 	'    <Text text={{ mode: "literal", value: "Chronomètre" }} />',
 	'    <Text text={{ mode: "source", source: { category: "local", name: "clock", scopeId: "shared" }, path: [{ kind: "property", name: "display" }] }} />',
@@ -392,29 +392,35 @@ var flowSource = [
 	"nodes:",
 	"  - id: initItems",
 	"    block: set",
-	"    path: local.items",
-	"    value:",
-	"      - Paris",
-	"      - Lyon",
+	"    props:",
+	"      path: local.items",
+	"      value:",
+	"        - Paris",
+	"        - Lyon",
 	"  - id: initResult",
 	"    block: set",
-	"    path: result.cities",
-	"    value: []",
+	"    props:",
+	"      path: result.cities",
+	"      value: []",
 	"  - id: loopItems",
 	"    block: forEach",
-	"    items: local.items",
+	"    props:",
+	"      items: local.items",
 	"    nodes:",
 		"      - id: pushCurrent",
 		"        block: json.push",
-		"        path: result.cities",
-		"        value: \"{{ current }}\"",
+		"        props:",
+		"          path: result.cities",
+		"          value: \"{{ current }}\"",
 	"  - id: setMessage",
 	"    block: set",
-	"    path: result.message",
-	"    value: Hello Flow",
+	"    props:",
+	"      path: result.message",
+	"      value: Hello Flow",
 	"  - id: done",
 	"    block: return",
-	"    value: \"{{ result }}\"",
+	"    props:",
+	"      value: \"{{ result }}\"",
 	""
 ].join("\n");
 
@@ -899,6 +905,7 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	[
 		"<script module>",
 		"  export const _meta = {",
+		"    sourceVersion: 2,",
 		"    id: \"project.sharedBadge\",",
 		"    label: \"Shared badge\",",
 		"    tag: \"SharedBadge\",",
@@ -906,7 +913,7 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 		"    insert: { kind: \"sharedBadge\", tag: \"SharedBadge\" }",
 		"  };",
 		"</script>",
-		"<FlowComponent id=\"sharedBadge\"><Structure><Text text=\"Shared\" /></Structure></FlowComponent>",
+		"<FlowComponent $$id=\"sharedBadge\"><Structure><Text text=\"Shared\" /></Structure></FlowComponent>",
 		""
 	].join("\n"),
 	"UTF-8"
@@ -982,7 +989,7 @@ portableFixtures.forEach(function (fixture, index) {
 });
 var clockBefore = Date.now();
 var clockRun = JSON.parse(engine.run(JSON.stringify({ flowSource:
-	'function ClockSmoke({ result }) { date.now({ out: "result.timestamp" }) }', includeTrace: false })));
+	'function ClockSmoke({ result }) { date.now({ $$out: "result.timestamp" }) }', includeTrace: false })));
 assertTrue(clockRun.ok && clockRun.result.timestamp >= clockBefore && clockRun.result.timestamp <= Date.now(),
 	"Portable clock must execute a real timestamp, not a backend placeholder");
 var frontendTargetValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
@@ -1030,9 +1037,9 @@ var naturalValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	code: naturalFlowScriptSource
 })));
 assertTrue(naturalValidation.ok === true &&
-	naturalValidation.definition.nodes[1].source === "local.rows" &&
-	naturalValidation.definition.nodes[1].path === "[0].title" &&
-	naturalValidation.definition.nodes[4].value === "{{ local.titles }}",
+	naturalValidation.definition.nodes[1].props.source === "local.rows" &&
+	naturalValidation.definition.nodes[1].props.path === "[0].title" &&
+	naturalValidation.definition.nodes[4].props.value === "{{ local.titles }}",
 	"natural FlowScript syntax did not compile to the expected Flow model");
 var naturalRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: naturalFlowScriptSource,
@@ -1288,7 +1295,7 @@ var configUseFlowScriptSource = [
 	"\t\t\ttimeout: 30000,",
 	"\t\t\theaders: { Authorization: config.github.token }",
 	"\t\t},",
-	"\t\tthen: function () {",
+	"\t\t$$then: function () {",
 	"\t\t\tresult.insideTimeout = config.http.timeout",
 	"\t\t\tresult.insideAccept = config.http.headers.Accept",
 	"\t\t\tresult.insideAuthorization = config.http.headers.Authorization",
@@ -1307,8 +1314,8 @@ var configUseValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 assertTrue(configUseValidation.ok === true &&
 	configUseValidation.definition.nodes[2].block === "config.use" &&
 	configUseValidation.definition.nodes[2].then.length === 3 &&
-	configUseValidation.definition.nodes[2].overrides.http.headers.Authorization === "{{ config.github.token }}" &&
-	configUseValidation.definition.nodes[2].http === undefined,
+	configUseValidation.definition.nodes[2].props.overrides.http.headers.Authorization === "{{ config.github.token }}" &&
+	configUseValidation.definition.nodes[2].props.http === undefined,
 	"config.use FlowScript slot did not compile to the expected Flow model");
 var configUseRendered = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 	name: "ConfigUseSmoke",
@@ -1316,9 +1323,9 @@ var configUseRendered = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 })));
 assertTrue(configUseRendered.ok === true &&
 	configUseRendered.code.indexOf("config.use({") !== -1 &&
-	configUseRendered.code.indexOf("then: function () {") !== -1 &&
+	configUseRendered.code.indexOf("$$then: function () {") !== -1 &&
 	configUseRendered.code.indexOf("Authorization: config.github.token") !== -1 &&
-	configUseRendered.code.indexOf("overrides:") === -1,
+	configUseRendered.code.indexOf("overrides:") !== -1,
 	"config.use Flow model did not render back to AST-compatible FlowScript");
 var configUseRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: configUseFlowScriptSource,
@@ -1584,7 +1591,8 @@ var resourceGetRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: readResource",
 		"    block: resource.get",
-		"    path: _flow/blocks/resource/echo.block.js",
+		"    props:",
+		"      path: _flow/blocks/resource/echo.block.js",
 		"    out: result.resource",
 		""
 	].join("\n"),
@@ -1602,8 +1610,9 @@ var targetedResourceGetRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: readTargetResource",
 		"    block: resource.get",
-		"    projectDir: " + JSON.stringify(String(alternateResourceProject.getAbsolutePath())),
-		"    path: _flow/resources/target.txt",
+		"    props:",
+		"      projectDir: " + JSON.stringify(String(alternateResourceProject.getAbsolutePath())),
+		"      path: _flow/resources/target.txt",
 		"    out: result.resource",
 		""
 	].join("\n"),
@@ -1624,9 +1633,10 @@ var resourceSearchRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: searchResource",
 		"    block: resource.search",
-		"    query: patched ok",
-		"    doc: false",
-		"    hints: false",
+		"    props:",
+		"      query: patched ok",
+		"      doc: false",
+		"      hints: false",
 		"    out: result.search",
 		""
 	].join("\n"),
@@ -1692,7 +1702,8 @@ var publicAssetReadFlowSource = [
 	"nodes:",
 	"  - id: readPublicAsset",
 	"    block: asset.read",
-	"    path: resources/fixtures/catalog.xml",
+	"    props:",
+	"      path: resources/fixtures/catalog.xml",
 	"    out: result.content",
 	""
 ].join("\n");
@@ -1828,7 +1839,8 @@ var canonicalRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: echo",
 		"    block: canonical.echo",
-		"    value: Hello canonical",
+		"    props:",
+		"      value: Hello canonical",
 		"    out: result.message",
 		""
 	].join("\n"),
@@ -2155,9 +2167,9 @@ var declaredResponseBlockSource = [
 	"}",
 	"",
 	"function declaredResponse({ input, result }) {",
-	"\tvar response = json.object({ id: \"response\" }) {",
-	"\t\tjson.field({ id: \"ok\", key: \"ok\", value: input.ok })",
-	"\t\tjson.field({ id: \"events\", key: \"events\", value: input.events })",
+	"\tvar response = json.object({ $$id: \"response\" }) {",
+	"\t\tjson.field({ $$id: \"ok\", key: \"ok\", value: input.ok })",
+	"\t\tjson.field({ $$id: \"events\", key: \"events\", value: input.events })",
 	"\t}",
 	"\treturn response",
 	"}",
@@ -2183,7 +2195,8 @@ var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: flowBacked",
 		"    block: smoke.flowBacked",
-		"    value: Hello flow backed block",
+		"    props:",
+		"      value: Hello flow backed block",
 		"    out: result.message",
 		""
 	].join("\n"),
@@ -2221,11 +2234,13 @@ var httpInputUrlRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: url",
 		"    block: set",
-		"    path: local.url",
-		"    value: " + JSON.stringify(String(httpInputUrlFile.toURI().toURL())),
+		"    props:",
+		"      path: local.url",
+		"      value: " + JSON.stringify(String(httpInputUrlFile.toURI().toURL())),
 		"  - id: read",
 		"    block: smoke.httpInputUrl",
-		"    url: local.url",
+		"    props:",
+		"      url: local.url",
 		"    out: result.text",
 		""
 	].join("\n"),
@@ -2248,16 +2263,19 @@ var xmlParseFlowSource = [
 		"nodes:",
 		"  - id: parseFeed",
 		"    block: xml.parse",
-		"    text: \"<rss><channel><item><title>One</title><enclosure url=\\\"https://example.test/one.png\\\" /></item><item><title>Two</title></item></channel></rss>\"",
+		"    props:",
+		"      text: \"<rss><channel><item><title>One</title><enclosure url=\\\"https://example.test/one.png\\\" /></item><item><title>Two</title></item></channel></rss>\"",
 		"    out: local.feed",
 		"  - id: selectItems",
 		"    block: set",
-		"    path: local.items",
-		"    value: \"{{ local.feed.rss.channel.item }}\"",
+		"    props:",
+		"      path: local.items",
+		"      value: \"{{ local.feed.rss.channel.item }}\"",
 		"  - id: mapImages",
 		"    block: list.map",
-		"    items: local.items",
-		"    select: current.enclosure.attr.url",
+		"    props:",
+		"      items: local.items",
+		"      select: current.enclosure.attr.url",
 		"    out: result.imageUrls",
 		""
 	].join("\n");
@@ -2286,9 +2304,10 @@ var xmlParseEnvelopeRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: parseEnvelope",
 		"    block: xml.parse",
-		"    text:",
-		"      content: \"<rss />\"",
-		"      path: _flow/resources/feed.xml",
+		"    props:",
+		"      text:",
+		"        content: \"<rss />\"",
+		"        path: _flow/resources/feed.xml",
 		"    out: local.feed",
 		""
 	].join("\n"),
@@ -2365,20 +2384,24 @@ var compositeSchema = JSON.parse(engine.outputSchema(JSON.stringify({
 		"nodes:",
 		"  - id: outer",
 		"    block: smoke.outerLeak",
-		"    value: Hello isolated schema",
+		"    props:",
+		"      value: Hello isolated schema",
 		"    out: local.outer",
 		"  - id: count",
 		"    block: set",
-		"    path: result.count",
-		"    value: \"{{ local.outer.count }}\"",
+		"    props:",
+		"      path: result.count",
+		"      value: \"{{ local.outer.count }}\"",
 		"  - id: message",
 		"    block: set",
-		"    path: result.message",
-		"    value: \"{{ local.outer.message }}\"",
+		"    props:",
+		"      path: result.message",
+		"      value: \"{{ local.outer.message }}\"",
 		"  - id: type",
 		"    block: set",
-		"    path: result.type",
-		"    value: \"{{ local.outer.type }}\"",
+		"    props:",
+		"      path: result.type",
+		"      value: \"{{ local.outer.type }}\"",
 		""
 	].join("\n"),
 	detail: "full"
@@ -2395,7 +2418,8 @@ var compositeRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: outer",
 		"    block: smoke.outerLeak",
-		"    value: Hello isolated runtime",
+		"    props:",
+		"      value: Hello isolated runtime",
 		"    out: result.outer",
 		""
 	].join("\n"),
@@ -2439,8 +2463,9 @@ var expressionEchoRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: echoExpressionObject",
 		"    block: smoke.expressionEcho",
-		"    payload:",
-		"      flowSource: \"value: {{ local.person.age }}\"",
+		"    props:",
+		"      payload:",
+		"        flowSource: \"value: {{ local.person.age }}\"",
 		"    out: result.payload",
 		""
 	].join("\n"),
@@ -2490,7 +2515,8 @@ var callBlockRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: callSmoke",
 		"    block: smoke.callBlock",
-		"    message: \"{{ input.name }}\"",
+		"    props:",
+		"      message: \"{{ input.name }}\"",
 		"    out: result.call",
 		""
 	].join("\n"),
@@ -2552,7 +2578,7 @@ var flowDir = new java.io.File(projectDirFile, "_flow/flows");
 flowDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(flowDir, "ChildSmoke.flow.js"), [
 	"function ChildSmoke({ input, config, result }) {",
-	"\tresult.message = smoke.lib({ id: \"decorate\", value: input.name })",
+	"\tresult.message = smoke.lib({ $$id: \"decorate\", value: input.name })",
 	"\treturn result",
 	"}",
 	""
@@ -2563,9 +2589,10 @@ var flowCallRun = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: child",
 		"    block: flow.call",
-		"    flow: ChildSmoke",
-		"    input:",
-		"      name: input.name",
+		"    props:",
+		"      flow: ChildSmoke",
+		"      input:",
+		"        name: input.name",
 		"    out: result.child",
 		""
 	].join("\n"),
@@ -2582,7 +2609,8 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(frag
 	"nodes:",
 	"  - id: fragmentDecorate",
 	"    block: smoke.lib",
-	"    value: input.name",
+	"    props:",
+	"      value: input.name",
 	"    out: result.fragmentMessage",
 	""
 ].join("\n"), "UTF-8");
@@ -2591,7 +2619,8 @@ var fragmentFlowSource = [
 	"nodes:",
 	"  - id: useDecorate",
 	"    block: fragment.use",
-	"    fragment: DecorateMessage",
+	"    props:",
+	"      fragment: DecorateMessage",
 	""
 ].join("\n");
 var fragmentRun = JSON.parse(engine.run(JSON.stringify({
@@ -2764,8 +2793,7 @@ debugPrint(JSON.stringify(describedFlowTree));
 assertTrue(describedFlowTree.children[0].name === "flow" &&
 	describedFlowTree.children[0].children[2].type === "forEach",
 	"describeTree(flow) did not expose flow nodes");
-// Summaries come from block templates over canonical props (62172b0); the flat v1 YAML
-// shape above is not a canonical source, so check the FlowScript form.
+// Summaries come from block templates over canonical props.
 var summaryTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow",
 	flowSource: 'const _flow={sourceVersion:2};\nfunction Summary(){\nset({$$id:"initItems",path:"local.items",value:["Paris","Lyon"]});\n}' })));
 assertTrue(summaryTree.children[0].children[0].summary === "local.items = [\"Paris\",\"Lyon\"]",
@@ -2791,18 +2819,20 @@ var pickerArrayFlowSource = [
 	"nodes:",
 	"  - id: initPeople",
 	"    block: set",
-	"    path: local.people",
-	"    value:",
-	"      - name: Ada",
-	"        age: 36",
-	"        city: Paris",
-	"      - name: Grace",
-	"        age: 40",
-	"        city: London",
+	"    props:",
+	"      path: local.people",
+	"      value:",
+	"        - name: Ada",
+	"          age: 36",
+	"          city: Paris",
+	"        - name: Grace",
+	"          age: 40",
+	"          city: London",
 	"  - id: filterAdults",
 	"    block: list.filter",
-	"    items: local.people",
-	"    where: current.age >= 18",
+	"    props:",
+	"      items: local.people",
+	"      where: current.age >= 18",
 	"    out: local.adults",
 	""
 ].join("\n");
@@ -2835,25 +2865,29 @@ var pickerJsonObjectFlowSource = [
 	"nodes:",
 	"  - id: initSource",
 	"    block: set",
-	"    path: local.source",
-	"    value:",
-	"      name: Ada",
-	"      count: 3",
+	"    props:",
+	"      path: local.source",
+	"      value:",
+	"        name: Ada",
+	"        count: 3",
 	"  - id: buildResponse",
 	"    block: json.object",
 	"    out: local.response",
 	"    fields:",
 	"      - id: name",
 	"        block: json.field",
-	"        key: name",
-	"        value: \"{{ local.source.name }}\"",
+	"        props:",
+	"          key: name",
+	"          value: \"{{ local.source.name }}\"",
 	"      - id: count",
 	"        block: json.field",
-	"        key: count",
-	"        value: \"{{ local.source.count }}\"",
+	"        props:",
+	"          key: count",
+	"          value: \"{{ local.source.count }}\"",
 	"  - id: done",
 	"    block: return",
-	"    value: \"{{ local.response }}\"",
+	"    props:",
+	"      value: \"{{ local.response }}\"",
 	""
 ].join("\n");
 var pickerJsonObjectContext = JSON.parse(engine.context(JSON.stringify({
@@ -2912,7 +2946,7 @@ var disabledFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 		enabled: false
 	}
 })));
-assertTrue(disabledFlow.source.indexOf("// @flow-disabled") !== -1,
+assertTrue(disabledFlow.source.indexOf("$$disabled: true") !== -1,
 	"setEnabled(false) did not preserve the disabled state in FlowScript");
 var disabledFlowRun = JSON.parse(engine.run(JSON.stringify({ flowSource: disabledFlow.source })));
 assertTrue(disabledFlowRun.result.message === undefined,
@@ -2926,7 +2960,7 @@ var enabledFlow = JSON.parse(engine.applyMutation(JSON.stringify({
 		enabled: true
 	}
 })));
-assertTrue(enabledFlow.source.indexOf("// @flow-disabled") === -1 &&
+assertTrue(enabledFlow.source.indexOf("$$disabled: true") === -1 &&
 	JSON.parse(engine.run(JSON.stringify({ flowSource: enabledFlow.source }))).result.message === "Hello Flow",
 	"setEnabled(true) did not restore the Flow node");
 var disabledIfSource = [
@@ -2992,14 +3026,16 @@ var staticSchemaFlowSource = [
 	"nodes:",
 	"  - id: sourceItems",
 	"    block: set",
-	"    path: local.items",
-	"    value:",
-	"      - city: Paris",
-	"        temperature: 36",
+	"    props:",
+	"      path: local.items",
+	"      value:",
+	"        - city: Paris",
+	"          temperature: 36",
 	"  - id: copyItems",
 	"    block: set",
-	"    path: result.items",
-	"    value: \"{{ local.items }}\"",
+	"    props:",
+	"      path: result.items",
+	"      value: \"{{ local.items }}\"",
 	""
 ].join("\n");
 var staticOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: staticSchemaFlowSource })));
@@ -3016,21 +3052,25 @@ var schemaChoiceFlowSource = [
 	"nodes:",
 	"  - id: parsePayload",
 	"    block: json.safeParse",
-	"    text: \"{{ input.raw }}\"",
+	"    props:",
+	"      text: \"{{ input.raw }}\"",
 	"    out: local.parsed",
 	"  - id: copyValue",
 	"    block: set",
-	"    path: result.value",
-	"    value: \"{{ local.parsed.value }}\"",
+	"    props:",
+	"      path: result.value",
+	"      value: \"{{ local.parsed.value }}\"",
 	"  - id: count",
 	"    block: set",
-	"    path: result.count",
-	"    value: true",
+	"    props:",
+	"      path: result.count",
+	"      value: true",
 	"  - id: tags",
 	"    block: set",
-	"    path: result.tags",
-	"    value:",
-	"      - stable",
+	"    props:",
+	"      path: result.tags",
+	"      value:",
+	"        - stable",
 	""
 ].join("\n");
 var schemaChoiceDir = new java.io.File(projectDirFile, "_flow/schemas/SchemaChoiceSmoke");
@@ -3081,13 +3121,15 @@ var duplicateNodePointerSchemaSource = [
 	"nodes:",
 	"  - id: duplicated",
 	"    block: set",
-	"    path: local.first",
-	"    value: first",
+	"    props:",
+	"      path: local.first",
+	"      value: first",
 	"  - id: duplicated",
 	"    block: set",
-	"    path: local.second",
-	"    value:",
-	"      name: Ada",
+	"    props:",
+	"      path: local.second",
+	"      value:",
+	"        name: Ada",
 	""
 ].join("\n");
 var nodePointerOutputSchema = JSON.parse(engine.nodeOutputSchema(JSON.stringify({
@@ -3187,13 +3229,15 @@ var explicitReturnSchemaFlowSource = [
 	"nodes:",
 	"  - id: sourceItems",
 	"    block: set",
-	"    path: local.items",
-	"    value:",
-	"      - city: Paris",
-	"        temperature: 36",
+	"    props:",
+	"      path: local.items",
+	"      value:",
+	"        - city: Paris",
+	"          temperature: 36",
 	"  - id: done",
 	"    block: return",
-	"    value: \"{{ local.items }}\"",
+	"    props:",
+	"      value: \"{{ local.items }}\"",
 	""
 ].join("\n");
 var explicitReturnSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: explicitReturnSchemaFlowSource })));
@@ -3224,8 +3268,9 @@ var implicitReturnFlowSource = [
 	"nodes:",
 	"  - id: setMessage",
 	"    block: set",
-	"    path: result.message",
-	"    value: implicit result",
+	"    props:",
+	"      path: result.message",
+	"      value: implicit result",
 	""
 ].join("\n");
 var implicitReturnRun = JSON.parse(engine.run(JSON.stringify({ flowSource: implicitReturnFlowSource })));
@@ -3237,8 +3282,9 @@ var templatedValueFlowSource = [
 	"nodes:",
 	"  - id: setMessage",
 	"    block: set",
-	"    path: result.message",
-	"    value: \"Hello {{ input.append }}\"",
+	"    props:",
+	"      path: result.message",
+	"      value: \"Hello {{ input.append }}\"",
 	""
 ].join("\n");
 var templatedValueRun = JSON.parse(engine.run(JSON.stringify({
@@ -3255,15 +3301,18 @@ var explicitReturnFlowSource = [
 	"nodes:",
 	"  - id: before",
 	"    block: set",
-	"    path: result.message",
-	"    value: before return",
+	"    props:",
+	"      path: result.message",
+	"      value: before return",
 	"  - id: done",
 	"    block: return",
-	"    value: \"{{ result }}\"",
+	"    props:",
+	"      value: \"{{ result }}\"",
 	"  - id: after",
 	"    block: set",
-	"    path: result.message",
-	"    value: after return",
+	"    props:",
+	"      path: result.message",
+	"      value: after return",
 	""
 ].join("\n");
 var explicitReturnRun = JSON.parse(engine.run(JSON.stringify({ flowSource: explicitReturnFlowSource })));
@@ -3275,11 +3324,12 @@ var throwFlowSource = [
 	"nodes:",
 	"  - id: fail",
 	"    block: throw",
-	"    code: WEATHER_ALERT_ERROR",
-	"    status: 422",
-	"    message: Weather alert failed",
-	"    details:",
-	"      reason: threshold missing",
+	"    props:",
+	"      code: WEATHER_ALERT_ERROR",
+	"      status: 422",
+	"      message: Weather alert failed",
+	"      details:",
+	"        reason: threshold missing",
 	""
 ].join("\n");
 var throwRun = JSON.parse(engine.run(JSON.stringify({ flowSource: throwFlowSource })));
@@ -3296,12 +3346,14 @@ var httpHeadersFlowSource = [
 	"nodes:",
 	"  - id: fetchFixture",
 	"    block: http.get",
-	"    url: \"{{ config.url }}\"",
+	"    props:",
+	"      url: \"{{ config.url }}\"",
 	"    out: local.response",
 	"  - id: exposeHeaders",
 	"    block: set",
-	"    path: result.headers",
-	"    value: \"{{ local.response.headers }}\"",
+	"    props:",
+	"      path: result.headers",
+	"      value: \"{{ local.response.headers }}\"",
 	""
 ].join("\n");
 var httpHeadersRun = JSON.parse(engine.run(JSON.stringify({
@@ -3317,44 +3369,53 @@ var weatherFlowSource = [
 	"nodes:",
 	"  - id: fetchWeather",
 	"    block: http.get",
-	"    url: \"{{ config.weatherUrl }}\"",
-	"    headers:",
-	"      X-Api-Key: \"{{ config.apiKey }}\"",
+	"    props:",
+	"      url: \"{{ config.weatherUrl }}\"",
+	"      headers:",
+	"        X-Api-Key: \"{{ config.apiKey }}\"",
 	"    out: local.weather",
 	"  - id: selectMetropoles",
 	"    block: json.select",
-	"    source: local.weather",
-	"    path: body.metropoles",
+	"    props:",
+	"      source: local.weather",
+	"      path: body.metropoles",
 	"    out: local.metropoles",
 	"  - id: initHotCities",
 	"    block: set",
-	"    path: result.hotCities",
-	"    value: []",
+	"    props:",
+	"      path: result.hotCities",
+	"      value: []",
 	"  - id: eachCity",
 	"    block: forEach",
-	"    items: local.metropoles",
+	"    props:",
+	"      items: local.metropoles",
 	"    nodes:",
 	"      - id: keepHotCity",
 	"        block: if",
-	"        condition: current.temperature >= config.threshold",
+	"        props:",
+	"          condition: current.temperature >= config.threshold",
 	"        then:",
 	"          - id: pushHotCity",
 	"            block: json.push",
-	"            path: result.hotCities",
-	"            value: \"{{ current.city }}\"",
+	"            props:",
+	"              path: result.hotCities",
+	"              value: \"{{ current.city }}\"",
 	"  - id: notify",
 	"    block: email.mock",
-	"    to: ops@example.com",
-	"    subject: Weather alert",
-	"    body: \"Hot cities over {{ config.threshold }}C: {{ result.hotCities }}\"",
+	"    props:",
+	"      to: ops@example.com",
+	"      subject: Weather alert",
+	"      body: \"Hot cities over {{ config.threshold }}C: {{ result.hotCities }}\"",
 	"    out: result.notification",
 	"  - id: message",
 	"    block: set",
-	"    path: result.message",
-	"    value: Weather alert computed",
+	"    props:",
+	"      path: result.message",
+	"      value: Weather alert computed",
 	"  - id: done",
 	"    block: return",
-	"    value: \"{{ result }}\"",
+	"    props:",
+	"      value: \"{{ result }}\"",
 	""
 ].join("\n");
 debugPrint(engine.analyze(JSON.stringify({ flowSource: weatherFlowSource })));
@@ -3458,41 +3519,48 @@ var compactWeatherFlowSource = [
 	"nodes:",
 	"  - id: fetchWeather",
 	"    block: http.request",
-	"    method: GET",
-	"    url: \"{{ config.weatherUrl }}\"",
-	"    headers:",
-	"      X-Api-Key: \"{{ config.apiKey }}\"",
+	"    props:",
+	"      method: GET",
+	"      url: \"{{ config.weatherUrl }}\"",
+	"      headers:",
+	"        X-Api-Key: \"{{ config.apiKey }}\"",
 	"    out: local.weather",
 	"  - id: selectMetropoles",
 	"    block: json.select",
-	"    source: local.weather",
-	"    path: body.metropoles",
+	"    props:",
+	"      source: local.weather",
+	"      path: body.metropoles",
 	"    out: local.metropoles",
 	"  - id: filterHot",
 	"    block: list.filter",
-	"    items: local.metropoles",
-	"    where: current.temperature >= config.threshold",
+	"    props:",
+	"      items: local.metropoles",
+	"      where: current.temperature >= config.threshold",
 	"    out: local.hotMetropoles",
 	"  - id: sortHot",
 	"    block: list.sort",
-	"    items: local.hotMetropoles",
-	"    by: current.city",
+	"    props:",
+	"      items: local.hotMetropoles",
+	"      by: current.city",
 	"    out: local.sortedHotMetropoles",
 	"  - id: mapCities",
 	"    block: list.map",
-	"    items: local.sortedHotMetropoles",
-	"    select: current.city",
+	"    props:",
+	"      items: local.sortedHotMetropoles",
+	"      select: current.city",
 	"    out: result.hotCities",
 	"  - id: notify",
 	"    block: email.mock",
-	"    to: ops@example.com",
-	"    subject: Weather alert",
-	"    body: \"Hot cities over {{ config.threshold }}C: {{ result.hotCities }}\"",
+	"    props:",
+	"      to: ops@example.com",
+	"      subject: Weather alert",
+	"      body: \"Hot cities over {{ config.threshold }}C: {{ result.hotCities }}\"",
 	"    out: result.notification",
 	"  - id: message",
 	"    block: set",
-	"    path: result.message",
-	"    value: Weather alert computed with catalogue blocks",
+	"    props:",
+	"      path: result.message",
+	"      value: Weather alert computed with catalogue blocks",
 	""
 ].join("\n");
 
@@ -3518,47 +3586,55 @@ var listSchemaPropagationFlowSource = [
 	"nodes:",
 	"  - id: sourcePeople",
 	"    block: set",
-	"    path: local.people",
-	"    value:",
-	"      - name: Ada",
-	"        age: 36",
-	"        city: London",
-	"      - name: Grace",
-	"        age: 40",
-	"        city: Arlington",
+	"    props:",
+	"      path: local.people",
+	"      value:",
+	"        - name: Ada",
+	"          age: 36",
+	"          city: London",
+	"        - name: Grace",
+	"          age: 40",
+	"          city: Arlington",
 	"  - id: filterAdults",
 	"    block: list.filter",
-	"    items: local.people",
-	"    where: current.age >= 18",
+	"    props:",
+	"      items: local.people",
+	"      where: current.age >= 18",
 	"    out: local.adults",
 	"  - id: sortAdults",
 	"    block: list.sort",
-	"    items: local.adults",
-	"    by: current.name",
+	"    props:",
+	"      items: local.adults",
+	"      by: current.name",
 	"    out: local.sortedAdults",
 	"  - id: searchAdults",
 	"    block: list.search",
-	"    items: local.sortedAdults",
-	"    query: a",
+	"    props:",
+	"      items: local.sortedAdults",
+	"      query: a",
 	"    out: local.matchingAdults",
 	"  - id: mapNames",
 	"    block: list.map",
-	"    items: local.matchingAdults",
-	"    select: current.name",
+	"    props:",
+	"      items: local.matchingAdults",
+	"      select: current.name",
 	"    out: result.names",
 	"  - id: pluckAges",
 	"    block: list.pluck",
-	"    items: local.sortedAdults",
-	"    path: age",
+	"    props:",
+	"      items: local.sortedAdults",
+	"      path: age",
 	"    out: result.ages",
 	"  - id: copySorted",
 	"    block: set",
-	"    path: result.sorted",
-	"    value: \"{{ local.sortedAdults }}\"",
+	"    props:",
+	"      path: result.sorted",
+	"      value: \"{{ local.sortedAdults }}\"",
 	"  - id: countSorted",
 	"    block: set",
-	"    path: result.count",
-	"    value: \"{{ local.sortedAdults.length }}\"",
+	"    props:",
+	"      path: result.count",
+	"      value: \"{{ local.sortedAdults.length }}\"",
 	""
 ].join("\n");
 var listSchemaAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: listSchemaPropagationFlowSource })));
@@ -3622,30 +3698,34 @@ var collectionSchemaFlowSource = [
 	"nodes:",
 	"  - id: sourcePayload",
 	"    block: set",
-	"    path: local.payload",
-	"    value:",
-	"      items:",
-	"        - name: Ada",
-	"          age: 36",
-	"        - name: Grace",
-	"          age: 40",
+	"    props:",
+	"      path: local.payload",
+	"      value:",
+	"        items:",
+	"          - name: Ada",
+	"            age: 36",
+	"          - name: Grace",
+	"            age: 40",
 	"  - id: normalizeItems",
 	"    block: json.items",
-	"    source: local.payload",
-	"    path: items",
+	"    props:",
+	"      source: local.payload",
+	"      path: items",
 	"    out: local.items",
 	"  - id: sourceGroups",
 	"    block: set",
-	"    path: local.groups",
-	"    value:",
-	"      - - name: Ada",
-	"          age: 36",
-	"      - - name: Grace",
-	"          age: 40",
+	"    props:",
+	"      path: local.groups",
+	"      value:",
+	"        - - name: Ada",
+	"            age: 36",
+	"        - - name: Grace",
+	"            age: 40",
 	"  - id: compactGroups",
 	"    block: list.compact",
-	"    items: local.groups",
-	"    flatten: true",
+	"    props:",
+	"      items: local.groups",
+	"      flatten: true",
 	"    out: local.flatPeople",
 	""
 ].join("\n");
@@ -3664,30 +3744,35 @@ var jsonObjectSchemaFlowSource = [
 	"nodes:",
 	"  - id: sourcePerson",
 	"    block: set",
-	"    path: local.person",
-	"    value:",
-	"      name: Ada",
-	"      age: 36",
+	"    props:",
+	"      path: local.person",
+	"      value:",
+	"        name: Ada",
+	"        age: 36",
 	"  - id: buildCard",
 	"    block: json.object",
 	"    out: result.card",
 	"    fields:",
 	"      - id: fieldName",
 	"        block: json.field",
-	"        key: name",
-	"        value: \"{{ local.person.name }}\"",
+	"        props:",
+	"          key: name",
+	"          value: \"{{ local.person.name }}\"",
 	"      - id: fieldAge",
 	"        block: json.field",
-	"        key: age",
-	"        value: \"{{ local.person.age }}\"",
+	"        props:",
+	"          key: age",
+	"          value: \"{{ local.person.age }}\"",
 	"      - id: fieldActive",
 	"        block: json.field",
-	"        key: active",
-	"        value: true",
+	"        props:",
+	"          key: active",
+	"          value: true",
 	"      - id: fieldCity",
 	"        block: json.field",
-	"        key: city",
-	"        value: Paris",
+	"        props:",
+	"          key: city",
+	"          value: Paris",
 	""
 ].join("\n");
 var jsonObjectOutputSchema = JSON.parse(engine.outputSchema(JSON.stringify({ flowSource: jsonObjectSchemaFlowSource })));
@@ -3702,29 +3787,33 @@ var configUsePickerFlowSource = [
 	"nodes:",
 	"  - id: sourcePeople",
 	"    block: set",
-	"    path: local.people",
-	"    value:",
-	"      - name: Ada",
-	"        age: 36",
-	"        city: London",
-	"      - name: Grace",
-	"        age: 40",
-	"        city: Arlington",
+	"    props:",
+	"      path: local.people",
+	"      value:",
+	"        - name: Ada",
+	"          age: 36",
+	"          city: London",
+	"        - name: Grace",
+	"          age: 40",
+	"          city: Arlington",
 	"  - id: adultConfig",
 	"    block: config.use",
-	"    overrides:",
-	"      adult:",
-	"        age: 18",
+	"    props:",
+	"      overrides:",
+	"        adult:",
+	"          age: 18",
 	"    then:",
 	"      - id: filterAdults",
 	"        block: list.filter",
-	"        items: local.people",
-	"        where: current.age >= config.adult.age",
+	"        props:",
+	"          items: local.people",
+	"          where: current.age >= config.adult.age",
 	"        out: local.adults",
 	"      - id: copyAdults",
 	"        block: set",
-	"        path: result.adults",
-	"        value: \"{{ local.adults }}\"",
+	"        props:",
+	"          path: result.adults",
+	"          value: \"{{ local.adults }}\"",
 	""
 ].join("\n");
 var configUsePickerAnalysis = JSON.parse(engine.analyze(JSON.stringify({
@@ -3768,64 +3857,75 @@ var standardDataFlowSource = [
 	"nodes:",
 	"  - id: sourceProfile",
 	"    block: set",
-	"    path: local.profile",
-	"    value:",
-	"      city: Paris",
-	"      metrics:",
-	"        temperature: 38",
-	"        unit: C",
-	"      currencies:",
-	"        EUR:",
-	"          name: Euro",
-	"          symbol: EUR",
-	"        DKK:",
-	"          name: Danish krone",
-	"          symbol: DKK",
+	"    props:",
+	"      path: local.profile",
+	"      value:",
+	"        city: Paris",
+	"        metrics:",
+	"          temperature: 38",
+	"          unit: C",
+	"        currencies:",
+	"          EUR:",
+	"            name: Euro",
+	"            symbol: EUR",
+	"          DKK:",
+	"            name: Danish krone",
+	"            symbol: DKK",
 	"  - id: pickFields",
 	"    block: object.pick",
-	"    source: local.profile",
-	"    keys:",
-	"      - city",
-	"      - metrics.temperature",
+	"    props:",
+	"      source: local.profile",
+	"      keys:",
+	"        - city",
+	"        - metrics.temperature",
 	"    out: local.selected",
 	"  - id: currencyKeys",
 	"    block: object.keys",
-	"    source: local.profile.currencies",
+	"    props:",
+	"      source: local.profile.currencies",
 	"    out: local.currencyCodes",
 	"  - id: firstCurrency",
 	"    block: object.firstEntry",
-	"    source: local.profile.currencies",
+	"    props:",
+	"      source: local.profile.currencies",
 	"    out: local.firstCurrency",
 	"  - id: currencyInfo",
 	"    block: object.get",
-	"    source: local.profile.currencies",
-	"    key: local.firstCurrency.key",
+	"    props:",
+	"      source: local.profile.currencies",
+	"      key: local.firstCurrency.key",
 	"    out: local.currencyInfo",
 	"  - id: mergeAlert",
 	"    block: object.merge",
-	"    target: local.selected",
-	"    source:",
-	"      alert: true",
+	"    props:",
+	"      target: local.selected",
+	"      source:",
+	"        alert: true",
 	"    out: result.payload",
 	"  - id: setCurrencyCodes",
 	"    block: set",
-	"    path: result.currencyCodes",
-	"    value: \"{{ local.currencyCodes }}\"",
+	"    props:",
+	"      path: result.currencyCodes",
+	"      value: \"{{ local.currencyCodes }}\"",
 	"  - id: setCurrencyCode",
 	"    block: set",
-	"    path: result.currencyCode",
-	"    value: \"{{ local.firstCurrency.key }}\"",
+	"    props:",
+	"      path: result.currencyCode",
+	"      value: \"{{ local.firstCurrency.key }}\"",
 	"  - id: setCurrencyName",
 	"    block: set",
-	"    path: result.currencyName",
-	"    value: \"{{ local.currencyInfo.name }}\"",
+	"    props:",
+	"      path: result.currencyName",
+	"      value: \"{{ local.currencyInfo.name }}\"",
 	"  - id: stringify",
 	"    block: json.stringify",
-	"    value: \"{{ result.payload }}\"",
+	"    props:",
+	"      value: \"{{ result.payload }}\"",
 	"    out: local.payloadText",
 	"  - id: parse",
 	"    block: json.parse",
-	"    text: \"{{ local.payloadText }}\"",
+	"    props:",
+	"      text: \"{{ local.payloadText }}\"",
 	"    out: result.roundtrip",
 	""
 ].join("\n");
@@ -3850,16 +3950,19 @@ var inputFlowSource = [
 	"nodes:",
 	"  - id: setCity",
 	"    block: set",
-	"    path: result.city",
-	"    value: \"{{ input.city }}\"",
+	"    props:",
+	"      path: result.city",
+	"      value: \"{{ input.city }}\"",
 	"  - id: setTags",
 	"    block: set",
-	"    path: result.tags",
-	"    value: \"{{ input.tags }}\"",
+	"    props:",
+	"      path: result.tags",
+	"      value: \"{{ input.tags }}\"",
 	"  - id: setBodyMessage",
 	"    block: set",
-	"    path: result.message",
-	"    value: \"{{ input.message }}\"",
+	"    props:",
+	"      path: result.message",
+	"      value: \"{{ input.message }}\"",
 	""
 ].join("\n");
 var inputRun = JSON.parse(engine.run(JSON.stringify({
@@ -3882,28 +3985,33 @@ var writerFlowSource = [
 	"nodes:",
 	"  - id: initLines",
 	"    block: set",
-	"    path: local.lines",
-	"    value:",
-	"      - Alpha",
-	"      - Beta",
+	"    props:",
+	"      path: local.lines",
+	"      value:",
+	"        - Alpha",
+	"        - Beta",
 	"  - id: writeFile",
 	"    block: file.withWriter",
-	"    path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
-	"    as: local.writer",
+	"    props:",
+	"      path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	"      as: local.writer",
 	"    nodes:",
 	"      - id: loopLines",
 	"        block: forEach",
-	"        items: local.lines",
+	"        props:",
+	"          items: local.lines",
 	"        nodes:",
 	"          - id: writeLine",
 	"            block: file.write",
-	"            writer: local.writer",
-	"            value: \"{{ current }}\"",
-	"            newline: true",
+	"            props:",
+	"              writer: local.writer",
+	"              value: \"{{ current }}\"",
+	"              newline: true",
 	"  - id: done",
 	"    block: set",
-	"    path: result.file",
-	"    value: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	"    props:",
+	"      path: result.file",
+	"      value: " + JSON.stringify(String(writerFile.getAbsolutePath())),
 	""
 ].join("\n");
 var writerRun = JSON.parse(engine.run(JSON.stringify({ flowSource: writerFlowSource })));
@@ -3924,13 +4032,15 @@ var forbiddenHandleResultFlowSource = [
 	"nodes:",
 	"  - id: openFile",
 	"    block: file.withWriter",
-	"    path: " + JSON.stringify(String(new java.io.File(projectDirFile, "handle-leak.txt").getAbsolutePath())),
-	"    as: local.writer",
+	"    props:",
+	"      path: " + JSON.stringify(String(new java.io.File(projectDirFile, "handle-leak.txt").getAbsolutePath())),
+	"      as: local.writer",
 	"    nodes:",
 	"      - id: leakHandle",
 	"        block: set",
-	"        path: result.writer",
-	"        value: \"{{ local.writer }}\"",
+	"        props:",
+	"          path: result.writer",
+	"          value: \"{{ local.writer }}\"",
 	""
 ].join("\n");
 var forbiddenHandleResultRun = JSON.parse(engine.run(JSON.stringify({ flowSource: forbiddenHandleResultFlowSource })));
@@ -3944,22 +4054,26 @@ var readerFlowSource = [
 	"nodes:",
 	"  - id: initReadLines",
 	"    block: set",
-	"    path: result.lines",
-	"    value: []",
+	"    props:",
+	"      path: result.lines",
+	"      value: []",
 	"  - id: readFile",
 	"    block: file.withReader",
-	"    path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
-	"    as: local.reader",
+	"    props:",
+	"      path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	"      as: local.reader",
 	"    nodes:",
 	"      - id: eachLine",
 	"        block: file.forEachLine",
-	"        reader: local.reader",
+	"        props:",
+	"          reader: local.reader",
 	"        out: result.readStats",
 	"        nodes:",
 	"          - id: pushReadLine",
 	"            block: json.push",
-	"            path: result.lines",
-	"            value: \"{{ current }}\"",
+	"            props:",
+	"              path: result.lines",
+	"              value: \"{{ current }}\"",
 	""
 ].join("\n");
 var readerRun = JSON.parse(engine.run(JSON.stringify({ flowSource: readerFlowSource })));
@@ -3992,17 +4106,20 @@ var readLineFlowSource = [
 	"nodes:",
 	"  - id: readFile",
 	"    block: file.withReader",
-	"    path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
-	"    as: local.reader",
+	"    props:",
+	"      path: " + JSON.stringify(String(writerFile.getAbsolutePath())),
+	"      as: local.reader",
 	"    nodes:",
 	"      - id: firstLine",
 	"        block: file.readLine",
-	"        reader: local.reader",
-	"        line: result.first",
-	"        eof: result.firstEof",
+	"        props:",
+	"          reader: local.reader",
+	"          line: result.first",
+	"          eof: result.firstEof",
 	"      - id: secondLine",
 	"        block: file.readLine",
-	"        reader: local.reader",
+	"        props:",
+	"          reader: local.reader",
 	"        out: result.second",
 	""
 ].join("\n");
@@ -4019,8 +4136,8 @@ var smokeFlowsDir = new java.io.File(projectDirFile, "_flow/flows");
 smokeFlowsDir.mkdirs();
 var namedGreetingFlowSource = [
 	"function NamedGreeting({ input, config, result }) {",
-	"\tset({ id: \"setMessage\", path: \"result.message\", value: `Hello ${input.name}${config.suffix}` })",
-	"\tset({ id: \"setMode\", path: \"result.mode\", value: \"rhino-flow\" })",
+	"\tset({ $$id: \"setMessage\", path: \"result.message\", value: `Hello ${input.name}${config.suffix}` })",
+	"\tset({ $$id: \"setMode\", path: \"result.mode\", value: \"rhino-flow\" })",
 	"\treturn result",
 	"}",
 	""
@@ -4058,7 +4175,7 @@ assertTrue(catalogSearch.matches.some(function (match) {
 }), "search did not return catalog block/type matches");
 var requestableCallSource = [
 	"function RequestableBridge({ input, config, result }) {",
-	"\tvar response = requestable.call({ id: \"callRequestable\", requestable: \".NamedGreeting\", input: { name: \"Nicolas\" } })",
+	"\tvar response = requestable.call({ $$id: \"callRequestable\", requestable: \".NamedGreeting\", input: { name: \"Nicolas\" } })",
 	"\treturn result",
 	"}",
 	""
@@ -4181,9 +4298,9 @@ var frontendComponentsDir = new java.io.File(frontendRoot, "components");
 frontendComponentsDir.mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(frontendComponentsDir, "SharedControls.flow.svelte"), [
 	"<script module>",
-	"  export const _meta = { id: \"SmokeProject.sharedControls\", label: \"Shared controls\", tag: \"SharedControls\" };",
+	"  export const _meta = { sourceVersion: 2, id: \"SmokeProject.sharedControls\", label: \"Shared controls\", tag: \"SharedControls\" };",
 	"</script>",
-	"<FlowComponent id=\"sharedControls\" label=\"Shared controls\">",
+	"<FlowComponent $$id=\"sharedControls\" label=\"Shared controls\">",
 	"  <Structure>",
 	"    <Text text={{ mode: \"literal\", value: \"Chronomètre\" }} />",
 	"    <Text text={{ mode: \"source\", source: { category: \"local\", name: \"clock\", scopeId: \"sharedControls\" }, path: [{ kind: \"property\", name: \"display\" }] }} />",
@@ -4319,8 +4436,9 @@ var authoringDraftProbe = JSON.parse(engine.run(JSON.stringify({
 		"nodes:",
 		"  - id: probe",
 		"    block: smoke.authoringDraftProbe",
-		"    projectDir: " + __flowProjectDir,
-		"    sourceFile: " + String(new java.io.File(frontendComponentsDir, "SharedControls.flow.svelte").getCanonicalPath()),
+		"    props:",
+		"      projectDir: " + __flowProjectDir,
+		"      sourceFile: " + String(new java.io.File(frontendComponentsDir, "SharedControls.flow.svelte").getCanonicalPath()),
 		"    out: result.label",
 		""
 	].join("\n"),
@@ -4458,32 +4576,33 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	"<script module>",
 	"  export const _flow = {",
+	"    sourceVersion: 2,",
 	"    app: { id: \"AstSmoke\", title: \"Ast smoke\" },",
 	"    page: { id: \"home\", route: \"/\", title: \"Ast smoke\" },",
 	"    builder: { id: \"lib_flow_frontbuilder_svelte\" }",
 	"  };",
 	"</script>",
 	"",
-	"<FlowComponent id=\"home\" label=\"Ast smoke\">",
+	"<FlowComponent $$id=\"home\" label=\"Ast smoke\">",
 	"  <Variables>",
-	"    <Variable name=\"localMessage\" type=\"string\" value=\"Ready\" />",
+	"    <State $$id=\"localMessage\" type=\"string\" value=\"Ready\" />",
 	"  </Variables>",
 	"  <Events>",
-	"    <Interval id=\"ticker\" milliseconds={1000} immediate={true}>",
+	"    <Interval $$id=\"ticker\" milliseconds={1000} immediate={true}>",
 	"      <Actions>",
-	"        <SetValue id=\"refreshLocal\" target=\"local.localMessage\" value=\"Tick\" />",
+	"        <SetValue $$id=\"refreshLocal\" target=\"local.localMessage\" value=\"Tick\" />",
 	"      </Actions>",
 	"    </Interval>",
 	"  </Events>",
 	"  <Structure>",
-	"    <PageShell id=\"pageShell\">",
+	"    <PageShell $$id=\"pageShell\">",
 	"      <Children>",
-	"        <Text id=\"localText\" text={{\"mode\":\"source\",\"source\":{\"category\":\"local\",\"name\":\"localMessage\"},\"path\":[]}} />",
+	"        <Text $$id=\"localText\" text={{\"mode\":\"source\",\"source\":{\"category\":\"local\",\"name\":\"localMessage\"},\"path\":[]}} />",
 	"        <Button label=\"Start\" />",
 	"        <Button label=\"Step\" />",
 	"        <Button label=\"Stop\" />",
 	"        <Button label=\"Reset\" />",
-	"        <SmokePanel id=\"smokePanel1\" />",
+	"        <SmokePanel $$id=\"smokePanel1\" />",
 	"      </Children>",
 	"    </PageShell>",
 	"  </Structure>",
@@ -4491,30 +4610,30 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSveltePageFile, [
 	""
 ].join("\n"), "UTF-8");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSvelteLayoutFile, [
-	"<FlowComponent id=\"shell\" label=\"Store shell\">",
-	"  <Structure><Text id=\"shellTitle\" text=\"Store\" /></Structure>",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"shell\" label=\"Store shell\">",
+	"  <Structure><Text $$id=\"shellTitle\" text=\"Store\" /></Structure>",
 	"</FlowComponent>",
 	""
 ].join("\n"), "UTF-8");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(nestedRouteFile, [
 	"<script module>",
-	"  export const _flow = { page: { id: \"product\", title: \"Product detail\" } };",
+	"  export const _flow = { sourceVersion: 2, page: { id: \"product\", title: \"Product detail\" } };",
 	"</script>",
-	"<FlowComponent id=\"product\" label=\"Product detail\">",
-	"  <Structure><Text id=\"productTitle\" text=\"Original product\" /></Structure>",
+	"<FlowComponent $$id=\"product\" label=\"Product detail\">",
+	"  <Structure><Text $$id=\"productTitle\" text=\"Original product\" /></Structure>",
 	"</FlowComponent>",
 	""
 ].join("\n"), "UTF-8");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(flowSvelteComponentFile, [
-	"<FlowComponent id=\"smokePanel\" label=\"Smoke panel\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"smokePanel\" label=\"Smoke panel\">",
 	"  <Structure>",
-	"    <Text id=\"first\" text=\"First\" />",
-	"    <If id=\"guard\" test={ready}>",
+	"    <Text $$id=\"first\" text=\"First\" />",
+	"    <If $$id=\"guard\" test={ready}>",
 	"      <Then>",
-	"        <Text id=\"inside\" text=\"Inside\" />",
+	"        <Text $$id=\"inside\" text=\"Inside\" />",
 	"      </Then>",
 	"    </If>",
-	"    <Text id=\"last\" text=\"Last\" />",
+	"    <Text $$id=\"last\" text=\"Last\" />",
 	"  </Structure>",
 	"</FlowComponent>",
 	""
@@ -4594,8 +4713,11 @@ var flowSvelteLocalText = findNode(flowSvelteRootPage, function (node) {
 	var definition = node && node.definition ? JSON.parse(node.definition) : {};
 	return definition.id === "localText";
 });
-assertTrue(flowSvelteLocalText !== null &&
-	/\.props\.text$/.test(String(nodeInfoObject(flowSvelteLocalText).sourcePropertyMutationPaths.text || "")),
+var flowSvelteLocalTextInfo = flowSvelteLocalText ? nodeInfoObject(flowSvelteLocalText) : {};
+// A derivable mutation path (node path + definitionPath) is omitted from the payload.
+var flowSvelteLocalTextPath = (flowSvelteLocalTextInfo.sourcePropertyMutationPaths || {}).text ||
+	flowSvelteLocalTextInfo.sourceMutationPath + "." + flowSvelteLocalTextInfo.propertyDefinitions.text.definitionPath;
+assertTrue(flowSvelteLocalText !== null && /\.props\.text$/.test(String(flowSvelteLocalTextPath)),
 	"projected Flow Svelte properties did not preserve their FrontAst mutation paths");
 var initialProjectedRouteSourceCount = 0;
 (function countProjectedRouteSources(node) {
@@ -4744,10 +4866,10 @@ assertTrue(bindingVariantCacheAfter.misses >= bindingVariantCacheBefore.misses +
 	"authoring tree cache should distinguish lightweight and binding-aware projections");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(nestedRouteFile, [
 	"<script module>",
-	"  export const _flow = { page: { id: \"product\", title: \"Updated product detail\" } };",
+	"  export const _flow = { sourceVersion: 2, page: { id: \"product\", title: \"Updated product detail\" } };",
 	"</script>",
-	"<FlowComponent id=\"product\" label=\"Updated product detail\">",
-	"  <Structure><Text id=\"productTitle\" text=\"Updated product\" /></Structure>",
+	"<FlowComponent $$id=\"product\" label=\"Updated product detail\">",
+	"  <Structure><Text $$id=\"productTitle\" text=\"Updated product\" /></Structure>",
 	"</FlowComponent>",
 	""
 ].join("\n"), "UTF-8");
@@ -4858,7 +4980,8 @@ var flowSvelteLocalTextNode = findNode(flowSvelteTree, function (node) {
 assertTrue(flowSvelteLocalTextNode && flowSvelteLocalTextNode.path,
 	"authoring tree did not expose the locally-bound Text node");
 var flowSvelteLocalTextDefinition = JSON.parse(flowSvelteLocalTextNode.definition);
-assertTrue(flowSvelteLocalTextDefinition.text && flowSvelteLocalTextDefinition.kind === undefined &&
+assertTrue(flowSvelteLocalTextDefinition.props.text && flowSvelteLocalTextDefinition.text === undefined &&
+	flowSvelteLocalTextDefinition.kind === undefined &&
 	flowSvelteLocalTextDefinition.tag === undefined && flowSvelteLocalTextDefinition.type === undefined &&
 	flowSvelteLocalTextDefinition.descriptorId === undefined && flowSvelteLocalTextDefinition.icon === undefined,
 	"authoring tree leaked technical frontend metadata into editable properties");
@@ -5269,7 +5392,7 @@ var smokePanelRoot = findNode(flowSvelteTree, function (node) {
 	return node.kind === "frontendComponent" && node.summary === "Smoke panel";
 });
 var smokePanelRouteRef = findNode(flowSvelteTree, function (node) {
-	return node.type === "SmokePanel" && node.summary === "smokePanel1";
+	return node.type === "SmokePanel" && /\.smokePanel1$/.test(String(node.path || ""));
 });
 var smokeIf = findNode(flowSvelteTree, function (node) {
 	return node.kind === "frontendDirectiveBlock" && node.summary === "If" &&
@@ -5325,7 +5448,7 @@ var flowSvelteDisabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
 })));
 assertTrue(flowSvelteDisabled.ok === true &&
 	String(flowSvelteDisabled.source).indexOf("id=\"first\"") !== -1 &&
-	String(flowSvelteDisabled.source).indexOf("enabled={false}") !== -1,
+	String(flowSvelteDisabled.source).indexOf("$$disabled={true}") !== -1,
 	"flow-svelte AST setEnabled(false) did not preserve the disabled state in source");
 var flowSvelteReenabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5341,7 +5464,7 @@ var flowSvelteReenabled = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	}
 })));
 assertTrue(flowSvelteReenabled.ok === true &&
-	String(flowSvelteReenabled.source).indexOf("enabled={false}") === -1 &&
+	String(flowSvelteReenabled.source).indexOf("$$disabled={true}") === -1 &&
 	String(flowSvelteReenabled.source).indexOf("id=\"first\"") !== -1,
 	"flow-svelte AST setEnabled(true) did not restore the node source");
 var flowSvelteMoveDrafts = {};
@@ -5457,8 +5580,8 @@ var flowSvelteReplaceNode = JSON.parse(engine.applySourceMutation(JSON.stringify
 	}
 })));
 assertTrue(flowSvelteReplaceNode.ok === true &&
-	/<Card\s+id="replacementCard"/.test(String(flowSvelteReplaceNode.source)) &&
-	/<Text\s+id="replacementText"/.test(String(flowSvelteReplaceNode.source)),
+	/<Card\s+\$\$id="replacementCard"/.test(String(flowSvelteReplaceNode.source)) &&
+	/<Text\s+\$\$id="replacementText"/.test(String(flowSvelteReplaceNode.source)),
 	"flow-svelte AST node replacement did not template palette-style values");
 var flowSvelteBatchMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5491,11 +5614,11 @@ assertTrue(flowSvelteBatchMutation.ok === true &&
 	String(flowSvelteBatchMutation.source).indexOf("text=\"Batch one\"") < String(flowSvelteBatchMutation.source).indexOf("text=\"Batch two\""),
 	"flow-svelte source mutations were not applied as one ordered batch");
 var flowSvelteBindingRoundTripSource = [
-	"<FlowComponent id=\"bindingRoundTrip\" label=\"Binding round trip\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"bindingRoundTrip\" label=\"Binding round trip\">",
 	"  <Structure>",
-	"    <ForEach id=\"items\" source={{\"mode\":\"source\",\"source\":{\"category\":\"requestable\",\"actionId\":\"loadItems\"},\"path\":[{\"kind\":\"property\",\"name\":\"items\"}]}} context=\"item\">",
+	"    <ForEach $$id=\"items\" source={{\"mode\":\"source\",\"source\":{\"category\":\"requestable\",\"actionId\":\"loadItems\"},\"path\":[{\"kind\":\"property\",\"name\":\"items\"}]}} context=\"item\">",
 	"      <Children>",
-	"        <Text id=\"itemTitle\" text=\"Placeholder\" source={{\"mode\":\"source\",\"source\":{\"category\":\"iteration\",\"scopeId\":\"items\",\"value\":\"item\"},\"path\":[{\"kind\":\"property\",\"name\":\"title\"}]}} />",
+	"        <Text $$id=\"itemTitle\" text=\"Placeholder\" source={{\"mode\":\"source\",\"source\":{\"category\":\"iteration\",\"scopeId\":\"items\",\"value\":\"item\"},\"path\":[{\"kind\":\"property\",\"name\":\"title\"}]}} />",
 	"      </Children>",
 	"      <Else />",
 	"    </ForEach>",
@@ -5515,13 +5638,17 @@ var flowSvelteBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stri
 	}
 })));
 assertTrue(flowSvelteBindingRoundTrip.ok === true &&
-	String(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("source", { category: "requestable", actionId: "loadItems" }, "items")) !== -1 &&
-	String(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
+	compactSource(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("source", { category: "requestable", actionId: "loadItems" }, "items")) !== -1 &&
+	compactSource(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
 	String(flowSvelteBindingRoundTrip.source).indexOf('id="itemDescription"') !== -1,
 	"flow-svelte AST mutations should preserve complete structured iteration bindings: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
 function structuredBindingAttribute(name, source, property) {
 	return name + "={" + JSON.stringify({ mode: "source", source: source, path: [{ kind: "property", name: property }] }) + "}";
+}
+// The canonical writer lays structured values out over several lines with trailing commas.
+function compactSource(text) {
+	return String(text).replace(/\s+/g, "").replace(/,([}\]])/g, "$1");
 }
 var flowSvelteIntuitiveBindingMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5537,10 +5664,10 @@ assertTrue(flowSvelteIntuitiveBindingMutation.ok === true &&
 	String(flowSvelteIntuitiveBindingMutation.source).indexOf('source="@loadItems.items"') !== -1,
 	"flow-svelte AST mutation did not accept an intuitive binding reference");
 var flowSvelteSyntaxIntentSource = [
-	"<FlowComponent id=\"syntaxIntent\" label=\"Syntax intent\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"syntaxIntent\" label=\"Syntax intent\">",
 	"  <Structure>",
-	"    <If id=\"ready\" test=\"@catalog.rows\">",
-	"      <Then><Header id=\"header\" sticky={true} /><UpdateList id=\"trim\" count={itemIndex + 1} /></Then>",
+	"    <If $$id=\"ready\" test=\"@catalog.rows\">",
+	"      <Then><Header $$id=\"header\" sticky={true} /><UpdateList $$id=\"trim\" count={itemIndex + 1} /></Then>",
 	"    </If>",
 	"  </Structure>",
 	"</FlowComponent>",
@@ -5564,12 +5691,12 @@ assertTrue(flowSvelteSyntaxIntentRoundTrip.ok === true &&
 	"flow-svelte AST mutations should preserve quoted, literal and expression attribute intent: " +
 		JSON.stringify(flowSvelteSyntaxIntentRoundTrip));
 var flowSvelteNaturalBindingSource = [
-	"<FlowComponent id=\"naturalBindingRoundTrip\" label=\"Natural binding round trip\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"naturalBindingRoundTrip\" label=\"Natural binding round trip\">",
 	"  <Structure>",
-	"    <ForEach id=\"items\" source={{ mode: \"literal\", value: [] }} context=\"item\">",
+	"    <ForEach $$id=\"items\" source={{ mode: \"literal\", value: [] }} context=\"item\">",
 	"      <Children>",
-	"        <UpdateNumber id=\"quantity\" count={{ mode: \"literal\", value: 0 }} step={{ mode: \"literal\", value: 1 }} />",
-	"        <Text id=\"itemTitle\" text=\"Placeholder\" source={{ mode: \"source\", source: { category: \"iteration\", scopeId: \"items\", value: \"item\" }, path: [{ kind: \"property\", name: \"title\" }] }} />",
+	"        <UpdateNumber $$id=\"quantity\" count={{ mode: \"literal\", value: 0 }} step={{ mode: \"literal\", value: 1 }} />",
+	"        <Text $$id=\"itemTitle\" text=\"Placeholder\" source={{ mode: \"source\", source: { category: \"iteration\", scopeId: \"items\", value: \"item\" }, path: [{ kind: \"property\", name: \"title\" }] }} />",
 	"      </Children>",
 	"      <Else />",
 	"    </ForEach>",
@@ -5590,7 +5717,7 @@ var flowSvelteNaturalBindingRoundTrip = JSON.parse(engine.applySourceMutation(JS
 })));
 assertTrue(flowSvelteNaturalBindingRoundTrip.ok === true &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source={[]}') !== -1 &&
-	String(flowSvelteNaturalBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
+	compactSource(flowSvelteNaturalBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count={0}') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step={1}') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source="{') === -1 &&
@@ -5613,7 +5740,7 @@ var flowSvelteFullSyncBinding = JSON.parse(engine.applySourceMutation(JSON.strin
 	}
 })));
 assertTrue(flowSvelteFullSyncBinding.ok === true &&
-	String(flowSvelteFullSyncBinding.source).indexOf(structuredBindingAttribute("source", { category: "fullsync", actionId: "readItems", operation: "view" }, "rows")) !== -1,
+	compactSource(flowSvelteFullSyncBinding.source).indexOf(structuredBindingAttribute("source", { category: "fullsync", actionId: "readItems", operation: "view" }, "rows")) !== -1,
 	"flow-svelte AST mutations must preserve the FullSync operation in structured binding sources");
 var flowSvelteComposedBinding = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5634,8 +5761,8 @@ var flowSvelteComposedBinding = JSON.parse(engine.applySourceMutation(JSON.strin
 })));
 assertTrue(flowSvelteComposedBinding.ok === true &&
 	String(flowSvelteComposedBinding.source).indexOf('"parts"') !== -1 &&
-	String(flowSvelteComposedBinding.source).indexOf('"value":"index["') !== -1 &&
-	String(flowSvelteComposedBinding.source).indexOf('"value":"]"') !== -1,
+	compactSource(flowSvelteComposedBinding.source).indexOf('"value":"index["') !== -1 &&
+	compactSource(flowSvelteComposedBinding.source).indexOf('"value":"]"') !== -1,
 	"flow-svelte AST mutations did not preserve ordered expression fragments");
 var flowSvelteIterableComposition = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),
@@ -5656,16 +5783,16 @@ var flowSvelteIterableComposition = JSON.parse(engine.applySourceMutation(JSON.s
 	}
 })));
 assertTrue(flowSvelteIterableComposition.ok === true &&
-	String(flowSvelteIterableComposition.source).indexOf('"value":"iterable"') !== -1 &&
-	String(flowSvelteIterableComposition.source).indexOf('"name":"length"') !== -1,
+	compactSource(flowSvelteIterableComposition.source).indexOf('"value":"iterable"') !== -1 &&
+	compactSource(flowSvelteIterableComposition.source).indexOf('"name":"length"') !== -1,
 	"flow-svelte AST mutations rejected a picker-backed iterable composition: " +
 		JSON.stringify(flowSvelteIterableComposition));
 var flowSvelteConditionalBindingSource = [
-	"<FlowComponent id=\"conditionalBinding\" label=\"Conditional binding\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"conditionalBinding\" label=\"Conditional binding\">",
 	"  <Structure>",
-	"    <If id=\"alternateCard\" test={{\"mode\":\"source\",\"source\":{\"category\":\"iteration\",\"scopeId\":\"items\",\"value\":\"item\"},\"path\":[{\"kind\":\"property\",\"name\":\"alternate\"}]}}>",
+	"    <If $$id=\"alternateCard\" test={{\"mode\":\"source\",\"source\":{\"category\":\"iteration\",\"scopeId\":\"items\",\"value\":\"item\"},\"path\":[{\"kind\":\"property\",\"name\":\"alternate\"}]}}>",
 	"      <Then>",
-	"        <Text id=\"conditionalText\" text=\"Visible\" />",
+	"        <Text $$id=\"conditionalText\" text=\"Visible\" />",
 	"      </Then>",
 	"    </If>",
 	"  </Structure>",
@@ -5683,18 +5810,18 @@ var flowSvelteConditionalBindingRoundTrip = JSON.parse(engine.applySourceMutatio
 	}
 })));
 assertTrue(flowSvelteConditionalBindingRoundTrip.ok === true &&
-	String(flowSvelteConditionalBindingRoundTrip.source).indexOf(structuredBindingAttribute("test", { category: "iteration", scopeId: "items", value: "item" }, "alternate")) !== -1 &&
+	compactSource(flowSvelteConditionalBindingRoundTrip.source).indexOf(structuredBindingAttribute("test", { category: "iteration", scopeId: "items", value: "item" }, "alternate")) !== -1 &&
 	String(flowSvelteConditionalBindingRoundTrip.source).indexOf("test={{{") === -1,
 	"flow-svelte AST mutations should preserve structured conditional bindings across reparses: " +
 		JSON.stringify(flowSvelteConditionalBindingRoundTrip));
 var flowSvelteNestedConditionalSource = [
-	"<FlowComponent id=\"nestedConditional\" label=\"Nested conditional\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"nestedConditional\" label=\"Nested conditional\">",
 	"  <Structure>",
-	"    <ForEach id=\"items\" source={{\"mode\":\"literal\",\"value\":[]}}>",
+	"    <ForEach $$id=\"items\" source={{\"mode\":\"literal\",\"value\":[]}}>",
 	"      <Each>",
-	"        <If id=\"alternate\" test={index % 2 === 0}>",
+	"        <If $$id=\"alternate\" test={index % 2 === 0}>",
 	"          <Then><Card><Children>",
-	"            <Text id=\"evenTitle\" text=\"Placeholder\" />",
+	"            <Text $$id=\"evenTitle\" text=\"Placeholder\" />",
 	"          </Children></Card></Then>",
 	"          <Else />",
 	"        </If>",
@@ -5721,25 +5848,25 @@ var flowSvelteNestedConditionalMutation = JSON.parse(engine.applySourceMutation(
 })));
 assertTrue(flowSvelteNestedConditionalMutation.ok === true &&
 	String(flowSvelteNestedConditionalMutation.source).indexOf('id="evenTitle"') !== -1 &&
-	String(flowSvelteNestedConditionalMutation.source).indexOf(structuredBindingAttribute("source", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1,
+	compactSource(flowSvelteNestedConditionalMutation.source).indexOf(structuredBindingAttribute("source", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1,
 	"flow-svelte AST mutations should resolve Each and named If slots: " +
 		JSON.stringify(flowSvelteNestedConditionalMutation));
 var flowSvelteKitchenSinkSource = [
-	"<FlowComponent id=\"home\" label=\"Kitchen Sink gallery\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id=\"home\" label=\"Kitchen Sink gallery\">",
 	"  <Structure>",
-	"    <PageShell id=\"homeShell\"><Children>",
-	"      <ColumnLayout id=\"homeContent\"><Children>",
-	"        <Card id=\"introCard\" />",
-	"        <SearchField id=\"componentSearch\" />",
-	"        <RowLayout id=\"resultsMeta\" />",
-	"        <GridLayout id=\"componentGrid\"><Children>",
-	"          <ForEach id=\"componentLoop\" source={{\"mode\":\"literal\",\"value\":[]}}><Children>",
-	"            <Card id=\"componentCard\"><Children>",
-	"              <RowLayout id=\"componentCardRow\"><Children>",
-	"                <Text id=\"componentIcon\" text=\"@item.icon\" />",
-	"                <ColumnLayout id=\"componentCopy\"><Children>",
-	"                  <Heading id=\"componentName\" text=\"@item.title\" />",
-	"                  <Text id=\"componentDescription\" text=\"@item.description\" />",
+	"    <PageShell $$id=\"homeShell\"><Children>",
+	"      <ColumnLayout $$id=\"homeContent\"><Children>",
+	"        <Card $$id=\"introCard\" />",
+	"        <SearchField $$id=\"componentSearch\" />",
+	"        <RowLayout $$id=\"resultsMeta\" />",
+	"        <GridLayout $$id=\"componentGrid\"><Children>",
+	"          <ForEach $$id=\"componentLoop\" source={{\"mode\":\"literal\",\"value\":[]}}><Children>",
+	"            <Card $$id=\"componentCard\"><Children>",
+	"              <RowLayout $$id=\"componentCardRow\"><Children>",
+	"                <Text $$id=\"componentIcon\" text=\"@item.icon\" />",
+	"                <ColumnLayout $$id=\"componentCopy\"><Children>",
+	"                  <Heading $$id=\"componentName\" text=\"@item.title\" />",
+	"                  <Text $$id=\"componentDescription\" text=\"@item.description\" />",
 	"                </Children></ColumnLayout>",
 	"              </Children></RowLayout>",
 	"            </Children></Card>",
@@ -5864,12 +5991,13 @@ var contractFlowSource = [
 	"nodes:",
 	"  - id: getTemperature",
 	"    block: use",
-	"    contract: weather.currentTemperature@1",
-	"    input:",
-	"      city:",
-	"        value: Paris",
-	"      unit:",
-	"        value: C",
+	"    props:",
+	"      contract: weather.currentTemperature@1",
+	"      input:",
+	"        city:",
+	"          value: Paris",
+	"        unit:",
+	"          value: C",
 	"    out: result.weather",
 	""
 ].join("\n");
@@ -5900,12 +6028,13 @@ var projectBindingFlowSource = [
 	"nodes:",
 	"  - id: getTemperature",
 	"    block: use",
-	"    contract: weather.projectTemperature@1",
-	"    input:",
-	"      city:",
-	"        value: Lyon",
-	"      unit:",
-	"        value: \"{{ config.weather.unit }}\"",
+	"    props:",
+	"      contract: weather.projectTemperature@1",
+	"      input:",
+	"        city:",
+	"          value: Lyon",
+	"        unit:",
+	"          value: \"{{ config.weather.unit }}\"",
 	"    out: result.weather",
 	""
 ].join("\n");

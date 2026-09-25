@@ -41,17 +41,15 @@ assert(!called.ok && called.error.code === "INVALID_DESTINATION" && !marker.exis
 // Internal trace writes must continue working despite read-only public trace.
 var probe = run([{ block: "debug.probe", props: { value: 7 } }], { includeTrace: true });
 assert(probe.ok && probe.trace.probes[0].value === 7, "Internal trace: " + JSON.stringify(probe));
-// Dialect 2 business out is not confused with the engine destination.
+// A business out property is not confused with the engine destination.
 assert(invoke("blockCodeSet", { name: "proof.business", code: 'const _meta={sourceVersion:2,runtime:"rhino",properties:{out:{kind:"value",type:"string"}}};\n'
 	+ '(function(){return {run:function(ctx,node){return ctx.props(node).out;}};}())' }).ok, "Create business out fixture");
 var business = run([{ block: "proof.business", props: { out: "ordinary text" }, out: "result.value" }]);
 assert(business.ok && business.result.value === "ordinary text", "Business out stays independent: " + JSON.stringify(business));
-var legacy = invoke("run", { definition: { nodes: [{ block: "set", path: "result.legacy", value: 3 }] }, includeTrace: false });
-assert(legacy.ok && legacy.result.legacy === 3, "Legacy dialect supported");
 var flow = source('set({path:"local.answer",value:1});\nnumber.add({$$id:"target",left:1,right:2,$$out:"result.sum"});');
 var context = invoke("context", { flowSource: flow, node: "target", property: "$$out" });
 assert(context.ok && context.mode === "write" && JSON.stringify(context.include) === '["local","result"]', "Backend context filters destination scopes: " + JSON.stringify(context));
 assert(context.destinationPolicy.syntax === "named-path" && context.scopes.local.paths.some(function (entry) { return entry.path === "local.answer"; }), "Destination metadata and known names");
 var read = invoke("context", { flowSource: flow, node: "target", property: "left" });
 assert(read.ok && read.include.indexOf("input") >= 0 && !read.destinationPolicy, "Value picker remains readable");
-print("destination-runtime-contract OK: interpreter, prepared writes, analysis, context, callBlock, effects and v1/v2");
+print("destination-runtime-contract OK: interpreter, prepared writes, analysis, context, callBlock, effects and business out");

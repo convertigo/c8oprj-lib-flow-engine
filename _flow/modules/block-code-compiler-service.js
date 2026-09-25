@@ -18,7 +18,7 @@
 
 		function flowScriptBlockDescriptorFromMeta(name, meta, graphDefinition, code) {
 			meta = normalizeTree(meta || {});
-			if (meta.sourceVersion !== undefined && meta.sourceVersion !== 1 && meta.sourceVersion !== 2) {
+			if (meta.sourceVersion !== undefined && meta.sourceVersion !== 2) {
 				raise("FLOW_SOURCE_VERSION_UNSUPPORTED", "Unsupported block sourceVersion: " + meta.sourceVersion);
 			}
 			if (meta.name && String(meta.name) !== String(name) && String(meta.name) !== blockLocalName(name)) {

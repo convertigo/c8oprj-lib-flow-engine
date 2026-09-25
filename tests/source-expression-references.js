@@ -32,8 +32,8 @@ try {
     equal(result.ok, true, name + ' succeeded ' + JSON.stringify(result.diagnostics || []));
     return result;
   }
-  [1,2].forEach(function (version) {
-    var code = 'const _flow={sourceVersion:' + version + '};\nfunction ReferenceProof(){\n'
+  (function () {
+    var code = 'const _flow={sourceVersion:2};\nfunction ReferenceProof(){\n'
       + 'var model = input.model\nvar appId = input.appId\n'
       + 'var modelPath = input.modelPath || "_flow/frontbuilder/svelte/model/" + appId + "/src/routes/+page.flow.svelte"\n'
       + 'return {path:modelPath,label:"model:" + model,original:"local.model:" + model,template:`model: ${model}`}\n}';
@@ -41,9 +41,9 @@ try {
     var written = api('flowSourceValidate', {name:'ReferenceProof', flowSource:parsed.source, includeHeader:false});
     var input = {model:'yes', appId:'Sample'};
     var expected = {path:'_flow/frontbuilder/svelte/model/Sample/src/routes/+page.flow.svelte', label:'model:yes', original:'local.model:yes', template:'model: yes'};
-    equal(api('run', {flowSource:code,input:input,includeTrace:false}).result, expected, 'original runtime v' + version);
-    equal(api('run', {flowSource:written.code,input:input,includeTrace:false}).result, expected, 'written runtime v' + version);
-    equal(api('flowSourceValidate', {name:'ReferenceProof', flowSource:written.source,includeHeader:false}).code, written.code, 'stable writer v' + version);
-  });
+    equal(api('run', {flowSource:code,input:input,includeTrace:false}).result, expected, 'original runtime');
+    equal(api('run', {flowSource:written.code,input:input,includeTrace:false}).result, expected, 'written runtime');
+    equal(api('flowSourceValidate', {name:'ReferenceProof', flowSource:written.source,includeHeader:false}).code, written.code, 'stable writer');
+  }());
   print('source-expression-references OK (' + checks + ' checks)');
 } finally { files.deleteDirectory(project); }

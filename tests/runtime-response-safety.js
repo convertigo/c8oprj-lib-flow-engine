@@ -22,8 +22,7 @@ var safe = JSON.parse(engine.run(JSON.stringify({
 		nodes: [{
 			id: "payload",
 			block: "set",
-			path: "result.payload",
-			value: { rows: [{ id: 1 }, { id: 2 }], complete: true }
+			props: { path: "result.payload", value: { rows: [{ id: 1 }, { id: 2 }], complete: true } }
 		}]
 	},
 	includeTrace: false
@@ -38,13 +37,11 @@ var forbidden = JSON.parse(engine.run(JSON.stringify({
 		nodes: [{
 			id: "openFile",
 			block: "file.withWriter",
-			path: String(leakFile.getAbsolutePath()),
-			as: "local.writer",
+			props: { path: String(leakFile.getAbsolutePath()), as: "local.writer" },
 			nodes: [{
 				id: "leakHandle",
 				block: "set",
-				path: "result.writer",
-				value: "{{ local.writer }}"
+				props: { path: "result.writer", value: "{{ local.writer }}" }
 			}]
 		}]
 	},

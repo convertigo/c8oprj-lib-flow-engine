@@ -59,7 +59,8 @@ var nodes = cases.map(function (testCase) {
 	return {
 		id: testCase.name,
 		block: "text.replace",
-		props: Object.assign({}, testCase.input, { out: "result." + testCase.name })
+		props: Object.assign({}, testCase.input),
+		out: "result." + testCase.name
 	};
 });
 nodes.push({
@@ -68,9 +69,9 @@ nodes.push({
 	props: {
 		text: "{{ input.text }}",
 		search: "{{ input.search }}",
-		replacement: "{{ input.replacement }}",
-		out: "result.templateValues"
-	}
+		replacement: "{{ input.replacement }}"
+	},
+	out: "result.templateValues"
 });
 
 var run = JSON.parse(engine.run(JSON.stringify({
@@ -99,7 +100,8 @@ var analysis = JSON.parse(engine.analyze(JSON.stringify({
 		nodes: [{
 			id: "replace",
 			block: "text.replace",
-			props: { text: "value", search: "v", replacement: "V", out: "result.value" }
+			props: { text: "value", search: "v", replacement: "V" },
+			out: "result.value"
 		}]
 	}
 })));

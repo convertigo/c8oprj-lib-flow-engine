@@ -441,7 +441,7 @@ ctx.runNodes(nodes)   execute child nodes
 ctx.callBlock(name, props, options) call another block as a capability
 ctx.runFlowSource(src, config, options) run another Flow source
 ctx.flowGet(name)     read a named project Flow sidecar
-ctx.props(node)       business properties (v2 excludes engine output metadata)
+ctx.props(node)       business properties (excludes engine output metadata)
 ctx.outputPath(node)  engine result destination, independent of business out
 ```
 
@@ -453,7 +453,7 @@ Engine output routing is not a business input. Runtime implementations and
 analysis hooks must use `ctx.outputPath(node)`, not `ctx.props(node).out`, when
 writing or publishing the block result/schema. For `ctx.callBlock`, pass an
 engine destination in `options.out`; a value in the second argument's `out`
-remains business data in source version 2. Keep `outputs.out` as the declared
+remains business data. Keep `outputs.out` as the declared
 result schema contract; it is distinct from an optional business input `out`.
 Every Flow source is version 2.
 
@@ -466,17 +466,16 @@ business names and engine names must coexist in the property view.
 The Engine passes its exact codec file to document, mutation and generation
 entry points. Do not duplicate the codec or discover an unrelated sibling repo.
 
-Reusable `.block.js` implementations declare their source dialect in
-`_meta.sourceVersion`. Version 2 uses `$$id`, `$$comment`, `$$disabled` and
-`$$out` for engine attributes; unprefixed `id`/`disabled`/`out` remain business
+Reusable `.block.js` implementations declare `_meta.sourceVersion: 2`. Sources
+use `$$id`, `$$comment`, `$$disabled` and `$$out` for engine attributes; unprefixed `id`/`disabled`/`out` remain business
 properties. A declared child slot uses the same engine namespace, for example
 `$$then: function () { ... }`, independent of a business property named `then`.
 Write every present slot, including empty and secondary slots; never choose
 only the first slot. AST child slots stay separate from `node.props`.
 The slot names must not collide with structural AST storage (`id`, `props`,
-etc.); reject such contracts explicitly.
-Helpers inherit their source's dialect. A called reusable implementation owns
-its own dialect, but caller-provided child slots keep the caller's dialect.
+etc.); reject such contracts explicitly. Any other declared `sourceVersion`
+is rejected with `FLOW_SOURCE_VERSION_UNSUPPORTED`; a definition without one is
+version 2.
 
 Block descriptors should declare property kinds:
 

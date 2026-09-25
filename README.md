@@ -244,6 +244,8 @@ names/properties, and executes that model.
 For new Flows, prefer the natural code-like form:
 
 ```javascript
+const _flow = { sourceVersion: 2 };
+
 function GetFeedSorted({ input, config, result }) {
   const feed = requestable.call({ requestable: ".RSSConnector.GetFeed" });
   const sortedItems = list.sort({
@@ -266,14 +268,14 @@ function GetFeedSorted({ input, config, result }) {
 ```
 
 This is syntax sugar, not free-form JavaScript. `const name = block({...})`
-becomes `out: local.name`, paths like `feed.rss.channel.item` become
+becomes `$$out: "local.name"`, paths like `feed.rss.channel.item` become
 `local.feed.rss.channel.item`, object-style `list.map` expands to
 `forEach/json.object/json.push`, and `result.key = value` writes the response
 scope. The lower-level canonical call form remains valid for precise
 edits:
 
 ```javascript
-list.sort({ id: "sort", items: "local.feed.rss.channel.item", by: "current.title", out: "local.sorted" })
+list.sort({ $$id: "sort", items: local.feed.rss.channel.item, by: current.title, $$out: "local.sorted" })
 ```
 
 Agent-facing core blocks:
@@ -388,15 +390,18 @@ Prefer scoped `with*` blocks for resources that must be closed, mirroring Java
 
 ```yaml
 - block: file.withWriter
-  path: local.outputPath
-  as: local.writer
+  props:
+    path: local.outputPath
+    as: local.writer
   nodes:
     - block: forEach
-      items: local.lines
+      props:
+        items: local.lines
       nodes:
         - block: file.write
-          writer: local.writer
-          value: "{{ current }}"
+          props:
+            writer: local.writer
+            value: "{{ current }}"
 ```
 
 The `with*` block opens the handle, writes it to the requested scope path, runs
@@ -411,15 +416,18 @@ iterates over it while setting `current` to the current line:
 
 ```yaml
 - block: file.withReader
-  path: local.inputPath
-  as: local.reader
+  props:
+    path: local.inputPath
+    as: local.reader
   nodes:
     - block: file.forEachLine
-      reader: local.reader
+      props:
+        reader: local.reader
       nodes:
         - block: json.push
-          path: result.lines
-          value: "{{ current }}"
+          props:
+            path: result.lines
+            value: "{{ current }}"
 ```
 
 Use `requestable.call` when the target must go through the regular Convertigo
@@ -686,22 +694,26 @@ Examples:
 
 ```yaml
 - block: http.request
-  method: GET
-  url: "{{ config.weatherUrl }}"
-  headers:
-    X-Api-Key: "{{ config.apiKey }}"
+  props:
+    method: GET
+    url: "{{ config.weatherUrl }}"
+    headers:
+      X-Api-Key: "{{ config.apiKey }}"
   out: local.weather
 
 - block: if
-  condition: current.temperature >= config.threshold
+  props:
+    condition: current.temperature >= config.threshold
 
 - block: json.push
-  path: result.hotCities
-  value: "{{ current.city }}"
+  props:
+    path: result.hotCities
+    value: "{{ current.city }}"
 
 - block: set
-  path: result.message
-  value: Weather alert computed
+  props:
+    path: result.message
+    value: Weather alert computed
 ```
 
 Use `value` for literals and dynamic values. A string containing only
@@ -758,12 +770,13 @@ Example call site:
 ```yaml
 - id: getTemperature
   block: use
-  contract: weather.currentTemperature@1
-  input:
-    city: current.city
-    latitude: current.latitude
-    longitude: current.longitude
-    unit: local.unit
+  props:
+    contract: weather.currentTemperature@1
+    input:
+      city: current.city
+      latitude: current.latitude
+      longitude: current.longitude
+      unit: local.unit
   out: local.temperature
 ```
 

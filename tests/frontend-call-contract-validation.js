@@ -67,8 +67,8 @@ assertTrue(relativeContract && relativeContract.target.project === "Marketplace"
 var flowTreeService = loadService("flow-tree-service.js");
 function callContractDocument(variableName, contract, observedTargets) {
 	return flowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
-		'<FlowComponent id="smoke" label="Smoke">',
-		'  <Structure><CallSequence id="catalog" requestable=".Catalog"><Variables><Variable name="' +
+		'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+		'  <Structure><CallSequence $$id="catalog" requestable=".Catalog"><Variables><Variable name="' +
 			variableName + '" value="books" /></Variables></CallSequence></Structure>',
 		'</FlowComponent>'
 	].join("\n"), {

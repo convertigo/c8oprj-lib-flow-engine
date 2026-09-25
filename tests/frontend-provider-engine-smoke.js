@@ -15,8 +15,8 @@ var model = new java.io.File(root,
 	"_flow/frontbuilder/svelte/model/ProviderSmoke/src/routes/+page.flow.svelte");
 model.getParentFile().mkdirs();
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(model, [
-	'<FlowComponent id="home" label="Home">',
-	'  <Structure><Text id="title" text="Provider smoke" /><Avatar id="avatar" variant="primary" /></Structure>',
+	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="home" label="Home">',
+	'  <Structure><Text $$id="title" text="Provider smoke" /><Avatar $$id="avatar" variant="primary" /></Structure>',
 	'</FlowComponent>',
 	''
 ].join("\n"), "UTF-8");
@@ -136,7 +136,7 @@ if (info.frontendProvider.compiledSelections < 1 || info.frontendProvider.valid 
 // not only the correct source string produced by the canonical serializer.
 var reusable = new java.io.File(model.getParentFile().getParentFile(), "lib/components/Reusable.flow.svelte");
 reusable.getParentFile().mkdirs();
-var reusableSource = '<FlowComponent id="reusable"><Structure><Text id="first" text="First" /><Text id="last" text="Last" /></Structure></FlowComponent>';
+var reusableSource = '<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="reusable"><Structure><Text $$id="first" text="First" /><Text $$id="last" text="Last" /></Structure></FlowComponent>';
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(reusable, reusableSource, "UTF-8");
 var projectionRoot = "frontends.svelte.library.uiBlocks.reusable";
 var moved = JSON.parse(engine.applySourceMutation(JSON.stringify({

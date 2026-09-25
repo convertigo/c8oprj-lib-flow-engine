@@ -171,7 +171,7 @@
 				}
 			}, display));
 		}
-		var out = env.nodeOutputPath(node, 2);
+		var out = env.nodeOutputPath(node);
 		return out ? definition.name + " -> " + out : definition.name;
 	}
 
@@ -313,7 +313,6 @@
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
-		var previousSourceVersion = ctx.sourceVersion;
 		var defaults = block.__graphDefinition.flow && block.__graphDefinition.flow.config;
 		var hasDefaults = defaults && Object.keys(defaults).length > 0;
 		// Default-free blocks keep the existing lazy/no-copy config fast path.
@@ -341,7 +340,6 @@
 		ctx.scopes.result = {};
 		ctx.returned = undefined;
 		ctx.stopped = false;
-		ctx.sourceVersion = block.__graphDefinition.flow && block.__graphDefinition.flow.sourceVersion || 1;
 		if (hasDefaults) ctx.scopes.config = scopedConfig;
 		profileAdd(ctx, "graphBlockFrameEnterMs", frameStarted);
 		try {
@@ -366,7 +364,6 @@
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
-			ctx.sourceVersion = previousSourceVersion;
 			if (hasDefaults) ctx.scopes.config = previousConfig;
 			if (graphName) {
 				ctx.graphBlockStack.pop();

@@ -18,8 +18,8 @@ var compact = JSON.parse(engine.catalog(JSON.stringify({ detail: "compact", q: "
 var compactLoop = compact.blocks.filter(function (block) { return block.blockId === "forEach"; })[0];
 assertTrue(compactLoop.traits.indexOf("flow.node") >= 0 && compactLoop.slots[0].acceptsFrom === "parentSlot",
 	"Compact catalogue must not drop structural metadata");
-var definition = { nodes: [{ id: "loop", block: "forEach", items: "[]", nodes: [
-	{ id: "condition", block: "if", condition: "true", then: [{ id: "assign", block: "set", path: "result.ok", value: true }] }
+var definition = { nodes: [{ id: "loop", block: "forEach", props: { items: "[]" }, nodes: [
+	{ id: "condition", block: "if", props: { condition: "true" }, then: [{ id: "assign", block: "set", props: { path: "result.ok", value: true } }] }
 ] }] };
 var tree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", definition: definition })));
 assertTrue(tree.ok, "Real backend projection must succeed: " + JSON.stringify(tree.error));
@@ -41,7 +41,7 @@ assertTrue(service.authoringPaletteFromTreeRequest({ surface: "virtual", definit
 	{}, readOnly, env).items.length === 0, "An explicitly read-only Flow must not be made writable by its block descriptor");
 var mapContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: JSON.stringify({ input: { items: { type: "array", items: { type: "object", properties: { title: { type: "string" } } } } },
-		nodes: [{ id: "map", block: "list.map", items: "input.items", select: "current.title", out: "result.titles" }] }),
+		nodes: [{ id: "map", block: "list.map", props: { items: "input.items", select: "current.title" }, out: "result.titles" }] }),
 	node: "map", property: "select", include: ["current"], detail: "compact"
 })));
 assertTrue(mapContext.scopes.current.indexOf("current.title") >= 0,
@@ -91,8 +91,8 @@ assertTrue(compactPalette.items.some(function (i) { return i.id === "flow.block.
 print("backend-provider-authoring OK");
 print("backend public palette-to-mutation OK");
 
-var betweenDefinition = { nodes: [{ id: "get", block: "http.get", url: "https://example.invalid" },
-	{ id: "logger", block: "log", message: "done" }] };
+var betweenDefinition = { nodes: [{ id: "get", block: "http.get", props: { url: "https://example.invalid" } },
+	{ id: "logger", block: "log", props: { message: "done" } }] };
 var betweenPalette = JSON.parse(engine.authoringPalette(JSON.stringify({ target: "flow", surface: "virtual",
 	definition: betweenDefinition, focusPath: "nodes" })));
 var keysEntry = betweenPalette.items.filter(function (i) { return i.id === "flow.block.object.keys"; })[0];
@@ -110,7 +110,7 @@ var parsedBetween = JSON.parse(engine.flowSourceValidate(JSON.stringify({ code: 
 assertTrue(parsedBetween.ok && parsedBetween.definition.nodes.map(function (n) { return n.block; }).join(",") === "http.get,object.keys,log",
 	"Serialization and reparse preserve exact insertion order");
 assertTrue(realPalette("nodes").items.some(function (i) { return i.id === "flow.block.date.now"; }), "date.now is available in backend palette");
-var timeSource = 'function Clock({ result }) { date.now({ out: "result.timestamp" }) }';
+var timeSource = 'function Clock({ result }) { date.now({ $$out: "result.timestamp" }) }';
 var lowerTime = Date.now();
 var timeRun = JSON.parse(engine.run(JSON.stringify({ flowSource: timeSource, includeTrace: false })));
 var upperTime = Date.now();
