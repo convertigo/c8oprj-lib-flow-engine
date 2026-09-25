@@ -6248,7 +6248,11 @@
 		}
 	}
 
-	function frontendRunDocumentServer(resourceRoot, cliArgs, op) {
+	var FRONTEND_COMPANION_REQUEST_TIMEOUT_MS = 30000;
+	var FRONTEND_COMPANION_GENERATE_TIMEOUT_MS = 600000;
+
+	function frontendRunDocumentServer(resourceRoot, cliArgs, op, options) {
+		options = options || {};
 		var phaseStartedAt = JavaSystem.nanoTime();
 		var server = startFrontendDocumentServer(resourceRoot);
 		frontendPerformanceDuration("frontend.provider.request.server", JavaSystem.nanoTime() - phaseStartedAt);
@@ -6258,11 +6262,14 @@
 		try {
 			var id = "doc-" + String(server.sequence.incrementAndGet());
 			phaseStartedAt = JavaSystem.nanoTime();
-			server.writer.write(JSON.stringify(op ? { id: id, op: op, args: cliArgs } : { id: id, args: cliArgs }));
+			var message = { id: id, args: cliArgs };
+			if (op) message.op = op;
+			if (options.env) message.env = options.env;
+			server.writer.write(JSON.stringify(message));
 			server.writer.newLine();
 			server.writer.flush();
 			frontendPerformanceDuration("frontend.provider.request.write", JavaSystem.nanoTime() - phaseStartedAt);
-			var deadline = new Date().getTime() + 30000;
+			var deadline = new Date().getTime() + Number(options.timeoutMs || FRONTEND_COMPANION_REQUEST_TIMEOUT_MS);
 			var responseStartedAt = JavaSystem.nanoTime();
 			var readyAt = 0;
 			while (new Date().getTime() < deadline) {
@@ -6317,9 +6324,9 @@
 						responseError.frontendDocumentResponse = true;
 						throw responseError;
 					}
-					if (op === "mutate") {
+					if (op === "mutate" || op === "generate") {
 						if (!response.result || typeof response.result !== "object") {
-							throw new Error("Svelte front document server returned an invalid mutation result.");
+							throw new Error("Svelte front document server returned an invalid " + op + " result.");
 						}
 						return response.result;
 					}
@@ -6662,23 +6669,75 @@
 		};
 	}
 
+	function frontendGenerateArgs(resourceRoot, projectRoot, projectName, modelPath, generationMode) {
+		var generateArgs = [
+			"--flow-source-root", sourcePaths().root,
+			"--source-codec-file", String(engineModuleFile("source-attribute-name-codec.js").getAbsolutePath()),
+			"--project-root", String(projectRoot.getAbsolutePath()),
+			"--project-name", String(projectName || ""),
+			"--model", String(modelPath.getAbsolutePath()),
+			"--mode", generationMode
+		];
+		frontendReferenceCliArgs(projectRoot, resourceRoot).forEach(function (arg) {
+			generateArgs.push(arg);
+		});
+		return generateArgs;
+	}
+
+	// The generation runs in the frontbuilder companion (warm compiler and loaders)
+	// instead of a Node process per step. A provider that predates the `generate`
+	// operation keeps the one-shot process; a generation error is a failed step.
+	function frontendCompanionGenerateStep(npm, resourceRoot, projectRoot, projectName, modelPath, generationMode, envValues, startedAt) {
+		var args = frontendGenerateArgs(resourceRoot, projectRoot, projectName, modelPath, generationMode);
+		frontendStudioLog("[Svelte frontbuilder] > companion generate " + args.join(" "));
+		try {
+			var result = frontendRunDocumentServer(resourceRoot, args, "generate", {
+				env: envValues || {},
+				timeoutMs: FRONTEND_COMPANION_GENERATE_TIMEOUT_MS
+			});
+			return {
+				action: "generate",
+				command: "companion generate " + args.join(" "),
+				cwd: String(resourceRoot.getAbsolutePath()),
+				exitCode: 0,
+				stdout: String(result.output || ""),
+				stderr: "",
+				ok: true,
+				skipped: false,
+				companion: true,
+				durationMs: frontendDurationMs(startedAt)
+			};
+		} catch (companionError) {
+			var message = String(companionError && companionError.message || companionError);
+			if (companionError && companionError.frontendDocumentResponse === true
+					&& !/Unknown (option|document server operation)/.test(message)) {
+				frontendStudioLog("[Svelte frontbuilder] companion generate failed: " + message, true);
+				return {
+					action: "generate",
+					command: "companion generate " + args.join(" "),
+					cwd: String(resourceRoot.getAbsolutePath()),
+					exitCode: 1,
+					stdout: message,
+					stderr: "",
+					ok: false,
+					skipped: false,
+					companion: true,
+					durationMs: frontendDurationMs(startedAt)
+				};
+			}
+			runtimeState.frontendDocumentServerStats.fallbacks++;
+			frontendStudioLog("[Svelte frontbuilder] companion generate unavailable, using a Node process: " + message, true);
+			return null;
+		}
+	}
+
 	function frontendRunCommandFor(action, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode) {
 		if (action === "installBuilder") {
 			return [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "install", "--prefer-offline", "--no-audit", "--no-fund"];
 		}
 		if (action === "generate") {
-			var generateArgs = [
-				"--flow-source-root", sourcePaths().root,
-				"--source-codec-file", String(engineModuleFile("source-attribute-name-codec.js").getAbsolutePath()),
-				"--project-root", String(projectRoot.getAbsolutePath()),
-				"--project-name", String(projectName || ""),
-				"--model", String(modelPath.getAbsolutePath()),
-				"--mode", generationMode
-			];
-			frontendReferenceCliArgs(projectRoot, resourceRoot).forEach(function (arg) {
-				generateArgs.push(arg);
-			});
-			return frontendTsxCommand(resourceRoot, "src-builder/cli.ts", generateArgs);
+			return frontendTsxCommand(resourceRoot, "src-builder/cli.ts",
+				frontendGenerateArgs(resourceRoot, projectRoot, projectName, modelPath, generationMode));
 		}
 		if (action === "installApp") {
 			return [npm, "--prefix", String(generatedRoot.getAbsolutePath()), "install", "--prefer-offline", "--no-audit", "--no-fund"];
@@ -6855,6 +6914,13 @@
 				skipped: true,
 				durationMs: frontendDurationMs(startedAt)
 			};
+		}
+		if (stepAction === "generate") {
+			var companionStep = frontendCompanionGenerateStep(npm, resourceRoot, projectRoot, projectName,
+				modelPath, generationMode, envValues, startedAt);
+			if (companionStep) {
+				return companionStep;
+			}
 		}
 		var cwd = stepAction === "installApp" || stepAction === "check" || stepAction === "build"
 			? generatedRoot
