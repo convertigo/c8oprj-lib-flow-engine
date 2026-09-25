@@ -3901,8 +3901,8 @@
 		// JavaPackage whose toString() would become a directory under the cwd.
 		var workspace = Packages.com.twinsoft.convertigo.engine.Engine.USER_WORKSPACE_PATH;
 		return typeof workspace === "string" || workspace instanceof Packages.java.lang.String
-			? new File(String(workspace), "cache/flow-icons-v1")
-			: new File(Packages.java.lang.System.getProperty("java.io.tmpdir"), "convertigo-flow-cache/flow-icons-v1");
+			? new File(String(workspace), "cache/flow-icons-v2")
+			: new File(Packages.java.lang.System.getProperty("java.io.tmpdir"), "convertigo-flow-cache/flow-icons-v2");
 	}
 
 	function iconServiceEnv() {
@@ -3916,6 +3916,9 @@
 			engineDir: engineDir,
 			projectDir: projectDir,
 			sharedIconCacheRoot: sharedIconCacheRoot(),
+			iconReferenceRoots: function () {
+				return referencedProjectRoots(sourcePaths().path("icons"));
+			},
 			sha256Hex: sha256Hex
 		};
 	}

@@ -287,7 +287,9 @@
 				icon: icon
 			};
 			resolveBlockIcon({
-				__flowFile: new File(engineDir(), "virtual-icons.js").getAbsolutePath()
+				__flowFile: new File(engineDir(), "virtual-icons.js").getAbsolutePath(),
+				// Tree icons belong to lib_flow_engine, which carries them.
+				__flowIconSaved: true
 			}, resolved);
 			return resolved;
 		});

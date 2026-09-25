@@ -3,13 +3,4 @@
 /.gradle
 /.project
 /build/
-/_flow/icons/iconify/
-/_flow/icons/url/
-/_flow/icons/mdi/
-/_flow/blocks/**/icons/iconify/
-/_flow/blocks/**/icons/url/
-/_flow/blocks/**/icons/mdi/
-/_flow/**/icons/iconify/
-/_flow/**/icons/url/
-/_flow/**/icons/mdi/
 .DS_Store

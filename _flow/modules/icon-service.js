@@ -1,4 +1,14 @@
 (function () {
+	// Icons are sources of the project that uses them, stored as SVG only:
+	//   <project>/_flow/icons/iconify/<set>/<name>.svg (+ LICENSE.json of the set)
+	//   <project>/_flow/icons/url/<sha256>.<ext>
+	// They travel with the project (git, .car). Resolution looks in the project, then
+	// in its referenced projects and lib_flow_engine, then in the server cache, and only
+	// then downloads. Studio renderings (tinted SVG, 16/32 PNG) are derived into the
+	// server cache and never written into a project.
+	var STUDIO_TINT = "#14a7cf";
+	var projectCopies = {};
+
 	function isIconifyIcon(icon) {
 		return String(icon || "").match(/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9_.-]+$/) !== null;
 	}
@@ -7,24 +17,7 @@
 		return String(icon || "").match(/^https?:\/\//i) !== null;
 	}
 
-	function flowDirForBlock(block, env) {
-		var blockFile = String(block && block.__flowFile || "");
-		if (blockFile) {
-			var dir = new env.File(blockFile).getParentFile();
-			if (dir && String(dir.getName()) === "blocks") {
-				return dir.getParentFile();
-			}
-			return dir || env.engineDir();
-		}
-		return env.engineDir();
-	}
-
-	function iconCacheDir(block, family, provider, env) {
-		var dir = new env.File(new env.File(flowDirForBlock(block, env), "icons"), family);
-		return provider ? new env.File(dir, provider) : dir;
-	}
-
-	function sharedIconCacheDir(family, provider, env) {
+	function sharedDir(family, provider, env) {
 		if (!env.sharedIconCacheRoot) {
 			return null;
 		}
@@ -32,37 +25,49 @@
 		return provider ? new env.File(dir, provider) : dir;
 	}
 
-	function cachedIconFiles(base, extension, env) {
-		if (!base) {
-			return [];
+	// The project owning a source: the parent of its Flow source root directory.
+	function ownerProjectRoot(block, env) {
+		var file = String(block && block.__flowFile || "");
+		for (var dir = file ? new env.File(file).getParentFile() : null; dir; dir = dir.getParentFile()) {
+			if (String(dir.getName()) === env.sourcePaths.root) {
+				return dir.getParentFile();
+			}
 		}
-		var files = [
-			new env.File(String(base.getAbsolutePath()) + ".svg"),
-			new env.File(String(base.getAbsolutePath()) + "_16x16.png"),
-			new env.File(String(base.getAbsolutePath()) + "_32x32.png")
-		];
-		if (extension && extension !== "svg") {
-			files.push(new env.File(String(base.getAbsolutePath()) + "." + extension));
-		}
-		return files;
+		return null;
 	}
 
-	function copyCachedIconFiles(sourceBase, targetBase, extension, env) {
-		if (!sourceBase || !targetBase) {
-			return;
-		}
-		var sources = cachedIconFiles(sourceBase, extension, env);
-		var targets = cachedIconFiles(targetBase, extension, env);
-		sources.forEach(function (source, index) {
-			var target = targets[index];
-			if (source.isFile() && !target.isFile()) {
-				try {
-					target.getParentFile().mkdirs();
-					env.FileUtils.copyFile(source, target);
-				} catch (ignored) {
-				}
+	function sameFile(left, right, env) {
+		return !!left && !!right && env.canonicalPath(left) === env.canonicalPath(right);
+	}
+
+	function projectIconFile(projectRoot, relative, env) {
+		return new env.File(new env.File(projectRoot, env.sourcePaths.path("icons")), relative);
+	}
+
+	// Where an icon may already travel: the project, its references, lib_flow_engine.
+	function iconSourceRoots(block, env) {
+		var roots = [];
+		function add(root) {
+			if (root && !roots.some(function (known) { return sameFile(known, root, env); })) {
+				roots.push(root);
 			}
-		});
+		}
+		add(ownerProjectRoot(block, env));
+		add(env.projectDir && env.projectDir());
+		(typeof env.iconReferenceRoots === "function" ? env.iconReferenceRoots() : []).forEach(add);
+		add(env.engineDir().getParentFile());
+		return roots;
+	}
+
+	function copyFileQuietly(source, target, env) {
+		try {
+			if (source && source.isFile() && !target.isFile()) {
+				target.getParentFile().mkdirs();
+				env.FileUtils.copyFile(source, target);
+			}
+		} catch (ignored) {
+		}
+		return target.isFile();
 	}
 
 	function safeIconName(name) {
@@ -104,15 +109,109 @@
 		}
 	}
 
-	function exposeCachedIconFiles(descriptor, base, extension, env) {
+	function iconifyLicenseFile(dir, env) {
+		return new env.File(dir, "LICENSE.json");
+	}
+
+	// Iconify publishes the license of each icon set: it travels with its icons.
+	function downloadIconifyLicense(provider, dir, env) {
+		var license = iconifyLicenseFile(dir, env);
+		var raw = new env.File(dir, "collection.json");
+		if (license.isFile() || !downloadToCache("https://api.iconify.design/collections?prefixes=" + provider, raw, env)) {
+			return;
+		}
+		try {
+			var info = JSON.parse(String(env.FileUtils.readFileToString(raw, "UTF-8")))[provider] || {};
+			env.FileUtils.writeStringToFile(license, JSON.stringify({
+				prefix: provider,
+				name: info.name || provider,
+				author: info.author || null,
+				license: info.license || null
+			}, null, 2) + "\n", "UTF-8");
+		} catch (ignored) {
+		} finally {
+			env.FileUtils.deleteQuietly(raw);
+		}
+	}
+
+	// The original SVG (currentColor), from a project that carries it or from the server cache.
+	function rawIconFile(block, family, provider, fileName, download, env) {
+		var relative = family + "/" + (provider ? provider + "/" : "") + fileName;
+		var cacheDir = sharedDir(family, provider, env);
+		var cached = cacheDir ? new env.File(cacheDir, fileName) : null;
+		var roots = iconSourceRoots(block, env);
+		for (var i = 0; i < roots.length; i++) {
+			var carried = projectIconFile(roots[i], relative, env);
+			if (carried.isFile()) {
+				if (cached) {
+					copyFileQuietly(carried, cached, env);
+					copyFileQuietly(iconifyLicenseFile(carried.getParentFile(), env), iconifyLicenseFile(cacheDir, env), env);
+				}
+				return carried;
+			}
+		}
+		if (!cached) {
+			return null;
+		}
+		if (!cached.isFile() && download) {
+			download(cached);
+		}
+		return cached.isFile() ? cached : null;
+	}
+
+	// A saved source of the current project carries the icons it uses (SVG and license).
+	function ensureProjectCopy(block, family, provider, fileName, rawSupplier, env) {
+		var owner = ownerProjectRoot(block, env);
+		var current = env.projectDir && env.projectDir();
+		if (!owner || !sameFile(owner, current, env)) {
+			return;
+		}
+		var sourceFile = new env.File(String(block.__flowFile));
+		if (!sourceFile.isFile() && block.__flowIconSaved !== true) {
+			return;
+		}
+		var relative = family + "/" + (provider ? provider + "/" : "") + fileName;
+		var key = env.canonicalPath(owner) + "|" + relative;
+		if (projectCopies[key]) {
+			return;
+		}
+		var target = projectIconFile(owner, relative, env);
+		if (target.isFile()) {
+			projectCopies[key] = true;
+			return;
+		}
+		var raw = rawSupplier();
+		if (copyFileQuietly(raw, target, env)) {
+			copyFileQuietly(iconifyLicenseFile(raw.getParentFile(), env), iconifyLicenseFile(target.getParentFile(), env), env);
+			projectCopies[key] = true;
+		}
+	}
+
+	// Studio rendering: tinted SVG plus 16/32 PNG, derived into the server cache.
+	function studioRendering(descriptor, raw, family, provider, name, extension, env) {
+		var dir = sharedDir("studio/" + family, provider, env);
+		if (!dir || !raw) {
+			return false;
+		}
+		var base = new env.File(dir, name);
 		var svg = new env.File(String(base.getAbsolutePath()) + ".svg");
 		var png16 = new env.File(String(base.getAbsolutePath()) + "_16x16.png");
 		var png32 = new env.File(String(base.getAbsolutePath()) + "_32x32.png");
-		var original = extension ? new env.File(String(base.getAbsolutePath()) + "." + extension) : null;
-		if (svg.isFile()) {
-			descriptor.iconSvg = env.canonicalPath(svg);
+		if (extension === "svg") {
+			if (!svg.isFile()) {
+				try {
+					var text = String(env.FileUtils.readFileToString(raw, "UTF-8"));
+					svg.getParentFile().mkdirs();
+					env.FileUtils.writeStringToFile(svg, text.replace(/currentColor/g, STUDIO_TINT), "UTF-8");
+				} catch (ignored) {
+					return false;
+				}
+			}
 			rasterizeSvg(svg, png16, 16, env);
 			rasterizeSvg(svg, png32, 32, env);
+			descriptor.iconSvg = env.canonicalPath(svg);
+		} else if (extension !== "bin") {
+			descriptor.iconFile = env.canonicalPath(raw);
 		}
 		if (png32.isFile()) {
 			descriptor.iconFile32 = env.canonicalPath(png32);
@@ -122,30 +221,64 @@
 			descriptor.iconFile16 = env.canonicalPath(png16);
 			descriptor.iconFile = descriptor.iconFile || descriptor.iconFile16;
 		}
-		if (original && original.isFile()) {
-			var path = env.canonicalPath(original);
-			if (extension === "svg") {
-				descriptor.iconSvg = path;
-			}
-			if (!descriptor.iconFile && extension !== "bin") {
-				descriptor.iconFile = path;
-			}
+		if (!descriptor.iconFile && descriptor.iconSvg) {
+			descriptor.iconFile = descriptor.iconSvg;
 		}
+		return true;
 	}
 
-	function exposeCompleteIconifyCache(descriptor, base, iconify, env) {
-		var svg = new env.File(String(base.getAbsolutePath()) + ".svg");
-		var png16 = new env.File(String(base.getAbsolutePath()) + "_16x16.png");
-		var png32 = new env.File(String(base.getAbsolutePath()) + "_32x32.png");
+	function exposeCompleteStudioRendering(descriptor, family, provider, name, env) {
+		var dir = sharedDir("studio/" + family, provider, env);
+		if (!dir) {
+			return false;
+		}
+		var base = String(new env.File(dir, name).getAbsolutePath());
+		var svg = new env.File(base + ".svg");
+		var png16 = new env.File(base + "_16x16.png");
+		var png32 = new env.File(base + "_32x32.png");
 		if (!svg.isFile() || !png16.isFile() || !png32.isFile()) {
 			return false;
 		}
-		descriptor.iconify = iconify;
 		descriptor.iconSvg = env.canonicalPath(svg);
 		descriptor.iconFile16 = env.canonicalPath(png16);
 		descriptor.iconFile32 = env.canonicalPath(png32);
 		descriptor.iconFile = descriptor.iconFile32;
 		return true;
+	}
+
+	function addIconifyCache(block, descriptor, icon, env) {
+		var parts = String(icon || "").split(":");
+		if (parts.length !== 2) {
+			return;
+		}
+		var provider = safeIconName(parts[0]);
+		var name = safeIconName(parts[1]);
+		descriptor.iconify = provider + ":" + name;
+		var raw = null;
+		// Resolving the same MDI icons hundreds of times: the complete Studio rendering
+		// is the fast path (three stats); the raw SVG is looked up only when needed.
+		if (!exposeCompleteStudioRendering(descriptor, "iconify", provider, name, env)) {
+			raw = rawIconFile(block, "iconify", provider, name + ".svg", function (target) {
+				if (downloadToCache("https://api.iconify.design/" + provider + "/" + name + ".svg", target, env)) {
+					downloadIconifyLicense(provider, target.getParentFile(), env);
+				}
+			}, env);
+			studioRendering(descriptor, raw, "iconify", provider, name, "svg", env);
+		}
+		ensureProjectCopy(block, "iconify", provider, name + ".svg", function () {
+			return raw || rawIconFile(block, "iconify", provider, name + ".svg", null, env);
+		}, env);
+	}
+
+	function addUrlIconCache(block, descriptor, icon, env) {
+		var ext = urlExtension(icon);
+		var name = env.sha256Hex(icon);
+		var raw = rawIconFile(block, "url", null, name + "." + ext, function (target) {
+			downloadToCache(icon, target, env);
+		}, env);
+		descriptor.iconUrl = icon;
+		studioRendering(descriptor, raw, "url", null, name, ext, env);
+		ensureProjectCopy(block, "url", null, name + "." + ext, function () { return raw; }, env);
 	}
 
 	function rasterizeSvg(svg, png, size, env) {
@@ -217,58 +350,6 @@
 		return false;
 	}
 
-	function fileDataUrl(file, mimeType, env) {
-		try {
-			if (!file || !file.isFile() || file.length() > 65536) {
-				return "";
-			}
-			var encoded = env.Base64.getEncoder().encodeToString(env.FileUtils.readFileToByteArray(file));
-			return "data:" + mimeType + ";base64," + encoded;
-		} catch (e) {
-			return "";
-		}
-	}
-
-	function addIconifyCache(block, descriptor, icon, env) {
-		var parts = String(icon || "").split(":");
-		if (parts.length !== 2) {
-			return;
-		}
-		var provider = safeIconName(parts[0]);
-		var name = safeIconName(parts[1]);
-		var base = new env.File(iconCacheDir(block, "iconify", provider, env), name);
-		var iconify = provider + ":" + name;
-		// The common authoring path resolves already-generated MDI assets hundreds
-		// of times. Avoid probing and copying the shared cache when all local
-		// variants are present; on NFS this removes most icon projection latency.
-		if (exposeCompleteIconifyCache(descriptor, base, iconify, env)) {
-			return;
-		}
-		var sharedDir = sharedIconCacheDir("iconify", provider, env);
-		var sharedBase = sharedDir ? new env.File(sharedDir, name) : null;
-		copyCachedIconFiles(sharedBase, base, "svg", env);
-		var svg = new env.File(String(base.getAbsolutePath()) + ".svg");
-		if (!svg.isFile()) {
-			downloadToCache("https://api.iconify.design/" + provider + "/" + name + ".svg?color=%2314a7cf", svg, env);
-		}
-		descriptor.iconify = iconify;
-		exposeCachedIconFiles(descriptor, base, "svg", env);
-		copyCachedIconFiles(base, sharedBase, "svg", env);
-	}
-
-	function addUrlIconCache(block, descriptor, icon, env) {
-		var ext = urlExtension(icon);
-		var base = new env.File(iconCacheDir(block, "url", null, env), env.sha256Hex(icon));
-		var sharedDir = sharedIconCacheDir("url", null, env);
-		var sharedBase = sharedDir ? new env.File(sharedDir, env.sha256Hex(icon)) : null;
-		copyCachedIconFiles(sharedBase, base, ext, env);
-		var file = new env.File(String(base.getAbsolutePath()) + "." + ext);
-		downloadToCache(icon, file, env);
-		descriptor.iconUrl = icon;
-		exposeCachedIconFiles(descriptor, base, ext, env);
-		copyCachedIconFiles(base, sharedBase, ext, env);
-	}
-
 	function exposeLocalIcon(descriptor, iconFile, env) {
 		if (!iconFile || !iconFile.isFile()) {
 			return;
@@ -294,7 +375,6 @@
 		}
 		descriptor.icon = icon;
 		if (isIconifyIcon(icon)) {
-			descriptor.iconify = icon;
 			addIconifyCache(block, descriptor, icon, env);
 			return descriptor;
 		}
@@ -316,53 +396,38 @@
 		return descriptor;
 	}
 
-	function iconNameFromCacheFile(file) {
-		var name = String(file.getName() || "");
-		if (name.indexOf(".") === -1) {
-			return "";
-		}
-		name = name.replace(/\.(svg|png|gif|jpg|jpeg|webp|ico)$/i, "");
-		name = name.replace(/_(16|32)x(16|32)$/i, "");
-		return name;
-	}
-
 	function collectIconifyProviderIcons(providerDir, provider, origin, icons, seen, env) {
 		var files = providerDir && providerDir.listFiles();
 		if (!files) {
 			return;
 		}
-		files = env.Arrays.asList(files).toArray();
-		files.forEach(function (file) {
-			if (!file.isFile()) {
+		env.Arrays.asList(files).toArray().forEach(function (file) {
+			var fileName = String(file.getName());
+			if (!file.isFile() || !/\.svg$/i.test(fileName)) {
 				return;
 			}
-			var name = iconNameFromCacheFile(file);
-			if (!name || name === ".gitignore") {
-				return;
-			}
+			var name = fileName.replace(/\.svg$/i, "");
 			var id = provider + ":" + name;
 			if (seen[id]) {
 				return;
 			}
 			seen[id] = true;
-			var icon = {
-				id: id,
-				provider: provider,
-				name: name,
-				origin: origin
-			};
-			var base = new env.File(providerDir, name);
-			exposeCachedIconFiles(icon, base, "svg", env);
-			var svg = new env.File(String(base.getAbsolutePath()) + ".svg");
-			if (svg.isFile()) {
-				icon.iconData = fileDataUrl(svg, "image/svg+xml", env);
+			var icon = { id: id, provider: provider, name: name, origin: origin, iconSvg: env.canonicalPath(file) };
+			// The picker shows the Studio tint, computed in memory from the carried SVG.
+			try {
+				if (file.length() <= 65536) {
+					var text = String(env.FileUtils.readFileToString(file, "UTF-8")).replace(/currentColor/g, STUDIO_TINT);
+					icon.iconData = "data:image/svg+xml;base64," + env.Base64.getEncoder()
+						.encodeToString(new Packages.java.lang.String(text).getBytes("UTF-8"));
+				}
+			} catch (ignored) {
 			}
 			icons.push(icon);
 		});
 	}
 
-	function collectIconifyIcons(flowDir, origin, provider, icons, seen, env) {
-		var root = flowDir ? new env.File(new env.File(flowDir, "icons"), "iconify") : null;
+	function collectIconifyIcons(projectRoot, origin, provider, icons, seen, env) {
+		var root = projectRoot ? projectIconFile(projectRoot, "iconify", env) : null;
 		if (!root || !root.isDirectory()) {
 			return;
 		}
@@ -374,8 +439,7 @@
 		if (!providers) {
 			return;
 		}
-		providers = env.Arrays.asList(providers).toArray();
-		providers.forEach(function (dir) {
+		env.Arrays.asList(providers).toArray().forEach(function (dir) {
 			if (dir.isDirectory()) {
 				collectIconifyProviderIcons(dir, String(dir.getName()), origin, icons, seen, env);
 			}
@@ -389,8 +453,11 @@
 		var limit = Math.max(1, Math.min(Number(request.limit || 200), 500));
 		var icons = [];
 		var seen = {};
-		collectIconifyIcons(env.projectDir() ? new env.File(env.projectDir(), env.sourcePaths.root) : null, "project", provider, icons, seen, env);
-		collectIconifyIcons(env.engineDir(), "core", provider, icons, seen, env);
+		collectIconifyIcons(env.projectDir(), "project", provider, icons, seen, env);
+		(typeof env.iconReferenceRoots === "function" ? env.iconReferenceRoots() : []).forEach(function (root) {
+			collectIconifyIcons(root, "reference", provider, icons, seen, env);
+		});
+		collectIconifyIcons(env.engineDir().getParentFile(), "core", provider, icons, seen, env);
 		icons.sort(function (a, b) {
 			return String(a.id).localeCompare(String(b.id));
 		});

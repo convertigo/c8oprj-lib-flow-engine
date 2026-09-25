@@ -42,8 +42,9 @@ assertTrue(treeServiceSource.indexOf('Object.defineProperty(definitions, "__flow
 var iconServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/icon-service.js"), "UTF-8"));
 assertTrue(iconServiceSource.indexOf("sharedIconCacheRoot") >= 0
-	&& iconServiceSource.indexOf("copyCachedIconFiles(sharedBase, base") >= 0,
-	"generated icon caches must survive project redeployment through the workspace cache");
+	&& iconServiceSource.indexOf("copyFileQuietly(carried, cached") >= 0
+	&& iconServiceSource.indexOf("exposeCompleteStudioRendering") >= 0,
+	"icons carried by projects feed the workspace cache, where Studio renderings are reused");
 assertTrue(source.indexOf('frontendPerformanceDuration("frontend.provider.start.dependencies"') >= 0
 	&& source.indexOf('frontendPerformanceDuration("frontend.provider.start.process"') >= 0
 	&& source.indexOf('frontendPerformanceDuration("frontend.provider.request.response"') >= 0
