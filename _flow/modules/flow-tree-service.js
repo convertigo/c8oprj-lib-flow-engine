@@ -2119,6 +2119,11 @@
 		if (!sourceFile.isFile() && frontendDraftForFile(request, sourceFile) === null) {
 			return true;
 		}
+		// A component written in Svelte code (described by its _meta header) is edited as
+		// source: only a <FlowComponent> is authored as a tree.
+		if (!/<FlowComponent\b/.test(frontendModelSource(request, sourceFile))) {
+			return false;
+		}
 		try {
 			var sourceRequest = Object.assign({}, request || {}, {
 				sourceTree: true,
