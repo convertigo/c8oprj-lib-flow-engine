@@ -143,7 +143,8 @@
 		if (env.clearVirtualDefinitions) {
 			env.clearVirtualDefinitions();
 		}
-		env.clearFrontendDocumentServers();
+		// The frontbuilder companion is shared by every engine scope: clearing the
+		// caches of one scope (explicitly or when Java discards it) never stops it.
 		env.clearFrontendProviderState();
 		env.clearPersistentFrontendDocuments();
 		env.resetModuleCaches();

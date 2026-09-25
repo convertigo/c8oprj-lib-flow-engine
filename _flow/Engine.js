@@ -921,7 +921,6 @@
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
-			clearFrontendDocumentServers: clearFrontendDocumentServers,
 			clearVirtualDefinitions: clearVirtualDefinitions,
 			frontendDocumentServerCount: frontendDocumentServerCount,
 			clearFrontendProviderState: clearFrontendProviderState
@@ -5869,20 +5868,16 @@
 		}
 	}
 
-	function clearFrontendDocumentServers() {
+	// Drop only companions whose process ended; live ones keep serving other scopes.
+	function forgetDeadFrontendDocumentServers() {
 		var registry = sharedDocumentServerRegistry();
-		var startLock = sharedDocumentServerStartLock(registry);
-		startLock.lock();
-		try {
-			var keys = new Packages.java.util.ArrayList(registry.keySet()).iterator();
-			while (keys.hasNext()) {
-				var key = String(keys.next());
-				if (key === "__startLock") continue;
-				var entry = registry.remove(key);
-				if (entry) stopFrontendDocumentServer(documentServerView(entry, null));
+		var keys = new Packages.java.util.ArrayList(registry.keySet()).iterator();
+		while (keys.hasNext()) {
+			var key = String(keys.next());
+			var entry = key === "__startLock" ? null : registry.get(key);
+			if (entry && !entry.get("process").isAlive()) {
+				registry.remove(key, entry);
 			}
-		} finally {
-			startLock.unlock();
 		}
 	}
 
@@ -6062,7 +6057,7 @@
 				frontendStudioLog("[Svelte front document server] Precompiled provider failed; retrying with tsx: "
 					+ String(e && e.message || e), true);
 			}
-			clearFrontendDocumentServers();
+			forgetDeadFrontendDocumentServers();
 			runtimeState.frontendDocumentServerStats.fallbacks++;
 			var toolRoot = failedSelection && failedSelection.toolRoot
 				? failedSelection.toolRoot
