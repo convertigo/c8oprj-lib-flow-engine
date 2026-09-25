@@ -5570,7 +5570,8 @@
 			}
 		}
 		if (descriptor.insert && descriptor.insert.__frontendCreateSource) {
-			out.authoringAction = { id: String(descriptor.id || ""), surface: "frontend", builder: String(descriptor.builder || "") };
+			out.authoringAction = { id: String(descriptor.id || ""), surface: String(descriptor.authoringSurface || "frontend"),
+				builder: String(descriptor.builder || "") };
 		} else if (descriptor.virtualPrototype && descriptor.authoringMutation) {
 			out.authoringAction = { id: String(descriptor.id || "") };
 		} else if (descriptor.authoringMutation) {
@@ -5918,6 +5919,8 @@
 			var copy = normalizeTree(descriptor);
 			copy.targetKinds = (copy.targetKinds || []).concat(["frontendCatalogComponents"]);
 			copy.insert.__frontendCreateSource.directory = "components/${namespacePath}";
+			// Created from the Catalog projection: the action resolves its target there.
+			copy.authoringSurface = "virtual";
 			return copy;
 		});
 	}

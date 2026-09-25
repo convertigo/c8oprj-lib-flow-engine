@@ -81,6 +81,14 @@ try {
 	var item = palette.items.filter(function (candidate) { return candidate.id === "frontbuilder.svelte.flowUiBlock"; })[0];
 	assertTrue(item.insert.__frontendCreateSource.directory === "components/${namespacePath}",
 		"Components are created in the builder components directory of the defining project");
+	var created = JSON.parse(engine.authoringMutate(JSON.stringify({ target: "engine", engineSource: engineSource,
+		surface: item.authoringAction.surface, includeTree: false,
+		action: Object.assign({}, item.authoringAction, { targetPath: namespace.path, position: "inside" }) })));
+	var createdPaths = Object.keys(created.sourceChanges || {});
+	assertTrue(created.ok === true && createdPaths.length === 1,
+		"Creating a component from Catalog > Components plans its source: " + JSON.stringify(created).slice(0, 600));
+	assertTrue(createdPaths[0].indexOf("/lib_flow_frontend_demo/_flow/frontbuilder/svelte/components/demo/") >= 0,
+		"The component is created in the namespace directory of the library: " + createdPaths[0]);
 	var ownTypes = find(tree, "catalog.types");
 	assertTrue(JSON.stringify(ownTypes).indexOf("demo.colorPicker") >= 0,
 		"The library lists the types it defines for its components in its own Catalog");
