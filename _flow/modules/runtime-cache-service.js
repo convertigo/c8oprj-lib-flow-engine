@@ -18,13 +18,6 @@
 	function bridgeInfo(env) {
 		var scope = env.globalScope || {};
 		var raw = typeof scope.__flowBridgeInfo !== "undefined" ? String(scope.__flowBridgeInfo || "") : "";
-		if (!raw && typeof env.bridgeInfo === "function") {
-			try {
-				raw = String(env.bridgeInfo() || "");
-			} catch (e) {
-				return { error: String(e) };
-			}
-		}
 		if (!raw) {
 			return {};
 		}
@@ -72,18 +65,7 @@
 			createMs: Number(stats.createMs || 0),
 			hydrateMs: Number(stats.hydrateMs || 0),
 			payloadBytes: Number(stats.payloadBytes || 0),
-			maxPayloadBytes: Number(stats.maxPayloadBytes || 0),
-			sharedHits: Number(stats.sharedHits || 0),
-			sharedMisses: Number(stats.sharedMisses || 0),
-			sharedWrites: Number(stats.sharedWrites || 0),
-			sharedErrors: Number(stats.sharedErrors || 0),
-			sharedSkips: Number(stats.sharedSkips || 0),
-			sharedDeserializeMs: Number(stats.sharedDeserializeMs || 0),
-			machineHits: Number(stats.machineHits || 0),
-			machineMisses: Number(stats.machineMisses || 0),
-			machineStores: Number(stats.machineStores || 0),
-			machineErrors: Number(stats.machineErrors || 0),
-			sharedCache: typeof env.sharedFlowSnapshotInfo === "function" ? env.sharedFlowSnapshotInfo() : { available: false }
+			maxPayloadBytes: Number(stats.maxPayloadBytes || 0)
 		};
 	}
 

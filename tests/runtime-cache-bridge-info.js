@@ -6,7 +6,6 @@ const vm = require("vm");
 const source = fs.readFileSync(path.join(__dirname, "../_flow/modules/runtime-cache-service.js"), "utf8");
 const service = vm.runInNewContext(source, {});
 const cache = {};
-let bridgeCalls = 0;
 const caches = {
 	blocks: cache,
 	coreBlocks: cache,
@@ -38,22 +37,15 @@ const env = {
 	engineDir: () => "/engine",
 	Thread: { currentThread: () => ({ getName: () => "test" }) },
 	globalScope: {},
-	bridgeInfo: () => {
-		bridgeCalls += 1;
-		return '{"generation":7,"methods":{"run":{"calls":3}}}';
-	},
 	flowSnapshotStats: {},
 	compiledScriptCacheInfo: () => ({ name: "compiledScripts" }),
 };
 
-const first = service.info(env);
-assert.strictEqual(bridgeCalls, 1, "bridge diagnostics must be pulled only when cache info is requested");
-assert.strictEqual(first.bridge.generation, 7);
-assert.strictEqual(first.bridge.methods.run.calls, 3);
-
-env.globalScope.__flowBridgeInfo = '{"generation":8}';
-const second = service.info(env);
-assert.strictEqual(bridgeCalls, 1, "an explicitly supplied bridge snapshot remains backward compatible");
-assert.strictEqual(second.bridge.generation, 8);
+// The Convertigo bridge publishes its diagnostics as a scope snapshot.
+assert.strictEqual(Object.keys(service.info(env).bridge).length, 0, "no bridge snapshot, no bridge diagnostics");
+env.globalScope.__flowBridgeInfo = '{"generation":8,"methods":{"run":{"calls":3}}}';
+const info = service.info(env);
+assert.strictEqual(info.bridge.generation, 8);
+assert.strictEqual(info.bridge.methods.run.calls, 3);
 
 console.log("runtime-cache-bridge-info tests passed");

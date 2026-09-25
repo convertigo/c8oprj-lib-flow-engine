@@ -478,8 +478,8 @@ var cacheInfoAfterCatalog = JSON.parse(engine.cacheInfo());
 var compiledScriptsAfterCatalog = cacheInfoAfterCatalog.caches.compiledScripts;
 var bridgeCompiledScriptsAfterCatalog = cacheInfoAfterCatalog.bridge && cacheInfoAfterCatalog.bridge.compiledScripts || {};
 assertTrue((compiledScriptsAfterCatalog.size > 0 && compiledScriptsAfterCatalog.misses > 0) ||
-	compiledScriptsAfterCatalog.sharedHits > 0 || bridgeCompiledScriptsAfterCatalog.size > 0,
-	"compiled script cache did not compile or reuse shared Rhino scripts: " +
+	bridgeCompiledScriptsAfterCatalog.size > 0,
+	"compiled script cache did not compile Rhino scripts: " +
 	JSON.stringify({ runtime: compiledScriptsAfterCatalog, bridge: bridgeCompiledScriptsAfterCatalog }));
 var blockArtifactsAfterCatalog = JSON.parse(engine.cacheInfo()).caches.blockArtifacts;
 var coreBlocksAfterCatalog = JSON.parse(engine.cacheInfo()).caches.coreBlocks;

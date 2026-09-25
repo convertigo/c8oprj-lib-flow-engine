@@ -21,16 +21,6 @@
 		var flowPlanCompilerFingerprint = env.flowPlanCompilerFingerprint;
 		var flowSnapshotService = env.flowSnapshotService;
 		var flowSnapshotStats = env.flowSnapshotStats || {};
-		var isFlowScriptSource = env.isFlowScriptSource || function () { return false; };
-		var flowSnapshotCatalogFingerprint = env.flowSnapshotCatalogFingerprint || function () { return ""; };
-		var sharedFlowSnapshotKey = env.sharedFlowSnapshotKey || function () { return ""; };
-		var sharedFlowSnapshotGet = env.sharedFlowSnapshotGet || function () { return null; };
-		var sharedFlowSnapshotPut = env.sharedFlowSnapshotPut || function () { return false; };
-		var sharedFlowSnapshotClaim = env.sharedFlowSnapshotClaim || function () { return false; };
-		var sharedFlowSnapshotAwait = env.sharedFlowSnapshotAwait || function () { return null; };
-		var sharedFlowSnapshotAbort = env.sharedFlowSnapshotAbort || function () {};
-		var sharedFlowMachineImageGet = env.sharedFlowMachineImageGet || function () { return null; };
-		var sharedFlowMachineImagePut = env.sharedFlowMachineImagePut || function () { return null; };
 		var sourceForWriteRequest = env.sourceForWriteRequest;
 		var loadProjectEngineDefinition = env.loadProjectEngineDefinition;
 		var runtimeHandles = env.runtimeHandles;
@@ -624,6 +614,7 @@
 
 		function prepareExecutionPlan(plan) {
 			if (plan && plan.definition && plan.blocks) {
+				// Immutable (frozen) definitions keep prepared runners beside the plan.
 				plan.preparedNodes = plan.machineImage === true ? [] : null;
 				plan.preparation = {
 					mode: "lazy",
@@ -825,25 +816,6 @@
 			return "";
 		}
 
-		function sharedFlowSnapshotIdentity(request, blocks) {
-			if (!request) {
-				return "";
-			}
-			if (request.definition !== undefined && request.definition !== null) {
-				return "definition\n" + JSON.stringify(request.definition);
-			}
-			if (request.flowSource !== undefined && request.flowSource !== null && String(request.flowSource).trim() !== "") {
-				if (!isFlowScriptSource(request.flowSource)) {
-					return "source\n" + String(request.flowSource);
-				}
-				var catalogFingerprint = flowSnapshotCatalogFingerprint(blocks);
-				return catalogFingerprint
-					? "flowscript\n" + String(request.flowSource) + "\ncatalog\n" + catalogFingerprint
-					: "";
-			}
-			return "";
-		}
-
 		function addSnapshotDuration(name, started) {
 			flowSnapshotStats[name] = Number(flowSnapshotStats[name] || 0) + profileDuration(started);
 		}
@@ -885,74 +857,6 @@
 			return plan;
 		}
 
-		function flowMachineImageKey(request, blocks, compilerFingerprint) {
-			var identity = sharedFlowSnapshotIdentity(request, blocks);
-			if (!identity) {
-				return "";
-			}
-			var flowQName = request.flowQName || request.name || request.flowName || "Flow";
-			var snapshotKey = sharedFlowSnapshotKey(sha256Hex(identity), compilerFingerprint, flowQName);
-			return snapshotKey ? snapshotKey + "\nflow-machine-image-v1" : "";
-		}
-
-		function readSharedFlowSnapshot(request, blocks, compilerFingerprint) {
-			var identity = sharedFlowSnapshotIdentity(request, blocks);
-			if (!identity) {
-				flowSnapshotStats.sharedSkips = Number(flowSnapshotStats.sharedSkips || 0) + 1;
-				return { key: "", owner: false, snapshot: null };
-			}
-			var flowQName = request.flowQName || request.name || request.flowName || "Flow";
-			var key = sharedFlowSnapshotKey(sha256Hex(identity), compilerFingerprint, flowQName);
-			if (!key) {
-				flowSnapshotStats.sharedSkips = Number(flowSnapshotStats.sharedSkips || 0) + 1;
-				return { key: "", owner: false, snapshot: null };
-			}
-			var payload = sharedFlowSnapshotGet(key);
-			if (!payload) {
-				flowSnapshotStats.sharedMisses = Number(flowSnapshotStats.sharedMisses || 0) + 1;
-				if (sharedFlowSnapshotClaim(key)) {
-					return { key: key, owner: true, snapshot: null };
-				}
-				payload = sharedFlowSnapshotAwait(key);
-				if (!payload && sharedFlowSnapshotClaim(key)) {
-					return { key: key, owner: true, snapshot: null };
-				}
-				if (!payload) {
-					flowSnapshotStats.sharedSkips = Number(flowSnapshotStats.sharedSkips || 0) + 1;
-					return { key: "", owner: false, snapshot: null };
-				}
-			}
-			var started = nanoTime();
-			try {
-				var compiled = flowSnapshotService.deserialize(payload);
-				addSnapshotDuration("sharedDeserializeMs", started);
-				flowSnapshotStats.sharedHits = Number(flowSnapshotStats.sharedHits || 0) + 1;
-				return { key: key, owner: false, snapshot: compiled };
-			} catch (e) {
-				addSnapshotDuration("sharedDeserializeMs", started);
-				flowSnapshotStats.sharedErrors = Number(flowSnapshotStats.sharedErrors || 0) + 1;
-				sharedFlowSnapshotAbort(key);
-				return { key: key, owner: sharedFlowSnapshotClaim(key), snapshot: null };
-			}
-		}
-
-		function publishSharedFlowSnapshot(key, compiled, owner) {
-			if (!key || !compiled || owner !== true) {
-				return;
-			}
-			try {
-				if (sharedFlowSnapshotPut(key, flowSnapshotService.serialize(compiled))) {
-					flowSnapshotStats.sharedWrites = Number(flowSnapshotStats.sharedWrites || 0) + 1;
-				} else {
-					sharedFlowSnapshotAbort(key);
-					flowSnapshotStats.sharedErrors = Number(flowSnapshotStats.sharedErrors || 0) + 1;
-				}
-			} catch (e) {
-				sharedFlowSnapshotAbort(key);
-				flowSnapshotStats.sharedErrors = Number(flowSnapshotStats.sharedErrors || 0) + 1;
-			}
-		}
-
 		function compileFlowPlan(request, blocks) {
 			var identity = flowPlanIdentity(request);
 			var cacheKey = "";
@@ -964,54 +868,7 @@
 					return cached;
 				}
 			}
-			var machineKey = flowMachineImageKey(request, blocks, compilerFingerprint);
-			if (machineKey) {
-				var sharedDefinition = sharedFlowMachineImageGet(machineKey);
-				if (sharedDefinition) {
-					flowSnapshotStats.machineHits = Number(flowSnapshotStats.machineHits || 0) + 1;
-					var machineBlocks = blocksWithFlowHelpers(blocks, sharedDefinition);
-					var machinePlan = prepareExecutionPlan({
-						definition: sharedDefinition,
-						blocks: machineBlocks,
-						catalog: blocks,
-						machineImage: true
-					});
-					if (cacheKey && writeRuntimeBoundedCache) {
-						return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint,
-							machinePlan, "compiled Flow plans");
-					}
-					return machinePlan;
-				}
-				flowSnapshotStats.machineMisses = Number(flowSnapshotStats.machineMisses || 0) + 1;
-			}
-			var shared = readSharedFlowSnapshot(request, blocks, compilerFingerprint);
-			var compiled;
-			try {
-				compiled = shared.snapshot || compileFlowSnapshot(request, blocks, identity, compilerFingerprint);
-				if (!shared.snapshot) {
-					publishSharedFlowSnapshot(shared.key, compiled, shared.owner);
-				}
-			} catch (e) {
-				if (shared.owner) {
-					sharedFlowSnapshotAbort(shared.key);
-				}
-				throw e;
-			}
-			var plan = hydrateFlowSnapshot(compiled, blocks);
-			if (machineKey) {
-				try {
-					var image = sharedFlowMachineImagePut(machineKey, JSON.stringify(plan.definition));
-					if (image) {
-						plan.definition = image;
-						plan.machineImage = true;
-						flowSnapshotStats.machineStores = Number(flowSnapshotStats.machineStores || 0) + 1;
-					} else {
-						flowSnapshotStats.machineErrors = Number(flowSnapshotStats.machineErrors || 0) + 1;
-					}
-				} catch (e) {
-					flowSnapshotStats.machineErrors = Number(flowSnapshotStats.machineErrors || 0) + 1;
-				}
-			}
+			var plan = hydrateFlowSnapshot(compileFlowSnapshot(request, blocks, identity, compilerFingerprint), blocks);
 			plan = prepareExecutionPlan(plan);
 			if (cacheKey && writeRuntimeBoundedCache) {
 				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint, plan, "compiled Flow plans");

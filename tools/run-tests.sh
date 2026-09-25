@@ -21,10 +21,6 @@ pass=0; fail=0
 for f in tests/*.js tests/*.cjs; do
 	name="$(basename "$f")"
 	[ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
-	case "$name" in
-		# Needs FlowEngineBridge shared snapshot methods not merged in Convertigo yet.
-		flow-shared-snapshot-rhino.js) echo "SKIP $name (needs the shared snapshot bridge)"; continue;;
-	esac
 	if grep -q "require(" "$f"; then
 		if [ "$name" = frontend-provider-integration.js ]; then cmd=(node "$f"); else cmd=(node "$f" "$PROVIDER/node_modules/jsdom"); fi
 	elif [ "$name" = source-creation-contract.js ]; then

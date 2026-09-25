@@ -27,9 +27,7 @@
 	var compiledScriptStats = {
 		hits: 0,
 		misses: 0,
-		evictions: 0,
-		sharedHits: 0,
-		sharedFallbacks: 0
+		evictions: 0
 	};
 	var cacheUtilsModule = null;
 	var fingerprintUtilsModule = null;
@@ -45,10 +43,6 @@
 	var flowRuntimeServiceEnvInstance = null;
 	var runPlanHeadEnvInstance = null;
 	var graphBlockRuntimeEnvInstance = null;
-	// Only modules with immutable top-level closures are eligible for the JVM-wide machine image.
-	// flow-code-service.js keeps in-memory drafts and flow-runtime-service.js caches its active env/service,
-	// so both deliberately remain local to an Engine runtime.
-	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|destination-contract.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|property-value-codec.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-contract.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|source-attribute-name-codec.js|source-creation-plan.js|source-layout.js|source-node-contract.js|type-descriptor-service.js|typed-scope-contract.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// One frontbuilder companion (document server) per provider for the whole
 	// Convertigo server, shared by every Rhino scope that evaluates this engine. The
@@ -153,13 +147,7 @@
 			createMs: 0,
 			hydrateMs: 0,
 			payloadBytes: 0,
-			maxPayloadBytes: 0,
-			sharedHits: 0,
-			sharedMisses: 0,
-			sharedWrites: 0,
-			sharedErrors: 0,
-			sharedSkips: 0,
-			sharedDeserializeMs: 0
+			maxPayloadBytes: 0
 		},
 		persistentFrontendDocuments: {
 			hits: 0,
@@ -196,14 +184,6 @@
 	}
 
 	function projectDir() {
-		try {
-			var invocationProjectDir = String(FlowEngineBridge.currentFlowProjectDir() || "");
-			if (invocationProjectDir.trim() !== "") {
-				return new File(invocationProjectDir);
-			}
-		} catch (e) {
-			// Older bridges do not expose per-invocation Flow frames.
-		}
 		if (projectDirOverride) {
 			return new File(String(projectDirOverride));
 		}
@@ -214,24 +194,6 @@
 	}
 
 	function withProjectDir(dir, callback) {
-		var invocationFrame = false;
-		var invocationPrevious = null;
-		try {
-			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
-				invocationPrevious = FlowEngineBridge.setCurrentFlowProjectDir(
-					dir === undefined || dir === null ? "" : String(dir));
-				invocationFrame = true;
-			}
-		} catch (e) {
-			// Older bridges keep the project override in this Engine closure.
-		}
-		if (invocationFrame) {
-			try {
-				return callback();
-			} finally {
-				FlowEngineBridge.restoreCurrentFlowProjectDir(invocationPrevious);
-			}
-		}
 		var previous = projectDirOverride;
 		if (dir !== undefined && dir !== null && String(dir).trim() !== "") {
 			projectDirOverride = String(dir);
@@ -244,37 +206,10 @@
 	}
 
 	function currentActiveRequest() {
-		try {
-			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
-				var invocationRequest = FlowEngineBridge.currentFlowRequestState();
-				if (invocationRequest !== null && invocationRequest !== undefined) {
-					return invocationRequest;
-				}
-			}
-		} catch (e) {
-			// Older bridges keep the active request in this Engine closure.
-		}
 		return activeRequestFallback;
 	}
 
 	function withActiveRequest(request, callback) {
-		var invocationFrame = false;
-		var invocationPrevious = null;
-		try {
-			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
-				invocationPrevious = FlowEngineBridge.setCurrentFlowRequestState(request);
-				invocationFrame = true;
-			}
-		} catch (e) {
-			// Older bridges keep the active request in this Engine closure.
-		}
-		if (invocationFrame) {
-			try {
-				return callback();
-			} finally {
-				FlowEngineBridge.restoreCurrentFlowRequestState(invocationPrevious);
-			}
-		}
 		var previous = activeRequestFallback;
 		activeRequestFallback = request;
 		try {
@@ -344,9 +279,7 @@
 			limit: compiledScriptCacheLimit,
 			hits: compiledScriptStats.hits,
 			misses: compiledScriptStats.misses,
-			evictions: compiledScriptStats.evictions,
-			sharedHits: compiledScriptStats.sharedHits,
-			sharedFallbacks: compiledScriptStats.sharedFallbacks
+			evictions: compiledScriptStats.evictions
 		};
 	}
 
@@ -403,14 +336,7 @@
 				break;
 			}
 		}
-		try {
-			cached = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge.compileFlowScript(
-				String(source), String(sourceName || "flow-script"), String(fingerprint || ""));
-			compiledScriptStats.sharedHits++;
-		} catch (e) {
-			compiledScriptStats.sharedFallbacks++;
-			cached = cx.compileString(source, String(sourceName || "flow-script"), 1, null);
-		}
+		cached = cx.compileString(source, String(sourceName || "flow-script"), 1, null);
 		compiledScriptCache[key] = {
 			script: cached,
 			usedAt: ++compiledScriptCacheClock
@@ -435,19 +361,6 @@
 			return eval(source);
 		}
 		return script.exec(cx, compiledScriptScope(cx));
-	}
-
-	function sharedEngineModule(name, source, sourceName, fingerprint) {
-		if (sharedEngineModuleNames.indexOf("|" + String(name || "") + "|") === -1) {
-			return null;
-		}
-		try {
-			return Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge.sharedFlowModule(
-				String(source || ""), String(sourceName || "flow-module"), String(fingerprint || ""));
-		} catch (e) {
-			// A previous bridge or a rejected module must retain the proven runtime-local path.
-			return null;
-		}
 	}
 
 	function parseYamlSource(source, fallback) {
@@ -913,18 +826,12 @@
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
 		var sourceName = canonicalPath(file);
 		var fingerprint = file.lastModified() + ":" + file.length();
-		var module = sharedEngineModule(name, source, sourceName, fingerprint);
-		var shared = !!module;
-		if (!module) {
-			module = evalCompiledSource(source, sourceName, fingerprint);
-		}
+		var module = evalCompiledSource(source, sourceName, fingerprint);
 		if (!module || typeof module !== "object") {
 			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
 				null, "A Flow engine module must evaluate to an object.");
 		}
-		if (!shared) {
-			module.__flowFile = String(file.getAbsolutePath());
-		}
+		module.__flowFile = String(file.getAbsolutePath());
 		return module;
 	}
 
@@ -1009,16 +916,9 @@
 			engineDir: engineDir,
 			Thread: Packages.java.lang.Thread,
 			globalScope: globalScope,
-			bridgeInfo: function () {
-				var qname = typeof globalScope.__flowBridgeEngineQName !== "undefined"
-					? String(globalScope.__flowBridgeEngineQName || "")
-					: "lib_flow_engine.Engine";
-				return Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge.flowBridgeCacheInfo(qname);
-			},
 			resetModuleCaches: resetRuntimeModuleCaches,
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
-			sharedFlowSnapshotInfo: sharedFlowSnapshotInfo,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
 			clearFrontendDocumentServers: clearFrontendDocumentServers,
@@ -1141,18 +1041,12 @@
 			return cached;
 		}
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
-		var module = sharedEngineModule(name, source, key, fingerprint);
-		var shared = !!module;
-		if (!module) {
-			module = evalCompiledSource(source, key, fingerprint);
-		}
+		var module = evalCompiledSource(source, key, fingerprint);
 		if (!module || typeof module !== "object") {
 			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
 				null, "A Flow engine module must evaluate to an object.");
 		}
-		if (!shared) {
-			module.__flowFile = String(file.getAbsolutePath());
-		}
+		module.__flowFile = String(file.getAbsolutePath());
 		return writeRuntimeMapCache(cache, key, fingerprint, module, "Flow engine modules");
 	}
 
@@ -4115,140 +4009,6 @@
 		return loadEngineModule("flow-execution-snapshot-service.js");
 	}
 
-	function flowSnapshotBridge() {
-		try {
-			return Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
-		} catch (e) {
-			return null;
-		}
-	}
-
-	function sharedFlowSnapshotKey(identityHash, compilerFingerprint, flowQName) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !identityHash) {
-			return "";
-		}
-		try {
-			return [
-				"flow-execution-snapshot-v1",
-				String(bridge.cacheGeneration()),
-				canonicalPath(engineDir()),
-				projectDir() ? canonicalPath(projectDir()) : "",
-				String(flowQName || "Flow"),
-				String(identityHash),
-				String(compilerFingerprint || "")
-			].join("\n");
-		} catch (e) {
-			return "";
-		}
-	}
-
-	function flowSnapshotCatalogFingerprint(blocks) {
-		return blocks && blocks.__flowCatalogFingerprint
-			? String(blocks.__flowCatalogFingerprint)
-			: "";
-	}
-
-	function sharedFlowSnapshotGet(key) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !key) {
-			return null;
-		}
-		try {
-			var value = bridge.getFlowExecutionSnapshot(String(key));
-			return value === null || value === undefined ? null : String(value);
-		} catch (e) {
-			return null;
-		}
-	}
-
-	function sharedFlowSnapshotPut(key, payload) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !key || !payload) {
-			return false;
-		}
-		try {
-			return bridge.putFlowExecutionSnapshot(String(key), String(payload)) === true;
-		} catch (e) {
-			return false;
-		}
-	}
-
-	function sharedFlowSnapshotClaim(key) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !key) {
-			return false;
-		}
-		try {
-			return bridge.claimFlowExecutionSnapshot(String(key)) === true;
-		} catch (e) {
-			return false;
-		}
-	}
-
-	function sharedFlowSnapshotAwait(key) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !key) {
-			return null;
-		}
-		try {
-			var value = bridge.awaitFlowExecutionSnapshot(String(key), 30000);
-			return value === null || value === undefined ? null : String(value);
-		} catch (e) {
-			return null;
-		}
-	}
-
-	function sharedFlowSnapshotAbort(key) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !key) {
-			return;
-		}
-		try {
-			bridge.abortFlowExecutionSnapshot(String(key));
-		} catch (e) {
-			// Older bridges do not expose shared execution snapshots.
-		}
-	}
-
-	function sharedFlowSnapshotInfo() {
-		var bridge = flowSnapshotBridge();
-		if (!bridge) {
-			return { available: false };
-		}
-		try {
-			return JSON.parse(String(bridge.flowExecutionSnapshotCacheInfo()));
-		} catch (e) {
-			return { available: false };
-		}
-	}
-
-	function sharedFlowMachineImageGet(key) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !key) {
-			return null;
-		}
-		try {
-			var image = bridge.getFlowMachineImage(String(key));
-			return image === null || image === undefined ? null : image;
-		} catch (e) {
-			return null;
-		}
-	}
-
-	function sharedFlowMachineImagePut(key, payload) {
-		var bridge = flowSnapshotBridge();
-		if (!bridge || !key || !payload) {
-			return null;
-		}
-		try {
-			var image = bridge.putFlowMachineImage(String(key), String(payload));
-			return image === null || image === undefined ? null : image;
-		} catch (e) {
-			return null;
-		}
-	}
-
 	function flowRuntimeServiceEnv() {
 		if (flowRuntimeServiceEnvInstance) {
 			return flowRuntimeServiceEnvInstance;
@@ -4279,16 +4039,6 @@
 			flowPlanCompilerFingerprint: flowPlanCompilerFingerprint,
 			flowSnapshotService: flowExecutionSnapshotService(),
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
-			isFlowScriptSource: isFlowScriptSource,
-			flowSnapshotCatalogFingerprint: flowSnapshotCatalogFingerprint,
-			sharedFlowSnapshotKey: sharedFlowSnapshotKey,
-			sharedFlowSnapshotGet: sharedFlowSnapshotGet,
-			sharedFlowSnapshotPut: sharedFlowSnapshotPut,
-			sharedFlowSnapshotClaim: sharedFlowSnapshotClaim,
-			sharedFlowSnapshotAwait: sharedFlowSnapshotAwait,
-			sharedFlowSnapshotAbort: sharedFlowSnapshotAbort,
-			sharedFlowMachineImageGet: sharedFlowMachineImageGet,
-			sharedFlowMachineImagePut: sharedFlowMachineImagePut,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
 			runtimeHandles: runtimeHandleApi(),
@@ -4362,13 +4112,6 @@
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
 			currentConvertigoContext: function () {
-				try {
-					if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
-						return FlowEngineBridge.currentFlowConvertigoContext();
-					}
-				} catch (e) {
-					// Older bridges expose the Convertigo context on the Engine scope.
-				}
 				return typeof context === "undefined" ? null : context;
 			},
 			nanoTime: function () { return Number(JavaSystem.nanoTime()); }
@@ -9748,21 +9491,8 @@
 	}
 
 	function runWithActiveRequest(request, functionProfile, activeStarted) {
-		var invocationFrame = false;
-		var invocationPrevious = null;
-		try {
-			if (Number(FlowEngineBridge.currentFlowInvocationDepth()) > 0) {
-				invocationPrevious = FlowEngineBridge.setCurrentFlowRequestState(request);
-				invocationFrame = true;
-			}
-		} catch (e) {
-			// Older bridges keep the active request in this Engine closure.
-		}
-		var fallbackPrevious = null;
-		if (!invocationFrame) {
-			fallbackPrevious = activeRequestFallback;
-			activeRequestFallback = request;
-		}
+		var fallbackPrevious = activeRequestFallback;
+		activeRequestFallback = request;
 		var bodyStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var bodyFinished = 0;
 		if (functionProfile) {
@@ -9777,11 +9507,7 @@
 				bodyFinished = JavaSystem.nanoTime();
 				functionProfile.activeBodyMs = Number(bodyFinished - bodyStarted) / 1000000;
 			}
-			if (invocationFrame) {
-				FlowEngineBridge.restoreCurrentFlowRequestState(invocationPrevious);
-			} else {
-				activeRequestFallback = fallbackPrevious;
-			}
+			activeRequestFallback = fallbackPrevious;
 		}
 		if (functionProfile) {
 			var activeFinished = JavaSystem.nanoTime();
