@@ -303,13 +303,13 @@
 		if (capabilities.deletable === undefined) {
 			capabilities.deletable = kind === "node" || kind === "field" || kind === "binding";
 		}
-		detachDefinitions(capabilities);
 		if (icon) {
 			var iconInfo = virtualIcon(icon);
 			Object.keys(iconInfo).forEach(function (key) {
 				capabilities[key] = iconInfo[key];
 			});
 		}
+		detachDefinitions(capabilities);
 		nodeInfo = compactPlain(capabilities);
 		return {
 			name: safeVirtualName(kind || "item", name),
@@ -2564,7 +2564,32 @@
 			});
 			info.sourcePropertyMutationPaths = paths;
 		}
+		omitDerivedPropertyMutationPaths(info);
 		return info;
+	}
+
+	// A property mutation path equal to the node path plus the property definitionPath
+	// is the default: consumers derive it (FlowVirtualObject does), so it is not sent.
+	function derivedPropertyMutationPath(info, key) {
+		var definition = info && info.propertyDefinitions && info.propertyDefinitions[key];
+		var base = String(info && info.sourceMutationPath || "");
+		var definitionPath = String(definition && definition.definitionPath || "");
+		return base && definitionPath ? base + "." + definitionPath : "";
+	}
+
+	function omitDerivedPropertyMutationPaths(info) {
+		var paths = info && info.sourcePropertyMutationPaths;
+		if (!paths || typeof paths !== "object") {
+			return;
+		}
+		Object.keys(paths).forEach(function (key) {
+			if (String(paths[key]) === derivedPropertyMutationPath(info, key)) {
+				delete paths[key];
+			}
+		});
+		if (!Object.keys(paths).length) {
+			delete info.sourcePropertyMutationPaths;
+		}
 	}
 
 	function applyFrontendAuthoringInsertTarget(info, node) {
@@ -4321,8 +4346,14 @@
 					try { parsedInfo = node.info ? JSON.parse(node.info) : null; } catch (e1) {}
 				}
 				if (parsedInfo) {
+					resolveDefinitions(parsedInfo);
 					out.sourceMutationPath = parsedInfo.frontendModelPath || parsedInfo.sourceMutationPath || "";
-					out.sourcePropertyMutationPaths = parsedInfo.sourcePropertyMutationPaths || {};
+					var mutationPaths = Object.assign({}, parsedInfo.sourcePropertyMutationPaths || {});
+					Object.keys(parsedInfo.propertyDefinitions || {}).forEach(function (key) {
+						var derived = mutationPaths[key] === undefined ? derivedPropertyMutationPath(parsedInfo, key) : "";
+						if (derived) mutationPaths[key] = derived;
+					});
+					out.sourcePropertyMutationPaths = mutationPaths;
 				}
 			}
 		}

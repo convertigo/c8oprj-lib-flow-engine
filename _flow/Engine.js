@@ -3937,7 +3937,9 @@
 	// objects. Convertigo versions whose FlowVirtualObject cannot resolve a ref keep
 	// receiving inline definitions.
 	var SHARED_VIRTUAL_DEFINITIONS_KEY = "flow.virtualDefinitions";
-	var DETACHED_DEFINITION_KEYS = ["propertyDefinitions", "propertyOrder", "propertyDefaults"];
+	// Type-level fields: the property contract and the block icon.
+	var DETACHED_DEFINITION_KEYS = ["propertyDefinitions", "propertyOrder", "propertyDefaults",
+		"icon", "iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"];
 	var VIRTUAL_DEFINITION_MEMO_LIMIT = 20000;
 	var virtualDefinitionRefs = {};
 	var virtualDefinitionEntries = {};
