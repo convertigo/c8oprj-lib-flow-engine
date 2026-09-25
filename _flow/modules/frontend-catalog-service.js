@@ -1656,11 +1656,11 @@
 				traits: ["definition.uiBlock"],
 				targetKinds: ["frontendBuilder", "frontendBlocks", "frontendBlockProvider", "frontendBlockNamespace"],
 				acceptedPositions: ["inside"],
-				description: "Creates a source-backed low-code UI block edited through its parsed .flow.svelte AST.",
+				description: "Creates a UI block composed of Flow blocks (<FlowComponent>), edited in the tree.",
 				baseId: "project.flowUiBlock",
 				directory: frontendComponentSourceDirectory(builderName, settings, env) + "/${namespacePath}",
 				fileName: "${tag}.flow.svelte",
-				source: frontendUiBlockSourceTemplate("flow-svelte", "Flow UI block")
+				source: frontendFlowUiBlockSourceTemplate()
 			}),
 			frontendSourceDefinitionDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.svelteUiBlock",
@@ -1671,11 +1671,11 @@
 				traits: ["definition.uiBlock"],
 				targetKinds: ["frontendBuilder", "frontendBlocks", "frontendBlockProvider", "frontendBlockNamespace"],
 				acceptedPositions: ["inside"],
-				description: "Creates a source-backed UI block implemented as pure Svelte code.",
+				description: "Creates a UI block implemented in Svelte code and described by its _meta header.",
 				baseId: "project.svelteUiBlock",
 				directory: frontendComponentSourceDirectory(builderName, settings, env) + "/${namespacePath}",
-				fileName: "${tag}.svelte",
-				source: frontendUiBlockSourceTemplate("svelte", "Svelte UI block")
+				fileName: "${tag}.flow.svelte",
+				source: frontendUiBlockSourceTemplate("flow-svelte", "Svelte UI block")
 			}),
 			frontendSourceDefinitionDescriptor(builderName, settings, {
 				id: "frontbuilder.svelte.svelteClientAction",
@@ -1784,10 +1784,36 @@
 		});
 	}
 
+	// A UI block defined in Flow: its _flow header describes it for the palette, its
+	// <FlowComponent> structure is edited in the tree like a page.
+	function frontendFlowUiBlockSourceTemplate() {
+		return [
+			"<script module>",
+			"  export const _flow = {",
+			"    sourceVersion: 2,",
+			"    kind: \"component\",",
+			"    id: \"${id}\",",
+			"    label: \"${tag}\",",
+			"    icon: \"mdi:view-module-outline\",",
+			"    description: \"\"",
+			"  };",
+			"</script>",
+			"",
+			"<FlowComponent",
+			"  $$id=\"${localName}\"",
+			">",
+			"  <Structure />",
+			"</FlowComponent>",
+			""
+		].join("\n");
+	}
+
+	// A UI block defined in Svelte code, described by its _meta header.
 	function frontendUiBlockSourceTemplate(runtime, description) {
 		return [
 			"<script module>",
 			"  export const _meta = {",
+			"    sourceVersion: 2,",
 			"    version: 1,",
 			"    id: \"${id}\",",
 			"    name: \"${tag}\",",

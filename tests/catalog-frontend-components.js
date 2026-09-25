@@ -50,6 +50,10 @@ var __flowProjectDir = String(project.getAbsolutePath());
 var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 var engineSource = "version: 1\nconfig: {}\n";
 
+function objectValue(value) {
+	return typeof value === "string" ? JSON.parse(value) : value || {};
+}
+
 function find(node, path) {
 	if (!node) return null;
 	if (String(node.path || "") === path) return node;
@@ -71,6 +75,21 @@ try {
 	var namespace = (components.children || []).filter(function (child) { return child.type === "frontendBlockNamespace"; })[0];
 	assertTrue(namespace, "Components are grouped by namespace");
 	assertTrue(JSON.stringify(namespace).indexOf("Gauge") >= 0, "The Gauge component is listed");
+	var gauge = null;
+	(function findGauge(node) {
+		if (!node || gauge) return;
+		if (node.kind === "frontendBlock" && objectValue(node.definition).label === "Gauge") gauge = node;
+		(node.children || []).forEach(findGauge);
+	}(namespace));
+	assertTrue(gauge, "The Gauge component node is a frontendBlock");
+	var gaugeInfo = objectValue(gauge.info);
+	["label", "category", "icon", "description", "longDescription"].forEach(function (key) {
+		var definition = (gaugeInfo.propertyDefinitions || {})[key] || {};
+		assertTrue(definition.label && definition.readOnly !== true, "The component " + key + " is editable in its own library");
+		assertTrue((gaugeInfo.sourcePropertyMutationPaths || {})[key] === key,
+			"The component " + key + " is edited in the component header: " + JSON.stringify(gaugeInfo.sourcePropertyMutationPaths));
+	});
+	assertTrue(!gaugeInfo.sourceMutationPath, "The component node itself stays a file (deleted as a whole), not a source node");
 
 	var palette = JSON.parse(engine.authoringPalette(JSON.stringify({ target: "engine", engineSource: engineSource,
 		surface: "virtual", focusPath: namespace.path, position: "inside",
@@ -78,17 +97,32 @@ try {
 	var ids = (palette.items || []).map(function (item) { return item.id; });
 	assertTrue(ids.indexOf("frontbuilder.svelte.flowUiBlock") >= 0,
 		"Catalog > Components offers component creation: " + JSON.stringify(ids));
-	var item = palette.items.filter(function (candidate) { return candidate.id === "frontbuilder.svelte.flowUiBlock"; })[0];
-	assertTrue(item.insert.__frontendCreateSource.directory === "components/${namespacePath}",
-		"Components are created in the builder components directory of the defining project");
-	var created = JSON.parse(engine.authoringMutate(JSON.stringify({ target: "engine", engineSource: engineSource,
-		surface: item.authoringAction.surface, includeTree: false,
-		action: Object.assign({}, item.authoringAction, { targetPath: namespace.path, position: "inside" }) })));
-	var createdPaths = Object.keys(created.sourceChanges || {});
-	assertTrue(created.ok === true && createdPaths.length === 1,
-		"Creating a component from Catalog > Components plans its source: " + JSON.stringify(created).slice(0, 600));
-	assertTrue(createdPaths[0].indexOf("/lib_flow_frontend_demo/_flow/frontbuilder/svelte/components/demo/") >= 0,
-		"The component is created in the namespace directory of the library: " + createdPaths[0]);
+	function createComponent(id) {
+		var item = palette.items.filter(function (candidate) { return candidate.id === id; })[0];
+		assertTrue(item, "Catalog > Components offers " + id + ": " + JSON.stringify(ids));
+		assertTrue(item.insert.__frontendCreateSource.directory === "components/${namespacePath}",
+			"Components are created in the builder components directory of the defining project");
+		var created = JSON.parse(engine.authoringMutate(JSON.stringify({ target: "engine", engineSource: engineSource,
+			surface: item.authoringAction.surface, includeTree: false,
+			action: Object.assign({}, item.authoringAction, { targetPath: namespace.path, position: "inside" }) })));
+		var createdPaths = Object.keys(created.sourceChanges || {});
+		assertTrue(created.ok === true && createdPaths.length === 1,
+			"Creating a component from Catalog > Components plans its source: " + JSON.stringify(created).slice(0, 600));
+		assertTrue(createdPaths[0].indexOf("/lib_flow_frontend_demo/_flow/frontbuilder/svelte/components/demo/") >= 0
+			&& /\.flow\.svelte$/.test(createdPaths[0]),
+			"The component is created in the namespace directory of the library: " + createdPaths[0]);
+		return created.sourceChanges[createdPaths[0]];
+	}
+	// A component is defined either in Flow (a <FlowComponent> tree) or in Svelte code,
+	// both described by their header.
+	var flowSource = createComponent("frontbuilder.svelte.flowUiBlock");
+	assertTrue(/export const _flow = \{[\s\S]*sourceVersion: 2,[\s\S]*kind: "component"[\s\S]*id: "demo\.flowUiBlock"/.test(flowSource)
+		&& flowSource.indexOf("<FlowComponent") >= 0 && flowSource.indexOf("<Structure />") >= 0,
+		"A Flow component is a <FlowComponent> described by its _flow header: " + flowSource);
+	var svelteSource = createComponent("frontbuilder.svelte.svelteUiBlock");
+	assertTrue(/export const _meta = \{[\s\S]*sourceVersion: 2,[\s\S]*id: "demo\.svelteUiBlock"/.test(svelteSource)
+		&& svelteSource.indexOf("$props()") >= 0 && svelteSource.indexOf("<FlowComponent") < 0,
+		"A Svelte component is Svelte code described by its _meta header: " + svelteSource);
 	var ownTypes = find(tree, "catalog.types");
 	assertTrue(JSON.stringify(ownTypes).indexOf("demo.colorPicker") >= 0,
 		"The library lists the types it defines for its components in its own Catalog");

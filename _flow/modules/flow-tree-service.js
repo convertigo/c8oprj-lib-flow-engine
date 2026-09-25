@@ -1174,12 +1174,20 @@
 			var blockSource = sourceDefinitionForFile(block.file || block.sourcePath || "", "frontend-block");
 			var blockInfo = sourceObjectInfo(blockSource,
 				frontendBlockPropertyDefinitions(),
-				["id", "namespace", "localName", "name", "label", "kind", "tag", "category", "description", "runtime",
-					"target", "provider", "sourceRelativePath", "sourceWritable"]);
+				["id", "namespace", "localName", "name", "label", "kind", "tag", "category", "icon", "description",
+					"longDescription", "runtime", "target", "provider", "sourceRelativePath", "sourceWritable"]);
 			blockInfo.frontendBlock = true;
 			blockInfo.frontendBuilder = name;
 			if (!blockSource.sourceWritable) {
 				blockInfo.readOnlyReference = true;
+			}
+			if (blockSource.sourceWritable && String(blockSource.sourcePath || "").endsWith(".flow.svelte")) {
+				// General information lives in the component header (_flow or _meta): each
+				// editable key is a header mutation of the component source.
+				blockInfo.sourcePropertyMutationPaths = {};
+				FRONTEND_BLOCK_HEADER_KEYS.forEach(function (key) {
+					blockInfo.sourcePropertyMutationPaths[key] = key;
+				});
 			}
 			if (blockSource.sourceWritable && isFlowSvelteFrontendBlock(block)) {
 				blockInfo.frontendInsertSourcePath = blockSource.sourcePath;
@@ -1228,20 +1236,23 @@
 		};
 	}
 
+	var FRONTEND_BLOCK_HEADER_KEYS = ["label", "category", "icon", "description", "longDescription"];
+
 	function frontendBlockPropertyDefinitions() {
 		return {
 			id: propertyDefinition("Id", "Base properties", "Reusable UI block id.", { readOnly: true }),
 			namespace: propertyDefinition("Namespace", "Base properties", "Path-derived frontend block namespace.", { readOnly: true }),
 			localName: propertyDefinition("Local name", "Base properties", "Frontend block local name inside its namespace.", { readOnly: true }),
-			label: propertyDefinition("Label", "Base properties", "Visible palette label.", { readOnly: true }),
+			label: propertyDefinition("Label", "Base properties", "Visible palette label.", { kind: "text", type: "string" }),
 			name: propertyDefinition("Name", "Base properties", "Reusable UI block name.", { readOnly: true }),
 			kind: propertyDefinition("Kind", "Base properties", "Frontend object kind inserted by this block.", { readOnly: true }),
 			tag: propertyDefinition("Tag", "Base properties", "Svelte component tag inserted by this block.", { readOnly: true }),
 			target: propertyDefinition("Target", "Base properties", "Frontend target runtime.", { readOnly: true }),
 			provider: propertyDefinition("Provider", "Information", "Library providing this UI block.", { readOnly: true }),
-			category: propertyDefinition("Category", "Information", "Palette category.", { readOnly: true }),
-			description: propertyDefinition("Description", "Documentation", "Short UI block documentation.", { readOnly: true }),
-			longDescription: propertyDefinition("Long description", "Documentation", "Detailed UI block documentation.", { readOnly: true }),
+			category: propertyDefinition("Category", "Base properties", "Palette category.", { kind: "text", type: "string" }),
+			icon: propertyDefinition("Icon", "Base properties", "Icon id, relative icon file, or URL.", { kind: "icon", type: "string" }),
+			description: propertyDefinition("Description", "Documentation", "Short UI block documentation.", { kind: "text", type: "string" }),
+			longDescription: propertyDefinition("Long description", "Documentation", "Detailed UI block documentation.", { kind: "markdown", type: "string" }),
 			runtime: propertyDefinition("Runtime", "Implementation", "Frontend UI block runtime kind.", { readOnly: true }),
 			sourceRelativePath: propertyDefinition("Relative path", "Information", "UI block descriptor source.", { readOnly: true }),
 			sourceWritable: propertyDefinition("Writable", "Information", "Whether this descriptor can be edited from this project.", { readOnly: true })
