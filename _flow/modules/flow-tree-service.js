@@ -4780,19 +4780,48 @@
 		}
 		var text = String(value);
 		try {
-			return normalizeTree(JSON.parse(text));
+			// JSON.parse already returns a fresh plain object: a second deep copy only
+			// costs time (it dominated palette computation on large projects).
+			return JSON.parse(text);
 		} catch (e) {
 			return {};
 		}
 	}
 
-	function nodeValue(node, key) {
-		var info = nodeJson(node, "info");
-		if (info[key] !== undefined) {
-			return info[key];
+	// Reads one projected attribute without copying the whole info/definition
+	// object; only an object value is copied so callers keep a private instance.
+	function nodeRawJson(node, key) {
+		var value = node && node[key];
+		if (!value) {
+			return null;
 		}
-		var definition = nodeJson(node, "definition");
-		return definition[key];
+		if (typeof value === "object") {
+			return value;
+		}
+		try {
+			return JSON.parse(String(value));
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function nodeValues(node, keys) {
+		var info = nodeRawJson(node, "info");
+		var definition;
+		var out = {};
+		keys.forEach(function (key) {
+			var value = info ? info[key] : undefined;
+			if (value === undefined) {
+				if (definition === undefined) definition = nodeRawJson(node, "definition");
+				value = definition ? definition[key] : undefined;
+			}
+			out[key] = value !== null && typeof value === "object" ? normalizeTree(value) : value;
+		});
+		return out;
+	}
+
+	function nodeValue(node, key) {
+		return nodeValues(node, [key])[key];
 	}
 
 	function nodeFlag(node, key) {
@@ -4875,8 +4904,9 @@
 			semanticOwnerTree = tree;
 			semanticOwnerIndex = {};
 			function index(node) {
-				var source = nodeValue(node, "sourcePath");
-				var path = nodeValue(node, "sourceMutationPath");
+				var values = nodeValues(node, ["sourcePath", "sourceMutationPath"]);
+				var source = values.sourcePath;
+				var path = values.sourceMutationPath;
 				if (source && path) {
 					var key = JSON.stringify([String(source), String(path)]);
 					(semanticOwnerIndex[key] || (semanticOwnerIndex[key] = [])).push(node);
@@ -5774,6 +5804,17 @@
 		}
 		if (treeRequest.includeBindings === undefined || treeRequest.includeBindings === null) {
 			treeRequest.includeBindings = false;
+		}
+		// An engine-backed palette targets a node of the Studio projection (its
+		// focusPath comes from there). Describe the engine with the projection's
+		// catalog options so both share one cached tree instead of building two.
+		if (surface !== "frontend" && String(treeRequest.target || "") === "engine") {
+			if (treeRequest.flowCatalogOrigin === undefined || treeRequest.flowCatalogOrigin === null) {
+				treeRequest.flowCatalogOrigin = "project";
+			}
+			if (treeRequest.includeCatalogLibraries === undefined || treeRequest.includeCatalogLibraries === null) {
+				treeRequest.includeCatalogLibraries = false;
+			}
 		}
 		return treeRequest;
 	}

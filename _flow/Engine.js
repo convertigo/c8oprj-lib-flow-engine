@@ -5695,9 +5695,7 @@
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--project-name", projectNameForRoot(projectRoot) || currentProjectName(request)
 			].concat(frontendReferenceCliArgs(projectRoot, resourceRoot));
-			var output = frontendRunProviderOneShot(resourceRoot, "src-builder/sourceMutateCli.ts", cliArgs,
-				"Svelte source mutate", "__C8O_FLOW_SOURCE_MUTATION__");
-			var result = frontendMarkedJson(output, "__C8O_FLOW_SOURCE_MUTATION__");
+			var result = frontendRunSourceMutation(resourceRoot, cliArgs);
 			if (!result || result.ok !== true || typeof result.source !== "string") {
 				var error = new Error("Svelte source mutation did not return a valid source.");
 				error.code = "FRONTEND_SOURCE_MUTATION_INVALID_RESULT";
@@ -5791,6 +5789,31 @@
 			env.put("PATH", String(executableParent.getAbsolutePath()) + File.pathSeparator + String(Packages.java.lang.System.getenv("PATH") || ""));
 		}
 		return pb;
+	}
+
+	// A source mutation runs in the warm document server (same provider, same
+	// contract as sourceMutateCli.ts). Starting a Node process per Disable/Enable or
+	// property edit cost most of the action time. The one-shot CLI stays the fallback
+	// for a server that cannot serve the operation (older provider, transport failure);
+	// a mutation the provider rejects is reported, never retried.
+	function frontendRunSourceMutation(resourceRoot, cliArgs) {
+		try {
+			return frontendRunDocumentServer(resourceRoot, cliArgs, "mutate");
+		} catch (serverError) {
+			var message = String(serverError && serverError.message || serverError);
+			var unsupported = /Unknown (option|document server operation)/.test(message);
+			if (serverError && serverError.frontendDocumentResponse === true && !unsupported) {
+				var mutationError = new Error("Svelte source mutate failed.\n" + message);
+				mutationError.code = "FRONTEND_SOURCE_MUTATION_FAILED";
+				mutationError.hint = "Check the Studio log for the Svelte source mutation command.";
+				throw mutationError;
+			}
+			runtimeState.frontendDocumentServerStats.fallbacks++;
+			frontendStudioLog("[Svelte source mutate] Document server unavailable, using the one-shot CLI: " + message, true);
+			var output = frontendRunProviderOneShot(resourceRoot, "src-builder/sourceMutateCli.ts", cliArgs,
+				"Svelte source mutate", "__C8O_FLOW_SOURCE_MUTATION__");
+			return frontendMarkedJson(output, "__C8O_FLOW_SOURCE_MUTATION__");
+		}
 	}
 
 	function frontendRunOneShot(args, cwd, label) {
@@ -5931,7 +5954,7 @@
 		}
 	}
 
-	function frontendRunDocumentServer(resourceRoot, cliArgs) {
+	function frontendRunDocumentServer(resourceRoot, cliArgs, op) {
 		var phaseStartedAt = JavaSystem.nanoTime();
 		var server = startFrontendDocumentServer(resourceRoot);
 		frontendPerformanceDuration("frontend.provider.request.server", JavaSystem.nanoTime() - phaseStartedAt);
@@ -5941,7 +5964,7 @@
 		try {
 			var id = runtimeState.id + "-" + (++server.sequence);
 			phaseStartedAt = JavaSystem.nanoTime();
-			server.writer.write(JSON.stringify({ id: id, args: cliArgs }));
+			server.writer.write(JSON.stringify(op ? { id: id, op: op, args: cliArgs } : { id: id, args: cliArgs }));
 			server.writer.newLine();
 			server.writer.flush();
 			frontendPerformanceDuration("frontend.provider.request.write", JavaSystem.nanoTime() - phaseStartedAt);
@@ -5999,6 +6022,12 @@
 						var responseError = new Error(String(response.error));
 						responseError.frontendDocumentResponse = true;
 						throw responseError;
+					}
+					if (op === "mutate") {
+						if (!response.result || typeof response.result !== "object") {
+							throw new Error("Svelte front document server returned an invalid mutation result.");
+						}
+						return response.result;
 					}
 					if (!response.result || !response.result.model) {
 						throw new Error("Svelte front document server returned an invalid model.");
