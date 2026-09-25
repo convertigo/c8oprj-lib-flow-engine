@@ -158,6 +158,9 @@
 		Object.keys(env.flowSnapshotStats || {}).forEach(function (key) {
 			env.flowSnapshotStats[key] = 0;
 		});
+		if (env.clearVirtualDefinitions) {
+			env.clearVirtualDefinitions();
+		}
 		env.clearFrontendDocumentServers();
 		env.clearFrontendProviderState();
 		env.clearPersistentFrontendDocuments();

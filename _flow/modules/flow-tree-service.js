@@ -303,6 +303,7 @@
 		if (capabilities.deletable === undefined) {
 			capabilities.deletable = kind === "node" || kind === "field" || kind === "binding";
 		}
+		detachDefinitions(capabilities);
 		if (icon) {
 			var iconInfo = virtualIcon(icon);
 			Object.keys(iconInfo).forEach(function (key) {
@@ -344,9 +345,21 @@
 		return node;
 	}
 
+	function detachDefinitions(info, definitionsJson) {
+		return env.detachVirtualDefinitions ? env.detachVirtualDefinitions(info, definitionsJson) : info;
+	}
+
+	function resolveDefinitions(info) {
+		return env.resolveVirtualDefinitions ? env.resolveVirtualDefinitions(info) : info;
+	}
+
 	function compactFrontendAuthoringInfo(info) {
 		var definitions = info && info.propertyDefinitions;
 		var compactDefinitions = definitions && definitions.__flowCompactJson;
+		detachDefinitions(info, typeof compactDefinitions === "string" ? compactDefinitions : undefined);
+		if (info && info.definitionRef) {
+			return compactPlain(info);
+		}
 		if (typeof compactDefinitions !== "string") {
 			return compactPlain(info);
 		}
@@ -4199,7 +4212,7 @@
 	function inspectTreeBindings(node, definition, requestedProperty, requestedSourceId) {
 		var info = null;
 		try {
-			info = node && node.info ? JSON.parse(node.info) : null;
+			info = node && node.info ? resolveDefinitions(JSON.parse(node.info)) : null;
 		} catch (e) {
 		}
 		var definitions = info && info.propertyDefinitions || {};
@@ -4281,7 +4294,7 @@
 			}
 			if (includeInspect === true && parsedDefinition) {
 				try {
-					parsedInfo = node.info ? JSON.parse(node.info) : null;
+					parsedInfo = node.info ? resolveDefinitions(JSON.parse(node.info)) : null;
 				} catch (e0) {
 				}
 				if (parsedInfo && parsedInfo.propertyDefinitions) {

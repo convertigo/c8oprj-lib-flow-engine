@@ -1016,6 +1016,7 @@
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
 			clearFrontendDocumentServers: clearFrontendDocumentServers,
+			clearVirtualDefinitions: clearVirtualDefinitions,
 			frontendDocumentServerCount: frontendDocumentServerCount,
 			clearFrontendProviderState: clearFrontendProviderState
 		};
@@ -3923,6 +3924,104 @@
 		return String(name || "").replace(/[^A-Za-z0-9_.-]/g, "_");
 	}
 
+	// Property definitions are shared by every node of the same shape, as a class is
+	// shared by its instances: a node info only carries a content-derived definitionRef
+	// and its own values. Each distinct entry is registered once in the Java
+	// FlowVirtualDefinitions registry, read by the Studio and by every engine scope.
+	// Without that registry (older Convertigo) infos keep their definitions inline.
+	var DETACHED_DEFINITION_KEYS = ["propertyDefinitions", "propertyOrder", "propertyDefaults"];
+	var VIRTUAL_DEFINITION_MEMO_LIMIT = 20000;
+	var virtualDefinitionRefs = {};
+	var virtualDefinitionEntries = {};
+	var virtualDefinitionCount = 0;
+	var virtualDefinitionRegistry;
+
+	function virtualDefinitionsRegistry() {
+		if (virtualDefinitionRegistry === undefined) {
+			var registry = null;
+			try {
+				registry = Packages.com.twinsoft.convertigo.engine.flow.FlowVirtualDefinitions;
+			} catch (e) {
+				registry = null;
+			}
+			// A missing class resolves to a Java package object, not to a callable class.
+			virtualDefinitionRegistry = typeof registry === "function" ? registry : null;
+		}
+		return virtualDefinitionRegistry;
+	}
+
+	function detachVirtualDefinitions(info, definitionsJson) {
+		if (!info || typeof info !== "object" || !info.propertyDefinitions || info.definitionRef) {
+			return info;
+		}
+		var registry = virtualDefinitionsRegistry();
+		if (!registry) {
+			return info;
+		}
+		var parts = [];
+		DETACHED_DEFINITION_KEYS.forEach(function (key) {
+			if (info[key] === undefined || info[key] === null) {
+				return;
+			}
+			var json = key === "propertyDefinitions" && typeof definitionsJson === "string"
+				? definitionsJson
+				: JSON.stringify(normalizeTree(info[key]));
+			parts.push(JSON.stringify(key) + ":" + json);
+		});
+		var entry = "{" + parts.join(",") + "}";
+		var ref = virtualDefinitionRefs[entry];
+		if (!ref) {
+			if (virtualDefinitionCount >= VIRTUAL_DEFINITION_MEMO_LIMIT) {
+				virtualDefinitionRefs = {};
+				virtualDefinitionEntries = {};
+				virtualDefinitionCount = 0;
+			}
+			ref = "vd-" + sha256Hex(entry).substring(0, 32);
+			virtualDefinitionRefs[entry] = ref;
+			virtualDefinitionEntries[ref] = entry;
+			virtualDefinitionCount++;
+			registry.register(ref, entry);
+		} else if (!registry.has(ref)) {
+			registry.register(ref, entry);
+		}
+		DETACHED_DEFINITION_KEYS.forEach(function (key) {
+			delete info[key];
+		});
+		info.definitionRef = ref;
+		return info;
+	}
+
+	function resolveVirtualDefinitions(info) {
+		if (!info || typeof info !== "object" || !info.definitionRef) {
+			return info;
+		}
+		var ref = String(info.definitionRef);
+		var json = virtualDefinitionEntries[ref];
+		if (!json) {
+			var registry = virtualDefinitionsRegistry();
+			var registered = registry ? registry.json(ref) : null;
+			json = registered === null || registered === undefined ? "" : String(registered);
+		}
+		if (!json) {
+			return info;
+		}
+		var entry = JSON.parse(json);
+		Object.keys(entry).forEach(function (key) {
+			if (info[key] === undefined) {
+				info[key] = entry[key];
+			}
+		});
+		return info;
+	}
+
+	// Registered entries are immutable and content-addressed: other scopes may still
+	// reference them, so only this scope's memo is dropped.
+	function clearVirtualDefinitions() {
+		virtualDefinitionRefs = {};
+		virtualDefinitionEntries = {};
+		virtualDefinitionCount = 0;
+	}
+
 	function sha256Hex(text) {
 		try {
 			var digest = Packages.java.security.MessageDigest.getInstance("SHA-256")
@@ -4509,6 +4608,8 @@
 	function flowTreeServiceEnv() {
 		return {
 			sourcePaths: sourcePaths(),
+			detachVirtualDefinitions: detachVirtualDefinitions,
+			resolveVirtualDefinitions: resolveVirtualDefinitions,
 			nodeEngineProperties: nodeEngineProperties,
 			nodeOutputPath: nodeOutputPath,
 			sourceAttributeNameCodec: sourceAttributeNameCodec,
@@ -4889,6 +4990,9 @@
 		if (!definition) {
 			return tree;
 		}
+		// The focused node gets its own complete definitions: the shared entry plus
+		// the context-specific binding sources of the requested property.
+		info = resolveVirtualDefinitions(info);
 		info.propertyDefinitions = info.propertyDefinitions || {};
 		info.propertyDefinitions[property] = normalizeTree(definition);
 		focused.info = typeof focused.info === "string" ? JSON.stringify(info) : info;
