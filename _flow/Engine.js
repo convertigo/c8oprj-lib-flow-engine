@@ -5490,10 +5490,7 @@
 				"--project-name", projectName,
 				"--engine-model"
 			];
-			var catalogFingerprint = frontendCatalogFingerprintForRequest(request);
-			var catalogCacheKey = catalogFingerprint
-				? sha256Hex(catalogFingerprint + "\n" + blocksCacheKey())
-				: "";
+			var catalogCacheKey = frontendCatalogCacheKey(request);
 			if (catalogCacheKey) {
 				cliArgs.push("--catalog-cache-key", catalogCacheKey);
 			}
@@ -5981,7 +5978,7 @@
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--project-name", projectNameForRoot(projectRoot) || currentProjectName(request)
 			].concat(frontendReferenceCliArgs(projectRoot, resourceRoot));
-			var result = frontendRunSourceMutation(resourceRoot, cliArgs);
+			var result = frontendRunSourceMutation(resourceRoot, cliArgs, frontendCatalogCacheKey(request));
 			if (!result || result.ok !== true || typeof result.source !== "string") {
 				var error = new Error("Svelte source mutation did not return a valid source.");
 				error.code = "FRONTEND_SOURCE_MUTATION_INVALID_RESULT";
@@ -6077,12 +6074,30 @@
 		return pb;
 	}
 
+	function frontendCatalogCacheKey(request) {
+		var catalogFingerprint = frontendCatalogFingerprintForRequest(request);
+		return catalogFingerprint ? sha256Hex(catalogFingerprint + "\n" + blocksCacheKey()) : "";
+	}
+
 	// A source mutation runs in the warm document server (same provider, same
 	// contract as sourceMutateCli.ts). Starting a Node process per Disable/Enable or
 	// property edit cost most of the action time. The one-shot CLI stays the fallback
 	// for a server that cannot serve the operation (older provider, transport failure);
 	// a mutation the provider rejects is reported, never retried.
-	function frontendRunSourceMutation(resourceRoot, cliArgs) {
+	function frontendRunSourceMutation(resourceRoot, cliArgs, catalogCacheKey) {
+		if (catalogCacheKey) {
+			try {
+				return frontendRunDocumentServer(resourceRoot, cliArgs.concat(["--catalog-cache-key", catalogCacheKey]), "mutate");
+			} catch (catalogKeyError) {
+				// A real mutation error stands; a provider predating the shared catalog key
+				// (unknown option) or an unavailable server falls back to the plain request.
+				var catalogKeyMessage = String(catalogKeyError && catalogKeyError.message || catalogKeyError);
+				if (catalogKeyError && catalogKeyError.frontendDocumentResponse === true
+						&& !/Unknown (option|document server operation)/.test(catalogKeyMessage)) {
+					throw catalogKeyError;
+				}
+			}
+		}
 		try {
 			return frontendRunDocumentServer(resourceRoot, cliArgs, "mutate");
 		} catch (serverError) {
