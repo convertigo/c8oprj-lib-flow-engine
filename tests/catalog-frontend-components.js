@@ -93,6 +93,17 @@ try {
 	var gaugeKinds = (gauge.children || []).map(function (child) { return child.kind; });
 	assertTrue(gaugeKinds.indexOf("frontendBlockImplementation") >= 0 && gaugeKinds.indexOf("error") < 0,
 		"A component written in Svelte code is edited as source, not as a parsed tree: " + JSON.stringify(gaugeKinds));
+	var gaugeProperties = (gauge.children || []).filter(function (child) { return child.type === "frontendBlockProperties"; })[0];
+	var declared = (gaugeProperties.children || []).map(function (child) { return child.type; });
+	assertTrue(declared.join(",") === "value",
+		"The Catalog lists the declared properties, not the ones common to all UI blocks: " + declared);
+	var propertiesPalette = JSON.parse(engine.authoringPalette(JSON.stringify({ target: "engine", engineSource: engineSource,
+		surface: "virtual", focusPath: gaugeProperties.path, position: "inside",
+		flowCatalogOrigin: "project", includeCatalogLibraries: false })));
+	assertTrue((propertiesPalette.items || []).some(function (candidate) { return candidate.id === "frontbuilder.svelte.property"; }),
+		"A component declares a new property from its Properties folder: " + JSON.stringify((propertiesPalette.items || []).map(function (c) { return c.id; })));
+	assertTrue(objectValue(gaugeProperties.info).frontendInsertMutationPath === "props",
+		"A new property is an entry of the component header props");
 
 	var palette = JSON.parse(engine.authoringPalette(JSON.stringify({ target: "engine", engineSource: engineSource,
 		surface: "virtual", focusPath: namespace.path, position: "inside",

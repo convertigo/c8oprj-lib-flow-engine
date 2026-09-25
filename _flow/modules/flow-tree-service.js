@@ -1269,9 +1269,17 @@
 
 	function addFrontendBlockProperties(parent, block, path) {
 		var props = normalizeTree(block && (block.properties || block.props) || {});
-		var keys = Object.keys(props);
+		// The Catalog lists what the component declares, not the properties common to all UI blocks.
+		var keys = Object.keys(props).filter(function (key) {
+			return !(props[key] && props[key].common === true);
+		});
 		var propsSource = sourceDefinitionForFile(block.file || block.sourcePath || "", "frontend-properties");
 		propsSource.sourceMutationPath = "props";
+		if (propsSource.sourceWritable) {
+			// A property added here is a new entry of the component header props.
+			propsSource.frontendInsertSourcePath = propsSource.sourcePath;
+			propsSource.frontendInsertMutationPath = "props";
+		}
 		var folderInfo = sourceObjectInfo(propsSource, blockPropertiesFolderDefinitions(), ["count", "sourceRelativePath", "sourceWritable"]);
 		var folder = virtualNode("properties", "folder", "frontendBlockProperties",
 			path + ".properties", "Properties", compact({ count: keys.length }), compact(folderInfo), "mdi:form-textbox");
@@ -5954,7 +5962,12 @@
 		var entry = frontbuilderSettings(engine && engine.config || {}).filter(function (candidate) {
 			return candidate.name === builder;
 		})[0];
-		return (frontendCreateDescriptorsForSettings(builder, entry ? entry.settings : {}) || []).filter(function (descriptor) {
+		var descriptors = frontendCreateDescriptorsForSettings(builder, entry ? entry.settings : {}) || [];
+		// A component declares its properties in its Properties folder.
+		var propertyDescriptors = descriptors.filter(function (descriptor) {
+			return String(descriptor && descriptor.kind || "") === "frontendPropertyDefinition";
+		});
+		return descriptors.filter(function (descriptor) {
 			var recipe = descriptor && descriptor.insert && descriptor.insert.__frontendCreateSource;
 			return recipe && String(descriptor.kind || "") === "frontendUiBlockDefinition";
 		}).map(function (descriptor) {
@@ -5964,7 +5977,7 @@
 			// Created from the Catalog projection: the action resolves its target there.
 			copy.authoringSurface = "virtual";
 			return copy;
-		});
+		}).concat(propertyDescriptors);
 	}
 
 	function authoringActionMutationFromTreeRequest(request, blocks, tree) {

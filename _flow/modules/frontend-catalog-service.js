@@ -120,7 +120,9 @@
 				kind: "text",
 				type: "string",
 				"default": "",
-				description: "Application CSS class names separated by spaces."
+				description: "Application CSS class names separated by spaces.",
+				// Offered on every UI block, never declared by its source.
+				common: true
 			}
 		}, properties);
 		return descriptor;
