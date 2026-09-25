@@ -72,7 +72,7 @@
 	(function () {
 		if (customElements.get("flow-binding-editor")) return;
 
-		var categories = ["local", "requestable", "action", "fullsync", "iteration", "event", "route"];
+		var categories = ["props", "local", "requestable", "action", "fullsync", "iteration", "event", "route", "theme"];
 		var categoryLabels = {
 			local: "Page variables",
 			requestable: "Backend calls",
@@ -80,7 +80,9 @@
 			fullsync: "FullSync",
 			iteration: "Iteration",
 			event: "Event",
-			route: "Current route"
+			route: "Current route",
+			theme: "Application themes",
+			props: "Component inputs"
 		};
 
 		function esc(value) {
@@ -245,8 +247,8 @@
 			if (source && source.category === "local") {
 				return String(source.name || source.ownerId || source.scopeId || "");
 			}
-			if (source && source.category === "route") {
-				return String(source.value || "route");
+			if (source && (source.category === "route" || source.category === "theme" || source.category === "props")) {
+				return String(source.value || source.category);
 			}
 			return String(source && (source.actionId || source.scopeId || source.instanceId || source.formId || source.ownerId || source.name || source.path) || "");
 		}
@@ -401,6 +403,8 @@
 			else if (category === "form") { out.formId = id; out.value = previous && previous.value || "values"; }
 			else if (category === "local") { out.name = id; out.scopeId = previous && previous.scopeId || ""; }
 			else if (category === "route") out.value = previous && previous.value || "route";
+			else if (category === "theme") out.value = "theme";
+			else if (category === "props") out.value = "props";
 			else if (category === "icon") { out.provider = previous && previous.provider || "mdi"; out.name = id; }
 			else if (category === "asset") { out.project = previous && previous.project || ""; out.path = id; }
 			return out;

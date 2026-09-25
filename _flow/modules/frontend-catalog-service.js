@@ -413,6 +413,16 @@
 		return props;
 	}
 
+	// Inputs of a Flow-defined component: bindable values, as the builder edits them.
+	function flowComponentInputs(props) {
+		var inputs = {};
+		Object.keys(props || {}).forEach(function (name) {
+			var entry = props[name] && typeof props[name] === "object" ? props[name] : {};
+			inputs[name] = Object.assign({ category: "Inputs", kind: "binding", type: "string" }, entry);
+		});
+		return inputs;
+	}
+
 	function flowComponentMeta(flow, file) {
 		if (!flow || typeof flow !== "object") {
 			return null;
@@ -443,7 +453,7 @@
 			slots: flow.slots || {},
 			targetKinds: flow.targetKinds || ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
 			acceptedPositions: flow.acceptedPositions || ["inside"],
-			props: flow.props || flow.properties || {},
+			props: flowComponentInputs(flow.props || flow.properties || {}),
 			snippets: flow.snippets || {},
 			insert: flow.insert || {
 				id: nameParts.localName,

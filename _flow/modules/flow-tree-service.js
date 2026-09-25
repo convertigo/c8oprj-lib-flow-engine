@@ -1703,6 +1703,8 @@
 			&& typeof source.scopeId === "string" && source.scopeId !== "";
 		if (source.category === "iteration") return typeof source.scopeId === "string" && source.scopeId !== "" && (source.value === "item" || source.value === "index" || source.value === "iterable");
 		if (source.category === "event") return source.value === "event";
+		if (source.category === "theme") return source.value === "theme";
+		if (source.category === "props") return source.value === "props";
 		return source.category === "route" && source.value === "route";
 	}
 
