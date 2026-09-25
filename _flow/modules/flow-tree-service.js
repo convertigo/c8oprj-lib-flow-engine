@@ -2115,7 +2115,8 @@
 			return true;
 		}
 		var sourceFile = new File(sourcePath);
-		if (!sourceFile.isFile()) {
+		// A component created in the Studio is a working copy until saved.
+		if (!sourceFile.isFile() && frontendDraftForFile(request, sourceFile) === null) {
 			return true;
 		}
 		try {
@@ -4740,7 +4741,13 @@
 		var surface = String(request.surface || "frontend");
 		if (surface !== "frontend") {
 			var componentsBuilder = catalogComponentsBuilder(request, engine);
-			return componentsBuilder ? catalogComponentCreateDescriptors(componentsBuilder, engine) : [];
+			if (!componentsBuilder) {
+				return [];
+			}
+			// Inside a component tree, the structure is authored with the builder blocks.
+			return catalogComponentTreeFocus(request)
+				? catalogComponentBlockDescriptors(componentsBuilder, engine, blocks, request)
+				: catalogComponentCreateDescriptors(componentsBuilder, engine);
 		}
 		var builder = authoringBuilderName(request, engine);
 		var entries = frontbuilderSettings(engine && engine.config || {});
@@ -5917,6 +5924,23 @@
 		}
 		var entries = frontbuilderSettings(engine && engine.config || {});
 		return String(request.builder || entries.length && entries[0].name || "svelte");
+	}
+
+	function catalogComponentTreeFocus(request) {
+		var focus = String(request && (request.focusPath || request.path) || "");
+		return focus.indexOf("catalog.components.") === 0 && focus.indexOf(".nodes.") > 0;
+	}
+
+	function catalogComponentBlockDescriptors(builder, engine, blocks, request) {
+		var entry = frontbuilderSettings(engine && engine.config || {}).filter(function (candidate) {
+			return candidate.name === builder;
+		})[0];
+		// The component being authored is not offered inside itself.
+		var focus = String(request && (request.focusPath || request.path) || "");
+		var ownSegment = focus.substring(0, focus.indexOf(".nodes.")).split(".").pop();
+		return (frontendBlocksForSettings(builder, entry ? entry.settings : {}) || []).filter(function (descriptor) {
+			return safeVirtualName("block", descriptor.id || descriptor.name) !== ownSegment;
+		}).concat(frontendPortableBlockDescriptors(blocks));
 	}
 
 	function catalogComponentCreateDescriptors(builder, engine) {
