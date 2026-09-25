@@ -15,7 +15,7 @@ try {
     raise: function (code, message) { var error = new Error(message); error.code = code; throw error; },
     parseFlowScriptMetadataValue: function (text, line) { return parser.parseFlowScriptMetadataValue(text, line, env); }
   };
-  var corpus = JSON.parse(read('../../tests/fixtures/portable-metadata-headers.json'));
+  var corpus = JSON.parse(read('../tests/fixtures/portable-metadata-headers.json'));
   corpus.valid.forEach(function (item) {
     var actual = reader.extractMeta(item.source, env);
     assert(JSON.stringify(actual.meta) === JSON.stringify(item.meta), 'Header changed: ' + item.source);
@@ -29,7 +29,7 @@ try {
     try { reader.extractMeta(source, env); } catch (error) { failed = /METADATA|DUPLICATE_PROPERTY/.test(error.code); }
     assert(failed, 'Invalid portable header accepted: ' + source);
   });
-  var values = JSON.parse(read('../../tests/fixtures/source-metadata-values.json'));
+  var values = JSON.parse(read('../tests/fixtures/source-metadata-values.json'));
   values.valid.forEach(function (item) {
     var actual = reader.extractMeta('const _meta={value:' + item.source + '};\nfunction Demo(){}', env);
     assert(JSON.stringify(actual.meta.value) === JSON.stringify(item.value), 'Value changed: ' + item.source);

@@ -19,6 +19,8 @@ var env = {
 	catalogDefinition: function () { return { groups: [], types: [] }; },
 	listFlowLibraries: function () { return []; },
 	File: java.io.File,
+	sourcePaths: eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+		new java.io.File(engineDir, "modules/source-layout.js"), "UTF-8"))).current,
 	engineDir: function () { return engineDir; },
 	normalizeTree: clone,
 	compact: JSON.stringify,

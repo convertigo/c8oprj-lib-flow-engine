@@ -25,7 +25,8 @@ const project = vm.runInNewContext('(' + source.slice(start, end) + ')', {
   writeRuntimeMapCache: (_cache, _key, _fingerprint, value) => (memory = value),
   writePersistentFrontendDocument: (_key, _fingerprint, value) => (disk = value),
   prewarmFrontendDocumentServer() {}, enrichFrontendBindingSources: value => value,
-  frontendCatalogFingerprintForRequest: () => '', frontendReferenceCliArgs: () => [],
+  frontendCatalogCacheKey: () => '', frontendReferenceCliArgs: () => [],
+  sourcePaths: () => ({ root: '_flow' }), engineModuleFile: () => file,
   frontendDescribeDocument: () => { calls++; if (failure) throw failure; return document; }
 });
 const request = { source: '<FlowComponent />', includeBindings: false };

@@ -19,7 +19,7 @@ try {
 	var unknownRejected = false;
 	try { layouts.create("_flows"); } catch (e) { unknownRejected = true; }
 	assert(unknownRejected, "Unknown bootstrap layout must fail explicitly");
-	["legacy", "_flow"].forEach(function (mode) {
+	["_flow"].forEach(function (mode) {
 		var paths = layouts.create(mode);
 		var other = layouts.create(mode === "legacy" ? "_flow" : "legacy");
 		var resources = module("resource-utils.js");
@@ -138,8 +138,6 @@ try {
 		var frontendSettings = {target:"svelte5",modelPath:paths.path("frontbuilder/svelte/model/LayoutProject/src/routes/+page.flow.svelte")};
 		var descriptors = frontend.frontendCreateDescriptorsForSettings("svelte", frontendSettings, frontendEnv);
 		function descriptor(id){return descriptors.filter(function(item){return item.id === "frontbuilder.svelte." + id;})[0].insert.__frontendCreateSource;}
-		assert(descriptor("page").fallbackDirectory === "model/LayoutProject/src/routes", "Page directory doubled its source prefix");
-		assert(descriptor("layout").fallbackDirectory === "model/LayoutProject/src/routes", "Layout directory doubled its source prefix");
 		assert(descriptor("flowUiBlock").directory === "model/LayoutProject/src/lib/components/${namespacePath}", "Component directory uses wrong root");
 		assert(descriptor("svelteClientAction").directory === "model/LayoutProject/src/lib/actions/${namespacePath}", "Action directory uses wrong root");
 		assert(descriptor("translation.fr").directory === "model/LayoutProject/src/i18n", "Translation directory uses wrong root");

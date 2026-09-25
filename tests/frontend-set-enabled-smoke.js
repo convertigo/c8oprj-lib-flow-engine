@@ -2,12 +2,14 @@ var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_
 var engineSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "Engine.js"), "UTF-8"));
 var engine = eval(engineSource);
-var sourceFile = new java.io.File(Packages.java.lang.System.getProperty("java.io.tmpdir"),
+// Own directory: the provider scans the source's parent, never the shared OS temp root.
+var sourceFile = new java.io.File(java.nio.file.Files.createTempDirectory("flow-frontend-set-enabled-").toFile(),
 	"flow-frontend-set-enabled-smoke.flow.svelte");
 var initialSource = [
-	'<FlowComponent id="home" label="Home">',
+	'<script module>export const _flow = { sourceVersion: 2 };</script>',
+	'<FlowComponent $$id="home" label="Home">',
 	'  <Structure>',
-	'    <Text id="title" text="Visible" />',
+	'    <Text $$id="title" text="Visible" />',
 	'  </Structure>',
 	'</FlowComponent>',
 	''
@@ -34,16 +36,16 @@ function setEnabled(source, enabled) {
 }
 
 var disabled = setEnabled(initialSource, false);
-assertTrue(disabled.ok === true && disabled.target === "frontAst",
+assertTrue(disabled.ok === true && disabled.target === "flowSvelte",
 	"setEnabled(false) did not use the frontend fast path: " + JSON.stringify(disabled));
-assertTrue(String(disabled.source).indexOf('<Text id="title"') !== -1 &&
-	String(disabled.source).indexOf("enabled={false}") !== -1,
+assertTrue(/<Text\s[^>]*\$\$id="title"/.test(String(disabled.source)) &&
+	String(disabled.source).indexOf("$$disabled={true}") !== -1,
 	"setEnabled(false) did not preserve the disabled state in source: " + disabled.source);
 
 var reenabled = setEnabled(disabled.source, true);
-assertTrue(reenabled.ok === true && reenabled.target === "frontAst",
+assertTrue(reenabled.ok === true && reenabled.target === "flowSvelte",
 	"setEnabled(true) did not use the frontend fast path: " + JSON.stringify(reenabled));
-assertTrue(String(reenabled.source).indexOf("enabled={false}") === -1,
+assertTrue(String(reenabled.source).indexOf("$$disabled") === -1,
 	"setEnabled(true) did not restore the frontend node: " + reenabled.source);
 
 var enableMenu = JSON.parse(engine.contextMenu(JSON.stringify({

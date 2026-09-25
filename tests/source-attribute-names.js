@@ -4,7 +4,7 @@ function read(file) {
 	return String(Packages.org.apache.commons.io.FileUtils.readFileToString(file, "UTF-8"));
 }
 var codec = eval(read(new java.io.File(root, "modules/source-attribute-name-codec.js")));
-var cases = JSON.parse(read(new java.io.File(root, "../../tests/fixtures/source-attribute-names.json")));
+var cases = JSON.parse(read(new java.io.File(root, "../tests/fixtures/source-attribute-names.json")));
 function assert(value, message) { if (!value) throw new Error(message); }
 function rejects(fn, code) {
 	try { fn(); } catch (error) { assert(error.code === code, String(error)); return; }

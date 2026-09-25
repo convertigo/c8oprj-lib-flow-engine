@@ -226,7 +226,8 @@ var modernRoot = sourceRoot(modernTree, model);
 var modernEdited = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(model.getCanonicalPath()), source: modernSource,
 	engineSource: engineSource, projectDir: String(root.getAbsolutePath()), authoringRootPath: modernRoot.path,
-	mutation: { op: "replace", path: editorInfo.sourcePropertyMutationPaths.id, value: "editedBusiness" }
+	mutation: { op: "replace", path: (editorInfo.sourcePropertyMutationPaths || {}).id
+		|| editorInfo.sourceMutationPath + "." + editorInfo.propertyDefinitions.id.definitionPath, value: "editedBusiness" }
 })));
 if (!modernEdited.ok || !modernEdited.authoringTree || !modernEdited.authoringTree.ok
 		|| !findNode(modernEdited.authoringTree, "editorNode")

@@ -48,15 +48,16 @@ function sameFile(left, right) {
 }
 
 var frontendRoot = new java.io.File(projectDirFile, "_flow/frontbuilder/svelte");
-var modelDir = new java.io.File(frontendRoot, "model");
+var modelDir = new java.io.File(frontendRoot, "model/CloseProvider/src/routes");
 modelDir.mkdirs();
-var componentFile = new java.io.File(modelDir, "CloseProvider.flow.svelte");
+var componentFile = new java.io.File(modelDir, "+page.flow.svelte");
 Packages.org.apache.commons.io.FileUtils.writeStringToFile(componentFile, [
-	"<FlowComponent id=\"closeProvider\" label=\"Close provider\">",
+	"<script module>export const _flow = { sourceVersion: 2 };</script>",
+	"<FlowComponent $$id=\"closeProvider\" label=\"Close provider\">",
 	"  <Structure>",
-	"    <Button id=\"dialog\" label=\"Dialog\">",
+	"    <Button $$id=\"dialog\" label=\"Dialog\">",
 	"      <Events>",
-	"        <OnClose id=\"closed\"><Actions /></OnClose>",
+	"        <OnClose $$id=\"closed\"><Actions /></OnClose>",
 	"      </Events>",
 	"    </Button>",
 	"  </Structure>",
@@ -70,8 +71,8 @@ var engineSource = [
 	"  frontbuilder:",
 	"    svelte:",
 	"      target: svelte5",
-	"      resourceRoot: _flow/frontbuilder/svelte",
-	"      modelPath: _flow/frontbuilder/svelte/model/CloseProvider.flow.svelte",
+	"      resourceRoot: " + String(java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT")),
+	"      modelPath: _flow/frontbuilder/svelte/model/CloseProvider/src/routes/+page.flow.svelte",
 	""
 ].join("\n");
 var request = {

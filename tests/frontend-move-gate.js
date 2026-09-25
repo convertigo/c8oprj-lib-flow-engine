@@ -62,9 +62,9 @@ try {
       return documentOverride || describeSource(request.source);
     },
     flowTreeService: () => service, flowTreeServiceEnv: () => env, frontendStudioLog() {},
-    frontendSvelteResourceRoot: () => provider,
-    File: { createTempFile() { const filename = path.join(tmp, `temp-${tempCount++}`);
-      return { getAbsolutePath: () => filename, delete() { fs.unlinkSync(filename); } }; } },
+    frontendSvelteResourceRoot: () => ({ getAbsolutePath: () => provider }),
+    File: Object.assign(function File() {}, { createTempFile() { const filename = path.join(tmp, `temp-${tempCount++}`);
+      return { getAbsolutePath: () => filename, delete() { fs.unlinkSync(filename); } }; } }),
     FileUtils: { writeStringToFile(file, text) { fs.writeFileSync(file.getAbsolutePath(), text); } },
     frontendRunProviderOneShot(_root, script, args) {
       assert.equal(script, 'src-builder/sourceMutateCli.ts');
@@ -74,7 +74,16 @@ try {
       assert.equal(written.status, 0, written.stderr);
       return written.stdout;
     },
-    frontendMarkedJson(output, prefix) { return JSON.parse(output.split('\n').find(line => line.startsWith(prefix)).slice(prefix.length)); }
+    frontendMarkedJson(output, prefix) { return JSON.parse(output.split('\n').find(line => line.startsWith(prefix)).slice(prefix.length)); },
+    // Writer inputs added by the _flow layout (23027d2) and the warm provider server (011397d, a4c418e).
+    fileForProjectPath: () => null, projectDir: () => ({ getAbsolutePath: () => tmp }),
+    sourcePaths: () => ({ root: '_flow' }), projectNameForRoot: () => 'MoveTest', currentProjectName: () => 'MoveTest',
+    engineModuleFile: name => ({ getAbsolutePath: () => path.join(engine, 'modules', name) }),
+    frontendReferenceCliArgs: () => ['--reference-root', path.resolve(engine, '../..')], frontendCatalogCacheKey: () => '',
+    frontendRunSourceMutation(root, args) {
+      return real.frontendMarkedJson(real.frontendRunProviderOneShot(root, 'src-builder/sourceMutateCli.ts', args),
+        '__C8O_FLOW_SOURCE_MUTATION__');
+    }
   });
   vm.runInContext(engineSource.slice(start, engineSource.indexOf('\n\tfunction frontendSvelteResourceRoot(', start)), real);
   const moved = real.applyOneFlowSvelteSourceMutation({}, source,

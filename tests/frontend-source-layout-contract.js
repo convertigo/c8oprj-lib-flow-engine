@@ -14,7 +14,7 @@ function read(file) { return String(files.readFileToString(file, "UTF-8")); }
 function write(file, text) { files.forceMkdir(file.getParentFile()); files.writeStringToFile(file, String(text), "UTF-8"); }
 var layouts = eval(read(new File(sourceRoot, "modules/source-layout.js")));
 try {
-	["legacy", "_flow"].forEach(function (mode) {
+	["_flow"].forEach(function (mode) {
 		var paths = layouts.create(mode);
 		var base = new File(temp, mode);
 		var engineProject = new File(base, "lib_flow_engine");

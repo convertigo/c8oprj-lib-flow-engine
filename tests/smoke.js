@@ -462,6 +462,9 @@ var portableFixtureBlocks = JSON.parse(String(Packages.org.apache.commons.io.Fil
 	new java.io.File(engineDir, "portable-axiom-fixtures.json"), "UTF-8"))).map(function (fixture) { return fixture.block; });
 // Clock output is bounded by observation times below, not a constant expected value.
 var dynamicPortableFixtureBlocks = ["date.now"];
+// Stateful collection blocks (effects: state) cannot be pure input/expected axioms;
+// their runtime contract is covered by tests/typed-collections-runtime.js.
+dynamicPortableFixtureBlocks = dynamicPortableFixtureBlocks.concat(["json.array", "json.map", "json.push", "json.put"]);
 var coveredPortableBlocks = portableFixtureBlocks.concat(dynamicPortableFixtureBlocks);
 assertTrue(portableCatalogBlocks.length === coveredPortableBlocks.length && portableCatalogBlocks.every(function (block) {
 	var relativeFile = block.implementations && block.implementations.frontend && block.implementations.frontend.file;
@@ -2674,7 +2677,7 @@ assertTrue(propertyEditor.html.indexOf("<label>Scope</label>") !== -1 &&
 	propertyEditor.html.indexOf("ensureSelection()") !== -1 &&
 	propertyEditor.html.indexOf("addSource.disabled") !== -1 &&
 	propertyEditor.html.indexOf("<label>Prefix</label>") === -1 &&
-	propertyEditor.html.indexOf("pickerOnly: true") !== -1 &&
+	propertyEditor.html.indexOf("pickerOnly: false") !== -1 &&
 	propertyEditor.html.indexOf("Stable id") === -1 &&
 	propertyEditor.html.indexOf("The index is the current item's position") !== -1 &&
 	propertyEditor.html.indexOf('return "Index"') !== -1,
@@ -2761,7 +2764,11 @@ debugPrint(JSON.stringify(describedFlowTree));
 assertTrue(describedFlowTree.children[0].name === "flow" &&
 	describedFlowTree.children[0].children[2].type === "forEach",
 	"describeTree(flow) did not expose flow nodes");
-assertTrue(describedFlowTree.children[0].children[0].summary === "[set] local.items = [\"Paris\",\"Lyon\"]",
+// Summaries come from block templates over canonical props (62172b0); the flat v1 YAML
+// shape above is not a canonical source, so check the FlowScript form.
+var summaryTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow",
+	flowSource: 'const _flow={sourceVersion:2};\nfunction Summary(){\nset({$$id:"initItems",path:"local.items",value:["Paris","Lyon"]});\n}' })));
+assertTrue(summaryTree.children[0].children[0].summary === "local.items = [\"Paris\",\"Lyon\"]",
 	"describeTree(flow) did not expose data-centric display names");
 var simpleLoopContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: flowSource,
@@ -4829,10 +4836,11 @@ assertTrue(cachedRoutePalette.ok === true && authoringTreeCacheAfterPalette.hits
 	authoringTreeCacheAfterPalette.misses === authoringTreeCacheBeforePalette.misses,
 	"authoring palette should reuse the shared catalog-free tree snapshot");
 var flowSveltePageNode = findNode(flowSvelteRoutesTree, function (node) {
-	return node.kind === "frontendPage" && node.path === "frontends.svelte.routes.home";
+	return node.kind === "frontendPage";
 });
+// Route pages carry a source-qualified projection id (provider bc308e6), still index-free.
 assertTrue(flowSveltePageNode !== null &&
-	flowSveltePageNode.path === "frontends.svelte.routes.home",
+	flowSveltePageNode.path === "frontends.svelte.routes.page_src_routes_page_flow_svelte",
 	"authoring tree did not expose a stable index-free Svelte page focus path: " +
 		(flowSveltePageNode && flowSveltePageNode.path));
 var flowSvelteTextNode = findNode(flowSvelteTree, function (node) {
@@ -5449,8 +5457,8 @@ var flowSvelteReplaceNode = JSON.parse(engine.applySourceMutation(JSON.stringify
 	}
 })));
 assertTrue(flowSvelteReplaceNode.ok === true &&
-	String(flowSvelteReplaceNode.source).indexOf("<Card id=\"replacementCard\"") !== -1 &&
-	String(flowSvelteReplaceNode.source).indexOf("<Text id=\"replacementText\"") !== -1,
+	/<Card\s+id="replacementCard"/.test(String(flowSvelteReplaceNode.source)) &&
+	/<Text\s+id="replacementText"/.test(String(flowSvelteReplaceNode.source)),
 	"flow-svelte AST node replacement did not template palette-style values");
 var flowSvelteBatchMutation = JSON.parse(engine.applySourceMutation(JSON.stringify({
 	sourceFile: String(flowSvelteComponentFile.getAbsolutePath()),

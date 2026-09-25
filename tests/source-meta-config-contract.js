@@ -10,7 +10,7 @@ function equal(actual, expected, message) { assert(JSON.stringify(actual) === JS
 try {
 	var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 	function api(name, request) { return JSON.parse(engine[name](JSON.stringify(request))); }
-	var corpus = JSON.parse(String(files.readFileToString(new java.io.File(engineDir, "../../tests/fixtures/source-metadata-values.json"), "UTF-8")));
+	var corpus = JSON.parse(String(files.readFileToString(new java.io.File(engineDir, "../tests/fixtures/source-metadata-values.json"), "UTF-8")));
 	corpus.valid.forEach(function (fixture) {
 		var parsedFixture = api("flowSourceValidate", { code: "const _flow={config:{sample:" + fixture.source + "}}\nfunction Sample(){\nset({path:'result.sample',value:config.sample})\n}" });
 		assert(parsedFixture.ok, "Shared metadata fixture rejected: " + fixture.source);
