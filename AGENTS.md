@@ -35,8 +35,7 @@ FlowScript sidecar:
 _flow/flows/<FlowName>.flow.js
 ```
 
-Legacy `libs/flows/<FlowName>.flow.yaml` sidecars were migration artifacts and
-must not be treated as a runtime fallback. Do not optimize for editing
+Do not optimize for editing
 escaped `flowSource` content inside Convertigo YAML. Treat the Java bean
 property as an in-memory bridge for Studio/editor services; the source file is
 the human/LLM-friendly representation.
@@ -49,7 +48,7 @@ Backend loaders, config, resources, shared-block discovery, writers and the
 Engine-side frontend catalog consume this contract through their env.
 Do not select a layout by testing whether `_flow` exists, merge two source
 trees, or add a per-request MCP switch. Canonical source is `_flow`, with Flow
-sidecars under `_flow/flows`; legacy layout exists only in isolated fixtures.
+sidecars under `_flow/flows`.
 The core resource root remains explicitly supplied by the Java bridge.
 
 `tests/source-layout-contract.js` copies the Engine into a temporary fixture
@@ -145,8 +144,7 @@ a business property when the block actually declares it. Never reintroduce a
 runtime fallback from a business `out` to the engine capture. Expressions such
 as `2 + 3` stay expressions; do not lower them into arithmetic blocks.
 Formatting must preserve the AST, metadata, slots, literal string content and
-business property order. Workspace migrations are one-off offline tools, not
-startup/runtime compatibility code.
+business property order.
 
 Do not broaden this into full JavaScript during the spike. Add syntax only when
 it demonstrably reduces LLM retries on the benchmark. Do not add native JS
@@ -284,8 +282,7 @@ the hooks file. Use it for structural blocks such as `json.object` that can
 publish their own `out` schema from direct child metadata.
 
 The block id comes from the file path: `_flow/blocks/demo/decorate.block.js`
-is `demo.decorate`. Legacy `*.block.yaml` descriptors were migration artifacts
-and are no longer a runtime fallback. For Rhino/native escape hatches, use the
+is `demo.decorate`. For Rhino/native escape hatches, use the
 same `*.block.js` shape with `_meta.runtime = "rhino"` and an IIFE returning
 `run`.
 named by `implementation.file`; it is not a block definition. Metadata,
@@ -312,8 +309,8 @@ descriptor with `uses: [name]` so the library appears under `Catalog >
 Libraries` and under the block's `Uses` node.
 
 Keep the standard library small. Put only generally useful runtime blocks in
-`lib_flow_engine`. MCP plumbing, Studio tooling, benchmark helpers and migration
-helpers belong in a dedicated library such as `lib_flow_mcp`, not in the core
+`lib_flow_engine`. MCP plumbing, Studio tooling and benchmark helpers belong
+in a dedicated library such as `lib_flow_mcp`, not in the core
 catalog.
 
 Use dotted names for non-core vocabulary: `json.select`, `requestable.call`,
@@ -329,7 +326,7 @@ Prefer a project-local custom block over inline Rhino code when behavior does
 not fit existing blocks. Mark one-off or implementation-detail blocks
 `private: true` so they are usable in the owning project but not advertised to
 projects that reference it. A generic script-style block is an escape hatch for
-debugging or migration only; it should not be the default authoring path because
+debugging only; it should not be the default authoring path because
 it weakens schemas and recreates SequenceJS-style hidden logic.
 
 Use `fragment.use` when the behavior is graph-shaped and should stay visible in
@@ -458,7 +455,7 @@ writing or publishing the block result/schema. For `ctx.callBlock`, pass an
 engine destination in `options.out`; a value in the second argument's `out`
 remains business data in source version 2. Keep `outputs.out` as the declared
 result schema contract; it is distinct from an optional business input `out`.
-The version 2 source contract is opt-in until the coordinated migration.
+Every Flow source is version 2.
 
 Frontend `FlowComponent` sources use the same codec with `_flow.sourceVersion: 2`
 (or `_meta.sourceVersion` for reusable pseudo-components). The provider keeps
@@ -468,7 +465,6 @@ carry explicit `definitionPath` and `sourcePropertyMutationPaths`; escaped
 business names and engine names must coexist in the property view.
 The Engine passes its exact codec file to document, mutation and generation
 entry points. Do not duplicate the codec or discover an unrelated sibling repo.
-Version 2 remains a local opt-in contract, not a completed project migration.
 
 Reusable `.block.js` implementations declare their source dialect in
 `_meta.sourceVersion`. Version 2 uses `$$id`, `$$comment`, `$$disabled` and
@@ -478,7 +474,7 @@ properties. A declared child slot uses the same engine namespace, for example
 Write every present slot, including empty and secondary slots; never choose
 only the first slot. AST child slots stay separate from `node.props`.
 The slot names must not collide with structural AST storage (`id`, `props`,
-etc.); reject such contracts explicitly until the storage migration.
+etc.); reject such contracts explicitly.
 Helpers inherit their source's dialect. A called reusable implementation owns
 its own dialect, but caller-provided child slots keep the caller's dialect.
 
@@ -582,7 +578,7 @@ obsolete YAML fallbacks for that block. `blockCreate` remains a compatibility
 facade and should still write the canonical source for new project-local blocks.
 
 Static `requestable.call` nodes should enrich picker context too. Flow targets
-read the Flow output contract; legacy sequence and transaction targets use the
+read the Flow output contract; Convertigo sequence and transaction targets use the
 Convertigo `schemaManager` when a live engine is available. Dynamic or templated
 targets should degrade to the plain `out` path instead of guessing.
 

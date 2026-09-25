@@ -147,7 +147,7 @@ Full alias/branch/graph-call static propagation, schema keyword/reference extens
 performance for large growing collections, and both live Studio surfaces remain to
 qualify. The pre-existing broad smoke QName failure is unchanged/not resolved here.
 
-Legacy business properties named out still coexist with the v2 engine $$out.
+Business properties named out coexist with the engine $$out.
 Do not infer an alias from the spelling: v2 permits real business properties
 with that name. Audit core descriptors and preserve existing sources explicitly.
 
@@ -167,8 +167,7 @@ with that name. Audit core descriptors and preserve existing sources explicitly.
   Provider build, generated application check (0 errors/warnings) and production
   build pass. Real browser clicks update array count and map value; reload resets.
 - Node/Rhino core/property/context suites remain green. Full provider tsc retains
-  the identical nine diagnostics reproduced on clean ec5dedf; broad Engine QName
-  smoke and removed migration fixture remain known unrelated failures.
+  the identical nine diagnostics reproduced on clean ec5dedf.
 
 Remaining gates: coordinated integration after Studio shutdown; live Eclipse AND
 web picker/edit/Save/Reload. Frontend static value-type analysis parity, nested

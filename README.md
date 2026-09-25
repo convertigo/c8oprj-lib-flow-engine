@@ -42,7 +42,7 @@ For source control, a Convertigo `Flow` should not serialize its full source as 
 _flow/flows/<FlowName>.flow.js
 ```
 
-The loader only accepts this `.flow.js` sidecar. Legacy `libs/flows/<FlowName>.flow.yaml` sidecars were used during the spike migration and must not be treated as a runtime fallback. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
+The loader only accepts this `.flow.js` sidecar. The bean property remains an in-memory editor bridge. On save/export the property is removed from Convertigo serialization and the sidecar file is written instead.
 
 The runtime core is intentionally small. Concrete behavior is implemented by
 block descriptors in:
@@ -82,9 +82,7 @@ The block id is derived from the path, for example
 `_flow/blocks/demo/decorate.block.js` becomes `demo.decorate`.
 
 Rhino-backed blocks use the same `*.block.js` file: `_meta.runtime` declares
-`"rhino"` and the body is an IIFE returning `run`. Legacy `*.block.yaml`
-descriptors were used during the spike migration and are no longer a runtime
-fallback. Future implementation kinds (`java`, `kotlin`, etc.) should keep the
+`"rhino"` and the body is an IIFE returning `run`. Future implementation kinds (`java`, `kotlin`, etc.) should keep the
 same logical contract shape exposed in the tree and MCP APIs.
 
 Flow-backed blocks are regular catalog blocks. At runtime the engine exposes
@@ -176,7 +174,7 @@ The current catalog includes low-level composable blocks for:
 
 `lib_flow_engine` should stay the standard runtime vocabulary. A block belongs
 there only when it is generally useful in normal application Flows. Tooling
-blocks, MCP server plumbing, benchmark helpers or migration helpers belong in a
+blocks, MCP server plumbing or benchmark helpers belong in a
 separate library project such as `lib_flow_mcp`. The Flow MCP block lives there,
 not in the standard catalog.
 
@@ -205,8 +203,8 @@ Catalog APIs hide private blocks by default; diagnostic callers can pass
 Direct Rhino code inside a Flow should remain an escape hatch, not the normal
 model. The preferred equivalent of a small function is a project-local custom
 block, often `private: true`, with a tiny catalog descriptor and optional
-`analyze()` method. A generic script block would be useful only for debugging or
-advanced migration cases because it hides intent, weakens schemas and encourages
+`analyze()` method. A generic script block would be useful only for debugging
+because it hides intent, weakens schemas and encourages
 SequenceJS-style low-code bypasses.
 
 Custom Rhino blocks should also stay primitive-sized. They must not hide a whole
@@ -239,31 +237,9 @@ still keep usage counts as secondary information.
 
 ## FlowScript spike
 
-The `spike-flowscript` branch adds an experimental code-like authoring view for
-LLMs. For project Flows, `.flow.js` is now the canonical sidecar on this branch:
-the engine lists and loads it first, compiles it into the internal Flow
-definition, validates block names/properties, and executes that model. Legacy
-`.flow.yaml` Flow sidecars are obsolete and must be migrated or removed instead
-of being loaded at runtime.
-
-Use `tools/migrate-flow-js-canonical.sh` during the spike to report existing
-pairs and, once a `.flow.js` sibling exists, remove obsolete YAML sidecars:
-
-```bash
-tools/migrate-flow-js-canonical.sh /path/to/Project/_flow/flows
-tools/migrate-flow-js-canonical.sh --remove-yaml /path/to/Project/_flow/flows
-```
-
-Use `tools/migrate-block-js-canonical.py` to validate or migrate project-local
-Flow-backed blocks through the live Flow MCP endpoint. It returns a complete
-`_meta + function` FlowScript block source, validates it, and writes only when
-`--write` is passed:
-
-```bash
-tools/migrate-block-js-canonical.py --project lib_flow_mcp
-tools/migrate-block-js-canonical.py --project lib_flow_mcp --name mcp.handle
-tools/migrate-block-js-canonical.py --project lib_flow_mcp --write
-```
+For project Flows, `.flow.js` is the canonical sidecar: the engine lists and
+loads it, compiles it into the internal Flow definition, validates block
+names/properties, and executes that model.
 
 For new Flows, prefer the natural code-like form:
 
@@ -346,7 +322,7 @@ Core blocks should stay small, generic and predictable. The default move is to
 add JSON/scope/list/control blocks that compose well, then promote project-local
 blocks only when the vocabulary is clearly reusable.
 
-Good first-class candidates from legacy Steps:
+Good first-class candidates from Convertigo Steps:
 
 - `LogStep` -> `log`;
 - `SequenceStep` / `TransactionStep` -> `requestable.call` for the KISS path;
@@ -361,7 +337,7 @@ Good first-class candidates from legacy Steps:
 
 Poor candidates for the initial core:
 
-- XML/XPath/XSD-heavy Steps, because they would bring the legacy data model into
+- XML/XPath/XSD-heavy Steps, because they would bring the XML data model into
   a JSON-first engine before the bridge is designed;
 - process and filesystem mutation blocks (`ProcessExecStep`, `DeleteStep`,
   `MoveFileStep`, etc.) before security and deployment boundaries are defined;
@@ -514,8 +490,7 @@ project-local blocks.
 
 - `blockGet({ name })` reads any visible block as one logical unit. Canonical
   FlowScript blocks return `code`, `codeRevision`, `descriptor` and
-  `implementationRuntime`. Legacy YAML-backed blocks may still return
-  `descriptorSource` during migration.
+  `implementationRuntime`.
 - `blockCodeSet({ name, code, properties, outputs })` creates or replaces a
   project-local FlowScript block stored as `<name>.block.js`.
 - `blockCodeGet({ name })` reads canonical block code with its revision for
@@ -525,7 +500,7 @@ project-local blocks.
 - `blockCodePatch({ name, revision, codepatch|code })` applies a
   revision-checked patch or replacement to a project-local FlowScript block.
 - `blockCreate({ name, descriptorSource|descriptor|definition, implementationSource })`
-  creates or migrates a project-local block through the canonical format. Prefer
+  creates a project-local block through the canonical format. Prefer
   `blockCodeSet` for new work.
 - `blockDuplicate({ fromName, toName })` copies a visible block into the
   project using the canonical format.
@@ -681,7 +656,7 @@ picker context exposes the iterated item under `current.*`; for example
 `current.city` and `current.temperature`.
 
 Call blocks also expose known output shapes during analysis when their target is
-static. `requestable.call` reads Flow output contracts directly. For legacy
+static. `requestable.call` reads Flow output contracts directly. For Convertigo
 sequences and transactions, it asks Convertigo's `schemaManager`, converts the
 generated DOM sample to JSON, then infers a Flow schema and unwraps the
 historical `document` container.
@@ -737,8 +712,7 @@ Studio edits backend `expression` and `value` properties as one readable
 expression. Selecting a picker path inserts it at the current cursor position,
 so a human can compose several sources, operators, nullish fallbacks and
 wrappers without a fixed prefix/pick/suffix form. Persistence remains the same:
-`{{ expression }}` for native values and embedded slots for templates. Existing
-FlowScript therefore needs no migration.
+`{{ expression }}` for native values and embedded slots for templates.
 
 ## Contracts and bindings
 
@@ -918,7 +892,7 @@ The current analysis returns:
   groups;
 - learned JSON schemas, when available, attached to the scope path produced by
   the node;
-- legacy requestable schemas for static `requestable.call` targets when a live
+- Convertigo requestable schemas for static `requestable.call` targets when a live
   Convertigo engine is available;
 - a first `errors` array for future static diagnostics.
 
