@@ -3412,7 +3412,7 @@
 	function projectedBackendSlots(node, catalog, path) {
 		var slots = {};
 		slotDefinitions(catalog).forEach(function (definition) {
-			// Legacy descriptors remain unmigrated until they declare an acceptance contract.
+			// Only slots declaring an acceptance contract are projected as insertion targets.
 			if (definition.accepts === undefined && definition.acceptsFrom === undefined) return;
 			var name = [definition.name].concat(definition.aliases || []).filter(function (name) {
 				return Array.isArray(node[name]);
@@ -3725,12 +3725,10 @@
 			longDescription: propertyDefinition("Long description", "Base properties", "Detailed block documentation.", { kind: "markdown", type: "string" }),
 			icon: propertyDefinition("Icon", "Base properties", "Icon id, relative icon file, or URL.", { kind: "icon", type: "string" }),
 			uses: propertyDefinition("Libraries", "Base properties", "JavaScript libraries explicitly used by this block implementation.", { kind: "array", type: "array", items: { kind: "text", type: "string", trim: true, unique: true }, defaultValue: [] }),
-			display: propertyDefinition("Display template", "Information", "Legacy static display fallback. Prefer the Hooks displayName function.", { readOnly: true, hidden: true }),
+			display: propertyDefinition("Display template", "Information", "Static display fallback. Prefer the Hooks displayName function.", { readOnly: true, hidden: true }),
 			visibility: propertyDefinition("Visibility", "Base properties", "Palette visibility: public, internal or private.", { kind: "text", type: "string", defaultValue: "public" }),
 			private: propertyDefinition("Private", "Expert", "Hide this block from projects referencing this library.", { kind: "boolean", type: "boolean", defaultValue: false }),
 			tags: propertyDefinition("Tags", "Base properties", "Searchable labels used for filtering and documentation.", { kind: "array", type: "array", items: { kind: "text", type: "string", trim: true, unique: true }, defaultValue: [] }),
-			kind: propertyDefinition("Kind", "Information", "Legacy field migrated to tags.", { readOnly: true, hidden: true }),
-			package: propertyDefinition("Package", "Information", "Legacy field replaced by provider.", { readOnly: true, hidden: true }),
 			props: propertyDefinition("Properties", "Information", "Block property contract. Edit the Properties child instead.", { readOnly: true, hidden: true }),
 			slots: propertyDefinition("Slots", "Properties", "Child node slots accepted by this block.", { kind: "literal", type: "array" }),
 			defaults: propertyDefinition("Defaults", "Properties", "Default node values applied when the block is dropped from the palette.", { kind: "literal", type: "object" })

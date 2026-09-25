@@ -22,8 +22,6 @@
 		var applyUnifiedPatchText = env.applyUnifiedPatchText;
 		var getBlockSource = env.getBlockSource;
 		var setProjectBlockCode = env.setProjectBlockCode;
-		var flowScriptBlockMetaFromRequest = env.flowScriptBlockMetaFromRequest;
-		var flowScriptBlockCodeSource = env.flowScriptBlockCodeSource;
 		var flowScriptBlockCandidates = env.flowScriptBlockCandidates || function () { return []; };
 		var flowScriptBlockCandidateDecision = env.flowScriptBlockCandidateDecision || function (candidates) {
 			candidates = candidates || [];
@@ -673,17 +671,6 @@
 			};
 		}
 		var current = getBlockSource(blocks, name, Object.assign({}, request, { detail: "full" }));
-		if ((current.format !== "flowscript" && current.format !== "blockjs") || !current.code) {
-			return {
-				ok: false,
-				name: name,
-				revision: current.codeRevision || "",
-				error: flowCodeError("BLOCK_NOT_CANONICAL_CODE",
-					"Block " + name + " is not stored as canonical .block.js.",
-					"Use flow-block-code-get only for .block.js blocks, or duplicate/migrate the block first."),
-				warnings: []
-			};
-		}
 		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
 		if (expectedRevision && String(expectedRevision) !== current.codeRevision) {
 			return {
@@ -763,62 +750,23 @@
 			detail: "full",
 			includeMeta: true
 		}));
-		if ((block.format === "flowscript" || block.format === "blockjs") && block.code) {
-			var direct = {
-				ok: true,
-				name: name,
-				origin: block.origin,
-				format: block.format,
-				implementationRuntime: block.implementationRuntime,
-				canonical: true,
-				revision: block.codeRevision || "",
-				code: block.code,
-				descriptor: block.descriptor,
-				warnings: []
-			};
-			if (request.includeSources === true || String(request.includeSources || "") === "true") {
-				direct.codeFile = block.codeFile;
-				direct.implementationSource = block.implementationSource;
-			}
-			return direct;
-		}
-		if (block.implementationRuntime !== "flow") {
-			return {
-				ok: false,
-				name: name,
-				error: flowCodeError("BLOCK_NOT_FLOWSCRIPT", "Block " + name + " is implemented with " + block.implementationRuntime + ".",
-					"Use flow-block-get for legacy descriptor-backed Rhino blocks, or migrate the block to canonical .block.js."),
-				warnings: []
-			};
-		}
-		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
-			name: name,
-			flowSource: block.implementationSource,
-			includeHeader: false,
-			includeImplicitReturn: false
-		}));
-		var meta = flowScriptBlockMetaFromRequest(name, { descriptor: block.descriptor });
-		var code = flowScriptBlockCodeSource(name, validation.code, meta);
-		var out = {
-			ok: validation.ok !== false,
+		var direct = {
+			ok: true,
 			name: name,
 			origin: block.origin,
-			format: "flowscript-mirror",
-			canonical: false,
-			revision: sha256Hex(code),
-			code: code,
+			format: block.format,
+			implementationRuntime: block.implementationRuntime,
+			canonical: true,
+			revision: block.codeRevision || "",
+			code: block.code,
 			descriptor: block.descriptor,
-			diagnostics: validation.diagnostics || [],
-			warnings: (validation.diagnostics || []).filter(function (diagnostic) {
-				return diagnostic.severity === "warning";
-			}),
-			next: "Call flow-block-code-set with this full _meta + function code to migrate the project-local block to canonical .block.js."
+			warnings: []
 		};
 		if (request.includeSources === true || String(request.includeSources || "") === "true") {
-			out.descriptorSource = block.descriptorSource;
-			out.implementationSource = block.implementationSource;
+			direct.codeFile = block.codeFile;
+			direct.implementationSource = block.implementationSource;
 		}
-		return out;
+		return direct;
 	}
 
 	function flowCodeRgExtract(code, matcher, context, limit) {

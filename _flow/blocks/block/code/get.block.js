@@ -28,7 +28,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Also include migration metadata when available.",
+      "description": "Also include the code file path and the implementation source.",
     },
     "projectDir": {
       "label": "projectDir",

@@ -10,7 +10,6 @@
 		var blockFileName = env.blockFileName;
 		var blockHooksFileName = env.blockHooksFileName;
 		var blockLocalName = env.blockLocalName;
-		var projectBlockDescriptorFile = env.projectBlockDescriptorFile;
 		var projectBlockCodeFile = env.projectBlockCodeFile;
 		var projectBlocksDir = env.projectBlocksDir;
 		var projectDir = env.projectDir;
@@ -99,16 +98,6 @@
 			return rhinoBlockCodeSource(name, implementationSource, meta);
 		}
 
-		function implementationTargetFile(descriptorFile, definition) {
-			var implementation = blockImplementation(definition);
-			var defaultFile = implementation.runtime === "flow" ? blockFlowFileName(definition.name) : blockFileName(definition.name);
-			var file = new File(String(implementation.file || defaultFile));
-			if (!file.isAbsolute()) {
-				file = new File(descriptorFile.getParentFile(), String(implementation.file || defaultFile));
-			}
-			return file;
-		}
-
 		function hooksTargetFile(descriptorFile, definition) {
 			var hooks = definition && definition.hooks;
 			if (!hooks) {
@@ -127,31 +116,6 @@
 				file = new File(descriptorFile.getParentFile(), String(hooks.file));
 			}
 			return file;
-		}
-
-		function deleteIfFile(file) {
-			try {
-				return file && file.isFile() && file["delete"]();
-			} catch (_ignoreDelete) {
-				return false;
-			}
-		}
-
-		function cleanupProjectBlockYamlFallback(name, descriptor) {
-			var removed = [];
-			var descriptorFile = projectBlockDescriptorFile(name);
-			if (deleteIfFile(descriptorFile)) {
-				removed.push(String(descriptorFile.getAbsolutePath()));
-			}
-			var implementation = blockImplementation(descriptor || {});
-			var implementationFile = implementationTargetFile(descriptorFile, Object.assign({
-				name: blockLocalName(name) || name,
-				implementation: implementation.file ? implementation : { runtime: "flow", file: blockFlowFileName(name) }
-			}, descriptor || {}));
-			if (deleteIfFile(implementationFile)) {
-				removed.push(String(implementationFile.getAbsolutePath()));
-			}
-			return removed;
 		}
 
 		function setProjectBlockCode(blocks, name, request) {
@@ -194,7 +158,6 @@
 			}
 			codeFile.getParentFile().mkdirs();
 			FileUtils.writeStringToFile(codeFile, compiled.code, "UTF-8");
-			var removed = cleanupProjectBlockYamlFallback(name, compiled.descriptor);
 			if (blocks[name]) {
 				delete blocks[name];
 			}
@@ -209,7 +172,6 @@
 				file: String(codeFile.getAbsolutePath()),
 				codeFile: String(codeFile.getAbsolutePath()),
 				revision: compiled.revision,
-				removedFallbacks: removed,
 				warnings: (compiled.warnings || (compiled.diagnostics || []).filter(function (diagnostic) {
 					return diagnostic.severity === "warning";
 				})),
@@ -229,14 +191,13 @@
 					overwrite: overwrite
 				}).block;
 			}
-			var descriptorFile = projectBlockDescriptorFile(name);
 			var codeFile = projectBlockCodeFile(name);
 			var block = blocks[String(name || "")];
 			if (block && block.__flowOrigin !== "project") {
 				raise("DUPLICATE_BLOCK", "Cannot override non-project Flow block: " + name,
 					null, "Choose a project-specific name instead.");
 			}
-			if ((codeFile.isFile() || descriptorFile.isFile()) && overwrite !== true) {
+			if (codeFile.isFile() && overwrite !== true) {
 				raise("BLOCK_ALREADY_EXISTS", "Project block already exists: " + name,
 					null, "Pass overwrite=true to replace it explicitly.");
 			}
@@ -337,9 +298,7 @@
 			canonicalBlockDefinition: canonicalBlockDefinition,
 			blockCodeMetaFromDefinition: blockCodeMetaFromDefinition,
 			canonicalBlockCodeFromDefinitionSource: canonicalBlockCodeFromDefinitionSource,
-			implementationTargetFile: implementationTargetFile,
 			hooksTargetFile: hooksTargetFile,
-			cleanupProjectBlockYamlFallback: cleanupProjectBlockYamlFallback,
 			setProjectBlockCode: setProjectBlockCode,
 			createProjectBlock: createProjectBlock,
 			editProjectBlock: editProjectBlock,
@@ -357,14 +316,8 @@
 		canonicalBlockCodeFromDefinitionSource: function (blocks, name, definition, implementationSource, request, env) {
 			return create(env).canonicalBlockCodeFromDefinitionSource(blocks, name, definition, implementationSource, request);
 		},
-		implementationTargetFile: function (descriptorFile, definition, env) {
-			return create(env).implementationTargetFile(descriptorFile, definition);
-		},
 		hooksTargetFile: function (descriptorFile, definition, env) {
 			return create(env).hooksTargetFile(descriptorFile, definition);
-		},
-		cleanupProjectBlockYamlFallback: function (name, descriptor, env) {
-			return create(env).cleanupProjectBlockYamlFallback(name, descriptor);
 		},
 		setProjectBlockCode: function (blocks, name, request, env) {
 			return create(env).setProjectBlockCode(blocks, name, request);

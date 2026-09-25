@@ -348,7 +348,7 @@
 		var kind = env.resourceKind(path);
 		var blockId = env.blockIdFromResourcePath(path);
 		if (kind === "blockHooks") {
-			var hooksContractFile = env.projectBlockContractFileForResource(path);
+			var hooksContractFile = env.projectBlockCodeFileForResource(path);
 			if (!hooksContractFile || !hooksContractFile.isFile()) {
 				env.raise("BLOCK_DESCRIPTOR_REQUIRED", "Block hooks resources require a peer *.block.js source: " + path,
 					null, "Create or patch " + env.sourcePaths.path("blocks/" + env.blockCodeDescriptorFileName(blockId)) + " first.");

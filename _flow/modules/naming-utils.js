@@ -53,16 +53,6 @@
 		return namePart + ".js";
 	}
 
-	function blockDescriptorFileName(name, env) {
-		var parts = blockIdParts(name);
-		if (parts.length === 0) {
-			env.raise("INVALID_BLOCK_NAME", "Invalid Flow block name: " + name,
-				null, "Use letters, digits, dot, underscore or dash.");
-		}
-		var leaf = parts.pop();
-		return (parts.length ? parts.join("/") + "/" : "") + leaf + ".block.yaml";
-	}
-
 	function blockCodeDescriptorFileName(name, env) {
 		var parts = blockIdParts(name);
 		if (parts.length === 0) {
@@ -148,7 +138,6 @@
 		blockLocalName: blockLocalName,
 		blockNamespace: blockNamespace,
 		blockFileName: blockFileName,
-		blockDescriptorFileName: blockDescriptorFileName,
 		blockCodeDescriptorFileName: blockCodeDescriptorFileName,
 		blockFlowFileName: blockFlowFileName,
 		blockHooksFileName: blockHooksFileName,

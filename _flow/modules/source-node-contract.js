@@ -1,6 +1,5 @@
 (function () {
 	// The source reader owns syntax/value parsing. This boundary owns namespaces only.
-	// It is deliberately not activated by the legacy parser during the rollout.
 	var own = function (value, key) { return Object.prototype.hasOwnProperty.call(value, key); };
 	var array = function (value) { return Object.prototype.toString.call(value) === "[object Array]"; };
 	function fail(code, path) {

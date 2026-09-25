@@ -21,7 +21,7 @@ const _meta = {
       "label": "descriptorSource",
       "kind": "text",
       "type": "string",
-      "description": "Optional descriptor source migrated into canonical block metadata.",
+      "description": "Optional descriptor source converted into canonical block metadata.",
     },
     "overwrite": {
       "label": "overwrite",

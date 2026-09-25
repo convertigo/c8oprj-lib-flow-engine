@@ -1122,10 +1122,6 @@
 		return namingUtils().blockFileName(name, namingEnv());
 	}
 
-	function blockDescriptorFileName(name) {
-		return namingUtils().blockDescriptorFileName(name, namingEnv());
-	}
-
 	function blockCodeDescriptorFileName(name) {
 		return namingUtils().blockCodeDescriptorFileName(name, namingEnv());
 	}
@@ -1305,20 +1301,8 @@
 		return loadEngineModule("resource-utils.js").blockIdFromPath(path, sourcePaths());
 	}
 
-	function projectBlockDescriptorFileForResource(path) {
-		return projectBlocksDir() ? new File(projectBlocksDir(), blockDescriptorFileName(blockIdFromResourcePath(path))) : null;
-	}
-
 	function projectBlockCodeFileForResource(path) {
 		return projectBlocksDir() ? new File(projectBlocksDir(), blockCodeDescriptorFileName(blockIdFromResourcePath(path))) : null;
-	}
-
-	function projectBlockContractFileForResource(path) {
-		var codeFile = projectBlockCodeFileForResource(path);
-		if (codeFile && codeFile.isFile()) {
-			return codeFile;
-		}
-		return projectBlockDescriptorFileForResource(path);
 	}
 
 	function resourceService() {
@@ -1366,9 +1350,7 @@
 			sha256Hex: sha256Hex,
 			responseBudget: responseBudget,
 			applyUnifiedPatchText: applyUnifiedPatchText,
-			projectBlockDescriptorFileForResource: projectBlockDescriptorFileForResource,
-			projectBlockContractFileForResource: projectBlockContractFileForResource,
-			blockDescriptorFileName: blockDescriptorFileName,
+			projectBlockCodeFileForResource: projectBlockCodeFileForResource,
 			blockCodeDescriptorFileName: blockCodeDescriptorFileName,
 			blockIdFromResourcePath: blockIdFromResourcePath,
 			evalCompiledSource: evalCompiledSource,
@@ -1577,9 +1559,7 @@
 			projectNameForRoot: projectNameForRoot,
 			projectRootForName: loadedProjectRootForName,
 			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
-			loadGraphBlockFile: loadGraphBlockFile,
 			reserveFlowScriptBlockFile: reserveFlowScriptBlockFile,
-			reserveGraphBlockFile: reserveGraphBlockFile,
 			validateTypeDescriptorSource: validateTypeDescriptorSource,
 			raise: raise,
 			blockCache: runtimeState.caches.blocks,
@@ -1672,15 +1652,6 @@
 			relativePath,
 			explicitProjectRoot || projectDir()
 		);
-	}
-
-	function projectBlockDescriptorFile(name) {
-		var dir = projectBlocksDir();
-		if (!dir) {
-			raise("PROJECT_BLOCKS_UNAVAILABLE", "Project blocks are unavailable.",
-				null, "Run through a Flow requestable or set __flowProjectDir in standalone tests.");
-		}
-		return new File(dir, blockDescriptorFileName(name));
 	}
 
 	function projectBlockCodeFile(name) {
@@ -1891,10 +1862,6 @@
 		return out;
 	}
 
-	function loadGraphBlockFile(blocks, file, origin, provider, blocksDir) {
-		return graphBlockRuntimeService().loadGraphBlockFile(blocks, file, origin, provider, blocksDir, graphBlockRuntimeEnv());
-	}
-
 	function balancedObjectEnd(text, open) {
 		return blockCodeSourceService().balancedObjectEnd(text, open);
 	}
@@ -2024,10 +1991,6 @@
 		return blockFileLoaderService().materializeFlowScriptBlock(blocks, name, runtime);
 	}
 
-	function reserveGraphBlockFile(blocks, file, origin, provider, blocksDir) {
-		return blockFileLoaderService().reserveGraphBlockFile(blocks, file, origin, provider, blocksDir, blockFileLoaderEnv());
-	}
-
 	function escapeRegExp(text) {
 		return blockCodeSourceService().escapeRegExp(text);
 	}
@@ -2062,7 +2025,6 @@
 			blockFileName: blockFileName,
 			blockHooksFileName: blockHooksFileName,
 			blockLocalName: blockLocalName,
-			projectBlockDescriptorFile: projectBlockDescriptorFile,
 			projectBlockCodeFile: projectBlockCodeFile,
 			projectBlocksDir: projectBlocksDir,
 			projectDir: projectDir,
@@ -2095,18 +2057,6 @@
 
 	function canonicalBlockCodeFromDefinitionSource(blocks, name, definition, implementationSource, request) {
 		return blockAuthoringService().canonicalBlockCodeFromDefinitionSource(blocks, name, definition, implementationSource, request, blockAuthoringEnv());
-	}
-
-	function implementationTargetFile(descriptorFile, definition) {
-		return blockAuthoringService().implementationTargetFile(descriptorFile, definition, blockAuthoringEnv());
-	}
-
-	function hooksTargetFile(descriptorFile, definition) {
-		return blockAuthoringService().hooksTargetFile(descriptorFile, definition, blockAuthoringEnv());
-	}
-
-	function cleanupProjectBlockYamlFallback(name, descriptor) {
-		return blockAuthoringService().cleanupProjectBlockYamlFallback(name, descriptor, blockAuthoringEnv());
 	}
 
 	function setProjectBlockCode(blocks, name, request) {
@@ -3135,8 +3085,6 @@
 			applyUnifiedPatchText: applyUnifiedPatchText,
 			getBlockSource: getBlockSource,
 			setProjectBlockCode: setProjectBlockCode,
-			flowScriptBlockMetaFromRequest: flowScriptBlockMetaFromRequest,
-			flowScriptBlockCodeSource: flowScriptBlockCodeSource,
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
 			flowScriptBlockCandidateDecision: flowScriptBlockCandidateDecision,
 			listProjectFlows: listProjectFlows,

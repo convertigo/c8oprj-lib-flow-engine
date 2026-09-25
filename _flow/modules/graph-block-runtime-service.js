@@ -491,16 +491,9 @@
 		return block;
 	}
 
-	function loadGraphBlockFile() {
-		raise("UNSUPPORTED_BLOCK_STORAGE", "Legacy *.block.yaml Flow block descriptors are no longer supported.",
-			null, "Use canonical _flow/blocks/**/*.block.js files.");
-	}
-
-
 		return {
 			validateBlockFlowImplementationSource: validateBlockFlowImplementationSource,
-			graphBlockFromDefinition: graphBlockFromDefinition,
-			loadGraphBlockFile: loadGraphBlockFile
+			graphBlockFromDefinition: graphBlockFromDefinition
 		};
 	}
 
@@ -520,9 +513,6 @@
 		},
 		graphBlockFromDefinition: function (definition, file, origin, provider, env) {
 			return serviceFor(env).graphBlockFromDefinition(definition, file, origin, provider);
-		},
-		loadGraphBlockFile: function (blocks, file, origin, provider, blocksDir, env) {
-			return serviceFor(env).loadGraphBlockFile(blocks, file, origin, provider, blocksDir);
 		}
 	};
 }())

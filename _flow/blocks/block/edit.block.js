@@ -21,7 +21,7 @@ const _meta = {
       "label": "descriptorSource",
       "kind": "text",
       "type": "string",
-      "description": "Optional replacement descriptor source migrated into canonical block metadata.",
+      "description": "Optional replacement descriptor source converted into canonical block metadata.",
     },
     "projectDir": {
       "label": "projectDir",
