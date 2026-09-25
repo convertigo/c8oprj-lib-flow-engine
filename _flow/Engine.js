@@ -50,7 +50,73 @@
 	// so both deliberately remain local to an Engine runtime.
 	var sharedEngineModuleNames = "|block-authoring-service.js|block-code-compiler-service.js|block-code-source-service.js|block-file-loader-service.js|block-policy-service.js|block-source-service.js|cache-utils.js|catalog-loader-service.js|catalog-service.js|destination-contract.js|expression-utils.js|fingerprint-utils.js|flow-analysis-service.js|flow-execution-snapshot-service.js|flow-library-service.js|flow-node-utils.js|flow-repository-service.js|flow-script-parser-service.js|flow-script-renderer-service.js|flow-script-validation-service.js|flow-source-service.js|flow-storage-service.js|flow-summary-service.js|flow-tree-service.js|flowscript-intent-utils.js|frontend-catalog-service.js|frontend-dev-lifecycle.js|frontend-dev-proxy.js|frontend-production-lifecycle.js|frontend-provider-service.js|graph-block-descriptor-service.js|graph-block-runtime-service.js|icon-service.js|naming-utils.js|patch-utils.js|project-config-service.js|property-editor-builder.js|requestable-service.js|resource-service.js|resource-utils.js|response-budget-service.js|run-plan-head-service.js|runtime-cache-service.js|runtime-handle-utils.js|schema-contract.js|schema-store-service.js|schema-utils.js|scope-path-utils.js|scope-reference-utils.js|source-attribute-name-codec.js|source-layout.js|source-node-contract.js|type-descriptor-service.js|typed-scope-contract.js|";
 	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
-	var frontendDocumentServerStartLock = new Packages.java.util.concurrent.locks.ReentrantLock();
+	// One frontbuilder companion (document server) per provider for the whole
+	// Convertigo server, shared by every Rhino scope that evaluates this engine. The
+	// handle lives in the generic Convertigo shared server map as plain Java objects
+	// (process, streams, lock, sequence): no Rhino object crosses scopes or threads.
+	var SHARED_DOCUMENT_SERVERS_KEY = "flow.frontbuilder.documentServers";
+	var localDocumentServerRegistry = new Packages.java.util.concurrent.ConcurrentHashMap();
+
+	function sharedDocumentServerRegistry() {
+		var shared = null;
+		try {
+			var app = Packages.com.twinsoft.convertigo.engine.Engine.theApp;
+			shared = app ? app.getShareServerMap() : null;
+		} catch (ignoredStandalone) {
+			shared = null;
+		}
+		if (!shared) {
+			return localDocumentServerRegistry;
+		}
+		var registry = shared.get(SHARED_DOCUMENT_SERVERS_KEY);
+		if (registry == null) {
+			// Create once for all scopes: the check-and-set runs synchronized on the
+			// shared map instance so two engines cannot publish competing registries.
+			var createOnce = new Packages.org.mozilla.javascript.Synchronizer(function () {
+				var current = shared.get(SHARED_DOCUMENT_SERVERS_KEY);
+				if (current == null) {
+					current = new Packages.java.util.concurrent.ConcurrentHashMap();
+					current.put("__startLock", new Packages.java.util.concurrent.locks.ReentrantLock());
+					shared.set(SHARED_DOCUMENT_SERVERS_KEY, current);
+				}
+				return current;
+			}, shared);
+			registry = createOnce();
+		}
+		return registry;
+	}
+
+	function sharedDocumentServerStartLock(registry) {
+		var lock = registry.get("__startLock");
+		if (lock == null) {
+			registry.putIfAbsent("__startLock", new Packages.java.util.concurrent.locks.ReentrantLock());
+			lock = registry.get("__startLock");
+		}
+		return lock;
+	}
+
+	function frontendDocumentServerCount() {
+		var count = 0;
+		var entries = sharedDocumentServerRegistry().entrySet().iterator();
+		while (entries.hasNext()) {
+			var entry = entries.next();
+			if (String(entry.getKey()) !== "__startLock" && entry.getValue().get("process").isAlive()) count++;
+		}
+		return count;
+	}
+
+	function documentServerView(entry, selection) {
+		return {
+			entry: entry,
+			process: entry.get("process"),
+			writer: entry.get("writer"),
+			reader: entry.get("reader"),
+			lock: entry.get("lock"),
+			sequence: entry.get("sequence"),
+			providerKey: String(entry.get("providerKey")),
+			providerSelection: selection
+		};
+	}
 	var frontendProductionBuildLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// Catalog construction is single-flight only on a cold generation. Hot reads never take these locks.
 	var blockCatalogBuildLocks = new ConcurrentHashMap();
@@ -59,7 +125,6 @@
 		startedAt: new Date().toISOString(),
 		frontendDevServers: {},
 		frontendProductionBuilds: {},
-		frontendDocumentServers: {},
 		frontendDocumentServerStats: {
 			starts: 0,
 			reuses: 0,
@@ -951,6 +1016,7 @@
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
 			clearFrontendDocumentServers: clearFrontendDocumentServers,
+			frontendDocumentServerCount: frontendDocumentServerCount,
 			clearFrontendProviderState: clearFrontendProviderState
 		};
 	}
@@ -5888,20 +5954,27 @@
 	}
 
 	function clearFrontendDocumentServers() {
-		frontendDocumentServerStartLock.lock();
+		var registry = sharedDocumentServerRegistry();
+		var startLock = sharedDocumentServerStartLock(registry);
+		startLock.lock();
 		try {
-			Object.keys(runtimeState.frontendDocumentServers).forEach(function (key) {
-				stopFrontendDocumentServer(runtimeState.frontendDocumentServers[key]);
-			});
-			runtimeState.frontendDocumentServers = {};
+			var keys = new Packages.java.util.ArrayList(registry.keySet()).iterator();
+			while (keys.hasNext()) {
+				var key = String(keys.next());
+				if (key === "__startLock") continue;
+				var entry = registry.remove(key);
+				if (entry) stopFrontendDocumentServer(documentServerView(entry, null));
+			}
 		} finally {
-			frontendDocumentServerStartLock.unlock();
+			startLock.unlock();
 		}
 	}
 
 	function startFrontendDocumentServer(resourceRoot) {
 		var lockStartedAt = JavaSystem.nanoTime();
-		frontendDocumentServerStartLock.lock();
+		var registry = sharedDocumentServerRegistry();
+		var startLock = sharedDocumentServerStartLock(registry);
+		startLock.lock();
 		frontendPerformanceDuration("frontend.provider.start.lockWait", JavaSystem.nanoTime() - lockStartedAt);
 		try {
 			var phaseStartedAt = JavaSystem.nanoTime();
@@ -5911,12 +5984,14 @@
 			phaseStartedAt = JavaSystem.nanoTime();
 			var selection = frontendProviderCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
 			frontendPerformanceDuration("frontend.provider.start.selection", JavaSystem.nanoTime() - phaseStartedAt);
-			var existing = runtimeState.frontendDocumentServers[key];
+			var existingEntry = registry.get(key);
+			var existing = existingEntry ? documentServerView(existingEntry, selection) : null;
 			if (existing && existing.process.isAlive() && existing.providerKey === selection.key) {
 				runtimeState.frontendDocumentServerStats.reuses++;
 				return existing;
 			}
 			if (existing) {
+				registry.remove(key);
 				stopFrontendDocumentServer(existing);
 			}
 			phaseStartedAt = JavaSystem.nanoTime();
@@ -5930,27 +6005,28 @@
 			var process;
 			try {
 				phaseStartedAt = JavaSystem.nanoTime();
-				process = frontendProcessBuilder(args, toolRoot).start();
+				var serverBuilder = frontendProcessBuilder(args, toolRoot);
+				serverBuilder.environment().put("FLOW_FRONT_DOCUMENT_IDLE_MS", "0");
+				process = serverBuilder.start();
 				frontendPerformanceDuration("frontend.provider.start.process", JavaSystem.nanoTime() - phaseStartedAt);
 			} catch (launchError) {
 				launchError.frontendProviderSelection = selection;
 				throw launchError;
 			}
-			var server = {
-				process: process,
-				writer: new Packages.java.io.BufferedWriter(new Packages.java.io.OutputStreamWriter(process.getOutputStream(), "UTF-8")),
-				reader: new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(process.getInputStream(), "UTF-8")),
-				lock: new Packages.java.util.concurrent.locks.ReentrantLock(),
-				sequence: 0,
-				providerKey: selection.key,
-				providerSelection: selection
-			};
-			runtimeState.frontendDocumentServers[key] = server;
+			var entry = new Packages.java.util.concurrent.ConcurrentHashMap();
+			entry.put("process", process);
+			entry.put("writer", new Packages.java.io.BufferedWriter(new Packages.java.io.OutputStreamWriter(process.getOutputStream(), "UTF-8")));
+			entry.put("reader", new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(process.getInputStream(), "UTF-8")));
+			entry.put("lock", new Packages.java.util.concurrent.locks.ReentrantLock());
+			entry.put("sequence", new Packages.java.util.concurrent.atomic.AtomicLong());
+			entry.put("providerKey", String(selection.key));
+			registry.put(key, entry);
+			var server = documentServerView(entry, selection);
 			runtimeState.frontendDocumentServerStats.starts++;
 			runtimeState.frontendDocumentServerStats.lastError = "";
 			return server;
 		} finally {
-			frontendDocumentServerStartLock.unlock();
+			startLock.unlock();
 		}
 	}
 
@@ -5962,7 +6038,7 @@
 		server.lock.lock();
 		frontendPerformanceDuration("frontend.provider.request.queueWait", JavaSystem.nanoTime() - phaseStartedAt);
 		try {
-			var id = runtimeState.id + "-" + (++server.sequence);
+			var id = "doc-" + String(server.sequence.incrementAndGet());
 			phaseStartedAt = JavaSystem.nanoTime();
 			server.writer.write(JSON.stringify(op ? { id: id, op: op, args: cliArgs } : { id: id, args: cliArgs }));
 			server.writer.newLine();

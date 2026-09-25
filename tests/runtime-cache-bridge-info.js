@@ -31,7 +31,6 @@ const env = {
 		caches,
 		persistentFrontendDocuments: {},
 		frontendDocumentServerStats: {},
-		frontendDocumentServers: {},
 	},
 	cacheUtils: { summary: (name) => ({ name }) },
 	projectDir: () => null,

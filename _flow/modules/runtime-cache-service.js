@@ -128,7 +128,7 @@
 					reuses: Number(env.runtimeState.frontendDocumentServerStats.reuses || 0),
 					fallbacks: Number(env.runtimeState.frontendDocumentServerStats.fallbacks || 0),
 					errors: Number(env.runtimeState.frontendDocumentServerStats.errors || 0),
-					active: Object.keys(env.runtimeState.frontendDocumentServers).length,
+					active: env.frontendDocumentServerCount ? Number(env.frontendDocumentServerCount()) : 0,
 					lastError: String(env.runtimeState.frontendDocumentServerStats.lastError || "")
 				},
 				frontendProvider: frontendProviderInfo(env),
