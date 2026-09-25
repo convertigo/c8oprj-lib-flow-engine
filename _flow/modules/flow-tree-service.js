@@ -7044,11 +7044,29 @@
 			delete parent[key];
 		} else if (op === "merge") {
 			parent[key] = mergeObjects(parent[key], mutation.value);
+		} else if (op === "replace" && defaultedNodeProperty(root, parts, mutation.value, blocks)) {
+			delete parent[key];
 		} else if (op === "replace") {
 			parent[key] = cloneMutationValue(mutation.value);
 		} else {
 			raise("UNKNOWN_MUTATION_OP", "Unknown Flow mutation operation: " + op);
 		}
+	}
+
+	// Shrink: a node property set to the default declared by its block is not written,
+	// as Convertigo project YAML omits default bean values; the runtime gives it back.
+	function defaultedNodeProperty(root, parts, value, blocks) {
+		if (parts.length < 3 || parts[parts.length - 2] !== "props") {
+			return false;
+		}
+		var node = valueAt(root, parts.slice(0, parts.length - 2));
+		var name = node && typeof node === "object" ? blockName(node) : "";
+		var catalog = name && blocks ? blockDescriptor(blocks[name]) : null;
+		var declared = catalog && catalog.props && catalog.props[parts[parts.length - 1]];
+		if (!declared || declared["default"] === undefined) {
+			return false;
+		}
+		return JSON.stringify(normalizeTree(value)) === JSON.stringify(normalizeTree(declared["default"]));
 	}
 
 	function applyMutationRequest(request, blocks) {

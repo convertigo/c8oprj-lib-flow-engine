@@ -371,6 +371,23 @@
 			};
 		}
 
+		// Unshrink: a canonical source omits a property equal to its declared default
+		// (as Convertigo project YAML does); the block receives the default back.
+		function nodePropsWithDefaults(node, sourceVersion, block) {
+			var props = nodeProps(node, sourceVersion);
+			if (sourceVersion !== 2 || !block) {
+				return props;
+			}
+			var declared = (blockCatalog(block) || {}).props || {};
+			Object.keys(declared).forEach(function (key) {
+				var descriptor = declared[key];
+				if (props[key] === undefined && descriptor && descriptor["default"] !== undefined) {
+					props[key] = normalizeTree(descriptor["default"]);
+				}
+			});
+			return props;
+		}
+
 		runContextPrototype.props = function (node) {
 			var prepared = preparedNodeFor(this, node);
 			if (prepared && prepared.catalog === this.blocks && prepared.props) {
@@ -378,7 +395,8 @@
 				return prepared.props;
 			}
 			profileCount(this, "preparedPropsMisses");
-			return nodeProps(node, this.sourceVersion);
+			var name = blockName(node);
+			return nodePropsWithDefaults(node, this.sourceVersion, name ? runtimeBlock(this.blocks, name) : null);
 		};
 		runContextPrototype.outputPath = function (node) {
 			return nodeOut(node, this.sourceVersion);
@@ -496,7 +514,7 @@
 		runContextPrototype.raise = raise;
 
 		function validateNodeDestinations(block, node, sourceVersion, props) {
-			destinations.entries(blockCatalog(block), props || nodeProps(node, sourceVersion), nodeOut(node, sourceVersion), sourceVersion)
+			destinations.entries(blockCatalog(block), props || nodePropsWithDefaults(node, sourceVersion, block), nodeOut(node, sourceVersion), sourceVersion)
 				.forEach(function (entry) {
 					var checked = destinations.validate(entry.value);
 					if (!checked.valid) raise(checked.code, entry.property + ": " + checked.message, node);
@@ -558,7 +576,7 @@
 			var placeholder = blocks && blocks[name] && blocks[name].__flowScriptPlaceholder === true;
 			var block = name ? runtimeBlock(blocks, name) : null;
 			if (block) {
-				var properties = nodeProps(node, sourceVersion);
+				var properties = nodePropsWithDefaults(node, sourceVersion, block);
 				validateNodeDestinations(block, node, sourceVersion, properties);
 				var reusableProps = canReuseNodeProps(block) ? properties : null;
 				if (reusableProps && typeof Object.freeze === "function") {
