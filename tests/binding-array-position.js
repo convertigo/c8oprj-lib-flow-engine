@@ -72,14 +72,12 @@ editor.setMode('expression');
 editor.renderArrayPositions();
 assert.equal(positions.innerHTML, '');
 assert.match(html, /var category = this.shadowRoot.querySelector\("\[data-category\]"\);\s*var allSources = sources\(this._state\);\s*this.renderArrayPositions\(\);/, 'source render must refresh the array controls, not only the composition preview');
-editor.setState({ value: { ...binding, textBefore: 'Temperature: ', textAfter: ' °C' } });
-const formatted = editor.value;
+// Text around a value is a composition: it stays in Compose and round-trips unchanged.
+const composed = JSON.stringify({ mode: 'expression', parts: [{ kind: 'literal', value: 'Temperature: ' }]
+	.concat(JSON.parse(serialized).parts, [{ kind: 'literal', value: ' °C' }]) });
+editor.setState({ value: composed });
+assert.equal(editor._binding.mode, 'expression');
 assert.equal(editor.valid, true);
-assert.equal(JSON.parse(formatted).parts[0].value, 'Temperature: ');
-assert.equal(JSON.parse(formatted).parts.at(-1).value, ' °C');
-editor.setState({ value: formatted });
-assert.equal(editor._binding.mode, 'source');
-assert.equal(editor._binding.textBefore, 'Temperature: ');
-assert.equal(editor._binding.textAfter, ' °C');
-assert.equal(editor.value, formatted);
+assert.equal(editor.value, composed);
+assert.doesNotMatch(html, /Text before|textBefore/, 'the Source mode has no text before/after');
 console.log('binding array position tests passed');
