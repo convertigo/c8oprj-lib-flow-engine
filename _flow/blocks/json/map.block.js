@@ -8,7 +8,7 @@ const _meta = {
   tags: ["map", "dictionary", "create", "typed"],
   properties: {
     path: {label: "Output", kind: "path", mode: "write", declares: "out", default: "local.entries", required: true},
-    valueType: {label: "Value type", kind: "schema", type: "object", default: {type: "string"}, required: true}
+    valueType: {label: "Value type", description: "JSON Schema describing each value; values inserted with json.put must satisfy it.", kind: "schema", type: "object", default: {type: "string"}, required: true}
   },
   outputs: {out: {type: "object", additionalProperties: {"x-flow-schema-from": "valueType"}, hidden: true}},
   hooks: {file: "map.hooks.js"}
