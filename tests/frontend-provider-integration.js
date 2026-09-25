@@ -149,7 +149,7 @@ async function copyProviderRoot() {
 		await fsp.mkdir(path.dirname(target), { recursive: true });
 		await fsp.copyFile(path.join(resourceRoot, "provider-dist", name), target);
 	}
-	const sourceFile = path.join(root, "fixture", "+page.flow.svelte");
+	const sourceFile = path.join(root, "fixture", "src", "routes", "+page.flow.svelte");
 	const sourceText = [
 		'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="home" label="Home">',
 		"  <Variables>",
