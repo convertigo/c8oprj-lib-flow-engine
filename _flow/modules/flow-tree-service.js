@@ -169,6 +169,20 @@
 		return definition;
 	}
 
+	// A project reads the defaults of the definer version it recorded (_flow/dependencies.json):
+	// the catalog of its blocks carries the historical ones, if any.
+	function catalogWithHistory(catalog, blocks, name) {
+		var history = blocks && blocks.__flowDefaultsHistory && blocks.__flowDefaultsHistory[name];
+		if (!history || !catalog || !catalog.props) {
+			return catalog;
+		}
+		var props = Object.assign({}, catalog.props);
+		Object.keys(history).forEach(function (key) {
+			if (props[key]) props[key] = Object.assign({}, props[key], { "default": history[key] });
+		});
+		return Object.assign({}, catalog, { props: props });
+	}
+
 	function nodeInfo(nodeAnalysis, catalog) {
 		var info = nodeAnalysis ? normalizeTree(nodeAnalysis) : {};
 		var props = catalog && catalog.props || {};
@@ -3457,7 +3471,7 @@
 			var id = String(node && (node.id || node.uid || node.name) || "node" + index);
 			var blockType = String(blockName(node) || "unknown");
 			var block = blocks && blocks[blockType];
-			var catalog = blockDescriptor(block);
+			var catalog = catalogWithHistory(blockDescriptor(block), blocks, blockType);
 			resolveBlockIcon(block, catalog);
 			var nodeAnalysis = analysisById && analysisById[id];
 			var nodePath = path + "[" + index + "]";
@@ -7159,7 +7173,7 @@
 		}
 		var node = valueAt(root, parts.slice(0, parts.length - 2));
 		var name = node && typeof node === "object" ? blockName(node) : "";
-		var catalog = name && blocks ? blockDescriptor(blocks[name]) : null;
+		var catalog = name && blocks ? catalogWithHistory(blockDescriptor(blocks[name]), blocks, name) : null;
 		var declared = catalog && catalog.props && catalog.props[parts[parts.length - 1]];
 		if (!declared || declared["default"] === undefined) {
 			return false;

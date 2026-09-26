@@ -144,6 +144,9 @@
 				key.push("reference", env.canonicalPath(root), env.directoryFingerprint(refBlocksDir));
 			});
 			key.push("project", env.canonicalPath(env.projectDir()), env.directoryFingerprint(localBlocksDir));
+			// The recorded definer versions select historical defaults.
+			var dependencies = new env.File(env.projectDir(), env.sourcePaths.path("dependencies.json"));
+			key.push("dependencies", dependencies.isFile() ? dependencies.lastModified() + ":" + dependencies.length() : "none");
 		}
 		if (typeof env.sourceDraftsFingerprint === "function") {
 			var draftsFingerprint = env.sourceDraftsFingerprint();
@@ -252,6 +255,9 @@
 			});
 			reserveBlockDir(blocks, localBlocksDir, "project",
 				env.flowProviderName(new env.File(env.projectDir(), env.sourcePaths.root), "project"), env);
+		}
+		if (typeof env.blocksDefaultsHistory === "function") {
+			Object.defineProperty(blocks, "__flowDefaultsHistory", { value: env.blocksDefaultsHistory(blocks), enumerable: false });
 		}
 		return blocks;
 	}

@@ -361,14 +361,28 @@
 			};
 		}
 
+		// The defaults a project reads are those of the definer version it recorded
+		// (_flow/dependencies.json): the catalog carries the historical ones, if any.
+		function declaredWithHistory(declared, blocks, name) {
+			var history = blocks && blocks.__flowDefaultsHistory && blocks.__flowDefaultsHistory[name];
+			if (!history) {
+				return declared;
+			}
+			var out = Object.assign({}, declared);
+			Object.keys(history).forEach(function (key) {
+				if (out[key]) out[key] = Object.assign({}, out[key], { "default": history[key] });
+			});
+			return out;
+		}
+
 		// Unshrink: a canonical source omits a property equal to its declared default
 		// (as Convertigo project YAML does); the block receives the default back.
-		function nodePropsWithDefaults(node, block) {
+		function nodePropsWithDefaults(node, block, blocks) {
 			var props = nodeProps(node);
 			if (!block) {
 				return props;
 			}
-			var declared = (blockCatalog(block) || {}).props || {};
+			var declared = declaredWithHistory((blockCatalog(block) || {}).props || {}, blocks, blockName(node));
 			Object.keys(declared).forEach(function (key) {
 				var descriptor = declared[key];
 				if (props[key] === undefined && descriptor && descriptor["default"] !== undefined) {
@@ -386,7 +400,7 @@
 			}
 			profileCount(this, "preparedPropsMisses");
 			var name = blockName(node);
-			return nodePropsWithDefaults(node, name ? runtimeBlock(this.blocks, name) : null);
+			return nodePropsWithDefaults(node, name ? runtimeBlock(this.blocks, name) : null, this.blocks);
 		};
 		runContextPrototype.outputPath = function (node) {
 			return nodeOut(node);
@@ -566,7 +580,7 @@
 			var placeholder = blocks && blocks[name] && blocks[name].__flowScriptPlaceholder === true;
 			var block = name ? runtimeBlock(blocks, name) : null;
 			if (block) {
-				var properties = nodePropsWithDefaults(node, block);
+				var properties = nodePropsWithDefaults(node, block, blocks);
 				validateNodeDestinations(block, node, properties);
 				var reusableProps = canReuseNodeProps(block) ? properties : null;
 				if (reusableProps && typeof Object.freeze === "function") {

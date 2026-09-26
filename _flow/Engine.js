@@ -1559,6 +1559,9 @@
 			projectRootForName: loadedProjectRootForName,
 			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
 			reserveFlowScriptBlockFile: reserveFlowScriptBlockFile,
+			blocksDefaultsHistory: function (blocks) {
+				return defaultsHistoryService().blocksDefaultsHistory(blocks, defaultsHistoryEnv());
+			},
 			validateTypeDescriptorSource: validateTypeDescriptorSource,
 			raise: raise,
 			blockCache: runtimeState.caches.blocks,
@@ -1643,6 +1646,27 @@
 
 	function loadTypes() {
 		return catalogLoaderService().loadTypes(catalogLoaderEnv());
+	}
+
+	function defaultsHistoryService() {
+		return loadEngineModule("defaults-history-service.js");
+	}
+
+	function defaultsHistoryEnv() {
+		return {
+			sourcePaths: sourcePaths(),
+			File: File,
+			Arrays: Arrays,
+			FileUtils: FileUtils,
+			canonicalPath: canonicalPath,
+			engineDir: engineDir,
+			projectDir: projectDir,
+			projectNameForRoot: projectNameForRoot,
+			flowReferenceRoots: function () {
+				return referencedProjectRoots(sourcePaths().root);
+			},
+			raise: raise
+		};
 	}
 
 	function referencedProjectRoots(relativePath, explicitProjectRoot) {
@@ -1850,6 +1874,9 @@
 			return blocks;
 		}
 		var out = Object.assign({}, blocks || {});
+		if (blocks && blocks.__flowDefaultsHistory) {
+			Object.defineProperty(out, "__flowDefaultsHistory", { value: blocks.__flowDefaultsHistory, enumerable: false });
+		}
 		helpers.forEach(function (helper) {
 			var name = safeIdentifier(helper && helper.name || "");
 			if (!name) {
@@ -9612,6 +9639,12 @@
 		icons: function (requestJson) {
 			return engineCall("icons", requestJson, function (request) {
 				return iconCatalogRequest(request);
+			});
+		},
+
+		dependencies: function (requestJson) {
+			return projectCall("dependencies", requestJson, function () {
+				return defaultsHistoryService().dependenciesRequest(defaultsHistoryEnv());
 			});
 		},
 
