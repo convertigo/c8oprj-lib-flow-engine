@@ -8,6 +8,37 @@
 	// server cache and never written into a project.
 	var STUDIO_TINT = "#14a7cf";
 	var projectCopies = {};
+	// Without Batik nor a raster command (a server image), PNG renderings cannot be made:
+	// the tinted SVG is published instead, and rasterization is not retried on every
+	// resolution (each attempt forks several missing commands). Marker valid one day.
+	var RASTER_UNAVAILABLE_MS = 24 * 3600 * 1000;
+	var rasterUnavailable = null;
+
+	function rasterMarker(env) {
+		var dir = sharedDir("studio", null, env);
+		return dir ? new env.File(dir, ".raster-unavailable") : null;
+	}
+
+	function isRasterUnavailable(env) {
+		if (rasterUnavailable === null) {
+			var marker = rasterMarker(env);
+			rasterUnavailable = !!marker && marker.isFile()
+				&& new Date().getTime() - Number(marker.lastModified()) < RASTER_UNAVAILABLE_MS;
+		}
+		return rasterUnavailable;
+	}
+
+	function markRasterUnavailable(env) {
+		rasterUnavailable = true;
+		var marker = rasterMarker(env);
+		try {
+			if (marker) {
+				marker.getParentFile().mkdirs();
+				env.FileUtils.writeStringToFile(marker, new Date().toISOString(), "UTF-8");
+			}
+		} catch (ignored) {
+		}
+	}
 
 	function isIconifyIcon(icon) {
 		return String(icon || "").match(/^[A-Za-z][A-Za-z0-9_-]*:[A-Za-z0-9_.-]+$/) !== null;
@@ -236,8 +267,16 @@
 		var svg = new env.File(base + ".svg");
 		var png16 = new env.File(base + "_16x16.png");
 		var png32 = new env.File(base + "_32x32.png");
-		if (!svg.isFile() || !png16.isFile() || !png32.isFile()) {
+		if (!svg.isFile()) {
 			return false;
+		}
+		if (!png16.isFile() || !png32.isFile()) {
+			if (!isRasterUnavailable(env)) {
+				return false;
+			}
+			descriptor.iconSvg = env.canonicalPath(svg);
+			descriptor.iconFile = descriptor.iconSvg;
+			return true;
 		}
 		descriptor.iconSvg = env.canonicalPath(svg);
 		descriptor.iconFile16 = env.canonicalPath(png16);
@@ -282,13 +321,14 @@
 	}
 
 	function rasterizeSvg(svg, png, size, env) {
-		if (!svg || !svg.isFile() || !png || png.isFile()) {
+		if (!svg || !svg.isFile() || !png || png.isFile() || isRasterUnavailable(env)) {
 			return false;
 		}
-		if (rasterizeSvgWithBatik(svg, png, size, env)) {
+		if (rasterizeSvgWithBatik(svg, png, size, env) || rasterizeSvgWithCommand(svg, png, size, env)) {
 			return true;
 		}
-		return rasterizeSvgWithCommand(svg, png, size, env);
+		markRasterUnavailable(env);
+		return false;
 	}
 
 	function rasterizeSvgWithBatik(svg, png, size, env) {

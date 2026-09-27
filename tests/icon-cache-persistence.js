@@ -63,6 +63,19 @@ try {
 		"an icon carried by a project is persisted in the workspace cache");
 	assertTrue(!new java.io.File(project, "_flow/icons/iconify/mdi/carried-icon.svg").exists(),
 		"a source of another project never writes into the current project");
+	// A server without Batik nor raster command publishes the tinted SVG, without
+	// retrying the rasterization on every resolution.
+	var bare = new java.io.File(root, "bare-cache/flow-icons-v2");
+	FileUtils.writeStringToFile(new java.io.File(bare, "iconify/mdi/test-icon.svg"), '<svg><path fill="currentColor"/></svg>', "UTF-8");
+	FileUtils.writeStringToFile(new java.io.File(bare, "studio/.raster-unavailable"), "now", "UTF-8");
+	var bareService = eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(serviceFile, "UTF-8")));
+	var bareDescriptor = { icon: "mdi:test-icon" };
+	bareService.resolveBlockIcon({ __flowFile: blockFile.getAbsolutePath() }, bareDescriptor, env(project, bare));
+	assertTrue(/\.svg$/.test(String(bareDescriptor.iconFile)) && !new java.io.File(bare, "studio/iconify/mdi/test-icon_16x16.png").exists(),
+		"without a rasterizer the tinted SVG is the Studio rendering: " + bareDescriptor.iconFile);
+	var again = { icon: "mdi:test-icon" };
+	bareService.resolveBlockIcon({ __flowFile: blockFile.getAbsolutePath() }, again, env(project, bare));
+	assertTrue(again.iconFile === bareDescriptor.iconFile, "the SVG rendering is then served from the cache");
 	print("icon-cache-persistence OK");
 } finally {
 	FileUtils.deleteDirectory(root);
