@@ -409,7 +409,14 @@
 	}
 
 	function catalogPage(blocks, options, mapper, env) {
-		var descriptors = Object.keys(blocks).sort().map(function (name) {
+		// A catalog restricted to one origin (the project Catalog) does not build the
+		// descriptors of the other blocks (reading and parsing every core block source);
+		// descriptors are still filtered below, as a block catalog may declare its origin.
+		var origin = String(options && options.origin || "").trim();
+		var descriptors = Object.keys(blocks).sort().filter(function (name) {
+			var blockOrigin = blocks[name] && blocks[name].__flowOrigin;
+			return !origin || !blockOrigin || blockOrigin === origin;
+		}).map(function (name) {
 			return blockDescriptor(blocks[name], env, options);
 		});
 		descriptors = filterVisibleDescriptors(descriptors, options);
