@@ -4171,7 +4171,11 @@
 		var builders = frontbuilderSettings(options.frontendConfig || {});
 		if (!builders.length) builders = [{ name: "svelte", settings: {} }];
 		var projectProvider = currentFrontendProjectProvider();
+		var root = projectDir && projectDir();
 		builders.forEach(function (builder) {
+			// A project without frontend sources for this builder defines no component: do
+			// not load the whole frontend catalog (costly on a network file system) for it.
+			if (!root || !new File(root, env.sourcePaths.path("frontbuilder/" + builder.name)).isDirectory()) return;
 			var own = (frontendBlocksForSettings(builder.name, builder.settings) || []).filter(function (block) {
 				return frontendCatalogProvider(block) === projectProvider;
 			});
