@@ -60,7 +60,7 @@ const _meta = {
       "label": "Source id",
       "kind": "text",
       "type": "string",
-      "description": "Optional exact action, FullSync or iterator source id used to filter picker candidates.",
+      "description": "Optional exact source id used to filter picker candidates: a sequence result key (.Seq or .Seq#marker), a FullSync, action or iterator id.",
     },
     "rootPath": {
       "label": "Root path (alias)",
