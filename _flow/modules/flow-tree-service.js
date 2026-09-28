@@ -4304,6 +4304,12 @@
 		}
 		var definitions = info && info.propertyDefinitions || {};
 		var bindings = {};
+		// Frontend nodes carry their business properties under props.
+		function currentValue(name) {
+			var props = definition && definition.props && typeof definition.props === "object" ? definition.props : null;
+			if (props && props[name] !== undefined) return props[name];
+			return definition && definition[name] !== undefined ? definition[name] : null;
+		}
 		Object.keys(definitions).sort().forEach(function (name) {
 			var property = definitions[name] || {};
 			if (property.hidden === true) {
@@ -4317,7 +4323,7 @@
 			}
 			if (!requestedProperty) {
 				bindings[name] = {
-					current: definition && definition[name] !== undefined ? definition[name] : null,
+					current: currentValue(name),
 					sourceCount: (property.bindingSources || []).length
 				};
 				return;
@@ -4349,7 +4355,7 @@
 				return out;
 			});
 			bindings[name] = {
-				current: definition && definition[name] !== undefined ? definition[name] : null,
+				current: currentValue(name),
 				sources: sources
 			};
 		});
@@ -6581,7 +6587,7 @@
 					uses: uses,
 					summary: "[sample] " + flowQName + (uses.length ? " uses " + uses.join(", ") : ""),
 					snippet: searchSnippet(flow.source, needle),
-					next: "flow-tree project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
+					next: "code-get qname=" + (flowProject || currentProjectName(request)) + "." + flow.name +
 						", flow-test project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
 						", then copy the pattern into a new Flow"
 				});
@@ -6596,7 +6602,7 @@
 					file: flow.file || "",
 					summary: "[flow] " + flowQName,
 					snippet: searchSnippet(flow.source, needle),
-					next: "flow-tree name=" + flow.name
+					next: "code-get qname=" + (flowProject || currentProjectName(request)) + "." + flow.name
 				});
 			}
 			if (kinds.node) {
@@ -6627,7 +6633,7 @@
 			nextCursor: offset + limit < matches.length ? String(offset + limit) : null
 		};
 		if (request.doc !== false) {
-			out.doc = "Search Flow sidecars, nodes, catalog entries and learned schemas. Use flow-tree on a match for detailed inspection, then flow-edit with nodeId/path for mutations.";
+			out.doc = "Search Flows, nodes, catalog entries and learned schemas. Use code-get on a matching Flow for its source, then code-patch with its revision.";
 		}
 		if (request.hints !== false) {
 			out.hints = [
@@ -6685,7 +6691,7 @@
 						flow: flow.name, flowQName: flowQName, file: flow.file || "", uses: uses,
 						summary: "[sample] " + flowQName + (uses.length ? " uses " + uses.join(", ") : ""),
 						snippet: searchSnippet(flow.source, needle),
-						next: "flow-tree project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
+						next: "code-get qname=" + (flowProject || currentProjectName(request)) + "." + flow.name +
 							", flow-test project=" + (flowProject || currentProjectName(request)) + " name=" + flow.name +
 							", then copy the pattern into a new Flow"
 					});
@@ -6694,7 +6700,7 @@
 				found.push({
 					kind: "flow", score: 50, project: flowProject || currentProjectName(request), flow: flow.name,
 					flowQName: flowQName, file: flow.file || "", summary: "[flow] " + flowQName,
-					snippet: searchSnippet(flow.source, needle), next: "flow-tree name=" + flow.name
+					snippet: searchSnippet(flow.source, needle), next: "code-get qname=" + (flowProject || currentProjectName(request)) + "." + flow.name
 				});
 			}
 			return found;
@@ -6770,7 +6776,7 @@
 			nextCursor: null
 		}, hasMore, nextState);
 		if (request.doc !== false) {
-			out.doc = "Search Flow sidecars, nodes, catalog entries and learned schemas. Continue partial results with nextCursor.";
+			out.doc = "Search Flows, nodes, catalog entries and learned schemas. Continue partial results with nextCursor.";
 		}
 		if (request.hints !== false) {
 			out.hints = ["Use focused kinds and query terms. Continue with nextCursor only when the first results are insufficient."];
