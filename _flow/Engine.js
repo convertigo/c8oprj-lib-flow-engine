@@ -1785,11 +1785,16 @@
 				return flowScriptParserService().parseFlowScriptMetadataValue(text, lineNumber, flowScriptParserEnv());
 			},
 			normalizeFlowScriptCode: normalizeFlowScriptCode,
+			formatMetadataLiteral: flowScriptInlineValue,
 			safeIdentifier: safeIdentifier,
 			blockLocalName: blockLocalName,
 			blockHooksFileName: blockHooksFileName,
 			raise: raise
 		};
+	}
+
+	function blockMetaSource(meta) {
+		return blockCodeSourceService().blockMetaSource(meta, blockCodeSourceEnv());
 	}
 
 	function graphBlockRuntimeService() {
@@ -3344,7 +3349,7 @@
 			return String(tag).toLowerCase() !== "mock" && String(tag).toLowerCase() !== "todo";
 		});
 		FileUtils.writeStringToFile(descriptorFile,
-			"const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + String(extracted.code || "").trim() + "\n", "UTF-8");
+			blockMetaSource(meta) + "\n\n" + String(extracted.code || "").trim() + "\n", "UTF-8");
 		return true;
 	}
 

@@ -167,6 +167,19 @@
 			indent + "\n}\n");
 	}
 
+	// Every block writer emits the v2 header first, in the canonical literal
+	// layout (one property per line, trailing commas).
+	function blockMetaSource(meta, env) {
+		meta = env.normalizeTree(meta || {});
+		var ordered = { sourceVersion: meta.sourceVersion !== undefined ? meta.sourceVersion : 2 };
+		Object.keys(meta).forEach(function (key) {
+			if (key !== "sourceVersion") ordered[key] = meta[key];
+		});
+		var literal = typeof env.formatMetadataLiteral === "function"
+			? env.formatMetadataLiteral(ordered) : JSON.stringify(ordered, null, 2);
+		return "const _meta = " + literal;
+	}
+
 	function flowScriptBlockCodeSource(name, functionCode, meta, env) {
 		meta = env.normalizeTree(meta || {});
 		if (!meta.description) {
@@ -182,7 +195,7 @@
 			meta.outputs = { out: { type: "unknown" } };
 		}
 		delete meta.name;
-		return "const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + env.normalizeFlowScriptCode(functionCode);
+		return blockMetaSource(meta, env) + "\n\n" + env.normalizeFlowScriptCode(functionCode);
 	}
 
 	function rhinoBlockCodeSource(name, source, meta, env) {
@@ -201,7 +214,7 @@
 			meta.outputs = { out: { type: "unknown" } };
 		}
 		delete meta.name;
-		return "const _meta = " + JSON.stringify(meta, null, 2) + "\n\n" + String(source || "").trim() + "\n";
+		return blockMetaSource(meta, env) + "\n\n" + String(source || "").trim() + "\n";
 	}
 
 	function escapeRegExp(text) {
@@ -247,6 +260,7 @@
 	return {
 		balancedObjectEnd: balancedObjectEnd,
 		extractMeta: extractMeta,
+		blockMetaSource: blockMetaSource,
 		unwrapFlowScriptBlockEnvelope: unwrapFlowScriptBlockEnvelope,
 		flowScriptBlockFunctionName: flowScriptBlockFunctionName,
 		normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
