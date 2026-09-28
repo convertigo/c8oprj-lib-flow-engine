@@ -17,6 +17,10 @@
 			fields[name] = Object.assign({}, engineProperties[name]);
 		});
 		var result = outputs && outputs.out;
+		// The provider knows the destinations in scope (e.g. the page states of a frontend action).
+		if (result && result.editorContext) {
+			fields.out.editorContext = result.editorContext;
+		}
 		if (!result || result.hidden || result.expert) {
 			// Never make an existing assignment inaccessible when a contract changes.
 			fields.out.hidden = (!result || result.hidden === true) && !(node && node.out);

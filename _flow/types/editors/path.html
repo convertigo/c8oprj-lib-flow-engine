@@ -263,6 +263,11 @@
 
 			setState(state) {
 				this._state = state || {};
+				// A provider may describe the paths in scope with the property itself.
+				var declared = (this._state.propertyDefinition || {}).editorContext;
+				if ((!this._state.context || !this._state.context.scopes) && declared && declared.scopes) {
+					this._state.context = declared;
+				}
 				if ((!this._state.context || !this._state.context.scopes) && this.flowHost && this.flowHost.request) {
 					var response = this.flowHost.request("context", {});
 					if (response && response.ok && response.context) {
