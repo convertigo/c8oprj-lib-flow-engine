@@ -5081,6 +5081,10 @@
 			if (action.target) {
 				schemas[String(action.target)] = normalized;
 			}
+			// Backend results are also read by sequence (".Seq" or ".Seq#marker").
+			if (action.resultKey) {
+				schemas[String(action.resultKey)] = normalized;
+			}
 		}
 		(model.clientActions || []).forEach(function (action) {
 			var call = action && calls[String(action.backendCall || "")];
