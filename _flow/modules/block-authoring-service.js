@@ -151,6 +151,13 @@
 					null, "Choose a project-specific name instead.");
 			}
 			var codeFile = projectBlockCodeFile(name);
+			// A block source with a Studio working copy is owned by that draft until Save project.
+			var drafts = request.frontendSourceDrafts || request.sourceDrafts || {};
+			var codePath = String(codeFile.getCanonicalPath());
+			if (Object.keys(drafts).some(function (key) { return String(new File(String(key)).getCanonicalPath()) === codePath; })) {
+				raise("BLOCK_SOURCE_WORKING_COPY", "Block " + name + " has unsaved Studio changes.",
+					null, "Ask the user to save the project (or reload it), then read the block again.");
+			}
 			if (codeFile.isFile() && request.overwrite !== true && String(request.overwrite || "") !== "true" &&
 					(!current || current.__flowFormat !== "flowscript-block")) {
 				raise("BLOCK_ALREADY_EXISTS", "Project FlowScript block already exists: " + name,
