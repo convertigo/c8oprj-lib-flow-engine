@@ -21,6 +21,12 @@ assert.equal(contract.validate('').valid, true, 'Output can be omitted');
 assert.equal(contract.validate('', { required: true }).valid, false);
 assert.equal(contract.validate('state.value', { roots: ['state'] }).valid, true, 'environment-owned roots');
 assert.equal(contract.validate('local.value', { roots: ['state'] }).valid, false);
+// A frontend Output writes a declared state, or declares an event variable (a free root).
+const frontend = { roots: ['page', 'local'], bases: ['page.message'], freeRoots: ['local'] };
+assert.equal(contract.validate('page.message', frontend).valid, true);
+assert.equal(contract.validate('page.other', frontend).valid, false, 'a state must be declared');
+assert.equal(contract.validate('local.probe', frontend).valid, true, 'an event variable is declared by its write');
+assert.equal(contract.validate('local.__proto__', frontend).valid, false);
 const source = { input: { name: 'safe' }, local: {}, result: {}, trace: {} };
 paths.writeScopePath(source, 'trace.probes', [], env); // trusted internal scope, not public Output
 paths.compileWriteScopePath('local.named.value', env)(source, 7);

@@ -72,9 +72,10 @@
 	(function () {
 		if (customElements.get("flow-binding-editor")) return;
 
-		var categories = ["props", "local", "requestable", "action", "fullsync", "iteration", "event", "route", "theme"];
+		var categories = ["props", "local", "variable", "requestable", "action", "fullsync", "iteration", "event", "route", "theme"];
 		var categoryLabels = {
-			local: "Page variables",
+			local: "States",
+			variable: "Event variables",
 			requestable: "Backend calls",
 			action: "Actions",
 			fullsync: "FullSync",
@@ -305,7 +306,7 @@
 			var path = pathText(binding && binding.path);
 			var source = binding && binding.source || {};
 			var label = candidate ? sourceLabel(candidate)
-				: source.category === "local" ? "local." + sourceId(source)
+				: source.category === "local" || source.category === "variable" ? "local." + sourceId(source)
 				: sourceId(source) || "Saved source";
 			return label + (path ? (path.charAt(0) === "[" ? path : "." + path) : "");
 		}
@@ -412,6 +413,7 @@
 			else if (category === "component") { out.instanceId = id; out.value = previous && previous.value || "props"; }
 			else if (category === "form") { out.formId = id; out.value = previous && previous.value || "values"; }
 			else if (category === "local") { out.name = id; out.scopeId = previous && previous.scopeId || ""; }
+			else if (category === "variable") out.name = id;
 			else if (category === "route") out.value = previous && previous.value || "route";
 			else if (category === "theme") out.value = "theme";
 			else if (category === "props") out.value = "props";

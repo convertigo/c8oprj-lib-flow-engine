@@ -18,7 +18,9 @@
 		if (roots.indexOf(parts[0]) < 0) {
 			return invalid("scope", "Choose a destination under " + roots.join(" or ") + "; other scopes are read-only here.");
 		}
-		if (options.bases && options.bases.indexOf(parts.slice(0, 2).join(".")) < 0) {
+		// A free root (an event variable local.x) is declared by the write itself.
+		var free = (options.freeRoots || []).indexOf(parts[0]) >= 0;
+		if (options.bases && !free && options.bases.indexOf(parts.slice(0, 2).join(".")) < 0) {
 			return invalid("scope", "Choose a declared writable State variable.");
 		}
 		for (var i = 1; i < parts.length; i++) {
