@@ -20,15 +20,9 @@ const _meta = {
       "type": "string",
       "description": "File path. Relative paths resolve from the current project directory.",
     },
-    "file": {
-      "label": "File path (alias)",
-      "kind": "template",
-      "type": "string",
-      "description": "Alias for path.",
-      "hidden": true,
-    },
     "charset": {
       "label": "Charset",
+      "category": "Expert",
       "kind": "text",
       "type": "string",
       "default": "UTF-8",
@@ -65,7 +59,7 @@ const _meta = {
 	function resolveFile(ctx, value) {
 		var path = String(ctx.template(value || ""));
 		if (!path) {
-			ctx.raise("MISSING_FILE_PATH", "file.withReader requires path or file.");
+			ctx.raise("MISSING_FILE_PATH", "file.withReader requires path.");
 		}
 		var file = new File(path);
 		if (!file.isAbsolute()) {
@@ -80,7 +74,7 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			var file = resolveFile(ctx, props.path || props.file);
+			var file = resolveFile(ctx, props.path);
 			var reader = new BufferedReader(new InputStreamReader(
 				new FileInputStream(file),
 				String(props.charset || "UTF-8")

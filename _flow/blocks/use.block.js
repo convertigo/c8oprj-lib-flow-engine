@@ -18,6 +18,7 @@ const _meta = {
     },
     "implementation": {
       "label": "Implementation flow",
+      "category": "Expert",
       "kind": "text",
       "type": "string",
       "description": "Optional implementation flow overriding the binding.",

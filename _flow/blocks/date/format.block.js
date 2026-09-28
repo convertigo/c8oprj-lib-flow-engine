@@ -23,6 +23,7 @@ const _meta = {
     },
     "locale": {
       "label": "Locale",
+      "category": "Expert",
       "kind": "value",
       "type": "string",
       "default": "",
@@ -30,6 +31,7 @@ const _meta = {
     },
     "options": {
       "label": "Options",
+      "category": "Expert",
       "kind": "value",
       "type": "object",
       "default": {},
@@ -37,6 +39,7 @@ const _meta = {
     },
     "fallback": {
       "label": "Fallback",
+      "category": "Expert",
       "kind": "value",
       "type": "string",
       "default": "",

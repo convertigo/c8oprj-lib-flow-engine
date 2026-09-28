@@ -28,6 +28,7 @@ const _meta = {
     },
     "showHours": {
       "label": "Show hours",
+      "category": "Expert",
       "kind": "value",
       "type": "boolean",
       "default": false,
@@ -35,6 +36,7 @@ const _meta = {
     },
     "fractionDigits": {
       "label": "Fraction digits",
+      "category": "Expert",
       "kind": "value",
       "type": "integer",
       "default": 1,

@@ -27,12 +27,14 @@ const _meta = {
     },
     "details": {
       "label": "Details",
+      "category": "Expert",
       "kind": "literal",
       "type": "object",
       "description": "Optional structured error details.",
     },
     "hint": {
       "label": "Hint",
+      "category": "Expert",
       "kind": "template",
       "type": "string",
       "description": "Optional remediation hint template.",

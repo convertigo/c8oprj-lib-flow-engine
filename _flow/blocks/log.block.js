@@ -15,6 +15,7 @@ const _meta = {
     },
     "logger": {
       "label": "Logger",
+      "category": "Expert",
       "kind": "literal",
       "type": "string",
       "enum": ["context", "engine", "user", "audit", "beans"],

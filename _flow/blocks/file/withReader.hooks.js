@@ -11,7 +11,7 @@
 	function resolveFile(ctx, value) {
 		var path = String(ctx.template(value || ""));
 		if (!path) {
-			ctx.raise("MISSING_FILE_PATH", "file.withReader requires path or file.");
+			ctx.raise("MISSING_FILE_PATH", "file.withReader requires path.");
 		}
 		var file = new File(path);
 		if (!file.isAbsolute()) {
@@ -25,7 +25,7 @@
 
 	return {
 		displayName: function (node) {
-			return flowSummary.output({ out: prop(node, "as") }, flowSummary.text(prop(node, "path") || prop(node, "file") || "reader"));
+			return flowSummary.output({ out: prop(node, "as") }, flowSummary.text(prop(node, "path") || "reader"));
 		},
 
 		analyze: function (ctx, node) {

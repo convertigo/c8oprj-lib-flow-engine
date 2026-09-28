@@ -26,12 +26,14 @@ const _meta = {
     },
     "maxBytes": {
       "label": "Maximum size (bytes)",
+      "category": "Expert",
       "kind": "literal",
       "type": "number",
       "description": "Maximum content size to return.",
     },
     "allowLarge": {
       "label": "Allow large content",
+      "category": "Expert",
       "kind": "literal",
       "type": "boolean",
       "description": "Allow returning a resource larger than maxBytes.",

@@ -28,6 +28,7 @@ const _meta = {
     },
     "path": {
       "label": "Items path",
+      "category": "Expert",
       "kind": "text",
       "type": "string",
       "default": "items",
@@ -36,6 +37,7 @@ const _meta = {
     },
     "includeScalar": {
       "label": "Include scalar",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": true,

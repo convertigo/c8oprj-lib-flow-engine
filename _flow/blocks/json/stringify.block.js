@@ -28,6 +28,7 @@ const _meta = {
     },
     "pretty": {
       "label": "Pretty print",
+      "category": "Expert",
       "kind": "literal",
       "type": "boolean",
       "default": false,

@@ -15,6 +15,7 @@ const _meta = {
     },
     "charset": {
       "label": "Charset",
+      "category": "Expert",
       "kind": "text",
       "type": "string",
       "default": "UTF-8",
@@ -22,6 +23,7 @@ const _meta = {
     },
     "maxBytes": {
       "label": "Maximum size (bytes)",
+      "category": "Expert",
       "kind": "literal",
       "type": "integer",
       "default": 16777216,

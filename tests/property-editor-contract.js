@@ -40,6 +40,8 @@ assert(info(2).propertyDefinitions.logger.editorClass === "flow-literal-editor"
 	"Logger is a declared choice, not a free-form dynamic message");
 assert(info(2).propertyDefinitions.level.editorClass === "flow-literal-editor"
 	&& info(2).propertyDefinitions.level.enum.indexOf("warn") >= 0, "Log levels expose their supported choices");
+assert(info(2).propertyDefinitions.logger.category === "Expert" && info(2).propertyDefinitions.message.category === "Base properties",
+	"A block property declared Expert keeps its category; undeclared ones stay Base properties");
 assert(info(5).propertyDefinitions.$$out.hidden === true, "Set must not display a second Output");
 assert(info(6).propertyDefinitions.$$out.hidden === false && info(6).propertyDefinitions.$$out.category === "Expert",
 	"Existing result captures remain editable, never silently discarded");
