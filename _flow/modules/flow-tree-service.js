@@ -2766,6 +2766,8 @@
 
 	function frontendAuthoringDefinition(node) {
 		var out = {};
+		// outputs and resultSchema only feed the engine attribute contract ($$out),
+		// resolved from the provider node. block stays: compact trees report it.
 		var internal = {
 			parentSlot: true,
 			projectionId: true,
@@ -2774,6 +2776,8 @@
 			icon: true,
 			kind: true,
 			label: true,
+			outputs: true,
+			resultSchema: true,
 			sourceExplicitId: true,
 			tag: true,
 			type: true
@@ -2870,8 +2874,8 @@
 		// Technical data is explicitly described by the provider, never inferred
 		// as an editable property by a Studio host. Keep business names independent.
 		var information = frontendAuthoringBasePropertyDefinitions(false);
-		information.sourceKind = propertyDefinition("Source kind", "Information", "Source AST kind.", { readOnly: true });
-		information.sourceVersion = propertyDefinition("Source version", "Information", "Source format version.", { readOnly: true });
+		information.sourceKind = propertyDefinition("Source kind", "Information", "Internal source node kind.", { readOnly: true, hidden: true });
+		information.sourceVersion = propertyDefinition("Source version", "Information", "Internal source format version.", { readOnly: true, hidden: true });
 		Object.keys(information).forEach(function (name) {
 			if (name === "id" || node[name] === undefined) return;
 			var key = name;
