@@ -235,8 +235,10 @@
 		var renderBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var lines = [];
 		if (request.includeHeader !== false) {
-			lines.push("// c8o: FlowScript spike. Function calls are Flow blocks; named arguments are block properties.");
-			lines.push("// c8o: Patch with the returned revision. The engine validates and compiles this code back to Flow YAML.");
+			// Informational comment only: nothing parses it, and sources written with
+			// an earlier wording keep parsing (comments are ignored).
+			lines.push("// c8o: Flow source (FlowScript, sourceVersion 2). Calls are Flow blocks; plain keys are business properties, $$ keys are engine attributes and slots.");
+			lines.push("// c8o: Edit in the Studio or with the Flow MCP code tools; patch with the returned revision.");
 		}
 		if (request.includeContext === true) {
 			var analysis = env.analyzeFlowDefinition(blocks, definition, request);

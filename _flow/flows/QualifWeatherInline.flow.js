@@ -1,5 +1,5 @@
-// c8o: FlowScript spike. Function calls are Flow blocks; named arguments are block properties.
-// c8o: Patch with the returned revision. The engine validates and compiles this code back to Flow YAML.
+// c8o: Flow source (FlowScript, sourceVersion 2). Calls are Flow blocks; plain keys are business properties, $$ keys are engine attributes and slots.
+// c8o: Edit in the Studio or with the Flow MCP code tools; patch with the returned revision.
 
 const _flow = {
   "sourceVersion": 2,
