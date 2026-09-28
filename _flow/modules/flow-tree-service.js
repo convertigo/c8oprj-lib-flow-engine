@@ -6184,7 +6184,10 @@
 				surface: request.action.surface || request.surface,
 				builder: request.action.builder || request.builder
 			});
-			var treeRequest = authoringPaletteTreeRequest(request);
+			// The action target decides the tree to describe (a Catalog target needs the Catalog).
+			var treeRequest = authoringPaletteTreeRequest(Object.assign({}, request, {
+				focusPath: String(request.action.targetPath || request.focusPath || "")
+			}));
 			var tree = authoringTreeBaseRequest(treeRequest, blocks);
 			if (request.target === "flow") {
 				return applyMutationRequest(Object.assign({}, request, { mutation:
