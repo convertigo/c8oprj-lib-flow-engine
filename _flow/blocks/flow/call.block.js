@@ -9,13 +9,13 @@ const _meta = {
   "summary": "call {{flow}}",
   "properties": {
     "flow": {
-      "label": "flow",
+      "label": "Flow",
       "kind": "text",
       "type": "string",
       "description": "Project Flow to execute in the Flow engine.",
     },
     "input": {
-      "label": "input",
+      "label": "Input",
       "kind": "expression",
       "type": "object",
       "description": "Object passed as input to the called Flow.",

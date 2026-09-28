@@ -10,7 +10,7 @@ const _meta = {
   "longDescription": "Replaces {{ expression }} placeholders with values from the current Flow scopes. An exact {{ expression }} keeps the native value type; mixed text produces a string.",
   "properties": {
     "template": {
-      "label": "template",
+      "label": "Template",
       "kind": "text",
       "type": "string",
       "default": "",

@@ -34,22 +34,26 @@ const _meta = {
   },
   "properties": {
     "url": {
+      "label": "URL",
       "kind": "template",
       "type": "string",
       "default": "",
       "description": "HTTP URL template to call.",
     },
     "query": {
+      "label": "Query parameters",
       "kind": "template",
       "type": "object",
       "description": "Optional query parameters object.",
     },
     "headers": {
+      "label": "Headers",
       "kind": "template",
       "type": "object",
       "description": "Optional HTTP headers object.",
     },
     "body": {
+      "label": "Body",
       "kind": "expression",
       "type": "unknown",
       "description": "Optional request body expression.",

@@ -12,7 +12,7 @@ const _meta = {
   "summary": "authenticate {{user}}",
   "properties": {
     "user": {
-      "label": "user",
+      "label": "User id",
       "kind": "template",
       "type": "string",
       "default": "",

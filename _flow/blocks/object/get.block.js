@@ -21,21 +21,21 @@ const _meta = {
   },
   "properties": {
     "source": {
-      "label": "source",
+      "label": "Object",
       "kind": "expression",
       "type": "object",
       "default": "local.object",
       "description": "Object expression to read from.",
     },
     "key": {
-      "label": "key",
+      "label": "Key",
       "kind": "value",
       "type": "string",
       "default": "{{ local.key }}",
       "description": "Literal key or dotted path to read. Quote arbitrary keys such as display name or x-y; use a source such as current.code for a dynamic key.",
     },
     "defaultValue": {
-      "label": "default",
+      "label": "Default value",
       "kind": "value",
       "type": "unknown",
       "default": null,

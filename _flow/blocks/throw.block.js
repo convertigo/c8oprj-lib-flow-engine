@@ -6,28 +6,33 @@ const _meta = {
   "summary": "throw {{code}}: {{message}}",
   "properties": {
     "code": {
+      "label": "Error code",
       "kind": "text",
       "type": "string",
       "default": "FLOW_THROW",
       "description": "Structured error code.",
     },
     "message": {
+      "label": "Message",
       "kind": "template",
       "type": "string",
       "default": "Flow error",
       "description": "Error message template.",
     },
     "status": {
+      "label": "Status code",
       "kind": "expression",
       "type": "number",
       "description": "Optional HTTP-style status code.",
     },
     "details": {
+      "label": "Details",
       "kind": "literal",
       "type": "object",
       "description": "Optional structured error details.",
     },
     "hint": {
+      "label": "Hint",
       "kind": "template",
       "type": "string",
       "description": "Optional remediation hint template.",

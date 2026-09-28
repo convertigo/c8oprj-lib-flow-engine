@@ -25,6 +25,7 @@ const _meta = {
   ],
   "properties": {
     "condition": {
+      "label": "Condition",
       "kind": "expression",
       "type": "boolean",
       "default": "true",

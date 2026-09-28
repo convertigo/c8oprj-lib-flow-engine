@@ -34,17 +34,20 @@ const _meta = {
   },
   "properties": {
     "url": {
+      "label": "URL",
       "kind": "template",
       "type": "string",
       "default": "",
       "description": "HTTP URL template to call.",
     },
     "headers": {
+      "label": "Headers",
       "kind": "template",
       "type": "object",
       "description": "Optional HTTP headers object.",
     },
     "query": {
+      "label": "Query parameters",
       "kind": "template",
       "type": "object",
       "description": "Optional query parameters object.",

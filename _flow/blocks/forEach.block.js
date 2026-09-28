@@ -25,10 +25,11 @@ const _meta = {
   ],
   "properties": {
     "items": {
+      "label": "Items",
       "kind": "expression",
       "type": "array",
       "default": "local.items",
-      "description": "Array expression iterated by this block.",
+      "description": "List to iterate; child nodes run once per item.",
     },
   },
   "runtime": "rhino",

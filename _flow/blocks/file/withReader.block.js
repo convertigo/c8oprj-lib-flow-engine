@@ -15,26 +15,27 @@ const _meta = {
   ],
   "properties": {
     "path": {
-      "label": "path",
+      "label": "File path",
       "kind": "template",
       "type": "string",
       "description": "File path. Relative paths resolve from the current project directory.",
     },
     "file": {
-      "label": "file",
+      "label": "File path (alias)",
       "kind": "template",
       "type": "string",
       "description": "Alias for path.",
+      "hidden": true,
     },
     "charset": {
-      "label": "charset",
+      "label": "Charset",
       "kind": "text",
       "type": "string",
       "default": "UTF-8",
       "description": "Reader charset.",
     },
     "as": {
-      "label": "as",
+      "label": "Reader handle",
       "kind": "path",
       "mode": "write",
       "default": "local.reader",

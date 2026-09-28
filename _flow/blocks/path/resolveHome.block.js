@@ -8,14 +8,14 @@ const _meta = {
   "description": "Resolves a home-relative filesystem path.",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "Base path",
       "kind": "template",
       "type": "string",
       "default": "~",
       "description": "Base path. Supports ~ and ~/ prefixes.",
     },
     "suffix": {
-      "label": "suffix",
+      "label": "Child path",
       "kind": "template",
       "type": "string",
       "description": "Optional child path appended after the base path is resolved.",

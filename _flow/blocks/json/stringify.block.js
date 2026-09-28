@@ -20,14 +20,14 @@ const _meta = {
   },
   "properties": {
     "value": {
-      "label": "value",
+      "label": "Value",
       "kind": "value",
       "type": "unknown",
       "default": "{{ local.value }}",
       "description": "Value to serialize as JSON.",
     },
     "pretty": {
-      "label": "pretty",
+      "label": "Pretty print",
       "kind": "literal",
       "type": "boolean",
       "default": false,

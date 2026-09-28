@@ -13,25 +13,25 @@ const _meta = {
   "summary": "read {{path}}",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "Resource path",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow resource path. Takes precedence over uri.",
     },
     "uri": {
-      "label": "uri",
+      "label": "Resource URI",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow resource URI returned by resource.list/search. MCP guide URIs use resources/read.",
     },
     "maxBytes": {
-      "label": "maxBytes",
+      "label": "Maximum size (bytes)",
       "kind": "literal",
       "type": "number",
       "description": "Maximum content size to return.",
     },
     "allowLarge": {
-      "label": "allowLarge",
+      "label": "Allow large content",
       "kind": "literal",
       "type": "boolean",
       "description": "Allow returning a resource larger than maxBytes.",

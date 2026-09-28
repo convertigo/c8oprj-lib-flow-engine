@@ -20,14 +20,14 @@ const _meta = {
   },
   "properties": {
     "source": {
-      "label": "source",
+      "label": "Object",
       "kind": "expression",
       "type": "object",
       "default": "local.object",
       "description": "Object expression to read from.",
     },
     "keys": {
-      "label": "keys",
+      "label": "Keys",
       "kind": "literal",
       "type": "array|string",
       "default": "",

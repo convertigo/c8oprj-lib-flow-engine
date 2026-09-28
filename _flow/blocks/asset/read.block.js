@@ -9,7 +9,7 @@ const _meta = {
   "longDescription": "Use _flow/resources for backend-only templates, snippets, guides or fixtures. Use resources for textual assets shared with the generated frontend, so one canonical file can be read by Flow and served to the browser. Flow code passes the project-relative path and receives raw text. MCP flow-resource-get returns an inspection envelope whose content field is the text.",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "Asset path",
       "kind": "text",
       "type": "string",
       "default": "_flow/resources/asset.txt",

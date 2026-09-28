@@ -14,14 +14,14 @@ const _meta = {
   "longDescription": "Use path to choose the destination and value for the content. A value containing only {{ expression }} keeps the native expression type.",
   "properties": {
     "path": {
-      "label": "Output",
+      "label": "Destination",
       "kind": "path",
       "mode": "write",
       "default": "result.value",
-      "description": "Scope path receiving the value.",
+      "description": "Scope path that receives the value, e.g. local.total.",
     },
     "value": {
-      "label": "value",
+      "label": "Value",
       "kind": "value",
       "type": "unknown",
       "default": "",

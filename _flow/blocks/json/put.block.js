@@ -7,9 +7,9 @@ const _meta = {
   summary: "put {{key}} into {{path}}",
   tags: ["map", "dictionary", "put", "insert"],
   properties: {
-    path: {label: "Map", kind: "path", mode: "write", targetType: "object", default: "local.entries", required: true},
-    key: {label: "Key", kind: "value", type: "string", default: "key", required: true},
-    value: {label: "Value", kind: "value", type: "unknown", default: ""}
+    path: {label: "Map", description: "Map (from json.map) receiving the entry.", kind: "path", mode: "write", targetType: "object", default: "local.entries", required: true},
+    key: {label: "Key", description: "Key of the entry.", kind: "value", type: "string", default: "key", required: true},
+    value: {label: "Value", description: "Value stored under the key.", kind: "value", type: "unknown", default: ""}
   },
   outputs: {out: {type: "object", hidden: true}},
   hooks: {file: "put.hooks.js"}

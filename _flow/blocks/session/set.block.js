@@ -6,14 +6,14 @@ const _meta = {
   "summary": "session {{key}} = {{value}}",
   "properties": {
     "key": {
-      "label": "key",
+      "label": "Session key",
       "kind": "template",
       "type": "string",
       "default": "",
       "description": "HTTP session attribute name.",
     },
     "value": {
-      "label": "value",
+      "label": "Value",
       "kind": "value",
       "type": "unknown",
       "default": "",

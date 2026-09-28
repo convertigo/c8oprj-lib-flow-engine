@@ -8,20 +8,20 @@ const _meta = {
   "description": "Reads a complete project text file with an explicit size limit.",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "File path",
       "kind": "template",
       "type": "string",
       "description": "File path. Relative paths resolve from the current project directory.",
     },
     "charset": {
-      "label": "charset",
+      "label": "Charset",
       "kind": "text",
       "type": "string",
       "default": "UTF-8",
       "description": "Text charset.",
     },
     "maxBytes": {
-      "label": "maximum bytes",
+      "label": "Maximum size (bytes)",
       "kind": "literal",
       "type": "integer",
       "default": 16777216,

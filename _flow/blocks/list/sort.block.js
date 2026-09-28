@@ -22,12 +22,14 @@ const _meta = {
   },
   "properties": {
     "items": {
+      "label": "Items",
       "kind": "expression",
       "type": "array",
       "default": "local.items",
       "description": "Array expression to sort.",
     },
     "by": {
+      "label": "Sort by",
       "kind": "expression",
       "type": "unknown",
       "current": "item",
@@ -36,6 +38,7 @@ const _meta = {
       "description": "Expression evaluated as the sort key for each current item.",
     },
     "direction": {
+      "label": "Direction",
       "kind": "text",
       "type": "string",
       "default": "asc",

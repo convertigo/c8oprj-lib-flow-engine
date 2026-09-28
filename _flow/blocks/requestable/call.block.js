@@ -15,14 +15,14 @@ const _meta = {
   "summary": "call {{requestable}}",
   "properties": {
     "requestable": {
-      "label": "requestable",
+      "label": "Requestable",
       "kind": "requestable",
       "type": "requestable",
       "default": "",
       "description": "Target requestable: project.sequence, project.flow, project.connector.transaction, .sequence or .connector.transaction. Current-project calls start with a dot.",
     },
     "input": {
-      "label": "input",
+      "label": "Input variables",
       "kind": "template",
       "type": "object",
       "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary.",

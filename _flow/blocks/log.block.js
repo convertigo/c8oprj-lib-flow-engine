@@ -6,7 +6,7 @@ const _meta = {
   "summary": "log {{level}}: {{message}}",
   "properties": {
     "level": {
-      "label": "level",
+      "label": "Level",
       "kind": "literal",
       "type": "string",
       "enum": ["error", "warn", "info", "debug", "trace"],
@@ -14,7 +14,7 @@ const _meta = {
       "description": "Log level: error, warn, info, debug or trace.",
     },
     "logger": {
-      "label": "logger",
+      "label": "Logger",
       "kind": "literal",
       "type": "string",
       "enum": ["context", "engine", "user", "audit", "beans"],
@@ -22,14 +22,14 @@ const _meta = {
       "description": "Choose a Convertigo logger. Other names in existing projects use context; they do not create a custom logger.",
     },
     "message": {
-      "label": "message",
+      "label": "Message",
       "kind": "template",
       "type": "string",
       "default": "",
       "description": "Message template to write.",
     },
     "data": {
-      "label": "data",
+      "label": "Data",
       "kind": "value",
       "type": "unknown",
       "description": "Optional structured value appended as JSON.",

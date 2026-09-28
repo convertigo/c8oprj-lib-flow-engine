@@ -28,39 +28,46 @@ const _meta = {
   },
   "properties": {
     "method": {
+      "label": "Method",
       "kind": "text",
       "type": "string",
       "default": "GET",
       "description": "HTTP method to use.",
     },
     "url": {
+      "label": "URL",
       "kind": "template",
       "type": "string",
       "default": "",
       "description": "HTTP URL template to call.",
     },
     "query": {
+      "label": "Query parameters",
       "kind": "template",
       "type": "object",
       "description": "Optional query parameters object.",
     },
     "headers": {
+      "label": "Headers",
       "kind": "template",
       "type": "object",
       "description": "Optional HTTP headers object.",
     },
     "body": {
+      "label": "Body",
       "kind": "expression",
       "type": "unknown",
       "description": "Optional request body expression.",
     },
     "connectTimeoutMs": {
+      "label": "Connection timeout (ms)",
       "kind": "expression",
       "type": "integer",
       "default": 60000,
       "description": "Connection timeout in milliseconds.",
     },
     "readTimeoutMs": {
+      "label": "Read timeout (ms)",
       "kind": "expression",
       "type": "integer",
       "default": 60000,

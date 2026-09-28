@@ -20,7 +20,7 @@ const _meta = {
   },
   "properties": {
     "source": {
-      "label": "source",
+      "label": "Object",
       "kind": "expression",
       "type": "object",
       "default": "local.object",

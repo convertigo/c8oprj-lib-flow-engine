@@ -17,7 +17,7 @@ const _meta = {
   ],
   "properties": {
     "fragment": {
-      "label": "fragment",
+      "label": "Fragment",
       "kind": "text",
       "type": "string",
       "description": "Project Flow fragment to expand inline.",

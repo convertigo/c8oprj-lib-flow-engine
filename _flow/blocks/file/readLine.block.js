@@ -8,20 +8,20 @@ const _meta = {
   "description": "Reads one line from a file reader handle.",
   "properties": {
     "reader": {
-      "label": "reader",
+      "label": "Reader",
       "kind": "expression",
       "type": "handle<file.reader>",
       "default": "local.reader",
       "description": "Reader handle produced by file.withReader.",
     },
     "line": {
-      "label": "line",
+      "label": "Line destination",
       "kind": "path",
       "mode": "write",
       "description": "Optional scope path receiving the line or null at EOF.",
     },
     "eof": {
-      "label": "eof",
+      "label": "End-of-file destination",
       "kind": "path",
       "mode": "write",
       "description": "Optional scope path receiving true when the reader reached EOF.",

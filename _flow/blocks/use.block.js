@@ -10,20 +10,20 @@ const _meta = {
   "summary": "use {{contract}}",
   "properties": {
     "contract": {
-      "label": "contract",
+      "label": "Contract",
       "kind": "text",
       "type": "string",
       "default": "",
       "description": "Contract name to resolve.",
     },
     "implementation": {
-      "label": "implementation",
+      "label": "Implementation flow",
       "kind": "text",
       "type": "string",
       "description": "Optional implementation flow overriding the binding.",
     },
     "input": {
-      "label": "input",
+      "label": "Input",
       "kind": "expression",
       "type": "object",
       "description": "Object expression passed to the implementation flow.",

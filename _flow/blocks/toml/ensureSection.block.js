@@ -9,28 +9,28 @@ const _meta = {
   "longDescription": "Creates or updates one TOML section while preserving the rest of the file. Values support strings, numbers and booleans.",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "TOML file",
       "kind": "template",
       "type": "string",
       "default": "~/config.toml",
       "description": "TOML file path.",
     },
     "section": {
-      "label": "section",
+      "label": "Section",
       "kind": "template",
       "type": "string",
       "default": "section",
       "description": "TOML section name without brackets.",
     },
     "values": {
-      "label": "values",
+      "label": "Values",
       "kind": "template",
       "type": "object",
       "default": {},
       "description": "Object of key/value pairs to set in the section.",
     },
     "dryRun": {
-      "label": "dryRun",
+      "label": "Dry run",
       "kind": "expression",
       "type": "boolean",
       "default": false,

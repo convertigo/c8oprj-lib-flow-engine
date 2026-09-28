@@ -16,7 +16,7 @@ const _meta = {
   },
   "properties": {
     "text": {
-      "label": "text",
+      "label": "YAML text",
       "kind": "template",
       "type": "string",
       "default": "{{ local.text }}",

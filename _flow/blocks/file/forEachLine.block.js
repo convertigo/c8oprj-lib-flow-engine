@@ -15,7 +15,7 @@ const _meta = {
   ],
   "properties": {
     "reader": {
-      "label": "reader",
+      "label": "Reader",
       "kind": "expression",
       "type": "handle<file.reader>",
       "default": "local.reader",

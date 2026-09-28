@@ -6,18 +6,21 @@ const _meta = {
   "summary": "mock email to {{to}}",
   "properties": {
     "to": {
+      "label": "Recipient",
       "kind": "template",
       "type": "string",
       "default": "",
       "description": "Recipient email address template.",
     },
     "subject": {
+      "label": "Subject",
       "kind": "template",
       "type": "string",
       "default": "",
       "description": "Email subject template.",
     },
     "body": {
+      "label": "Body",
       "kind": "template",
       "type": "string",
       "default": "",

@@ -20,18 +20,18 @@ const _meta = {
   },
   "properties": {
     "target": {
-      "label": "target",
+      "label": "Base object",
       "kind": "expression",
       "type": "object",
       "default": "local.object",
-      "description": "Base object expression.",
+      "description": "Object whose keys are kept unless overridden.",
     },
     "source": {
-      "label": "source",
+      "label": "Overrides",
       "kind": "expression",
       "type": "object",
       "default": "local.patch",
-      "description": "Object expression overriding target keys.",
+      "description": "Object whose keys replace those of the base object.",
     },
   },
   "runtime": "rhino",

@@ -7,7 +7,7 @@ const _meta = {
   "longDescription": "Pass the text returned by asset.read or the content field of a resource envelope. Element attributes are grouped under attr, for example <enclosure url=\"...\"> becomes enclosure.attr.url. This block rejects resource metadata objects so path and content mistakes fail explicitly.",
   "properties": {
     "text": {
-      "label": "text",
+      "label": "XML text",
       "kind": "template",
       "type": "string",
       "default": "{{ local.text }}",

@@ -9,7 +9,7 @@ const _meta = {
   "longDescription": "Uses the Convertigo engine configuration to expose common local URLs such as the Convertigo base URL, REST API URL and Flow MCP endpoint URL.",
   "properties": {
     "mcpPath": {
-      "label": "mcpPath",
+      "label": "MCP endpoint path",
       "kind": "text",
       "type": "string",
       "default": "/api/flow-mcp",

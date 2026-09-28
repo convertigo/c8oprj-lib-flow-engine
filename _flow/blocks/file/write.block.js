@@ -8,28 +8,28 @@ const _meta = {
   "description": "Writes text to a file writer handle.",
   "properties": {
     "writer": {
-      "label": "writer",
+      "label": "Writer",
       "kind": "expression",
       "type": "handle<file.writer>",
       "default": "local.writer",
       "description": "Writer handle produced by file.withWriter.",
     },
     "value": {
-      "label": "value",
+      "label": "Value",
       "kind": "value",
       "type": "unknown",
       "default": "",
       "description": "Value written to the file.",
     },
     "newline": {
-      "label": "newline",
+      "label": "Add newline",
       "kind": "literal",
       "type": "boolean",
       "default": false,
       "description": "Append a newline after the value.",
     },
     "flush": {
-      "label": "flush",
+      "label": "Flush",
       "kind": "literal",
       "type": "boolean",
       "default": false,

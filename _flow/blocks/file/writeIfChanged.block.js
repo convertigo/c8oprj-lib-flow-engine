@@ -9,21 +9,21 @@ const _meta = {
   "longDescription": "Creates parent directories, compares existing text and returns created, updated or unchanged. Use dryRun to preview without writing.",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "File path",
       "kind": "template",
       "type": "string",
       "default": "~/file.txt",
       "description": "Absolute path or home-relative path receiving the content.",
     },
     "content": {
-      "label": "content",
+      "label": "Content",
       "kind": "value",
       "type": "unknown",
       "default": "",
       "description": "Text content to write.",
     },
     "dryRun": {
-      "label": "dryRun",
+      "label": "Dry run",
       "kind": "expression",
       "type": "boolean",
       "default": false,

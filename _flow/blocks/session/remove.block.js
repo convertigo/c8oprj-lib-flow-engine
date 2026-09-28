@@ -6,7 +6,7 @@ const _meta = {
   "summary": "remove session {{key}}",
   "properties": {
     "key": {
-      "label": "key",
+      "label": "Session key",
       "kind": "template",
       "type": "string",
       "default": "",

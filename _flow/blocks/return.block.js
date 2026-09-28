@@ -7,7 +7,7 @@ const _meta = {
   "longDescription": "Most flows do not need this block because result is returned at the end. Use it only to return early from a branch.",
   "properties": {
     "value": {
-      "label": "value",
+      "label": "Value",
       "kind": "value",
       "type": "unknown",
       "default": "{{ result }}",

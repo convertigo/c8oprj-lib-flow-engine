@@ -20,14 +20,14 @@ const _meta = {
   ],
   "properties": {
     "key": {
-      "label": "key",
+      "label": "Key",
       "kind": "text",
       "type": "string",
       "default": "field",
       "description": "JSON object key.",
     },
     "value": {
-      "label": "value",
+      "label": "Value",
       "kind": "value",
       "type": "unknown",
       "default": "",

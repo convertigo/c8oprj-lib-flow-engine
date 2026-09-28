@@ -20,7 +20,7 @@ const _meta = {
   },
   "properties": {
     "source": {
-      "label": "source object",
+      "label": "Source object",
       "kind": "expression",
       "type": "object",
       "default": "local.source",
@@ -28,7 +28,7 @@ const _meta = {
       "description": "Backing source expression edited by the data path selector.",
     },
     "path": {
-      "label": "data path",
+      "label": "Data path",
       "kind": "selector",
       "type": "string",
       "mode": "read",

@@ -24,15 +24,15 @@ const _meta = {
   ],
   "properties": {
     "path": {
-      "label": "path",
+      "label": "Array",
       "kind": "path",
       "mode": "write",
       "targetType": "array",
       "default": "result.items",
-      "description": "Array scope path receiving the pushed value.",
+      "description": "Array (from json.array) receiving the value.",
     },
     "value": {
-      "label": "value",
+      "label": "Value",
       "kind": "value",
       "type": "unknown",
       "default": "{{ current }}",
