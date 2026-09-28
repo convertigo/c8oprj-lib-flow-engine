@@ -306,6 +306,16 @@
 		}
 	}
 
+	function flowBeanExists(name, request) {
+		try {
+			var lookup = projectFlowBeanLookup ? projectFlowBeanLookup(name, request) : projectFlowBean ? projectFlowBean(name, request) : null;
+			var flow = lookup && lookup.flow !== undefined ? lookup.flow : lookup;
+			return !!flow;
+		} catch (e) {
+			return false;
+		}
+	}
+
 	function flowCodeDraftKey(request, name) {
 		return flowCodeQName(request || {}, name);
 	}
@@ -325,8 +335,15 @@
 				code: working.code
 			};
 		}
-		var draft = memoryDrafts[flowCodeDraftKey(request, name)];
+		var draftKey = flowCodeDraftKey(request, name);
+		var draft = memoryDrafts[draftKey];
 		if (!draft) {
+			return null;
+		}
+		// A loaded Flow owns its working copy: without one, the Studio saved,
+		// reloaded or discarded it, and the mirror must not bring it back.
+		if (flowBeanExists(name, request)) {
+			delete memoryDrafts[draftKey];
 			return null;
 		}
 		return {
@@ -500,8 +517,8 @@
 		}
 		var normalized = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
-		// Keep a runtime-owned mirror even when the current DBO accepts the draft.
-		// Studio tree refreshes may replace that DBO instance before promotion.
+		// The mirror holds the working copy only while no loaded Flow owns it
+		// (standalone runtime); flowCodeDraftRead drops it once a Flow exists.
 		var draftKey = flowCodeDraftKey(request, name);
 		memoryDrafts[draftKey] = {
 			code: normalized,
@@ -627,7 +644,20 @@
 			}));
 		}
 		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
-		if (expectedRevision && String(expectedRevision) !== current.revision) {
+		if (!expectedRevision) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				draft: true,
+				revision: current.revision,
+				error: flowCodeError("FLOW_CODE_REVISION_REQUIRED",
+					"Promoting a FlowScript working copy requires the revision that was checked: " + name,
+					"Promote with the revision returned by code-set, code-patch or code-check."),
+				warnings: []
+			};
+		}
+		if (String(expectedRevision) !== current.revision) {
 			return {
 				ok: false,
 				qname: flowCodeQName(request, name),
@@ -1022,7 +1052,20 @@
 			};
 		}
 		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
-		if (expectedRevision && String(expectedRevision) !== current.revision) {
+		if (!expectedRevision) {
+			return {
+				ok: false,
+				qname: flowCodeQName(request, name),
+				name: name,
+				draft: true,
+				revision: current.revision,
+				error: flowCodeError("FLOW_CODE_REVISION_REQUIRED",
+					"Promoting a FlowScript working copy requires the revision that was checked: " + name,
+					"Promote with the revision returned by code-set, code-patch or code-check."),
+				warnings: []
+			};
+		}
+		if (String(expectedRevision) !== current.revision) {
 			return {
 				ok: false,
 				qname: flowCodeQName(request, name),
