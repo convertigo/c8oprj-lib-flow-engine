@@ -261,10 +261,63 @@
 			return missing.join(", ");
 		}
 	
+		// Top-level `;` ends a statement, as in JavaScript: `var a = f({...}); result.a = a`
+		// on one line is two statements. Separators inside strings, (), {} and []
+		// belong to the statement (object literals, slot bodies, templates).
+		function splitFlowScriptStatementText(statement) {
+			var text = statement.text;
+			var parts = [];
+			var start = 0;
+			var quote = "";
+			var depth = 0;
+			for (var i = 0; i < text.length; i++) {
+				var ch = text.charAt(i);
+				if (quote) {
+					if (ch === "\\" && i + 1 < text.length) {
+						i++;
+					} else if (ch === quote) {
+						quote = "";
+					}
+				} else if (ch === "\"" || ch === "'" || ch === "`") {
+					quote = ch;
+				} else if (ch === "(" || ch === "{" || ch === "[") {
+					depth++;
+				} else if (ch === ")" || ch === "}" || ch === "]") {
+					depth--;
+				} else if (ch === ";" && depth === 0) {
+					parts.push({ offset: start, text: text.substring(start, i + 1) });
+					start = i + 1;
+				}
+			}
+			if (text.substring(start).trim() !== "") {
+				parts.push({ offset: start, text: text.substring(start) });
+			} else if (parts.length) {
+				parts[parts.length - 1].text += text.substring(start);
+			}
+			if (parts.length <= 1) {
+				return [statement];
+			}
+			return parts.map(function (part) {
+				var leading = part.text.match(/^\s*/)[0];
+				return {
+					line: statement.line + (text.substring(0, part.offset) + leading).split("\n").length - 1,
+					text: part.text.trim(),
+					disabled: statement.disabled
+				};
+			}).filter(function (part) {
+				return part.text !== "" && part.text !== ";";
+			});
+		}
+
 		function flowScriptStatements(code) {
 			var out = [];
 			var pending = null;
 			var disabledNext = false;
+			function emit(statement) {
+				splitFlowScriptStatementText(statement).forEach(function (part) {
+					out.push(part);
+				});
+			}
 			String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").forEach(function (raw, index) {
 				if (!pending && raw.trim() === "// @flow-disabled") {
 					disabledNext = true;
@@ -275,7 +328,7 @@
 					return;
 				}
 				if (!pending && (line.match(/^(flow|function)\s+/) || line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/))) {
-					out.push({ line: index + 1, text: line, disabled: disabledNext });
+					emit({ line: index + 1, text: line, disabled: disabledNext });
 					disabledNext = false;
 					return;
 				}
@@ -290,7 +343,7 @@
 					}
 					pending.text += "\n" + line;
 					if (flowScriptStatementComplete(pending.text)) {
-						out.push(pending);
+						emit(pending);
 						pending = null;
 					}
 					return;
@@ -298,7 +351,7 @@
 				pending = { line: index + 1, text: line, disabled: disabledNext };
 				disabledNext = false;
 				if (flowScriptStatementComplete(pending.text)) {
-					out.push(pending);
+					emit(pending);
 					pending = null;
 				}
 			});
@@ -308,7 +361,7 @@
 					env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + pending.line + ": " + problem,
 						null, "Close the current statement before writing the next one.");
 				}
-				out.push(pending);
+				emit(pending);
 			}
 			return out;
 		}
