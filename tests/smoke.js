@@ -282,7 +282,7 @@ var embeddedLabelNodes = [];
 })(embeddedStructuredLabels.root);
 var embeddedLabels = embeddedLabelNodes.map(function (node) { return node.label; }).join("|");
 assertTrue(embeddedLabels ===
-	"Chronomètre|@local.clock.display|Start|Stop" &&
+	"Chronomètre|@comp.clock.display|Start|Stop" &&
 	embeddedLabelNodes.every(function (node) { return node.sourceExplicitId === false; }),
 	"Embedded Flow Svelte fallback exposed structured values as object labels or stable ids: " +
 	embeddedLabels + " / explicit=" + embeddedLabelNodes.map(function (node) { return node.sourceExplicitId; }).join("|"));
@@ -4504,7 +4504,7 @@ var sharedControlPaths = {};
 sharedControlLeaves.forEach(function (node) { sharedControlPaths[node.path] = true; });
 assertTrue(sharedControlsBlock !== null &&
 	sharedControlLeaves.map(function (node) { return node.summary; }).join("|") ===
-		"Chronomètre|@local.clock.display|Start|Stop" &&
+		"Chronomètre|@comp.clock.display|Start|Stop" &&
 	Object.keys(sharedControlPaths).length === 4,
 	"reusable Flow Svelte catalog projection lost structured labels or sibling identities: " +
 		JSON.stringify(sharedControlLeaves.map(function (node) { return { summary: node.summary, path: node.path }; })));

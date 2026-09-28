@@ -1444,7 +1444,13 @@
 		return ["ui.block"];
 	}
 
-	function flowSvelteLiteValueLabel(value) {
+	// States are named by their owner, as in NGX: page.x, layout.x, comp.x.
+	function flowSvelteLiteStateOwner(sourcePath) {
+		var name = String(sourcePath || "").replace(/\\/g, "/").split("/").pop() || "";
+		return name.indexOf("+layout") === 0 ? "layout" : name.indexOf("+page") === 0 || !name ? "page" : "comp";
+	}
+
+	function flowSvelteLiteValueLabel(value, owner) {
 		if (value === undefined || value === null) {
 			return "";
 		}
@@ -1463,17 +1469,18 @@
 			var path = (value.path || []).map(function (segment) {
 				return segment && segment.kind === "index" ? "[" + segment.index + "]" : "." + String(segment && segment.name || "");
 			}).join("");
-			return "@" + String(source.category || "source") + "." + String(base) + path;
+			var root = source.category === "local" ? owner || "page" : String(source.category || "source");
+			return "@" + root + "." + String(base) + path;
 		}
 		return "";
 	}
 
-	function flowSvelteLiteLabel(kind, tag, props) {
+	function flowSvelteLiteLabel(kind, tag, props, owner) {
 		if (kind === "text") {
-			return flowSvelteLiteValueLabel(props.text) || "Text";
+			return flowSvelteLiteValueLabel(props.text, owner) || "Text";
 		}
 		if (kind === "button") {
-			return flowSvelteLiteValueLabel(props.label) || "Button";
+			return flowSvelteLiteValueLabel(props.label, owner) || "Button";
 		}
 		if (kind === "callSequence") {
 			return String(props.requestable || "CallSequence");
@@ -2072,7 +2079,7 @@
 			sourceExplicitId: sourceExplicitId,
 			type: String(element.tag || kind),
 			tag: String(element.tag || ""),
-			label: flowSvelteLiteLabel(kind, element.tag, props),
+			label: flowSvelteLiteLabel(kind, element.tag, props, flowSvelteLiteStateOwner(sourcePath)),
 			sourcePath: sourcePath,
 			sourceMutationPath: path,
 			sourceWritable: true,
