@@ -29,6 +29,11 @@ const _meta = {
       "description": "Object expression passed to the implementation flow.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "unknown",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "use.hooks.js",

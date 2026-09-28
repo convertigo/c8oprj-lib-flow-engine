@@ -21,6 +21,11 @@ const _meta = {
       "description": "Object passed as input to the called Flow.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "object",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "call.hooks.js",

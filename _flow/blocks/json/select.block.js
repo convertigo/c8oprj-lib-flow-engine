@@ -37,6 +37,11 @@ const _meta = {
       "description": "Relative path to read inside the source object. Supports indexes like rss.channel.item[0].title.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "unknown",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "select.hooks.js",

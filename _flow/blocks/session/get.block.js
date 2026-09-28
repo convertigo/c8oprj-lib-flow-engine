@@ -19,6 +19,11 @@ const _meta = {
       "description": "Value returned when the session key is missing.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "unknown",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "get.hooks.js",

@@ -34,6 +34,11 @@ const _meta = {
       "description": "Object whose keys replace those of the base object.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "object",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "merge.hooks.js",

@@ -27,6 +27,11 @@ const _meta = {
       "description": "JSON text to parse.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "unknown",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "parse.hooks.js",

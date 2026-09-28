@@ -43,6 +43,11 @@ const _meta = {
       "description": "Fallback value used when the key is missing.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "unknown",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "get.hooks.js",

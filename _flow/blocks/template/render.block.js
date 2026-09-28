@@ -17,6 +17,11 @@ const _meta = {
       "description": "Template text containing optional {{ expression }} placeholders.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "string",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "render.hooks.js",

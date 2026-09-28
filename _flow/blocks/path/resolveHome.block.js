@@ -21,6 +21,11 @@ const _meta = {
       "description": "Optional child path appended after the base path is resolved.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "string",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "resolveHome.hooks.js",

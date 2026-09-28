@@ -34,6 +34,11 @@ const _meta = {
       "description": "Write indented JSON when true.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "string",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "stringify.hooks.js",

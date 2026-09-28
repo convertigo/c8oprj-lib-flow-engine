@@ -28,6 +28,11 @@ const _meta = {
       "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary.",
     },
   },
+  "outputs": {
+    "out": {
+      "type": "object",
+    },
+  },
   "runtime": "rhino",
   "hooks": {
     "file": "call.hooks.js",
