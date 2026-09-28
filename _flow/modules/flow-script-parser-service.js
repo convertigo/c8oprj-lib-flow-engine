@@ -993,8 +993,42 @@
 			return token.substring(bodyStart + 1, bodyEnd);
 		}
 
+		function isFlowScriptFunctionLiteral(token) {
+			token = String(token || "").trim();
+			return /^(?:async\s+)?function\b/.test(token) || /^(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>/.test(token);
+		}
+
+		// Plain names are business properties. A function literal is never a
+		// business value: it is a slot written without its $$ prefix (or a typo)
+		// and would otherwise be stored as text and never run.
+		function rejectFlowScriptFunctionProperties(block, slotNames, tokens, lineNumber) {
+			var codec = env.sourceAttributeNameCodec();
+			Object.keys(tokens || {}).forEach(function (key) {
+				var decoded = codec.decode(key);
+				if (decoded.namespace !== "property" || !isFlowScriptFunctionLiteral(tokens[key])) {
+					return;
+				}
+				var slotSpelling = slotNames.indexOf(key) !== -1 ? codec.encode("engine", key) : "";
+				if (slotSpelling) {
+					env.raise("FLOWSCRIPT_SLOT_WITHOUT_ENGINE_PREFIX",
+						"Slot \"" + key + "\" of Flow block " + block + " is written without its $$ prefix at line " + lineNumber + ".",
+						null,
+						"Slots are written " + slotSpelling + ": function () { ... }. Plain names are business properties.");
+				}
+				env.raise("FLOWSCRIPT_FUNCTION_IN_PROPERTY",
+					"Property \"" + key + "\" of Flow block " + block + " receives a function at line " + lineNumber + ".",
+					null,
+					slotNames.length
+						? "Only slots take a function body; " + block + " slots are written " + slotNames.map(function (slot) {
+							return codec.encode("engine", slot);
+						}).join(", ") + "."
+						: block + " has no slot; pass a value or an expression.");
+			});
+		}
+
 		function extractFlowScriptInlineSlots(blocks, imports, locals, block, parsed, lineNumber) {
 			var slotNames = flowScriptBlockSlotNames(blocks, block);
+			rejectFlowScriptFunctionProperties(block, slotNames, parsed.tokens, lineNumber);
 			if (!slotNames.length) {
 				return { parsed: parsed, slots: {} };
 			}
