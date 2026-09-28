@@ -8,7 +8,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + " or public resources/. Use flowCode* for Flow sidecars.");
+				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + " or public resources/. Use the flowCode* APIs for Flow sources.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);
@@ -384,9 +384,15 @@
 
 	function patch(request, env) {
 		request = request || {};
-		var entry = projectResourceFile(request.path, true, env);
-		var oldContent = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
+		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
+		var entry = projectResourceFile(request.path, !fromWorkingCopy, env);
+		var oldContent = fromWorkingCopy ? String(request.baseContent) : String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
 		var oldHash = env.sha256Hex(oldContent);
+		if (fromWorkingCopy && request.dryRun !== true) {
+			env.raise("RESOURCE_WORKING_COPY_WRITE", "A working copy patch is only previewed; its owner stores the result.",
+				null, "Pass dryRun:true with baseContent.");
+		}
 		if (request.baseHash && String(request.baseHash) !== oldHash) {
 			env.raise("RESOURCE_BASE_HASH_MISMATCH", "Flow resource changed since it was read: " + entry.path,
 				null, "Read the resource again and patch from the new hash.");
@@ -413,9 +419,15 @@
 
 	function remove(request, env) {
 		request = request || {};
-		var entry = projectResourceFile(request.path, true, env);
-		var oldContent = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
+		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
+		var entry = projectResourceFile(request.path, !fromWorkingCopy, env);
+		var oldContent = fromWorkingCopy ? String(request.baseContent) : String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
 		var oldHash = env.sha256Hex(oldContent);
+		if (fromWorkingCopy && request.dryRun !== true) {
+			env.raise("RESOURCE_WORKING_COPY_WRITE", "A working copy patch is only previewed; its owner stores the result.",
+				null, "Pass dryRun:true with baseContent.");
+		}
 		if (request.baseHash && String(request.baseHash) !== oldHash) {
 			env.raise("RESOURCE_BASE_HASH_MISMATCH", "Flow resource changed since it was read: " + entry.path,
 				null, "Read the resource again and delete from the new hash.");
