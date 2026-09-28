@@ -280,6 +280,16 @@
 			return label;
 		}
 
+		// The producer (named as in the tree, e.g. ".LiveProbe (CallSequence)") tells what the
+		// source is; its id stays the name used in expressions.
+		function sourceOptionText(candidate) {
+			var label = sourceLabel(candidate);
+			var producer = String(candidate && candidate.producerLabel || "");
+			if (!producer || producer === label) return label;
+			var tag = String(candidate.producerTag || "");
+			return producer + (tag && tag !== producer ? " (" + tag + ")" : "") + " · " + label;
+		}
+
 		function directSourceText(candidate) {
 			var source = candidate && (candidate.source || candidate) || {};
 			if (source.category === "iteration" && source.value === "index") {
@@ -826,7 +836,7 @@
 				sourceSelect.innerHTML = retainedOption + (available.length ? available.map(function (entry, index) {
 					var selected = sourceKey(entry.source || entry) === sourceKey(self._selection.source);
 					var type = entry.schema && entry.schema.type ? " — " + entry.schema.type : "";
-					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(sourceLabel(entry) + type) + '</option>';
+					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(sourceOptionText(entry) + type) + '</option>';
 				}).join("") : missingSource ? "" : '<option value="">No source available</option>');
 				sourceSelect.disabled = available.length === 0;
 				var selectedSource = available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._selection.source); });

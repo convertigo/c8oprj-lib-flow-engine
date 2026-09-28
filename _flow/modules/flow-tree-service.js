@@ -4342,6 +4342,9 @@
 					binding: candidate.binding || null,
 					mutation: candidate.mutation || null
 				};
+				// The producing node, named as in the tree (e.g. ".LiveProbe" CallSequence).
+				if (candidate.producerLabel) out.producerLabel = String(candidate.producerLabel);
+				if (candidate.producerTag) out.producerTag = String(candidate.producerTag);
 				if (candidate.bindings && candidate.bindings.length) {
 					out.bindings = candidate.bindings.slice(0, 40).map(function (entry) {
 						return {
