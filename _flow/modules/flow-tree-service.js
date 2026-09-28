@@ -2855,7 +2855,9 @@
 		var definitions = {};
 		Object.keys(Object.assign({}, props, extra)).forEach(function (name) {
 			var key = codec.encode("property", name);
-			var descriptor = extra[name] || { type: typeof props[name] === "boolean" ? "boolean" : "string" };
+			// An attribute its block does not declare is kept as written, but said unused.
+			var descriptor = extra[name] || { type: typeof props[name] === "boolean" ? "boolean" : "string",
+				description: "Not a property of this block: kept as written in the source, but unused. Remove it." };
 			definitions[key] = frontendPropertyDefinition(name, descriptor);
 			definitions[key].definitionPath = "props." + name;
 		});

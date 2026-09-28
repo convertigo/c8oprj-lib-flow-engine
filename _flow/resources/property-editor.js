@@ -116,6 +116,8 @@
       .forEach(function (k) {
         if (!defs[k].hidden && out.indexOf(k) < 0) out.push(k);
       });
+    // A v2 node declares every editable property; its other fields are structure.
+    if (node && node.sourceVersion === 2) return out;
     keys(node)
       .sort()
       .forEach(function (k) {
@@ -632,7 +634,17 @@
   }
   function pathGroups(target) {
     var html = "";
-    pathList(state.context).forEach(function (group) {
+    // Declared choices of the property (e.g. the page states a target may name).
+    var choices = target && target.def && Array.isArray(target.def["enum"]) ? target.def["enum"] : [];
+    if (choices.length) {
+      html += '<details class="scopeGroup" open><summary>Choices <span class="type">' + choices.length + "</span></summary>";
+      choices.forEach(function (choice) {
+        html += '<button draggable="true" class="path" data-path="' + esc(String(choice)) + '">' + esc(String(choice)) + "</button>";
+      });
+      html += "</details>";
+    }
+    var declaredContext = target && target.def && target.def.editorContext;
+    pathList(declaredContext && declaredContext.scopes ? declaredContext : state.context).forEach(function (group) {
       var rows = (group.paths || []).filter(function (p) {
         return acceptsPath(target, p);
       });
