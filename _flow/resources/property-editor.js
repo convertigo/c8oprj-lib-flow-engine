@@ -238,9 +238,11 @@
       );
       var target = pickerProperty(props);
       var kind = pickerKind(target);
-      return kind === "path" || kind === "expression"
-        ? path
-        : "{{ " + path + " }}";
+      // A destination, or a frontend property (no backend template syntax), takes the
+      // path itself; backend properties other than paths and expressions embed it as {{ }}.
+      var raw = kind === "path" || kind === "expression" || (target && target.def && target.def.mode === "write")
+        || String(state.virtualKind || "").indexOf("frontend") === 0;
+      return raw ? path : "{{ " + path + " }}";
     }
     return path;
   }
@@ -639,7 +641,7 @@
     if (choices.length) {
       html += '<details class="scopeGroup" open><summary>Choices <span class="type">' + choices.length + "</span></summary>";
       choices.forEach(function (choice) {
-        html += '<button draggable="true" class="path" data-path="' + esc(String(choice)) + '">' + esc(String(choice)) + "</button>";
+        html += '<button draggable="true" class="path" data-choice="true" data-path="' + esc(String(choice)) + '">' + esc(String(choice)) + "</button>";
       });
       html += "</details>";
     }
@@ -1008,7 +1010,7 @@
     var path = e.target.getAttribute && e.target.getAttribute("data-path");
     if (path) {
       if (state && state.mode === "picker") {
-        updatePickerValue(pickedText(path));
+        updatePickerValue(e.target.getAttribute("data-choice") === "true" ? path : pickedText(path));
         return;
       }
       if (editorMode === "simple" && templateLike(currentPropertyKind())) {
