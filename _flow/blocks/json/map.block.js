@@ -7,7 +7,7 @@ const _meta = {
   summary: "create map {{path}}",
   tags: ["map", "dictionary", "create", "typed"],
   properties: {
-    path: {label: "Output", kind: "path", mode: "write", declares: "out", default: "local.entries", required: true},
+    path: {label: "Output", description: "Scope path receiving the new typed map; an assignment (local.entries = json.map({ valueType })) sets it.", kind: "path", mode: "write", declares: "out", default: "local.entries", required: true},
     valueType: {label: "Value type", description: "JSON Schema describing each value; values inserted with json.put must satisfy it.", kind: "schema", type: "object", default: {type: "string"}, required: true}
   },
   outputs: {out: {type: "object", additionalProperties: {"x-flow-schema-from": "valueType"}, hidden: true}},

@@ -1512,17 +1512,31 @@
 			if (!node.id) {
 				node.id = env.safeIdentifier(varName);
 			}
-			bindAssignmentOutput(node, block, "local." + env.safeIdentifier(varName), lineNumber);
+			bindAssignmentOutput(blocks, node, block, "local." + env.safeIdentifier(varName), lineNumber);
 			node.__flowScriptLine = lineNumber;
 			return [node];
 		}
 
-		function bindAssignmentOutput(node, block, path, lineNumber) {
+		// The destination property of a block whose output is the value it
+		// writes: set.path, and write paths declaring the output (json.array,
+		// json.map). An assignment fills it when the call leaves it out.
+		function assignmentDestinationProperty(blocks, block) {
+			if (block === "set") return "path";
+			var catalog = env.blockCatalog(blocks && blocks[block]) || {};
+			var props = catalog.props || {};
+			var keys = Object.keys(props).filter(function (key) {
+				return props[key] && props[key].declares === "out" && env.destinationContract.isWriteProperty(catalog, key);
+			});
+			return keys.length === 1 ? keys[0] : "";
+		}
+
+		function bindAssignmentOutput(blocks, node, block, path, lineNumber) {
 			if (node.out !== undefined && node.out !== path) {
 				env.raise("FLOW_SOURCE_OUTPUT_CONFLICT", "Assignment and $$out have different destinations at line " + lineNumber,
 					null, "Remove $$out from the assignment or use an explicit block call.");
 			}
-			if (block === "set" && node.props.path === undefined) node.props.path = path;
+			var destination = assignmentDestinationProperty(blocks, block);
+			if (destination && node.props[destination] === undefined) node.props[destination] = path;
 			node.out = path;
 		}
 	
@@ -1604,7 +1618,7 @@
 				var node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
 				node.block = block;
 				node.__flowScriptLine = lineNumber;
-				bindAssignmentOutput(node, block, scopePath, lineNumber);
+				bindAssignmentOutput(blocks, node, block, scopePath, lineNumber);
 				if (!node.id) node.id = env.safeIdentifier(scopePath.replace(/^(local|result)\./, ""));
 				return [node];
 			}

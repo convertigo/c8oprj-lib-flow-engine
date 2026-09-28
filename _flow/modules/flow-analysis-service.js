@@ -77,6 +77,20 @@
 				returnedPathSchemas: sourceCatalog ? returnPathSchemasForSourceBlock(definition, sourceCatalog) : {}
 			};
 			ctx.props = nodeProps;
+			// A canonical source omits a property equal to its declared default and
+			// the runtime gives it back; hooks that need the effective value (a
+			// defaulted destination, for instance) read it here, as the runtime does.
+			ctx.propsWithDefaults = function (node) {
+				var props = nodeProps(node);
+				var name = blockName(node);
+				var declared = (blockCatalog(blocks[name]) || {}).props || {};
+				var history = blocks.__flowDefaultsHistory && blocks.__flowDefaultsHistory[name] || {};
+				Object.keys(declared).forEach(function (key) {
+					var value = Object.prototype.hasOwnProperty.call(history, key) ? history[key] : declared[key] && declared[key]["default"];
+					if (props[key] === undefined && value !== undefined) props[key] = normalizeTree(value);
+				});
+				return props;
+			};
 			ctx.outputPath = nodeOutputPath;
 			function reportType(checked, property) {
 				if (checked.status === "compatible") return;
@@ -87,6 +101,14 @@
 			}
 			ctx.declaredSchema = function (path) { return ctx.declaredSchemas[path] || null; };
 			ctx.declareSchema = function (path, schema) {
+				var destination = destinations.validate(path, Object.assign(destinations.policy(), { required: true }));
+				if (!destination.valid) {
+					ctx.errors.push({ severity: "error", code: destination.code, property: "path",
+						path: ctx.currentNodeInfo && ctx.currentNodeInfo.id || "", block: ctx.currentNodeInfo && ctx.currentNodeInfo.block || "",
+						message: "A typed collection needs a destination: " + destination.message,
+						hint: "Assign the call (local.items = json.array({ itemType })) or set path." });
+					return;
+				}
 				var checked = env.schemaContract.definition(schema);
 				if (!checked.valid) { reportType({status:"incompatible", issues:checked.errors}, "type"); return; }
 				var known = env.schemaContract.compare(schema, schema);

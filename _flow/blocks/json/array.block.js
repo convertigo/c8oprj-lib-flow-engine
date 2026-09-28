@@ -7,7 +7,7 @@ const _meta = {
   summary: "create array {{path}}",
   tags: ["array", "list", "create", "typed"],
   properties: {
-    path: {label: "Output", kind: "path", mode: "write", declares: "out", default: "local.items", required: true},
+    path: {label: "Output", description: "Scope path receiving the new typed array; an assignment (local.items = json.array({ itemType })) sets it.", kind: "path", mode: "write", declares: "out", default: "local.items", required: true},
     itemType: {label: "Item type", description: "JSON Schema describing each item; values appended with json.push must satisfy it.", kind: "schema", type: "object", default: {type: "string"}, required: true}
   },
   outputs: {out: {type: "array", items: {"x-flow-schema-from": "itemType"}, hidden: true}},
