@@ -9,13 +9,13 @@ const _meta = {
     "flowscript",
     "patch",
   ],
-  "description": "Patches FlowScript by revision, validates it, then writes the Flow sidecar.",
+  "description": "Patches FlowScript by revision, validates it, then writes the Flow source.",
   "properties": {
     "name": {
       "label": "name",
       "kind": "text",
       "type": "string",
-      "description": "Project Flow sidecar name.",
+      "description": "Project Flow name.",
     },
     "revision": {
       "label": "revision",
@@ -40,7 +40,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Validate and compile without writing the sidecar.",
+      "description": "Validate and compile without writing the Flow source.",
     },
     "projectDir": {
       "label": "projectDir",

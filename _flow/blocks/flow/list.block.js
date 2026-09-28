@@ -3,7 +3,7 @@ const _meta = {
   "version": 1,
   "private": true,
   "icon": "mdi:sitemap-outline",
-  "description": "Lists project Flow sidecars.",
+  "description": "Lists project Flows.",
   "properties": {
     "projectDir": {
       "label": "projectDir",

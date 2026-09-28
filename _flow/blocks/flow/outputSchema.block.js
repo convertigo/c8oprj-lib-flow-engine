@@ -15,7 +15,7 @@ const _meta = {
       "label": "name",
       "kind": "text",
       "type": "string",
-      "description": "Project Flow sidecar name.",
+      "description": "Project Flow name.",
     },
     "flowName": {
       "label": "flowName",

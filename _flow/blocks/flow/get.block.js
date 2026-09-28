@@ -3,13 +3,13 @@ const _meta = {
   "version": 1,
   "private": true,
   "icon": "mdi:sitemap",
-  "description": "Reads one project Flow sidecar.",
+  "description": "Reads one project Flow.",
   "properties": {
     "name": {
       "label": "name",
       "kind": "text",
       "type": "string",
-      "description": "Project Flow sidecar name.",
+      "description": "Project Flow name.",
     },
     "flowName": {
       "label": "flowName",

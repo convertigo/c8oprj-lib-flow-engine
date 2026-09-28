@@ -115,8 +115,8 @@
 					inputSync: inputSync
 				};
 			}
-			raise("UNKNOWN_FLOW", "Unknown Flow sidecar: " + name,
-				null, "Flow sidecars are canonical FlowScript files: " + env.sourcePaths.flows + "/" + flowCodeFileName(name) + ".");
+			raise("UNKNOWN_FLOW", "Unknown Flow: " + name,
+				null, "Flows are canonical FlowScript files: " + env.sourcePaths.flows + "/" + flowCodeFileName(name) + ".");
 		}
 
 		function listFlowsFromRoot(root, projectName, origin, samplesOnly) {

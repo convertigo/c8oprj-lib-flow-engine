@@ -9,7 +9,7 @@ const _meta = {
       "label": "flowName",
       "kind": "text",
       "type": "string",
-      "description": "Flow sidecar name.",
+      "description": "Flow name.",
     },
     "name": {
       "label": "name",

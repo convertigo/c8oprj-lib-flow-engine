@@ -5,14 +5,14 @@ const _meta = {
   "tags": [
     "flow",
   ],
-  "description": "Calls another Flow sidecar without going through Convertigo requestable/XML execution.",
+  "description": "Calls another Flow without going through Convertigo requestable/XML execution.",
   "summary": "call {{flow}}",
   "properties": {
     "flow": {
       "label": "flow",
       "kind": "text",
       "type": "string",
-      "description": "Project Flow sidecar to execute in the Flow engine.",
+      "description": "Project Flow to execute in the Flow engine.",
     },
     "input": {
       "label": "input",
