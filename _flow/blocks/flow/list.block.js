@@ -6,7 +6,7 @@ const _meta = {
   "description": "Lists project Flows.",
   "properties": {
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

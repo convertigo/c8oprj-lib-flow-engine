@@ -6,19 +6,19 @@ const _meta = {
   "description": "Reads one project Flow.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Flow name",
       "kind": "text",
       "type": "string",
       "description": "Project Flow name.",
     },
     "flowName": {
-      "label": "flowName",
+      "label": "Flow name (alias)",
       "kind": "text",
       "type": "string",
       "description": "Alias for name.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

@@ -6,31 +6,31 @@ const _meta = {
   "description": "Deletes learned Flow schema files so the Flow falls back to declared/static schema until an explicit record/adopt action is used.",
   "properties": {
     "flowName": {
-      "label": "flowName",
+      "label": "Flow name",
       "kind": "text",
       "type": "string",
       "description": "Flow name.",
     },
     "name": {
-      "label": "name",
+      "label": "Flow name (alias)",
       "kind": "text",
       "type": "string",
       "description": "Alias for flowName.",
     },
     "node": {
-      "label": "node",
+      "label": "Node id",
       "kind": "text",
       "type": "string",
       "description": "Optional node id.",
     },
     "property": {
-      "label": "property",
+      "label": "Property",
       "kind": "text",
       "type": "string",
       "description": "Optional output property.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

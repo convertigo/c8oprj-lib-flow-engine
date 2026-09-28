@@ -12,25 +12,25 @@ const _meta = {
   "description": "Parses and validates FlowScript without writing the Flow.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Flow name",
       "kind": "text",
       "type": "string",
       "description": "Optional project Flow name used when code is omitted.",
     },
     "code": {
-      "label": "code",
+      "label": "Code",
       "kind": "text",
       "type": "string",
       "description": "FlowScript code to validate.",
     },
     "flowScript": {
-      "label": "flowScript",
+      "label": "FlowScript code (alias)",
       "kind": "text",
       "type": "string",
       "description": "Alias for code.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

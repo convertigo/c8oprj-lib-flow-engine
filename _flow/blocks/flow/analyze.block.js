@@ -6,19 +6,19 @@ const _meta = {
   "description": "Analyzes a Flow source or definition without running it: node order, reads, writes, sources and inferred scope paths.",
   "properties": {
     "flowSource": {
-      "label": "flowSource",
+      "label": "Flow source",
       "kind": "text",
       "type": "string",
       "description": "Flow YAML source to analyze.",
     },
     "definition": {
-      "label": "definition",
+      "label": "Definition",
       "kind": "literal",
       "type": "object",
       "description": "Flow definition object to analyze.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

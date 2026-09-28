@@ -13,32 +13,32 @@ const _meta = {
   "description": "Lists requestables in the current project: sequences, Flows and connector transactions.",
   "properties": {
     "project": {
-      "label": "project",
+      "label": "Project",
       "kind": "text",
       "type": "string",
       "description": "Project to inspect. Defaults to the current project.",
     },
     "query": {
-      "label": "query",
+      "label": "Query",
       "kind": "text",
       "type": "string",
       "description": "Optional text filter over qname, kind, connector and name.",
     },
     "q": {
-      "label": "q",
+      "label": "Query (alias)",
       "kind": "text",
       "type": "string",
       "description": "Short alias for query.",
     },
     "limit": {
-      "label": "limit",
+      "label": "Limit",
       "kind": "literal",
       "type": "number",
       "default": 100,
       "description": "Maximum number of requestables to return.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

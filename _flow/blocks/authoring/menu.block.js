@@ -6,20 +6,20 @@ const _meta = {
   "description": "Returns the dynamic authoring context menu for Flow Studio, MCP, and future clients.",
   "properties": {
     "targetObject": {
-      "label": "targetObject",
+      "label": "Target object",
       "kind": "literal",
       "type": "object",
       "description": "Focused virtual tree node. Defaults to the Svelte frontend builder.",
     },
     "builder": {
-      "label": "builder",
+      "label": "Builder",
       "kind": "text",
       "type": "string",
       "default": "svelte",
       "description": "Frontend builder name.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

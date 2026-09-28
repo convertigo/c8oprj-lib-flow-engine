@@ -6,25 +6,25 @@ const _meta = {
   "description": "Edits one project-local Flow block descriptor and/or implementation. Rhino code should stay a small primitive; HTTP and Convertigo requestable calls belong in visible FlowScript nodes.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Block name",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow block name.",
     },
     "implementationSource": {
-      "label": "implementationSource",
+      "label": "Implementation source",
       "kind": "text",
       "type": "string",
       "description": "Optional low-level replacement implementation source. Prefer canonical block code; Rhino must stay a small primitive.",
     },
     "descriptorSource": {
-      "label": "descriptorSource",
+      "label": "Descriptor source",
       "kind": "text",
       "type": "string",
       "description": "Optional replacement descriptor source converted into canonical block metadata.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

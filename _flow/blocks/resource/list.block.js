@@ -6,27 +6,27 @@ const _meta = {
   "description": "Lists project-local Flow source resources.",
   "properties": {
     "rootDir": {
-      "label": "rootDir",
+      "label": "Root directory",
       "kind": "text",
       "type": "string",
       "default": "_flow/resources",
       "description": "Project-local root directory to scan.",
     },
     "pattern": {
-      "label": "pattern",
+      "label": "Pattern",
       "kind": "text",
       "type": "string",
       "default": "**/*.md",
       "description": "Glob pattern relative to rootDir.",
     },
     "limit": {
-      "label": "limit",
+      "label": "Limit",
       "kind": "literal",
       "type": "number",
       "description": "Maximum number of resources to return.",
     },
     "skip": {
-      "label": "skip",
+      "label": "Skip",
       "kind": "literal",
       "type": "number",
       "description": "Number of matching resources to skip.",

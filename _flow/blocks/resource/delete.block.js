@@ -6,25 +6,25 @@ const _meta = {
   "description": "Deletes a project-local Flow source resource.",
   "properties": {
     "path": {
-      "label": "path",
+      "label": "Resource path",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow resource path.",
     },
     "baseHash": {
-      "label": "baseHash",
+      "label": "Base hash",
       "kind": "text",
       "type": "string",
       "description": "Hash returned by resource.get before deleting.",
     },
     "dryRun": {
-      "label": "dryRun",
+      "label": "Dry run",
       "kind": "literal",
       "type": "boolean",
       "description": "Validate without deleting the file.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

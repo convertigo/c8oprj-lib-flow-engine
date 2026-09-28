@@ -6,13 +6,13 @@ const _meta = {
   "description": "Reads one Flow property type descriptor.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Type name",
       "kind": "text",
       "type": "string",
       "description": "Flow property type name.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

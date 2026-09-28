@@ -6,25 +6,25 @@ const _meta = {
   "description": "Duplicates one Flow block into a project-local block.",
   "properties": {
     "fromName": {
-      "label": "fromName",
+      "label": "Source name",
       "kind": "text",
       "type": "string",
       "description": "Source block name.",
     },
     "toName": {
-      "label": "toName",
+      "label": "New name",
       "kind": "text",
       "type": "string",
       "description": "Project-local destination block name.",
     },
     "overwrite": {
-      "label": "overwrite",
+      "label": "Overwrite",
       "kind": "literal",
       "type": "boolean",
       "description": "Allow replacing an existing project-local block.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

@@ -6,26 +6,26 @@ const _meta = {
   "description": "Reads one Flow block as a logical descriptor plus implementation unit.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Block name",
       "kind": "text",
       "type": "string",
       "description": "Flow block name.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",
     },
     "detail": {
-      "label": "detail",
+      "label": "Detail level",
       "kind": "text",
       "type": "string",
       "default": "compact",
       "description": "Response detail: compact (default), summary or full. Full includes descriptor and implementation sources.",
     },
     "includeMeta": {
-      "label": "includeMeta",
+      "label": "Include metadata",
       "kind": "expression",
       "type": "boolean",
       "default": false,

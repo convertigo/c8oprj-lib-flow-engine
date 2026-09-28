@@ -11,31 +11,31 @@ const _meta = {
   "description": "Analyzes the current FlowScript working copy or official Flow.",
   "properties": {
     "qname": {
-      "label": "qname",
+      "label": "Qualified name",
       "kind": "text",
       "type": "string",
       "description": "Flow qname, for example Project.FlowName.",
     },
     "name": {
-      "label": "name",
+      "label": "Flow name",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow name.",
     },
     "code": {
-      "label": "code",
+      "label": "Code",
       "kind": "text",
       "type": "string",
       "description": "Optional full FlowScript code for internal use. MCP agents should write with flow-code-set or flow-code-patch first.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",
     },
     "project": {
-      "label": "project",
+      "label": "Project",
       "kind": "text",
       "type": "string",
       "description": "Optional logical project name used for relative requestables.",

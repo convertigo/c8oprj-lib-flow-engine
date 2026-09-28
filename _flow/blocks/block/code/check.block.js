@@ -12,26 +12,26 @@ const _meta = {
   "description": "Validates one project-local target implementation without writing it.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Block name",
       "kind": "text",
       "type": "string",
       "description": "Flow block name.",
     },
     "target": {
-      "label": "target",
+      "label": "Implementation",
       "kind": "text",
       "type": "string",
       "default": "frontend",
       "description": "Implementation target. Currently frontend.",
     },
     "code": {
-      "label": "code",
+      "label": "Code",
       "kind": "text",
       "type": "string",
       "description": "Optional browser function source. The saved implementation is checked when omitted.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

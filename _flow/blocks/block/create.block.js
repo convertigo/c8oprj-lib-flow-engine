@@ -6,31 +6,31 @@ const _meta = {
   "description": "Creates one project-local block. Rhino HTTP/requestable code is rejected; prefer FlowScript and use Rhino only for one missing Java/algorithm primitive.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Block name",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow block name.",
     },
     "implementationSource": {
-      "label": "implementationSource",
+      "label": "Implementation source",
       "kind": "text",
       "type": "string",
       "description": "Optional low-level implementation source. Prefer canonical block code; Rhino must stay a small primitive.",
     },
     "descriptorSource": {
-      "label": "descriptorSource",
+      "label": "Descriptor source",
       "kind": "text",
       "type": "string",
       "description": "Optional descriptor source converted into canonical block metadata.",
     },
     "overwrite": {
-      "label": "overwrite",
+      "label": "Overwrite",
       "kind": "literal",
       "type": "boolean",
       "description": "Allow replacing an existing project-local block.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

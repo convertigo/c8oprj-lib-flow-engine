@@ -6,25 +6,25 @@ const _meta = {
   "description": "Creates one project-local Flow property type.",
   "properties": {
     "name": {
-      "label": "name",
+      "label": "Type name",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow property type name.",
     },
     "descriptorSource": {
-      "label": "descriptorSource",
+      "label": "Descriptor source",
       "kind": "text",
       "type": "string",
       "description": "Flow property type descriptor YAML source.",
     },
     "overwrite": {
-      "label": "overwrite",
+      "label": "Overwrite",
       "kind": "literal",
       "type": "boolean",
       "description": "Allow replacing an existing project-local type.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",

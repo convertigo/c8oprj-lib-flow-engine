@@ -11,25 +11,25 @@ const _meta = {
   "description": "Returns compact FlowScript code and revision for one Flow.",
   "properties": {
     "qname": {
-      "label": "qname",
+      "label": "Qualified name",
       "kind": "text",
       "type": "string",
       "description": "Flow qname, for example Project.FlowName.",
     },
     "name": {
-      "label": "name",
+      "label": "Flow name",
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow name.",
     },
     "projectDir": {
-      "label": "projectDir",
+      "label": "Project directory",
       "kind": "text",
       "type": "string",
       "description": "Optional project directory override.",
     },
     "draft": {
-      "label": "draft",
+      "label": "Use draft",
       "kind": "literal",
       "type": "boolean",
       "default": false,
