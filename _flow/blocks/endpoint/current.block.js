@@ -10,6 +10,7 @@ const _meta = {
   "properties": {
     "mcpPath": {
       "label": "MCP endpoint path",
+      "category": "Expert",
       "kind": "text",
       "type": "string",
       "default": "/api/flow-mcp",

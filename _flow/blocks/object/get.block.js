@@ -36,6 +36,7 @@ const _meta = {
     },
     "defaultValue": {
       "label": "Default value",
+      "category": "Expert",
       "kind": "value",
       "type": "unknown",
       "default": null,

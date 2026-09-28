@@ -27,6 +27,7 @@ const _meta = {
     },
     "fallback": {
       "label": "Fallback",
+      "category": "Expert",
       "kind": "value",
       "type": "number",
       "default": 0,

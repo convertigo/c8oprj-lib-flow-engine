@@ -28,6 +28,7 @@ const _meta = {
     },
     "trim": {
       "label": "Trim lines",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": true,
@@ -35,6 +36,7 @@ const _meta = {
     },
     "skipEmpty": {
       "label": "Skip empty lines",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": true,

@@ -14,6 +14,7 @@ const _meta = {
     },
     "default": {
       "label": "Default value",
+      "category": "Expert",
       "kind": "value",
       "type": "unknown",
       "description": "Value returned when the session key is missing.",

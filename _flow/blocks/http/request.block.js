@@ -49,6 +49,7 @@ const _meta = {
     },
     "headers": {
       "label": "Headers",
+      "category": "Expert",
       "kind": "template",
       "type": "object",
       "description": "Optional HTTP headers object.",
@@ -61,6 +62,7 @@ const _meta = {
     },
     "connectTimeoutMs": {
       "label": "Connection timeout (ms)",
+      "category": "Expert",
       "kind": "expression",
       "type": "integer",
       "default": 60000,
@@ -68,6 +70,7 @@ const _meta = {
     },
     "readTimeoutMs": {
       "label": "Read timeout (ms)",
+      "category": "Expert",
       "kind": "expression",
       "type": "integer",
       "default": 60000,

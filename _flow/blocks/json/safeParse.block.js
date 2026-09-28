@@ -27,6 +27,7 @@ const _meta = {
     },
     "errorPrefix": {
       "label": "Error prefix",
+      "category": "Expert",
       "kind": "template",
       "type": "string",
       "default": "JSON parse failed",
@@ -34,6 +35,7 @@ const _meta = {
     },
     "truncated": {
       "label": "Truncated",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": false,

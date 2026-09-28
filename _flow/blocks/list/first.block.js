@@ -28,6 +28,7 @@ const _meta = {
     },
     "fallback": {
       "label": "Fallback",
+      "category": "Expert",
       "kind": "value",
       "type": "unknown",
       "description": "Value returned for an empty array.",

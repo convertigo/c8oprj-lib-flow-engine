@@ -24,6 +24,7 @@ const _meta = {
     },
     "dryRun": {
       "label": "Dry run",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": false,

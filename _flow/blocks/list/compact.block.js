@@ -28,6 +28,7 @@ const _meta = {
     },
     "flatten": {
       "label": "Flatten arrays",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": true,
@@ -35,6 +36,7 @@ const _meta = {
     },
     "skipEmptyString": {
       "label": "Skip empty strings",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": true,

@@ -22,6 +22,7 @@ const _meta = {
     },
     "charset": {
       "label": "Charset",
+      "category": "Expert",
       "kind": "text",
       "type": "string",
       "default": "UTF-8",

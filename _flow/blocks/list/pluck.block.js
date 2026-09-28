@@ -38,6 +38,7 @@ const _meta = {
     },
     "skipMissing": {
       "label": "Skip missing",
+      "category": "Expert",
       "kind": "expression",
       "type": "boolean",
       "default": true,
@@ -45,6 +46,7 @@ const _meta = {
     },
     "defaultValue": {
       "label": "Default value",
+      "category": "Expert",
       "kind": "value",
       "type": "unknown",
       "expert": true,

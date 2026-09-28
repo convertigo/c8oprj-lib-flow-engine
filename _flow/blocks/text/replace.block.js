@@ -49,6 +49,7 @@ const _meta = {
     },
     "caseSensitive": {
       "label": "Case sensitive",
+      "category": "Expert",
       "kind": "value",
       "type": "boolean",
       "default": true,

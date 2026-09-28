@@ -30,6 +30,7 @@ const _meta = {
     },
     "flush": {
       "label": "Flush",
+      "category": "Expert",
       "kind": "literal",
       "type": "boolean",
       "default": false,

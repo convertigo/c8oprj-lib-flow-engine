@@ -42,6 +42,7 @@ const _meta = {
     },
     "headers": {
       "label": "Headers",
+      "category": "Expert",
       "kind": "template",
       "type": "object",
       "description": "Optional HTTP headers object.",
