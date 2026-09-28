@@ -106,7 +106,8 @@
   function stateDefinition() {
     return objectValue(state && state.definition);
   }
-  function propOrder(info, defs, node) {
+  // Every Flow node declares its editable properties; its other fields are structure.
+  function propOrder(info, defs) {
     var out = [];
     (info.propertyOrder || []).forEach(function (k) {
       if (defs[k] && !defs[k].hidden && out.indexOf(k) < 0) out.push(k);
@@ -115,18 +116,6 @@
       .sort()
       .forEach(function (k) {
         if (!defs[k].hidden && out.indexOf(k) < 0) out.push(k);
-      });
-    // A v2 node declares every editable property; its other fields are structure.
-    if (node && node.sourceVersion === 2) return out;
-    keys(node)
-      .sort()
-      .forEach(function (k) {
-        if (
-          ["id", "block", "comment", "props"].indexOf(k) < 0 &&
-          !defs[k] &&
-          out.indexOf(k) < 0
-        )
-          out.push(k);
       });
     return out;
   }
@@ -247,7 +236,7 @@
     return path;
   }
   function pickerProps(info, defs, node) {
-    return propOrder(info, defs, node)
+    return propOrder(info, defs)
       .filter(function (k) {
         var d = defs[k] || {};
         return !d.readOnly && ["id", "block", "comment"].indexOf(k) < 0;
@@ -844,7 +833,7 @@
     var node = stateDefinition();
     var info = state.info || {};
     var defs = info.propertyDefinitions || {};
-    var ordered = propOrder(info, defs, node);
+    var ordered = propOrder(info, defs);
     var html =
       '<div class="wrap"><div class="main"><h1>' +
       esc(state.summary || node.id || state.virtualPath || "Flow node") +
