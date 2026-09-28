@@ -5395,7 +5395,7 @@ var smokePanelRouteRef = findNode(flowSvelteTree, function (node) {
 	return node.type === "SmokePanel" && /\.smokePanel1$/.test(String(node.path || ""));
 });
 var smokeIf = findNode(flowSvelteTree, function (node) {
-	return node.kind === "frontendDirectiveBlock" && node.summary === "If" &&
+	return node.kind === "frontendDirectiveBlock" && node.type === "If" &&
 		sameCanonicalPath(nodeInfoObject(node).sourcePath, flowSvelteComponentFile);
 });
 assertTrue(smokePanelRoot && nodeInfoObject(smokePanelRoot).slots.structure.sourceMutationPath === "frontAst.slots.structure.children"
