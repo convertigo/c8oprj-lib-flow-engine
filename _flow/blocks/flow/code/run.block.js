@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Runs the current FlowScript working copy or official Flow.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -58,12 +61,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Include execution trace in the response.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
     "project": {
       "label": "Project",

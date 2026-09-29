@@ -10,6 +10,9 @@ const _meta = {
     "search",
   ],
   "description": "Searches FlowScript code and returns small matching extracts.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -50,12 +53,6 @@ const _meta = {
       "type": "integer",
       "default": 20,
       "description": "Maximum number of extracts.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

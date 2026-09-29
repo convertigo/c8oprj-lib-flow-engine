@@ -10,6 +10,9 @@ const _meta = {
     "validate",
   ],
   "description": "Parses and validates FlowScript without writing the Flow.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Flow name",
@@ -28,12 +31,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Alias for code.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

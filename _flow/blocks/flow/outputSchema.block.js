@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:code-json",
   "description": "Returns the selected JSON output schema source for a Flow; MCP authoring can adopt or remove it as _flow.outputs.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -58,12 +61,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "When adopting/removing through MCP, return the rewritten source without writing it.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

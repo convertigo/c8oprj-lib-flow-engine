@@ -4,18 +4,15 @@ const _meta = {
   "private": true,
   "icon": "mdi:shape-outline",
   "description": "Reads one Flow property type descriptor.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Type name",
       "kind": "text",
       "type": "string",
       "description": "Flow property type name.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

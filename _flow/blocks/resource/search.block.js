@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:file-search-outline",
   "description": "Searches project-local Flow text resources.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "query": {
       "label": "Query",
@@ -46,12 +49,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Include short usage hints.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:dots-vertical-circle-outline",
   "description": "Returns the dynamic authoring context menu for Flow Studio, MCP, and future clients.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "targetObject": {
       "label": "Target object",
@@ -17,12 +20,6 @@ const _meta = {
       "type": "string",
       "default": "svelte",
       "description": "Frontend builder name.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "outputs": {

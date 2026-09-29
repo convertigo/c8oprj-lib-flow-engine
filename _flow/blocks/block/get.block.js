@@ -4,18 +4,15 @@ const _meta = {
   "private": true,
   "icon": "mdi:puzzle-outline",
   "description": "Reads one Flow block as a logical descriptor plus implementation unit.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
       "kind": "text",
       "type": "string",
       "description": "Flow block name.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
     "detail": {
       "label": "Detail level",

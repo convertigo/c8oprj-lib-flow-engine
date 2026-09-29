@@ -10,6 +10,9 @@ const _meta = {
     "patch",
   ],
   "description": "Patches FlowScript by revision, validates it, then writes the Flow source.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Flow name",
@@ -41,12 +44,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Validate and compile without writing the Flow source.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

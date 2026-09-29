@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:puzzle-edit-outline",
   "description": "Edits one project-local Flow block descriptor and/or implementation. Rhino code should stay a small primitive; HTTP and Convertigo requestable calls belong in visible FlowScript nodes.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
@@ -22,12 +25,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Optional replacement descriptor source converted into canonical block metadata.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:file-tree-outline",
   "description": "Describes the virtual Flow or FlowEngine tree.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "target": {
       "label": "Tree",
@@ -70,12 +73,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Include static analysis when available.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

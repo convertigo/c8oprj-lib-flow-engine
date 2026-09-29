@@ -10,6 +10,9 @@ const _meta = {
     "check",
   ],
   "description": "Validates one project-local target implementation without writing it.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
@@ -29,12 +32,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Optional browser function source. The saved implementation is checked when omitted.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

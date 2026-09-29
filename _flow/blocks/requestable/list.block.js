@@ -11,6 +11,9 @@ const _meta = {
     "flow",
   ],
   "description": "Lists requestables in the current project: sequences, Flows and connector transactions.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "project": {
       "label": "Project",
@@ -36,12 +39,6 @@ const _meta = {
       "type": "number",
       "default": 100,
       "description": "Maximum number of requestables to return.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

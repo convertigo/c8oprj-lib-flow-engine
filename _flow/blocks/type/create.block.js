@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:shape-plus-outline",
   "description": "Creates one project-local Flow property type.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Type name",
@@ -22,12 +25,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Allow replacing an existing project-local type.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

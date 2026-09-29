@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:file-edit-outline",
   "description": "Applies a unified patch to a project-local Flow source resource.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "path": {
       "label": "Resource path",
@@ -46,12 +49,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Return patched content.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

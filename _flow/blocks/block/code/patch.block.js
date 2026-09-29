@@ -10,6 +10,9 @@ const _meta = {
     "patch",
   ],
   "description": "Applies a revision-checked FlowScript block patch or replacement.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
@@ -55,12 +58,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Validate without writing.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

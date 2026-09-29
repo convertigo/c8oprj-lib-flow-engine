@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:play-circle-outline",
   "description": "Runs a Flow source or definition.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "flowSource": {
       "label": "Flow source",
@@ -77,12 +80,6 @@ const _meta = {
       "kind": "literal",
       "type": "number",
       "description": "MCP authoring hint: compact trace payloads larger than this JSON size.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
     "project": {
       "label": "Project",

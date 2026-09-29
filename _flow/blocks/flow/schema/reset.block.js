@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:database-refresh-outline",
   "description": "Deletes learned Flow schema files so the Flow falls back to declared/static schema until an explicit record/adopt action is used.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "flowName": {
       "label": "Flow name",
@@ -28,12 +31,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Optional output property.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

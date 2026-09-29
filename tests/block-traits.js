@@ -31,4 +31,8 @@ assert(props.name && props.name.description === "Who to greet.", "Own properties
 
 var run = invoke("run", { definition: { flow: { sourceVersion: 2 }, nodes: [{ block: "proof.greet", props: { name: "Nicolas" }, out: "result.text" }] }, includeTrace: false });
 assert(run.ok && run.result.text === "Bonjour Nicolas", "The composed default applies at run time: " + JSON.stringify(run));
-print("block-traits OK: project trait, composed documentation, changed default, runtime default");
+// A core trait: the blocks working on a project share projectDir, documented once.
+var core = invoke("blockGet", { name: "type.get" });
+var coreProps = (core.block || core).properties || (core.block || core).props || {};
+assert(coreProps.projectDir && coreProps.projectDir.trait === "flow.projectScoped", "Core block composes flow.projectScoped: " + JSON.stringify(coreProps.projectDir));
+print("block-traits OK: project trait, composed documentation, changed default, runtime default, core trait");

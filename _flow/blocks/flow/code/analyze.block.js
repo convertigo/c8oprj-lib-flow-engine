@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Analyzes the current FlowScript working copy or official Flow.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -27,12 +30,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Optional full FlowScript code for internal use. MCP agents should write with flow-code-set or flow-code-patch first.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
     "project": {
       "label": "Project",

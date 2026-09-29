@@ -10,6 +10,9 @@ const _meta = {
     "patch",
   ],
   "description": "Applies a revision-checked FlowScript patch to the working copy.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -68,12 +71,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Refresh the Studio Project Explorer after writing. Keep false for fast MCP edits.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

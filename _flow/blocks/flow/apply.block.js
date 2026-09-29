@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:source-branch-sync",
   "description": "Applies Flow or FlowEngine mutations without writing files.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "target": {
       "label": "Tree",
@@ -46,12 +49,6 @@ const _meta = {
       "kind": "literal",
       "type": "array",
       "description": "Mutations to apply in order.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

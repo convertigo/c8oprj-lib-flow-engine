@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:content-duplicate",
   "description": "Duplicates one Flow block into a project-local block.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "fromName": {
       "label": "Source name",
@@ -22,12 +25,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Allow replacing an existing project-local block.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

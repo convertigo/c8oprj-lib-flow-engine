@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:sitemap",
   "description": "Reads one project Flow.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Flow name",
@@ -16,12 +19,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Alias for name.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Checks the current FlowScript working copy without running it.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -34,12 +37,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Check the in-memory FlowScript working copy when code is omitted.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

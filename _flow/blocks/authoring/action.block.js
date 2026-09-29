@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:play-circle-outline",
   "description": "Runs one dynamic authoring action through the same engine contract used by the Studio context menu.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "actionId": {
       "label": "Action id",
@@ -42,12 +45,6 @@ const _meta = {
       "kind": "literal",
       "type": "integer",
       "description": "Managed Studio viewer CDP port injected by the MCP transport.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "outputs": {

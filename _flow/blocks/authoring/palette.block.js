@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:palette-outline",
   "description": "Computes the generic authoring palette for a focus node and returns diagnostics when it is empty.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "surface": {
       "label": "Surface",
@@ -73,12 +76,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Optional FlowEngine YAML source.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

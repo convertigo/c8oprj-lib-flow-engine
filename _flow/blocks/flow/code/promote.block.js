@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Promotes a checked FlowScript working copy to the official Flow model.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -54,12 +57,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Clear the working copy after successful promotion.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

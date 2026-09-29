@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:file-remove-outline",
   "description": "Deletes a project-local Flow source resource.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "path": {
       "label": "Resource path",
@@ -22,12 +25,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Validate without deleting the file.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

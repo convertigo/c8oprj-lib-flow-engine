@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Renders one project Flow as FlowScript code with a revision.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Flow name",
@@ -28,12 +31,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Include generated context comments such as known paths.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

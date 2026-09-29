@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:graph-outline",
   "description": "Returns visible scope paths at a Flow node.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Flow name",
@@ -64,12 +67,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "normal or compact.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

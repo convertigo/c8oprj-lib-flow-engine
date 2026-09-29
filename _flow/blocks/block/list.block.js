@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:puzzle-outline",
   "description": "Lists Flow blocks visible from a project.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "query": {
       "label": "Query",
@@ -97,12 +100,6 @@ const _meta = {
       "type": "boolean",
       "default": true,
       "description": "Include usage hints. Call with hints=false once understood.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

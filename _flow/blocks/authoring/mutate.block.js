@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:source-branch-sync",
   "description": "Applies a generic authoring mutation through the same engine/frontbuilder contract used by Studio and MCP.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "surface": {
       "label": "Surface",
@@ -60,12 +63,6 @@ const _meta = {
       "kind": "literal",
       "type": "array",
       "description": "Mutations to apply in order.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

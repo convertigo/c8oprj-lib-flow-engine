@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:file-tree-outline",
   "description": "Describes the generic authoring tree for Studio, MCP, tests, and future authoring clients.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "surface": {
       "label": "Surface",
@@ -67,12 +70,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Alias for focusPath.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

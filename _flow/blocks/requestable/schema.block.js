@@ -11,6 +11,9 @@ const _meta = {
     "flow",
   ],
   "description": "Returns the known output schema and paths for a requestable.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "requestable": {
       "label": "Requestable",
@@ -43,12 +46,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Include the runtime sample when learn is true.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

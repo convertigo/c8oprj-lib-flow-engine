@@ -10,6 +10,9 @@ const _meta = {
     "search",
   ],
   "description": "Searches project FlowScript block code and returns small matching extracts.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
@@ -68,12 +71,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Optional provider filter.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

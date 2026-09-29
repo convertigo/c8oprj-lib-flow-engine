@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Reads project-local custom block code with revision info; not for standard http/list/json blocks.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
@@ -29,12 +32,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Also include the code file path and the implementation source.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

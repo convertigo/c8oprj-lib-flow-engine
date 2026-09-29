@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:puzzle-plus-outline",
   "description": "Creates one project-local block. Rhino HTTP/requestable code is rejected; prefer FlowScript and use Rhino only for one missing Java/algorithm primitive.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
@@ -28,12 +31,6 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "description": "Allow replacing an existing project-local block.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

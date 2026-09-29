@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Returns compact FlowScript code and revision for one Flow.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "qname": {
       "label": "Qualified name",
@@ -21,12 +24,6 @@ const _meta = {
       "kind": "text",
       "type": "string",
       "description": "Project-local Flow name.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
     "draft": {
       "label": "Use draft",

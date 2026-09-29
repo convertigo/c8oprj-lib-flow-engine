@@ -4,14 +4,10 @@ const _meta = {
   "private": true,
   "icon": "mdi:sitemap-outline",
   "description": "Lists project Flows.",
-  "properties": {
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
-    },
-  },
+  "traits": [
+    "flow.projectScoped",
+  ],
+  "properties": {},
   "runtime": "rhino",
   "hooks": {
     "file": "list.hooks.js",

@@ -9,6 +9,9 @@ const _meta = {
     "flowscript",
   ],
   "description": "Creates or updates one project-local Flow block implemented with FlowScript code.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Block name",
@@ -111,12 +114,6 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Validate without writing.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",

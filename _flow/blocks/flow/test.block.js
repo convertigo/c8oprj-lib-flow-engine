@@ -4,6 +4,9 @@ const _meta = {
   "private": true,
   "icon": "mdi:test-tube",
   "description": "Runs a named project Flow, source or definition.",
+  "traits": [
+    "flow.projectScoped",
+  ],
   "properties": {
     "name": {
       "label": "Flow name",
@@ -89,12 +92,6 @@ const _meta = {
       "kind": "literal",
       "type": "number",
       "description": "MCP authoring hint: compact trace payloads larger than this JSON size.",
-    },
-    "projectDir": {
-      "label": "Project directory",
-      "kind": "text",
-      "type": "string",
-      "description": "Optional project directory override.",
     },
   },
   "runtime": "rhino",
