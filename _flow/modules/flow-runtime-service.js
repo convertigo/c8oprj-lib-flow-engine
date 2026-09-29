@@ -450,6 +450,29 @@
 		runContextPrototype.closeHandle = function (handle) {
 			return closeRuntimeHandle(this, handle);
 		};
+		// Cooperative cancellation, as bContinue in Convertigo sequences: read before each
+		// block and before a result is published. Blocks with internal loops read it too.
+		runContextPrototype.canContinue = function () {
+			if (this.cancelled) {
+				return false;
+			}
+			if (this.parentRun && !this.parentRun.canContinue()) {
+				this.cancelled = this.parentRun.cancelled || "cancelled";
+				return false;
+			}
+			var host = this.hostRequestable;
+			if (host === undefined) {
+				host = this.hostRequestable = hostRequestable();
+			}
+			if (host && !host.isRunning()) {
+				this.cancelled = "cancelled";
+				return false;
+			}
+			return true;
+		};
+		runContextPrototype.cancel = function (reason) {
+			this.cancelled = String(reason || "cancelled");
+		};
 		runContextPrototype.convertigoContext = function () {
 			var state = frameStateForRequestScope(this.scopes.request);
 			if (!Object.prototype.hasOwnProperty.call(state, "invocationContext")) {
@@ -546,6 +569,30 @@
 			return runner || null;
 		}
 
+		// The requestable running this Flow (a Convertigo Sequence): isRunning() is false once
+		// the Studio cancels it or its timeout expires (bContinue).
+		function hostRequestable() {
+			try {
+				var convertigoContext = currentConvertigoContext();
+				var requested = convertigoContext && convertigoContext.requestedObject;
+				return requested && typeof requested.isRunning === "function" ? requested : null;
+			} catch (e) {
+				return null;
+			}
+		}
+
+		// A Flow run from another one stops when its caller is cancelled.
+		function childRunRequest(parent, request) {
+			Object.defineProperty(request, "__parentRun", { value: parent, enumerable: false });
+			return request;
+		}
+
+		function ensureCanContinue(ctx, node) {
+			if (!ctx.canContinue()) {
+				raise("FLOW_CANCELLED", "The Flow execution was cancelled (" + ctx.cancelled + ").", node);
+			}
+		}
+
 		function prepareNodeExecutor(node, block, name, out, writer, runner) {
 			if (!block) {
 				return null;
@@ -554,7 +601,9 @@
 				if (ctx.stopped || node.disabled) {
 					return undefined;
 				}
+				ensureCanContinue(ctx, node);
 				var result = runner ? runner(ctx, node) : block.run(ctx, node);
+				ensureCanContinue(ctx, node);
 				if (writer && result !== undefined) {
 					writer(ctx, result);
 				}
@@ -678,6 +727,7 @@
 				profileAdd(ctx, "executeNodePropsMs", propsStarted);
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
+				ensureCanContinue(ctx, node);
 				try {
 					if (preparedHit && prepared.run) {
 						profileCount(ctx, "preparedRunnerHits");
@@ -691,6 +741,7 @@
 					profileAdd(ctx, "executeNodeRunMs", runStarted);
 				}
 				var commitStarted = profiled ? nanoTime() : 0;
+				ensureCanContinue(ctx, node);
 				if (out && result !== undefined) {
 					ctx.write(out, result);
 				}
@@ -758,12 +809,14 @@
 			try {
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
+				ensureCanContinue(ctx, node);
 				try {
 					result = block.run(ctx, node);
 				} finally {
 					profileAdd(ctx, "callBlockRunMs", runStarted);
 				}
 				var commitStarted = profiled ? nanoTime() : 0;
+				ensureCanContinue(ctx, node);
 				if (ctx.returned !== undefined) {
 					result = ctx.returned;
 				}
@@ -1092,6 +1145,10 @@
 			ctx.preparation = plan && plan.preparation || null;
 			ctx.returned = undefined;
 			ctx.stopped = false;
+			if (request.__parentRun) {
+				// Only a called Flow carries its caller: a top-level frame keeps its slot budget.
+				ctx.parentRun = request.__parentRun;
+			}
 			ctx.traceEnabled = request.includeTrace !== false;
 			ctx.scopes = scopes;
 			if (request.maxGraphBlockDepth !== undefined && request.maxGraphBlockDepth !== null) {
@@ -1272,7 +1329,7 @@
 				options = options || {};
 				return withProjectDir(options.projectDir, function () {
 					var source = sourceForWriteRequest(options, flowSource);
-					return runFlowRequest({
+					return runFlowRequest(childRunRequest(ctx, {
 						project: options.project || currentProjectName(ctx.request),
 						flowSource: source,
 						config: config || {},
@@ -1280,7 +1337,7 @@
 						context: mergedContext(ctx.scopes.request, options.context || {}),
 						includeFlow: options.includeFlow === true || options.includeLocal === true,
 						includeTrace: options.includeTrace === true
-					}, loadBlocks());
+					}), loadBlocks());
 				});
 			};
 			ctx.blockList = function (args) {
@@ -1390,7 +1447,7 @@
 				options = options || {};
 				return withProjectDir(options.projectDir, function () {
 					var source = sourceForWriteRequest(options, flowSource);
-					return runFlowRequest({
+					return runFlowRequest(childRunRequest(ctx, {
 						project: options.project || currentProjectName(ctx.request),
 						flowSource: source,
 						config: config || {},
@@ -1398,7 +1455,7 @@
 						context: mergedContext(ctx.scopes.request, options.context || {}),
 						includeFlow: options.includeFlow === true || options.includeLocal === true,
 						includeTrace: options.includeTrace === true
-					}, loadBlocks());
+					}), loadBlocks());
 				});
 			};
 			ctx.flowList = function (args) {
@@ -1423,7 +1480,7 @@
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
 					var source = sourceForFlowRequest(args);
-					return runFlowRequest({
+					return runFlowRequest(childRunRequest(ctx, {
 						project: args.project || currentProjectName(ctx.request),
 						flowSource: source,
 						config: args.config || {},
@@ -1431,7 +1488,7 @@
 						context: mergedContext(ctx.scopes.request, args.context || {}),
 						includeFlow: args.includeFlow === true || args.includeLocal === true,
 						includeTrace: args.includeTrace === true
-					}, loadBlocks());
+					}), loadBlocks());
 				});
 			};
 			ctx.flowSourceGet = function (args) {
