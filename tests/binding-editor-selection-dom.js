@@ -60,5 +60,23 @@ assert.deepEqual(JSON.parse(editor.value), composed);
 assert.match(selected().selectedOptions[0].textContent, /local.copy.*unavailable/);
 editor.setState({ value: { mode: 'literal', value: 'Text' }, bindingSources: [date] });
 assert.deepEqual(JSON.parse(editor.value), { mode: 'literal', value: 'Text' });
+// An empty value opens empty: nothing is chosen, as the first available source, until the author chooses.
+for (const value of ['', undefined, null]) {
+  emitted = 0;
+  editor.setState({ value, bindingSources: [date, current] });
+  assert.equal(emitted, 0, 'opening an empty value must never mutate it');
+  assert.equal(editor.value, '', 'an empty value stays empty until a value is chosen');
+  assert.equal(editor.valid, true);
+  assert.equal(selected().value, '', 'no source is selected for an empty value');
+  assert.match(selected().selectedOptions[0].textContent, /Choose a value/);
+  editor.shadowRoot.querySelector('[data-mode="source"]').click();
+  assert.equal(emitted, 0, 'Source is already the mode of an empty value');
+  assert.equal(editor.value, '');
+}
+selected().value = '1';
+selected().dispatchEvent(new Event('change', { bubbles: true }));
+assert.ok(emitted > 0);
+assert.deepEqual(JSON.parse(editor.value).source, current.source, 'the chosen value is the value');
+assert.equal(selected().value, '1');
 dom.window.close();
 console.log('binding editor selection DOM OK: preserved source, honest selection, editable path, asynchronous sources');

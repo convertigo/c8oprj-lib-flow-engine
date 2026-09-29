@@ -153,7 +153,9 @@
   }
   function setDraft(v, valid, error) {
     draft = v == null ? "" : String(v);
-    var conversionError = propertyValueError(draft, state && state.propertyDefinition);
+    // A value not set that stays so, as an empty binding until a value is chosen, is not a change to check.
+    var current = state && state.value != null ? (typeof state.value === "string" ? state.value : JSON.stringify(state.value)) : "";
+    var conversionError = draft === "" && current === "" ? "" : propertyValueError(draft, state && state.propertyDefinition);
     if (conversionError) { valid = false; error = conversionError; }
     send({ type: "value", value: draft, valid: valid !== false, error: error || "" });
   }

@@ -446,6 +446,10 @@
 
 			setState(state) {
 				this._state = state || {};
+				// An empty value stays empty until the author chooses a value: opening the editor
+				// never picks one, as the first available source, for the host to apply.
+				var value = this._state.value;
+				this._emptyUntilChosen = value === undefined || value === null || value === "";
 				// Text around a value is composed (Compose mode); Source selects one value.
 				this._binding = editableIndexedBinding(normalize(this._state.value));
 				if (this._binding.mode === "expression") {
@@ -462,9 +466,9 @@
 				this.render();
 			}
 
-			get value() { return JSON.stringify(indexedBinding(this._binding)); }
-			get valid() { return bindingValidation(indexedBinding(this._binding)).valid; }
-			get validationError() { return bindingValidation(indexedBinding(this._binding)).error; }
+			get value() { return this._emptyUntilChosen ? "" : JSON.stringify(indexedBinding(this._binding)); }
+			get valid() { return this._emptyUntilChosen || bindingValidation(indexedBinding(this._binding)).valid; }
+			get validationError() { return this._emptyUntilChosen ? "" : bindingValidation(indexedBinding(this._binding)).error; }
 
 			customLiteralEditor(tag) {
 				var container = this.shadowRoot && this.shadowRoot.querySelector("[data-literal-custom]");
@@ -544,13 +548,15 @@
 					source: copy(first.source || sourceRef(first.category, first.id, this._selection.source)),
 					path: []
 				};
-				if (this._binding.mode === "source") this._binding = copy(this._selection);
+				if (this._binding.mode === "source" && !this._emptyUntilChosen) this._binding = copy(this._selection);
 			}
 
 			handleEvent(event) {
 				var mode = event.target && event.target.getAttribute && event.target.getAttribute("data-mode");
 				if (event.type === "click" && mode) {
-					event.preventDefault(); this.setMode(mode); this.render(); this.emit(); return;
+					event.preventDefault();
+					if (this.setMode(mode) === false) return;
+					this.render(); this.emit(); return;
 				}
 				if (event.type === "click") {
 					var addKind = event.target && event.target.getAttribute && event.target.getAttribute("data-add-part");
@@ -673,6 +679,7 @@
 			}
 
 			applySelection() {
+				this._emptyUntilChosen = false;
 				if (this._binding.mode === "source") this._binding = copy(this._selection);
 				else if (Array.isArray(this._binding.parts) && this._editingPartIndex >= 0 && this._binding.parts[this._editingPartIndex]) {
 					this._binding.parts[this._editingPartIndex] = sourcePart(this._selection);
@@ -680,6 +687,9 @@
 			}
 
 			setMode(mode) {
+				// Source is already the mode of an empty value: a value is chosen in the list
+				if (mode === "source" && this._emptyUntilChosen && (this._binding.mode || "source") === "source") return false;
+				this._emptyUntilChosen = false;
 				if (mode === "literal") {
 					var choices = literalChoices(this._state);
 					var value = this._binding.value;
@@ -694,6 +704,8 @@
 			}
 
 			emit() {
+				// an action of the author: the value is the one the editor shows
+				this._emptyUntilChosen = false;
 				var validation = bindingValidation(indexedBinding(this._binding));
 				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value, valid: validation.valid, error: validation.error } }));
 			}
@@ -833,15 +845,17 @@
 				this._visibleSources = available;
 				var sourceSelect = this.shadowRoot.querySelector("[data-source]");
 				var missingSource = !currentCandidate && !!(sourceId(this._selection.source) || this._selection.source.value);
+				var choosing = this._emptyUntilChosen && available.length > 0;
 				var retainedOption = missingSource ? '<option value="" selected disabled>' +
-					esc(sourceExpression(null, this._selection)) + ' — unavailable</option>' : "";
+					esc(sourceExpression(null, this._selection)) + ' — unavailable</option>'
+					: choosing ? '<option value="" selected disabled>Choose a value…</option>' : "";
 				sourceSelect.innerHTML = retainedOption + (available.length ? available.map(function (entry, index) {
-					var selected = sourceKey(entry.source || entry) === sourceKey(self._selection.source);
+					var selected = !choosing && sourceKey(entry.source || entry) === sourceKey(self._selection.source);
 					var type = entry.schema && entry.schema.type ? " — " + entry.schema.type : "";
 					return '<option value="' + index + '"' + (selected ? " selected" : "") + '>' + esc(sourceOptionText(entry) + type) + '</option>';
 				}).join("") : missingSource ? "" : '<option value="">No source available</option>');
 				sourceSelect.disabled = available.length === 0;
-				var selectedSource = available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._selection.source); });
+				var selectedSource = choosing ? null : available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._selection.source); });
 				// Paths here are relative to this source, not the host's global scopes.
 				var context = selectedSource && selectedSource.context || {};
 				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };
