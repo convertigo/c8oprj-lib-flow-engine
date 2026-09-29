@@ -384,12 +384,16 @@
 
 	// Traits (spec-flow-catalog-composition-v1): *.trait.js files with a leading _meta,
 	// from the core, this project and referenced projects, like types.
-	function traitDirs(env) {
+	function traitDirs(env, extraDirs) {
 		var dirs = [{ dir: new env.File(env.engineDir(), "traits"), origin: "core" }];
 		var project = env.projectDir();
 		if (project) dirs.push({ dir: new env.File(project, env.sourcePaths.path("traits")), origin: "project" });
 		referencedProjectRoots(env, env.sourcePaths.path("traits")).forEach(function (root) {
 			dirs.push({ dir: new env.File(root, env.sourcePaths.path("traits")), origin: "reference" });
+		});
+		// Providers (the Svelte frontbuilder) keep their traits in their project's _flow/traits.
+		(extraDirs || []).forEach(function (dir) {
+			dirs.push({ dir: dir, origin: "reference" });
 		});
 		var seen = {};
 		return dirs.filter(function (entry) {
@@ -409,17 +413,17 @@
 		return files;
 	}
 
-	function traitsCacheKey(env) {
-		return traitDirs(env).map(function (entry) {
+	function traitsCacheKey(env, extraDirs) {
+		return traitDirs(env, extraDirs).map(function (entry) {
 			return entry.origin + ":" + traitFiles(entry.dir, env).map(function (file) {
 				return env.canonicalPath(file) + "@" + file.lastModified() + ":" + file.length();
 			}).join(",");
 		}).join("\n") || "none";
 	}
 
-	function loadTraitsUncached(env) {
+	function loadTraitsUncached(env, extraDirs) {
 		var traits = {};
-		traitDirs(env).forEach(function (entry) {
+		traitDirs(env, extraDirs).forEach(function (entry) {
 			traitFiles(entry.dir, env).forEach(function (file) {
 				var meta = env.extractFlowScriptBlockMeta(String(env.FileUtils.readFileToString(file, "UTF-8"))).meta || {};
 				var name = String(meta.name || "");
@@ -438,13 +442,13 @@
 		return traits;
 	}
 
-	function loadTraits(env) {
-		var key = "traits\n" + traitsCacheKey(env);
+	function loadTraits(env, extraDirs) {
+		var key = "traits\n" + traitsCacheKey(env, extraDirs);
 		var cached = env.readRuntimeCache(env.typeCache, key, key);
 		if (cached) {
 			return cached;
 		}
-		return env.writeRuntimeCache(env.typeCache, key, key, loadTraitsUncached(env),
+		return env.writeRuntimeCache(env.typeCache, key, key, loadTraitsUncached(env, extraDirs),
 			"traits for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project"));
 	}
 

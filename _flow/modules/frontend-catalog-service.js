@@ -469,7 +469,7 @@
 		};
 	}
 
-	function normalizeSvelteComponent(raw, file, builderName, settings, env, providerHint) {
+	function normalizeSvelteComponent(raw, file, builderName, settings, env, providerHint, traitDirs) {
 		if (!raw) {
 			return null;
 		}
@@ -500,7 +500,7 @@
 		var uiTraits = raw.traits && typeof raw.traits === "object" && Object.prototype.toString.call(raw.traits) !== "[object Array]"
 			? Object.keys(raw.traits) : frontendUiBlockTraits(raw);
 		// Traits bring shared properties (disabled of ui.control...), composed by the shared module.
-		var composed = typeof env.composeTraits === "function" ? env.composeTraits({ properties: properties, traits: raw.traits || uiTraits }) : null;
+		var composed = typeof env.composeTraits === "function" ? env.composeTraits({ properties: properties, traits: raw.traits || uiTraits }, traitDirs) : null;
 		if (composed) {
 			properties = composed.properties;
 			uiTraits = composed.traits;
@@ -2085,6 +2085,10 @@
 		settings = settings || {};
 		var roots = frontendResourceRoots(name, settings, env);
 		var projectFrontendRoot = projectFrontendRootForSettings(name, settings, env);
+		// <project>/_flow/frontbuilder/svelte -> <project>/_flow/traits of each provider.
+		var traitDirs = roots.map(function (root) {
+			return new env.File(new env.File(root).getParentFile().getParentFile(), "traits");
+		}).filter(function (dir) { return dir.isDirectory(); });
 		var out = [];
 		var seen = {};
 		function addDescriptor(descriptor) {
@@ -2112,7 +2116,7 @@
 				componentFiles.forEach(function (file) {
 					try {
 						var source = sourceForFile(file, env);
-						addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint));
+						addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint, traitDirs));
 					} catch (e) {
 						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
 						addDescriptor({
@@ -2208,7 +2212,7 @@
 			componentFiles.forEach(function (file) {
 				try {
 					var source = sourceForFile(file, env);
-					addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint));
+					addDescriptor(normalizeSvelteComponent(svelteComponentMeta(source, file), file, name, settings, env, providerHint, traitDirs));
 				} catch (e) {
 					var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
 					addDescriptor({

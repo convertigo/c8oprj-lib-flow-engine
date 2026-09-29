@@ -1649,16 +1649,16 @@
 		return catalogLoaderService().loadTypes(catalogLoaderEnv());
 	}
 
-	function loadTraits() {
-		return catalogLoaderService().loadTraits(catalogLoaderEnv());
+	function loadTraits(extraDirs) {
+		return catalogLoaderService().loadTraits(catalogLoaderEnv(), extraDirs);
 	}
 
 	// Properties brought by traits, composed once by the shared module (Engine and frontbuilder).
-	function composeTraits(descriptor) {
+	function composeTraits(descriptor, extraTraitDirs) {
 		var names = Object.prototype.toString.call(descriptor.traits) === "[object Array]" ? descriptor.traits
 			: descriptor.traits && typeof descriptor.traits === "object" ? Object.keys(descriptor.traits) : [];
 		if (!names.length) return null;
-		var traits = loadTraits();
+		var traits = loadTraits(extraTraitDirs);
 		if (!names.some(function (name) { return traits[name]; })) return null;
 		return loadEngineModule("trait-composition.js").compose(descriptor, traits);
 	}
