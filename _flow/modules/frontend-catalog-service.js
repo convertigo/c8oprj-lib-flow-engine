@@ -2571,6 +2571,8 @@
 							: source.value === "iterable"
 								? iterationCollectionSchemas[String(source.scopeId || candidate.id || "")]
 								: iterationSchemas[String(source.scopeId || candidate.id || "")]
+						// An event variable has the schema of the action whose Output (local.x) wrote it.
+						: source.category === "variable" ? actionSchemas["local." + String(source.name || "")]
 						: actionSchemas[String(source.actionId || candidate.id || "")]);
 					var info = schemaInfo(schema, env);
 					if (!info) {

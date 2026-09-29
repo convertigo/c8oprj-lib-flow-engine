@@ -119,10 +119,19 @@
       });
     return out;
   }
-  function propValue(node, key) {
-    var v = node[key];
+  // A property is read where its definition says (definitionPath: "out" for $$out),
+  // then as a node field or a business prop.
+  function propValue(node, key, def) {
+    var v;
+    var path = def && typeof def.definitionPath === "string" ? def.definitionPath.split(".") : null;
+    if (path) {
+      v = node;
+      path.forEach(function (part) { v = v != null && typeof v === "object" ? v[part] : undefined; });
+    }
+    if (v === undefined) v = node[key];
     if (v === undefined && node && node.props)
       v = node.props[key];
+    if (v === undefined && key.indexOf("$$") === 0) v = node[key.substring(2)];
     if (v === undefined) return "";
     return typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
   }
@@ -242,7 +251,7 @@
         return !d.readOnly && ["id", "block", "comment"].indexOf(k) < 0;
       })
       .map(function (k) {
-        return { key: k, def: defs[k] || {}, value: propValue(node, k) };
+        return { key: k, def: defs[k] || {}, value: propValue(node, k, defs[k]) };
       });
   }
   function pickerKind(prop) {
@@ -486,7 +495,7 @@
   function field(key, def, node) {
     def = def || {};
     var kind = def.kind || "text";
-    var value = propValue(node, key);
+    var value = propValue(node, key, def);
     var rows =
       kind === "template" ||
       kind === "expression" ||

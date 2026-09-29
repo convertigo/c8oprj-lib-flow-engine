@@ -85,4 +85,13 @@ for (const mode of ["property", "picker"]) {
 	assert.equal(h.editor.state.value, "local.entries", "refresh must preserve the pending draft");
 	assert.deepEqual(JSON.parse(JSON.stringify(h.editor.state.context.destinationPolicy)), context.destinationPolicy);
 }
+// An engine attribute is read where its definition says: $$out lives in the node's out field.
+{
+	const h = host("flow-path-editor");
+	const definition = { kind: "path", mode: "write", definitionPath: "out",
+		editorContext: { destinationPolicy: { roots: ["page", "local"], freeRoots: ["local"] }, scopes: {} } };
+	h.window.receiveFromJava({ mode: "picker", virtualPath: "nodes[0]",
+		definition: { out: "local.probe", props: { requestable: ".LiveProbe" } }, info: { propertyDefinitions: { "$$out": definition } } });
+	assert.equal(h.editor.state.value, "local.probe", "the Source Picker shows the current Output");
+}
 console.log("property-editor-host tests passed");
