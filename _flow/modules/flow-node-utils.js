@@ -3,7 +3,7 @@
 		// Harmonised with Convertigo objects: Name, Comment, Is active, Output. One
 		// category vocabulary for every surface: "Base properties" and "Expert" are
 		// editable, "Information" is read-only. No technical prefix in a label.
-		id: { label: "Name", category: "Information", description: "Node name inside its Flow. Use Rename to change it; references are updated.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
+		id: { label: "Name", category: "Information", description: "Node name inside its Flow. Rename it with Rename: references in the same source follow, and a rename that would break another source is refused.", kind: "text", type: "string", readOnly: true, definitionPath: "id" },
 		// Every host displays the same declared property; no native-row fallback.
 		comment: { label: "Comment", category: "Base properties", description: "Free comment about this node.", kind: "text", type: "string", "default": "", definitionPath: "comment" },
 		disabled: { label: "Is active", category: "Base properties", description: "Uncheck to skip this node and its children at runtime.", kind: "boolean", type: "boolean", "default": false, invert: true, definitionPath: "disabled" },

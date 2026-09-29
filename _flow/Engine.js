@@ -4954,7 +4954,32 @@
 	}
 
 	function applyMutationRequest(request, blocks) {
-		return flowTreeService().applyMutationRequest(request, blocks, flowTreeServiceEnv());
+		var response = flowTreeService().applyMutationRequest(request, blocks, flowTreeServiceEnv());
+		if (response && response.renamedNodes && String(request && request.target || "flow") === "flow") {
+			moveRenamedNodeSchemas(request, response.renamedNodes);
+		}
+		return response;
+	}
+
+	// A learned output schema is stored under its node id: it follows a rename.
+	function moveRenamedNodeSchemas(request, renamedNodes) {
+		var dir = projectSchemasDir();
+		var flowName = flowNameFor(request, {});
+		if (!dir || !flowName) return;
+		var flowDir = new File(dir, flowName);
+		var files = flowDir.isDirectory() ? flowDir.listFiles() : null;
+		if (!files) return;
+		renamedNodes.forEach(function (rename) {
+			var from = safeFilePart(rename.from) + ".";
+			var to = safeFilePart(rename.to) + ".";
+			for (var i = 0; i < files.length; i++) {
+				var name = String(files[i].getName());
+				if (name.indexOf(from) === 0 && /\.schema\.json$/.test(name)) {
+					var target = new File(flowDir, to + name.substring(from.length));
+					if (!target.exists()) files[i].renameTo(target);
+				}
+			}
+		});
 	}
 
 	function blockCodeSourceMutationName(request, sourcePath, source) {

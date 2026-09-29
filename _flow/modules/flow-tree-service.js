@@ -7217,6 +7217,24 @@
 		return JSON.stringify(normalizeTree(value)) === JSON.stringify(normalizeTree(declared["default"]));
 	}
 
+	// Node ids by position: nodes[0], nodes[0].props.$$nodes[1]... (slots are child arrays).
+	function definitionNodeIds(definition) {
+		var ids = {};
+		function visit(value, pointer) {
+			if (Object.prototype.toString.call(value) === "[object Array]") {
+				value.forEach(function (item, index) { visit(item, pointer + "[" + index + "]"); });
+				return;
+			}
+			if (!value || typeof value !== "object") return;
+			if (value.block !== undefined && typeof value.id === "string") ids[pointer] = value.id;
+			Object.keys(value).forEach(function (key) {
+				if (key !== "id") visit(value[key], pointer + "." + key);
+			});
+		}
+		visit(definition && definition.nodes, "nodes");
+		return ids;
+	}
+
 	function applyMutationRequest(request, blocks) {
 		request = request || {};
 		var target = String(request.target || "flow");
@@ -7229,9 +7247,24 @@
 		if (mutations.length === 0) {
 			raise("MISSING_MUTATION", "Flow mutation request requires mutation or mutations.");
 		}
+		// Node renames are reported so the host can move what is keyed by a node id
+		// (learned output schemas). Only pure id replacements keep node positions.
+		var renamesOnly = mutations.every(function (mutation) {
+			return mutation && (!mutation.op || mutation.op === "replace" || mutation.op === "set") && /\.id$/.test(String(mutation.path || ""));
+		});
+		var idsBefore = renamesOnly ? definitionNodeIds(definition) : null;
 		mutations.forEach(function (mutation) {
 			applyOneMutation(definition, mutation, blocks);
 		});
+		var renamedNodes = [];
+		if (idsBefore) {
+			var idsAfter = definitionNodeIds(definition);
+			Object.keys(idsBefore).forEach(function (pointer) {
+				if (idsAfter[pointer] !== undefined && idsBefore[pointer] && idsAfter[pointer] !== idsBefore[pointer]) {
+					renamedNodes.push({ from: idsBefore[pointer], to: idsAfter[pointer] });
+				}
+			});
+		}
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;
 		}
@@ -7257,6 +7290,7 @@
 			selectionMutationPath: mutations[mutations.length - 1].selectionMutationPath || "",
 			children: tree.children
 		};
+		if (renamedNodes.length) out.renamedNodes = renamedNodes;
 		if (target === "flow") {
 			out.analysis = analyzeFlowSource(blocks, source);
 		}

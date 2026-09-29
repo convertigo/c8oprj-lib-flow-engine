@@ -5639,7 +5639,8 @@ var flowSvelteBindingRoundTrip = JSON.parse(engine.applySourceMutation(JSON.stri
 })));
 assertTrue(flowSvelteBindingRoundTrip.ok === true &&
 	compactSource(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("source", { category: "requestable", actionId: "loadItems" }, "items")) !== -1 &&
-	compactSource(flowSvelteBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
+	// An iteration read without transform is written as its short reference.
+	String(flowSvelteBindingRoundTrip.source).indexOf('text="@items.item.title"') !== -1 &&
 	String(flowSvelteBindingRoundTrip.source).indexOf('id="itemDescription"') !== -1,
 	"flow-svelte AST mutations should preserve complete structured iteration bindings: " +
 		JSON.stringify(flowSvelteBindingRoundTrip));
@@ -5717,7 +5718,7 @@ var flowSvelteNaturalBindingRoundTrip = JSON.parse(engine.applySourceMutation(JS
 })));
 assertTrue(flowSvelteNaturalBindingRoundTrip.ok === true &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source={[]}') !== -1 &&
-	compactSource(flowSvelteNaturalBindingRoundTrip.source).indexOf(structuredBindingAttribute("text", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1 &&
+	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('text="@items.item.title"') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('count={0}') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('step={1}') !== -1 &&
 	String(flowSvelteNaturalBindingRoundTrip.source).indexOf('source="{') === -1 &&
@@ -5810,7 +5811,7 @@ var flowSvelteConditionalBindingRoundTrip = JSON.parse(engine.applySourceMutatio
 	}
 })));
 assertTrue(flowSvelteConditionalBindingRoundTrip.ok === true &&
-	compactSource(flowSvelteConditionalBindingRoundTrip.source).indexOf(structuredBindingAttribute("test", { category: "iteration", scopeId: "items", value: "item" }, "alternate")) !== -1 &&
+	String(flowSvelteConditionalBindingRoundTrip.source).indexOf('test="@items.item.alternate"') !== -1 &&
 	String(flowSvelteConditionalBindingRoundTrip.source).indexOf("test={{{") === -1,
 	"flow-svelte AST mutations should preserve structured conditional bindings across reparses: " +
 		JSON.stringify(flowSvelteConditionalBindingRoundTrip));
@@ -5848,7 +5849,7 @@ var flowSvelteNestedConditionalMutation = JSON.parse(engine.applySourceMutation(
 })));
 assertTrue(flowSvelteNestedConditionalMutation.ok === true &&
 	String(flowSvelteNestedConditionalMutation.source).indexOf('id="evenTitle"') !== -1 &&
-	compactSource(flowSvelteNestedConditionalMutation.source).indexOf(structuredBindingAttribute("source", { category: "iteration", scopeId: "items", value: "item" }, "title")) !== -1,
+	String(flowSvelteNestedConditionalMutation.source).indexOf('source="@items.item.title"') !== -1,
 	"flow-svelte AST mutations should resolve Each and named If slots: " +
 		JSON.stringify(flowSvelteNestedConditionalMutation));
 var flowSvelteKitchenSinkSource = [

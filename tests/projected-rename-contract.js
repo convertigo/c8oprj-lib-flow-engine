@@ -23,7 +23,14 @@ assert(info.renameValue === "before", "Projected editable name");
 assert(info.renameMutation.path === "nodes[0].id", "Exact AST identity path");
 assert(info.propertyDefinitions.$$comment && !info.propertyDefinitions.$$comment.hidden,
 	"Comment must be published by the provider on every surface");
+// A learned output schema is stored under the node id: it follows the rename.
+var schemaDir = new java.io.File(__flowProjectDir, "_flow/schemas/Demo");
+schemaDir.mkdirs();
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(schemaDir, "before.out.schema.json"), '{"type":"string"}', "UTF-8");
 var renamed = call("applyMutation", Object.assign({}, request, { mutation: Object.assign({}, info.renameMutation, { value: "after" }) }));
+assert(JSON.stringify(renamed.renamedNodes) === '[{"from":"before","to":"after"}]', "Rename reported: " + JSON.stringify(renamed.renamedNodes));
+assert(new java.io.File(schemaDir, "after.out.schema.json").isFile() && !new java.io.File(schemaDir, "before.out.schema.json").exists(),
+	"The learned schema follows the renamed node");
 assert(renamed.source.indexOf('$$id: "after"') >= 0, "Canonical v2 identity written");
 assert(renamed.selectionMutationPath === "nodes[0]", "Renamed node remains selected");
 assert(JSON.parse(find(renamed, "nodes[0]").info).renameValue === "after", "Fresh rename capability");
