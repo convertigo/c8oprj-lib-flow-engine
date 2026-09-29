@@ -4,6 +4,7 @@ label: "Scope path"
 icon: "mdi:map-marker-path"
 type: "string"
 description: "Read a value from the available scopes. Write mode selects a static named destination in a writable scope (local or result for backend flows), never an expression or an array index."
+format: "A static named path such as local.total or page.items: dot-separated names, no expression, no array index."
 editor:
   valueEncoding: text
   label: "Path picker"

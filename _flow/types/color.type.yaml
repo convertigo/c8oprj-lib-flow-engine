@@ -4,6 +4,7 @@ label: "Color"
 icon: "mdi:palette-outline"
 type: "string"
 description: "Semantic theme token or exact CSS color, with light/dark previews and a native color picker."
+format: "An exact CSS color (name such as lime, #rrggbb, rgb(), rgba(), hsl()), a theme token such as primary when the page has a theme, or light-dark(light, dark)."
 editor:
   valueEncoding: text
   label: "Color picker"

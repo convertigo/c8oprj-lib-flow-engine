@@ -93,7 +93,8 @@
 
 	function compactPropertyDescriptor(property) {
 		var out = {};
-		["label", "kind", "type", "literalType", "literalOptions", "items", "mode", "default", "description", "properties", "required", "additionalProperties", "enum", "suggestions", "oneOf", "anyOf"].forEach(function (key) {
+		// trait: the property comes from a trait (same meaning everywhere); category: Expert settings.
+		["label", "kind", "type", "literalType", "literalOptions", "items", "mode", "default", "description", "properties", "required", "additionalProperties", "enum", "suggestions", "oneOf", "anyOf", "trait", "category"].forEach(function (key) {
 			if (property && property[key] !== undefined && property[key] !== null && property[key] !== "") {
 				out[key] = property[key];
 			}

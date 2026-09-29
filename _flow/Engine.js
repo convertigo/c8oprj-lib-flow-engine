@@ -1563,6 +1563,7 @@
 				return defaultsHistoryService().blocksDefaultsHistory(blocks, defaultsHistoryEnv());
 			},
 			validateTypeDescriptorSource: validateTypeDescriptorSource,
+			extractFlowScriptBlockMeta: extractFlowScriptBlockMeta,
 			raise: raise,
 			blockCache: runtimeState.caches.blocks,
 			coreBlockCache: runtimeState.caches.coreBlocks,
@@ -1646,6 +1647,20 @@
 
 	function loadTypes() {
 		return catalogLoaderService().loadTypes(catalogLoaderEnv());
+	}
+
+	function loadTraits() {
+		return catalogLoaderService().loadTraits(catalogLoaderEnv());
+	}
+
+	// Properties brought by traits, composed once by the shared module (Engine and frontbuilder).
+	function composeTraits(descriptor) {
+		var names = Object.prototype.toString.call(descriptor.traits) === "[object Array]" ? descriptor.traits
+			: descriptor.traits && typeof descriptor.traits === "object" ? Object.keys(descriptor.traits) : [];
+		if (!names.length) return null;
+		var traits = loadTraits();
+		if (!names.some(function (name) { return traits[name]; })) return null;
+		return loadEngineModule("trait-composition.js").compose(descriptor, traits);
 	}
 
 	function defaultsHistoryService() {
@@ -1737,6 +1752,7 @@
 			blockNamespace: blockNamespace,
 			blockLocalName: blockLocalName,
 			parseYamlSource: parseYamlSource,
+			composeTraits: composeTraits,
 			raise: raise
 		};
 	}
@@ -4222,6 +4238,7 @@
 			projectRootForName: loadedProjectRootForName,
 			referencedProjectRoots: referencedProjectRoots,
 			sourceForFile: sourceForFile,
+			composeTraits: composeTraits,
 			draftFilesUnder: function (baseDir) {
 				return frontendDraftEntriesUnder(currentActiveRequest(), baseDir).map(function (entry) {
 					return entry.file;

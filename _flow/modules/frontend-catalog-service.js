@@ -497,6 +497,14 @@
 			insert.id = insert.kind;
 		}
 		var properties = raw.properties || raw.props || {};
+		var uiTraits = raw.traits && typeof raw.traits === "object" && Object.prototype.toString.call(raw.traits) !== "[object Array]"
+			? Object.keys(raw.traits) : frontendUiBlockTraits(raw);
+		// Traits bring shared properties (disabled of ui.control...), composed by the shared module.
+		var composed = typeof env.composeTraits === "function" ? env.composeTraits({ properties: properties, traits: raw.traits || uiTraits }) : null;
+		if (composed) {
+			properties = composed.properties;
+			uiTraits = composed.traits;
+		}
 		var descriptor = {
 			id: id,
 			name: raw.name || label,
@@ -512,7 +520,7 @@
 			description: raw.description || "",
 			longDescription: raw.longDescription || "",
 			icon: raw.icon || "mdi:view-module-outline",
-			traits: frontendUiBlockTraits(raw),
+			traits: uiTraits,
 			slots: raw.slots || {},
 			insert: insert,
 			defaults: raw.defaults || insert,

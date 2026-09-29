@@ -516,6 +516,8 @@
         '<div class="desc">' +
         esc(def.description || def.shortDescription) +
         "</div>";
+    if (def.format)
+      html += '<div class="desc format">Format: ' + esc(def.format) + "</div>";
     if (rows === "textarea")
       html +=
         '<textarea data-key="' +
@@ -578,6 +580,8 @@
         '<div class="desc">' +
         esc(def.description || def.shortDescription) +
         "</div>";
+    if (def.format)
+      html += '<div class="desc format">Format: ' + esc(def.format) + "</div>";
     if (hasTypeEditor(kind, def)) {
       var tag = editorTag(kind, def);
       return (

@@ -141,7 +141,15 @@
 			longDescription: definition.longDescription || definition.documentation || ""
 		};
 		descriptor.targets = normalizeTargets(definition);
-		descriptor.traits = env.normalizeTree(definition.traits || []);
+		// Traits bring shared properties, documented once; the block changes defaults only.
+		var composed = typeof env.composeTraits === "function" ? env.composeTraits({ properties: props, traits: definition.traits || [] }) : null;
+		if (composed) {
+			descriptor.props = composed.properties;
+			if (composed.diagnostics.length) descriptor.traitDiagnostics = composed.diagnostics;
+		}
+		descriptor.traits = env.normalizeTree(composed ? composed.traits
+			: Object.prototype.toString.call(definition.traits) === "[object Array]" ? definition.traits
+			: definition.traits && typeof definition.traits === "object" ? Object.keys(definition.traits) : []);
 		if (descriptor.targets.indexOf("backend") !== -1) {
 			// Backend child lists execute statements. More specific constraints belong
 			// to the declared slot and to scope/resource analysis, not to Studio kinds.

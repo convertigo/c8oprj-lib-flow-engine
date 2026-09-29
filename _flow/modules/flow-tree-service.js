@@ -114,6 +114,10 @@
 		if (type) {
 			var descriptor = typeDescriptor(type);
 			var editor = descriptor && descriptor.editor;
+			// The type documents how to write the value; the property says what it is for.
+			if (descriptor.format && !definition.format) {
+				definition.format = String(descriptor.format);
+			}
 			if (definition.enum === undefined && descriptor.enum !== undefined) {
 				definition.enum = normalizeTree(descriptor.enum);
 			}
@@ -139,6 +143,9 @@
 		if (literalType) {
 			var literalDescriptor = typeDescriptor(literalType);
 			var literalEditor = literalDescriptor && literalDescriptor.editor;
+			if (literalDescriptor.format && !definition.format) {
+				definition.format = String(literalDescriptor.format);
+			}
 			if (literalEditor && literalEditor.component && !definition.literalEditorClass) {
 				definition.literalEditorClass = String(literalEditor.component);
 			}

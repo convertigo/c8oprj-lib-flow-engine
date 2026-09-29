@@ -4,6 +4,7 @@ label: "Requestable"
 icon: "mdi:link-variant"
 type: "string"
 description: "Sequence, Flow or Transaction target using SDK-like Convertigo qname syntax."
+format: "A Convertigo qname: .Sequence in this project, Project.Sequence in another one, or Project.Connector.Transaction."
 editor:
   valueEncoding: text
   label: "Requestable picker"

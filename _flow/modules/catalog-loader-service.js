@@ -382,7 +382,74 @@
 			"types for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project"));
 	}
 
+	// Traits (spec-flow-catalog-composition-v1): *.trait.js files with a leading _meta,
+	// from the core, this project and referenced projects, like types.
+	function traitDirs(env) {
+		var dirs = [{ dir: new env.File(env.engineDir(), "traits"), origin: "core" }];
+		var project = env.projectDir();
+		if (project) dirs.push({ dir: new env.File(project, env.sourcePaths.path("traits")), origin: "project" });
+		referencedProjectRoots(env, env.sourcePaths.path("traits")).forEach(function (root) {
+			dirs.push({ dir: new env.File(root, env.sourcePaths.path("traits")), origin: "reference" });
+		});
+		var seen = {};
+		return dirs.filter(function (entry) {
+			var path = env.canonicalPath(entry.dir);
+			if (!entry.dir.isDirectory() || seen[path]) return false;
+			seen[path] = true;
+			return true;
+		});
+	}
+
+	function traitFiles(dir, env) {
+		var files = [];
+		sortedFiles(dir, env).forEach(function (file) {
+			if (file.isDirectory()) files = files.concat(traitFiles(file, env));
+			else if (String(file.getName()).endsWith(".trait.js")) files.push(file);
+		});
+		return files;
+	}
+
+	function traitsCacheKey(env) {
+		return traitDirs(env).map(function (entry) {
+			return entry.origin + ":" + traitFiles(entry.dir, env).map(function (file) {
+				return env.canonicalPath(file) + "@" + file.lastModified() + ":" + file.length();
+			}).join(",");
+		}).join("\n") || "none";
+	}
+
+	function loadTraitsUncached(env) {
+		var traits = {};
+		traitDirs(env).forEach(function (entry) {
+			traitFiles(entry.dir, env).forEach(function (file) {
+				var meta = env.extractFlowScriptBlockMeta(String(env.FileUtils.readFileToString(file, "UTF-8"))).meta || {};
+				var name = String(meta.name || "");
+				if (!name) {
+					env.raise("TRAIT_NAME_REQUIRED", "Trait " + file.getName() + " must declare its name in _meta.");
+				}
+				if (traits[name]) {
+					if (entry.origin === "reference") return;
+					env.raise("DUPLICATE_TRAIT", "Duplicate Flow trait: " + name, null, "Rename the project trait or remove the duplicate.");
+				}
+				meta.__flowOrigin = entry.origin;
+				meta.__flowFile = file.getAbsolutePath();
+				traits[name] = meta;
+			});
+		});
+		return traits;
+	}
+
+	function loadTraits(env) {
+		var key = "traits\n" + traitsCacheKey(env);
+		var cached = env.readRuntimeCache(env.typeCache, key, key);
+		if (cached) {
+			return cached;
+		}
+		return env.writeRuntimeCache(env.typeCache, key, key, loadTraitsUncached(env),
+			"traits for " + (env.projectDir() ? env.canonicalPath(env.projectDir()) : "no project"));
+	}
+
 	return {
+		loadTraits: loadTraits,
 		blockIdFromDescriptorFile: blockIdFromDescriptorFile,
 		referencedProjectRoots: referencedProjectRoots,
 		loadBlockDir: loadBlockDir,
