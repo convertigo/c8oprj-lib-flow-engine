@@ -877,7 +877,7 @@
 				},
 				targetKinds: ["frontendEvents"],
 				acceptedPositions: ["inside"],
-				description: "Runs explicit client actions when the page or component mounts.",
+				description: "Runs its actions when the page or the component mounts (Svelte onMount): its first display, each entry on its route and a live reload. A navigation that keeps the page shown, to other parameters or another query, does not run them again: use OnAfterNavigate.",
 				insert: {
 					id: "onMount",
 					kind: "onMount",
@@ -887,8 +887,33 @@
 					id: { type: "string" },
 					once: {
 						type: "boolean",
-						description: "Run this lifecycle chain once per browser runtime."
+						description: "Run this lifecycle chain once per browser runtime, while allowing it again after a full reload."
 					}
+				}
+			}),
+			frontendAuthoringDescriptor(builderName, settings, {
+				id: "frontbuilder.svelte.onAfterNavigate",
+				label: "OnAfterNavigate",
+				category: "Svelte / Lifecycle",
+				kind: "frontendEventBlockDefinition",
+				icon: "mdi:map-marker-path",
+				traits: ["ui.lifecycle", "ui.container", "ui.trigger"],
+				slots: {
+					actions: {
+						label: "Actions",
+						accepts: ["ui.action"]
+					}
+				},
+				targetKinds: ["frontendEvents"],
+				acceptedPositions: ["inside"],
+				description: "Runs its actions after each navigation (SvelteKit afterNavigate): the first display, then each change of the address, parameters or query included. @event.type is the navigation (enter, link, goto, popstate, form), @event.to and @event.from its arrival and its departure (url, path, route, params, query).",
+				insert: {
+					id: "onAfterNavigate",
+					kind: "onAfterNavigate",
+					tag: "OnAfterNavigate"
+				},
+				properties: {
+					id: { type: "string" }
 				}
 			}),
 			frontendAuthoringDescriptor(builderName, settings, {

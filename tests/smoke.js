@@ -546,6 +546,7 @@ assertTrue(onMountDescriptor && onMountDescriptor.properties.once &&
 	onMountDescriptor.targetKinds.indexOf("frontendEvents") !== -1,
 	"frontend catalog did not expose the persistent OnMount once property");
 [
+	"frontbuilder.svelte.onAfterNavigate",
 	"frontbuilder.svelte.onDestroy",
 	"frontbuilder.svelte.effect",
 	"frontbuilder.svelte.preEffect",
@@ -5120,6 +5121,7 @@ var flowSvelteLifecyclePalette = JSON.parse(engine.authoringPalette(JSON.stringi
 assertTrue(Array.isArray(flowSvelteLifecyclePalette.items), "Lifecycle palette response: " + JSON.stringify(flowSvelteLifecyclePalette));
 [
 	"frontbuilder.svelte.onMount",
+	"frontbuilder.svelte.onAfterNavigate",
 	"frontbuilder.svelte.onDestroy",
 	"frontbuilder.svelte.effect",
 	"frontbuilder.svelte.preEffect",
