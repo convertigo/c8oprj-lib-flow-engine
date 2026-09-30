@@ -16,6 +16,9 @@ FILTER="${1:-}"
 export FLOW_ENGINE_RESOURCE_ROOT="$ROOT/_flow" FLOW_FRONTBUILDER_RESOURCE_ROOT="$PROVIDER" FLOW_SVELTE_PROVIDER_ROOT="$PROVIDER"
 [ -f "$JAR" ] || { echo "Convertigo dependencies jar not found; set CONVERTIGO_DEPENDENCIES_JAR" >&2; exit 2; }
 LOGS="$(mktemp -d "${TMPDIR:-/tmp}/lib-flow-engine-tests.XXXXXX")"
+# Headless: a test that renders icons starts AWT, whose AWT-Shutdown thread otherwise keeps
+# the JVM alive on macOS for minutes after the script ends
+JAVA_FLAGS=(-Djava.awt.headless=true)
 cd "$ROOT"
 pass=0; fail=0
 for f in tests/*.js tests/*.cjs; do
@@ -24,9 +27,9 @@ for f in tests/*.js tests/*.cjs; do
 	if grep -q "require(" "$f"; then
 		if [ "$name" = frontend-provider-integration.js ]; then cmd=(node "$f"); else cmd=(node "$f" "$PROVIDER/node_modules/jsdom"); fi
 	elif [ "$name" = source-creation-contract.js ]; then
-		cmd=(java -cp "$JAR" org.mozilla.javascript.tools.shell.Main -version 200 "$f" "$ROOT/_flow" "$PROVIDER")
+		cmd=(java "${JAVA_FLAGS[@]}" -cp "$JAR" org.mozilla.javascript.tools.shell.Main -version 200 "$f" "$ROOT/_flow" "$PROVIDER")
 	else
-		cmd=(java -cp "$JAR" org.mozilla.javascript.tools.shell.Main -version 200 "$f" "$ROOT/_flow")
+		cmd=(java "${JAVA_FLAGS[@]}" -cp "$JAR" org.mozilla.javascript.tools.shell.Main -version 200 "$f" "$ROOT/_flow")
 	fi
 	log="$LOGS/$name.log"
 	perl -e 'alarm 400; exec @ARGV' "${cmd[@]}" > "$log" 2>&1
