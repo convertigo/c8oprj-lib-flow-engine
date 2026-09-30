@@ -64,6 +64,13 @@ function siblingPalette(fixture, position) {
 	delete noOwner.children[1].info.parentSlot;
 	assertTrue(siblingPalette(noOwner, position).items.length === 0, "No heuristic acceptance without a semantic parent slot");
 });
+// A compact item still tells the traits of its block: dropped on another node than the one of the
+// palette, the host places it in the slot of that node that accepts them.
+var compactItems = service.authoringPaletteFromTreeRequest({ surface: "virtual", definition: {}, focusPath: "anchor",
+	position: "after", detail: "compact", applyFallback: false }, {}, siblingTree, env).items;
+assertTrue(compactItems.length === 2 && compactItems.every(function (item) {
+	return item.traits.join(",") === "example." + item.id && item.slots === undefined;
+}), "A compact palette item must carry the traits of its block");
 assertTrue(ids(palette("inner")) === "control,text", "Nested controls must inherit the outer semantic slot");
 assertTrue(ids(palette("event")) === "action", "An event must retain its explicit action contract");
 assertTrue(ids(palette("outer")) === "control,control,text,text", "Each control branch inherits independently");

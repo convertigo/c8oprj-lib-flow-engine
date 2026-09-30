@@ -5622,8 +5622,10 @@
 		if (documentedProperties.length) {
 			out.documentation = { properties: documentedProperties };
 		}
+		// Traits travel with every item: a block dropped on another node than the one of the
+		// palette goes to the slot of that node that accepts them.
+		out.traits = frontendArray(descriptor.traits);
 		if (!compact) {
-			out.traits = frontendArray(descriptor.traits);
 			out.slots = descriptor.slots || {};
 		}
 		out.targetKinds = descriptor.targetKinds || [];
