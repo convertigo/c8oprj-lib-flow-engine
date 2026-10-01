@@ -2,6 +2,11 @@ var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_
 var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var __flowEngineDir = String(new java.io.File(engineDir).getAbsolutePath());
+// Project references and caches must belong to this run, not fixed names in the
+// user's global temp directory. A second or parallel campaign must be independent.
+var smokeOriginalTmpDir = String(java.lang.System.getProperty("java.io.tmpdir"));
+var smokeWorkspaceDir = java.nio.file.Files.createTempDirectory("lib-flow-engine-smoke-").toFile().getCanonicalFile();
+java.lang.System.setProperty("java.io.tmpdir", String(smokeWorkspaceDir.getAbsolutePath()));
 var projectDirFile = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-smoke-project").getCanonicalFile();
 var persistentFrontendCacheDir = new java.io.File(java.lang.System.getProperty("java.io.tmpdir"),
 	"convertigo-flow-cache/frontend-documents-v1");
@@ -533,10 +538,16 @@ assertTrue(bindingType && bindingType.type === "object" && bindingType.editor &&
 var frontendCatalogServiceSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/frontend-catalog-service.js"), "UTF-8"));
 var isolatedFrontendCatalogService = eval(frontendCatalogServiceSource);
-var frontendDescriptors = isolatedFrontendCatalogService.frontendCreateDescriptorsForSettings("svelte", {}, {
+var frontendDescriptors = isolatedFrontendCatalogService.frontendCreateDescriptorsForSettings("svelte", {
+	resourceRoot: String(java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || "")
+}, {
+	File: java.io.File,
+	FileUtils: Packages.org.apache.commons.io.FileUtils,
+	Arrays: java.util.Arrays,
+	normalizeTree: function (value) { return value; },
 	sourcePaths: eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 		new java.io.File(engineDir, "modules/source-layout.js"), "UTF-8"))).current,
-	projectDir: function () { return null; }
+	projectDir: function () { return projectDirFile; }
 });
 var onMountDescriptor = frontendDescriptors.filter(function (descriptor) {
 	return descriptor.id === "frontbuilder.svelte.onMount";
@@ -576,7 +587,7 @@ var callSequenceDescriptor = frontendDescriptors.filter(function (descriptor) {
 	return descriptor.id === "frontbuilder.svelte.callSequence";
 })[0];
 assertTrue(callSequenceDescriptor && callSequenceDescriptor.properties.marker &&
-	callSequenceDescriptor.insert.marker === "",
+	(callSequenceDescriptor.insert.marker || "") === "",
 	"frontend catalog did not expose the NGX-compatible CallSequence marker");
 var fullSyncPostDescriptor = frontendDescriptors.filter(function (descriptor) {
 	return descriptor.id === "frontbuilder.client.fullsync.post";
@@ -4293,6 +4304,18 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(
 	"UTF-8"
 );
 var frontendRoot = new java.io.File(projectDirFile, "_flow/frontbuilder/svelte");
+// The real provider owns intrinsic definitions; the project contributes only
+// its own vocabulary, not a shadow copy of a provider descriptor.
+var smokeProviderRoot = new java.io.File(String(java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || ""));
+if (!new java.io.File(smokeProviderRoot, "src-builder/frontDocumentCli.ts").isFile()) {
+	throw new Error("FLOW_FRONTBUILDER_RESOURCE_ROOT must identify the smoke provider");
+}
+var smokeProviderLink = new java.io.File(projectDirFile.getParentFile(), "lib_flow_frontbuilder_svelte");
+java.nio.file.Files.createSymbolicLink(smokeProviderLink.toPath(), smokeProviderRoot.getParentFile().getParentFile().getParentFile().toPath());
+var smokeProjectYaml = new java.io.File(projectDirFile, "c8oProject.yaml");
+Packages.org.apache.commons.io.FileUtils.writeStringToFile(smokeProjectYaml,
+	String(Packages.org.apache.commons.io.FileUtils.readFileToString(smokeProjectYaml, "UTF-8")) +
+	"  ↓frontbuilder_reference [references.ProjectSchemaReference]:\n    projectName: lib_flow_frontbuilder_svelte\n", "UTF-8");
 var frontendUiDir = new java.io.File(frontendRoot, "ui/project");
 frontendUiDir.mkdirs();
 var frontendComponentsDir = new java.io.File(frontendRoot, "components");
@@ -4331,35 +4354,6 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(fron
 			type: "string",
 			description: "Displayed text."
 		}
-	}
-}, null, 2), "UTF-8");
-Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(frontendUiDir, "DataRender.uiblock.json"), JSON.stringify({
-	id: "frontbuilder.svelte.dataRender",
-	label: "DataRender",
-	category: "Svelte / Directives",
-	kind: "frontendDirectiveBlockDefinition",
-	icon: "mdi:loading",
-	description: "Renders one visual tree with schema-derived null placeholders while its requestable loads.",
-	targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
-	acceptedPositions: ["inside"],
-	traits: ["ui.directive", "ui.container"],
-	slots: {
-		data: { label: "Data", accepts: ["ui.data.binding"] },
-		render: { label: "Render", accepts: ["ui.block", "ui.directive"] },
-		failure: { label: "Failure", accepts: ["ui.block", "ui.directive"] }
-	},
-	insert: {
-		id: "dataRender",
-		kind: "dataRender",
-		tag: "DataRender",
-		actionId: "",
-		placeholderCounts: {}
-	},
-	properties: {
-		id: { type: "string" },
-		actionId: { label: "Loading action", category: "Data", type: "string" },
-		placeholderCounts: { label: "Placeholder counts", category: "Data", kind: "literal", type: "object" },
-		class: { label: "CSS class", category: "Styling", type: "string" }
 	}
 }, null, 2), "UTF-8");
 var frontendEngineSource = [
@@ -5319,8 +5313,8 @@ assertTrue(flowSvelteDataRender && flowSvelteDataRender.slots &&
 	flowSvelteDataRender.properties.actionId.type === "string" &&
 	flowSvelteDataRender.properties.placeholderCounts.kind === "literal" &&
 	flowSvelteDataRender.insert &&
-	flowSvelteDataRender.insert.placeholderCounts &&
-	Object.prototype.toString.call(flowSvelteDataRender.insert.placeholderCounts) === "[object Object]",
+	flowSvelteDataRender.insert.props && flowSvelteDataRender.insert.props.placeholderCounts &&
+	Object.prototype.toString.call(flowSvelteDataRender.insert.props.placeholderCounts) === "[object Object]",
 	"authoring palette should expose the frontbuilder-contributed DataRender contract");
 assertTrue(flowSvelteContract.items.some(function (item) {
 	return item.id === "frontbuilder.svelte.callSequence" && item.properties &&
@@ -6047,4 +6041,6 @@ assertTrue(projectBindingRun.result.weather.temperature === 12 &&
 	projectBindingRun.result.weather.provider === "ProjectEngineMock",
 	"Contract use did not honor project FlowEngine binding");
 
+java.lang.System.setProperty("java.io.tmpdir", smokeOriginalTmpDir);
+Packages.org.apache.commons.io.FileUtils.deleteDirectory(smokeWorkspaceDir);
 print("lib_flow_engine smoke tests passed");

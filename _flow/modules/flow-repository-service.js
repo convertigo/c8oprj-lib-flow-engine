@@ -26,6 +26,7 @@
 		var flowProviderName = env.flowProviderName;
 		var flowCodeFileName = env.flowCodeFileName;
 		var syncProjectFlowInputs = env.syncProjectFlowInputs;
+		var sources = env.sources;
 
 		function canonicalProjectName(root) {
 			return root && typeof projectNameForRoot === "function"
@@ -90,15 +91,20 @@
 		}
 
 		function getProjectFlow(name, blocks, request) {
-			var working = officialMode(request) || !readProjectFlowWorkingCopy
+			var storage = projectFlowStorage(name);
+			var official = officialMode(request);
+			if (!official && sources && sources.removed(storage.codeFile)) {
+				raise("UNKNOWN_FLOW", "Unknown Flow: " + name);
+			}
+			var working = official || !readProjectFlowWorkingCopy || sources && sources.draft(storage.codeFile) !== null
 				? null
 				: readProjectFlowWorkingCopy(name, blocks || loadBlocks(), false);
 			if (working) {
 				return working;
 			}
-			var storage = projectFlowStorage(name);
-			if (storage.codeFile.isFile()) {
-				var code = String(FileUtils.readFileToString(storage.codeFile, "UTF-8"));
+			if (!official && sources ? sources.isFile(storage.codeFile) : storage.codeFile.isFile()) {
+				var code = !official && sources ? sources.read(storage.codeFile)
+					: String(FileUtils.readFileToString(storage.codeFile, "UTF-8"));
 				var compiled = sourceFromFlowScript(blocks || loadBlocks(), name, code);
 				var inputSync = syncLoadedProjectFlowInputs(name, compiled, request);
 				return {
@@ -122,20 +128,20 @@
 		function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
 			root = root ? new File(root) : null;
 			var dir = root ? new File(root, env.sourcePaths.flows) : null;
-			if (!dir || !dir.isDirectory()) {
+			if (!dir || !(sources ? sources.isDirectory(dir) : dir.isDirectory())) {
 				return [];
 			}
-			var listed = dir.listFiles();
+			var listed = sources ? sources.files(dir) : dir.listFiles();
 			if (!listed) {
 				return [];
 			}
-			var files = Arrays.asList(listed).toArray();
+			var files = sources ? listed : Arrays.asList(listed).toArray();
 			files.sort(function (a, b) {
 				return String(a.getName()).localeCompare(String(b.getName()));
 			});
 			var byName = {};
 			files.filter(function (file) {
-				return file.isFile() && String(file.getName()).endsWith(".flow.js");
+				return (sources ? sources.isFile(file) : file.isFile()) && String(file.getName()).endsWith(".flow.js");
 			}).forEach(function (file) {
 				var name = flowNameFromFile(file);
 				if (!name || (samplesOnly === true && !isSampleFlowName(name))) {
@@ -150,7 +156,7 @@
 			return Object.keys(byName).sort().map(function (name) {
 				var entry = byName[name];
 				var file = entry.file;
-				var raw = String(FileUtils.readFileToString(file, "UTF-8"));
+				var raw = sources ? sources.read(file) : String(FileUtils.readFileToString(file, "UTF-8"));
 				var source = sourceFromFlowScript(loadBlocks(), name, raw).source;
 				return {
 					name: name,

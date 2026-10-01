@@ -728,6 +728,7 @@
 
 	function projectConfigEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			sourcePaths: sourcePaths(),
 			File: File,
 			FileUtils: FileUtils,
@@ -1325,6 +1326,7 @@
 
 	function resourceServiceEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
@@ -1539,6 +1541,7 @@
 
 	function catalogLoaderEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
@@ -2130,6 +2133,7 @@
 
 	function blockSourceEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			File: File,
 			FileUtils: FileUtils,
 			normalizeTree: normalizeTree,
@@ -2166,6 +2170,7 @@
 
 	function typeDescriptorEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			sourcePaths: sourcePaths(),
 			File: File,
 			FileUtils: FileUtils,
@@ -2217,6 +2222,7 @@
 
 	function flowStorageEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
@@ -2278,6 +2284,7 @@
 
 	function flowRepositoryEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,
@@ -4220,6 +4227,7 @@
 
 	function frontendCatalogServiceEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
 			sourcePaths: sourcePaths(),
 			projectRootFromFlowDir: flowProjectRootFromFlowDir,
 			File: File,
@@ -4313,7 +4321,8 @@
 				if (!file.isAbsolute()) {
 					file = new File(root, modelPath);
 				}
-				var draft = frontendDraftForFile(request, file);
+				var sources = sourceView(request);
+				var draft = sources.removed(file) ? null : sources.draft(file);
 				var componentDir = new File(file.getParentFile(), "components");
 				var sourceRoot = file.getParentFile();
 				while (sourceRoot && String(sourceRoot.getName()) !== "src") {
@@ -4338,7 +4347,8 @@
 					draft !== null ? "draft:" + sha256Hex(draft) : file.isFile() ? fileFingerprint(file) : "missing",
 					sourceRoot && sourceRoot.isDirectory() ? directoryFingerprint(sourceRoot) : "",
 					componentDir.isDirectory() ? directoryFingerprint(componentDir) : "",
-					draftParts.join("|")
+					draftParts.join("|"),
+					sources.fingerprint()
 				].join(":");
 			}).join("\n");
 		} catch (e) {
@@ -4348,6 +4358,8 @@
 
 	function flowTreeServiceEnv() {
 		return {
+			sources: sourceView(currentActiveRequest()),
+			sourceView: sourceView,
 			sourcePaths: sourcePaths(),
 			detachVirtualDefinitions: detachVirtualDefinitions,
 			resolveVirtualDefinitions: resolveVirtualDefinitions,
@@ -4415,7 +4427,8 @@
 				frontendCreateDescriptorsForConfig: frontendCreateDescriptorsForConfig,
 				planSourceCreation: function (recipe, context) {
 					context.root = String(new File(projectDir(), sourcePaths().path("frontbuilder/" + context.builder)).getAbsolutePath());
-					return loadEngineModule("source-creation-plan.js").plan(recipe, context, { File: File, raise: raise });
+					return loadEngineModule("source-creation-plan.js").plan(recipe, context, { File: File, raise: raise,
+						sources: sourceView(context) });
 				},
 				sha256Hex: sha256Hex,
 				responseBudget: responseBudget,
@@ -4863,6 +4876,23 @@
 
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
+		if (request.mutation && request.mutation.target === "sources" && request.mutation.op === "renameResource") {
+			if (request.sourceWritable === false || request.readOnly === true || request.readOnlyReference === true) {
+				raise("READ_ONLY_SOURCE", "This source view does not allow resource mutations.");
+			}
+			return loadEngineModule("source-relocation-plan.js").plan(request.mutation, { root: String(projectDir()) }, {
+				File: File, sources: sourceView(request), raise: raise,
+				isSymbolicLink: function (file) { return java.nio.file.Files.isSymbolicLink(file.toPath()); },
+				readText: function (file) {
+					try {
+						var bytes = FileUtils.readFileToByteArray(file);
+						var text = String(java.nio.charset.StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)));
+						if (text.indexOf("\u0000") >= 0) throw new Error("Binary source");
+						return text;
+					} catch (e) { raise("SOURCE_RELOCATION_NON_TEXT", "Relocation requires text sources; this source cannot be decoded without loss: " + file); }
+				}
+			});
+		}
 		// A clipboard transfer is an authoring command, not yet a source mutation.
 		// Resolve its slot first even when the Flow request carries its source identity.
 		if ((request.sourceFile || request.sourcePath) && !(request.target === "flow" && (request.transfer || request.action))) {
@@ -5192,7 +5222,7 @@
 		frontendPerformanceMark("frontend.document.sourceFile");
 		var source = request.source !== undefined && request.source !== null
 			? String(request.source)
-			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
+			: sourceView(request).read(sourceFile);
 		frontendPerformanceMark("frontend.document.sourceRead");
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
@@ -5213,7 +5243,7 @@
 			String(request.includeBindings !== false),
 			String(request.sourceTree === true)
 		].join("\n");
-		var fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot);
+		var fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot, request);
 		frontendPerformanceMark("frontend.document.fingerprint");
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		frontendPerformanceMark("frontend.document.memoryCache");
@@ -5243,6 +5273,7 @@
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--drafts", String(draftsTemp.getAbsolutePath()),
+				"--source-removals", JSON.stringify(request.sourceRemovals || []),
 				"--cache-key", fingerprint,
 				"--flow-source-root", sourcePaths().root,
 				"--source-codec-file", String(engineModuleFile("source-attribute-name-codec.js").getAbsolutePath()),
@@ -5288,7 +5319,7 @@
 			if (persistentCacheEligible) {
 				// The first provider request may install the frontbuilder and update package metadata.
 				// Store the document under the post-install fingerprint so the next Engine runtime can reuse it.
-				fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot);
+				fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot, request);
 				frontendPerformanceMark("frontend.document.postInstallFingerprint");
 			}
 			var cachedResult = writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents");
@@ -5562,10 +5593,11 @@
 		return sha256Hex(stableFingerprint + "\n" + mutableEntries.join("\n"));
 	}
 
-	function frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot) {
+	function frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot, request) {
 		return sha256Hex([
 			source,
 			JSON.stringify(drafts || {}),
+			JSON.stringify(request && request.sourceRemovals || []),
 			fileFingerprint(engineModuleFile("source-attribute-name-codec.js")),
 			frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot)
 		].join("\n"));
@@ -5598,7 +5630,7 @@
 		var sourceFile = frontendRequestSourceFile(request, request.source === undefined || request.source === null);
 		var source = request.source !== undefined && request.source !== null
 			? String(request.source)
-			: String(FileUtils.readFileToString(sourceFile, "UTF-8"));
+			: sourceView(request).read(sourceFile);
 		var mutations = request.mutations || (request.mutation ? [request.mutation] : []);
 		if (mutations.length === 0) {
 			raise("MISSING_FRONTEND_MUTATION", "Frontend source mutation requires mutation or mutations.");
@@ -5725,14 +5757,18 @@
 		var resourceRoot = frontendSvelteResourceRoot(request);
 		var sourceTemp = File.createTempFile("c8o-flow-svelte-source-", ".flow.svelte");
 		var mutationTemp = File.createTempFile("c8o-flow-svelte-mutation-", ".json");
+		var draftsTemp = File.createTempFile("c8o-flow-svelte-drafts-", ".json");
 		try {
 			FileUtils.writeStringToFile(sourceTemp, source, "UTF-8");
 			FileUtils.writeStringToFile(mutationTemp, JSON.stringify(mutation), "UTF-8");
+			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(frontendSourceDrafts(request)), "UTF-8");
 			var projectRoot = fileForProjectPath(new File("."), request.projectDir || "") || projectDir() || new File(".");
 			var cliArgs = [
 				"--source-file", String(sourceFile.getAbsolutePath()),
 				"--source-input", String(sourceTemp.getAbsolutePath()),
 				"--mutation", String(mutationTemp.getAbsolutePath()),
+				"--drafts", String(draftsTemp.getAbsolutePath()),
+				"--source-removals", JSON.stringify(request.sourceRemovals || []),
 				"--flow-source-root", sourcePaths().root,
 				"--source-codec-file", String(engineModuleFile("source-attribute-name-codec.js").getAbsolutePath()),
 				"--resource-root", String(resourceRoot.getAbsolutePath()),
@@ -5769,6 +5805,7 @@
 				mutationTemp["delete"]();
 			} catch (e2) {
 			}
+			try { draftsTemp["delete"](); } catch (e3) {}
 		}
 	}
 
@@ -6259,6 +6296,11 @@
 			request.sourceFile,
 			targetInfo.sourcePath
 		];
+		// Synchronization consumes the whole builder model. Changed paths are
+		// notification data, not model selectors (a moved/deleted path is absent).
+		if (request.action && request.action.id === "frontbuilder.svelte.dev.sync") {
+			sources = [];
+		}
 		for (var i = 0; i < sources.length; i++) {
 			var source = String(sources[i] || "");
 			var normalized = source.replace(/\\/g, "/");
@@ -6274,66 +6316,33 @@
 		return drafts && typeof drafts === "object" ? drafts : {};
 	}
 
+	function sourceView(request) {
+		return loadEngineModule("source-working-copies.js").create(request, {
+			File: File, FileUtils: FileUtils, hash: sha256Hex
+		});
+	}
+
 	function frontendDraftCount(request) {
-		return Object.keys(frontendSourceDrafts(request)).length;
+		return sourceView(request).count;
 	}
 
 	function sourceDraftsFingerprint() {
-		var drafts = frontendSourceDrafts(currentActiveRequest());
-		var parts = [];
-		Object.keys(drafts).sort().forEach(function (key) {
-			parts.push(canonicalPath(new File(String(key))) + ":" + sha256Hex(String(drafts[key])));
-		});
-		return parts.join("|");
+		return sourceView(currentActiveRequest()).fingerprint();
 	}
 
 	function frontendDraftForFile(request, file) {
 		if (!file) {
 			return null;
 		}
-		var drafts = frontendSourceDrafts(request);
-		var key = String(file.getCanonicalPath());
-		if (Object.prototype.hasOwnProperty.call(drafts, key)) {
-			return String(drafts[key]);
-		}
-		var absolute = String(file.getAbsolutePath());
-		if (Object.prototype.hasOwnProperty.call(drafts, absolute)) {
-			return String(drafts[absolute]);
-		}
-		var normalized = key.replace(/\\/g, "/");
-		var keys = Object.keys(drafts);
-		for (var i = 0; i < keys.length; i++) {
-			var draftKey = String(keys[i]);
-			var draftPath = draftKey.replace(/\\/g, "/");
-			if (draftPath === normalized) {
-				return String(drafts[draftKey]);
-			}
-		}
-		return null;
+		return sourceView(request).draft(file);
 	}
 
 	function sourceForFile(file) {
-		var draft = frontendDraftForFile(currentActiveRequest(), file);
-		return draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
+		return sourceView(currentActiveRequest()).read(file);
 	}
 
 	function frontendDraftEntriesUnder(request, baseDir) {
-		var drafts = frontendSourceDrafts(request);
-		var basePath = canonicalPath(baseDir);
-		var entries = [];
-		Object.keys(drafts).forEach(function (key) {
-			var file = new File(String(key));
-			var path = canonicalPath(file);
-			if (path === basePath || path.indexOf(basePath + File.separator) !== 0) {
-				return;
-			}
-			entries.push({
-				file: file,
-				relativePath: path.substring(basePath.length + 1),
-				content: String(drafts[key])
-			});
-		});
-		return entries;
+		return sourceView(request).entriesUnder(baseDir);
 	}
 
 	function frontendWriteFile(file, content) {
@@ -6345,12 +6354,12 @@
 	}
 
 	function frontendCopyFlowSvelteOverlay(sourceDir, overlayDir, request) {
-		var listed = sourceDir && sourceDir.listFiles();
-		if (listed) {
-			Arrays.asList(listed).toArray().forEach(function (file) {
-				if (file.isDirectory()) {
+		var sources = sourceView(request);
+		if (sourceDir) {
+			sources.files(sourceDir).forEach(function (file) {
+				if (sources.isDirectory(file)) {
 					frontendCopyFlowSvelteOverlay(file, new File(overlayDir, file.getName()), request);
-				} else if (file.isFile()) {
+				} else if (sources.isFile(file)) {
 					var draft = frontendDraftForFile(request, file);
 					var target = new File(overlayDir, file.getName());
 					if (draft === null) {
@@ -6404,7 +6413,7 @@
 		var sourceBaseDir = isFlowSvelte ? frontendFlowSvelteSourceRoot(modelPath) : null;
 		var draftEntries = isFlowSvelte ? frontendDraftEntriesUnder(request, sourceBaseDir) : [];
 		if (draft === null) {
-			if (!isFlowSvelte || draftEntries.length === 0) {
+			if (!isFlowSvelte || !sourceView(request).hasChangesUnder(sourceBaseDir)) {
 				return {
 					file: modelPath,
 					cleanup: null,
@@ -6831,7 +6840,7 @@
 			}
 		}
 		var modelPath = frontendModelPath(request, info);
-		if (!modelPath || !modelPath.isFile()) {
+		if (!modelPath || !sourceView(request).isFile(modelPath)) {
 			return failure("frontbuilder", {
 				code: "FRONTBUILDER_MODEL_REQUIRED",
 				message: "No frontend model file is available for this action."
@@ -6872,6 +6881,7 @@
 			envValues.FLOW_SVELTE_BUILD_OUT_DIR = String(atomicOutput.kit.getAbsolutePath());
 		}
 		var draftsTemp = null;
+		envValues.FRONTBUILDER_SOURCE_REMOVALS = JSON.stringify(request.sourceRemovals || []);
 		if (draftCount > 0) {
 			draftsTemp = File.createTempFile("c8o-frontbuilder-drafts-", ".json");
 			FileUtils.writeStringToFile(draftsTemp, JSON.stringify(frontendSourceDrafts(request)), "UTF-8");
@@ -9076,6 +9086,59 @@
 		};
 	}
 
+	function frontendBuilderCommands(info, available, dev) {
+		function command(suffix, label, description, group, enabled) {
+			return contextMenuItem("frontbuilder.svelte." + suffix, label, description, group,
+				{ builder: info.name }, "", "", available && enabled !== false);
+		}
+		return {
+			serve: command("dev.start", "Start dev mode",
+				"Generate the Svelte project, install app dependencies and start Vite dev server.", "Svelte dev", !dev),
+			stop: command("dev.stop", "Stop dev mode",
+				"Stop the Vite dev server started for this frontend.", "Svelte dev", !!dev),
+			open: command("dev.open", "Open dev mode",
+				"Open the running Vite dev server in a Studio browser.", "Svelte dev", !!dev),
+			generate: command("generate", "Update generated source",
+				"Regenerate the Svelte sources under the project private directory.", "Svelte build"),
+			build: command("build", "Build prod",
+				"Generate and build production assets under DisplayObjects/mobile. Stop Dev first; dirty production is rebuilt automatically after Dev stops.", "Svelte build", !dev),
+			built: command("openBuilt", "Open built prod",
+				"Open the built production frontend in a Studio browser.", "Svelte build")
+		};
+	}
+
+	function frontendStudioBuilders(request) {
+		// The host consumes semantic commands; provider action ids stay opaque.
+		var root = request.root || {};
+		var target = request.targetObject || {};
+		if (root.kind !== "engine" && target.kind !== "engine") {
+			return [];
+		}
+		var targetId = String(root.qname || target.qname || "");
+		if (!targetId) {
+			return [];
+		}
+		return frontendCatalogService().frontbuilderSettings(projectEngineDefinitionForRequest(request).config || {})
+			.map(function (info) {
+				var selected = Object.assign({}, request, {
+					targetObject: root.kind === "engine" ? root : target,
+					sourcePath: "", sourceFile: "",
+					action: { payload: { builder: info.name } }
+				});
+				var model = frontendModelPath(selected, info);
+				var available = !!model && sourceView(selected).isFile(model);
+				var dev = frontendDevEntry(selected, info);
+				return {
+					id: info.name,
+					label: info.name,
+					target: targetId,
+					available: available,
+					state: { serving: !!dev },
+					commands: frontendBuilderCommands(info, available, dev)
+				};
+			});
+	}
+
 	function contextMenuRequest(request, blocks) {
 		var target = request.targetObject || {};
 		var targetKind = String(target.kind || "");
@@ -9113,32 +9176,21 @@
 		if (isFrontendTarget(request)) {
 			var info = frontbuilderSettingsForRequest(request);
 			var modelPath = frontendModelPath(request, info);
-			var hasModel = modelPath && modelPath.isFile();
+			var hasModel = modelPath && sourceView(request).isFile(modelPath);
 			var dev = frontendDevEntry(request, info);
 			if (hasModel) {
-				items.push(contextMenuItem("frontbuilder.svelte.dev.start", "Start dev mode",
-					"Generate the Svelte project, install app dependencies and start Vite dev server.", "Svelte dev",
-					{}, "", "", !dev));
-				items.push(contextMenuItem("frontbuilder.svelte.dev.stop", "Stop dev mode",
-					"Stop the Vite dev server started for this frontend.", "Svelte dev",
-					{}, "", "", !!dev));
-				items.push(contextMenuItem("frontbuilder.svelte.dev.open", "Open dev mode",
-					"Open the running Vite dev server in a Studio browser.", "Svelte dev",
-					{}, "", "", !!dev));
-				items.push(contextMenuItem("frontbuilder.svelte.generate", "Update generated source",
-					"Regenerate the Svelte sources under the project private directory.", "Svelte build"));
-				items.push(contextMenuItem("frontbuilder.svelte.build", "Build prod",
-					"Generate and build production assets under DisplayObjects/mobile. Stop Dev first; dirty production is rebuilt automatically after Dev stops.", "Svelte build",
-					{}, "", "", !dev));
-				items.push(contextMenuItem("frontbuilder.svelte.openBuilt", "Open built prod",
-					"Open the built production frontend in a Studio browser.", "Svelte build"));
+				var commands = frontendBuilderCommands(info, hasModel, dev);
+				["serve", "stop", "open", "generate", "build", "built"].forEach(function (key) {
+					items.push(commands[key]);
+				});
 			}
 		}
 		return {
 			ok: true,
 			protocol: "flow.studio.menu.v1",
 			label: "Flow",
-			items: items
+			items: items,
+			builders: frontendStudioBuilders(request)
 		};
 	}
 
@@ -9735,14 +9787,9 @@
 					doc: request.doc,
 					hints: request.hints
 				}));
-					try {
-						var projectConfig = projectEngineDefinitionForRequest(request).config || {};
-						out.frontendBlocks = frontendBlocksForConfig(projectConfig);
-						out.frontendCreateDescriptors = frontendCreateDescriptorsForConfig(projectConfig);
-					} catch (e) {
-						out.frontendBlocks = [];
-						out.frontendCreateDescriptors = [];
-					}
+				var projectConfig = projectEngineDefinitionForRequest(request).config || {};
+				out.frontendBlocks = frontendBlocksForConfig(projectConfig);
+				out.frontendCreateDescriptors = frontendCreateDescriptorsForConfig(projectConfig);
 				return out;
 			});
 		},

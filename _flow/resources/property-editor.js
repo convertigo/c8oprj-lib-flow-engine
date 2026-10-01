@@ -151,11 +151,14 @@
     var expr = input ? input.value.trim() : "";
     return expr ? "{{ " + expr + " }}" : "";
   }
-  function setDraft(v, valid, error) {
+  function setDraft(v, valid, error, initializing) {
     draft = v == null ? "" : String(v);
-    // A value not set that stays so, as an empty binding until a value is chosen, is not a change to check.
     var current = state && state.value != null ? (typeof state.value === "string" ? state.value : JSON.stringify(state.value)) : "";
-    var conversionError = draft === "" && current === "" ? "" : propertyValueError(draft, state && state.propertyDefinition);
+    // A reader's native value is not an encoded write. On unchanged initialization,
+    // retain the editor's validation; apply the transport codec only to authored writes.
+    var unchangedInitial = initializing === true && draft === current;
+    // An unset value that stays unset is not a write to decode either.
+    var conversionError = unchangedInitial || draft === "" && current === "" ? "" : propertyValueError(draft, state && state.propertyDefinition);
     if (conversionError) { valid = false; error = conversionError; }
     send({ type: "value", value: draft, valid: valid !== false, error: error || "" });
   }
@@ -712,7 +715,7 @@
         if (d.value !== undefined) setDraft(d.value);
         send({ type: "values", value: d.value, values: d.values || {} });
       });
-      setDraft(editor.value || "", editor.valid, editor.validationError);
+      setDraft(editor.value || "", editor.valid, editor.validationError, true);
       return true;
     }
     return false;

@@ -45,7 +45,7 @@
 	function fragmentFile(name, env) {
 		var candidates = fragmentCandidates(name, env);
 		for (var i = 0; i < candidates.length; i++) {
-			if (candidates[i].isFile()) {
+			if (isFile(candidates[i], env)) {
 				return candidates[i];
 			}
 		}
@@ -55,7 +55,7 @@
 
 	function readFragment(name, env) {
 		var file = fragmentFile(name, env);
-		var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
+		var source = env.sources ? env.sources.read(file) : String(env.FileUtils.readFileToString(file, "UTF-8"));
 		return {
 			name: String(name),
 			file: String(file.getAbsolutePath()),
@@ -65,6 +65,7 @@
 	}
 
 	function sortedFiles(dir, env) {
+		if (env.sources) return dir ? env.sources.files(dir) : [];
 		var listed = dir && dir.listFiles();
 		if (!listed) {
 			return [];
@@ -75,15 +76,17 @@
 		});
 		return files;
 	}
+	function isFile(file, env) { return env.sources ? env.sources.isFile(file) : file.isFile(); }
+	function isDirectory(file, env) { return env.sources ? env.sources.isDirectory(file) : file.isDirectory(); }
 
 	function listProjectFlows(env) {
 		var dir = env.projectFlowsDir();
-		if (!dir || !dir.isDirectory()) {
+		if (!dir || !isDirectory(dir, env)) {
 			return { flows: [] };
 		}
 		var byName = {};
 		sortedFiles(dir, env).filter(function (file) {
-			return file.isFile() && String(file.getName()).endsWith(".flow.js");
+			return isFile(file, env) && String(file.getName()).endsWith(".flow.js");
 		}).forEach(function (file) {
 			var name = flowNameFromFile(file);
 			if (!name) {
@@ -110,12 +113,12 @@
 
 	function listProjectFragments(env) {
 		var dir = env.projectFragmentsDir();
-		if (!dir || !dir.isDirectory()) {
+		if (!dir || !isDirectory(dir, env)) {
 			return { fragments: [] };
 		}
 		return {
 			fragments: sortedFiles(dir, env).filter(function (file) {
-				return file.isFile() && String(file.getName()).endsWith(".fragment.yaml");
+				return isFile(file, env) && String(file.getName()).endsWith(".fragment.yaml");
 			}).map(function (file) {
 				var filename = String(file.getName());
 				return {

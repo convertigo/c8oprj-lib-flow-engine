@@ -45,6 +45,14 @@ files.writeStringToFile(new java.io.File(consumer, "c8oProject.yaml"),
 	"↑DemoApp [core.Project]:\n  ↓lib_flow_frontend_demo_reference [references.ProjectSchemaReference]: \n    projectName: lib_flow_frontend_demo\n", "UTF-8");
 files.writeStringToFile(new java.io.File(consumer, "_flow/engine.yaml"), "version: 1\nconfig: {}\n", "UTF-8");
 
+// The UI source editor vocabulary belongs to the referenced frontend provider.
+var providerResourceRoot = String(java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT") || "");
+if (!providerResourceRoot) throw new Error("FLOW_FRONTBUILDER_RESOURCE_ROOT required");
+var providerProject = new java.io.File(providerResourceRoot).getParentFile().getParentFile().getParentFile();
+var providerLink = new java.io.File(temp, "lib_flow_frontbuilder_svelte");
+java.nio.file.Files.createSymbolicLink(providerLink.toPath(), providerProject.toPath());
+write("c8oProject.yaml", "↑lib_flow_frontend_demo [core.Project]:\n  ↓frontbuilder [references.ProjectSchemaReference]:\n    projectName: lib_flow_frontbuilder_svelte\n");
+
 var __flowEngineDir = engineDir;
 var __flowProjectDir = String(project.getAbsolutePath());
 var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));

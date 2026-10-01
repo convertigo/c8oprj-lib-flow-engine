@@ -1,4 +1,9 @@
 (function () {
+	function sourceForFile(file, env) {
+		return env.sources ? env.sources.read(file) : String(env.FileUtils.readFileToString(file, "UTF-8"));
+	}
+	function isFile(file, env) { return env.sources ? env.sources.isFile(file) : file.isFile(); }
+	function isDirectory(file, env) { return env.sources ? env.sources.isDirectory(file) : file.isDirectory(); }
 	function projectResourceFile(path, mustExist, env) {
 		var base = env.projectDir();
 		if (!base) {
@@ -16,7 +21,7 @@
 		if (filePath !== basePath && filePath.indexOf(basePath + env.File.separator) !== 0) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path escapes the project: " + normalized);
 		}
-		if (mustExist && !file.isFile()) {
+		if (mustExist && !isFile(file, env)) {
 			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + normalized);
 		}
 		return {
@@ -35,20 +40,20 @@
 	}
 
 	function collectResourceFiles(dir, base, out, env) {
-		var listed = dir && dir.listFiles();
+		var listed = dir && (env.sources ? env.sources.files(dir) : dir.listFiles());
 		if (!listed) {
 			return;
 		}
-		var files = env.Arrays.asList(listed).toArray();
+		var files = env.sources ? listed : env.Arrays.asList(listed).toArray();
 		files.sort(function (a, b) {
 			return String(a.getName()).localeCompare(String(b.getName()));
 		});
 		files.forEach(function (file) {
-			if (file.isDirectory()) {
+			if (isDirectory(file, env)) {
 				collectResourceFiles(file, base, out, env);
 				return;
 			}
-			if (!file.isFile()) {
+			if (!isFile(file, env)) {
 				return;
 			}
 			var path = resourceRelativePath(base, file, env);
@@ -63,12 +68,12 @@
 
 	function projectResourceEntries(env) {
 		var base = env.projectDir();
-		if (!base || !base.isDirectory()) {
+		if (!base || !isDirectory(base, env)) {
 			return [];
 		}
 		var out = [];
 		var engineConfig = new env.File(base, env.sourcePaths.path("engine.yaml"));
-		if (engineConfig.isFile()) {
+		if (isFile(engineConfig, env)) {
 			out.push({
 				path: env.sourcePaths.path("engine.yaml"),
 				file: engineConfig
@@ -98,7 +103,7 @@
 	}
 
 	function resourceSummary(entry, content, env) {
-		content = content === undefined ? String(env.FileUtils.readFileToString(entry.file, "UTF-8")) : String(content);
+		content = content === undefined ? sourceForFile(entry.file, env) : String(content);
 		var summary = {
 			path: entry.path,
 			kind: env.resourceKind(entry.path),
@@ -132,7 +137,7 @@
 			summary.uri = uri;
 		}
 		if (includeHash === true || uri) {
-			var content = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+			var content = sourceForFile(entry.file, env);
 			if (includeHash === true) {
 				summary.hash = env.sha256Hex(content);
 			}
@@ -266,7 +271,7 @@
 				if (entry.file.length() > maxFileBytes) {
 					continue;
 				}
-				var content = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+				var content = sourceForFile(entry.file, env);
 				var text = [entry.path, env.resourceKind(entry.path), env.resourceName(entry.path), content].join(" ");
 				if (!env.searchMatches(text, needle)) {
 					continue;
@@ -289,7 +294,7 @@
 			if (entry.file.length() > maxFileBytes) {
 				return;
 			}
-			var content = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+			var content = sourceForFile(entry.file, env);
 			var text = [entry.path, env.resourceKind(entry.path), env.resourceName(entry.path), content].join(" ");
 			if (!env.searchMatches(text, needle)) {
 				return;
@@ -327,7 +332,7 @@
 			? projectResourceFile(request.path, true, env)
 			: projectResourceEntryForUri(request.uri, env);
 		var maxBytes = env.intOption(request.maxBytes, 12000, 1000, 5000000);
-		var content = String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+		var content = sourceForFile(entry.file, env);
 		var summary = resourceSummary(entry, content, env);
 		var truncated = content.length > maxBytes && request.allowLarge !== true;
 		var returned = truncated ? content.substring(0, maxBytes) : content;
@@ -387,7 +392,7 @@
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
 		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
 		var entry = projectResourceFile(request.path, !fromWorkingCopy, env);
-		var oldContent = fromWorkingCopy ? String(request.baseContent) : String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+		var oldContent = fromWorkingCopy ? String(request.baseContent) : sourceForFile(entry.file, env);
 		var oldHash = env.sha256Hex(oldContent);
 		if (fromWorkingCopy && request.dryRun !== true) {
 			env.raise("RESOURCE_WORKING_COPY_WRITE", "A working copy patch is only previewed; its owner stores the result.",
@@ -422,7 +427,7 @@
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
 		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
 		var entry = projectResourceFile(request.path, !fromWorkingCopy, env);
-		var oldContent = fromWorkingCopy ? String(request.baseContent) : String(env.FileUtils.readFileToString(entry.file, "UTF-8"));
+		var oldContent = fromWorkingCopy ? String(request.baseContent) : sourceForFile(entry.file, env);
 		var oldHash = env.sha256Hex(oldContent);
 		if (fromWorkingCopy && request.dryRun !== true) {
 			env.raise("RESOURCE_WORKING_COPY_WRITE", "A working copy patch is only previewed; its owner stores the result.",

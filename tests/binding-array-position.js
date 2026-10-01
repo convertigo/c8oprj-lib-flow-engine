@@ -5,7 +5,8 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '../_flow/types/editors/binding.html'), 'utf8');
 let Editor;
 vm.runInNewContext(html.match(/<script>([\s\S]*)<\/script>/)[1], {
-  HTMLElement: class {},
+  HTMLElement: class { dispatchEvent() {} },
+  CustomEvent: class {},
   customElements: { get() {}, define(name, editor) { Editor = editor; } }
 });
 const editor = new Editor();
@@ -17,6 +18,8 @@ const binding = {
   path: [property('weather'), property('body'), { kind: 'index', index: 0, source: iteration('cities') }, property('current'), property('temperature_2m')]
 };
 editor.setState({ value: binding });
+assert.deepEqual(JSON.parse(editor.value), binding, 'loading editor state is not an author edit');
+editor.emit(); // The author chooses the dynamic array position: lower the edited value.
 const serialized = editor.value;
 const lowered = JSON.parse(serialized);
 assert.equal(lowered.mode, 'expression');
@@ -47,6 +50,7 @@ assert.equal(editor.value, serialized, 'round trip preserves the persisted contr
 const nested = JSON.parse(JSON.stringify(binding));
 nested.path.push({ kind: 'index', index: 0, source: iteration('nested') }, property('quoted"name'));
 editor.setState({ value: nested });
+editor.emit();
 const nestedValue = editor.value;
 editor.setState({ value: nestedValue });
 assert.equal(editor._binding.mode, 'source');

@@ -16,13 +16,15 @@
 			return path.toFile();
 		}
 		function occupied(file) {
+			if (env.sources) return env.sources.isFile(file) || env.sources.isDirectory(file);
 			var path = file.getCanonicalFile().toPath();
 			return file.exists() || draftPaths.some(function (draft) { return draft.startsWith(path); });
 		}
 		function validateParents(file) {
 			var parent = file.getParentFile();
 			while (parent && parent.toPath().startsWith(rootPath)) {
-				if (parent.exists() && !parent.isDirectory() || draftPaths.some(function (draft) { return draft.equals(parent.toPath()); })) {
+				if (env.sources ? env.sources.isFile(parent)
+					: parent.exists() && !parent.isDirectory() || draftPaths.some(function (draft) { return draft.equals(parent.toPath()); })) {
 					raise("SOURCE_CREATION_PARENT_NOT_DIRECTORY", "A source file cannot contain another source.");
 				}
 				parent = parent.getParentFile();

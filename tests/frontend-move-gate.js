@@ -87,6 +87,8 @@ try {
         '__C8O_FLOW_SOURCE_MUTATION__');
     }
   });
+  const draftsStart = engineSource.indexOf('function frontendSourceDrafts(');
+  vm.runInContext(engineSource.slice(draftsStart, engineSource.indexOf('\n\tfunction sourceView(', draftsStart)), real);
   vm.runInContext(engineSource.slice(start, engineSource.indexOf('\n\tfunction frontendSvelteResourceRoot(', start)), real);
   const moved = real.applyOneFlowSvelteSourceMutation({}, source,
     {op: 'move', from: 'stale.path', fromId: 'text', path: right.sourceMutationPath}, sourceFile, file);

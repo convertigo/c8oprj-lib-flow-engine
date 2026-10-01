@@ -80,9 +80,11 @@ assertTrue(schedule.indexOf("stableRequest.productionBuildFingerprint = activeSt
 	"the asynchronous builder must capture its source fingerprint before generation starts");
 
 var contextMenu = functionSource("contextMenuRequest", "contextMenuItem");
-assertTrue(contextMenu.indexOf('"frontbuilder.svelte.build", "Build prod"') >= 0 &&
-	contextMenu.indexOf('rebuilt automatically after Dev stops') >= 0 &&
-	contextMenu.indexOf('"", !dev)') >= 0,
-	"the Studio menu must disable production build while Dev is active");
+var builderCommands = functionSource("frontendBuilderCommands", "frontendStudioBuilders");
+assertTrue(contextMenu.indexOf("frontendBuilderCommands(info, hasModel, dev)") >= 0 &&
+	builderCommands.indexOf('command("build", "Build prod"') >= 0 &&
+	builderCommands.indexOf('rebuilt automatically after Dev stops') >= 0 &&
+	builderCommands.indexOf('"Svelte build", !dev)') >= 0,
+	"the Studio menu and Build panel must share commands that disable production while Dev is active");
 
 print("frontend-dev-activation-contract OK");

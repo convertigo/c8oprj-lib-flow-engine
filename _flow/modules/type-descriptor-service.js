@@ -71,7 +71,8 @@
 		if (!type) {
 			env.raise("UNKNOWN_TYPE", "Unknown Flow property type: " + name);
 		}
-		var descriptorSource = String(env.FileUtils.readFileToString(new env.File(String(type.__flowFile)), "UTF-8"));
+		var file = new env.File(String(type.__flowFile));
+		var descriptorSource = env.sources ? env.sources.read(file) : String(env.FileUtils.readFileToString(file, "UTF-8"));
 		return {
 			name: type.name,
 			origin: type.__flowOrigin || "unknown",

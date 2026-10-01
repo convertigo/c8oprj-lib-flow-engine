@@ -12,6 +12,7 @@
 	}
 
 	function sortedFiles(dir, env) {
+		if (env.sources) return dir ? env.sources.files(dir) : [];
 		var files = dir && dir.listFiles();
 		if (!files) {
 			return [];
@@ -21,6 +22,11 @@
 			return String(a.getName()).localeCompare(String(b.getName()));
 		});
 		return files;
+	}
+	function isFile(file, env) { return env.sources ? env.sources.isFile(file) : file.isFile(); }
+	function isDirectory(file, env) { return env.sources ? env.sources.isDirectory(file) : file.isDirectory(); }
+	function sourceForFile(file, env) {
+		return env.sources ? env.sources.read(file) : String(env.FileUtils.readFileToString(file, "UTF-8"));
 	}
 
 	function blocksBaseDir(origin, env) {
@@ -47,14 +53,14 @@
 		];
 		for (var i = 0; i < candidates.length; i++) {
 			var root = candidates[i];
-			if (referencedContentDir(root, relativePath, env).isDirectory()) {
+			if (isDirectory(referencedContentDir(root, relativePath, env), env)) {
 				return root;
 			}
 		}
 		if (typeof env.projectRootForName === "function") {
 			try {
 				var loadedRoot = env.projectRootForName(name);
-				if (loadedRoot && referencedContentDir(loadedRoot, relativePath, env).isDirectory()) {
+				if (loadedRoot && isDirectory(referencedContentDir(loadedRoot, relativePath, env), env)) {
 					return loadedRoot;
 				}
 			} catch (e) {
@@ -101,11 +107,11 @@
 	function loadBlockDir(blocks, blocksDir, origin, provider, env, baseDir) {
 		baseDir = baseDir || blocksBaseDir(origin, env);
 		sortedFiles(blocksDir, env).forEach(function (file) {
-			if (file.isDirectory()) {
+			if (isDirectory(file, env)) {
 				loadBlockDir(blocks, file, origin, provider, env, baseDir);
 				return;
 			}
-			if (!file.isFile()) {
+			if (!isFile(file, env)) {
 				return;
 			}
 			if (String(file.getName()).endsWith(".block.js")) {
@@ -117,11 +123,11 @@
 	function reserveBlockDir(blocks, blocksDir, origin, provider, env, baseDir) {
 		baseDir = baseDir || blocksBaseDir(origin, env);
 		sortedFiles(blocksDir, env).forEach(function (file) {
-			if (file.isDirectory()) {
+			if (isDirectory(file, env)) {
 				reserveBlockDir(blocks, file, origin, provider, env, baseDir);
 				return;
 			}
-			if (!file.isFile()) {
+			if (!isFile(file, env)) {
 				return;
 			}
 			if (String(file.getName()).endsWith(".block.js")) {
@@ -297,7 +303,7 @@
 	}
 
 	function loadTypeDescriptorFile(types, file, origin, env) {
-		var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
+		var source = sourceForFile(file, env);
 		var type = env.validateTypeDescriptorSource(env.resourceName(file.getName()), source);
 		if (types[type.name]) {
 			env.raise("DUPLICATE_TYPE", "Duplicate Flow property type: " + type.name,
@@ -311,13 +317,13 @@
 
 	function loadTypeDir(types, typesDir, origin, env, provider) {
 		sortedFiles(typesDir, env).forEach(function (file) {
-			if (!file.isFile() || !String(file.getName()).endsWith(".type.yaml")) {
+			if (!isFile(file, env) || !String(file.getName()).endsWith(".type.yaml")) {
 				return;
 			}
 			if (origin === "reference") {
 				// A referenced project shares its types (e.g. the editor of its components'
 				// properties); the core, this project and earlier references take precedence.
-				var source = String(env.FileUtils.readFileToString(file, "UTF-8"));
+				var source = sourceForFile(file, env);
 				var type = env.validateTypeDescriptorSource(env.resourceName(file.getName()), source);
 				if (types[type.name]) return;
 				type.__flowOrigin = origin;
@@ -337,7 +343,7 @@
 			return { root: root, dir: new env.File(root, env.sourcePaths.path("types")) };
 		}).filter(function (entry) {
 			var path = env.canonicalPath(entry.dir);
-			return entry.dir.isDirectory() && path !== env.canonicalPath(coreTypesDir)
+			return isDirectory(entry.dir, env) && path !== env.canonicalPath(coreTypesDir)
 				&& !(localTypesDir && path === env.canonicalPath(localTypesDir));
 		});
 	}
@@ -346,6 +352,7 @@
 		var coreTypesDir = new env.File(env.engineDir(), "types");
 		var key = [
 			"engine", env.canonicalPath(env.engineDir()),
+			"sources", env.sourceDraftsFingerprint ? env.sourceDraftsFingerprint() : "",
 			"core", env.directoryFingerprint(coreTypesDir)
 		];
 		var localTypesDir = env.projectTypesDir();
@@ -398,7 +405,7 @@
 		var seen = {};
 		return dirs.filter(function (entry) {
 			var path = env.canonicalPath(entry.dir);
-			if (!entry.dir.isDirectory() || seen[path]) return false;
+			if (!isDirectory(entry.dir, env) || seen[path]) return false;
 			seen[path] = true;
 			return true;
 		});
@@ -407,14 +414,14 @@
 	function traitFiles(dir, env) {
 		var files = [];
 		sortedFiles(dir, env).forEach(function (file) {
-			if (file.isDirectory()) files = files.concat(traitFiles(file, env));
+			if (isDirectory(file, env)) files = files.concat(traitFiles(file, env));
 			else if (String(file.getName()).endsWith(".trait.js")) files.push(file);
 		});
 		return files;
 	}
 
 	function traitsCacheKey(env, extraDirs) {
-		return traitDirs(env, extraDirs).map(function (entry) {
+		return (env.sourceDraftsFingerprint ? env.sourceDraftsFingerprint() : "") + "\n" + traitDirs(env, extraDirs).map(function (entry) {
 			return entry.origin + ":" + traitFiles(entry.dir, env).map(function (file) {
 				return env.canonicalPath(file) + "@" + file.lastModified() + ":" + file.length();
 			}).join(",");
@@ -425,7 +432,7 @@
 		var traits = {};
 		traitDirs(env, extraDirs).forEach(function (entry) {
 			traitFiles(entry.dir, env).forEach(function (file) {
-				var meta = env.extractFlowScriptBlockMeta(String(env.FileUtils.readFileToString(file, "UTF-8"))).meta || {};
+				var meta = env.extractFlowScriptBlockMeta(sourceForFile(file, env)).meta || {};
 				var name = String(meta.name || "");
 				if (!name) {
 					env.raise("TRAIT_NAME_REQUIRED", "Trait " + file.getName() + " must declare its name in _meta.");

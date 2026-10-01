@@ -89,6 +89,9 @@
 	}
 
 	function frontendUiBlockTraits(raw) {
+		if (raw && raw.traits && typeof raw.traits === "object" && !Array.isArray(raw.traits)) {
+			return Object.keys(raw.traits);
+		}
 		return arrayCopy(raw && raw.traits, ["ui.block"]);
 	}
 
@@ -117,10 +120,10 @@
 			"class": {
 				label: "Classes",
 				category: "Base properties",
-				kind: "text",
+				kind: "binding",
 				type: "string",
 				"default": "",
-				description: "Application CSS class names separated by spaces.",
+				description: "Application CSS class names from a literal, expression or schema-backed source.",
 				// Offered on every UI block, never declared by its source.
 				common: true
 			}
@@ -200,6 +203,7 @@
 	}
 
 	function sortedFiles(dir, env) {
+		if (env.sources) return dir ? env.sources.files(dir) : [];
 		var files = dir && dir.listFiles();
 		if (!files) {
 			return [];
@@ -210,14 +214,18 @@
 		});
 		return files;
 	}
+	function isFile(file, env) { return env.sources ? env.sources.isFile(file) : file.isFile(); }
+	function isDirectory(file, env) { return env.sources ? env.sources.isDirectory(file) : file.isDirectory(); }
 
 	function sourceForFile(file, env) {
+		if (env.sources) return env.sources.read(file);
 		return typeof env.sourceForFile === "function"
 			? String(env.sourceForFile(file))
 			: String(env.FileUtils.readFileToString(file, "UTF-8"));
 	}
 
 	function addDraftFiles(dir, env, out, accept) {
+		if (env.sources) return; // Discovery already uses the complete working-copy view.
 		if (!dir || typeof env.draftFilesUnder !== "function") {
 			return;
 		}
@@ -240,11 +248,11 @@
 
 	function collectUiBlockFiles(dir, env, out) {
 		sortedFiles(dir, env).forEach(function (file) {
-			if (file.isDirectory()) {
+			if (isDirectory(file, env)) {
 				collectUiBlockFiles(file, env, out);
 				return;
 			}
-			if (file.isFile() && String(file.getName()).endsWith(".uiblock.json")) {
+			if (isFile(file, env) && String(file.getName()).endsWith(".uiblock.json")) {
 				out.push(file);
 			}
 		});
@@ -255,11 +263,11 @@
 
 	function collectSvelteComponentFiles(dir, env, out) {
 		sortedFiles(dir, env).forEach(function (file) {
-			if (file.isDirectory()) {
+			if (isDirectory(file, env)) {
 				collectSvelteComponentFiles(file, env, out);
 				return;
 			}
-			if (!file.isFile()) {
+			if (!isFile(file, env)) {
 				return;
 			}
 			var name = String(file.getName());
@@ -276,11 +284,11 @@
 
 	function collectSvelteActionFiles(dir, env, out) {
 		sortedFiles(dir, env).forEach(function (file) {
-			if (file.isDirectory()) {
+			if (isDirectory(file, env)) {
 				collectSvelteActionFiles(file, env, out);
 				return;
 			}
-			if (!file.isFile()) {
+			if (!isFile(file, env)) {
 				return;
 			}
 			var name = String(file.getName());
@@ -613,7 +621,7 @@
 		return descriptor;
 	}
 
-	function normalizeUiBlock(raw, file, builderName, settings, env, providerHint) {
+	function normalizeUiBlock(raw, file, builderName, settings, env, providerHint, traitDirs) {
 		raw = env.normalizeTree(raw || {});
 		var id = String(raw.id || "").trim();
 		if (!id) {
@@ -622,12 +630,19 @@
 		var insert = raw.insert || {};
 		var label = raw.label || raw.name || id;
 		var nameParts = frontendNameParts(id, label);
-		var tag = String(raw.tag || insert.tag || pascalCase(insert.kind || label || id));
+		var tag = raw.tag !== undefined ? String(raw.tag) : String(insert.tag || pascalCase(insert.kind || label || id));
 		var aliases = raw.aliases && Object.prototype.toString.call(raw.aliases) === "[object Array]" ? raw.aliases.slice() : [];
 		if (String(label).toUpperCase() === String(label) && String(label).toLowerCase() === tag.toLowerCase() && aliases.indexOf(label) === -1) {
 			aliases.push(label);
 		}
 		var source = sourceMetadataForFile(file, builderName, env, providerHint);
+		var properties = raw.properties || {};
+		var traits = frontendUiBlockTraits(raw);
+		var composed = typeof env.composeTraits === "function" ? env.composeTraits({ properties: properties, traits: raw.traits || traits }, traitDirs) : null;
+		if (composed) {
+			properties = composed.properties;
+			traits = composed.traits;
+		}
 		var descriptor = {
 			id: id,
 			name: raw.name || label,
@@ -641,18 +656,25 @@
 			targetKinds: raw.targetKinds || ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
 			acceptedPositions: raw.acceptedPositions || ["inside"],
 			description: raw.description || "",
+			longDescription: raw.longDescription || "",
 			icon: raw.icon || "mdi:view-module-outline",
-			traits: frontendUiBlockTraits(raw),
+			traits: traits,
 			slots: raw.slots || {},
+			sourceRename: raw.sourceRename,
+			engineProperties: raw.engineProperties,
+			effects: raw.effects || [],
+			resultSchema: raw.resultSchema,
+			implementation: raw.implementation,
 			insert: insert,
 			defaults: raw.defaults || insert,
-			properties: raw.properties || {},
+			properties: properties,
 			builder: builderName,
 			target: settings.target || "",
 			provider: source.provider,
 			declaredProvider: raw.provider || "",
 			sourceBacked: true,
-			descriptorKind: "source",
+			createAction: raw.createAction === true,
+			descriptorKind: raw.createAction === true ? "create" : "source",
 			sourcePath: source.sourcePath,
 			sourceRelativePath: source.sourceRelativePath || "",
 			sourceOrigin: source.sourceOrigin,
@@ -703,992 +725,13 @@
 		};
 	}
 
-	function frontendSvelteEventDescriptors(builderName, settings) {
-		var events = [
-			"beforeinput",
-			"click",
-			"change",
-			"close",
-			"dblclick",
-			"contextmenu",
-			"focusin",
-			"focusout",
-			"input",
-			"keydown",
-			"keyup",
-			"mousedown",
-			"mousemove",
-			"mouseout",
-			"mouseover",
-			"mouseup",
-			"pointerdown",
-			"pointermove",
-			"pointerout",
-			"pointerover",
-			"pointerup",
-			"submit",
-			"touchend",
-			"touchmove",
-			"touchstart"
-		];
-		return events.map(function (eventName) {
-			var label = "On" + eventName.replace(/(^|[^a-z0-9])([a-z0-9])/g, function (_, sep, chr) {
-				return chr.toUpperCase();
-			});
-			return frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.on" + eventName,
-				label: label,
-				category: "Svelte / Events",
-				kind: "frontendEventDefinition",
-				icon: "mdi:flash-outline",
-				traits: ["ui.event"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action"]
-					}
-				},
-				targetKinds: ["frontendEvents"],
-				acceptedPositions: ["inside"],
-				description: "Adds a Svelte 5 DOM event handler.",
-				insert: {
-					id: "on" + eventName,
-					kind: "event",
-					tag: label,
-					event: eventName,
-					actions: []
-				},
-				properties: {
-					id: { type: "string" },
-					event: { type: "string", readOnly: true }
-				}
-			});
-		});
-	}
-
 	function frontendAuthoringBlocksForSettings(builderName, settings, env) {
-		settings = settings || {};
-		var blocks = [
-			frontendBuilderBootstrapDescriptor(builderName, settings, env)
-		].concat(frontendSourceDefinitionDescriptors(builderName, settings, env));
-		return blocks.concat([
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.navigationItem",
-				label: "Navigation item",
-				category: "Svelte / Structure",
-				kind: "frontendNavigationItemDefinition",
-				icon: "mdi:link-variant",
-				traits: ["definition.navigationItem"],
-				targetKinds: ["frontendApp", "frontendNavigation"],
-				acceptedPositions: ["inside"],
-				description: "Adds a navigation item to the frontend app.",
-				insert: {
-					__frontendMutationPath: "app.navigation",
-					label: "New page",
-					route: "/page"
-				},
-				properties: {
-					label: { type: "string" },
-					route: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.layout",
-				label: "Layout",
-				category: "Svelte / Structure",
-				kind: "frontendLayoutDefinition",
-				icon: "mdi:page-layout-outline",
-				traits: ["definition.layout"],
-				targetKinds: ["frontendBuilder", "frontendLayouts"],
-				acceptedPositions: ["inside"],
-				description: "Adds a reusable frontend layout.",
-				insert: {
-					__frontendMutationPath: "layouts",
-					id: "layout",
-					title: "Layout",
-					regions: [
-						{ id: "content", role: "content" }
-					]
-				},
-				properties: {
-					id: { type: "string" },
-					title: { type: "string" },
-					regions: { type: "array", kind: "array" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.layoutRegion",
-				label: "Layout region",
-				category: "Svelte / Structure",
-				kind: "frontendLayoutRegionDefinition",
-				icon: "mdi:page-layout-body",
-				traits: ["definition.layoutRegion"],
-				targetKinds: ["frontendLayout"],
-				acceptedPositions: ["inside"],
-				description: "Adds a region to a frontend layout.",
-				insert: {
-					id: "region",
-					role: "content"
-				},
-				properties: {
-					id: { type: "string" },
-					role: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.property",
-				label: "UI block property",
-				category: "Svelte / Properties",
-				kind: "frontendPropertyDefinition",
-				icon: "mdi:form-textbox",
-				traits: ["definition.property"],
-				targetKinds: ["frontendBlockProperties"],
-				acceptedPositions: ["inside"],
-				description: "Adds a property to a source-backed frontend UI block definition.",
-				insert: {
-					__frontendPropertyDefinition: true,
-					name: "property",
-					label: "Property",
-					kind: "text",
-					type: "string",
-					description: "Frontend UI block property."
-				},
-				properties: {
-					name: { type: "string" },
-					label: { type: "string" },
-					kind: { type: "string" },
-					type: { type: "string" },
-					description: { type: "string" }
-				}
-			}),
-		].concat(frontendSvelteEventDescriptors(builderName, settings), [
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.onMount",
-				label: "OnMount",
-				category: "Svelte / Lifecycle",
-				kind: "frontendEventBlockDefinition",
-				icon: "mdi:play-circle-outline",
-				traits: ["ui.lifecycle", "ui.container"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action"]
-					}
-				},
-				targetKinds: ["frontendEvents"],
-				acceptedPositions: ["inside"],
-				description: "Runs its actions when the page or the component mounts (Svelte onMount): its first display, each entry on its route and a live reload. A navigation that keeps the page shown, to other parameters or another query, does not run them again: use OnAfterNavigate.",
-				insert: {
-					id: "onMount",
-					kind: "onMount",
-					tag: "OnMount"
-				},
-				properties: {
-					id: { type: "string" },
-					once: {
-						type: "boolean",
-						description: "Run this lifecycle chain once per browser runtime, while allowing it again after a full reload."
-					}
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.onAfterNavigate",
-				label: "OnAfterNavigate",
-				category: "Svelte / Lifecycle",
-				kind: "frontendEventBlockDefinition",
-				icon: "mdi:map-marker-path",
-				traits: ["ui.lifecycle", "ui.container", "ui.trigger"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action"]
-					}
-				},
-				targetKinds: ["frontendEvents"],
-				acceptedPositions: ["inside"],
-				description: "Runs its actions after each navigation (SvelteKit afterNavigate): the first display, then each change of the address, parameters or query included. @event.type is the navigation (enter, link, goto, popstate, form), @event.to and @event.from its arrival and its departure (url, path, route, params, query).",
-				insert: {
-					id: "onAfterNavigate",
-					kind: "onAfterNavigate",
-					tag: "OnAfterNavigate"
-				},
-				properties: {
-					id: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.onDestroy",
-				label: "OnDestroy",
-				category: "Svelte / Lifecycle",
-				kind: "frontendEventBlockDefinition",
-				icon: "mdi:stop-circle-outline",
-				traits: ["ui.lifecycle", "ui.container"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action", "ui.lifecycle"]
-					}
-				},
-				targetKinds: ["frontendEvents"],
-				acceptedPositions: ["inside"],
-				description: "Runs explicit client actions before the page or component is destroyed.",
-				insert: {
-					id: "onDestroy",
-					kind: "onDestroy",
-					tag: "OnDestroy"
-				},
-				properties: {
-					id: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.effect",
-				label: "Effect",
-				category: "Svelte / Lifecycle",
-				kind: "frontendEventBlockDefinition",
-				icon: "mdi:creation-outline",
-				traits: ["ui.lifecycle", "ui.container"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action", "ui.lifecycle"]
-					}
-				},
-				targetKinds: ["frontendEvents"],
-				acceptedPositions: ["inside"],
-				description: "Runs explicit side effects reactively when their dependencies change.",
-				insert: {
-					id: "effect",
-					kind: "effect",
-					tag: "Effect"
-				},
-				properties: {
-					id: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.preEffect",
-				label: "PreEffect",
-				category: "Svelte / Lifecycle",
-				kind: "frontendEventBlockDefinition",
-				icon: "mdi:creation-outline",
-				traits: ["ui.lifecycle", "ui.container"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action", "ui.lifecycle"]
-					}
-				},
-				targetKinds: ["frontendEvents"],
-				acceptedPositions: ["inside"],
-				description: "Runs explicit side effects before Svelte updates the DOM.",
-				insert: {
-					id: "preEffect",
-					kind: "preEffect",
-					tag: "PreEffect"
-				},
-				properties: {
-					id: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.interval",
-				label: "Interval",
-				category: "Svelte / Lifecycle",
-				kind: "frontendEventBlockDefinition",
-				icon: "mdi:timer-outline",
-				traits: ["ui.lifecycle", "ui.container"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action", "ui.lifecycle"]
-					}
-				},
-				targetKinds: ["frontendEvents", "frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Runs explicit client actions at a fixed interval while the component is mounted.",
-				insert: {
-					id: "interval",
-					kind: "interval",
-					tag: "Interval",
-					milliseconds: 1000,
-					immediate: true
-				},
-				properties: {
-					id: { type: "string" },
-					milliseconds: {
-						label: "Milliseconds",
-						type: "number",
-						kind: "number",
-						"default": 1000,
-						description: "Delay between action runs."
-					},
-					immediate: {
-						label: "Execute once on mount",
-						type: "boolean",
-						kind: "boolean",
-						"default": true,
-						description: "Execute the actions once when the component mounts, before the first timed execution."
-					}
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.timeout",
-				label: "Timeout",
-				category: "Svelte / Lifecycle",
-				kind: "frontendEventBlockDefinition",
-				icon: "mdi:timer-sand",
-				traits: ["ui.lifecycle", "ui.container"],
-				slots: {
-					actions: {
-						label: "Actions",
-						accepts: ["ui.action"]
-					}
-				},
-				targetKinds: ["frontendEvents", "frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Runs explicit client actions once after a delay and clears the timer on teardown.",
-				insert: {
-					id: "timeout",
-					kind: "timeout",
-					tag: "Timeout",
-					milliseconds: 1000
-				},
-				properties: {
-					id: { type: "string" },
-					milliseconds: {
-						label: "Milliseconds",
-						type: "number",
-						kind: "number",
-						"default": 1000,
-						description: "Delay before the action runs."
-					}
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.setValue",
-				label: "Set value",
-				category: "Svelte / Actions",
-				kind: "frontendActionDefinition",
-				icon: "mdi:variable-box-outline",
-				traits: ["ui.action"],
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Stores a literal or bound value in local client action state.",
-				insert: {
-					id: "setValue",
-					kind: "setValue",
-					tag: "SetValue",
-					target: "",
-					value: { mode: "literal", value: true }
-				},
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					value: { type: "binding", kind: "binding" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.updateList",
-				label: "Update list",
-				category: "Svelte / Actions",
-				kind: "frontendActionDefinition",
-				icon: "mdi:format-list-bulleted",
-				traits: ["ui.action"],
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Updates a list held in local client action state.",
-				insert: {
-					id: "updateList",
-					kind: "updateList",
-					tag: "UpdateList",
-					target: "listState",
-					operation: "append",
-					value: { mode: "literal", value: null },
-					count: { mode: "literal", value: 0 }
-				},
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					operation: { type: "string", "enum": ["set", "append", "truncate", "clear"] },
-					value: { type: "binding", kind: "binding" },
-					count: { type: "binding", kind: "binding" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.updateNumber",
-				label: "Update number",
-				category: "Svelte / Actions",
-				kind: "frontendActionDefinition",
-				icon: "mdi:numeric",
-				traits: ["ui.action"],
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Updates a bounded numeric value held in local client action state.",
-				insert: {
-					id: "updateNumber",
-					kind: "updateNumber",
-					tag: "UpdateNumber",
-					target: "numberState",
-					operation: "set",
-					value: { mode: "literal", value: 0 },
-					step: { mode: "literal", value: 1 }
-				},
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					operation: { type: "string", "enum": ["set", "increment", "decrement"] },
-					value: { type: "binding", kind: "binding" },
-					step: { type: "binding", kind: "binding" },
-					min: { type: "binding", kind: "binding" },
-					max: { type: "binding", kind: "binding" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.navigate",
-				label: "Navigate",
-				category: "Svelte / Actions",
-				kind: "frontendActionDefinition",
-				icon: "mdi:arrow-right-circle-outline",
-				traits: ["ui.action"],
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Navigates after preceding client actions complete.",
-				insert: {
-					id: "navigate",
-					kind: "navigate",
-					tag: "Navigate",
-					page: "home",
-					replace: false
-				},
-				slots: {
-					params: {
-						label: "Parameters",
-						accepts: ["ui.action.variable"]
-					},
-					query: {
-						label: "Query",
-						accepts: ["ui.action.variable"]
-					}
-				},
-				properties: {
-					id: { type: "string" },
-					page: { type: "string", kind: "text" },
-					to: {
-						type: "binding",
-						kind: "binding",
-						description: "Expert fallback route. Prefer page with Parameters and Query."
-					},
-					replace: { type: "boolean", kind: "boolean" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.goBack",
-				label: "Go back",
-				category: "Svelte / Actions",
-				kind: "frontendActionDefinition",
-				icon: "mdi:arrow-left-circle-outline",
-				traits: ["ui.action"],
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Returns through application history with a direct-entry fallback route.",
-				insert: {
-					id: "goBack",
-					kind: "goBack",
-					tag: "GoBack",
-					fallback: "/"
-				},
-				properties: {
-					id: { type: "string" },
-					fallback: { type: "string", kind: "text" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.callSequence",
-				label: "CallSequence",
-				category: "Svelte / Actions",
-				kind: "frontendActionDefinition",
-				icon: "mdi:play-box-outline",
-				traits: ["ui.action"],
-				slots: {
-					variables: {
-						label: "Variables",
-						accepts: ["ui.action.variable"]
-					}
-				},
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Adds a client-side action that calls a Convertigo requestable.",
-				insert: {
-					id: "callSequence",
-					kind: "callSequence",
-					tag: "CallSequence",
-					target: "",
-					requestable: ".Sequence",
-					marker: ""
-				},
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					requestable: { type: "requestable", kind: "requestable" },
-					marker: { type: "string", kind: "text", description: "Optional stable source marker appended to the requestable, as in NGX." },
-					outputSchema: { type: "object", kind: "literal", description: "Schema returned by flow-requestable-schema and reused unchanged by binding pickers and DataRender." }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.client.fullsync.get",
-				label: "FullSync Get",
-				category: "Svelte / FullSync",
-				kind: "frontendActionDefinition",
-				icon: "mdi:database-search-outline",
-				traits: ["ui.action"],
-				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Reads one document from the local FullSync database.",
-				insert: { id: "fullSyncGet", kind: "fullSyncGet", tag: "FullSyncGet", target: "", database: "", docid: "", live: "" },
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					database: { type: "string", kind: "fullsync" },
-					docid: { type: "binding", kind: "binding" },
-					live: { type: "string", description: "Re-executes this local read whenever the FullSync database changes." },
-					marker: { type: "string" },
-					schemaRequestable: { type: "requestable", kind: "requestable" },
-					schemaInput: { type: "object", kind: "literal" },
-					outputSchema: { type: "object", kind: "literal" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.client.fullsync.view",
-				label: "FullSync View",
-				category: "Svelte / FullSync",
-				kind: "frontendActionDefinition",
-				icon: "mdi:database-eye-outline",
-				traits: ["ui.action"],
-				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Queries one view from the local FullSync database.",
-				insert: { id: "fullSyncView", kind: "fullSyncView", tag: "FullSyncView", target: "", database: "", ddoc: "", view: "", live: "" },
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					database: { type: "string", kind: "fullsync" },
-					ddoc: { type: "string" },
-					view: { type: "string" },
-					live: { type: "string", description: "Re-executes this local read whenever the FullSync database changes." },
-					marker: { type: "string" },
-					schemaRequestable: { type: "requestable", kind: "requestable" },
-					schemaInput: { type: "object", kind: "literal" },
-					outputSchema: { type: "object", kind: "literal" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.client.fullsync.post",
-				label: "FullSync Post",
-				category: "Svelte / FullSync",
-				kind: "frontendActionDefinition",
-				icon: "mdi:database-plus-outline",
-				traits: ["ui.action"],
-				slots: { variables: { label: "Document fields", accepts: ["ui.action.variable"] } },
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Creates or updates one document in the local FullSync database.",
-				insert: { id: "fullSyncPost", kind: "fullSyncPost", tag: "FullSyncPost", target: "", database: "", policy: "none" },
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					database: { type: "string", kind: "fullsync" },
-					policy: { type: "string", enum: ["none", "create", "override", "merge"] },
-					marker: { type: "string" },
-					outputSchema: { type: "object", kind: "literal" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.client.fullsync.putAttachment",
-				label: "FullSync Put attachment",
-				category: "Svelte / FullSync",
-				kind: "frontendActionDefinition",
-				icon: "mdi:paperclip-plus",
-				traits: ["ui.action"],
-				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Stores a browser Blob or File as a local FullSync attachment.",
-				insert: { id: "fullSyncPutAttachment", kind: "fullSyncPutAttachment", tag: "FullSyncPutAttachment", target: "", database: "", docid: "", name: "", contentType: "", content: "" },
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					database: { type: "string", kind: "fullsync" },
-					docid: { type: "binding", kind: "binding" },
-					name: { type: "binding", kind: "binding" },
-					contentType: { type: "binding", kind: "binding" },
-					content: { type: "binding", kind: "binding" },
-					marker: { type: "string" },
-					outputSchema: { type: "object", kind: "literal" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.client.fullsync.getAttachment",
-				label: "FullSync Get attachment",
-				category: "Svelte / FullSync",
-				kind: "frontendActionDefinition",
-				icon: "mdi:paperclip",
-				traits: ["ui.action"],
-				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Reads one attachment Blob from the local FullSync database.",
-				insert: { id: "fullSyncGetAttachment", kind: "fullSyncGetAttachment", tag: "FullSyncGetAttachment", target: "", database: "", docid: "", name: "" },
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					database: { type: "string", kind: "fullsync" },
-					docid: { type: "binding", kind: "binding" },
-					name: { type: "binding", kind: "binding" },
-					marker: { type: "string" },
-					outputSchema: { type: "object", kind: "literal" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.client.fullsync.reset",
-				label: "FullSync Reset",
-				category: "Svelte / FullSync",
-				kind: "frontendActionDefinition",
-				icon: "mdi:database-refresh-outline",
-				traits: ["ui.action"],
-				slots: {},
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Resets a local FullSync database once per optional migration marker.",
-				insert: { id: "fullSyncReset", kind: "fullSyncReset", tag: "FullSyncReset", target: "", database: "", marker: "" },
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					database: { type: "string", kind: "fullsync" },
-					marker: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.client.fullsync.sync",
-				label: "FullSync Sync",
-				category: "Svelte / FullSync",
-				kind: "frontendActionDefinition",
-				icon: "mdi:database-sync-outline",
-				traits: ["ui.action"],
-				slots: { variables: { label: "Variables", accepts: ["ui.action.variable"] } },
-				targetKinds: ["frontendEventBlock"],
-				acceptedPositions: ["inside"],
-				description: "Synchronizes, pulls or pushes a FullSync database and reports progress.",
-				insert: { id: "fullSyncSync", kind: "fullSyncSync", tag: "FullSyncSync", target: "", database: "", mode: "sync" },
-				properties: {
-					id: { type: "string" },
-					target: { type: "string" },
-					database: { type: "string", kind: "fullsync" },
-					mode: { type: "string", enum: ["sync", "pull", "push", "continuous"] },
-					marker: { type: "string" },
-					outputSchema: { type: "object", kind: "literal" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.dataBinding",
-				label: "Data binding",
-				category: "Svelte / Data",
-				kind: "frontendDataBindingDefinition",
-				icon: "mdi:database-arrow-right-outline",
-				traits: ["ui.data.binding"],
-				targetKinds: ["frontendDataBindings"],
-				acceptedPositions: ["inside"],
-				description: "Adds a data binding to a frontend UI block.",
-				insert: {
-					id: "dataBinding",
-					kind: "dataBinding",
-					tag: "DataBinding",
-					source: "items",
-					value: "items"
-				},
-				properties: {
-					id: { type: "string" },
-					source: { type: "string", kind: "path" },
-					value: { type: "string", kind: "path" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.if",
-				label: "If",
-				category: "Svelte / Directives",
-				kind: "frontendDirectiveBlockDefinition",
-				icon: "mdi:source-branch",
-				traits: ["ui.directive"],
-				slots: {
-					then: {
-						label: "Then",
-						accepts: ["ui.block", "ui.directive"]
-					},
-					else: {
-						label: "Else",
-						accepts: ["ui.block", "ui.directive"]
-					}
-				},
-				targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
-				acceptedPositions: ["inside"],
-				description: "Adds a conditional frontend directive block.",
-				insert: {
-					id: "ifBlock",
-					kind: "if",
-					tag: "If",
-					test: "true"
-				},
-				properties: {
-					id: { type: "string" },
-					test: { type: "binding", kind: "binding" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.elseIf",
-				label: "ElseIf",
-				category: "Svelte / Directives",
-				kind: "frontendDirectiveBranchDefinition",
-				icon: "mdi:source-branch",
-				traits: ["ui.directive.branch"],
-				slots: {
-					structure: {
-						label: "Structure",
-						accepts: ["ui.block", "ui.directive"]
-					}
-				},
-				targetKinds: ["frontendDirectiveBlock"],
-				acceptedPositions: ["inside"],
-				description: "Adds an else-if branch to a conditional frontend directive.",
-				insert: {
-					id: "elseIf",
-					kind: "frontendDirectiveBranch",
-					type: "elseIf",
-					test: "true",
-					children: []
-				},
-				properties: {
-					id: { type: "string" },
-					test: { type: "string", kind: "expression" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.else",
-				label: "Else",
-				category: "Svelte / Directives",
-				kind: "frontendDirectiveBranchDefinition",
-				icon: "mdi:source-branch",
-				traits: ["ui.directive.branch"],
-				slots: {
-					structure: {
-						label: "Structure",
-						accepts: ["ui.block", "ui.directive"]
-					}
-				},
-				targetKinds: ["frontendDirectiveBlock"],
-				acceptedPositions: ["inside"],
-				description: "Adds an else branch to a conditional frontend directive.",
-				insert: {
-					id: "else",
-					kind: "frontendDirectiveBranch",
-					type: "else",
-					children: []
-				},
-				properties: {
-					id: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.forEach",
-				label: "ForEach",
-				category: "Svelte / Directives",
-				kind: "frontendDirectiveBlockDefinition",
-				icon: "mdi:repeat",
-				traits: ["ui.directive"],
-				slots: {
-					default: {
-						label: "Each",
-						accepts: ["ui.block", "ui.directive"]
-					}
-				},
-				targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
-				acceptedPositions: ["inside"],
-				description: "Adds an iteration frontend directive block.",
-				insert: {
-					id: "forEach",
-					kind: "each",
-					tag: "ForEach",
-					source: { mode: "literal", value: [] },
-					context: "item"
-				},
-				properties: {
-					id: { type: "string" },
-					source: { type: "object", kind: "binding" },
-					context: { type: "string" }
-				}
-			}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.await",
-				label: "Await",
-				category: "Svelte / Directives",
-				kind: "frontendDirectiveBlockDefinition",
-				icon: "mdi:timer-sand",
-				traits: ["ui.directive"],
-				slots: {
-					pending: {
-						label: "Pending",
-						accepts: ["ui.block", "ui.directive"]
-					},
-					then: {
-						label: "Then",
-						accepts: ["ui.block", "ui.directive"]
-					},
-					catch: {
-						label: "Catch",
-						accepts: ["ui.block", "ui.directive"]
-					}
-				},
-				targetKinds: ["frontendStructure", "frontendSlot", "frontendPage", "frontendRouteLayout", "frontendComponent"],
-				acceptedPositions: ["inside"],
-				description: "Adds an async frontend directive block.",
-				insert: {
-					id: "awaitBlock",
-					kind: "await",
-					tag: "Await",
-					expression: "Promise.resolve()"
-				},
-				properties: {
-					id: { type: "string" },
-					expression: { type: "string", kind: "expression" }
-				}
-				}),
-				frontendAuthoringDescriptor(builderName, settings, {
-					id: "frontbuilder.svelte.variable",
-					label: "Variable",
-					category: "Svelte / Actions",
-					kind: "frontendActionVariableDefinition",
-					icon: "mdi:variable",
-					traits: ["ui.action.variable"],
-					targetKinds: ["frontendActionBlock", "frontendActionVariables"],
-					acceptedPositions: ["inside"],
-					description: "Adds an input variable to a frontend action.",
-					insert: {
-						id: "variable",
-						kind: "variable",
-						tag: "Variable",
-						name: "variable",
-						value: { mode: "literal", value: "" }
-					},
-					properties: {
-						name: { type: "string" },
-						value: { type: "binding", kind: "binding" }
-					}
-				}),
-				frontendAuthoringDescriptor(builderName, settings, {
-					id: "frontbuilder.svelte.state",
-					label: "State",
-					category: "Svelte / Variables",
-					kind: "frontendActionVariableDefinition",
-					icon: "mdi:variable",
-					traits: ["ui.local.variable"],
-					targetKinds: ["frontendActionVariables"],
-					acceptedPositions: ["inside"],
-					description: "Declares writable page or component state backed by the Svelte state rune.",
-					insert: {
-						id: "state",
-						kind: "state",
-						tag: "State",
-						type: "string",
-						value: ""
-					},
-					properties: {
-						id: { type: "string" },
-						type: {
-							type: "string",
-							enum: ["unknown", "string", "number", "integer", "boolean", "object", "array"]
-						},
-						value: { type: "binding", kind: "binding" }
-					}
-				}),
-				frontendAuthoringDescriptor(builderName, settings, {
-					id: "frontbuilder.svelte.derived",
-					label: "Derived",
-					category: "Svelte / Variables",
-					kind: "frontendActionVariableDefinition",
-					icon: "mdi:function-variant",
-					traits: ["ui.local.variable"],
-					targetKinds: ["frontendActionVariables"],
-					acceptedPositions: ["inside"],
-					description: "Declares a value derived from one reactive expression.",
-					insert: {
-						id: "derived",
-						kind: "derived",
-						tag: "Derived",
-						type: "string",
-						value: "local.state"
-					},
-					properties: {
-						id: { type: "string" },
-						type: {
-							type: "string",
-							enum: ["unknown", "string", "number", "integer", "boolean", "object", "array"]
-						},
-						value: { label: "Expression", type: "expression", kind: "expression" }
-					}
-				}),
-				frontendAuthoringDescriptor(builderName, settings, {
-					id: "frontbuilder.svelte.derivedBy",
-					label: "DerivedBy",
-					category: "Svelte / Variables",
-					kind: "frontendActionVariableDefinition",
-					icon: "mdi:function",
-					traits: ["ui.local.variable"],
-					targetKinds: ["frontendActionVariables"],
-					acceptedPositions: ["inside"],
-					description: "Declares a value computed by a reactive calculation block.",
-					insert: {
-						id: "derivedBy",
-						kind: "derivedBy",
-						tag: "DerivedBy",
-						type: "string",
-						calculation: "return local.state;"
-					},
-					properties: {
-						id: { type: "string" },
-						type: {
-							type: "string",
-							enum: ["unknown", "string", "number", "integer", "boolean", "object", "array"]
-						},
-						calculation: { label: "Calculation", type: "string", kind: "code" }
-					}
-				}),
-			frontendAuthoringDescriptor(builderName, settings, {
-				id: "frontbuilder.svelte.column",
-				label: "Column",
-				category: "Svelte / Data",
-				kind: "frontendDataBlockDefinition",
-				icon: "mdi:table-column",
-				traits: ["ui.table.column"],
-				targetKinds: ["frontendColumns"],
-				acceptedPositions: ["inside"],
-				description: "Adds a table column to a frontend Table block.",
-				insert: {
-					id: "column",
-					kind: "column",
-					tag: "Column",
-					label: "Column",
-					path: "value",
-					value: "value"
-				},
-				properties: {
-					label: { type: "string" },
-					path: { type: "string", kind: "path" },
-					value: { type: "string", kind: "path" }
-				}
-			})
-				]));
-		}
+		return [frontendBuilderBootstrapDescriptor(builderName, settings, env)]
+			.concat(frontendSourceDefinitionDescriptors(builderName, settings, env))
+			.concat(frontendUiDescriptorsForSettings(builderName, settings, env).filter(function (descriptor) {
+				return descriptor.createAction === true;
+			}));
+	}
 
 	function frontendSourceDefinitionDescriptors(builderName, settings, env) {
 		return [
@@ -1977,6 +1020,18 @@
 				return settings.resourceRoot;
 			}
 		}
+		// Resolve the provider from the same referenced source roots as the catalog,
+		// before considering a development-only neighboring checkout.
+		if (env && typeof env.referencedProjectRoots === "function") {
+			var relativeRoot = env.sourcePaths.path("frontbuilder/" + safePathSegment(builderName || "svelte"));
+			var referencedRoots = env.referencedProjectRoots(relativeRoot);
+			for (var index = 0; index < referencedRoots.length; index++) {
+				var referencedRoot = usableRoot(new env.File(referencedRoots[index], relativeRoot));
+				if (referencedRoot) {
+					return referencedRoot;
+				}
+			}
+		}
 		if (String(builderName || "svelte") === "svelte" && env && typeof env.projectRootForName === "function") {
 			var projectRoot = env.projectRootForName("lib_flow_frontbuilder_svelte");
 			if (projectRoot) {
@@ -2081,7 +1136,7 @@
 		var roots = [];
 		var seen = {};
 		function add(file) {
-			if (!file || !file.isDirectory()) {
+			if (!file || !isDirectory(file, env)) {
 				return;
 			}
 			var path = canonicalPath(file);
@@ -2106,6 +1161,33 @@
 		return roots;
 	}
 
+	// Both catalogs consume provider source descriptors; no built-in vocabulary.
+	function frontendUiDescriptorsForSettings(name, settings, env) {
+		settings = settings || {};
+		var roots = frontendResourceRoots(name, settings, env);
+		var projectRoot = projectFrontendRootForSettings(name, settings, env);
+		var traitDirs = roots.map(function (root) {
+			return new env.File(new env.File(root).getParentFile().getParentFile(), "traits");
+		}).filter(function (dir) { return isDirectory(dir, env); });
+		var descriptors = [];
+		var seen = Object.create(null);
+		roots.forEach(function (root) {
+			var providerHint = rootProvider(root, projectRoot, name, settings, env);
+			var files = [];
+			collectUiBlockFiles(new env.File(root, "ui"), env, files);
+			files.forEach(function (file) {
+				var raw = JSON.parse(sourceForFile(file, env));
+				var descriptor = normalizeUiBlock(raw, file, name, settings, env, providerHint, traitDirs);
+				if (seen[descriptor.id]) {
+					throw new Error('Duplicate Flow Svelte component id "' + descriptor.id + '" in ' + seen[descriptor.id] + ' and ' + descriptor.sourcePath + '.');
+				}
+				seen[descriptor.id] = descriptor.sourcePath;
+				descriptors.push(descriptor);
+			});
+		});
+		return descriptors;
+	}
+
 	function frontendBlocksForSettings(name, settings, env) {
 		settings = settings || {};
 		var roots = frontendResourceRoots(name, settings, env);
@@ -2113,7 +1195,7 @@
 		// <project>/_flow/frontbuilder/svelte -> <project>/_flow/traits of each provider.
 		var traitDirs = roots.map(function (root) {
 			return new env.File(new env.File(root).getParentFile().getParentFile(), "traits");
-		}).filter(function (dir) { return dir.isDirectory(); });
+		}).filter(function (dir) { return isDirectory(dir, env); });
 		var out = [];
 		var seen = {};
 		function addDescriptor(descriptor) {
@@ -2130,10 +1212,11 @@
 				}
 				out.push(descriptor);
 			}
+		frontendUiDescriptorsForSettings(name, settings, env).filter(function (descriptor) {
+			return !descriptor.createAction;
+		}).forEach(addDescriptor);
 		roots.forEach(function (root) {
 			var providerHint = rootProvider(root, projectFrontendRoot, name, settings, env);
-			var uiFiles = [];
-			collectUiBlockFiles(new env.File(root, "ui"), env, uiFiles);
 				var componentFiles = [];
 				collectSvelteComponentFiles(new env.File(root, "components"), env, componentFiles);
 				var actionFiles = [];
@@ -2198,36 +1281,6 @@
 						});
 					}
 				});
-				uiFiles.forEach(function (file) {
-					try {
-						var raw = JSON.parse(sourceForFile(file, env));
-						addDescriptor(normalizeUiBlock(raw, file, name, settings, env, providerHint));
-					} catch (e) {
-						var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
-						addDescriptor({
-							id: name + ".invalid." + String(file.getName()).replace(/\.uiblock\.json$/, ""),
-							name: String(file.getName()),
-							label: String(file.getName()),
-							category: "Svelte / Invalid",
-							kind: "error",
-							targetKinds: [],
-							description: String(e && e.message || e),
-							icon: "mdi:alert-outline",
-							insert: {},
-							builder: name,
-							target: settings.target || "",
-							provider: sourceInfo.provider,
-							sourceBacked: true,
-							descriptorKind: "source",
-							sourcePath: sourceInfo.sourcePath,
-							sourceRelativePath: sourceInfo.sourceRelativePath || "",
-							sourceOrigin: sourceInfo.sourceOrigin,
-							file: sourceInfo.file,
-							sourceWritable: sourceInfo.sourceWritable,
-							error: String(e && e.message || e)
-						});
-				}
-			});
 		});
 		var modelComponentsDir = modelComponentsDirForSettings(settings, env);
 		if (modelComponentsDir) {

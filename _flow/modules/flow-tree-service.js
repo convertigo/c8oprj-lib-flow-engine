@@ -715,6 +715,7 @@
 		if (!file) {
 			return null;
 		}
+		if (env.sourceView) return env.sourceView(request).draft(file);
 		var drafts = request && request.frontendSourceDrafts || {};
 		if (!drafts || typeof drafts !== "object") {
 			return null;
@@ -731,6 +732,7 @@
 	}
 
 	function frontendModelSource(request, file) {
+		if (env.sourceView) return env.sourceView(request).read(file);
 		var draft = frontendDraftForFile(request, file);
 		return draft === null ? String(FileUtils.readFileToString(file, "UTF-8")) : draft;
 	}
@@ -755,6 +757,7 @@
 				resourceRoot: settings && settings.resourceRoot || "",
 				engineSource: request && request.engineSource || "",
 				drafts: request && request.frontendSourceDrafts || {},
+				sourceRemovals: request && request.sourceRemovals || [],
 				property: request && request.property || "",
 				sourceId: request && request.sourceId || "",
 				bindingTargetPath: request && request.bindingTargetPath || "",
@@ -812,6 +815,11 @@
 			source[key] = cached[key];
 		});
 		source.sourceMutationPath = mutationPath || "";
+		if (request && (request.sourceWritable === false || request.readOnly === true || request.readOnlyReference === true)) {
+			source.sourceWritable = false;
+			source.readOnly = true;
+			source.readOnlyReference = request.readOnlyReference === true;
+		}
 		return source;
 	}
 
@@ -862,7 +870,7 @@
 		if (!settings.modelPath) {
 			return;
 		}
-		if (!modelFile || !modelFile.isFile()) {
+		if (!modelFile || !(env.sourceView ? env.sourceView(request).isFile(modelFile) : modelFile.isFile())) {
 			builder.children.push(virtualNode("missingModel", "error", "frontendModel", path + ".model",
 				"Missing model: " + String(settings.modelPath || ""), compact(definition), null, "mdi:alert-outline"));
 			return;
@@ -881,10 +889,10 @@
 				dirty: frontendModelDirty(request, modelFile)
 			}));
 			if (document.tree && document.tree.children) {
-				addFrontendAuthoringTree(builder, document.tree, path, modelFile);
+				addFrontendAuthoringTree(builder, document.tree, path, modelFile, request);
 				performanceMark("frontend.model.authoringTree");
 				if (catalogNode) {
-					addFrontendAuthoringCatalogMirror(catalogNode, document.tree, path + ".catalog.authoring", modelFile);
+					addFrontendAuthoringCatalogMirror(catalogNode, document.tree, path + ".catalog.authoring", modelFile, request);
 					performanceMark("frontend.model.catalogMirror");
 				}
 			} else {
@@ -2156,7 +2164,8 @@
 		}
 		var sourceFile = new File(sourcePath);
 		// A component created in the Studio is a working copy until saved.
-		if (!sourceFile.isFile() && frontendDraftForFile(request, sourceFile) === null) {
+		if (env.sourceView ? !env.sourceView(request).isFile(sourceFile)
+			: !sourceFile.isFile() && frontendDraftForFile(request, sourceFile) === null) {
 			return true;
 		}
 		// A component written in Svelte code (described by its _meta header) is edited as
@@ -2377,19 +2386,19 @@
 		return slots;
 	}
 
-	function addFrontendAuthoringTree(builder, tree, path, modelFile) {
+	function addFrontendAuthoringTree(builder, tree, path, modelFile, request) {
 		(tree.children || []).forEach(function (node, index) {
-			addFrontendAuthoringNode(builder, node, path + "." + frontendAuthoringPathSegment(node, index), modelFile);
+			addFrontendAuthoringNode(builder, node, path + "." + frontendAuthoringPathSegment(node, index), modelFile, request);
 		});
 	}
 
-	function addFrontendAuthoringCatalogMirror(catalog, tree, path, modelFile) {
+	function addFrontendAuthoringCatalogMirror(catalog, tree, path, modelFile, request) {
 		var mirrored = 0;
 		(tree.children || []).forEach(function (node, index) {
 			if (String(node && node.kind || "") !== "frontendLibrary" && String(node && node.type || "") !== "library") {
 				return;
 			}
-			addFrontendAuthoringNode(catalog, node, path + "." + frontendAuthoringPathSegment(node, index), modelFile);
+			addFrontendAuthoringNode(catalog, node, path + "." + frontendAuthoringPathSegment(node, index), modelFile, request);
 			mirrored++;
 		});
 		if (mirrored) {
@@ -2424,7 +2433,7 @@
 				root = frontendFlowSvelteRoots[sourceKey];
 			} else {
 				root = flowSvelteLiteComponentRoot(sourceKey,
-					String(FileUtils.readFileToString(sourceFile, "UTF-8")));
+					env.sources ? env.sources.read(sourceFile) : String(FileUtils.readFileToString(sourceFile, "UTF-8")));
 				frontendFlowSvelteRoots[sourceKey] = root || null;
 			}
 			if (!root) {
@@ -2494,14 +2503,14 @@
 		};
 	}
 
-	function addFrontendAuthoringNode(parent, node, path, modelFile) {
+	function addFrontendAuthoringNode(parent, node, path, modelFile, request) {
 		var rootProjection = frontendAuthoringDepth === 0;
 		if (rootProjection) {
 			frontendAuthoringDurations = {};
 		}
 		frontendAuthoringDepth++;
 		try {
-			return addFrontendAuthoringNodeMeasured(parent, node, path, modelFile);
+			return addFrontendAuthoringNodeMeasured(parent, node, path, modelFile, request);
 		} finally {
 			frontendAuthoringDepth--;
 			if (rootProjection) {
@@ -2510,7 +2519,7 @@
 		}
 	}
 
-	function addFrontendAuthoringNodeMeasured(parent, node, path, modelFile) {
+	function addFrontendAuthoringNodeMeasured(parent, node, path, modelFile, request) {
 		node = node || {};
 		var sourceFile = measureFrontendAuthoring("sourceFile", function () {
 			return frontendNodeSourceFile(node, modelFile);
@@ -2538,12 +2547,20 @@
 			applyFrontendAuthoringSourcePath(info, node);
 			applyFrontendAuthoringInsertTarget(info, node);
 		});
+		if (node.sourceWritable === false || request && (request.sourceWritable === false || request.readOnly === true || request.readOnlyReference === true)) {
+			info.sourceWritable = false;
+			info.readOnly = true;
+			info.readOnlyReference = !!(request && request.readOnlyReference);
+		}
 		if (node.descriptorId) info.descriptorId = String(node.descriptorId);
 		var definition = measureFrontendAuthoring("definition", function () {
 			return frontendAuthoringDefinition(node);
 		});
 		// sourceKind identifies an authored AST node, unlike navigation and slot wrappers.
-		if (node.sourceKind && node.id && mutationPath && info.sourceWritable !== false) {
+		if (node.renameMutation && info.sourceWritable !== false) {
+			info.renameValue = String(node.renameValue || "");
+			info.renameMutation = normalizeTree(node.renameMutation);
+		} else if (node.sourceKind && node.id && mutationPath && info.sourceWritable !== false) {
 			info.renameValue = String(node.id);
 			info.renameMutation = { op: "replace", path: mutationPath + ".id",
 				selectionMutationPath: mutationPath };
@@ -2554,6 +2571,7 @@
 			}
 			var traits = frontendAuthoringTraits(node);
 			var slots = frontendAuthoringSlots(node);
+			if (info.sourceWritable === false) Object.keys(slots).forEach(function (key) { slots[key].sourceWritable = false; });
 			if (traits.length || node.traits !== undefined) {
 				info.traits = traits;
 				definition.traits = traits;
@@ -2574,7 +2592,7 @@
 		parent.children.push(virtual);
 		var projected = frontendProjectedChildren(node, path);
 		projected.children.forEach(function (child, index) {
-			addFrontendAuthoringNode(virtual, child, projected.path + "." + frontendAuthoringPathSegment(child, index), sourceFile || modelFile);
+			addFrontendAuthoringNode(virtual, child, projected.path + "." + frontendAuthoringPathSegment(child, index), sourceFile || modelFile, request);
 		});
 	}
 
@@ -6071,7 +6089,7 @@
 				cursor = cursor.parent ? findTreeNode(tree, cursor.parent.path) : null;
 			}
 			return env.planSourceCreation(recipe, { builder: builder, targetDirectory: targetDirectory,
-				namespace: namespace, drafts: request.frontendSourceDrafts || {},
+				namespace: namespace, drafts: request.frontendSourceDrafts || {}, sourceRemovals: request.sourceRemovals || [],
 				usedIds: authoringDescriptors(paletteRequest, authoringEngineDefinition(request), blocks)
 					.map(function (descriptor) { return String(descriptor.id || ""); }) });
 		}
@@ -7334,8 +7352,8 @@
 		var fallback = "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n";
 		var oldSource = request.engineSource !== undefined && request.engineSource !== null && String(request.engineSource).trim()
 			? String(request.engineSource)
-			: file.isFile()
-			? String(FileUtils.readFileToString(file, "UTF-8"))
+			: (env.sources ? env.sources.isFile(file) : file.isFile())
+			? (env.sources ? env.sources.read(file) : String(FileUtils.readFileToString(file, "UTF-8")))
 			: fallback;
 		var definition = parseYamlSource(oldSource, fallback);
 		var selectionMutationPath = "";

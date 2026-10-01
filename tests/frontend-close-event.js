@@ -86,8 +86,8 @@ var contract = JSON.parse(engine.authoringContract(JSON.stringify(request)));
 var closeContract = contract.items.filter(function (item) {
 	return item.tag === "OnClose";
 })[0];
-assertTrue(contract.ok === true && closeContract && closeContract.id === "frontbuilder.svelte.onclose" &&
-	closeContract.slots.actions && closeContract.properties.event.type === "string",
+assertTrue(contract.ok === true && closeContract && closeContract.id === "frontbuilder.svelte.onClose" &&
+	closeContract.slots.actions && closeContract.properties.reentrancy,
 	"authoring contract did not expose the generic OnClose event");
 
 var tree = JSON.parse(engine.authoringTree(JSON.stringify(Object.assign({}, request, { detail: "full" }))));
@@ -113,10 +113,10 @@ var palette = JSON.parse(engine.authoringPalette(JSON.stringify(Object.assign({}
 	query: "OnClose"
 }))));
 var closePalette = palette.items.filter(function (item) {
-	return item.id === "frontbuilder.svelte.onclose";
+	return item.id === "frontbuilder.svelte.onClose";
 })[0];
 assertTrue(palette.ok === true && closePalette && closePalette.insert.tag === "OnClose" &&
-	closePalette.insert.kind === "event" && closePalette.insert.event === "close",
+	closePalette.insert.kind === "onClose",
 	"authoring palette did not expose the generic OnClose insertion");
 
 print("frontend-close-event OK");

@@ -29,7 +29,7 @@ var engineSource = [
 	"  frontbuilder:",
 	"    svelte:",
 	"      target: svelte5",
-	"      resourceRoot: _flow/frontbuilder/svelte",
+	"      resourceRoot: " + String(java.lang.System.getenv("FLOW_FRONTBUILDER_RESOURCE_ROOT")),
 	"      modelPath: _flow/frontbuilder/svelte/model/LiveFullSync.flow.svelte",
 	""
 ].join("\n");

@@ -82,7 +82,8 @@
 			: env.sourceFromDefinition(block.__graphDefinition || { version: 1, nodes: [] });
 		if (block.__flowHooksFile) {
 			out.hooksFile = String(block.__flowHooksFile);
-			out.hooksSource = String(env.FileUtils.readFileToString(new env.File(String(block.__flowHooksFile)), "UTF-8"));
+			var file = new env.File(String(block.__flowHooksFile));
+			out.hooksSource = env.sources ? env.sources.read(file) : String(env.FileUtils.readFileToString(file, "UTF-8"));
 		}
 		return out;
 	}

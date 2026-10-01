@@ -450,6 +450,9 @@
 				// never picks one, as the first available source, for the host to apply.
 				var value = this._state.value;
 				this._emptyUntilChosen = value === undefined || value === null || value === "";
+				// Keep the host's value until an author edit, not a render or catalog refresh.
+				this._originalValue = this._emptyUntilChosen ? "" : typeof value === "string" ? value : JSON.stringify(value);
+				this._valueChanged = false;
 				// Text around a value is composed (Compose mode); Source selects one value.
 				this._binding = editableIndexedBinding(normalize(this._state.value));
 				if (this._binding.mode === "expression") {
@@ -466,7 +469,7 @@
 				this.render();
 			}
 
-			get value() { return this._emptyUntilChosen ? "" : JSON.stringify(indexedBinding(this._binding)); }
+			get value() { return this._valueChanged ? JSON.stringify(indexedBinding(this._binding)) : this._originalValue || ""; }
 			get valid() { return this._emptyUntilChosen || bindingValidation(indexedBinding(this._binding)).valid; }
 			get validationError() { return this._emptyUntilChosen ? "" : bindingValidation(indexedBinding(this._binding)).error; }
 
@@ -585,6 +588,7 @@
 						if (partAction === "select" && currentParts[partIndex] && currentParts[partIndex].kind === "source") {
 							this._editingPartIndex = partIndex;
 							this._selection = sourceSelection(currentParts[partIndex]);
+							this.renderPreservingScroll(event.target); return;
 						} else if (partAction === "remove") {
 							currentParts.splice(partIndex, 1);
 							if (!currentParts.length) currentParts.push({ kind: "literal", value: "" });
@@ -602,6 +606,7 @@
 					var child = event.target && event.target.getAttribute && event.target.getAttribute("data-child");
 					if (!child) return;
 					event.stopPropagation();
+					if (this._rendering) return;
 					if (child === "path") {
 						this._selection.path = pathParts(event.detail && event.detail.value);
 						if (this._binding.mode === "source") this._binding.path = copy(this._selection.path);
@@ -687,8 +692,8 @@
 			}
 
 			setMode(mode) {
-				// Source is already the mode of an empty value: a value is chosen in the list
-				if (mode === "source" && this._emptyUntilChosen && (this._binding.mode || "source") === "source") return false;
+				// Reselecting the active mode is navigation, not a value edit.
+				if (mode === (this._binding.mode || "source")) return false;
 				this._emptyUntilChosen = false;
 				if (mode === "literal") {
 					var choices = literalChoices(this._state);
@@ -706,6 +711,7 @@
 			emit() {
 				// an action of the author: the value is the one the editor shows
 				this._emptyUntilChosen = false;
+				this._valueChanged = true;
 				var validation = bindingValidation(indexedBinding(this._binding));
 				this.dispatchEvent(new CustomEvent("flow-value", { bubbles: true, detail: { value: this.value, valid: validation.valid, error: validation.error } }));
 			}
@@ -750,6 +756,12 @@
 			}
 
 			render() {
+				this._rendering = true;
+				try { this.renderContent(); }
+				finally { this._rendering = false; }
+			}
+
+			renderContent() {
 				if (!this.shadowRoot) return;
 				var self = this, mode = this._binding.mode || "source";
 				this.shadowRoot.querySelectorAll("[data-mode]").forEach(function (button) { button.classList.toggle("active", button.getAttribute("data-mode") === mode); });

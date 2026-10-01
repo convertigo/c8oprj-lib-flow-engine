@@ -21,15 +21,16 @@
 		var cache = env.configDefinitionCache;
 		var key = file ? env.canonicalPath(file) : "missing";
 		var fingerprint = file ? env.fileFingerprint(file) : "missing";
+		if (env.sources) fingerprint += "\n" + env.sources.fingerprint();
 		if (cache && env.readRuntimeCache) {
 			var cached = env.readRuntimeCache(cache, key, fingerprint);
 			if (cached) {
 				return cached;
 			}
 		}
-		var definition = !file || !file.isFile()
+		var definition = !file || !(env.sources ? env.sources.isFile(file) : file.isFile())
 			? {}
-			: env.parseYamlSource(env.FileUtils.readFileToString(file, "UTF-8"), fallback || "version: 1\n");
+			: env.parseYamlSource(env.sources ? env.sources.read(file) : env.FileUtils.readFileToString(file, "UTF-8"), fallback || "version: 1\n");
 		return cache && env.writeRuntimeCache
 			? env.writeRuntimeCache(cache, key, fingerprint, definition, "Flow engine configuration")
 			: definition;
