@@ -996,6 +996,7 @@
 		var execution = runFlowRequest(Object.assign({}, request, {
 			name: compiled.name,
 			flowName: compiled.name,
+			flowQName: compiled.qname,
 			qname: compiled.qname,
 			flowSource: compiled.validation.source,
 			definition: null
@@ -1017,7 +1018,7 @@
 		if (!compiled.ok) {
 			return compiled;
 		}
-		var analysis = analyzeFlowSource(blocks, compiled.validation.source, request);
+		var analysis = analyzeFlowSource(blocks, compiled.validation.source, Object.assign({}, request, {flowQName: compiled.qname}));
 		analysis.qname = compiled.qname;
 		analysis.name = compiled.name;
 		analysis.revision = compiled.revision;

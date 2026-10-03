@@ -402,25 +402,30 @@
 		}
 	}
 
-	function addSchemaFields(parent, schema, path, name) {
+	function ownedValueInfo(path, writable) {
+		return writable === undefined ? null : compact({ sourceMutationPath: path, sourceWritable: writable !== false });
+	}
+
+	function addSchemaFields(parent, schema, path, name, writable) {
 		if (!schema || typeof schema !== "object" || Object.prototype.toString.call(schema) === "[object Array]") {
 			return;
 		}
-		var folder = virtualNode(name, "schema", name, path, name, compact(schema), null, "mdi:code-json");
+		var folder = virtualNode(name, "schema", name, path, name, compact(schema), ownedValueInfo(path, writable), "mdi:code-json");
 		parent.children.push(folder);
-		addObjectFields(folder, schema, path);
+		addObjectFields(folder, schema, path, null, writable);
 	}
 
-	function addFlowSchema(out, schema, path, name, label) {
+	function addFlowSchema(out, schema, path, name, label, writable) {
 		if (!schema || typeof schema !== "object" || Object.keys(schema).length === 0) {
 			return;
 		}
-		var folder = virtualNode(name, "schema", name, path, label, compact(schema), null, "mdi:code-json");
+		var folder = virtualNode(name, "schema", name, path, label, compact(schema),
+			ownedValueInfo(path, writable), "mdi:code-json");
 		out.push(folder);
-		addObjectFields(folder, schema, path);
+		addObjectFields(folder, schema, path, null, writable);
 	}
 
-	function addObjectFields(parent, object, path, filter) {
+	function addObjectFields(parent, object, path, filter, writable) {
 		Object.keys(object || {}).sort().forEach(function (key) {
 			var value = object[key];
 			var fieldPath = path + "." + key;
@@ -428,45 +433,48 @@
 				return;
 			}
 			if (value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]") {
-				var folder = virtualNode(key, "object", key, fieldPath, key, compact(value), null, "mdi:cube-outline");
+				var folder = virtualNode(key, "object", key, fieldPath, key, compact(value), ownedValueInfo(fieldPath, writable), "mdi:cube-outline");
 				parent.children.push(folder);
-				addObjectFields(folder, value, fieldPath, filter);
+				addObjectFields(folder, value, fieldPath, filter, writable);
 			} else {
-				parent.children.push(virtualNode(key, "field", value, fieldPath, key + ": " + String(value), compact(value), null, "mdi:variable"));
+				parent.children.push(virtualNode(key, "field", value, fieldPath, key + ": " + String(value), compact(value), ownedValueInfo(fieldPath, writable), "mdi:variable"));
 			}
 		});
 	}
 
-	function addContracts(out, contracts, path) {
+	function addContracts(out, contracts, path, writable) {
 		if (!contracts || typeof contracts !== "object" || Object.keys(contracts).length === 0) {
 			return;
 		}
-		var folder = virtualNode("contracts", "folder", "contracts", path, "Contracts", compact(contracts), null, "mdi:file-sign");
+		var folder = virtualNode("contracts", "folder", "contracts", path, "Contracts", compact(contracts),
+				ownedValueInfo(path, writable), "mdi:file-sign");
 		out.push(folder);
 		Object.keys(contracts).sort().forEach(function (name) {
 			var contract = contracts[name] || {};
-			var contractObject = virtualNode("contract_" + name, "contract", name, path + "." + name, name, compact(contract), null, "mdi:file-sign");
+			var contractObject = virtualNode("contract_" + name, "contract", name, path + "." + name, name, compact(contract), ownedValueInfo(path + "." + name, writable), "mdi:file-sign");
 			folder.children.push(contractObject);
-			addSchemaFields(contractObject, contract.input, path + "." + name + ".input", "input");
-			addSchemaFields(contractObject, contract.output, path + "." + name + ".output", "output");
+			addSchemaFields(contractObject, contract.input, path + "." + name + ".input", "input", writable);
+			addSchemaFields(contractObject, contract.output, path + "." + name + ".output", "output", writable);
 			if (contract.defaultImplementation !== undefined && contract.defaultImplementation !== null) {
 				var implementation = String(contract.defaultImplementation);
 				contractObject.children.push(virtualNode("defaultImplementation", "binding", implementation,
-					path + "." + name + ".defaultImplementation", "default -> " + implementation, implementation, null, "mdi:link-variant"));
+					path + "." + name + ".defaultImplementation", "default -> " + implementation, implementation,
+					ownedValueInfo(path + "." + name + ".defaultImplementation", writable), "mdi:link-variant"));
 			}
 		});
 	}
 
-	function addBindings(out, bindings, path) {
+	function addBindings(out, bindings, path, writable) {
 		if (!bindings || typeof bindings !== "object" || Object.keys(bindings).length === 0) {
 			return;
 		}
-		var folder = virtualNode("bindings", "folder", "bindings", path, "Bindings", compact(bindings), null, "mdi:link-variant");
+		var folder = virtualNode("bindings", "folder", "bindings", path, "Bindings", compact(bindings),
+			ownedValueInfo(path, writable), "mdi:link-variant");
 		out.push(folder);
 		Object.keys(bindings).sort().forEach(function (contract) {
 			var implementation = bindings[contract];
 			folder.children.push(virtualNode("binding_" + contract, "binding", contract, path + "." + contract,
-				contract + " -> " + String(implementation), compact(implementation), null, "mdi:link-variant"));
+				contract + " -> " + String(implementation), compact(implementation), ownedValueInfo(path + "." + contract, writable), "mdi:link-variant"));
 		});
 	}
 
@@ -597,19 +605,19 @@
 		];
 	}
 
-	function configContainerInfo(path, root) {
+	function configContainerInfo(path, root, writable) {
 		return {
 			traits: [root ? "config.root" : "config.group"],
 			slots: { entries: { label: "Configuration", accepts: root ? ["config.group"] : ["config.group", "config.value"],
-				sourceMutationPath: path, sourceWritable: true } },
+				sourceMutationPath: path, sourceWritable: writable !== false } },
 			creationDescriptors: configCreationDescriptors()
 		};
 	}
 
-	function configNodeInfo(name, value, path) {
+	function configNodeInfo(name, value, path, writable) {
 		var info = {
 			sourceMutationPath: path,
-			sourceWritable: true,
+			sourceWritable: writable !== false,
 			deletable: true,
 			renameValue: String(name),
 			renameMutation: { op: "renameKey", path: path }
@@ -622,38 +630,44 @@
 			};
 			info.propertyOrder = ["#flow_value"];
 		} else {
-			Object.assign(info, configContainerInfo(path, false));
+			Object.assign(info, configContainerInfo(path, false, writable));
 		}
 		return info;
 	}
 
-	function addConfigFields(parent, object, path) {
+	function addConfigFields(parent, object, path, writable) {
 		Object.keys(object || {}).sort().forEach(function (key) {
 			var value = object[key];
 			var fieldPath = path + "." + key;
 			if (value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]") {
 				var folder = virtualNodeFromPlain(key, "object", "config", fieldPath, key, value,
-					configNodeInfo(key, value, fieldPath), "mdi:cube-outline");
+					configNodeInfo(key, value, fieldPath, writable), "mdi:cube-outline");
 				parent.children.push(folder);
-				addConfigFields(folder, value, fieldPath);
+				addConfigFields(folder, value, fieldPath, writable);
 			} else {
 				parent.children.push(virtualNodeFromPlain(key, "field", "config", fieldPath,
-					key + ": " + String(value), value, configNodeInfo(key, value, fieldPath), "mdi:variable"));
+					key + ": " + String(value), value, configNodeInfo(key, value, fieldPath, writable), "mdi:variable"));
 			}
 		});
 	}
 
-	function addConfig(out, config, path, visibility, request) {
+	function addConfig(out, config, path, visibility, request, presentation) {
+		presentation = presentation || {};
 		config = config && typeof config === "object" ? config : {};
 		var visibilityMap = flattenConfigVisibility(visibility || {});
 		var visibleConfig = visibleConfigObject(config, path, visibilityMap, request);
-		var folder = virtualNodeFromPlain("config", "scope", "config", path, "Config", visibleConfig, Object.assign(configContainerInfo(path, true), {
+		var writable = !request || request.sourceWritable !== false && request.readOnly !== true && request.readOnlyReference !== true;
+		var info = Object.assign(configContainerInfo(path, true, writable), {
 			sourceMutationPath: path,
-			sourceWritable: true,
-			sourceMutationOp: "replaceVisibleConfig"
-		}), "mdi:cog-outline");
+			sourceWritable: writable,
+			sourceMutationOp: presentation.mutationOp || "replaceVisibleConfig"
+		});
+		if (presentation.creationDescriptors) info.creationDescriptors = presentation.creationDescriptors;
+		if (presentation.description) info.description = presentation.description;
+		var folder = virtualNodeFromPlain(presentation.name || "config", "scope", "config", path,
+			presentation.label || "Config", visibleConfig, info, "mdi:cog-outline");
 		out.push(folder);
-		addConfigFields(folder, visibleConfig, path);
+		addConfigFields(folder, visibleConfig, path, writable);
 	}
 
 	function addEngineMetadata(out, engine, path) {
@@ -3582,18 +3596,20 @@
 		addRootNodeList(folder, nodes, path, blocks, analysisById, sourceInfo, path);
 	}
 
-	function addHelpers(out, helpers, path, blocks, analysisById, sourcePath) {
+	function addHelpers(out, helpers, path, blocks, analysisById, sourcePath, writable) {
 		if (!helpers || Object.prototype.toString.call(helpers) !== "[object Array]" || helpers.length === 0) {
 			return;
 		}
 		var folder = virtualNode("helpers", "folder", "helpers", path, "Helpers",
-			compact({ count: helpers.length }), null, "mdi:function-variant");
+			compact({ count: helpers.length }), compact({ sourceWritable: writable !== false }), "mdi:function-variant");
 		out.push(folder);
 		helpers.forEach(function (helper, index) {
 			helper = normalizeTree(helper || {});
 			var helperPath = path + "[" + index + "]";
 			var params = helper.params || Object.keys(helper.props || {});
 			var helperInfo = sourceObjectInfo(helper, helperPropertyDefinitions(), ["name", "params"]);
+			helperInfo.sourceMutationPath = helperPath;
+			helperInfo.sourceWritable = writable !== false;
 			var helperNode = virtualNode("helper_" + helper.name, "helper", helper.name, helperPath,
 				helper.name + "(" + params.join(", ") + ")", compact({
 					name: helper.name,
@@ -3606,9 +3622,9 @@
 				implementationKind: "flow-helper",
 				sourcePath: String(sourcePath || ""),
 				sourceMutationPath: helperPath + ".nodes",
-				sourceWritable: true,
-				writable: true,
-				readOnly: false,
+				sourceWritable: writable !== false,
+				writable: writable !== false,
+				readOnly: writable === false,
 				flowImplementation: true
 			};
 			var implementationNode = virtualNode("implementation", "blockImplementation", "flow",
@@ -4522,6 +4538,7 @@
 		request = request || {};
 		var target = String(request.target || "flow");
 		var children = [];
+		var writable = request.sourceWritable !== false && request.readOnly !== true && request.readOnlyReference !== true;
 		function wantsProjection(root) {
 			return !Array.isArray(request.projectionPaths) || request.projectionPaths.some(function (path) {
 				var parts = parseMutationPath(path);
@@ -4542,21 +4559,20 @@
 				analysisRequest.flowSource = sourceFromDefinition(definition);
 				analysisById = analysisByNodeId(analyzeFlowDefinition(activeBlocks, definition, analysisRequest));
 			}
-			addContracts(children, definition.contracts, "contracts");
-			addBindings(children, definition.bindings, "bindings");
+			addContracts(children, definition.contracts, "contracts", writable);
+			addBindings(children, definition.bindings, "bindings", writable);
 			var flowMeta = definition.flow || definition._flow || {};
 			if (flowMeta.config !== undefined) addConfig(children, flowMeta.config, "flow.config", {}, request);
 			[["inputs", "input", "Inputs"], ["outputs", "output", "Outputs"]].forEach(function (entry) {
 				var owner = flowMeta[entry[0]] || flowMeta[entry[1]] ? flowMeta : definition;
 				var key = owner[entry[0]] ? entry[0] : entry[1];
 				var path = (owner === flowMeta ? (definition.flow ? "flow." : "_flow.") : "") + key;
-				addFlowSchema(children, owner[key], path, entry[0], entry[2]);
+				addFlowSchema(children, owner[key], path, entry[0], entry[2], writable);
 			});
 			addHelpers(children, definition.helpers || [], "helpers", activeBlocks, analysisById,
-				request.sourceFile || request.sourcePath || "");
+				request.sourceFile || request.sourcePath || "", writable);
 			// Instances are edited in this Flow, not in the library defining their block.
 			// Block provenance remains available separately as blockSource/blockProvider.
-			var writable = request.sourceWritable !== false && request.readOnly !== true && request.readOnlyReference !== true;
 			addNodes(children, definition.nodes || [], "nodes", activeBlocks, analysisById, {
 				sourcePath: String(request.sourceFile || request.sourcePath || ""),
 				sourceWritable: writable, writable: writable,
@@ -4567,8 +4583,20 @@
 				? normalizeTree(request.definition)
 				: parseYamlSource(request.engineSource, "version: 1\n");
 			if (wantsProjection("engine")) addEngineMetadata(children, engine, "engine");
-			if (wantsProjection("bindings")) addBindings(children, engine.bindings, "bindings");
+			if (wantsProjection("bindings")) addBindings(children, engine.bindings, "bindings", writable);
 			if (wantsProjection("config")) addConfig(children, engine.config, "config", engine.configVisibility, request);
+			if (wantsProjection("configs")) {
+				var configurations = env.configurationDefinitions ? env.configurationDefinitions(engine) : engine.configs || {};
+				var createConfiguration = Object.assign({}, configCreationDescriptors()[0], {
+					label: "Add named configuration", name: "configuration",
+					description: "Creates a reusable project configuration. Add groups and settings, then associate its name with a tag."
+				});
+				addConfig(children, configurations, "configs", {}, request, {
+					name: "configs", label: "Named configurations", mutationOp: "replace",
+					description: "Reusable config layers. Definitions do not change the common project Config unless explicitly selected.",
+					creationDescriptors: [createConfiguration]
+				});
+			}
 			if (wantsProjection("frontends")) addFrontendModels(children, engine.config, "frontends", request, blocks);
 			if (wantsProjection("fragments") && request.includeFlowCatalog !== false) {
 				addFragments(children, blocks);
@@ -7276,6 +7304,8 @@
 		mutations.forEach(function (mutation) {
 			applyOneMutation(definition, mutation, blocks);
 		});
+		if (target === "engine" && env.validateConfigurations) env.validateConfigurations(definition, request);
+		else if (target === "engine" && env.configurationDefinitions) env.configurationDefinitions(definition);
 		var renamedNodes = [];
 		if (idsBefore) {
 			var idsAfter = definitionNodeIds(definition);
@@ -7365,6 +7395,8 @@
 			applyOneMutation(definition, spec, blocks);
 			selectionMutationPath = spec.op === "remove" || spec.op === "delete" ? "" : spec.selectionMutationPath || spec.path;
 		});
+		if (env.validateConfigurations) env.validateConfigurations(definition, request);
+		else if (env.configurationDefinitions) env.configurationDefinitions(definition);
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;
 		}

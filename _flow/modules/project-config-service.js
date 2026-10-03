@@ -95,7 +95,8 @@
 		var meta = definition && definition.flow || {};
 		// Preserve the existing root-branch replacement contract. Deep merging is
 		// explicit in config.use, not an implicit change to project/request config.
-		[meta.config, projectEngine && projectEngine.config, request && request.config].forEach(function (layer) {
+		[meta.config, projectEngine && projectEngine.config,
+			resolveTaggedConfig(request, projectEngine, env), request && request.config].forEach(function (layer) {
 			if (layer === undefined) return;
 			if (!layer || Object.prototype.toString.call(layer) !== "[object Object]") {
 				var error = new Error("Flow configuration must be an object of literal defaults.");
@@ -126,6 +127,105 @@
 		return config;
 	}
 
+	function configError(code, message) {
+		var error = new Error(message);
+		error.code = code;
+		throw error;
+	}
+
+	function configurationDefinitions(projectEngine) {
+		var definitions = projectEngine && projectEngine.configs;
+		if (definitions === undefined) return Object.create(null);
+		if (!definitions || Object.prototype.toString.call(definitions) !== "[object Object]") {
+			configError("FLOW_CONFIG_DEFINITIONS_OBJECT_REQUIRED", "Named project configurations must be an object.");
+		}
+		Object.keys(definitions).forEach(function (name) {
+			var value = definitions[name];
+			if (!value || Object.prototype.toString.call(value) !== "[object Object]") {
+				configError("FLOW_CONFIG_DEFINITION_OBJECT_REQUIRED", "Named configuration " + name + " must be an object of config branches.");
+			}
+		});
+		return definitions;
+	}
+
+	function tagContribution(projectEngine) {
+		return {
+			label: "Flow configurations",
+			fields: {
+				configs: {
+					label: "Named configurations",
+					description: "Applied from top to bottom. The last configuration replaces a conflicting root branch. Values stay in the Flow engine.",
+					type: "array", uniqueItems: true,
+					items: { type: "string", enum: Object.keys(configurationDefinitions(projectEngine)).sort() }
+				}
+			}
+		};
+	}
+
+	function validateReferencedConfigurations(projectEngine, tagContext) {
+		var definitions = configurationDefinitions(projectEngine);
+		var tags = tagContext && tagContext.tags || {};
+		Object.keys(tags).forEach(function (id) {
+			var tag = tags[id], references = tag.metadata && tag.metadata.flow && tag.metadata.flow.configs;
+			if (references === undefined) return;
+			if (!Array.isArray(references)) configError("FLOW_CONFIG_REFERENCES_ARRAY_REQUIRED", "Tag configuration references must be an ordered list.");
+			references.forEach(function (name) {
+				if (typeof name !== "string" || !Object.prototype.hasOwnProperty.call(definitions, name)) {
+					configError("FLOW_CONFIG_IN_USE", "Configuration " + String(name) + " is referenced by tag " + String(tag.label || id)
+						+ ". Update that tag's configuration references before removing or renaming the definition.");
+				}
+			});
+		});
+		return definitions;
+	}
+
+	function resolveTaggedConfig(request, projectEngine, env) {
+		var context = request && request.tagContext;
+		if (!context) return Object.create(null);
+		var target = String(request.flowQName || request.qname || "");
+		if (!target) {
+			var name = request.flowName || request.name;
+			if (name) target = String(request.project || context.project || "") + "." + String(name);
+		}
+		if (context.aliases && Object.prototype.hasOwnProperty.call(context.aliases, target)) target = context.aliases[target];
+		var assignments = context.assignments || {};
+		var tags = context.tags || {};
+		var ids = Object.prototype.hasOwnProperty.call(assignments, target) ? assignments[target] : [];
+		if (Object.prototype.toString.call(ids) !== "[object Array]") {
+			configError("FLOW_TAG_ASSIGNMENTS_ARRAY_REQUIRED", "Tag membership must be an ordered list.");
+		}
+		var references = [];
+		ids.forEach(function (id) {
+			if (!Object.prototype.hasOwnProperty.call(tags, id)) configError("FLOW_TAG_REFERENCE_NOT_FOUND", "Unknown assigned tag: " + id);
+			var metadata = tags[id].metadata;
+			var selected = metadata && metadata.flow && metadata.flow.configs;
+			if (selected === undefined) return;
+			if (Object.prototype.toString.call(selected) !== "[object Array]") {
+				configError("FLOW_CONFIG_REFERENCES_ARRAY_REQUIRED", "Tag configuration references must be an ordered list of names.");
+			}
+			references = references.concat(selected);
+		});
+		return resolveConfigReferences(projectEngine, references, env);
+	}
+
+	// Reference order is source data, never the presentation order of tags.
+	// Root replacement matches effectiveConfig; scoped deep merge stays explicit.
+	function resolveConfigReferences(projectEngine, references, env) {
+		if (Object.prototype.toString.call(references) !== "[object Array]") {
+			configError("FLOW_CONFIG_REFERENCES_ARRAY_REQUIRED", "Configuration references must be an ordered list of names.");
+		}
+		var definitions = configurationDefinitions(projectEngine);
+		var config = Object.create(null);
+		references.forEach(function (name) {
+			if (typeof name !== "string" || !name || !Object.prototype.hasOwnProperty.call(definitions, name)) {
+				configError("FLOW_CONFIG_REFERENCE_NOT_FOUND", "Unknown named configuration: " + String(name));
+			}
+			Object.keys(definitions[name]).forEach(function (key) { config[key] = definitions[name][key]; });
+		});
+		Object.keys(config).forEach(function (key) { config[key] = env.normalizeTree(config[key]); });
+		return config;
+	}
+
 	return {
 		readGlobalValue: readGlobalValue,
 		projectEngineFile: projectEngineFile,
@@ -133,6 +233,11 @@
 		loadProjectEngineDefinition: loadProjectEngineDefinition,
 		authoringSettings: authoringSettings,
 		authoringNumber: authoringNumber,
-		effectiveConfig: effectiveConfig
+		effectiveConfig: effectiveConfig,
+		configurationDefinitions: configurationDefinitions,
+		tagContribution: tagContribution,
+		validateReferencedConfigurations: validateReferencedConfigurations,
+		resolveTaggedConfig: resolveTaggedConfig,
+		resolveConfigReferences: resolveConfigReferences
 	};
 })();

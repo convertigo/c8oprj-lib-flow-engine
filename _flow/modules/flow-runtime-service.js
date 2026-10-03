@@ -582,7 +582,8 @@
 		}
 
 		// A Flow run from another one stops when its caller is cancelled.
-		function childRunRequest(parent, request) {
+		function childRunRequest(parent, request, options) {
+			request = Object.assign({}, options || {}, request);
 			Object.defineProperty(request, "__parentRun", { value: parent, enumerable: false });
 			return request;
 		}
@@ -1337,7 +1338,7 @@
 						context: mergedContext(ctx.scopes.request, options.context || {}),
 						includeFlow: options.includeFlow === true || options.includeLocal === true,
 						includeTrace: options.includeTrace === true
-					}), loadBlocks());
+					}, options), loadBlocks());
 				});
 			};
 			ctx.blockList = function (args) {
@@ -1455,7 +1456,7 @@
 						context: mergedContext(ctx.scopes.request, options.context || {}),
 						includeFlow: options.includeFlow === true || options.includeLocal === true,
 						includeTrace: options.includeTrace === true
-					}), loadBlocks());
+					}, options), loadBlocks());
 				});
 			};
 			ctx.flowList = function (args) {
@@ -1488,7 +1489,7 @@
 						context: mergedContext(ctx.scopes.request, args.context || {}),
 						includeFlow: args.includeFlow === true || args.includeLocal === true,
 						includeTrace: args.includeTrace === true
-					}), loadBlocks());
+					}, args), loadBlocks());
 				});
 			};
 			ctx.flowSourceGet = function (args) {

@@ -767,6 +767,10 @@
 		return projectConfigService().effectiveConfig(request, definition, projectEngine, projectConfigEnv());
 	}
 
+	function configurationDefinitions(projectEngine) {
+		return projectConfigService().configurationDefinitions(projectEngine);
+	}
+
 	function snapshot(value) {
 		return runtimeHandleUtils().snapshot(value, runtimeHandleEnv());
 	}
@@ -4385,6 +4389,10 @@
 			filterVisibleDescriptors: catalogService().filterVisibleDescriptors,
 			typeDescriptor: typeDescriptor,
 			loadTypes: loadTypes,
+			configurationDefinitions: configurationDefinitions,
+			validateConfigurations: function (definition, request) {
+				return projectConfigService().validateReferencedConfigurations(definition, request && request.tagContext);
+			},
 			catalogDefinition: catalogDefinition,
 			listFlowLibraries: listFlowLibraries,
 			normalizeGraphBlockUses: normalizeGraphBlockUses,
@@ -4965,6 +4973,8 @@
 				request.target === "engine" ? frontendCatalogFingerprintForRequest(request) : "",
 				request.target === "engine" ? frontendModelFingerprintForRequest(request) : "",
 				sourceFileFingerprint,
+				sha256Hex(JSON.stringify(request.tagContext || {})),
+				sha256Hex(JSON.stringify(request.config || {})),
 				describeTreeSourceFingerprintInput(request)
 			].join("\n");
 	}
@@ -9609,6 +9619,11 @@
 	}
 
 	return {
+		tagContribution: function (requestJson) {
+			return projectCall("tagContribution", requestJson, function () {
+				return { ok: true, descriptor: projectConfigService().tagContribution(loadProjectEngineDefinition()) };
+			});
+		},
 		preload: function (requestJson) {
 			return projectCall("preload", requestJson, function (request) {
 				return preloadProjectRequest(request);
