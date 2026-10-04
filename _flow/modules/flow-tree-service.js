@@ -657,7 +657,7 @@
 		var visibilityMap = flattenConfigVisibility(visibility || {});
 		var visibleConfig = visibleConfigObject(config, path, visibilityMap, request);
 		var writable = !request || request.sourceWritable !== false && request.readOnly !== true && request.readOnlyReference !== true;
-		var info = Object.assign(configContainerInfo(path, true, writable), {
+		var info = Object.assign(configContainerInfo(path, presentation.collection !== false, writable), {
 			sourceMutationPath: path,
 			sourceWritable: writable,
 			sourceMutationOp: presentation.mutationOp || "replaceVisibleConfig"
@@ -4584,18 +4584,27 @@
 				: parseYamlSource(request.engineSource, "version: 1\n");
 			if (wantsProjection("engine")) addEngineMetadata(children, engine, "engine");
 			if (wantsProjection("bindings")) addBindings(children, engine.bindings, "bindings", writable);
-			if (wantsProjection("config")) addConfig(children, engine.config, "config", engine.configVisibility, request);
-			if (wantsProjection("configs")) {
+			// A presentation collection can contain entries backed by distinct source
+			// paths. Always reproject the complete collection for either source branch.
+			if (wantsProjection("config") || wantsProjection("configs")) {
 				var configurations = env.configurationDefinitions ? env.configurationDefinitions(engine) : engine.configs || {};
 				var createConfiguration = Object.assign({}, configCreationDescriptors()[0], {
 					label: "Add named configuration", name: "configuration",
 					description: "Creates a reusable project configuration. Add groups and settings, then associate its name with a tag."
 				});
-				addConfig(children, configurations, "configs", {}, request, {
-					name: "configs", label: "Named configurations", mutationOp: "replace",
-					description: "Reusable config layers. Definitions do not change the common project Config unless explicitly selected.",
+				var configCollection = [];
+				addConfig(configCollection, configurations, "configs", {}, request, {
+					name: "configs", label: "Configs", mutationOp: "replace",
+					description: "default is the common configuration for all project Flows. Named configurations are applied only when selected by their tags.",
 					creationDescriptors: [createConfiguration]
 				});
+				var commonConfiguration = [];
+				addConfig(commonConfiguration, engine.config, "config", engine.configVisibility, request, {
+					name: "default", label: "default", collection: false,
+					description: "Common project configuration, applied to every Flow before the ordered configurations selected by its tags."
+				});
+				configCollection[0].children.unshift(commonConfiguration[0]);
+				children.push(configCollection[0]);
 			}
 			if (wantsProjection("frontends")) addFrontendModels(children, engine.config, "frontends", request, blocks);
 			if (wantsProjection("fragments") && request.includeFlowCatalog !== false) {

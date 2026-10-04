@@ -4923,6 +4923,7 @@
 			String(request.readOnlyReference === true),
 			String(request.detail || request.mode || "full"),
 			String(request.path || ""),
+			JSON.stringify(Array.isArray(request.projectionPaths) ? request.projectionPaths : null),
 			String(request.maxDepth || ""),
 			String(request.includeChildren === false ? "no-children" : "children"),
 			String(request.includeDefinition === true),

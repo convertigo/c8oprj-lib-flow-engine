@@ -23,8 +23,20 @@ try {
 	} };
 	var request = { target: "engine", engineSource: JSON.stringify(definition), includeFlowCatalog: false };
 	var tree = api("describeTree", request);
-	assert(tree.ok && find(tree, "config.baserow.host") && find(tree, "configs.B1.baserow.host"), "Separate common and named config trees");
-	assert(find(tree, "configs").name === "configs" && find(tree, "configs").summary === "Named configurations", "Named configuration root identity");
+	assert(tree.ok && find(tree, "config.baserow.host") && find(tree, "configs.B1.baserow.host"), "Common and named source paths preserved");
+	var collection = find(tree, "configs");
+	assert(collection.name === "configs" && collection.summary === "Configs", "Single configuration collection identity");
+	assert(!tree.children.some(function (node) { return node.path === "config"; }), "Common configuration must not remain a separate root");
+	assert(collection.children[0].name === "default" && collection.children[0].path === "config", "default is the first peer, backed by common config");
+	assert(collection.children[1].path === "configs.B1", "Named configurations are peers of default");
+	["config", "config.baserow.host", "configs.B1"].forEach(function (path) {
+		var partial = api("describeTree", Object.assign({}, request, { projectionPaths: [path] }));
+		assert(partial.children.length === 1 && find(partial, "config.baserow.host") && find(partial, "configs.B2"), "Complete shared projection for " + path + ": " + JSON.stringify(partial.children.map(function (node) { return node.path; })));
+	});
+	var emptyTree = api("describeTree", Object.assign({}, request, { engineSource: "version: 1\n" }));
+	assert(find(emptyTree, "configs").children.length === 1 && find(emptyTree, "config").name === "default", "default is present even without configuration sources");
+	var collisionTree = api("describeTree", Object.assign({}, request, { engineSource: JSON.stringify({ configs: { default: { value: "named" } } }) }));
+	assert(find(collisionTree, "config") && find(collisionTree, "configs.default.value"), "Presentation default must not reserve or overwrite a valid source key");
 	var info = JSON.parse(find(tree, "configs.B1.flag").info);
 	assert(info.sourceMutationPath === "configs.B1.flag" && info.propertyDefinitions["#flow_value"].type === "boolean", "Generic typed value editor");
 	var readOnlyTree = api("describeTree", Object.assign({}, request, { sourceWritable: false }));
@@ -36,6 +48,9 @@ try {
 	var palette = api("authoringPalette", Object.assign({}, request, { surface: "virtual", focusPath: "configs" }));
 	assert(palette.ok && palette.items.length === 1, "Named collection only accepts configurations");
 	assert(palette.items[0].label === "Add named configuration" && palette.items[0].description, "Named configuration palette documentation");
+	var commonPalette = api("authoringPalette", Object.assign({}, request, { surface: "virtual", focusPath: "config" }));
+	assert(commonPalette.ok && commonPalette.items.length === 2, "default accepts both groups and settings through its descriptor");
+	assert(commonPalette.items.some(function (item) { return item.label === "Add setting"; }), "default exposes the generic setting creation action");
 	var created = api("authoringMutate", Object.assign({}, request, { surface: "virtual", dryRun: true,
 		action: { id: palette.items[0].id, targetPath: "configs", position: "inside" } }));
 	assert(created.ok && created.selectionVirtualPath === "configs.configuration" && find(created, "configs.configuration"), "Generic palette creation/reveal");

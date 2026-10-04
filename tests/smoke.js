@@ -5967,9 +5967,7 @@ var mutatedEngine = JSON.parse(engine.applyMutation(JSON.stringify({
 })));
 debugPrint(JSON.stringify(mutatedEngine));
 assertTrue(mutatedEngine.ok === true &&
-	mutatedEngine.children.some(function (child) {
-		return child.name === "config" && child.definition.indexOf('"unit":"F"') !== -1;
-	}),
+	findChild(findChild(mutatedEngine, "configs"), "default").definition.indexOf('"unit":"F"') !== -1,
 	"applyMutation(engine) did not update config");
 
 var contractFlowSource = [
