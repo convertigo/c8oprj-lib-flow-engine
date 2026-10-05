@@ -99,6 +99,29 @@ try {
 	var reserved = api("applyMutation", {target: "engine", engineSource: JSON.stringify(definition), tagContext: tagContext, includeTree: false,
 		mutation: {op: "renameKey", path: "configs.B2", value: "default"}});
 	assert(!reserved.ok && reserved.error.code === "FLOW_CONFIG_NAME_RESERVED", "default is reserved for the common configuration: " + JSON.stringify(reserved).substring(0, 300));
+	// A Flow run from another Flow on the direct requestable path gets its own identity and the tag context of its project:
+	// its configurations follow its tags, like a regular call, without inheriting the caller's.
+	files.writeStringToFile(new java.io.File(project, "_flow/flows/Child.flow.js"),
+		"const _flow={sourceVersion:2}\nfunction Child(){ result.snapshot = config }", "UTF-8");
+	files.writeStringToFile(new java.io.File(project, "_flow/blocks/proof/callChild.block.js"), [
+		"const _meta = {", "  \"sourceVersion\": 2,", "  \"version\": 1,", "  \"icon\": \"mdi:variable\",",
+		"  \"description\": \"Runs the Child Flow as requestable.call does on its direct path.\",",
+		"  \"properties\": { \"flowQName\": { \"label\": \"Flow QName\", \"kind\": \"text\", \"type\": \"string\" } },",
+		"  \"outputs\": { \"out\": { \"type\": \"object\" } },", "  \"runtime\": \"rhino\",", "}", "",
+		"(function () {", "\treturn {", "\t\trun: function (ctx, node) {",
+		"\t\t\tvar flowQName = ctx.props(node).flowQName;",
+		"\t\t\tvar execution = ctx.runFlowSource(ctx.flowGet(\"Child\").source, {}, { project: \"Proof\", input: {}, includeTrace: false,",
+		"\t\t\t\tflowQName: flowQName || undefined, tagContext: flowQName ? ctx.request.tagContext : undefined });",
+		"\t\t\treturn execution.ok ? execution.result.snapshot : { error: execution.error };",
+		"\t\t}", "\t};", "}())", ""].join("\n"), "UTF-8");
+	engine.cacheClear();
+	var callerSource = "const _flow={sourceVersion:2}\nfunction Caller(){\n  result.tagged = proof.callChild({ $$id: \"tagged\", flowQName: \"Proof.Sample\" })\n"
+		+ "  result.plain = proof.callChild({ $$id: \"plain\" })\n}";
+	var caller = api("run", {flowSource: callerSource, flowQName: "Proof.Caller", tagContext: tagContext, includeTrace: false});
+	assert(caller.ok && caller.result.tagged.api.host === "one" && caller.result.tagged.smtp.host === "mail",
+		"A Flow run from another Flow did not get the configurations of its own tags: " + JSON.stringify(caller).substring(0, 400));
+	assert(caller.result.plain.api.host === "common" && caller.result.plain.smtp === undefined,
+		"A Flow run without its identity selected tagged configurations: " + JSON.stringify(caller.result.plain));
 	// An unreadable tag source (no valid state ever read): memberships are unknown.
 	var unreadable = {project: "Proof", diagnostic: "Unexpected character", tags: {}, assignments: {}, aliases: {}};
 	var blocked = api("run", Object.assign({}, request, {tagContext: unreadable}));

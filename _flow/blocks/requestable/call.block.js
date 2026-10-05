@@ -249,11 +249,29 @@ const _meta = {
 			engineQName(ctx.request.engineQName) === projectEngineQName(target.flow.getProject()));
 	}
 
+	// The tag context of the called Flow's project, as the regular requestable path captures it for
+	// that Flow (server side, from the tag domain): its named configurations are selected by its own
+	// tags, never inherited from the caller. Without the Convertigo tag domain (standalone runtime),
+	// only a call inside the caller's project can reuse the caller's context.
+	function calledFlowTagContext(ctx, project) {
+		var name = String(project.getName());
+		try {
+			return JSON.parse(String(Packages.com.twinsoft.convertigo.engine.tags.TagManager.get().runContext(project)));
+		} catch (_tagDomainUnavailable) {
+			var current = ctx.request && ctx.request.tagContext;
+			return current && String(current.project || "") === name ? current : undefined;
+		}
+	}
+
 	function runFlowDirect(ctx, target, input) {
 		var project = target.flow.getProject();
 		var execution = ctx.runFlowSource(String(target.flow.getFlowSource()), {}, {
 			project: target.project,
 			projectDir: String(project.getDirPath()),
+			// Same identity as a regular call, so the configurations of the called Flow follow its tags.
+			flowQName: typeof target.flow.getQName === "function" ? String(target.flow.getQName()) : target.project + "." + target.requestable,
+			flowName: target.requestable,
+			tagContext: calledFlowTagContext(ctx, project),
 			input: input || {},
 			context: {
 				project: target.project,
