@@ -182,6 +182,15 @@
 	function resolveTaggedConfig(request, projectEngine, env) {
 		var context = request && request.tagContext;
 		if (!context) return Object.create(null);
+		if (context.diagnostic) {
+			// The tag source cannot be read, so memberships are unknown. A project without named configurations does not
+			// depend on them; with some, picking none would silently run on another configuration.
+			if (Object.keys(configurationDefinitions(projectEngine)).length) {
+				configError("FLOW_TAGS_UNAVAILABLE", "The tags of project " + String(context.project || "") + " cannot be read ("
+					+ String(context.diagnostic) + "): its named configurations cannot be selected until its tag source is fixed.");
+			}
+			return Object.create(null);
+		}
 		var target = String(request.flowQName || request.qname || "");
 		if (!target) {
 			var name = request.flowName || request.name;

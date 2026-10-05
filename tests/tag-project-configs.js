@@ -62,6 +62,17 @@ try {
 		assert(!changed.ok && changed.error.code === "FLOW_CONFIG_IN_USE", "Referenced definition was silently removed/renamed");
 	});
 	assert(String(files.readFileToString(file, "UTF-8")) === JSON.stringify(definition), "Rejected referenced mutation touched disk");
+	// An unreadable tag source (no valid state ever read): memberships are unknown.
+	var unreadable = {project: "Proof", diagnostic: "Unexpected character", tags: {}, assignments: {}, aliases: {}};
+	var blocked = api("run", Object.assign({}, request, {tagContext: unreadable}));
+	assert(!blocked.ok && JSON.stringify(blocked).indexOf("FLOW_TAGS_UNAVAILABLE") !== -1, "An unreadable tag source silently selected no configuration");
+	var plain = JSON.parse(JSON.stringify(definition)); delete plain.configs;
+	var plainDrafts = {}; plainDrafts[String(file.getCanonicalPath())] = JSON.stringify(plain);
+	var unaffected = api("run", Object.assign({}, request, {tagContext: unreadable, sourceDrafts: plainDrafts}));
+	assert(unaffected.ok && unaffected.result.snapshot.api.host === "common",
+		"A project without named configurations must not depend on its tags: " + JSON.stringify(unaffected));
+	var kept = api("run", Object.assign({}, request, {tagContext: Object.assign({}, tagContext, {warning: "Unexpected character (the last valid tags stay in use)"})}));
+	assert(kept.ok && kept.result.snapshot.api.host === "one", "The last valid tags must keep serving: " + JSON.stringify(kept));
 	tagContext.tags["z-first"].metadata.flow.configs = ["absent"];
 	var invalid = api("run", request);
 	assert(!invalid.ok && JSON.stringify(invalid).indexOf("FLOW_CONFIG_REFERENCE_NOT_FOUND") !== -1, "Missing references must not silently fall back");
