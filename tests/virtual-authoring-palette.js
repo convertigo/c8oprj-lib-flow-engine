@@ -102,8 +102,12 @@ var focusedRequest = {
 };
 var focusedResult = service.applyMutationRequest(focusedRequest, {}, focusedEnv);
 assertTrue(unrelatedProjectionCalls === 0, "A focused value mutation must not project unrelated catalog/frontend providers");
-assertTrue(focusedResult.children.length === 1 && focusedResult.children[0].path === "config",
-	"Only the requested projection branch must be returned");
+// The common config is the default entry of the single Configs collection; a focused branch comes alone in it.
+function focusedConfig(result) {
+	var configs = result.children.length === 1 && result.children[0].path === "configs" ? result.children[0].children || [] : [];
+	return configs.length === 1 && configs[0].path === "config" && configs[0].name === "default" ? configs[0] : null;
+}
+assertTrue(focusedConfig(focusedResult) !== null, "Only the requested projection branch must be returned");
 assertTrue(JSON.parse(focusedResult.source).config.frontbuilder.svelte.target === "svelte",
 	"Projection filtering must not drop unrelated source data");
 assertTrue(JSON.parse(focusedResult.source).config.service.value === "new", "The draft must include the edited value");
@@ -117,7 +121,7 @@ var focusedPaste = service.authoringMutateRequest({ surface: "virtual", projecti
 	transfer: { sourcePath: "config.service", targetPath: "config.service", name: "service", value: { value: "copy" } }
 }, {}, focusedEnv);
 assertTrue(unrelatedProjectionCalls === 0, "Neither transfer validation nor its result may project unrelated frontend/catalog providers");
-assertTrue(focusedPaste.children.length === 1 && focusedPaste.children[0].path === "config", "Paste returns the fresh requested branch");
+assertTrue(focusedConfig(focusedPaste) !== null, "Paste returns the fresh requested branch");
 assertTrue(JSON.parse(focusedPaste.source).config.service.service.value === "copy", "Paste still inserts through the slot contract");
 assertTrue(JSON.parse(focusedPaste.source).config.frontbuilder.svelte.target === "svelte", "Paste preserves the complete source");
 assertTrue(focusedPaste.written === false, "A draft paste must not write the source file");
@@ -161,7 +165,9 @@ var rootPalette = service.authoringPaletteFromTreeRequest({
 	detail: "compact",
 	definition: { config: config.definition }
 }, {}, tree, env);
-assertTrue(rootPalette.ok && rootPalette.items.length === 1, "Config root must expose one Rhino palette action");
+// The default config, like a named one, takes groups and settings at its root.
+assertTrue(rootPalette.ok && rootPalette.items.map(function (item) { return item.authoringAction.id; }).join() ===
+	"config.create.group@entries,config.create.value@entries", "Config root must expose its group and setting actions");
 assertTrue(rootPalette.items[0].authoringAction.id === "config.create.group@entries",
 	"The palette must expose an opaque virtual authoring action");
 assertTrue(rootPalette.items[0].virtualPrototype.kind === "object",
@@ -292,7 +298,8 @@ var projected = service.describeTreeRequest({
 		configVisibility: { "hiddenOnly.secret": "private", privateEmpty: "private" }
 	}
 }, {}, env);
-var projectedConfig = projected.children.filter(function (node) { return node.path === "config"; })[0];
+var projectedConfigs = projected.children.filter(function (node) { return node.path === "configs"; })[0];
+var projectedConfig = (projectedConfigs && projectedConfigs.children || []).filter(function (node) { return node.path === "config"; })[0];
 assertTrue(JSON.parse(projectedConfig.info).deletable === false,
 	"The configuration root must not be deletable");
 assertTrue(projectedConfig.children.every(function (node) { return JSON.parse(node.info).deletable === true; }),
