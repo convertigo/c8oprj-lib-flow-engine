@@ -122,6 +122,27 @@ try {
 		"A Flow run from another Flow did not get the configurations of its own tags: " + JSON.stringify(caller).substring(0, 400));
 	assert(caller.result.plain.api.host === "common" && caller.result.plain.smtp === undefined,
 		"A Flow run without its identity selected tagged configurations: " + JSON.stringify(caller.result.plain));
+	// A code tool called from a running Flow (the MCP server Flow) reads the working copies of its own prepared
+	// request, not those of the running Flow: a named configuration still in draft resolves for the tag selecting it.
+	var draftDefinition = JSON.parse(JSON.stringify(definition)); draftDefinition.configs.Draft = {api: {host: "draft config"}};
+	var configDrafts = {}; configDrafts[String(file.getCanonicalPath())] = JSON.stringify(draftDefinition);
+	var draftTagContext = JSON.parse(JSON.stringify(tagContext));
+	draftTagContext.tags["with-draft"] = {metadata: {flow: {configs: ["Draft"]}}};
+	draftTagContext.assignments["Proof.sq:Sample"].push("with-draft");
+	files.writeStringToFile(new java.io.File(project, "_flow/blocks/proof/codeRunDraft.block.js"), [
+		"const _meta = {", "  \"sourceVersion\": 2,", "  \"version\": 1,", "  \"icon\": \"mdi:variable\",",
+		"  \"description\": \"Runs Sample through the code-run tool with a prepared request, as the MCP server Flow does.\",",
+		"  \"properties\": {},", "  \"outputs\": { \"out\": { \"type\": \"object\" } },", "  \"runtime\": \"rhino\",", "}", "",
+		"(function () {", "\treturn {", "\t\trun: function (ctx, node) {",
+		"\t\t\tvar execution = ctx.flowCodeRun(" + JSON.stringify({qname: "Proof.Sample", code: source, tagContext: draftTagContext,
+			frontendSourceDrafts: configDrafts, includeTrace: false}) + ");",
+		"\t\t\treturn execution.ok ? execution.result.snapshot : { error: execution.error };",
+		"\t\t}", "\t};", "}())", ""].join("\n"), "UTF-8");
+	engine.cacheClear();
+	var toolCaller = api("run", {flowSource: "const _flow={sourceVersion:2}\nfunction ToolCaller(){\n  result.snapshot = proof.codeRunDraft({ $$id: \"probe\" })\n}",
+		flowQName: "Proof.ToolCaller", tagContext: tagContext, includeTrace: false});
+	assert(toolCaller.ok && toolCaller.result.snapshot && toolCaller.result.snapshot.api && toolCaller.result.snapshot.api.host === "draft config",
+		"A code tool called from a running Flow ignored the draft configuration of its request: " + JSON.stringify(toolCaller).substring(0, 400));
 	// An unreadable tag source (no valid state ever read): memberships are unknown.
 	var unreadable = {project: "Proof", diagnostic: "Unexpected character", tags: {}, assignments: {}, aliases: {}};
 	var blocked = api("run", Object.assign({}, request, {tagContext: unreadable}));

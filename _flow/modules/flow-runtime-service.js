@@ -1492,82 +1492,115 @@
 					}, args), loadBlocks());
 				});
 			};
+			// A request prepared for a target project (an MCP tool) carries that project's working copies and tags:
+			// its sources, not those of the Flow running the tool, back what the operation reads meanwhile (engine.yaml,
+			// Flow and block sources), as for the authoring operations. Plain arguments keep the current request.
+			function withPreparedRequest(args, callback) {
+				return args.frontendSourceDrafts !== undefined || args.sourceDrafts !== undefined || args.sourceRemovals !== undefined
+					? withActiveRequest(args, callback) : callback();
+			}
 			ctx.flowSourceGet = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowScriptGetRequest(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowScriptGetRequest(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowSourceValidate = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowScriptValidateRequest(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowScriptValidateRequest(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowSourcePatch = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowScriptPatchRequest(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowScriptPatchRequest(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeGet = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.get(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.get(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeStatus = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.status(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.status(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeDiscard = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.discard(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.discard(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeSet = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.set(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.set(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodePatch = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.patch(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.patch(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeCheck = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.check(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.check(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeRg = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.rg(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.rg(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeRun = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.run(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.run(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodeAnalyze = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.analyze(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.analyze(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.flowCodePromote = function (args) {
 				args = args || {};
 				return withProjectDir(args.projectDir, function () {
-					return flowCode.promote(loadBlocks(), args);
+					return withPreparedRequest(args, function () {
+						return flowCode.promote(loadBlocks(), args);
+					});
 				});
 			};
 			ctx.requestableList = function (args) {
