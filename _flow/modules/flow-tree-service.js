@@ -3212,7 +3212,7 @@
 			var layoutInfo = frontendContainerInfo(modelFile, "layouts[" + index + "]", "layouts[" + index + "].regions", null, null);
 			var layoutNode = virtualNode("layout_" + (layout.id || index), "frontendLayout", layout.id || "layout",
 				path + "[" + index + "]", layout.title || layout.id || "Layout", compact(layout),
-				compact(layoutInfo), "mdi:page-layout-outline");
+				compact(layoutInfo), "mdi:page-layout-header-footer");
 			folder.children.push(layoutNode);
 			(layout.regions || []).forEach(function (region, regionIndex) {
 				layoutNode.children.push(virtualNode("region_" + (region.id || regionIndex), "frontendLayoutRegion", region.id || "region",

@@ -420,13 +420,15 @@ hooks:
 ```
 
 Use a single `icon` field for display. Prefer `mdi:*` ids for shared/core
-blocks. Use a relative file path such as `./icons/my-block.png` only for custom
-icons that ship next to a project/library block. HTTPS URLs are accepted but
-must be cached locally by the engine/tooling before Studio/Admin display. Icon
-caches are provider-local and ignored by Git, using paths such as
-`_flow/icons/iconify/mdi/<name>_16x16.png` plus SVG/32px variants. Generate
-PNG variants with `tools/generate-mdi-icon-cache.js`; it uses Convertigo's
-`convertigo-svg-icons` Batik converter, not ImageMagick.
+blocks and check that the name exists in the set: a missing icon only fails at
+run time. Icons are SVG project sources committed with the project:
+`_flow/icons/iconify/<set>/<name>.svg` plus the set's `LICENSE.json`; saving a
+source copies the icons it uses into its project. lib_flow_engine carries every
+icon its blocks, types and tree nodes display (`tests/icon-sources-carried.cjs`):
+add the SVG together with the reference. Never commit PNG renderings, they are
+derived into the server cache. Use a relative file path only for custom icons
+that ship with a project/library block; HTTPS URLs are cached under
+`_flow/icons/url/`.
 
 Use explicit value helpers instead of duplicating engine logic:
 

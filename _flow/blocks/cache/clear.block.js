@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "private": true,
-  "icon": "mdi:cached-off",
+  "icon": "mdi:delete-sweep-outline",
   "tags": [
     "cache",
     "runtime",

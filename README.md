@@ -347,25 +347,25 @@ Poor candidates for the initial core:
 
 Block descriptors expose one display icon through `icon`. Use `mdi:*` or another
 Iconify id for shared/core icons, a file path relative to the block file for
-custom project/library icons, or an HTTPS URL when the icon must be cached from a
-remote source. The Flow engine resolves the authoring value to concrete local
-files when they exist in the provider project's cache.
+custom project/library icons, or an HTTPS URL for a remote image. Check that an
+Iconify name exists in its set: a missing icon only fails at run time.
 
-Generated icon caches are intentionally ignored by Git:
+Icons are sources of the project that uses them, stored as SVG only and
+committed with it (Git, `.car`):
 
 ```text
-_flow/icons/iconify/<provider>/<name>.svg
-_flow/icons/iconify/<provider>/<name>_16x16.png
-_flow/icons/iconify/<provider>/<name>_32x32.png
+_flow/icons/iconify/<set>/<name>.svg   (plus the LICENSE.json of the set)
 _flow/icons/url/<sha256>.<ext>
 ```
 
-For example, `mdi:power` resolves to
-`_flow/icons/iconify/mdi/power_16x16.png` when the cache has been
-populated. Run `tools/generate-mdi-icon-cache.js` to populate the local cache
-from an Iconify MDI `icons.json` pack. The tool reuses Convertigo's
-`convertigo-svg-icons` Batik converter, so generated PNGs follow the same path
-as NGX dynamic component icons.
+Resolution looks in the project, then in its referenced projects and
+lib_flow_engine, then in the server cache, and only then downloads from
+Iconify. Saving a source copies the icons it uses into its project; a draft or a
+referenced project is never written. Studio renderings (tinted SVG, 16/32 PNG)
+are derived into the server cache (`<workspace>/cache/flow-icons-v2`) and are
+never committed. lib_flow_engine carries every icon that its own blocks, types
+and tree nodes display, checked by `tests/icon-sources-carried.cjs`, so a server
+without network still shows them.
 
 If no `return` block is executed, the Flow returns the `result` scope
 implicitly. Use `return` only to stop early or return something other than

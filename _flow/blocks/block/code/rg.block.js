@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "private": true,
-  "icon": "mdi:puzzle-search-outline",
+  "icon": "mdi:text-search",
   "tags": [
     "block",
     "code",

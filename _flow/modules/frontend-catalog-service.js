@@ -755,7 +755,7 @@
 				label: "Svelte UI block",
 				category: "Frontend block definitions",
 				kind: "frontendUiBlockDefinition",
-				icon: "mdi:svelte",
+				icon: "mdi:code-braces-box",
 				traits: ["definition.uiBlock"],
 				targetKinds: ["frontendBuilder", "frontendBlocks", "frontendBlockProvider", "frontendBlockNamespace"],
 				acceptedPositions: ["inside"],
