@@ -1176,16 +1176,66 @@
 			var files = [];
 			collectUiBlockFiles(new env.File(root, "ui"), env, files);
 			files.forEach(function (file) {
-				var raw = JSON.parse(sourceForFile(file, env));
-				var descriptor = normalizeUiBlock(raw, file, name, settings, env, providerHint, traitDirs);
-				if (seen[descriptor.id]) {
-					throw new Error('Duplicate Flow Svelte component id "' + descriptor.id + '" in ' + seen[descriptor.id] + ' and ' + descriptor.sourcePath + '.');
+				// A broken or duplicated descriptor is reported in the catalog; every other block keeps working.
+				var descriptor;
+				try {
+					descriptor = normalizeUiBlock(JSON.parse(sourceForFile(file, env)), file, name, settings, env, providerHint, traitDirs);
+				} catch (e) {
+					descriptors.push(invalidUiDescriptor(name, settings, env, providerHint, file,
+						"Invalid UI block descriptor " + String(file.getName()) + ": " + String(e && e.message || e)));
+					return;
 				}
-				seen[descriptor.id] = descriptor.sourcePath;
+				var previous = seen[descriptor.id];
+				if (previous) {
+					// Rhino and Node keep the declaration with the smaller source path, whatever their listing order.
+					var keepNew = String(descriptor.sourcePath) < String(descriptors[previous.index].sourcePath);
+					var winner = keepNew ? descriptor : descriptors[previous.index];
+					var dropped = keepNew ? { descriptor: descriptors[previous.index], file: previous.file } : { descriptor: descriptor, file: file };
+					if (keepNew) { descriptors[previous.index] = descriptor; seen[descriptor.id] = { index: previous.index, file: file }; }
+					descriptors.push(invalidUiDescriptor(name, settings, env, providerHint, dropped.file, 'Duplicate Flow Svelte component id "'
+						+ descriptor.id + '" in ' + dropped.descriptor.sourcePath + '; ' + winner.sourcePath + ' is used.'));
+					return;
+				}
+				seen[descriptor.id] = { index: descriptors.length, file: file };
 				descriptors.push(descriptor);
 			});
 		});
+		if (roots.length && !descriptors.some(function (descriptor) { return descriptor.createAction === true; })) {
+			// An older provider: without it, the creation palette would silently stay empty.
+			var message = "The " + name + " provider declares no authoring descriptors (ui/authoring/*.uiblock.json): its blocks cannot be created."
+				+ " This Flow engine needs lib_flow_frontbuilder_svelte 0.1.9 or later.";
+			descriptors.push({ id: name + ".invalid.authoring", name: "ui/authoring", label: "Missing authoring descriptors",
+				category: "Svelte / Invalid", kind: "error", targetKinds: [], description: message, icon: "mdi:alert-outline", insert: {},
+				builder: name, target: settings.target || "", provider: settings.provider || "frontbuilder." + name, sourceBacked: false,
+				descriptorKind: "source", sourcePath: "", file: "", sourceWritable: false, error: message });
+		}
 		return descriptors;
+	}
+
+	function invalidUiDescriptor(name, settings, env, providerHint, file, message) {
+		var sourceInfo = sourceMetadataForFile(file, name, env, providerHint);
+		return {
+			id: name + ".invalid." + String(file.getName()).replace(/\.uiblock\.json$/, ""),
+			name: String(file.getName()),
+			label: String(file.getName()),
+			category: "Svelte / Invalid",
+			kind: "error",
+			targetKinds: [],
+			description: message,
+			icon: "mdi:alert-outline",
+			insert: {},
+			builder: name,
+			target: settings.target || "",
+			provider: sourceInfo.provider,
+			sourceBacked: true,
+			descriptorKind: "source",
+			sourcePath: sourceInfo.sourcePath,
+			sourceRelativePath: sourceInfo.sourceRelativePath || "",
+			sourceOrigin: sourceInfo.sourceOrigin,
+			file: sourceInfo.file,
+			sourceWritable: sourceInfo.sourceWritable,
+			error: message
+		};
 	}
 
 	function frontendBlocksForSettings(name, settings, env) {

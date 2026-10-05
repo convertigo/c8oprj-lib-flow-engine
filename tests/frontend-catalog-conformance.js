@@ -77,11 +77,14 @@ try {
 	drafts[String(new File(provider, "ui/authoring/duplicate-proof.uiblock.json"))] = JSON.stringify(raw);
 	var duplicate = JSON.parse(engine.catalog(JSON.stringify({ engineSource: engineSource,
 		projectDir: String(project), includeIcons: false, frontendSourceDrafts: drafts, sourceRemovals: removals })));
-	assert(duplicate.ok === false && JSON.stringify(duplicate).indexOf("Duplicate Flow Svelte component id") >= 0,
-		"Rhino refuses duplicate vocabulary instead of returning a partial catalog");
-	var nodeDuplicate = false;
-	try { nodeCatalog(); } catch (error) { nodeDuplicate = String(error).indexOf("Duplicate Flow Svelte component id") >= 0; }
-	assert(nodeDuplicate, "Node refuses the same duplicate vocabulary");
+	// A duplicate is reported by both readers; the first declaration keeps working instead of the whole catalog failing.
+	var reported = (duplicate.frontendBlocks || []).filter(function (descriptor) { return descriptor.kind === "error"; })[0];
+	assert(duplicate.ok === true && reported && reported.kind === "error" && reported.description.indexOf("Duplicate Flow Svelte component id") >= 0,
+		"Rhino reports duplicate vocabulary and keeps its catalog");
+	assert((duplicate.frontendCreateDescriptors || []).filter(function (descriptor) { return descriptor.id === raw.id; }).length === 1,
+		"The first declaration stays the single creation contract");
+	var nodeDuplicate = nodeCatalog().filter(function (descriptor) { return descriptor.kind === "error"; })[0];
+	assert(nodeDuplicate && nodeDuplicate.description.indexOf("Duplicate Flow Svelte component id") >= 0, "Node reports the same duplicate vocabulary");
 	drafts = {}; removals = [];
 	var discarded = compare();
 	assert(discarded[raw.id].label === saved[raw.id].label && discarded["frontbuilder.svelte.timeout"], "Discard restores both saved contracts");
