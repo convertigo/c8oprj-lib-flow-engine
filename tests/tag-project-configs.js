@@ -29,8 +29,26 @@ try {
 	assert(JSON.stringify(descriptor).indexOf("not-for-the-picker") === -1, "Descriptor leaked config values");
 	var run = api("run", request);
 	assert(run.ok, "Tagged runtime failed: " + JSON.stringify(run));
-	equal(run.result.snapshot, {api: {host: "two", port: 42}, flowOnly: 1, common: true, flag: null, smtp: {host: "mail"}},
-		"Last tag wins, entire root branch replaced, unrelated branches retained");
+	// default, then B1 and Mail (first tag), then B2 (last tag), merged value by value; the Flow default keeps its own root keys.
+	equal(run.result.snapshot, {api: {host: "two", commonOnly: true, token: "not-for-the-picker", port: 42}, flowOnly: 1, common: true,
+		flag: null, smtp: {host: "mail"}}, "Named configurations merge over default value by value, the last tag winning");
+	function treeNode(nodes, path) {
+		for (var i = 0; i < (nodes || []).length; i++) {
+			if (nodes[i].path === path) return nodes[i];
+			var found = treeNode(nodes[i].children, path);
+			if (found) return found;
+		}
+		return null;
+	}
+	var flowTree = api("describeTree", {target: "flow", flowSource: source, flowQName: "Proof.Sample", tagContext: tagContext, includeFlowCatalog: false});
+	var effectiveHost = treeNode(flowTree.children, "effectiveConfig.api.host");
+	assert(effectiveHost && effectiveHost.summary === "host: two (B2 (tag a-last))", "Effective value with its origin: " + JSON.stringify(effectiveHost && effectiveHost.summary));
+	var commonOnly = treeNode(flowTree.children, "effectiveConfig.api.commonOnly");
+	assert(commonOnly && commonOnly.summary === "commonOnly: true (default)", "A value kept from default: " + JSON.stringify(commonOnly && commonOnly.summary));
+	var flowOnly = treeNode(flowTree.children, "effectiveConfig.flowOnly");
+	assert(flowOnly && flowOnly.summary.indexOf("(Flow default)") !== -1, "A Flow default keeps its origin");
+	var effective = treeNode(flowTree.children, "effectiveConfig");
+	assert(effective && JSON.parse(effective.info).sourceWritable === false, "The effective configuration is read-only");
 	[ {qname:"Proof.Sample"}, {project:"Proof",name:"Sample"} ].forEach(function (target) {
 		var toolRequest = Object.assign({code:source,tagContext:tagContext,includeTrace:false}, target);
 		var codeRun = api("flowCodeRun", toolRequest);
@@ -62,6 +80,25 @@ try {
 		assert(!changed.ok && changed.error.code === "FLOW_CONFIG_IN_USE", "Referenced definition was silently removed/renamed");
 	});
 	assert(String(files.readFileToString(file, "UTF-8")) === JSON.stringify(definition), "Rejected referenced mutation touched disk");
+	// A private key stays private in the named configurations too, in their tree and in the effective configuration.
+	var privateDefinition = JSON.parse(JSON.stringify(definition)); privateDefinition.configVisibility = {"api.token": "private"};
+	var engineTree = api("describeTree", {target: "engine", engineSource: JSON.stringify(privateDefinition), includeFlowCatalog: false});
+	assert(treeNode(engineTree.children, "configs.B1.api.host") && !treeNode(engineTree.children, "configs.B1.api.token"),
+		"A private key of a named configuration is hidden");
+	var privateDrafts = {}; privateDrafts[String(file.getCanonicalPath())] = JSON.stringify(privateDefinition);
+	var privateTree = api("describeTree", {target: "flow", flowSource: source, flowQName: "Proof.Sample", tagContext: tagContext,
+		includeFlowCatalog: false, sourceDrafts: privateDrafts});
+	var token = treeNode(privateTree.children, "effectiveConfig.api.token");
+	assert(token && token.summary.indexOf("(private)") !== -1 && JSON.stringify(privateTree).indexOf("not-for-the-picker") === -1,
+		"The effective configuration masks a private value: " + JSON.stringify(token && token.summary));
+	// Only what a mutation breaks is refused: an older broken reference no longer blocks an unrelated edit.
+	var stale = JSON.parse(JSON.stringify(tagContext)); stale.tags["z-first"].metadata.flow.configs = ["B1", "ghost"];
+	var unrelated = api("applyMutation", {target: "engine", engineSource: JSON.stringify(definition), tagContext: stale, includeTree: false,
+		mutation: {op: "replace", path: "config.common", value: false}});
+	assert(unrelated.ok, "An unrelated engine edit is not blocked by an older broken reference: " + JSON.stringify(unrelated).substring(0, 300));
+	var reserved = api("applyMutation", {target: "engine", engineSource: JSON.stringify(definition), tagContext: tagContext, includeTree: false,
+		mutation: {op: "renameKey", path: "configs.B2", value: "default"}});
+	assert(!reserved.ok && reserved.error.code === "FLOW_CONFIG_NAME_RESERVED", "default is reserved for the common configuration: " + JSON.stringify(reserved).substring(0, 300));
 	// An unreadable tag source (no valid state ever read): memberships are unknown.
 	var unreadable = {project: "Proof", diagnostic: "Unexpected character", tags: {}, assignments: {}, aliases: {}};
 	var blocked = api("run", Object.assign({}, request, {tagContext: unreadable}));

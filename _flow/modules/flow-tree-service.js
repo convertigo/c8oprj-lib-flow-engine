@@ -499,7 +499,10 @@
 	}
 
 	function configVisibility(visibilityMap, fieldPath) {
-		var relative = String(fieldPath || "").replace(/^config\.?/, "");
+		// The visibility of a key applies to the common config and to every named configuration alike.
+		var relative = String(fieldPath || "");
+		var named = /^configs(?:\.[^.]+)?(?:\.|$)/.exec(relative);
+		relative = named ? relative.substring(named[0].length) : relative.replace(/^config(?:\.|$)/, "");
 		if (!relative) {
 			return "public";
 		}
@@ -668,6 +671,53 @@
 			presentation.label || "Config", visibleConfig, info, "mdi:cog-outline");
 		out.push(folder);
 		addConfigFields(folder, visibleConfig, path, writable);
+	}
+
+	function configurationNameSet(definition) {
+		var names = Object.create(null), configs = definition && definition.configs;
+		if (configs && typeof configs === "object") Object.keys(configs).forEach(function (name) { names[name] = true; });
+		return names;
+	}
+
+	// Read-only: the configuration the runtime gives this Flow, with the origin of each value.
+	function addEffectiveConfig(out, trace, request, definition) {
+		var description = "Read-only: what this Flow receives at run time. Its Flow defaults, then the project default merged with "
+			+ "the named configurations of its tags, value by value in tag order (the last one wins); a call config replaces whole root branches.";
+		var result;
+		try { result = trace(request, definition); }
+		catch (e) { description = "The effective configuration cannot be computed: " + String(e && e.message || e); }
+		// A Flow without any configuration keeps its tree unchanged; an error stays visible.
+		if (result && !Object.keys(result.config || {}).some(function (key) { return key !== "bindings" && key !== "binding"; })) return;
+		var folder = virtualNodeFromPlain("effectiveConfig", "scope", "config", "effectiveConfig", "Effective configuration", {},
+			{ sourceWritable: false, deletable: false, readOnly: true, traits: [], slots: {}, description: description }, "mdi:cog-sync-outline");
+		out.push(folder);
+		if (!result) return;
+		var visibilityMap = flattenConfigVisibility(result.visibility || {});
+		(function add(parent, value, path) {
+			Object.keys(value || {}).sort().forEach(function (key) {
+				if (!path && (key === "bindings" || key === "binding")) return;
+				var fieldPath = path ? path + "." + key : key, item = value[key];
+				var hidden = !configPathVisible(visibilityMap, "config." + fieldPath, request);
+				if (!hidden && item && typeof item === "object" && Object.prototype.toString.call(item) !== "[object Array]" && Object.keys(item).length) {
+					var group = virtualNodeFromPlain(key, "object", "config", "effectiveConfig." + fieldPath, key, {},
+						{ sourceWritable: false, deletable: false, readOnly: true, traits: [], slots: {} }, "mdi:cube-outline");
+					parent.children.push(group);
+					add(group, item, fieldPath);
+					return;
+				}
+				var origin = result.sources[fieldPath] || "global";
+				var shown = hidden ? "(private)" : typeof item === "string" ? item : JSON.stringify(item);
+				var plain = { value: shown, origin: origin };
+				var info = sourceObjectInfo(Object.assign({ sourceWritable: false, deletable: false, readOnly: true, traits: [], slots: {},
+					description: "From " + origin }, plain), {
+					value: propertyDefinition("Value", "Information", "Effective value at run time.", { readOnly: true, kind: "text", type: "string" }),
+					origin: propertyDefinition("Origin", "Information", "Flow default, default, the named configuration and its tag, or the call config.",
+						{ readOnly: true, kind: "text", type: "string" })
+				}, ["value", "origin"]);
+				parent.children.push(virtualNodeFromPlain(key, "field", "config", "effectiveConfig." + fieldPath,
+					key + ": " + shown + " (" + origin + ")", plain, info, "mdi:variable"));
+			});
+		})(folder, result.config, "");
 	}
 
 	function addEngineMetadata(out, engine, path) {
@@ -4563,6 +4613,7 @@
 			addBindings(children, definition.bindings, "bindings", writable);
 			var flowMeta = definition.flow || definition._flow || {};
 			if (flowMeta.config !== undefined) addConfig(children, flowMeta.config, "flow.config", {}, request);
+			if (env.effectiveConfigTrace) addEffectiveConfig(children, env.effectiveConfigTrace, request, definition);
 			[["inputs", "input", "Inputs"], ["outputs", "output", "Outputs"]].forEach(function (entry) {
 				var owner = flowMeta[entry[0]] || flowMeta[entry[1]] ? flowMeta : definition;
 				var key = owner[entry[0]] ? entry[0] : entry[1];
@@ -4590,18 +4641,21 @@
 				var configurations = env.configurationDefinitions ? env.configurationDefinitions(engine) : engine.configs || {};
 				var createConfiguration = Object.assign({}, configCreationDescriptors()[0], {
 					label: "Add named configuration", name: "configuration",
-					description: "Creates a reusable project configuration. Add groups and settings, then associate its name with a tag."
+					description: "Creates a reusable project configuration. Add groups and settings, then associate its name with a tag: "
+						+ "its values are merged over default for the Flows of that tag."
 				});
 				var configCollection = [];
-				addConfig(configCollection, configurations, "configs", {}, request, {
+				addConfig(configCollection, configurations, "configs", engine.configVisibility, request, {
 					name: "configs", label: "Configs", mutationOp: "replace",
-					description: "default is the common configuration for all project Flows. Named configurations are applied only when selected by their tags.",
+					description: "default applies to every Flow of the project. The named configurations selected by a Flow's tags are merged "
+						+ "over it value by value, from the first tag to the last: for a value set several times, the last one wins.",
 					creationDescriptors: [createConfiguration]
 				});
 				var commonConfiguration = [];
 				addConfig(commonConfiguration, engine.config, "config", engine.configVisibility, request, {
 					name: "default", label: "default", collection: false,
-					description: "Common project configuration, applied to every Flow before the ordered configurations selected by its tags."
+					description: "Common project configuration of every Flow. The named configurations selected by its tags are merged over it, "
+						+ "in tag order; the last one wins."
 				});
 				configCollection[0].children.unshift(commonConfiguration[0]);
 				children.push(configCollection[0]);
@@ -7310,10 +7364,11 @@
 			return mutation && (!mutation.op || mutation.op === "replace" || mutation.op === "set") && /\.id$/.test(String(mutation.path || ""));
 		});
 		var idsBefore = renamesOnly ? definitionNodeIds(definition) : null;
+		var configNamesBefore = target === "engine" ? configurationNameSet(definition) : null;
 		mutations.forEach(function (mutation) {
 			applyOneMutation(definition, mutation, blocks);
 		});
-		if (target === "engine" && env.validateConfigurations) env.validateConfigurations(definition, request);
+		if (target === "engine" && env.validateConfigurations) env.validateConfigurations(definition, request, configNamesBefore);
 		else if (target === "engine" && env.configurationDefinitions) env.configurationDefinitions(definition);
 		var renamedNodes = [];
 		if (idsBefore) {
@@ -7395,6 +7450,7 @@
 			? (env.sources ? env.sources.read(file) : String(FileUtils.readFileToString(file, "UTF-8")))
 			: fallback;
 		var definition = parseYamlSource(oldSource, fallback);
+		var configNamesBefore = configurationNameSet(definition);
 		var selectionMutationPath = "";
 		mutations.forEach(function (mutation) {
 			var spec = engineMutationSpec(mutation);
@@ -7404,7 +7460,7 @@
 			applyOneMutation(definition, spec, blocks);
 			selectionMutationPath = spec.op === "remove" || spec.op === "delete" ? "" : spec.selectionMutationPath || spec.path;
 		});
-		if (env.validateConfigurations) env.validateConfigurations(definition, request);
+		if (env.validateConfigurations) env.validateConfigurations(definition, request, configNamesBefore);
 		else if (env.configurationDefinitions) env.configurationDefinitions(definition);
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;

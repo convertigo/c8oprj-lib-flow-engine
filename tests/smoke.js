@@ -2647,8 +2647,9 @@ var fragmentAnalysis = JSON.parse(engine.analyze(JSON.stringify({ flowSource: fr
 assertTrue(fragmentAnalysis.writes.indexOf("result.fragmentMessage") !== -1,
 	"Flow analysis did not see writes produced inside fragment.use");
 var fragmentTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", flowSource: fragmentFlowSource })));
-assertTrue(fragmentTree.children[0].children[0].type === "fragment.use" &&
-	fragmentTree.children[0].children[0].children[0].type === "smoke.lib",
+var fragmentNodes = findChild(fragmentTree, "flow");
+assertTrue(fragmentNodes && fragmentNodes.children[0].type === "fragment.use" &&
+	fragmentNodes.children[0].children[0].type === "smoke.lib",
 	"describeTree(flow) did not expand fragment.use children");
 var fragmentContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: fragmentFlowSource,
@@ -2802,13 +2803,14 @@ assertTrue(propertyEditor.html.indexOf("data-picker-format") === -1,
 debugPrint(engine.analyze(JSON.stringify({ flowSource: flowSource })));
 var describedFlowTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow", flowSource: flowSource })));
 debugPrint(JSON.stringify(describedFlowTree));
-assertTrue(describedFlowTree.children[0].name === "flow" &&
-	describedFlowTree.children[0].children[2].type === "forEach",
+// The project default configuration adds a read-only Effective configuration next to the Flow nodes.
+assertTrue(findChild(describedFlowTree, "effectiveConfig") && findChild(describedFlowTree, "flow") &&
+	findChild(describedFlowTree, "flow").children[2].type === "forEach",
 	"describeTree(flow) did not expose flow nodes");
 // Summaries come from block templates over canonical props.
 var summaryTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow",
 	flowSource: 'const _flow={sourceVersion:2};\nfunction Summary(){\nset({$$id:"initItems",path:"local.items",value:["Paris","Lyon"]});\n}' })));
-assertTrue(summaryTree.children[0].children[0].summary === "local.items = [\"Paris\",\"Lyon\"]",
+assertTrue(findChild(summaryTree, "flow").children[0].summary === "local.items = [\"Paris\",\"Lyon\"]",
 	"describeTree(flow) did not expose data-centric display names");
 var simpleLoopContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: flowSource,

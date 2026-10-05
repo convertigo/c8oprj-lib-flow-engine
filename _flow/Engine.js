@@ -4390,8 +4390,11 @@
 			typeDescriptor: typeDescriptor,
 			loadTypes: loadTypes,
 			configurationDefinitions: configurationDefinitions,
-			validateConfigurations: function (definition, request) {
-				return projectConfigService().validateReferencedConfigurations(definition, request && request.tagContext);
+			validateConfigurations: function (definition, request, namesBefore) {
+				return projectConfigService().validateReferencedConfigurations(definition, request && request.tagContext, namesBefore);
+			},
+			effectiveConfigTrace: function (request, definition) {
+				return projectConfigService().effectiveConfigTrace(request, definition, loadProjectEngineDefinition(), projectConfigEnv());
 			},
 			catalogDefinition: catalogDefinition,
 			listFlowLibraries: listFlowLibraries,

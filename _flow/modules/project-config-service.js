@@ -93,10 +93,10 @@
 	function effectiveConfig(request, definition, projectEngine, env) {
 		var config = Object.create(null);
 		var meta = definition && definition.flow || {};
-		// Preserve the existing root-branch replacement contract. Deep merging is
-		// explicit in config.use, not an implicit change to project/request config.
-		[meta.config, projectEngine && projectEngine.config,
-			resolveTaggedConfig(request, projectEngine, env), request && request.config].forEach(function (layer) {
+		// Flow defaults, the project configuration and the call config replace each other by root branch (deep merging
+		// stays explicit in config.use). Inside the project configuration, the named configurations selected by the
+		// tags merge over default, value by value, in tag order: the last one wins.
+		[meta.config, projectConfig(request, projectEngine, env), request && request.config].forEach(function (layer) {
 			if (layer === undefined) return;
 			if (!layer || Object.prototype.toString.call(layer) !== "[object Object]") {
 				var error = new Error("Flow configuration must be an object of literal defaults.");
@@ -133,6 +133,77 @@
 		throw error;
 	}
 
+	function isConfigObject(value) {
+		return !!value && typeof value === "object" && Object.prototype.toString.call(value) === "[object Object]";
+	}
+
+	// Value by value: objects merge, any other value (array and null included) replaces the previous one.
+	// It builds new objects only: definitions come from shared caches and are never mutated.
+	function mergeConfig(base, overlay) {
+		var merged = {};
+		[base, overlay].forEach(function (layer, index) {
+			Object.keys(layer || {}).forEach(function (key) {
+				if (key === "__proto__") return;
+				var value = layer[key];
+				merged[key] = index && isConfigObject(value) && isConfigObject(merged[key]) ? mergeConfig(merged[key], value) : value;
+			});
+		});
+		return merged;
+	}
+
+	// The project configuration of a Flow: default, then the named configurations of its tags merged over it.
+	function projectConfig(request, projectEngine, env) {
+		var common = projectEngine && projectEngine.config;
+		var tagged = resolveTaggedConfig(request, projectEngine, env);
+		// A malformed default stays reported by effectiveConfig.
+		if (!Object.keys(tagged).length || common !== undefined && !isConfigObject(common)) return common;
+		return mergeConfig(common, tagged);
+	}
+
+	// The configuration the runtime gives a Flow, with the origin of each value (leaf path -> origin).
+	function effectiveConfigTrace(request, definition, projectEngine, env) {
+		var meta = definition && definition.flow || {};
+		var sources = Object.create(null), projectSources = Object.create(null);
+		function forget(map, path) {
+			Object.keys(map).forEach(function (key) { if (key === path || key.indexOf(path + ".") === 0) delete map[key]; });
+		}
+		function mark(map, value, path, origin) {
+			if (isConfigObject(value) && Object.keys(value).length) {
+				Object.keys(value).forEach(function (key) { mark(map, value[key], path + "." + key, origin); });
+			} else map[path] = origin;
+		}
+		function mergeMark(current, value, path, origin) {
+			if (isConfigObject(value) && isConfigObject(current)) {
+				Object.keys(value).forEach(function (key) { mergeMark(current[key], value[key], path + "." + key, origin); });
+			} else { forget(projectSources, path); mark(projectSources, value, path, origin); }
+		}
+		function replaceRoots(layer, origin, layerSources) {
+			if (!isConfigObject(layer)) return;
+			Object.keys(layer).forEach(function (key) {
+				forget(sources, key);
+				if (!layerSources) { mark(sources, layer[key], key, origin); return; }
+				Object.keys(layerSources).forEach(function (path) {
+					if (path === key || path.indexOf(key + ".") === 0) sources[path] = layerSources[path];
+				});
+			});
+		}
+		var config = effectiveConfig(request, definition, projectEngine, env);
+		var common = projectEngine && projectEngine.config, project = isConfigObject(common) ? common : {};
+		Object.keys(project).forEach(function (key) { mark(projectSources, project[key], key, "default"); });
+		var definitions = configurationDefinitions(projectEngine);
+		taggedReferences(request, projectEngine).forEach(function (reference) {
+			var value = definitions[reference.name];
+			Object.keys(value).forEach(function (key) {
+				mergeMark(project[key], value[key], key, reference.name + " (tag " + reference.tag + ")");
+			});
+			project = mergeConfig(project, value);
+		});
+		replaceRoots(meta.config, "Flow default");
+		replaceRoots(project, null, projectSources);
+		replaceRoots(request && request.config, "call");
+		return { config: config, sources: sources, visibility: projectEngine && projectEngine.configVisibility || {} };
+	}
+
 	function configurationDefinitions(projectEngine) {
 		var definitions = projectEngine && projectEngine.configs;
 		if (definitions === undefined) return Object.create(null);
@@ -154,7 +225,7 @@
 			fields: {
 				configs: {
 					label: "Named configurations",
-					description: "Applied from top to bottom. The last configuration replaces a conflicting root branch. Values stay in the Flow engine.",
+					description: "Merged over the default configuration from top to bottom, value by value: for a value set several times, the last configuration wins. The tags of a sequence apply in their order, so the last tag wins over the previous ones. Values stay in the Flow engine.",
 					type: "array", uniqueItems: true,
 					items: { type: "string", enum: Object.keys(configurationDefinitions(projectEngine)).sort() }
 				}
@@ -162,26 +233,31 @@
 		};
 	}
 
-	function validateReferencedConfigurations(projectEngine, tagContext) {
+	// Only what a mutation breaks is refused: a referenced configuration it removes or renames, or a new configuration
+	// named default. An older broken reference (after a pull) stays visible in the tag manager instead of blocking edits.
+	function validateReferencedConfigurations(projectEngine, tagContext, namesBefore) {
 		var definitions = configurationDefinitions(projectEngine);
+		var had = function (name) { return !namesBefore || Object.prototype.hasOwnProperty.call(namesBefore, name); };
+		if (Object.prototype.hasOwnProperty.call(definitions, "default") && !(namesBefore && had("default"))) {
+			configError("FLOW_CONFIG_NAME_RESERVED", "default is the common configuration of the project: give this named configuration another name.");
+		}
 		var tags = tagContext && tagContext.tags || {};
 		Object.keys(tags).forEach(function (id) {
 			var tag = tags[id], references = tag.metadata && tag.metadata.flow && tag.metadata.flow.configs;
-			if (references === undefined) return;
-			if (!Array.isArray(references)) configError("FLOW_CONFIG_REFERENCES_ARRAY_REQUIRED", "Tag configuration references must be an ordered list.");
+			if (Object.prototype.toString.call(references) !== "[object Array]") return;
 			references.forEach(function (name) {
-				if (typeof name !== "string" || !Object.prototype.hasOwnProperty.call(definitions, name)) {
-					configError("FLOW_CONFIG_IN_USE", "Configuration " + String(name) + " is referenced by tag " + String(tag.label || id)
-						+ ". Update that tag's configuration references before removing or renaming the definition.");
-				}
+				if (typeof name !== "string" || Object.prototype.hasOwnProperty.call(definitions, name) || !had(name)) return;
+				configError("FLOW_CONFIG_IN_USE", "Configuration " + name + " is referenced by tag " + String(tag.label || id)
+					+ ". Update that tag's configuration references before removing or renaming the definition.");
 			});
 		});
 		return definitions;
 	}
 
-	function resolveTaggedConfig(request, projectEngine, env) {
+	// The ordered named configurations a Flow's tags select, each with the label of the tag that selects it.
+	function taggedReferences(request, projectEngine) {
 		var context = request && request.tagContext;
-		if (!context) return Object.create(null);
+		if (!context) return [];
 		if (context.diagnostic) {
 			// The tag source cannot be read, so memberships are unknown. A project without named configurations does not
 			// depend on them; with some, picking none would silently run on another configuration.
@@ -189,7 +265,7 @@
 				configError("FLOW_TAGS_UNAVAILABLE", "The tags of project " + String(context.project || "") + " cannot be read ("
 					+ String(context.diagnostic) + "): its named configurations cannot be selected until its tag source is fixed.");
 			}
-			return Object.create(null);
+			return [];
 		}
 		var target = String(request.flowQName || request.qname || "");
 		if (!target) {
@@ -212,13 +288,18 @@
 			if (Object.prototype.toString.call(selected) !== "[object Array]") {
 				configError("FLOW_CONFIG_REFERENCES_ARRAY_REQUIRED", "Tag configuration references must be an ordered list of names.");
 			}
-			references = references.concat(selected);
+			selected.forEach(function (reference) { references.push({ name: reference, tag: String(tags[id].label || id) }); });
 		});
-		return resolveConfigReferences(projectEngine, references, env);
+		return references;
 	}
 
-	// Reference order is source data, never the presentation order of tags.
-	// Root replacement matches effectiveConfig; scoped deep merge stays explicit.
+	function resolveTaggedConfig(request, projectEngine, env) {
+		return resolveConfigReferences(projectEngine, taggedReferences(request, projectEngine).map(function (reference) {
+			return reference.name;
+		}), env);
+	}
+
+	// Reference order is source data, never the presentation order of tags: they merge value by value, the last one winning.
 	function resolveConfigReferences(projectEngine, references, env) {
 		if (Object.prototype.toString.call(references) !== "[object Array]") {
 			configError("FLOW_CONFIG_REFERENCES_ARRAY_REQUIRED", "Configuration references must be an ordered list of names.");
@@ -229,7 +310,7 @@
 			if (typeof name !== "string" || !name || !Object.prototype.hasOwnProperty.call(definitions, name)) {
 				configError("FLOW_CONFIG_REFERENCE_NOT_FOUND", "Unknown named configuration: " + String(name));
 			}
-			Object.keys(definitions[name]).forEach(function (key) { config[key] = definitions[name][key]; });
+			config = mergeConfig(config, definitions[name]);
 		});
 		Object.keys(config).forEach(function (key) { config[key] = env.normalizeTree(config[key]); });
 		return config;
@@ -247,6 +328,7 @@
 		tagContribution: tagContribution,
 		validateReferencedConfigurations: validateReferencedConfigurations,
 		resolveTaggedConfig: resolveTaggedConfig,
+		effectiveConfigTrace: effectiveConfigTrace,
 		resolveConfigReferences: resolveConfigReferences
 	};
 })();

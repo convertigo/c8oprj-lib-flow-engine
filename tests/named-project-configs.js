@@ -71,6 +71,7 @@ try {
 		"const _flow={sourceVersion:2,inputs:{name:{type:'string'}}}\nfunction Proof(){}", readOnlyReference: true });
 	assert(JSON.parse(find(readOnlySchema, "flow.inputs.name.type").info).sourceWritable === false,
 		"Read-only schema descendants must not gain implicit writes");
+	assert(!find(readOnlySchema, "effectiveConfig"), "A Flow without any configuration keeps its tree unchanged");
 	files.writeStringToFile(new java.io.File(project, "_flow/engine.yaml"), JSON.stringify(definition), "UTF-8");
 	engine.cacheClear();
 	var run = api("run", { flowSource: source, includeTrace: false });
@@ -79,9 +80,14 @@ try {
 	var service = eval(String(files.readFileToString(new java.io.File(engineDir, "modules/project-config-service.js"), "UTF-8")));
 	var env = { normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); } };
 	var composed = service.resolveConfigReferences(definition, ["B1", "SmtpSendGrid", "B2"], env);
-	equal(composed, { baserow: { host: "b2" }, flag: 0, smtp: { host: "mail" } }, "Ordered root replacement, without implicit deep merge");
+	equal(composed, { baserow: { host: "b2", token: null }, flag: 0, smtp: { host: "mail" } }, "Ordered merge, value by value, the last reference winning");
 	composed.baserow.host = "mutated";
-	assert(definition.configs.B2.baserow.host === "b2", "Resolution must detach source values");
+	assert(definition.configs.B2.baserow.host === "b2" && definition.configs.B1.baserow.host === "b1", "Resolution must detach source values");
+	equal(service.resolveConfigReferences({ configs: { A: { list: [1, 2], obj: { a: 1 }, keep: { a: 1 } }, B: { list: [3], obj: null, keep: { b: 2 } } } },
+		["A", "B"], env), { list: [3], obj: null, keep: { a: 1, b: 2 } }, "Objects merge, arrays and null replace");
+	var poisoned = JSON.parse('{"configs":{"P":{"__proto__":{"polluted":true},"ok":1}}}');
+	equal(service.resolveConfigReferences(poisoned, ["P"], env), { ok: 1 }, "A __proto__ key is never merged");
+	assert(({}).polluted === undefined, "Merging must not pollute Object.prototype");
 	equal(service.resolveConfigReferences(definition, ["B2", "B1"], env), definition.configs.B1, "Last explicit reference wins, including null/false");
 	equal(service.resolveConfigReferences({}, [], env), {}, "Absent definitions/empty references are valid");
 	function rejects(projectEngine, references, code) {
