@@ -2633,6 +2633,50 @@
 		return true;
 	}
 
+	// A Flow without a loaded Flow object (new, or file only) has no owner for its working copy: the FlowEngine of
+	// its loaded project keeps it with the other source working copies, shared by every runtime of the pool and by
+	// the Studio, and kept across engine cache clears (a mirror in this runtime's memory was not).
+	function loadedFlowSourceDraftTarget(name, request) {
+		try {
+			var engine = Packages.com.twinsoft.convertigo.engine.Engine;
+			if (!name || !engine.theApp || !engine.theApp.databaseObjectsManager) {
+				return null;
+			}
+			var projectName = currentProjectName(request || {}) || projectNameForRoot(projectDir());
+			var project = projectName ? engine.theApp.databaseObjectsManager.getOriginalProjectByName(String(projectName), false) : null;
+			var flowEngine = project ? project.getFlowEngine() : null;
+			var file = flowEngine ? projectFlowCodeFile(name) : null;
+			return file ? { flowEngine: flowEngine, path: String(file.getCanonicalPath()) } : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function writeLoadedFlowSourceDraft(name, code, request) {
+		var target = loadedFlowSourceDraftTarget(name, request);
+		if (!target) {
+			return null;
+		}
+		var sources = new Packages.java.util.LinkedHashMap();
+		sources.put(target.path, String(code));
+		target.flowEngine.setSources(sources);
+		return { file: target.path, codeFile: target.path, revision: sha256Hex(String(code)) };
+	}
+
+	function readLoadedFlowSourceDraft(name, request) {
+		var target = loadedFlowSourceDraftTarget(name, request);
+		if (!target || !target.flowEngine.isSourceDirty(target.path) || !target.flowEngine.hasSource(target.path)) {
+			return null;
+		}
+		var code = String(target.flowEngine.getSource(target.path));
+		return { file: target.path, codeFile: target.path, code: code, revision: sha256Hex(code) };
+	}
+
+	function discardLoadedFlowSourceDraft(name, request) {
+		var target = loadedFlowSourceDraftTarget(name, request);
+		return !!target && target.flowEngine.isSourceDirty(target.path) && target.flowEngine.discardSource(target.path) === true;
+	}
+
 	function listFlowsFromRoot(root, projectName, origin, samplesOnly) {
 		return flowRepositoryService().listFlowsFromRoot(root, projectName, origin, samplesOnly, flowRepositoryEnv());
 	}
@@ -3133,6 +3177,9 @@
 			readProjectFlowWorkingCode: readProjectFlowWorkingCode,
 			writeProjectFlowWorkingCode: writeProjectFlowWorkingCode,
 			discardProjectFlowWorkingCopy: discardProjectFlowWorkingCopy,
+			writeLoadedFlowSourceDraft: writeLoadedFlowSourceDraft,
+			readLoadedFlowSourceDraft: readLoadedFlowSourceDraft,
+			discardLoadedFlowSourceDraft: discardLoadedFlowSourceDraft,
 			projectFlowBean: projectFlowBean,
 			projectFlowBeanLookup: projectFlowBeanLookup,
 			flowScriptGetRequest: flowScriptGetRequest,

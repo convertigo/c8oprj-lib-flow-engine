@@ -12,6 +12,9 @@
 		var readProjectFlowWorkingCode = env.readProjectFlowWorkingCode;
 		var writeProjectFlowWorkingCode = env.writeProjectFlowWorkingCode;
 		var discardProjectFlowWorkingCopy = env.discardProjectFlowWorkingCopy;
+		var writeLoadedFlowSourceDraft = env.writeLoadedFlowSourceDraft;
+		var readLoadedFlowSourceDraft = env.readLoadedFlowSourceDraft;
+		var discardLoadedFlowSourceDraft = env.discardLoadedFlowSourceDraft;
 		var projectFlowBean = env.projectFlowBean;
 		var projectFlowBeanLookup = env.projectFlowBeanLookup;
 		var flowScriptGetRequest = env.flowScriptGetRequest;
@@ -335,6 +338,21 @@
 				code: working.code
 			};
 		}
+		// Without a loaded Flow object, the project's FlowEngine keeps the working copy of the Flow source file.
+		var shared = readLoadedFlowSourceDraft && !flowBeanExists(name, request) ? readLoadedFlowSourceDraft(name, request) : null;
+		if (shared) {
+			return {
+				ok: true,
+				name: String(name),
+				format: "flowscript",
+				canonical: false,
+				draft: true,
+				file: shared.file,
+				codeFile: shared.codeFile,
+				revision: shared.revision,
+				code: shared.code
+			};
+		}
 		var draftKey = flowCodeDraftKey(request, name);
 		var draft = memoryDrafts[draftKey];
 		if (!draft) {
@@ -470,6 +488,9 @@
 		request = request || {};
 		var name = flowCodeName(request);
 		var memoryDiscarded = discardProjectFlowWorkingCopy ? discardProjectFlowWorkingCopy(name) : false;
+		if (!memoryDiscarded && discardLoadedFlowSourceDraft && !flowBeanExists(name, request)) {
+			memoryDiscarded = discardLoadedFlowSourceDraft(name, request);
+		}
 		var draftKey = flowCodeDraftKey(request, name);
 		var discarded = memoryDrafts[draftKey] !== undefined;
 		delete memoryDrafts[draftKey];
@@ -517,16 +538,23 @@
 		}
 		var normalized = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
-		// The mirror holds the working copy only while no loaded Flow owns it
-		// (standalone runtime); flowCodeDraftRead drops it once a Flow exists.
+		// No loaded Flow owns a new (or file only) Flow yet: the project's FlowEngine keeps its working copy, for
+		// every runtime and the Studio. The mirror only serves a standalone runtime, without a loaded project; and
+		// flowCodeDraftRead drops it once a Flow exists.
+		var shared = !written && writeLoadedFlowSourceDraft ? writeLoadedFlowSourceDraft(name, normalized, request) : null;
 		var draftKey = flowCodeDraftKey(request, name);
-		memoryDrafts[draftKey] = {
-			code: normalized,
-			revision: written && written.revision ? written.revision : sha256Hex(normalized),
-			file: written && written.file || "",
-			codeFile: written && (written.codeFile || written.file) || ""
-		};
-		var revision = memoryDrafts[draftKey].revision;
+		if (shared) {
+			written = shared;
+			delete memoryDrafts[draftKey];
+		} else {
+			memoryDrafts[draftKey] = {
+				code: normalized,
+				revision: written && written.revision ? written.revision : sha256Hex(normalized),
+				file: written && written.file || "",
+				codeFile: written && (written.codeFile || written.file) || ""
+			};
+		}
+		var revision = written && written.revision ? written.revision : memoryDrafts[draftKey].revision;
 		var checked = flowCodeValidate(blocks, request, name, normalized);
 		var out = {
 			ok: checked.error === null && checked.validation && checked.validation.ok === true,
@@ -1103,6 +1131,10 @@
 		var inputSync = flowCodeSyncInputs(name, checked.validation, request);
 		var draftCleared = current.draft === true;
 		delete memoryDrafts[flowCodeDraftKey(request, name)];
+		// The saved file replaces the working copy kept by the FlowEngine for a Flow without a Flow object.
+		if (discardLoadedFlowSourceDraft) {
+			discardLoadedFlowSourceDraft(name, request);
+		}
 		return flowCodeAddInputReport({
 			ok: true,
 			qname: flowCodeQName(request, name),

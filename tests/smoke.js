@@ -341,6 +341,42 @@ assertTrue(projectADraftRead && projectADraftRead.code === projectADraftCode &&
 	projectBDraftRead && projectBDraftRead.code === projectBDraftCode,
 	"FlowScript in-memory drafts collided across projects sharing the same Flow name");
 
+// A Flow without a loaded Flow object (new, or file only) keeps its working copy in the FlowEngine of its loaded
+// project, not in the memory of one runtime: a fresh evaluation of the module stands for another runtime of the
+// pool, or for the runtime that follows an engine cache clear.
+var loadedSourceDrafts = {};
+var loadedDraftEnv = Object.assign({}, isolatedFlowCodeEnv, {
+	writeProjectFlowWorkingCode: function () { return null; },
+	writeLoadedFlowSourceDraft: function (name, code) {
+		loadedSourceDrafts[name] = String(code);
+		return { file: "/loaded/" + name + ".flow.js", codeFile: "/loaded/" + name + ".flow.js", revision: "loaded:" + String(code).length };
+	},
+	readLoadedFlowSourceDraft: function (name) {
+		var code = loadedSourceDrafts[name];
+		return code === undefined ? null
+			: { file: "/loaded/" + name + ".flow.js", codeFile: "/loaded/" + name + ".flow.js", code: code, revision: "loaded:" + code.length };
+	},
+	discardLoadedFlowSourceDraft: function (name) {
+		var existed = loadedSourceDrafts[name] !== undefined;
+		delete loadedSourceDrafts[name];
+		return existed;
+	}
+});
+var loadedDraftCode = "function LoadedDraft({ result }) { result.loaded = true; return result }\n";
+var loadedDraftSet = isolatedFlowCodeService.flowCodeDraftSetRequest({}, {}, "LoadedDraft", loadedDraftCode, loadedDraftEnv);
+var otherRuntimeFlowCodeService = eval(flowCodeServiceSource);
+var loadedDraftRead = otherRuntimeFlowCodeService.flowCodeDraftRead("LoadedDraft", {}, loadedDraftEnv);
+assertTrue(loadedDraftSet.ok === true && loadedDraftSet.revision === "loaded:" + loadedDraftCode.length &&
+	loadedDraftRead && loadedDraftRead.code === loadedDraftCode && loadedDraftRead.revision === loadedDraftSet.revision,
+	"FlowScript working copy of a Flow without a Flow object was lost by another runtime: " +
+	JSON.stringify({ set: loadedDraftSet.revision, read: loadedDraftRead }));
+assertTrue(isolatedFlowCodeService.flowCodeDraftRead("LoadedDraft", {}, isolatedFlowCodeEnv) === null,
+	"FlowScript working copy kept by the FlowEngine was also mirrored in the runtime memory");
+var loadedDraftDiscard = otherRuntimeFlowCodeService.flowCodeDiscardRequest({}, { name: "LoadedDraft" }, loadedDraftEnv);
+assertTrue(loadedDraftDiscard.discarded === true && loadedSourceDrafts.LoadedDraft === undefined &&
+	isolatedFlowCodeService.flowCodeDraftRead("LoadedDraft", {}, loadedDraftEnv) === null,
+	"FlowScript working copy kept by the FlowEngine survived its discard: " + JSON.stringify(loadedDraftDiscard));
+
 var blockFileLoaderSource = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
 	new java.io.File(engineDir, "modules/block-file-loader-service.js"), "UTF-8"));
 var isolatedBlockFileLoader = eval(blockFileLoaderSource);
