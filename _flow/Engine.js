@@ -6486,6 +6486,7 @@
 		var settings = info.settings || {};
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "");
 		var sourceRoot = String(settings.privateDir || "_private/svelte").replace(/^\/+/, "");
+		frontendPrivateRootFile(projectRoot, settings, frontendProjectName(request));
 		var draftDir = new File(projectRoot || new File("."), sourceRoot + "/.flow-drafts");
 		draftDir.mkdirs();
 		if (isFlowSvelte) {
@@ -7198,10 +7199,40 @@
 		return fileForProjectPath(new File("."), request.projectDir || "");
 	}
 
+	// An engine with a local working directory (Convertigo local_work.directory) keeps the generated application of a
+	// project there: its private folder in the project becomes a link, and canonical paths reach its real place. Done
+	// once per runtime and folder, before anything is written in it. Its build output is created first in the project,
+	// which the local directory mirrors. An engine without it keeps the folder in the project.
+	var relocatedFrontendRoots = {};
+
+	function frontendPrivateRootFile(projectRoot, settings, projectName) {
+		var privateDir = String(settings && settings.privateDir || "_private/svelte");
+		if (projectRoot && !new File(privateDir).isAbsolute()) {
+			var key = String(projectRoot.getAbsolutePath()) + "|" + privateDir;
+			if (!relocatedFrontendRoots[key]) {
+				relocatedFrontendRoots[key] = true;
+				try {
+					var local = Packages.com.twinsoft.convertigo.engine.LocalWorkDirectory;
+					if (typeof local === "function") {
+						if (local.isEnabled()) {
+							var output = fileForProjectPath(projectRoot, settings && settings.buildOutput || "DisplayObjects/mobile");
+							if (output) {
+								output.mkdirs();
+							}
+						}
+						local.relocate(String(projectName || projectRoot.getName()), projectRoot, privateDir.replace(/^\/+/, ""));
+					}
+				} catch (e) {
+					// the folder stays in the project
+				}
+			}
+		}
+		return fileForProjectPath(projectRoot || new File("."), privateDir);
+	}
+
 	function frontendGeneratedRootFile(request, info) {
 		var settings = info && info.settings || {};
-		var projectRoot = frontendProjectRootFile(request);
-		return fileForProjectPath(projectRoot || new File("."), settings.privateDir || "_private/svelte");
+		return frontendPrivateRootFile(frontendProjectRootFile(request), settings, frontendProjectName(request));
 	}
 
 	function frontendProductionLifecycle() {
@@ -8356,7 +8387,7 @@
 	function frontendLaunchVite(request, info, reusableTicket) {
 		var settings = info.settings || {};
 		var projectRoot = fileForProjectPath(new File("."), request.projectDir || "");
-		var generatedRoot = fileForProjectPath(projectRoot, settings.privateDir || "_private/svelte");
+		var generatedRoot = frontendPrivateRootFile(projectRoot, settings, frontendProjectName(request));
 		var nodeModules = new File(generatedRoot, "node_modules");
 		if (!nodeModules.isDirectory()) {
 			return failure("frontbuilder", {
