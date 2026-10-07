@@ -9435,6 +9435,18 @@
 		};
 	}
 
+	/**
+	 * Whether the production output holds a build: the application folder SvelteKit writes (_app), which the page of
+	 * an unbuilt application delivered with a project has not. A server builds the applications delivered without it.
+	 */
+	function frontendBuildOutputBuilt(projectRoot, buildOutput) {
+		if (!projectRoot) {
+			return false;
+		}
+		var output = fileForProjectPath(projectRoot, String(buildOutput || "DisplayObjects/mobile").replace(/^\/+/, ""));
+		return !!output && new File(output, "_app").isDirectory();
+	}
+
 	function frontendBuilderCommands(info, available, dev) {
 		function command(suffix, label, description, group, enabled) {
 			return contextMenuItem("frontbuilder.svelte." + suffix, label, description, group,
@@ -9482,7 +9494,10 @@
 					label: info.name,
 					target: targetId,
 					available: available,
-					state: { serving: !!dev },
+					state: {
+						serving: !!dev,
+						built: frontendBuildOutputBuilt(frontendProjectRootFile(selected), (info.settings || {}).buildOutput)
+					},
 					commands: frontendBuilderCommands(info, available, dev)
 				};
 			});

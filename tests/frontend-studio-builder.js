@@ -27,13 +27,15 @@ function frontendModelPath(request, info) {
 }
 function sourceView(request) { return { isFile: function (path) { return request.effectiveFiles.indexOf(path) >= 0; } }; }
 function frontendDevEntry(request, info) { return request.activeBuilders.indexOf(info.name) >= 0 ? {} : null; }
+function frontendProjectRootFile(request) { return "project-root"; }
+function frontendBuildOutputBuilt(projectRoot, buildOutput) { return projectRoot === "project-root" && buildOutput === "built-output"; }
 var request = {
 	root: { kind: "engine", qname: "Project.CustomEngine" },
 	targetObject: { kind: "frontendRoutePage", info: { sourcePath: "other/+page.flow.svelte" } },
 	sourcePath: "other/+page.flow.svelte", sourceFile: "other/+page.flow.svelte",
 	engineDefinition: { config: { frontbuilder: {
 		customer: { modelPath: "draft-only/+page.flow.svelte" },
-		admin: { modelPath: "admin/+page.flow.svelte" },
+		admin: { modelPath: "admin/+page.flow.svelte", buildOutput: "built-output" },
 		removed: { modelPath: "removed/+page.flow.svelte" }
 	} } },
 	effectiveFiles: ["draft-only/+page.flow.svelte", "admin/+page.flow.svelte"],
@@ -41,6 +43,8 @@ var request = {
 };
 var builders = frontendStudioBuilders(request);
 assert(builders.length === 3, "All configured builders, not hardcoded conventional names");
+assert(builders[0].state.built === false && builders[1].state.built === true,
+	"Each builder tells whether its own production output holds a build");
 assert(builders[0].target === "Project.CustomEngine", "Action target uses the supplied identity");
 assert(builders[0].commands.serve.payload.builder === "customer", "Commands retain builder selection");
 assert(builders[0].available && builders[0].commands.build.enabled, "Draft-only model is available");
