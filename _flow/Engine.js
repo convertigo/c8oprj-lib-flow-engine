@@ -1997,6 +1997,19 @@
 		return blockCodeCompilerService().compileProjectBlockCode(blocks, name, code, request, blockCodeCompilerEnv());
 	}
 
+	/**
+	 * The Java packages of the project of the call: the Convertigo bridge binds Packages to the class path of the project
+	 * (its libs, those of the projects it references, then the engine) for the time of a call.
+	 */
+	function projectPackages() {
+		return Packages;
+	}
+
+	/** @return the identifier of the class path of the project of the call, empty for an engine without it */
+	function projectGeneration() {
+		return typeof __flowGenerationId === "undefined" || __flowGenerationId === null ? "" : String(__flowGenerationId);
+	}
+
 	function blockFileLoaderService() {
 		return loadEngineModule("block-file-loader-service.js");
 	}
@@ -2007,6 +2020,7 @@
 			sourceForFile: sourceForFile,
 			sha256Hex: sha256Hex,
 			blockCompilerFingerprint: blockArtifactCompilerFingerprint(),
+			projectGeneration: projectGeneration,
 			blockSourceFingerprint: function (file) {
 				var draft = frontendDraftForFile(currentActiveRequest(), file);
 				return draft === null ? fileFingerprint(file) : "draft:" + sha256Hex(draft);
@@ -4053,6 +4067,7 @@
 			return flowRuntimeServiceEnvInstance;
 		}
 		flowRuntimeServiceEnvInstance = {
+			projectPackages: projectPackages,
 			schemaContract: schemaContract(),
 			typedScopeContract: loadEngineModule("typed-scope-contract.js"),
 			nodeOutputPath: nodeOutputPath,

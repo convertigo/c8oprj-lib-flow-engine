@@ -111,6 +111,10 @@
 			return blocks && blocks[name];
 		};
 		var runContextPrototype = {};
+		// ctx.java: the Java packages of the class path of the project of the call (its libs, then the engine)
+		Object.defineProperty(runContextPrototype, "java", { get: function () {
+			return typeof env.projectPackages === "function" ? env.projectPackages() : Packages;
+		} });
 		Object.defineProperty(runContextPrototype, "collections", { get: function () {
 			var ctx = this;
 			var api = env.typedScopeContract.create({

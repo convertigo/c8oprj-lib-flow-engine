@@ -116,10 +116,13 @@
 	}
 
 	function artifactIdentity(name, file, origin, provider, env) {
+		// a block of a project or a library may keep classes of its class path: compiled again with a new one
+		var generation = origin === "project" || origin === "reference"
+			? String(typeof env.projectGeneration === "function" ? env.projectGeneration() : "") : "";
 		return {
 			key: String(provider || origin || "unknown") + "." + String(name),
 			fingerprint: String(origin || "") + "\n" + env.blockSourceFingerprint(file) + "\n"
-				+ String(env.blockCompilerFingerprint || "")
+				+ String(env.blockCompilerFingerprint || "") + (generation ? "\n" + generation : "")
 		};
 	}
 
