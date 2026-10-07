@@ -8100,7 +8100,30 @@
 		};
 	}
 
+	/**
+	 * Node.js, npm and npx build: a server runs them only when its configuration allows the builds
+	 * (allow_server_build). An engine before this setting always builds.
+	 */
+	function frontendCheckServerBuild(name) {
+		if (!/^(node|npm|npx)$/.test(String(name))) {
+			return;
+		}
+		var allowed = true;
+		try {
+			allowed = !!Packages.com.twinsoft.convertigo.engine.Engine.isServerBuildAllowed();
+		} catch (e) {
+			// an engine without the setting
+		}
+		if (!allowed) {
+			var error = new Error("This server does not allow builds: " + name + " cannot run.");
+			error.code = "FRONTBUILDER_SERVER_BUILD_NOT_ALLOWED";
+			error.hint = "Allow the builds with allow_server_build in the configuration of the server.";
+			throw error;
+		}
+	}
+
 	function frontendExecutable(name) {
+		frontendCheckServerBuild(name);
 		var path = String(Packages.java.lang.System.getenv("PATH") || "");
 		var parts = path.split(String(File.pathSeparator));
 		var home = String(Packages.java.lang.System.getProperty("user.home") || "");
