@@ -6911,6 +6911,37 @@
 		return { output: output, exitCode: exitCode };
 	}
 
+	// The production build works in its own SvelteKit folder (FLOW_SVELTE_BUILD_OUT_DIR), while the generated
+	// tsconfig.json extends the one of the default folder, which only the development server or a check writes: an
+	// application never run in development mode gets it from svelte-kit sync before its build.
+	// @return the sync that ran, null when nothing was needed or possible
+	function frontendSyncSvelteKitDefaults(generatedRoot, envValues) {
+		if (!generatedRoot || new File(generatedRoot, ".svelte-kit/tsconfig.json").isFile()) {
+			return null;
+		}
+		var kit = new File(generatedRoot, "node_modules/@sveltejs/kit");
+		var bin;
+		try {
+			var manifest = JSON.parse(String(FileUtils.readFileToString(new File(kit, "package.json"), "UTF-8")));
+			bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin && manifest.bin["svelte-kit"];
+		} catch (e) {
+			return null;
+		}
+		var cli = bin ? new File(kit, String(bin)) : null;
+		if (!cli || !cli.isFile()) {
+			return null;
+		}
+		var env = {};
+		Object.keys(envValues || {}).forEach(function (key) {
+			if (key !== "FLOW_SVELTE_BUILD_OUT_DIR") {
+				env[key] = envValues[key];
+			}
+		});
+		var args = [frontendExecutable("node"), String(cli.getAbsolutePath()), "sync"];
+		var run = frontendRunProcess(args, generatedRoot, env);
+		return { command: args.join(" "), output: run.output, exitCode: run.exitCode };
+	}
+
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
 		var startedAt = JavaSystem.nanoTime();
 		if (stepAction === "installBuilder") {
@@ -6947,12 +6978,26 @@
 		if (builderPrefix) {
 			return frontendRunBuilderInstallLocally(npm, resourceRoot, builderPrefix, envValues, startedAt);
 		}
+		var synced = stepAction === "build" ? frontendSyncSvelteKitDefaults(generatedRoot, envValues) : null;
+		if (synced && synced.exitCode !== 0) {
+			return {
+				action: stepAction,
+				command: synced.command,
+				cwd: String(generatedRoot.getAbsolutePath()),
+				exitCode: synced.exitCode,
+				stdout: synced.output,
+				stderr: "",
+				ok: false,
+				skipped: false,
+				durationMs: frontendDurationMs(startedAt)
+			};
+		}
 		var cwd = stepAction === "installApp" || stepAction === "check" || stepAction === "build"
 			? generatedRoot
 			: resourceRoot;
 		var args = frontendRunCommandFor(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode);
 		var run = frontendRunProcess(args, cwd, envValues);
-		var output = run.output;
+		var output = synced ? synced.output + "\n" + run.output : run.output;
 		var exitCode = run.exitCode;
 		if (installRoot && exitCode === 0) {
 			writeFrontendDependencyInstallStamp(
@@ -6966,7 +7011,7 @@
 		}
 		return {
 			action: stepAction,
-			command: args.join(" "),
+			command: (synced ? synced.command + " && " : "") + args.join(" "),
 			cwd: String(cwd.getAbsolutePath()),
 			exitCode: exitCode,
 			stdout: output,
