@@ -6672,8 +6672,162 @@
 		}
 	}
 
+	var relocatedBuilderModules = {};
+	var BUILDER_INSTALL_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
+
+	// With a local working directory (engine 8.5 and later), the packages of a builder that accepts it are installed
+	// there, instead of in its folder of the library project, in the workspace that may be shared and slow:
+	// node_modules becomes a link to its place there. Otherwise (no local working directory, symbolic links not
+	// available as on Windows without the privilege, or an older builder), the packages are installed in the builder
+	// folder, and a link left there by a previous configuration goes.
+	// @param refresh to check the place again, before installing: it may have been removed since
+	// @return the folder where npm installs the packages of the builder, or null to install them in resourceRoot
+	function frontendBuilderInstallPrefix(resourceRoot, refresh) {
+		var local = localWorkDirectory();
+		if (!local || !resourceRoot) {
+			return null;
+		}
+		try {
+			var root = resourceRoot.getCanonicalFile();
+			var key = String(root.getPath());
+			if (!refresh && Object.prototype.hasOwnProperty.call(relocatedBuilderModules, key)) {
+				return relocatedBuilderModules[key];
+			}
+			var prefix = null;
+			var projectRoot = projectRootAbove(root);
+			if (projectRoot) {
+				var relative = String(projectRoot.toPath().relativize(root.toPath())).replace(/\\/g, "/");
+				var projectName = projectNameForRoot(projectRoot);
+				var modules = relative ? relative + "/node_modules" : "node_modules";
+				if (local.isEnabled() && frontendBuilderAcceptsLinkedModules(root)) {
+					var nodeModules = local.relocate(projectName, projectRoot, modules);
+					if (java.nio.file.Files.isSymbolicLink(nodeModules.toPath())) {
+						prefix = relative ? new File(local.getProjectDirectory(projectName), relative) : local.getProjectDirectory(projectName);
+					}
+				} else {
+					// only a link to <local working directory>/projects/<project>/<folder>: one made by hand stays
+					var link = new File(projectRoot, modules).toPath();
+					var tail = "/projects/" + projectName + "/" + modules;
+					if (java.nio.file.Files.isSymbolicLink(link)
+						&& String(java.nio.file.Files.readSymbolicLink(link)).replace(/\\/g, "/").slice(-tail.length) === tail) {
+						java.nio.file.Files.delete(link);
+					}
+				}
+			}
+			relocatedBuilderModules[key] = prefix;
+			return prefix;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	// Whether the builder works with its node_modules being a link, as its package declares
+	function frontendBuilderAcceptsLinkedModules(resourceRoot) {
+		try {
+			var manifest = JSON.parse(String(FileUtils.readFileToString(new File(resourceRoot, "package.json"), "UTF-8")));
+			return !!(manifest.convertigoFlow && manifest.convertigoFlow.linkedNodeModules === true);
+		} catch (e) {
+			return false;
+		}
+	}
+
+	// The package files of the builder, copied where npm installs its packages, as npm replaces a node_modules link it
+	// installs into. The installation scripts of the builder package are left out, as they work on its sources, and
+	// its local packages (file:) come along.
+	// @return the installation scripts left out, to run in the builder folder once the packages are installed
+	function frontendCopyBuilderPackageFiles(resourceRoot, prefix) {
+		prefix.mkdirs();
+		var manifest = JSON.parse(String(FileUtils.readFileToString(new File(resourceRoot, "package.json"), "UTF-8")));
+		var scripts = manifest.scripts || {};
+		var leftOut = BUILDER_INSTALL_SCRIPTS.filter(function (name) {
+			return Object.prototype.hasOwnProperty.call(scripts, name);
+		});
+		leftOut.forEach(function (name) {
+			delete scripts[name];
+		});
+		var root = String(resourceRoot.getCanonicalPath());
+		["dependencies", "devDependencies", "optionalDependencies"].forEach(function (section) {
+			var dependencies = manifest[section] || {};
+			Object.keys(dependencies).forEach(function (name) {
+				var spec = String(dependencies[name]);
+				if (spec.indexOf("file:") !== 0 || new File(spec.substring(5)).isAbsolute()) {
+					return;
+				}
+				var source = new File(resourceRoot, spec.substring(5)).getCanonicalFile();
+				var path = String(source.getPath());
+				if (path.indexOf(root + File.separator) === 0) {
+					var copy = new File(prefix, path.substring(root.length + 1));
+					// replaced, as the copy methods Rhino selects do not overwrite
+					FileUtils.deleteQuietly(copy);
+					if (source.isDirectory()) {
+						FileUtils.copyDirectory(source, copy);
+					} else if (source.isFile()) {
+						FileUtils.copyFile(source, copy);
+					}
+				} else {
+					dependencies[name] = "file:" + path;
+				}
+			});
+		});
+		FileUtils.writeStringToFile(new File(prefix, "package.json"), JSON.stringify(manifest, null, 2) + "\n", "UTF-8");
+		["package-lock.json", "npm-shrinkwrap.json", ".npmrc"].forEach(function (name) {
+			var file = new File(resourceRoot, name);
+			var copy = new File(prefix, name);
+			FileUtils.deleteQuietly(copy);
+			if (file.isFile()) {
+				FileUtils.copyFile(file, copy);
+			}
+		});
+		return leftOut;
+	}
+
+	// The packages of the builder installed where prefix is, then its installation scripts run in its folder (they
+	// build provider-dist from its sources)
+	function frontendBuilderLocalInstallCommands(npm, resourceRoot, prefix, scripts) {
+		var commands = [{ args: frontendRunCommandFor("installBuilder", npm, prefix), cwd: prefix }];
+		(scripts || []).forEach(function (script) {
+			commands.push({ args: [npm, "--prefix", String(resourceRoot.getAbsolutePath()), "run", script], cwd: resourceRoot });
+		});
+		return commands;
+	}
+
+	function frontendRunBuilderInstallLocally(npm, resourceRoot, prefix, envValues, startedAt) {
+		var local = localWorkDirectory();
+		var nodeModules = new File(prefix, "node_modules");
+		var commands = frontendBuilderLocalInstallCommands(npm, resourceRoot, prefix, frontendCopyBuilderPackageFiles(resourceRoot, prefix));
+		// an installation interrupted there is removed at the next engine start, instead of being reused half done
+		local.beginWork(nodeModules);
+		var outputs = [];
+		var ran = [];
+		var exitCode = 0;
+		for (var i = 0; i < commands.length && exitCode === 0; i++) {
+			var result = frontendRunProcess(commands[i].args, commands[i].cwd, envValues);
+			outputs.push(result.output);
+			ran.push(commands[i].args.join(" "));
+			exitCode = result.exitCode;
+		}
+		if (exitCode === 0) {
+			writeFrontendDependencyInstallStamp(resourceRoot, frontendDependencyFingerprint(resourceRoot, npm), "builder");
+			runtimeState.frontendDependencyFingerprints = {};
+			local.endWork(nodeModules);
+		}
+		return {
+			action: "installBuilder",
+			command: ran.join(" && "),
+			cwd: String(prefix.getAbsolutePath()),
+			exitCode: exitCode,
+			stdout: outputs.join("\n"),
+			stderr: "",
+			ok: exitCode === 0,
+			skipped: false,
+			durationMs: frontendDurationMs(startedAt)
+		};
+	}
+
 	function ensureFrontendDocumentDependencies(resourceRoot) {
 		var npm = frontendExecutable("npm");
+		// packages installed in the builder folder before a local working directory was set are installed again there
+		frontendBuilderInstallPrefix(resourceRoot);
 		var fingerprint = frontendDependencyFingerprint(resourceRoot, npm);
 		if (frontendDependencyInstallReusable(resourceRoot, fingerprint, "builder")) {
 			return;
@@ -6739,8 +6893,30 @@
 		}
 	}
 
+	function frontendRunProcess(args, cwd, envValues) {
+		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
+		pb.directory(cwd);
+		pb.redirectErrorStream(true);
+		var env = pb.environment();
+		env.remove("npm_config_prefix");
+		env.remove("NPM_CONFIG_PREFIX");
+		Object.keys(envValues || {}).forEach(function (key) {
+			env.put(String(key), String(envValues[key]));
+		});
+		frontendStudioLog("[Svelte frontbuilder] > " + args.join(" "));
+		var process = pb.start();
+		var output = frontendReadProcessOutput(process.getInputStream(), "Svelte frontbuilder");
+		var exitCode = process.waitFor();
+		frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
+		return { output: output, exitCode: exitCode };
+	}
+
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
 		var startedAt = JavaSystem.nanoTime();
+		if (stepAction === "installBuilder") {
+			// packages installed in the builder folder before a local working directory was set are installed again there
+			frontendBuilderInstallPrefix(resourceRoot);
+		}
 		var installRoot = stepAction === "installBuilder"
 			? resourceRoot
 			: stepAction === "installApp" ? generatedRoot : null;
@@ -6767,24 +6943,17 @@
 				return companionStep;
 			}
 		}
+		var builderPrefix = stepAction === "installBuilder" ? frontendBuilderInstallPrefix(resourceRoot, true) : null;
+		if (builderPrefix) {
+			return frontendRunBuilderInstallLocally(npm, resourceRoot, builderPrefix, envValues, startedAt);
+		}
 		var cwd = stepAction === "installApp" || stepAction === "check" || stepAction === "build"
 			? generatedRoot
 			: resourceRoot;
 		var args = frontendRunCommandFor(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode);
-		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
-		pb.directory(cwd);
-		pb.redirectErrorStream(true);
-		var env = pb.environment();
-		env.remove("npm_config_prefix");
-		env.remove("NPM_CONFIG_PREFIX");
-		Object.keys(envValues || {}).forEach(function (key) {
-			env.put(String(key), String(envValues[key]));
-		});
-		frontendStudioLog("[Svelte frontbuilder] > " + args.join(" "));
-		var process = pb.start();
-		var output = frontendReadProcessOutput(process.getInputStream(), "Svelte frontbuilder");
-		var exitCode = process.waitFor();
-		frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
+		var run = frontendRunProcess(args, cwd, envValues);
+		var output = run.output;
+		var exitCode = run.exitCode;
 		if (installRoot && exitCode === 0) {
 			writeFrontendDependencyInstallStamp(
 				installRoot,
@@ -7205,6 +7374,26 @@
 	// which the local directory mirrors. An engine without it keeps the folder in the project.
 	var relocatedFrontendRoots = {};
 
+	// The local working directory of the engine (8.5 and later), null with an engine without it
+	function localWorkDirectory() {
+		try {
+			var local = Packages.com.twinsoft.convertigo.engine.LocalWorkDirectory;
+			return typeof local === "function" ? local : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	// The folder of the project holding a file, the nearest one with a c8oProject.yaml
+	function projectRootAbove(file) {
+		for (var current = file, depth = 0; current && depth < 8; current = current.getParentFile(), depth++) {
+			if (new File(current, "c8oProject.yaml").isFile()) {
+				return current;
+			}
+		}
+		return null;
+	}
+
 	function frontendPrivateRootFile(projectRoot, settings, projectName) {
 		var privateDir = String(settings && settings.privateDir || "_private/svelte");
 		if (projectRoot && !new File(privateDir).isAbsolute()) {
@@ -7212,8 +7401,8 @@
 			if (!relocatedFrontendRoots[key]) {
 				relocatedFrontendRoots[key] = true;
 				try {
-					var local = Packages.com.twinsoft.convertigo.engine.LocalWorkDirectory;
-					if (typeof local === "function") {
+					var local = localWorkDirectory();
+					if (local) {
 						if (local.isEnabled()) {
 							var output = fileForProjectPath(projectRoot, settings && settings.buildOutput || "DisplayObjects/mobile");
 							if (output) {
