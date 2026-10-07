@@ -72,19 +72,49 @@
 			if (!scopes.__flowTypeContracts) Object.defineProperty(scopes, "__flowTypeContracts", { value: { validateWrite: validateWrite }, enumerable: false });
 			return value;
 		}
+		// The item schemas the declarations covering an array path give its items, or null when one of them needs the
+		// whole array (a declaration below the path, or a covering type that is not an array).
+		function appendedItemSchemas(scopes, path) {
+			var names = String(path).split("."), relative = names.slice(1).join("."), declarations = table(scopes, names);
+			var schemas = [];
+			var keys = Object.keys(declarations);
+			for (var i = 0; i < keys.length; i++) {
+				var key = keys[i], covering = null;
+				if (relative === key) covering = declarations[key];
+				else if (relative.indexOf(key + ".") === 0) {
+					covering = child(declarations[key], relative.substring(key.length + 1).split("."));
+					if (covering === false) fail("VALUE_TYPE_MISMATCH", path + ": this field is not part of the declared type.");
+				} else if (key.indexOf(relative + ".") === 0) return null;
+				if (covering) {
+					if (covering.type !== "array") return null;
+					schemas.push(covering.items || {type:"unknown"});
+				}
+			}
+			return schemas;
+		}
 		function append(path, value) {
 			parts(path);
 			var target = env.read(path), schema = schemaFor(path);
-			if (target === undefined || target === null) target = [];
+			var created = target === undefined || target === null;
+			if (created) target = [];
 			if (!Array.isArray(target)) fail("COLLECTION_REQUIRED", "Choose an array destination: " + path);
 			if (schema) assertValue(schema.items || {type:"unknown"}, value, path + "[]");
-			var next = target.concat([value]);
-			validateWrite(env.scopes(), path, next);
-			if (env.preflight) env.preflight(path, next);
-			// Validate before mutation; legacy json.push aliases keep observing the same array.
-			if (env.immutable) target = next;
-			else target.push(value);
-			env.write(path, target);
+			var scopes = env.scopes(), itemSchemas = env.immutable || created ? null : appendedItemSchemas(scopes, path);
+			if (!itemSchemas) {
+				// A new array (a reactive host, the first item, a declaration needing the whole array): written whole.
+				var next = target.concat([value]);
+				validateWrite(scopes, path, next);
+				if (env.preflight) env.preflight(path, next);
+				if (env.immutable || created) target = next;
+				else target.push(value);
+				env.write(path, target);
+				return target;
+			}
+			// The array in place is already valid: only the item is checked, then it joins the array, which legacy
+			// json.push aliases keep observing. Checking the whole array at each push made a loop quadratic.
+			for (var i = 0; i < itemSchemas.length; i++) assertValue(itemSchemas[i], value, path + "[]");
+			if (env.preflight) env.preflight(path, [value]);
+			target.push(value);
 			return target;
 		}
 		function put(path, key, value) {
