@@ -117,11 +117,56 @@
 			target.push(value);
 			return target;
 		}
+		// The schema an object schema gives the entry of a key, false when it refuses the key, null when the object
+		// schema has rules on the whole map (counts, key patterns...).
+		function entrySchema(schema, key) {
+			if (!schema || schema.type !== "object") return null;
+			for (var rule in schema) {
+				if (own(schema, rule) && ["type", "properties", "additionalProperties", "required", "title", "description", "default", "examples"].indexOf(rule) < 0) return null;
+			}
+			if (own(schema.properties || {}, key)) return schema.properties[key];
+			if (schema.additionalProperties === false) return false;
+			return schema.additionalProperties && typeof schema.additionalProperties === "object" ? schema.additionalProperties : {type:"unknown"};
+		}
+		// The entry schemas the declarations covering a map path give the entry of a key, or null when one of them
+		// needs the whole map (a declaration below the path, or rules on the whole map).
+		function putEntrySchemas(scopes, path, key) {
+			var names = String(path).split("."), relative = names.slice(1).join("."), declarations = table(scopes, names);
+			var schemas = [];
+			var keys = Object.keys(declarations);
+			for (var i = 0; i < keys.length; i++) {
+				var declared = keys[i], covering = null;
+				if (relative === declared) covering = declarations[declared];
+				else if (relative.indexOf(declared + ".") === 0) {
+					covering = child(declarations[declared], relative.substring(declared.length + 1).split("."));
+					if (covering === false) fail("VALUE_TYPE_MISMATCH", path + ": this field is not part of the declared type.");
+				} else if (declared.indexOf(relative + ".") === 0) return null;
+				if (covering) {
+					var entry = entrySchema(covering, key);
+					if (entry === null) return null;
+					if (entry === false) fail("VALUE_TYPE_MISMATCH", path + "." + key + ": this field is not part of the declared type.");
+					schemas.push(entry);
+				}
+			}
+			return schemas;
+		}
 		function put(path, key, value) {
 			parts(path);
 			if (typeof key !== "string" || !key || ["__proto__", "prototype", "constructor"].indexOf(key) >= 0) fail("INVALID_MAP_KEY", "Choose a non-empty map key (reserved prototype names are not allowed).");
 			var target = env.read(path), schema = schemaFor(path);
 			if (!target || typeof target !== "object" || Array.isArray(target)) fail("COLLECTION_REQUIRED", "Choose a map destination: " + path);
+			var scopes = env.scopes(), direct = schema ? entrySchema(schema, key) : undefined;
+			var entrySchemas = env.immutable || direct === null ? null : putEntrySchemas(scopes, path, key);
+			if (entrySchemas) {
+				// The map in place is already valid: only the entry is checked, then it joins the map. Checking the
+				// whole map at each put made a loop quadratic.
+				if (direct === false) fail("VALUE_TYPE_MISMATCH", path + "." + key + ": this field is not part of the declared type.");
+				if (direct) assertValue(direct, value, path + "." + key);
+				for (var i = 0; i < entrySchemas.length; i++) assertValue(entrySchemas[i], value, path + "." + key);
+				if (env.preflight) env.preflight(path, value);
+				Object.defineProperty(target, key, {value:value, enumerable:true, writable:true, configurable:true});
+				return target;
+			}
 			var next = Object.assign({}, target);
 			Object.defineProperty(next, key, {value:value, enumerable:true, writable:true, configurable:true});
 			if (schema) assertValue(schema, next, path);

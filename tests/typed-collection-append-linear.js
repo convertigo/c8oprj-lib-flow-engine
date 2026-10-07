@@ -1,5 +1,6 @@
-// json.push on a typed array checks the appended item only: the array in place is already valid. Checking the whole
-// array at each push made a loop quadratic (8,000 pushes took more than a minute).
+// json.push on a typed array, and json.put on a typed map, check the added item or entry only: the collection in place
+// is already valid. Checking the whole collection at each push made a loop quadratic (8,000 pushes took more than a
+// minute).
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -10,7 +11,7 @@ const contract = load('typed-scope-contract'), realSchemas = load('schema-contra
 let checkedItems = 0;
 const schemas = Object.assign({}, realSchemas, {
 	validate(schema, value) {
-		checkedItems += Array.isArray(value) ? value.length : 1;
+		checkedItems += Array.isArray(value) ? value.length : value && typeof value === 'object' ? Math.max(1, Object.keys(value).length) : 1;
 		return realSchemas.validate(schema, value);
 	}
 });
@@ -60,4 +61,40 @@ const item = { type: 'object', properties: { id: { type: 'integer' } }, required
 	assert.equal(JSON.stringify(read('local.fresh')), '[1,2]');
 }
 
-console.log('typed-collection-append-linear: item-only checks, aliases, refusals and parents OK');
+// declared map: linear checks, same map observed, refused entries left out
+{
+	const { api, read } = setup();
+	api.declare('local.counts', { type: 'object', additionalProperties: { type: 'integer' } }, {});
+	const alias = read('local.counts');
+	checkedItems = 0; preflighted = 0;
+	for (let i = 0; i < 1000; i++) api.put('local.counts', 'k' + i, i);
+	assert.equal(read('local.counts'), alias, 'the map in place keeps its aliases');
+	assert.equal(Object.keys(alias).length, 1000);
+	assert.ok(checkedItems <= 3000, 'entries checked at most a few times each, not the whole map at each put: ' + checkedItems);
+	assert.ok(preflighted <= 1000, 'the result preflight sees the added entry only: ' + preflighted);
+	assert.throws(() => api.put('local.counts', 'bad', 'text'), { code: 'VALUE_TYPE_MISMATCH' });
+	assert.equal(Object.prototype.hasOwnProperty.call(alias, 'bad'), false, 'a refused entry does not join the map');
+}
+
+// closed object: an undeclared key is refused, a declared one checked against its own type
+{
+	const { api, read } = setup();
+	api.declare('local.person', { type: 'object', properties: { name: { type: 'string' }, age: { type: 'integer' } }, additionalProperties: false }, {});
+	api.put('local.person', 'name', 'Ada');
+	assert.throws(() => api.put('local.person', 'age', 'old'), { code: 'VALUE_TYPE_MISMATCH' });
+	assert.throws(() => api.put('local.person', 'nickname', 'A'), { code: 'VALUE_TYPE_MISMATCH' });
+	assert.equal(JSON.stringify(read('local.person')), '{"name":"Ada"}');
+}
+
+// a map declared inside its parent object
+{
+	const { api, read } = setup();
+	api.declare('local.box', { type: 'object', properties: { map: { type: 'object', additionalProperties: { type: 'string' } } } }, { map: {} });
+	checkedItems = 0;
+	for (let i = 0; i < 500; i++) api.put('local.box.map', 'k' + i, 'v' + i);
+	assert.equal(Object.keys(read('local.box.map')).length, 500);
+	assert.ok(checkedItems <= 1500, 'linear too under a declared parent: ' + checkedItems);
+	assert.throws(() => api.put('local.box.map', 'n', 1), { code: 'VALUE_TYPE_MISMATCH' });
+}
+
+console.log('typed-collection-append-linear: item and entry checks, aliases, refusals and parents OK');
