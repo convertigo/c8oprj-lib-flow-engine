@@ -4564,12 +4564,37 @@
 		var tree = shareable ? readSharedEngineTree(key, fingerprint) : null;
 		if (!tree) {
 			tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+			if (treeHasTransientError(tree)) {
+				// described again next time: the failure may come from the toolchain (packages being installed after a
+				// restart), which the fingerprint of the sources does not see
+				seedAuthoringTreeCandidate(request, tree);
+				return normalizeTree(tree);
+			}
 			if (shareable) {
 				writeSharedEngineTree(key, fingerprint, tree);
 			}
 		}
 		seedAuthoringTreeCandidate(request, tree);
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
+	}
+
+	// Whether a tree shows a frontend model that could not be described ("Invalid model")
+	function treeHasTransientError(tree) {
+		var pending = tree ? [tree] : [];
+		while (pending.length) {
+			var node = pending.pop();
+			if (!node) {
+				continue;
+			}
+			if (node.kind === "error" && node.type === "frontendModel" && node.name === "modelError") {
+				return true;
+			}
+			var children = node.children || [];
+			for (var i = 0; i < children.length; i++) {
+				pending.push(children[i]);
+			}
+		}
+		return false;
 	}
 
 	// Engine trees are shared by every scope of the pool through the Convertigo shared
@@ -6251,14 +6276,29 @@
 				frontendStudioLog("[Svelte front document server] Precompiled provider failed; retrying with tsx: "
 					+ String(e && e.message || e), true);
 			}
+			var cause = String(e && e.message || e);
+			frontendStudioLog("[Svelte front document server] failed, retrying with a Node process: " + cause, true);
 			forgetDeadFrontendDocumentServers();
 			runtimeState.frontendDocumentServerStats.fallbacks++;
 			var toolRoot = failedSelection && failedSelection.toolRoot
 				? failedSelection.toolRoot
 				: frontendSvelteToolRoot(resourceRoot, "src-builder/frontDocumentCli.ts");
-			var args = frontendTsxCommandForToolRoot(toolRoot, "src-builder/frontDocumentCli.ts", cliArgs);
-			var output = frontendRunOneShot(args, toolRoot, "Svelte front document tsx fallback");
-			return frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
+			try {
+				// the packages of the builder first: without them, npm would download tsx (with a local working
+				// directory, they are gone after a restart until installed again)
+				if (!new File(toolRoot, "node_modules/tsx/dist/cli.mjs").isFile()) {
+					ensureFrontendDocumentDependencies(toolRoot);
+				}
+				var args = frontendTsxCommandForToolRoot(toolRoot, "src-builder/frontDocumentCli.ts", cliArgs);
+				var output = frontendRunOneShot(args, toolRoot, "Svelte front document tsx fallback");
+				return frontendMarkedJson(output, "__C8O_FRONT_DOCUMENT__");
+			} catch (fallbackError) {
+				var error = new Error("Svelte front document failed: " + cause + "\nThen: "
+					+ String(fallbackError && fallbackError.message || fallbackError));
+				error.code = fallbackError && fallbackError.code || "FRONTEND_DOCUMENT_FAILED";
+				error.hint = fallbackError && fallbackError.hint || "Check the Studio log for the Svelte front document.";
+				throw error;
+			}
 		}
 	}
 
