@@ -4568,7 +4568,10 @@
 				// described again next time: the failure may come from the toolchain (packages being installed after a
 				// restart), which the fingerprint of the sources does not see
 				seedAuthoringTreeCandidate(request, tree);
-				return normalizeTree(tree);
+				var uncached = normalizeTree(tree);
+				// nor by the Convertigo bridge, which keeps the responses of describeTree (engine 8.5 and later)
+				uncached.cacheable = false;
+				return uncached;
 			}
 			if (shareable) {
 				writeSharedEngineTree(key, fingerprint, tree);

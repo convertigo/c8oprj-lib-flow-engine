@@ -63,10 +63,12 @@ var request = { target: "engine", projectDir: "/workspace/projects/sample" };
 assertTrue(describeTreeRequest(request, {}) === invalid, "the tree with the invalid model is returned");
 assertTrue(describeTreeRequest(request, {}) === invalid && described === 2, "and described again, not cached");
 assertTrue(sharedWrites === 0 && !runtime.key, "neither in the runtime cache nor in the shared map");
+assertTrue(describeTreeRequest(request, {}).cacheable === false, "and the bridge is told not to keep it");
 
 next = valid;
-assertTrue(describeTreeRequest(request, {}) === valid && described === 3, "once the model is described, the tree is");
-assertTrue(describeTreeRequest(request, {}) === valid && described === 3, "cached again");
+assertTrue(describeTreeRequest(request, {}) === valid && described === 4, "once the model is described, the tree is");
+assertTrue(valid.cacheable === undefined, "a valid tree is kept by the bridge");
+assertTrue(describeTreeRequest(request, {}) === valid && described === 4, "cached again");
 assertTrue(sharedWrites === 1, "and shared");
 
 print("tree-transient-error-not-cached: invalid models are described again, valid trees cached");
