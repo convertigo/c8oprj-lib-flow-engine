@@ -2,7 +2,7 @@ buildscript {
 	repositories {
 		mavenLocal()
 		maven {
-			url "https://m2.convertigo.com"
+			url = "https://m2.convertigo.com"
 		}
 		mavenCentral()
 	}
@@ -15,9 +15,9 @@ apply plugin: 'convertigo'
 
 /** Convertigo Gradle Plugin DSL **/
 
-//// determines if the project needs to perform a mobile build before 'deploy' or 'car' tasks
+//// determines if the project needs to perform a mobile build (Mobile Builder, NGX or Flow frontends) before 'deploy' or 'car' tasks
 //// can also be configured with a -Pconvertigo.performsMobileBuild as Gradle parameter
-def performsMobileBuild = file('_c8oProject/mobilePages').exists() && !'false'.equals(project.properties['convertigo.performsMobileBuild'])
+def performsMobileBuild = (file('_c8oProject/mobilePages').exists() || file('_flow/frontbuilder').exists()) && !'false'.equals(project.properties['convertigo.performsMobileBuild'])
 
 //// the 'load' task loads and migrates the project to the current plugin version
 load {
