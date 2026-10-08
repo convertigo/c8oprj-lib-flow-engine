@@ -43,7 +43,6 @@
 	var flowRuntimeServiceEnvInstance = null;
 	var runPlanHeadEnvInstance = null;
 	var graphBlockRuntimeEnvInstance = null;
-	var frontendBuilderDependencyLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// One frontbuilder companion (document server) per provider for the whole
 	// Convertigo server, shared by every Rhino scope that evaluates this engine. The
 	// handle lives in the generic Convertigo shared server map as plain Java objects
@@ -95,6 +94,37 @@
 		return lock;
 	}
 
+	// Locks shared by every Rhino scope evaluating this engine, as plain Java objects in the shared server map: the
+	// Convertigo bridge runs a production build on another runtime than the authoring one (engine 8.5 and later), and
+	// a background rebuild runs on its own thread
+	var SHARED_LOCKS_KEY = "flow.frontbuilder.locks";
+	var localSharedLocks = new ConcurrentHashMap();
+
+	function sharedLock(name) {
+		var locks = sharedServerJavaMap(SHARED_LOCKS_KEY, localSharedLocks);
+		var lock = locks.get(name);
+		if (lock == null) {
+			locks.putIfAbsent(name, new ReentrantLock());
+			lock = locks.get(name);
+		}
+		return lock;
+	}
+
+	// The packages of the builders are installed one at a time on the server
+	function frontendBuilderDependencyLock() {
+		return sharedLock("builderDependencies");
+	}
+
+	// The actions writing the generated application of a project (install, generate, check, build) run one at a time
+	// for that project on the server, whichever runtime or thread runs them
+	function frontendProjectActionLock(request) {
+		var root = frontendProjectRootFile(request || {});
+		return sharedLock("frontendActions:" + (root ? canonicalPath(root) : String(request && request.projectDir || "")));
+	}
+
+	// Production builds one at a time on the server, whichever runtime or thread runs them, to bound the peak memory
+	var frontendProductionBuildLock = sharedLock("productionBuilds");
+
 	function frontendDocumentServerCount() {
 		var count = 0;
 		var entries = sharedDocumentServerRegistry().entrySet().iterator();
@@ -117,7 +147,6 @@
 			providerSelection: selection
 		};
 	}
-	var frontendProductionBuildLock = new Packages.java.util.concurrent.locks.ReentrantLock();
 	// Catalog construction is single-flight only on a cold generation. Hot reads never take these locks.
 	var blockCatalogBuildLocks = new ConcurrentHashMap();
 	var runtimeState = {
@@ -859,8 +888,46 @@
 	function fingerprintEnv() {
 		return {
 			Arrays: Arrays,
-			canonicalPath: canonicalPath
+			canonicalPath: canonicalPath,
+			nativeDirectoryFingerprint: nativeDirectoryFingerprint
 		};
+	}
+
+	// Whether the Java fingerprints of lib_flow_engine (libs/src) are seen by the packages of the project of the call
+	// (engine 8.5 and later, its libraries compiled), by generation: only booleans are kept, never the classes of a
+	// generation, which would keep it in memory
+	var nativeFingerprintsByGeneration = {};
+	var nativeFingerprintsGenerations = 0;
+
+	// @return the fingerprint of a directory computed in Java, null when the classes are not there (the JS walk then
+	//         computes the same string)
+	function nativeDirectoryFingerprint(dir) {
+		var generation = typeof __flowGenerationId === "undefined" ? "" : String(__flowGenerationId);
+		var known = nativeFingerprintsByGeneration[generation];
+		if (known === false) {
+			return null;
+		}
+		try {
+			var fingerprints = Packages.com.convertigo.libflowengine.Fingerprints;
+			if (typeof fingerprints.directory !== "function") {
+				throw new Error("not compiled");
+			}
+			if (known === undefined) {
+				rememberNativeFingerprints(generation, true);
+			}
+			return String(fingerprints.directory(String(dir.getPath())));
+		} catch (e) {
+			rememberNativeFingerprints(generation, false);
+			return null;
+		}
+	}
+
+	function rememberNativeFingerprints(generation, available) {
+		if (++nativeFingerprintsGenerations > 256) {
+			nativeFingerprintsByGeneration = {};
+			nativeFingerprintsGenerations = 1;
+		}
+		nativeFingerprintsByGeneration[generation] = available;
 	}
 
 	function readRuntimeCache(cache, key) {
@@ -988,8 +1055,33 @@
 		return fingerprintUtils().fileFingerprint(file, fingerprintEnv());
 	}
 
+	// The read-only calls (a tree, a palette, a property editor, a menu) compute the fingerprint of a directory once:
+	// nothing they read changes during the call, and a refresh walks the same catalogs several times (a remote call
+	// per entry on a network file system). Per thread, as a background build shares the scope; the calls that write
+	// (mutations, actions) always walk.
+	var MEMOIZED_FINGERPRINT_OPERATIONS = {
+		describeTree: true,
+		authoringTree: true,
+		authoringPalette: true,
+		propertyEditor: true,
+		contextMenu: true,
+		catalog: true
+	};
+	var callFingerprints = new Packages.java.lang.ThreadLocal();
+
 	function directoryFingerprint(dir) {
-		return fingerprintUtils().directoryFingerprint(dir, fingerprintEnv());
+		var memo = dir ? callFingerprints.get() : null;
+		if (!memo) {
+			return fingerprintUtils().directoryFingerprint(dir, fingerprintEnv());
+		}
+		var key = String(dir.getAbsolutePath());
+		var known = memo.get(key);
+		if (known != null) {
+			return String(known);
+		}
+		var computed = fingerprintUtils().directoryFingerprint(dir, fingerprintEnv());
+		memo.put(key, computed);
+		return computed;
 	}
 
 	function engineResourceFile(name) {
@@ -6890,7 +6982,8 @@
 		if (frontendDependencyInstallReusable(resourceRoot, fingerprint, "builder")) {
 			return;
 		}
-		frontendBuilderDependencyLock.lock();
+		var dependencyLock = frontendBuilderDependencyLock();
+		dependencyLock.lock();
 		try {
 			fingerprint = frontendDependencyFingerprint(resourceRoot, npm);
 			if (frontendDependencyInstallReusable(resourceRoot, fingerprint, "builder")) {
@@ -6916,7 +7009,7 @@
 				throw error;
 			}
 		} finally {
-			frontendBuilderDependencyLock.unlock();
+			dependencyLock.unlock();
 		}
 	}
 
@@ -7001,6 +7094,19 @@
 	}
 
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
+		if (stepAction !== "installBuilder") {
+			return frontendRunStepLocked(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues);
+		}
+		var dependencyLock = frontendBuilderDependencyLock();
+		dependencyLock.lock();
+		try {
+			return frontendRunStepLocked(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues);
+		} finally {
+			dependencyLock.unlock();
+		}
+	}
+
+	function frontendRunStepLocked(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
 		var startedAt = JavaSystem.nanoTime();
 		if (stepAction === "installBuilder") {
 			// packages installed in the builder folder before a local working directory was set are installed again there
@@ -7160,6 +7266,27 @@
 	}
 
 	function frontendRunAction(request, blocks, action) {
+		// the production build lock first: a background rebuild holds it before running its build
+		var production = action === "build" ? frontendProductionBuildLock : null;
+		if (production) {
+			production.lock();
+		}
+		try {
+			var lock = frontendProjectActionLock(request);
+			lock.lock();
+			try {
+				return frontendRunActionLocked(request, blocks, action);
+			} finally {
+				lock.unlock();
+			}
+		} finally {
+			if (production) {
+				production.unlock();
+			}
+		}
+	}
+
+	function frontendRunActionLocked(request, blocks, action) {
 		var actionStartedAt = JavaSystem.nanoTime();
 		var info = frontbuilderSettingsForRequest(request);
 		if (action === "build") {
@@ -9506,6 +9633,12 @@
 	}
 
 	function frontendBuilderCommands(info, available, dev) {
+		// a long command that needs no authoring state: the Convertigo bridge runs it out of the authoring lock, on
+		// another runtime, instead of holding the frontend authoring of every project during the whole build
+		function background(item) {
+			item.authoring = false;
+			return item;
+		}
 		function command(suffix, label, description, group, enabled) {
 			return contextMenuItem("frontbuilder.svelte." + suffix, label, description, group,
 				{ builder: info.name }, "", "", available && enabled !== false);
@@ -9519,8 +9652,8 @@
 				"Open the running Vite dev server in a Studio browser.", "Svelte dev", !!dev),
 			generate: command("generate", "Update generated source",
 				"Regenerate the Svelte sources under the project private directory.", "Svelte build"),
-			build: command("build", "Build prod",
-				"Generate and build production assets under DisplayObjects/mobile. Stop Dev first; dirty production is rebuilt automatically after Dev stops.", "Svelte build", !dev),
+			build: background(command("build", "Build prod",
+				"Generate and build production assets under DisplayObjects/mobile. Stop Dev first; dirty production is rebuilt automatically after Dev stops.", "Svelte build", !dev)),
 			built: command("openBuilt", "Open built prod",
 				"Open the built production frontend in a Studio browser.", "Svelte build")
 		};
@@ -9961,6 +10094,11 @@
 	}
 
 	function engineCall(operation, requestJson, callback) {
+		var memoized = MEMOIZED_FINGERPRINT_OPERATIONS[operation] === true;
+		var previousFingerprints = memoized ? callFingerprints.get() : null;
+		if (memoized) {
+			callFingerprints.set(new Packages.java.util.HashMap());
+		}
 		try {
 			var request = parseRequest(requestJson);
 			return withActiveRequest(request, function () {
@@ -9968,6 +10106,10 @@
 			});
 		} catch (e) {
 			return response(failure(operation, e));
+		} finally {
+			if (memoized) {
+				callFingerprints.set(previousFingerprints);
+			}
 		}
 	}
 

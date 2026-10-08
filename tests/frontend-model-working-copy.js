@@ -35,7 +35,7 @@ var contextMenuItem = extract("contextMenuItem", "contextNodeToggle");
 var frontendBuilderCommands = extract("frontendBuilderCommands", "frontendStudioBuilders");
 var frontendStudioBuilders = extract("frontendStudioBuilders", "contextMenuRequest");
 var contextMenuRequest = extract("contextMenuRequest", "contextMenuItem");
-var frontendRunAction = extract("frontendRunAction", "frontendActionSteps");
+var frontendRunAction = extract("frontendRunActionLocked", "frontendActionSteps");
 
 function check(request, available, text, label) {
 	var menu = contextMenuRequest(request, []);

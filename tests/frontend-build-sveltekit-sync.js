@@ -42,7 +42,7 @@ function frontendDurationMs() {
 }
 var frontendSyncSvelteKitDefaults = extract("frontendSyncSvelteKitDefaults");
 var frontendRunCommandFor = extract("frontendRunCommandFor");
-var frontendRunStep = extract("frontendRunStep");
+var frontendRunStep = extract("frontendRunStepLocked");
 
 var base = java.nio.file.Files.createTempDirectory("flow-build-sveltekit-sync-").toFile().getCanonicalFile();
 var app = new File(base, "app");

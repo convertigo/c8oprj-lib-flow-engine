@@ -24,6 +24,13 @@
 		if (!dir) {
 			return "null";
 		}
+		if (env.nativeDirectoryFingerprint) {
+			// the same string, computed in Java when lib_flow_engine's classes are compiled
+			var computed = env.nativeDirectoryFingerprint(dir);
+			if (computed !== null && computed !== undefined) {
+				return computed;
+			}
+		}
 		if (!dir.exists()) {
 			return "missing:" + env.canonicalPath(dir);
 		}
