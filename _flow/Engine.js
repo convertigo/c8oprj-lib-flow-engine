@@ -8116,8 +8116,8 @@
 	}
 
 	/**
-	 * Node.js, npm and npx build: a server runs them only when its configuration allows the builds
-	 * (allow_server_build). An engine before this setting always builds.
+	 * Node.js, npm and npx build: a server runs them only when its configuration runs the builds started from the
+	 * web Studio (server_build studio or all). An engine before this setting always builds.
 	 */
 	function frontendCheckServerBuild(name) {
 		if (!/^(node|npm|npx)$/.test(String(name))) {
@@ -8130,9 +8130,9 @@
 			// an engine without the setting
 		}
 		if (!allowed) {
-			var error = new Error("This server does not allow builds: " + name + " cannot run.");
+			var error = new Error("This server does not run the builds started from the web Studio: " + name + " cannot run.");
 			error.code = "FRONTBUILDER_SERVER_BUILD_NOT_ALLOWED";
-			error.hint = "Allow the builds with allow_server_build in the configuration of the server.";
+			error.hint = "Set server_build to studio or all in the configuration of the server.";
 			throw error;
 		}
 	}

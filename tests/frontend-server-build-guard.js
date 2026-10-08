@@ -1,4 +1,5 @@
-// A server runs Node.js, npm and npx only when its configuration allows the builds (allow_server_build); an engine
+// A server runs Node.js, npm and npx only when its configuration runs the builds started from the web Studio
+// (server_build studio or all); an engine
 // before this setting always builds.
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
@@ -52,7 +53,7 @@ assertTrue(asked === 0, "and does not ask the engine");
 ["node", "npm", "npx"].forEach(function (name) {
 	var error = errorOf(function () { guard(name); });
 	assertTrue(error && error.code === "FRONTBUILDER_SERVER_BUILD_NOT_ALLOWED", name + " is refused when the server does not allow the builds");
-	assertTrue(/allow_server_build/.test(error.hint), "the hint names the setting");
+	assertTrue(/server_build/.test(error.hint), "the hint names the setting");
 });
 
 allowed = true;
