@@ -633,6 +633,18 @@ java tools/LibsBuild.java
 `tests/libs-build-in-sync.js` fails while `libs/build` does not match
 `libs/src`.
 
+## Continuous Integration
+
+`.github/workflows/build-and-release.yml`, `build.gradle` and the Gradle
+wrapper come from the Convertigo CI template
+(`convertigo-common-resources`, branch `8.5.0`, as the Studio "Update CI"
+action writes them), with the Convertigo Gradle plugin `8.5.0-SNAPSHOT` until
+8.5.0 is released. Each push builds the CAR: the export compiles `libs/src`
+into its `libs/build`, and the build fails when the committed `libs/build`
+differs. A tag `vX.Y.Z` builds the CAR at version `X.Y.Z` and publishes it on
+the GitHub release of the tag (`-beta` tags as pre-releases). No server is
+deployed while the `C8O_SERVER` secrets are empty.
+
 ## Validation
 
 Use the standalone smoke test before touching Java integration:
