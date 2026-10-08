@@ -613,6 +613,26 @@ custom blocks over changing the shared core library. Do not hide a complete
 backend feature in one Rhino block: compose IO, list/JSON transforms and result
 mapping with FlowScript, and keep Rhino for the one missing primitive.
 
+## Java Helpers (libs/src)
+
+`libs/src` holds the Java of the engine (JDK only, Java 17), such as
+`com.convertigo.libflowengine.Fingerprints`. Each helper keeps a JS fallback
+computing the same result, used when the classes are not available (engine
+before 8.5, or a project call without the packages of its project).
+
+`libs/build` is committed with the classes compiled from `libs/src` and their
+fingerprint (`src.sha256`): a Convertigo server takes them instead of
+compiling the sources for every project referencing the engine, and uses them
+even when it does not compile (`server_build` none). After any change of
+`libs/src`, run from the project folder, then commit `libs/build`:
+
+```sh
+java tools/LibsBuild.java
+```
+
+`tests/libs-build-in-sync.js` fails while `libs/build` does not match
+`libs/src`.
+
 ## Validation
 
 Use the standalone smoke test before touching Java integration:
