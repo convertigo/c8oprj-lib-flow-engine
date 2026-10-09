@@ -144,40 +144,54 @@
 		}
 	
 		function flowScriptBalance(text) {
-			var balance = { paren: 0, brace: 0, bracket: 0 };
-			var inString = false;
-			var quote = "";
-			for (var i = 0; i < text.length; i++) {
+			var scan = flowScriptBalanceScan(null, text);
+			return { paren: scan.paren, brace: scan.brace, bracket: scan.bracket };
+		}
+
+		// The balance of `previous` text followed by `text`, scanning only `text`: a statement
+		// read line by line is scanned once, not once per line.
+		function flowScriptBalanceScan(previous, text) {
+			var scan = previous
+				? { paren: previous.paren, brace: previous.brace, bracket: previous.bracket,
+					inString: previous.inString, quote: previous.quote, escaped: false }
+				: { paren: 0, brace: 0, bracket: 0, inString: false, quote: "", escaped: false };
+			// an escape that ended the previous text skips the first character of this one
+			var i = previous && previous.escaped && text.length ? 1 : 0;
+			for (; i < text.length; i++) {
 				var ch = text.charAt(i);
-				if (inString) {
-					if (ch === "\\" && i + 1 < text.length) {
-						i++;
-					} else if (ch === quote) {
-						inString = false;
+				if (scan.inString) {
+					if (ch === "\\") {
+						if (i + 1 < text.length) {
+							i++;
+						} else {
+							scan.escaped = true;
+						}
+					} else if (ch === scan.quote) {
+						scan.inString = false;
 					}
 					continue;
 				}
 				if (ch === "\"" || ch === "'" || ch === "`") {
-					inString = true;
-					quote = ch;
+					scan.inString = true;
+					scan.quote = ch;
 				} else if (ch === "(") {
-					balance.paren++;
+					scan.paren++;
 				} else if (ch === ")") {
-					balance.paren--;
+					scan.paren--;
 				} else if (ch === "{") {
-					balance.brace++;
+					scan.brace++;
 				} else if (ch === "}") {
-					balance.brace--;
+					scan.brace--;
 				} else if (ch === "[") {
-					balance.bracket++;
+					scan.bracket++;
 				} else if (ch === "]") {
-					balance.bracket--;
+					scan.bracket--;
 				}
 			}
-			return balance;
+			return scan;
 		}
 	
-		function flowScriptStatementComplete(text) {
+		function flowScriptStatementComplete(text, knownBalance) {
 			text = String(text || "").trim();
 			if (text === "") {
 				return true;
@@ -185,7 +199,7 @@
 			if (text.match(/^(flow|function)\s+/) || text === "}" || text === "};" || text.match(/^}\s*else\s*\{\s*;?$/)) {
 				return true;
 			}
-			var balance = flowScriptBalance(text);
+			var balance = knownBalance || flowScriptBalance(text);
 			if (balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
 					text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(.*\)\s*\{\s*;?$/)) {
 				return true;
@@ -314,6 +328,8 @@
 			var pending = null;
 			var disabledNext = false;
 			function emit(statement) {
+				// the reading state stays here
+				statement = { line: statement.line, text: statement.text, disabled: statement.disabled };
 				splitFlowScriptStatementText(statement).forEach(function (part) {
 					out.push(part);
 				});
@@ -333,7 +349,7 @@
 					return;
 				}
 				if (pending) {
-					var beforeClose = flowScriptBalance(pending.text);
+					var beforeClose = pending.balance;
 					if ((line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/)) &&
 							pending.text.match(/^if\s*\(/) && !pending.text.match(/^if\s*\(\s*\{/)
 							&& (beforeClose.paren > 0 || beforeClose.bracket > 0)) {
@@ -342,21 +358,22 @@
 							null, "Close the current statement before writing the next one.");
 					}
 					pending.text += "\n" + line;
-					if (flowScriptStatementComplete(pending.text)) {
+					pending.balance = flowScriptBalanceScan(pending.balance, "\n" + line);
+					if (flowScriptStatementComplete(pending.text, pending.balance)) {
 						emit(pending);
 						pending = null;
 					}
 					return;
 				}
-				pending = { line: index + 1, text: line, disabled: disabledNext };
+				pending = { line: index + 1, text: line, disabled: disabledNext, balance: flowScriptBalanceScan(null, line) };
 				disabledNext = false;
-				if (flowScriptStatementComplete(pending.text)) {
+				if (flowScriptStatementComplete(pending.text, pending.balance)) {
 					emit(pending);
 					pending = null;
 				}
 			});
 			if (pending) {
-				var problem = flowScriptBalanceProblem(flowScriptBalance(pending.text));
+				var problem = flowScriptBalanceProblem(pending.balance);
 				if (problem) {
 					env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + pending.line + ": " + problem,
 						null, "Close the current statement before writing the next one.");
