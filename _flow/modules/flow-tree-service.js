@@ -1,4 +1,69 @@
 (function () {
+	// Slot helpers depend only on the block catalog: the exports below call them without
+	// creating the whole service, which a tree walk or a validation did for every node.
+	function normalizeSlotDefinition(slot) {
+		if (typeof slot === "string") {
+			return { name: slot, label: slot, aliases: [], inline: false };
+		}
+		slot = slot || {};
+		var out = {
+			name: String(slot.name || "nodes"),
+			label: String(slot.label || slot.name || "nodes"),
+			aliases: slot.aliases || [],
+			inline: slot.inline === true
+		};
+		["scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom"].forEach(function (key) {
+			if (slot[key] !== undefined && slot[key] !== null) {
+				out[key] = slot[key];
+			}
+		});
+		return out;
+	}
+
+	function slotDefinitions(catalog) {
+		var slots = catalog && catalog.slots;
+		if (slots && Object.prototype.toString.call(slots) === "[object Array]") {
+			return slots.map(normalizeSlotDefinition);
+		}
+		var children = catalog && catalog.children;
+		if (children && Object.prototype.toString.call(children) === "[object Array]") {
+			return children.map(normalizeSlotDefinition);
+		}
+		return ["nodes", "do", "then", "else", "catch", "finally"].map(normalizeSlotDefinition);
+	}
+
+	function activeSlots(node, catalog) {
+		var active = [];
+		slotDefinitions(catalog).forEach(function (definition) {
+			var names = [definition.name].concat(definition.aliases || []);
+			for (var i = 0; i < names.length; i++) {
+				var name = String(names[i]);
+				var nodes = node && node[name];
+				if (nodes && Object.prototype.toString.call(nodes) === "[object Array]" && nodes.length > 0) {
+					active.push(Object.assign({}, definition, {
+						id: definition.name,
+						name: name,
+						nodes: nodes
+					}));
+					break;
+				}
+			}
+		});
+		return active;
+	}
+
+	function childSlotNames(blocks, node, blockName, blockCatalog) {
+		var names = {};
+		var block = blocks && blocks[blockName(node)];
+		slotDefinitions(blockCatalog(block)).forEach(function (definition) {
+			names[String(definition.name)] = true;
+			(definition.aliases || []).forEach(function (alias) {
+				names[String(alias)] = true;
+			});
+		});
+		return Object.keys(names);
+	}
+
 	function create(env) {
 		var File = env.File;
 		var FileUtils = env.FileUtils;
@@ -3416,57 +3481,6 @@
 			"Styling", compact(styling), compact(frontendItemInfo(modelFile, "styling", null, null)), "mdi:palette-outline");
 		parent.children.push(folder);
 		addObjectFields(folder, styling.tokens || {}, path + ".tokens");
-	}
-
-	function normalizeSlotDefinition(slot) {
-		if (typeof slot === "string") {
-			return { name: slot, label: slot, aliases: [], inline: false };
-		}
-		slot = slot || {};
-		var out = {
-			name: String(slot.name || "nodes"),
-			label: String(slot.label || slot.name || "nodes"),
-			aliases: slot.aliases || [],
-			inline: slot.inline === true
-		};
-		["scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom"].forEach(function (key) {
-			if (slot[key] !== undefined && slot[key] !== null) {
-				out[key] = slot[key];
-			}
-		});
-		return out;
-	}
-
-	function slotDefinitions(catalog) {
-		var slots = catalog && catalog.slots;
-		if (slots && Object.prototype.toString.call(slots) === "[object Array]") {
-			return slots.map(normalizeSlotDefinition);
-		}
-		var children = catalog && catalog.children;
-		if (children && Object.prototype.toString.call(children) === "[object Array]") {
-			return children.map(normalizeSlotDefinition);
-		}
-		return ["nodes", "do", "then", "else", "catch", "finally"].map(normalizeSlotDefinition);
-	}
-
-	function activeSlots(node, catalog) {
-		var active = [];
-		slotDefinitions(catalog).forEach(function (definition) {
-			var names = [definition.name].concat(definition.aliases || []);
-			for (var i = 0; i < names.length; i++) {
-				var name = String(names[i]);
-				var nodes = node && node[name];
-				if (nodes && Object.prototype.toString.call(nodes) === "[object Array]" && nodes.length > 0) {
-					active.push(Object.assign({}, definition, {
-						id: definition.name,
-						name: name,
-						nodes: nodes
-					}));
-					break;
-				}
-			}
-		});
-		return active;
 	}
 
 	// Human display of a node in the tree: what the block does with its inputs, not
@@ -7013,15 +7027,7 @@
 	}
 
 	function childSlotNamesForMutation(blocks, node) {
-		var names = {};
-		var block = blocks && blocks[blockName(node)];
-		slotDefinitions(blockCatalog(block)).forEach(function (definition) {
-			names[String(definition.name)] = true;
-			(definition.aliases || []).forEach(function (alias) {
-				names[String(alias)] = true;
-			});
-		});
-		return Object.keys(names);
+		return childSlotNames(blocks, node, blockName, blockCatalog);
 	}
 
 	function collectNodeLocations(root, blocks, wantedId) {
@@ -8017,11 +8023,11 @@
 			return create(env || { normalizeTree: function (value) { return value; } })
 				.embeddedFlowSvelteDocument(sourcePath, source);
 		},
-		slotDefinitions: function (catalog, env) {
-			return create(env).slotDefinitions(catalog);
+		slotDefinitions: function (catalog) {
+			return slotDefinitions(catalog);
 		},
-		activeSlots: function (node, catalog, env) {
-			return create(env).activeSlots(node, catalog);
+		activeSlots: function (node, catalog) {
+			return activeSlots(node, catalog);
 		},
 		toYamlSource: function (value, env) {
 			return create(env).toYamlSource(value);
@@ -8103,7 +8109,7 @@
 			return create(env).searchSnippet(text, needle);
 		},
 		childSlotNamesForMutation: function (blocks, node, env) {
-			return create(env).childSlotNamesForMutation(blocks, node);
+			return childSlotNames(blocks, node, env.blockName, env.blockCatalog);
 		}
 	};
 }())

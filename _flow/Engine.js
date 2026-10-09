@@ -4607,11 +4607,11 @@
 	}
 
 	function activeSlots(node, catalog) {
-		return flowTreeService().activeSlots(node, catalog, flowTreeServiceEnv());
+		return flowTreeService().activeSlots(node, catalog);
 	}
 
 	function slotDefinitions(catalog) {
-		return flowTreeService().slotDefinitions(catalog, flowTreeServiceEnv());
+		return flowTreeService().slotDefinitions(catalog);
 	}
 
 	function toYamlSource(value) {
@@ -9956,8 +9956,11 @@
 		return String(flowName || "").indexOf("sample_") === 0;
 	}
 
+	// called for every node of a walk: the slot names only need the block catalog
+	var childSlotNamesEnv = { blockName: blockName, blockCatalog: blockCatalog };
+
 	function childSlotNamesForMutation(blocks, node) {
-		return flowTreeService().childSlotNamesForMutation(blocks, node, flowTreeServiceEnv());
+		return flowTreeService().childSlotNamesForMutation(blocks, node, childSlotNamesEnv);
 	}
 
 	function catalogService() {
