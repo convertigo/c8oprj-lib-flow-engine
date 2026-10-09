@@ -69,4 +69,38 @@ assertTrue(walks === 2, "another thread, as a background build, does not share i
 	assertTrue(MEMOIZED_FINGERPRINT_OPERATIONS[operation] !== true, operation + " always walks");
 });
 
+// canonical paths: once per read-only call too, and in a read-only computation reached from another call
+var canonicalizations = 0;
+function pathFile(path) {
+	return {
+		getAbsolutePath: function () { return path; },
+		getCanonicalPath: function () { canonicalizations++; return path + "/canonical"; }
+	};
+}
+var canonicalPathOf = eval(functionSource("canonicalPathOf"));
+var canonicalPath = eval(functionSource("canonicalPath"));
+var withReadOnlyMemo = eval(functionSource("withReadOnlyMemo"));
+var source = pathFile("/tmp/project/_flow/page.flow.svelte");
+engineCall("describeTree", "{}", function () {
+	canonicalPath(source);
+	canonicalPathOf(source);
+	canonicalPath(pathFile("/tmp/project/_flow/other.flow.svelte"));
+});
+assertTrue(canonicalizations === 2, "a read-only call canonicalizes each path once: " + canonicalizations);
+canonicalizations = 0;
+canonicalPath(source);
+canonicalPath(source);
+assertTrue(canonicalizations === 2, "outside a call, each time: " + canonicalizations);
+canonicalizations = 0;
+engineCall("run", "{}", function () {
+	canonicalPath(source);
+	withReadOnlyMemo(function () {
+		canonicalPath(source);
+		canonicalPath(source);
+	});
+	canonicalPath(source);
+});
+assertTrue(canonicalizations === 3, "a run memoizes only inside its read-only computations: " + canonicalizations);
+assertTrue(callFingerprints.get() == null, "and the memo ends with them");
+
 print("directory-fingerprint-call-memo: once per read-only call, per thread");

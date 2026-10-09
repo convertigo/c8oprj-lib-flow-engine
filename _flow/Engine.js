@@ -834,10 +834,28 @@
 
 	function canonicalPath(file) {
 		try {
-			return String(file.getCanonicalPath());
+			return canonicalPathOf(file);
 		} catch (e) {
 			return String(file.getAbsolutePath());
 		}
+	}
+
+	// Within a read-only call (see MEMOIZED_FINGERPRINT_OPERATIONS), a path is canonicalized once: a tree asked it
+	// for the source, the drafts and the property types of every node, a native call per path component (remote on
+	// a network file system).
+	function canonicalPathOf(file) {
+		var memo = callFingerprints.get();
+		if (!memo) {
+			return String(file.getCanonicalPath());
+		}
+		var key = "canonical:" + String(file.getAbsolutePath());
+		var known = memo.get(key);
+		if (known != null) {
+			return String(known);
+		}
+		var computed = String(file.getCanonicalPath());
+		memo.put(key, computed);
+		return computed;
 	}
 
 	function createRuntimeCacheState() {
@@ -1068,6 +1086,20 @@
 		catalog: true
 	};
 	var callFingerprints = new Packages.java.lang.ThreadLocal();
+
+	// A read-only computation reached from another call (a flow run of the MCP builds a tree or a palette) memoizes
+	// as a read-only call does.
+	function withReadOnlyMemo(callback) {
+		if (callFingerprints.get()) {
+			return callback();
+		}
+		callFingerprints.set(new Packages.java.util.HashMap());
+		try {
+			return callback();
+		} finally {
+			callFingerprints.set(null);
+		}
+	}
 
 	function directoryFingerprint(dir) {
 		var memo = dir ? callFingerprints.get() : null;
@@ -4912,6 +4944,12 @@
 	}
 
 	function cachedAuthoringTreeBase(request, blocks) {
+		return withReadOnlyMemo(function () {
+			return computeCachedAuthoringTreeBase(request, blocks);
+		});
+	}
+
+	function computeCachedAuthoringTreeBase(request, blocks) {
 		frontendPerformanceMark("frontend.base.entry");
 		var cache = runtimeState.caches.treeSnapshots;
 		var baseRequest = authoringTreeBaseRequest(request);
@@ -6560,7 +6598,7 @@
 
 	function sourceView(request) {
 		return loadEngineModule("source-working-copies.js").create(request, {
-			File: File, FileUtils: FileUtils, hash: sha256Hex
+			File: File, FileUtils: FileUtils, hash: sha256Hex, canonicalPath: canonicalPathOf
 		});
 	}
 

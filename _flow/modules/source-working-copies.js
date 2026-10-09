@@ -13,7 +13,8 @@
 		var canonicalPaths = Object.create(null);
 		function canonical(file) {
 			var path = String(file);
-			return canonicalPaths[path] || (canonicalPaths[path] = String(new File(path).getCanonicalPath()));
+			return canonicalPaths[path] || (canonicalPaths[path] = env.canonicalPath
+				? String(env.canonicalPath(new File(path))) : String(new File(path).getCanonicalPath()));
 		}
 		function add(path, value) {
 			if (typeof path !== "string" || !path) throw new Error("FLOW_SOURCE_PATH_REQUIRED");
