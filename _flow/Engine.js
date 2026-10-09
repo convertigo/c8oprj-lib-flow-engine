@@ -6158,9 +6158,37 @@
 		return pb;
 	}
 
+	// The catalog (components, UI blocks, traits, blocks) reads no page: the drafts of the routes are left out of its
+	// key, or every page edit would load the whole catalog again in the mutation, the description and the generation.
 	function frontendCatalogCacheKey(request) {
-		var catalogFingerprint = frontendCatalogFingerprintForRequest(request);
-		return catalogFingerprint ? sha256Hex(catalogFingerprint + "\n" + blocksCacheKey()) : "";
+		return withActiveRequest(withoutRouteDrafts(request), function () {
+			var catalogFingerprint = frontendCatalogFingerprintForRequest(currentActiveRequest());
+			return catalogFingerprint ? sha256Hex(catalogFingerprint + "\n" + blocksCacheKey()) : "";
+		});
+	}
+
+	var ROUTE_SOURCE_PATH = /[\/\\]src[\/\\]routes[\/\\]/;
+
+	function withoutRouteDrafts(request) {
+		request = request || {};
+		var copy = Object.assign({}, request);
+		["sourceDrafts", "frontendSourceDrafts", "drafts"].forEach(function (key) {
+			var drafts = request[key];
+			if (drafts && typeof drafts === "object" && !Array.isArray(drafts)) {
+				copy[key] = {};
+				Object.keys(drafts).forEach(function (path) {
+					if (!ROUTE_SOURCE_PATH.test(path)) {
+						copy[key][path] = drafts[path];
+					}
+				});
+			}
+		});
+		if (Array.isArray(request.sourceRemovals)) {
+			copy.sourceRemovals = request.sourceRemovals.filter(function (path) {
+				return !ROUTE_SOURCE_PATH.test(String(path));
+			});
+		}
+		return copy;
 	}
 
 	// A source mutation runs in the warm document server (same provider, same
