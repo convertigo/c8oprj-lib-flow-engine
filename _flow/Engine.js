@@ -6740,7 +6740,9 @@
 			return {
 				file: new File(overlayDir, frontendRelativePath(sourceBaseDir, modelPath)).getCanonicalFile(),
 				cleanup: overlayDir,
-				effectiveSourceRoot: overlayDir,
+				// canonical as the model file: with a local working directory, _private is a link, and the frontbuilder
+				// maps back to the project sources only the paths found below this root
+				effectiveSourceRoot: overlayDir.getCanonicalFile(),
 				sourceIdentityRoot: sourceBaseDir
 			};
 		}
