@@ -5593,8 +5593,16 @@
 			if (request.sourceTree === true) {
 				cliArgs.push("--source-tree");
 			}
+			var reuseKey = "";
+			try {
+				reuseKey = frontendDocumentReuseKey(source, drafts, sourceFile, resourceRoot, projectRoot, request);
+			} catch (reuseKeyError) {
+				reuseKey = "";
+			}
 			frontendPerformanceMark("frontend.document.providerPrepare");
-			var result = frontendDescribeDocument(resourceRoot, cliArgs);
+			// FRONTBUILDER_DOCUMENT_REUSE_KEY: an environment variable an older provider ignores
+			var result = frontendDescribeDocument(resourceRoot, cliArgs,
+				reuseKey ? { FRONTBUILDER_DOCUMENT_REUSE_KEY: reuseKey } : null);
 			frontendPerformanceMark("frontend.document.provider");
 			if (!result || !result.model) {
 				var error = new Error("Svelte front document did not return a valid model.");
@@ -5826,6 +5834,39 @@
 	}
 
 	function frontendDocumentDependenciesFingerprint(sourceFile, resourceRoot, projectRoot) {
+		var dependencies = frontendDocumentDependencies(sourceFile, resourceRoot, projectRoot);
+		return sha256Hex(dependencies.stable + "\n" + dependencies.mutable.join("\n"));
+	}
+
+	// The key under which the companion keeps the document it described for the next mutation: what makes the document
+	// (the page, the drafts of the other sources, the dependencies) without the date and the draft of the page itself,
+	// which a save changes while the content stays the same.
+	function frontendDocumentReuseKey(source, drafts, sourceFile, resourceRoot, projectRoot, request) {
+		var self = canonicalPath(sourceFile);
+		var others = {};
+		Object.keys(drafts || {}).sort().forEach(function (path) {
+			if (canonicalPath(new File(path)) !== self) {
+				others[path] = drafts[path];
+			}
+		});
+		var removals = (request && request.sourceRemovals || []).filter(function (path) {
+			return canonicalPath(new File(String(path))) !== self;
+		});
+		var dependencies = frontendDocumentDependencies(sourceFile, resourceRoot, projectRoot);
+		return sha256Hex([
+			self,
+			source,
+			JSON.stringify(others),
+			JSON.stringify(removals),
+			fileFingerprint(engineModuleFile("source-attribute-name-codec.js")),
+			dependencies.stable,
+			dependencies.mutable.filter(function (entry) {
+				return entry.split("\n")[0] !== self;
+			}).join("\n")
+		].join("\n"));
+	}
+
+	function frontendDocumentDependencies(sourceFile, resourceRoot, projectRoot) {
 		var referenceRoots = frontendReferenceRoots(projectRoot, resourceRoot);
 		var stableCacheKey = [
 			canonicalPath(resourceRoot),
@@ -5876,7 +5917,7 @@
 			frontendFingerprintFiles(target.root, target.suffixes, mutableEntries, mutableVisited);
 		});
 		mutableEntries.sort();
-		return sha256Hex(stableFingerprint + "\n" + mutableEntries.join("\n"));
+		return { stable: stableFingerprint, mutable: mutableEntries };
 	}
 
 	function frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot, request) {
@@ -6063,9 +6104,9 @@
 			].concat(frontendReferenceCliArgs(projectRoot, resourceRoot));
 			var documentCacheKey = "";
 			try {
-				// the fingerprint of the described document: the companion mutates the document it already loaded
-				documentCacheKey = frontendDocumentFingerprint(source, frontendSourceDrafts(request), sourceFile, resourceRoot, projectRoot, request);
-			} catch (fingerprintError) {
+				// the companion mutates the document it described for this content, saved or not since
+				documentCacheKey = frontendDocumentReuseKey(source, frontendSourceDrafts(request), sourceFile, resourceRoot, projectRoot, request);
+			} catch (reuseKeyError) {
 				documentCacheKey = "";
 			}
 			var result = frontendRunSourceMutation(resourceRoot, cliArgs, frontendCatalogCacheKey(request), documentCacheKey);
@@ -6206,9 +6247,9 @@
 	function frontendRunSourceMutation(resourceRoot, cliArgs, catalogCacheKey, documentCacheKey) {
 		if (catalogCacheKey) {
 			try {
-				// FRONTBUILDER_DOCUMENT_CACHE_KEY: an environment variable an older provider ignores
+				// FRONTBUILDER_DOCUMENT_REUSE_KEY: an environment variable an older provider ignores
 				return frontendRunDocumentServer(resourceRoot, cliArgs.concat(["--catalog-cache-key", catalogCacheKey]), "mutate",
-					documentCacheKey ? { env: { FRONTBUILDER_DOCUMENT_CACHE_KEY: String(documentCacheKey) } } : undefined);
+					documentCacheKey ? { env: { FRONTBUILDER_DOCUMENT_REUSE_KEY: String(documentCacheKey) } } : undefined);
 			} catch (catalogKeyError) {
 				// A real mutation error stands; a provider predating the shared catalog key
 				// (unknown option) or an unavailable server falls back to the plain request.
@@ -6483,9 +6524,9 @@
 		}
 	}
 
-	function frontendDescribeDocument(resourceRoot, cliArgs) {
+	function frontendDescribeDocument(resourceRoot, cliArgs, env) {
 		try {
-			return frontendRunDocumentServer(resourceRoot, cliArgs);
+			return frontendRunDocumentServer(resourceRoot, cliArgs, undefined, env ? { env: env } : undefined);
 		} catch (e) {
 			runtimeState.frontendDocumentServerStats.errors++;
 			runtimeState.frontendDocumentServerStats.lastError = String(e && e.message || e);
