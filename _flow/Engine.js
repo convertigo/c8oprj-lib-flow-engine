@@ -1780,8 +1780,23 @@
 		return catalogLoaderService().loadTypes(catalogLoaderEnv());
 	}
 
+	// Every descriptor with traits loads them: their cache key lists the traits folders and reads the date and size
+	// of each trait file (remote calls on a network file system). A read-only call computes them once.
 	function loadTraits(extraDirs) {
-		return catalogLoaderService().loadTraits(catalogLoaderEnv(), extraDirs);
+		var memo = callFingerprints.get();
+		if (!memo) {
+			return catalogLoaderService().loadTraits(catalogLoaderEnv(), extraDirs);
+		}
+		var key = "traits:" + (extraDirs || []).map(function (dir) {
+			return String(dir && dir.getAbsolutePath ? dir.getAbsolutePath() : dir);
+		}).join("|");
+		var known = memo.get(key);
+		if (known != null) {
+			return known;
+		}
+		var traits = catalogLoaderService().loadTraits(catalogLoaderEnv(), extraDirs);
+		memo.put(key, traits);
+		return traits;
 	}
 
 	// Properties brought by traits, composed once by the shared module (Engine and frontbuilder).
@@ -5127,6 +5142,12 @@
 	}
 
 	function authoringPaletteRequest(request, blocks) {
+		return withReadOnlyMemo(function () {
+			return computeAuthoringPaletteRequest(request, blocks);
+		});
+	}
+
+	function computeAuthoringPaletteRequest(request, blocks) {
 		request = request || {};
 		if (request.target === "flow") {
 			return flowTreeService().authoringPaletteRequest(request, blocks, flowTreeServiceEnv());

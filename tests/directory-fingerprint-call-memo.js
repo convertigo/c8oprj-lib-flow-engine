@@ -80,27 +80,44 @@ function pathFile(path) {
 var canonicalPathOf = eval(functionSource("canonicalPathOf"));
 var canonicalPath = eval(functionSource("canonicalPath"));
 var withReadOnlyMemo = eval(functionSource("withReadOnlyMemo"));
-var source = pathFile("/tmp/project/_flow/page.flow.svelte");
+var sourceFile = pathFile("/tmp/project/_flow/page.flow.svelte");
 engineCall("describeTree", "{}", function () {
-	canonicalPath(source);
-	canonicalPathOf(source);
+	canonicalPath(sourceFile);
+	canonicalPathOf(sourceFile);
 	canonicalPath(pathFile("/tmp/project/_flow/other.flow.svelte"));
 });
 assertTrue(canonicalizations === 2, "a read-only call canonicalizes each path once: " + canonicalizations);
 canonicalizations = 0;
-canonicalPath(source);
-canonicalPath(source);
+canonicalPath(sourceFile);
+canonicalPath(sourceFile);
 assertTrue(canonicalizations === 2, "outside a call, each time: " + canonicalizations);
 canonicalizations = 0;
 engineCall("run", "{}", function () {
-	canonicalPath(source);
+	canonicalPath(sourceFile);
 	withReadOnlyMemo(function () {
-		canonicalPath(source);
-		canonicalPath(source);
+		canonicalPath(sourceFile);
+		canonicalPath(sourceFile);
 	});
-	canonicalPath(source);
+	canonicalPath(sourceFile);
 });
 assertTrue(canonicalizations === 3, "a run memoizes only inside its read-only computations: " + canonicalizations);
 assertTrue(callFingerprints.get() == null, "and the memo ends with them");
+
+// traits: loaded once per read-only call (their cache key lists folders and files)
+var traitLoads = 0;
+function catalogLoaderService() { return { loadTraits: function () { traitLoads++; return { "ui.block": {} }; } }; }
+function catalogLoaderEnv() { return {}; }
+var loadTraits = eval(functionSource("loadTraits"));
+var traitDir = { getAbsolutePath: function () { return "/tmp/project/_flow/traits"; } };
+engineCall("authoringPalette", "{}", function () {
+	loadTraits([traitDir]);
+	loadTraits([traitDir]);
+	loadTraits([]);
+});
+assertTrue(traitLoads === 2, "a read-only call loads the traits of the same folders once: " + traitLoads);
+traitLoads = 0;
+loadTraits([traitDir]);
+loadTraits([traitDir]);
+assertTrue(traitLoads === 2, "outside a call, each time: " + traitLoads);
 
 print("directory-fingerprint-call-memo: once per read-only call, per thread");
