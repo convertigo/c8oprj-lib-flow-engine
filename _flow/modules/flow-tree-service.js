@@ -1110,10 +1110,37 @@
 		return String(block && block.namespace || "_root") || "_root";
 	}
 
+	// The frontend blocks among the loaded ones, described once per loaded block set and kept
+	// with it (not enumerable) instead of describing every block on each palette or tree. The
+	// signature follows the names and the placeholders a loader materializes.
 	function frontendPortableBlockDescriptors(blocks) {
+		var names = Object.keys(blocks || {}).sort();
+		var signature = names.map(function (name) {
+			return blocks[name] && blocks[name].__flowScriptPlaceholder === true ? name + "?" : name;
+		}).join("\n");
+		var memo = blocks && blocks.__frontendPortableDescriptors;
+		if (memo && memo.signature === signature) {
+			return JSON.parse(memo.json);
+		}
+		var out = describeFrontendPortableBlocks(blocks, names);
+		if (blocks && Object.isExtensible(blocks)) {
+			try {
+				Object.defineProperty(blocks, "__frontendPortableDescriptors", {
+					value: { signature: signature, json: JSON.stringify(out) },
+					configurable: true,
+					writable: true,
+					enumerable: false
+				});
+			} catch (ignored) {
+			}
+		}
+		return out;
+	}
+
+	function describeFrontendPortableBlocks(blocks, names) {
 		var out = [];
 		var seen = {};
-		Object.keys(blocks || {}).sort().forEach(function (name) {
+		names.forEach(function (name) {
 			var block = blocks[name];
 			if (!block) {
 				return;

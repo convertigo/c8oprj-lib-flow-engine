@@ -1444,6 +1444,19 @@
 		return parts.join("\n");
 	}
 
+	// What the descriptors of a builder are read from: its catalog folders and the drafts
+	// (fingerprintForConfig), and the traits folders of its providers.
+	function descriptorsFingerprintForSettings(name, settings, env) {
+		var config = { frontbuilder: {} };
+		config.frontbuilder[name] = settings || {};
+		var parts = [fingerprintForConfig(config, env)];
+		frontendResourceRoots(name, settings || {}, env).forEach(function (root) {
+			var traits = new env.File(new env.File(root).getParentFile().getParentFile(), "traits");
+			parts.push(isDirectory(traits, env) ? env.canonicalPath(traits) + ":" + env.directoryFingerprint(traits) : "");
+		});
+		return parts.join("\n");
+	}
+
 	function bindingSchemaAtPath(schema, segments) {
 		var current = schema;
 		(segments || []).forEach(function (segment) {
@@ -1749,6 +1762,7 @@
 			frontendBlocksForConfig: frontendBlocksForConfig,
 			frontendCreateDescriptorsForConfig: frontendCreateDescriptorsForConfig,
 			fingerprintForConfig: fingerprintForConfig,
+			descriptorsFingerprintForSettings: descriptorsFingerprintForSettings,
 			enrichBindingSources: enrichBindingSources
 		};
 }())

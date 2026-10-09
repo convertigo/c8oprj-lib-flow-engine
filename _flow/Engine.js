@@ -4415,14 +4415,45 @@
 		};
 	}
 
+	// The descriptors of a builder are read and parsed from each of its sources: a palette, a
+	// tree or a mutation asked them on every call. They are kept while the project, the settings
+	// and the fingerprint of what they are read from stay the same; each caller gets a copy.
+	var FRONTEND_DESCRIPTORS_CACHE_SIZE = 16;
+	var frontendDescriptorsCache = new java.util.concurrent.ConcurrentHashMap();
+
+	function frontendCachedDescriptors(kind, name, settings, load) {
+		var key;
+		try {
+			var root = projectDir();
+			key = [kind, name, root ? canonicalPath(root) : "", JSON.stringify(settings || {}),
+				frontendCatalogService().descriptorsFingerprintForSettings(name, settings, frontendCatalogServiceEnv())].join("\n");
+		} catch (e) {
+			return load();
+		}
+		var cached = frontendDescriptorsCache.get(key);
+		if (cached !== null) {
+			return JSON.parse(String(cached));
+		}
+		var result = load();
+		if (frontendDescriptorsCache.size() >= FRONTEND_DESCRIPTORS_CACHE_SIZE) {
+			frontendDescriptorsCache.clear();
+		}
+		frontendDescriptorsCache.put(key, JSON.stringify(result));
+		return result;
+	}
+
 	function frontendBlocksForSettings(name, settings) {
-		var result = frontendCatalogService().frontendBlocksForSettings(name, settings, frontendCatalogServiceEnv());
+		var result = frontendCachedDescriptors("blocks", name, settings, function () {
+			return frontendCatalogService().frontendBlocksForSettings(name, settings, frontendCatalogServiceEnv());
+		});
 		frontendPerformanceMark("frontend.catalog.blocks");
 		return result;
 	}
 
 	function frontendCreateDescriptorsForSettings(name, settings) {
-		var result = frontendCatalogService().frontendCreateDescriptorsForSettings(name, settings, frontendCatalogServiceEnv());
+		var result = frontendCachedDescriptors("create", name, settings, function () {
+			return frontendCatalogService().frontendCreateDescriptorsForSettings(name, settings, frontendCatalogServiceEnv());
+		});
 		frontendPerformanceMark("frontend.catalog.createDescriptors");
 		return result;
 	}
