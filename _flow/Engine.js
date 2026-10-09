@@ -6061,7 +6061,14 @@
 				"--project-root", String(projectRoot.getAbsolutePath()),
 				"--project-name", projectNameForRoot(projectRoot) || currentProjectName(request)
 			].concat(frontendReferenceCliArgs(projectRoot, resourceRoot));
-			var result = frontendRunSourceMutation(resourceRoot, cliArgs, frontendCatalogCacheKey(request));
+			var documentCacheKey = "";
+			try {
+				// the fingerprint of the described document: the companion mutates the document it already loaded
+				documentCacheKey = frontendDocumentFingerprint(source, frontendSourceDrafts(request), sourceFile, resourceRoot, projectRoot, request);
+			} catch (fingerprintError) {
+				documentCacheKey = "";
+			}
+			var result = frontendRunSourceMutation(resourceRoot, cliArgs, frontendCatalogCacheKey(request), documentCacheKey);
 			if (!result || result.ok !== true || typeof result.source !== "string") {
 				var error = new Error("Svelte source mutation did not return a valid source.");
 				error.code = "FRONTEND_SOURCE_MUTATION_INVALID_RESULT";
@@ -6196,10 +6203,12 @@
 	// property edit cost most of the action time. The one-shot CLI stays the fallback
 	// for a server that cannot serve the operation (older provider, transport failure);
 	// a mutation the provider rejects is reported, never retried.
-	function frontendRunSourceMutation(resourceRoot, cliArgs, catalogCacheKey) {
+	function frontendRunSourceMutation(resourceRoot, cliArgs, catalogCacheKey, documentCacheKey) {
 		if (catalogCacheKey) {
 			try {
-				return frontendRunDocumentServer(resourceRoot, cliArgs.concat(["--catalog-cache-key", catalogCacheKey]), "mutate");
+				// FRONTBUILDER_DOCUMENT_CACHE_KEY: an environment variable an older provider ignores
+				return frontendRunDocumentServer(resourceRoot, cliArgs.concat(["--catalog-cache-key", catalogCacheKey]), "mutate",
+					documentCacheKey ? { env: { FRONTBUILDER_DOCUMENT_CACHE_KEY: String(documentCacheKey) } } : undefined);
 			} catch (catalogKeyError) {
 				// A real mutation error stands; a provider predating the shared catalog key
 				// (unknown option) or an unavailable server falls back to the plain request.
