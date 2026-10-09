@@ -7353,6 +7353,13 @@
 			envValues.FRONTBUILDER_SOURCE_IDENTITY_ROOT = String(effective.sourceIdentityRoot.getAbsolutePath());
 		}
 		var actions = frontendActionSteps(action);
+		if (actions.indexOf("generate") >= 0) {
+			// the companion reuses the catalog and blocks a mutation loaded under the same key
+			var catalogCacheKey = frontendCatalogCacheKey(request);
+			if (catalogCacheKey) {
+				envValues.FRONTBUILDER_CATALOG_CACHE_KEY = catalogCacheKey;
+			}
+		}
 		var steps = [];
 		var ok = true;
 		var currentStepAction = "";
