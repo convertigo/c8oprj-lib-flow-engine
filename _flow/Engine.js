@@ -8751,6 +8751,101 @@
 			}
 		} catch (e) {
 		}
+		frontendLogAppend(frontendCurrentLog.get(), (warn === true ? "warning: " : "") + String(message));
+	}
+
+	// The output of the frontbuilder actions of a project (generation, installs, builds, development server), kept for
+	// the Build panel of the Studio, which reads the lines it did not show yet (frontbuilder.svelte.logs). The actions
+	// run with the log of their project as the current log of their thread, which the development server and the
+	// background production build carry to their own threads. Shared by the runtimes, with Java objects only.
+	var FRONTEND_LOG_LINES = 2000;
+	var localFrontendLogs = new Packages.java.util.concurrent.ConcurrentHashMap();
+	var frontendCurrentLog = new Packages.java.lang.ThreadLocal();
+
+	function frontendLog(key) {
+		var logs = sharedServerJavaMap("flow.frontbuilder.logs", localFrontendLogs);
+		var log = logs.get(String(key));
+		if (log == null) {
+			var created = new Packages.java.util.concurrent.ConcurrentHashMap();
+			created.put("lines", new Packages.java.util.ArrayList());
+			created.put("next", new Packages.java.util.concurrent.atomic.AtomicLong(0));
+			created.put("lock", new Packages.java.util.concurrent.locks.ReentrantLock());
+			logs.putIfAbsent(String(key), created);
+			log = logs.get(String(key));
+		}
+		return log;
+	}
+
+	function frontendLogAppend(log, text) {
+		if (!log) {
+			return;
+		}
+		var lock = log.get("lock");
+		lock.lock();
+		try {
+			var lines = log.get("lines");
+			String(text).split(/\r?\n/).forEach(function (line) {
+				lines.add(line);
+				if (lines.size() > FRONTEND_LOG_LINES) {
+					lines.remove(0);
+				}
+				log.get("next").incrementAndGet();
+			});
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	// @return the lines from the position since (from the oldest kept when it is older) and the next position
+	function frontendLogRead(log, since) {
+		var lock = log.get("lock");
+		lock.lock();
+		try {
+			var lines = log.get("lines");
+			var next = Number(log.get("next").get());
+			var first = next - lines.size();
+			var position = Math.floor(Number(since) || 0);
+			var from = Math.max(first, Math.min(position, next));
+			var out = [];
+			for (var i = from - first; i < lines.size(); i++) {
+				out.push(String(lines.get(i)));
+			}
+			return { lines: out, next: next, skipped: Math.max(0, first - position) };
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	function withFrontendLog(log, callback) {
+		var previous = frontendCurrentLog.get();
+		frontendCurrentLog.set(log);
+		try {
+			return callback();
+		} finally {
+			if (previous) {
+				frontendCurrentLog.set(previous);
+			} else {
+				frontendCurrentLog.remove();
+			}
+		}
+	}
+
+	function frontendLogKey(request) {
+		try {
+			return String(frontendDevKey(request, frontbuilderSettingsForRequest(request)) || "");
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function frontendLogsRequest(request) {
+		var key = frontendLogKey(request);
+		if (!key) {
+			return { ok: true, lines: [], next: 0, skipped: 0 };
+		}
+		var payload = request.action && request.action.payload || {};
+		var read = frontendLogRead(frontendLog(key), payload.since);
+		return { ok: true, lines: read.lines, next: read.next, skipped: read.skipped };
 	}
 
 	function frontendLogTail(file, maxLines) {
@@ -8794,8 +8889,12 @@
 		var OutputStreamWriter = Packages.java.io.OutputStreamWriter;
 		var PrintWriter = Packages.java.io.PrintWriter;
 		logFile.getParentFile().mkdirs();
+		var projectLog = frontendCurrentLog.get();
 		var thread = new Thread(new Runnable({
 			run: function () {
+				if (projectLog) {
+					frontendCurrentLog.set(projectLog);
+				}
 				var reader = null;
 				var writer = null;
 				try {
@@ -9624,9 +9723,11 @@
 		cancel.put("cancelled", new Packages.java.util.concurrent.atomic.AtomicBoolean(false));
 		cancel.put("processes", new Packages.java.util.concurrent.CopyOnWriteArrayList());
 		frontendProductionBuildCancels().put(String(key), cancel);
+		var productionLog = frontendLog(key);
 		var thread = new Thread(new Runnable({
 			run: function () {
 				var startedAt = JavaSystem.nanoTime();
+				frontendCurrentLog.set(productionLog);
 				frontendCancellableBuild.set(cancel);
 				frontendProductionBuildLock.lock();
 				try {
@@ -9666,6 +9767,7 @@
 				} finally {
 					frontendProductionBuildLock.unlock();
 					frontendCancellableBuild.remove();
+					frontendCurrentLog.remove();
 					frontendProductionBuildCancels().remove(String(key), cancel);
 					delete runtimeState.frontendProductionBuilds[key];
 				}
@@ -9923,6 +10025,7 @@
 				var model = frontendModelPath(selected, info);
 				var available = !!model && sourceView(selected).isFile(model);
 				var dev = frontendDevEntry(selected, info);
+				var built = frontendBuildOutputBuilt(frontendProjectRootFile(selected), (info.settings || {}).buildOutput);
 				return {
 					id: info.name,
 					label: info.name,
@@ -9930,7 +10033,11 @@
 					available: available,
 					state: {
 						serving: !!dev,
-						built: frontendBuildOutputBuilt(frontendProjectRootFile(selected), (info.settings || {}).buildOutput)
+						built: built,
+						// the addresses to share (the QR code of the Studio): the development server through the gateway,
+						// and the production application; the Studio rebases their path on its own origin
+						url: dev && dev.status === "running" ? String(dev.url || "") : "",
+						productionUrl: built ? String(frontendBuiltUrl(selected) || "") : ""
 					},
 					commands: frontendBuilderCommands(info, available, dev)
 				};
@@ -10058,6 +10165,20 @@
 		var action = request.action || {};
 		var id = String(action.id || request.actionId || "");
 		var payload = action.payload || {};
+		if (id.indexOf("frontbuilder.svelte.") === 0 && !frontendCurrentLog.get()) {
+			if (id === "frontbuilder.svelte.logs") {
+				return frontendLogsRequest(request);
+			}
+			var logKey = frontendLogKey(request);
+			if (logKey) {
+				var projectLog = frontendLog(logKey);
+				frontendLogAppend(projectLog, "--- " + new Date().toISOString().substring(11, 19) + " "
+					+ (action.label || id.substring("frontbuilder.svelte.".length)));
+				return withFrontendLog(projectLog, function () {
+					return contextActionRequest(request, blocks);
+				});
+			}
+		}
 		if (id === "flow.node.disable" || id === "flow.node.enable") {
 			var mutation = payload.mutation || {};
 			if (String(mutation.op || "") !== "setEnabled") {

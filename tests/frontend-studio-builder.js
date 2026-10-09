@@ -26,7 +26,10 @@ function frontendModelPath(request, info) {
 	return info.settings.modelPath;
 }
 function sourceView(request) { return { isFile: function (path) { return request.effectiveFiles.indexOf(path) >= 0; } }; }
-function frontendDevEntry(request, info) { return request.activeBuilders.indexOf(info.name) >= 0 ? {} : null; }
+function frontendDevEntry(request, info) {
+	return request.activeBuilders.indexOf(info.name) >= 0 ? { status: "running", url: "http://127.0.0.1:28080/convertigo/gw/ticket/" } : null;
+}
+function frontendBuiltUrl(request) { return "http://127.0.0.1:28080/convertigo/projects/Project/built-output/"; }
 function frontendProjectRootFile(request) { return "project-root"; }
 function frontendBuildOutputBuilt(projectRoot, buildOutput) { return projectRoot === "project-root" && buildOutput === "built-output"; }
 var request = {
@@ -50,6 +53,11 @@ assert(builders[0].commands.serve.payload.builder === "customer", "Commands reta
 assert(builders[0].available && builders[0].commands.build.enabled, "Draft-only model is available");
 assert(builders[1].state.serving && !builders[1].commands.build.enabled,
 	"Active Dev disables production, as in the context menu");
+assert(builders[1].state.url === "http://127.0.0.1:28080/convertigo/gw/ticket/"
+	&& builders[1].state.productionUrl === "http://127.0.0.1:28080/convertigo/projects/Project/built-output/",
+	"A serving builder gives the address of its development server and of its built application, to share");
+assert(builders[0].state.url === "" && builders[0].state.productionUrl === "",
+	"A builder neither serving nor built has no address to share");
 assert(builders[1].commands.open.enabled && builders[1].commands.stop.enabled,
 	"An active Dev server can be opened or stopped");
 assert(!builders[2].available && !builders[2].commands.serve.enabled,
