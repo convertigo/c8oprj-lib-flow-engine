@@ -7175,11 +7175,65 @@
 			env.put(String(key), String(envValues[key]));
 		});
 		frontendStudioLog("[Svelte frontbuilder] > " + args.join(" "));
+		var cancel = frontendCancellableBuild.get();
+		if (cancel && cancel.get("cancelled").get()) {
+			return { output: "Cancelled: the development mode of the project started.", exitCode: -1 };
+		}
 		var process = pb.start();
-		var output = frontendReadProcessOutput(process.getInputStream(), "Svelte frontbuilder");
-		var exitCode = process.waitFor();
-		frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
-		return { output: output, exitCode: exitCode };
+		if (cancel) {
+			cancel.get("processes").add(process);
+			if (cancel.get("cancelled").get()) {
+				frontendDestroyProcessTree(process);
+			}
+		}
+		try {
+			var output = frontendReadProcessOutput(process.getInputStream(), "Svelte frontbuilder");
+			var exitCode = process.waitFor();
+			frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
+			return { output: output, exitCode: exitCode };
+		} finally {
+			if (cancel) {
+				cancel.get("processes").remove(process);
+			}
+		}
+	}
+
+	// A production build in the background gives way to a new start of the development mode of its project: the
+	// start waited for the whole vite build on the lock of the project (a minute on a small server), while the output
+	// is built again anyway when the development server stops. The build writes to a staging folder published at its
+	// end, so the previous production output stays, and the production state stays dirty. Shared by the runtimes,
+	// with Java objects only.
+	var frontendCancellableBuild = new Packages.java.lang.ThreadLocal();
+
+	var localProductionBuildCancels = new Packages.java.util.concurrent.ConcurrentHashMap();
+
+	function frontendProductionBuildCancels() {
+		return sharedServerJavaMap("flow.frontbuilder.productionBuildCancels", localProductionBuildCancels);
+	}
+
+	function frontendDestroyProcessTree(process) {
+		try {
+			var descendants = process.descendants().iterator();
+			while (descendants.hasNext()) {
+				descendants.next().destroyForcibly();
+			}
+		} catch (ignored) {
+		}
+		process.destroyForcibly();
+	}
+
+	// @return whether a production build of the project was running and is cancelled
+	function frontendCancelProductionBuild(key) {
+		var cancel = frontendProductionBuildCancels().get(String(key));
+		if (!cancel || cancel.get("cancelled").getAndSet(true)) {
+			return false;
+		}
+		var processes = cancel.get("processes").iterator();
+		while (processes.hasNext()) {
+			frontendDestroyProcessTree(processes.next());
+		}
+		frontendStudioLog("[Svelte production] Background build cancelled: the development mode of the project starts.");
+		return true;
 	}
 
 	// The production build works in its own SvelteKit folder (FLOW_SVELTE_BUILD_OUT_DIR), while the generated
@@ -9376,6 +9430,7 @@
 
 	function frontendStartDev(request, blocks) {
 		var info = frontbuilderSettingsForRequest(request);
+		frontendCancelProductionBuild(frontendDevKey(request, info));
 		var existing = frontendDevEntry(request, info);
 		if (existing && existing.status === "failed") {
 			delete runtimeState.frontendDevServers[frontendDevKey(request, info)];
@@ -9515,9 +9570,14 @@
 		stableRequest.engineSource = JSON.stringify(projectEngineDefinitionForRequest(request));
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
+		var cancel = new Packages.java.util.concurrent.ConcurrentHashMap();
+		cancel.put("cancelled", new Packages.java.util.concurrent.atomic.AtomicBoolean(false));
+		cancel.put("processes", new Packages.java.util.concurrent.CopyOnWriteArrayList());
+		frontendProductionBuildCancels().put(String(key), cancel);
 		var thread = new Thread(new Runnable({
 			run: function () {
 				var startedAt = JavaSystem.nanoTime();
+				frontendCancellableBuild.set(cancel);
 				frontendProductionBuildLock.lock();
 				try {
 					var stableInfo = frontbuilderSettingsForRequest(stableRequest);
@@ -9525,8 +9585,12 @@
 					frontendWriteProductionState(stableRequest, stableInfo, activeState);
 					stableRequest.productionBuildFingerprint = activeState.currentFingerprint;
 					frontendStudioLog("[Svelte production] Building the dirty application in background (" + reason + ").");
-					var built = frontendRunAction(stableRequest, blocks, "build");
-					if (built.ok === false) {
+					var built = cancel.get("cancelled").get() ? null : frontendRunAction(stableRequest, blocks, "build");
+					if (cancel.get("cancelled").get()) {
+						frontendWriteProductionState(stableRequest, stableInfo,
+							lifecycle.cancelled(frontendReadProductionState(stableRequest, stableInfo), new Date().toISOString()));
+						frontendStudioLog("[Svelte production] Build cancelled; the previous production output was preserved.");
+					} else if (built.ok === false) {
 						var failed = lifecycle.failed(
 							frontendReadProductionState(stableRequest, stableInfo),
 							built.details && built.details.steps && built.details.steps.length
@@ -9551,6 +9615,8 @@
 					frontendStudioLog("[Svelte production] Build failed; the previous production output was preserved: " + failedState.failure, true);
 				} finally {
 					frontendProductionBuildLock.unlock();
+					frontendCancellableBuild.remove();
+					frontendProductionBuildCancels().remove(String(key), cancel);
 					delete runtimeState.frontendProductionBuilds[key];
 				}
 			}

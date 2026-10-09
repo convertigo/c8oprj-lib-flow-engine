@@ -82,6 +82,16 @@
 		return next;
 	}
 
+	// a build given way to the development mode: the output is still to build
+	function cancelled(state, now) {
+		var next = normalize(state);
+		next.dirty = true;
+		next.status = "dirty";
+		next.completedAt = String(now || "");
+		next.failure = "";
+		return next;
+	}
+
 	return Object.freeze({
 		FORMAT_VERSION: FORMAT_VERSION,
 		shouldBuild: shouldBuild,
@@ -91,6 +101,7 @@
 		requested: requested,
 		started: started,
 		completed: completed,
-		failed: failed
+		failed: failed,
+		cancelled: cancelled
 	});
 }())
