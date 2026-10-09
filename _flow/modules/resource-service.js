@@ -13,7 +13,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + " or public resources/. Use the flowCode* APIs for Flow sources.");
+				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + ", public resources/ or the Java sources libs/src/ (*.java). Use the flowCode* APIs for Flow sources.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);
@@ -79,7 +79,7 @@
 				file: engineConfig
 			});
 		}
-		["blocks", "fragments", "lib", "resources", "frontbuilder", "types"].map(env.sourcePaths.path).concat(["resources"]).forEach(function (path) {
+		["blocks", "fragments", "lib", "resources", "frontbuilder", "types"].map(env.sourcePaths.path).concat(["resources", "libs/src"]).forEach(function (path) {
 			collectResourceFiles(new env.File(base, path), base, out, env);
 		});
 		return out;
@@ -229,7 +229,7 @@
 			nextCursor: offset + limit < resources.length ? String(offset + limit) : null
 		};
 		if (request.doc !== false) {
-			out.doc = "List project-local Flow resources using glob patterns such as " + env.sourcePaths.path("resources/**/*.md") + ".";
+			out.doc = "List project-local Flow resources using glob patterns such as " + env.sourcePaths.path("resources/**/*.md") + " or libs/src/**/*.java.";
 		}
 		if (request.hints !== false) {
 			out.hints = [
@@ -349,6 +349,25 @@
 		return out;
 	}
 
+	// The server compiles libs/src as a whole and keeps the previous classes when it fails: a source declares the package
+	// of its folder, so that a misplaced file is refused here rather than breaking the next compilation. Compiling is the
+	// server's job (javac of the engine, with the libraries of the project).
+	function validateJavaSource(path, content, env) {
+		var code = String(content || "").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+		if (code.trim() === "") {
+			env.raise("INVALID_JAVA_SOURCE", "Empty Java source: " + path,
+				null, "Delete the resource with flow-resource-delete instead of emptying it.");
+		}
+		var folder = String(path).substring("libs/src/".length);
+		folder = folder.lastIndexOf("/") < 0 ? "" : folder.substring(0, folder.lastIndexOf("/")).replace(/\//g, ".");
+		var declared = code.match(/^\s*package\s+([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*;/m);
+		var pkg = declared ? declared[1].replace(/\s+/g, "") : "";
+		if (pkg !== folder) {
+			env.raise("INVALID_JAVA_SOURCE", "Java source " + path + " declares package '" + pkg + "' instead of '" + folder + "'.",
+				null, folder ? "Start the source with: package " + folder + ";" : "Sources at the root of libs/src are in the default package: remove the package declaration or move the file.");
+		}
+	}
+
 	function validateResourceContent(path, content, env) {
 		var kind = env.resourceKind(path);
 		var blockId = env.blockIdFromResourcePath(path);
@@ -380,6 +399,8 @@
 			}
 		} else if (kind === "typeDescriptor") {
 			env.validateTypeDescriptorSource(env.resourceName(path), content);
+		} else if (kind === "javaSource") {
+			validateJavaSource(path, content, env);
 		}
 		return {
 			ok: true,
@@ -391,8 +412,14 @@
 		request = request || {};
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
 		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
-		var entry = projectResourceFile(request.path, !fromWorkingCopy, env);
-		var oldContent = fromWorkingCopy ? String(request.baseContent) : sourceForFile(entry.file, env);
+		// A Java source is created by a patch from an empty file (--- /dev/null); the other resources have their own
+		// creation APIs (blocks, fragments, frontends).
+		var entry = projectResourceFile(request.path, false, env);
+		var created = !fromWorkingCopy && !isFile(entry.file, env);
+		if (created && env.resourceKind(entry.path) !== "javaSource") {
+			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + entry.path);
+		}
+		var oldContent = fromWorkingCopy ? String(request.baseContent) : created ? "" : sourceForFile(entry.file, env);
 		var oldHash = env.sha256Hex(oldContent);
 		if (fromWorkingCopy && request.dryRun !== true) {
 			env.raise("RESOURCE_WORKING_COPY_WRITE", "A working copy patch is only previewed; its owner stores the result.",
@@ -415,6 +442,7 @@
 			path: entry.path,
 			dryRun: request.dryRun === true,
 			hunks: applied.hunks,
+			created: created,
 			oldHash: oldHash,
 			newHash: newHash,
 			changed: oldHash !== newHash,

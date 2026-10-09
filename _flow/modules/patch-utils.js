@@ -1,7 +1,11 @@
 (function () {
 	function splitContentLines(content) {
 		var text = String(content || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-		var trailingNewline = text.length > 0 && text.charAt(text.length - 1) === "\n";
+		if (text === "") {
+			// an empty file has no line; the lines a patch adds to it end with a new line, unless it says otherwise
+			return { lines: [], trailingNewline: true };
+		}
+		var trailingNewline = text.charAt(text.length - 1) === "\n";
 		var lines = text.split("\n");
 		if (trailingNewline) {
 			lines.pop();
@@ -13,7 +17,7 @@
 	}
 
 	function joinContentLines(parts) {
-		return parts.lines.join("\n") + (parts.trailingNewline ? "\n" : "");
+		return parts.lines.length ? parts.lines.join("\n") + (parts.trailingNewline ? "\n" : "") : "";
 	}
 
 	function assertPatchLine(actual, expected, lineNumber, env) {
@@ -116,7 +120,8 @@
 				}
 				hunkLines.push(patchLine);
 			}
-			var preferred = Number(match[1]) - 1 + delta;
+			// a hunk without old lines (-N,0) inserts after line N, the others start at line N
+			var preferred = (match[2] === "0" ? Number(match[1]) : Number(match[1]) - 1) + delta;
 			var position = findHunkPosition(lines, preferred, oldLinesForHunk(hunkLines), env);
 			delta += applyHunkLines(lines, parts, position, hunkLines, env);
 		}

@@ -25,10 +25,16 @@
 		return dot < 0 ? "" : String(path).substring(dot + 1).toLowerCase();
 	}
 
+	// The Java sources of the project (libs/src), compiled by the server into the class path of the project
+	var JAVA_SOURCES = "libs/src/";
+
 	function isAllowedPath(path, paths) {
 		var ext = extension(path);
 		if (String(path) === paths.path("engine.yaml")) {
 			return true;
+		}
+		if (String(path).indexOf(JAVA_SOURCES) === 0) {
+			return ext === "java";
 		}
 		if (String(path).indexOf(paths.path("blocks") + "/") === 0) {
 			return String(path).endsWith(".block.js") || String(path).endsWith(".hooks.js");
@@ -70,6 +76,9 @@
 		if (String(path) === paths.path("engine.yaml")) {
 			return "projectConfig";
 		}
+		if (String(path).indexOf(JAVA_SOURCES) === 0) {
+			return "javaSource";
+		}
 		if (String(path).indexOf(paths.path("blocks") + "/") === 0) {
 			if (String(path).endsWith(".block.js")) {
 				return "graphBlockCode";
@@ -110,7 +119,7 @@
 		if (slash >= 0) {
 			filename = filename.substring(slash + 1);
 		}
-		[".fragment.yaml", ".block.js", ".hooks.js", ".type.yaml", ".flow.svelte", ".flow.css", ".front.json", ".uiblock.json", ".js"].some(function (suffix) {
+		[".fragment.yaml", ".block.js", ".hooks.js", ".type.yaml", ".flow.svelte", ".flow.css", ".front.json", ".uiblock.json", ".java", ".js"].some(function (suffix) {
 			if (filename.endsWith(suffix)) {
 				filename = filename.substring(0, filename.length - suffix.length);
 				return true;
@@ -145,6 +154,9 @@
 		}
 		if (ext === "js") {
 			return "text/javascript";
+		}
+		if (ext === "java") {
+			return "text/x-java-source";
 		}
 		return "application/octet-stream";
 	}
