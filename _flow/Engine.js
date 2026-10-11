@@ -7488,6 +7488,13 @@
 		if (!generatedRoot || new File(generatedRoot, ".svelte-kit/tsconfig.json").isFile()) {
 			return null;
 		}
+		// SvelteKit 3: the tsconfig.json extends $app/tsconfig, which needs no sync before the build
+		try {
+			var tsconfig = new File(generatedRoot, "tsconfig.json");
+			if (tsconfig.isFile() && /"extends"\s*:\s*"\$app\/tsconfig/.test(String(FileUtils.readFileToString(tsconfig, "UTF-8")))) {
+				return null;
+			}
+		} catch (unreadable) {}
 		var kit = new File(generatedRoot, "node_modules/@sveltejs/kit");
 		var bin;
 		try {

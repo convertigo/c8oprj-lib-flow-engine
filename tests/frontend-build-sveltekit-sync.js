@@ -1,5 +1,6 @@
 // The production build works in its own SvelteKit folder, while the generated tsconfig.json extends the one of the
-// default folder: an application never run in development mode gets it from svelte-kit sync before its build.
+// default folder: an application never run in development mode gets it from svelte-kit sync before its build. A
+// SvelteKit 3 application, whose tsconfig.json extends $app/tsconfig, needs no sync.
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
 var File = java.io.File;
@@ -85,6 +86,12 @@ try {
 	step = frontendRunStep("build", "npm", base, base, "App", null, app, "incremental", buildEnv);
 	assertEqual(runs.length, 1, "a failed sync stops the build");
 	assertTrue(!step.ok && step.exitCode === 1 && step.stdout === "sync failed", "and reports its output");
+
+	FileUtils.writeStringToFile(new File(app, "tsconfig.json"), '{ "extends": "$app/tsconfig", "compilerOptions": {} }', "UTF-8");
+	runs = [];
+	step = frontendRunStep("build", "npm", base, base, "App", null, app, "incremental", buildEnv);
+	assertEqual(runs.map(function (run) { return run.args[0]; }), ["npm"], "a SvelteKit 3 application (tsconfig extending $app/tsconfig) only builds");
+	FileUtils.deleteQuietly(new File(app, "tsconfig.json"));
 
 	new File(app, ".svelte-kit").mkdirs();
 	FileUtils.writeStringToFile(new File(app, ".svelte-kit/tsconfig.json"), "{}", "UTF-8");
