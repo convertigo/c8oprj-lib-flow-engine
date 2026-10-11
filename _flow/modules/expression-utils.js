@@ -50,6 +50,18 @@
 		return value;
 	}
 
+	// FlowScript is written as JavaScript: === and !== keep strict equality, so a 0, false
+	// or "" input stays distinct from the others. A Rhino Java wrapper (String, Number,
+	// Boolean) compares as its JavaScript value.
+	function strictValue(value, env) {
+		return value !== null && typeof value === "object" && env && typeof env.jsValue === "function"
+			? env.jsValue(value) : value;
+	}
+
+	function strictEqual(left, right, env) {
+		return strictValue(left, env) === strictValue(right, env);
+	}
+
 	function renderTemplate(template, ctx, env) {
 		return String(template || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, path) {
 			var value = evaluate(ctx, path, env);
@@ -485,7 +497,11 @@
 		}
 		function parseEquality() {
 			return binary(parseComparison, ["==", "===", "!=", "!=="], function (left, op, right) {
-				return op === "!=" || op === "!==" ? left != right : left == right;
+				if (op === "===" || op === "!==") {
+					var same = strictEqual(left, right, env);
+					return op === "===" ? same : !same;
+				}
+				return op === "!=" ? left != right : left == right;
 			});
 		}
 		function parseComparison() {

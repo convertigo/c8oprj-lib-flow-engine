@@ -1114,6 +1114,29 @@
 			return normalizeTree(value);
 		}
 
+		// A declared number, integer or boolean input comes as text over HTTP: it takes its type, as
+		// through the MCP or a Flow call, so that === compares the same values whatever the caller.
+		function typedInputs(input, definition) {
+			var meta = definition && (definition.flow || definition._flow) || {};
+			var declared = meta.inputs || meta.input || definition && (definition.inputs || definition.input);
+			if (!declared || typeof declared !== "object" || !input || typeof input !== "object") {
+				return input;
+			}
+			Object.keys(declared).forEach(function (name) {
+				var type = declared[name] && declared[name].type;
+				var text = typeof input[name] === "string" ? input[name].trim() : null;
+				if (text === null) {
+					return;
+				}
+				if (type === "number" && /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) || type === "integer" && /^-?\d+$/.test(text)) {
+					input[name] = Number(text);
+				} else if (type === "boolean" && /^(?:true|false)$/i.test(text)) {
+					input[name] = text.toLowerCase() === "true";
+				}
+			});
+			return input;
+		}
+
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {
 			var totalStarted = frameProfile ? nanoTime() : 0;
 			var captureStarted = frameProfile ? nanoTime() : 0;
@@ -1149,7 +1172,7 @@
 			var scopesStarted = frameProfile ? nanoTime() : 0;
 			var scopes = {
 				request: requestScope,
-				input: frameScopeValue(request, "input"),
+				input: typedInputs(frameScopeValue(request, "input"), definition),
 				local: {},
 				result: {},
 				trace: request.includeTrace === false ? null : { nodes: [] },

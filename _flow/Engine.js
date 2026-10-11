@@ -1256,8 +1256,13 @@
 			cacheUtils: cacheUtils(),
 			expressionTokenCache: runtimeState.caches.expressionTokens,
 			expressionProgramCache: runtimeState.caches.expressionPrograms,
-			sanitizeRuntimeValue: sanitizeRuntimeValue
+			sanitizeRuntimeValue: sanitizeRuntimeValue,
+			jsValue: runtimeJsValue
 		};
+	}
+
+	function runtimeJsValue(value) {
+		return runtimeHandleUtils().jsValue(value, runtimeHandleEnv());
 	}
 
 	function runtimeHandleUtils() {
