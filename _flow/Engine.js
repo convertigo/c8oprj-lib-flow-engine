@@ -1730,7 +1730,7 @@
 			saveFlowSource: function (flow, source, mutated, onConflict) {
 				new Packages.org.mozilla.javascript.Synchronizer(function () {
 					if (flow.isFlowSourceDirty()) {
-						raise("SCHEMA_DRAFT_EXISTS", "The Flow " + flow.getName() + " has unsaved changes: save the project, or keep this change as a draft.");
+						var draftError = new Error("The Flow " + flow.getName() + " has unsaved changes: save the project, or keep this change as a draft."); draftError.code = "SCHEMA_DRAFT_EXISTS"; draftError.status = 409; throw draftError;
 					}
 					if (String(flow.getFlowSource()) !== source) onConflict();
 					flow.setFlowSource(mutated);
@@ -1764,7 +1764,7 @@
 			saveEngineSource: function (flowEngine, name, source, mutated, onConflict) {
 				new Packages.org.mozilla.javascript.Synchronizer(function () {
 					if (flowEngine.isEngineSourceDirty()) {
-						raise("CONFIG_DRAFT_EXISTS", "engine.yaml of " + name + " has unsaved changes: save the project, or keep this change as a draft.");
+						var draftError = new Error("engine.yaml of " + name + " has unsaved changes: save the project, or keep this change as a draft."); draftError.code = "CONFIG_DRAFT_EXISTS"; draftError.status = 409; throw draftError;
 					}
 					if (String(flowEngine.getEngineSource()) !== source) onConflict();
 					var file = new File(flowEngine.getProject().getDirFile(), sourcePaths().path("engine.yaml"));

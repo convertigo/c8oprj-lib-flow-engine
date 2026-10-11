@@ -91,7 +91,7 @@ try {
 		{ name: "a forged MCP mark", options: { mcp: "admin" } }
 	].forEach(function (item) {
 		var error = refused("AUTHORING_FORBIDDEN", function () { service.principal(context(item.options), env); });
-		assert(error && error.message === "This operation is not allowed.", item.name + " may not, with a plain answer");
+		assert(error && error.message === "This operation is not allowed." && error.status === 403, item.name + " may not, with a plain answer (403)");
 	});
 	engines.App = flowEngineOf("version: 1\nconfig:\n  greeting: Hello\nconfigs:\n  lab:\n    data:\n      sources: {}\n");
 	assert(refused("AUTHORING_FORBIDDEN", function () {
@@ -116,7 +116,7 @@ try {
 	var stale = refused("CONFIG_REVISION_CONFLICT", function () {
 		service.configMutate({ project: "App", configuration: "lab", path: "data.sources.orders", op: "remove", revision: dry.previousRevision }, mcp, env);
 	});
-	assert(stale && stale.revision === draft.revision, "a change in between is a conflict with the current revision");
+	assert(stale && stale.revision === draft.revision && stale.status === 409, "a change in between is a conflict (409) with the current revision");
 
 	// save writes engine.yaml alone, never over a working copy of engine.yaml
 	assert(refused("CONFIG_DRAFT_EXISTS", function () {

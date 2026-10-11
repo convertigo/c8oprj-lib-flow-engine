@@ -11,7 +11,10 @@
 
 	function forbidden(env, reason) {
 		env.log("(authoring) refused: " + reason);
-		env.raise("AUTHORING_FORBIDDEN", "This operation is not allowed.");
+		var error = new Error("This operation is not allowed.");
+		error.code = "AUTHORING_FORBIDDEN";
+		error.status = 403;
+		throw error;
 	}
 
 	// @return { kind: studio | internal | mcp | admin, user }, or raises AUTHORING_FORBIDDEN
@@ -290,6 +293,7 @@
 	function conflict(revision, env, code) {
 		var error = new Error(code === "SCHEMA_REVISION_CONFLICT" ? "The target changed since it was read." : "The configuration changed since it was read.");
 		error.code = code || "CONFIG_REVISION_CONFLICT";
+		error.status = 409;
 		error.revision = revision;
 		error.hint = "Read it again (dry run) and confirm with the new previousRevision.";
 		throw error;
