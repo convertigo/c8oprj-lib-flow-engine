@@ -2738,6 +2738,19 @@
 		return inputs && typeof inputs === "object" ? normalizeTree(inputs) : {};
 	}
 
+	// @return the Convertigo accessibility (Private, Hidden, Public) declared by _flow.accessibility, null without it
+	function flowAccessibilityFromMetadata(meta) {
+		var value = meta && meta.accessibility;
+		if (value === undefined || value === null) {
+			return null;
+		}
+		var name = String(value).toLowerCase();
+		if (!/^(private|hidden|public)$/.test(name)) {
+			raise("FLOW_ACCESSIBILITY_INVALID", "_flow.accessibility must be \"private\", \"hidden\" or \"public\".");
+		}
+		return name.charAt(0).toUpperCase() + name.substring(1);
+	}
+
 	function syncProjectFlowInputsRequest(request, blocks) {
 		request = request || {};
 		var name = String(request.name || request.flowName || "");
@@ -2765,7 +2778,8 @@
 			projectDir: String(projectDir() || ""),
 			metadataOnly: declaredMetadata,
 			inputDefinitions: inputDefinitions,
-			inputSync: inputSync
+			inputSync: inputSync,
+			accessibility: flowAccessibilityFromMetadata(flowMetadata)
 		};
 	}
 

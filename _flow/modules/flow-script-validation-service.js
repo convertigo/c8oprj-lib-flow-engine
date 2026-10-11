@@ -281,6 +281,21 @@
 		}).join(", ") + " } }";
 	}
 
+	// _flow.accessibility declares who may call the Flow over HTTP: private (internal calls, MCP and administrators),
+	// hidden (callable, not listed) or public. Without it, the accessibility property of the Flow applies.
+	function accessibilityDiagnostics(definition) {
+		var meta = definition && definition.flow || {};
+		if (meta.accessibility === undefined || /^(private|hidden|public)$/i.test(String(meta.accessibility))) {
+			return [];
+		}
+		return [{
+			severity: "error",
+			code: "FLOW_ACCESSIBILITY_INVALID",
+			message: "_flow.accessibility must be \"private\", \"hidden\" or \"public\", not " + JSON.stringify(meta.accessibility) + ".",
+			hint: "Keep internal, exploration, authoring and test Flows private; make public or hidden only the Flows a frontend calls."
+		}];
+	}
+
 	function inputContractDiagnostics(definition, request) {
 		request = request || {};
 		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) {
@@ -628,6 +643,9 @@
 			? { sourceVersion: request.sourceVersion } : undefined);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var diagnostics = [].concat(validateDefinition(blocks, definition, env, request.target || "backend"));
+		accessibilityDiagnostics(definition).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
 		inputContractDiagnostics(definition, request).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
