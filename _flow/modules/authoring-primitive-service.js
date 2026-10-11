@@ -6,9 +6,8 @@
 	var PRINCIPAL_ATTRIBUTE = "com.convertigo.flow.principal";
 	// keys holding a secret: password, clientSecret, accessToken, apiKey... (not secretFile, a path, nor tokenUrl)
 	var SECRET_KEY = /(password|passwd|secret|token|apikey|api_key|privatekey|private_key)$/i;
-	var SECRET_REFERENCE = /^\$\{[^}=]+\.secret=?\}$/;
+	var SECRET_REFERENCE = /^\$\{[^}=]+\.secret(=[^}]*)?\}$/;
 	var NAME = /^[A-Za-z_$][\w$-]*$/;
-	var SYMBOL = /\$\{([^}=]+?)(?:=([^}]*))?\}/g;
 
 	function forbidden(env, reason) {
 		env.log("(authoring) refused: " + reason);
@@ -43,8 +42,8 @@
 		return { kind: "admin", user: env.sessionUser(session) || "admin" };
 	}
 
-	// A secret never travels as a value: under a secret key, only a reference to a .secret global symbol with an empty
-	// default, ${name.secret=}; anywhere, a .secret symbol keeps an empty default. Checked through the whole value.
+	// A secret never travels as a value: under a secret key, only a reference to a .secret global symbol, whose default
+	// (a test or development value, the real secret being set on each server) is free. Checked through the whole value.
 	function checkSecrets(value, path, env) {
 		if (Array.isArray(value)) {
 			value.forEach(function (item, index) { checkSecrets(item, path + "[" + index + "]", env); });
@@ -57,21 +56,11 @@
 				if (SECRET_KEY.test(key) && (typeof item !== "object" || item === null)
 						&& !SECRET_REFERENCE.test(String(item === null || item === undefined ? "" : item))) {
 					env.raise("CONFIG_SECRET_LITERAL", "A secret value is not accepted: " + child,
-						null, "Reference a global symbol instead: \"${<project>.<usage>.<name>.secret=}\".");
+						null, "Reference a .secret global symbol instead, with a default if useful: \"${<project>.<usage>.<name>.secret=<default>}\".");
 				}
 				checkSecrets(item, child, env);
 			});
 			return;
-		}
-		if (typeof value === "string") {
-			var match;
-			SYMBOL.lastIndex = 0;
-			while ((match = SYMBOL.exec(value)) !== null) {
-				if (/\.secret$/.test(match[1]) && match[2] !== undefined && match[2] !== "") {
-					env.raise("CONFIG_SECRET_LITERAL", "A secret symbol keeps an empty default: " + path,
-						null, "Write \"${" + match[1] + "=}\" and set its value in the Global symbols page.");
-				}
-			}
 		}
 	}
 

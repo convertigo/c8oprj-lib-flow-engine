@@ -1,6 +1,6 @@
 // config.mutate changes a value of a named configuration of a project, for an administrator (POST with the session
 // XSRF token) or an authenticated MCP call only, dry runs included. The revision is the one of the source as edited;
-// a dry run tells before and after, a draft is the working copy, save writes engine.yaml alone; secrets are refused.
+// a dry run tells before and after, a draft is the working copy, save writes engine.yaml alone; literal secrets are refused.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-config-mutate-").toFile();
@@ -145,10 +145,10 @@ try {
 	assert(secret({ password: "s3cr3t" }), "a literal password is refused");
 	assert(secret({ nested: [{ apiKey: "abc" }] }), "also nested in a list");
 	assert(secret({ password: "${app.db.password}" }), "a secret key references a .secret symbol");
-	assert(secret({ password: "${app.db.password.secret=s3cr3t}" }), "whose default is empty");
-	assert(secret({ url: "jdbc:x?pw=${app.db.password.secret=s3cr3t}" }), "anywhere");
-	assert(!secret({ password: "${app.db.password.secret=}", secretFile: "/run/secrets/db.json", tokenUrl: "https://idp/token", user: "reader" }),
-		"a .secret reference, a secret file path, a token URL and a user are accepted");
+	assert(secret({ password: "prefix ${app.db.password.secret}" }), "the whole value is the reference");
+	assert(!secret({ password: "${app.db.password.secret=}", adminPassword: "${app.admin.password.secret=admin}",
+		secretFile: "/run/secrets/db.json", tokenUrl: "https://idp/token", user: "reader" }),
+		"a .secret reference, with a development default or not, a secret file path, a token URL and a user are accepted");
 	print("config-mutate OK");
 } finally {
 	FileUtils.deleteQuietly(project);
