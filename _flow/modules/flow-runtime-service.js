@@ -498,6 +498,15 @@
 			}
 			return env.configMutate(args || {}, invocation);
 		};
+		runContextPrototype.schemaAdopt = function (args) {
+			var invocation = null;
+			try {
+				invocation = this.convertigoContext();
+			} catch (standalone) {
+				invocation = null;
+			}
+			return env.schemaAdopt(args || {}, invocation);
+		};
 		runContextPrototype.runNodes = function (nodes) {
 			return executeNodes(this, nodes);
 		};

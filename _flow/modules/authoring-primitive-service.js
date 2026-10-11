@@ -189,9 +189,104 @@
 		return result;
 	}
 
-	function conflict(revision, env) {
-		var error = new Error("The configuration changed since it was read.");
-		error.code = "CONFIG_REVISION_CONFLICT";
+	/**
+	 * Adopts a result schema, as the owner of an unstructured source does once the data is known: the output of a Flow
+	 * (_flow.outputs, in the working copy of its source) or the output of one of its nodes (its schema file, which has
+	 * no working copy). A proposal is never adopted implicitly: the caller passes the complete schema. The revision is
+	 * the one of what is replaced (the Flow source as edited, or the node schema), flowRevision optionally the one of
+	 * the Flow the caller read, so that a change of the target is a conflict.
+	 */
+	function schemaAdopt(request, convertigoContext, env) {
+		request = request || {};
+		var who = principal(convertigoContext, env);
+		var qname = String(request.qname || "");
+		var dot = qname.indexOf(".");
+		if (dot <= 0 || dot === qname.length - 1) {
+			env.raise("SCHEMA_QNAME_REQUIRED", "schema.adopt requires the qname of the Flow, Project.Flow.");
+		}
+		var project = qname.substring(0, dot), name = qname.substring(dot + 1);
+		var flow = env.projectFlow(project, name);
+		if (!flow) {
+			env.raise("SCHEMA_FLOW_UNKNOWN", "No Flow named " + qname + ".");
+		}
+		var schema = request.schema !== undefined && request.schema !== null ? request.schema : request.proposal;
+		if (!schema || typeof schema !== "object" || Array.isArray(schema) || !Object.keys(schema).length) {
+			env.raise("SCHEMA_REQUIRED", "schema.adopt requires the complete schema to adopt.");
+		}
+		var persist = request.dryRun === true ? "none" : String(request.persist || "draft");
+		if (["none", "draft", "save"].indexOf(persist) === -1) {
+			env.raise("SCHEMA_PERSIST_INVALID", "persist must be draft or save.");
+		}
+		var source = String(flow.getFlowSource());
+		var flowRevision = env.sha256Hex(source);
+		if (request.flowRevision && String(request.flowRevision) !== flowRevision) {
+			conflict(flowRevision, env, "SCHEMA_REVISION_CONFLICT");
+		}
+		var node = String(request.node || "");
+		var result = { ok: true, qname: qname, target: node ? "node" : "flow", node: node || null, dryRun: persist === "none", persisted: "none" };
+		if (!node) {
+			var definition = env.flowDefinition(source) || {};
+			var before = copy(definition.flow && definition.flow.outputs);
+			// _flow.outputs holds the properties of the result object
+			var outputs = schema.type === "object" && schema.properties && typeof schema.properties === "object" ? schema.properties : schema;
+			var mutated = env.applyFlowMutation(source, name, { op: "replace", path: "/flow/outputs", value: outputs });
+			var after = copy((env.flowDefinition(mutated) || {}).flow);
+			result.path = "_flow.outputs";
+			result.before = before === undefined ? null : before;
+			result.after = after && after.outputs !== undefined ? after.outputs : null;
+			result.previousRevision = flowRevision;
+			result.revision = env.sha256Hex(mutated);
+			result.changed = mutated !== source;
+			if (persist !== "none") {
+				requireRevision(request, flowRevision, env);
+				if (result.changed) {
+					if (persist === "save") {
+						env.saveFlowSource(flow, source, mutated, function () { conflict(flowRevision, env, "SCHEMA_REVISION_CONFLICT"); });
+						result.persisted = "saved";
+					} else {
+						env.draftFlowSource(flow, source, mutated, function () { conflict(flowRevision, env, "SCHEMA_REVISION_CONFLICT"); });
+						result.persisted = "draft";
+					}
+				}
+			}
+		} else {
+			var current = env.nodeSchema(project, name, node, null);
+			var previous = current.schema === undefined ? null : current.schema;
+			result.path = current.file || "";
+			result.before = copy(previous);
+			result.after = copy(schema);
+			result.previousRevision = env.sha256Hex(JSON.stringify(previous));
+			result.revision = env.sha256Hex(JSON.stringify(schema));
+			result.changed = JSON.stringify(previous) !== JSON.stringify(schema);
+			if (persist !== "none") {
+				requireRevision(request, result.previousRevision, env);
+				if (result.changed) {
+					var written = env.nodeSchema(project, name, node, schema);
+					result.path = written.file || result.path;
+					// a node schema has no working copy: draft and save both write its file
+					result.persisted = "saved";
+				}
+			}
+		}
+		if (result.persisted !== "none") {
+			env.log("(schema.adopt) " + who.kind + " " + who.user + ": " + qname + (node ? " node " + node : " outputs")
+				+ " (" + result.persisted + ")");
+		}
+		return result;
+	}
+
+	function requireRevision(request, revision, env) {
+		if (!request.revision) {
+			env.raise("SCHEMA_REVISION_REQUIRED", "Pass the revision read before the change (previousRevision of a dry run).");
+		}
+		if (String(request.revision) !== revision) {
+			conflict(revision, env, "SCHEMA_REVISION_CONFLICT");
+		}
+	}
+
+	function conflict(revision, env, code) {
+		var error = new Error(code === "SCHEMA_REVISION_CONFLICT" ? "The target changed since it was read." : "The configuration changed since it was read.");
+		error.code = code || "CONFIG_REVISION_CONFLICT";
 		error.revision = revision;
 		error.hint = "Read it again (dry run) and confirm with the new previousRevision.";
 		throw error;
@@ -201,6 +296,7 @@
 		PRINCIPAL_ATTRIBUTE: PRINCIPAL_ATTRIBUTE,
 		principal: principal,
 		checkSecrets: checkSecrets,
-		configMutate: configMutate
+		configMutate: configMutate,
+		schemaAdopt: schemaAdopt
 	};
 }())

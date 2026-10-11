@@ -1655,6 +1655,10 @@
 		return authoringPrimitiveService().configMutate(request, convertigoContext, authoringPrimitiveEnv());
 	}
 
+	function schemaAdoptRequest(request, convertigoContext) {
+		return authoringPrimitiveService().schemaAdopt(request, convertigoContext, authoringPrimitiveEnv());
+	}
+
 	function authoringPrimitiveEnv() {
 		var convertigo = Packages.com.twinsoft.convertigo.engine;
 		function caches(flowEngine) {
@@ -1695,6 +1699,58 @@
 			parseYamlSource: parseYamlSource,
 			applyEngineMutation: function (source, mutation) {
 				return String(applyMutationRequest({ target: "engine", engineSource: source, mutations: [mutation], includeTree: false }, loadBlocks()).source);
+			},
+			projectFlow: function (projectName, name) {
+				var app = convertigo.Engine.theApp;
+				var project = app && app.databaseObjectsManager ? app.databaseObjectsManager.getOriginalProjectByName(String(projectName), false) : null;
+				if (!project) return null;
+				try {
+					var sequence = project.getSequenceByName(String(name));
+					return sequence instanceof Packages.com.twinsoft.convertigo.beans.flow.Flow ? sequence : null;
+				} catch (unknown) {
+					return null;
+				}
+			},
+			// the metadata of a FlowScript source (_flow), or the definition of a YAML one
+			flowDefinition: function (source) {
+				var text = String(source);
+				return isFlowScriptSource(text) ? { flow: parseFlowScriptTopLevelObjectFromCode(text, "flow") || {} } : parseSource(text);
+			},
+			applyFlowMutation: function (source, name, mutation) {
+				return String(applyMutationRequest({ target: "flow", flowSource: source, name: name, flowName: name, mutations: [mutation], includeTree: false }, loadBlocks()).source);
+			},
+			draftFlowSource: function (flow, source, mutated, onConflict) {
+				new Packages.org.mozilla.javascript.Synchronizer(function () {
+					if (String(flow.getFlowSource()) !== source) onConflict();
+					flow.setFlowSource(mutated);
+				}, flow)();
+				caches(flow.getProject() ? flow.getProject().getFlowEngine() : null);
+			},
+			// the source of this Flow alone, refused over a working copy of it
+			saveFlowSource: function (flow, source, mutated, onConflict) {
+				new Packages.org.mozilla.javascript.Synchronizer(function () {
+					if (flow.isFlowSourceDirty()) {
+						raise("SCHEMA_DRAFT_EXISTS", "The Flow " + flow.getName() + " has unsaved changes: save the project, or keep this change as a draft.");
+					}
+					if (String(flow.getFlowSource()) !== source) onConflict();
+					flow.setFlowSource(mutated);
+					flow.saveFlowSourceFile();
+				}, flow)();
+				caches(flow.getProject() ? flow.getProject().getFlowEngine() : null);
+			},
+			// the learned schema of a node: read (schema null) or written (adopted)
+			nodeSchema: function (projectName, name, node, schema) {
+				var app = convertigo.Engine.theApp;
+				var project = app.databaseObjectsManager.getOriginalProjectByName(String(projectName), false);
+				var request = { project: String(projectName), projectDir: String(project.getDirPath()), name: String(name), flowName: String(name), nodeId: String(node) };
+				return withProjectDir(request.projectDir, function () {
+					if (schema === null) {
+						var read = nodeOutputSchemaRequest(Object.assign({ action: "read", source: "learned" }, request), loadBlocks());
+						return { schema: read.source === "learned" ? read.schema : null, file: "" };
+					}
+					var adopted = nodeOutputSchemaRequest(Object.assign({ action: "adopt", schema: schema }, request), loadBlocks());
+					return { schema: adopted.schema, file: adopted.written && adopted.written.file || "" };
+				});
 			},
 			// the working copy, published by the Save of the project
 			draftEngineSource: function (flowEngine, source, mutated, onConflict) {
@@ -4380,6 +4436,7 @@
 			currentProjectName: currentProjectName,
 			intOption: intOption,
 			configMutate: configMutateRequest,
+			schemaAdopt: schemaAdoptRequest,
 			effectiveConfig: runtimeEffectiveConfig,
 			readScopePath: readScopePath,
 			readObjectPath: readObjectPath,
