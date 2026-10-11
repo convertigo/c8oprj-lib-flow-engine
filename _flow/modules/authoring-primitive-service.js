@@ -51,16 +51,25 @@
 		}
 		if (value && typeof value === "object") {
 			Object.keys(value).forEach(function (key) {
-				var item = value[key];
 				var child = path ? path + "." + key : key;
-				if (SECRET_KEY.test(key) && (typeof item !== "object" || item === null)
-						&& !SECRET_REFERENCE.test(String(item === null || item === undefined ? "" : item))) {
-					env.raise("CONFIG_SECRET_LITERAL", "A secret value is not accepted: " + child,
-						null, "Reference a .secret global symbol instead, with a default if useful: \"${<project>.<usage>.<name>.secret=<default>}\".");
+				if (SECRET_KEY.test(key)) {
+					checkSecretValue(value[key], child, env);
+				} else {
+					checkSecrets(value[key], child, env);
 				}
-				checkSecrets(item, child, env);
 			});
-			return;
+		}
+	}
+
+	// the value of a secret key: a reference to a .secret global symbol, or a list of them; a map is checked inside
+	function checkSecretValue(value, path, env) {
+		if (Array.isArray(value)) {
+			value.forEach(function (item, index) { checkSecretValue(item, path + "[" + index + "]", env); });
+		} else if (value && typeof value === "object") {
+			checkSecrets(value, path, env);
+		} else if (!SECRET_REFERENCE.test(String(value === null || value === undefined ? "" : value))) {
+			env.raise("CONFIG_SECRET_LITERAL", "A secret value is not accepted: " + path,
+				null, "Reference a .secret global symbol instead, with a default if useful: \"${<project>.<usage>.<name>.secret=<default>}\".");
 		}
 	}
 
@@ -123,7 +132,12 @@
 			if (op === "merge" && (!request.value || typeof request.value !== "object" || Array.isArray(request.value))) {
 				env.raise("CONFIG_VALUE_INVALID", "merge requires an object value.");
 			}
-			checkSecrets(request.value, parts.join("."), env);
+			// the last part of the path is the key of the value: password, apiKey...
+			if (SECRET_KEY.test(parts[parts.length - 1])) {
+				checkSecretValue(request.value, parts.join("."), env);
+			} else {
+				checkSecrets(request.value, parts.join("."), env);
+			}
 		}
 		var persist = request.dryRun === true ? "none" : String(request.persist || "draft");
 		if (["none", "draft", "save"].indexOf(persist) === -1) {

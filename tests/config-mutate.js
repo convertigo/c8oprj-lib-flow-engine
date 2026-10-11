@@ -146,6 +146,16 @@ try {
 	assert(secret({ nested: [{ apiKey: "abc" }] }), "also nested in a list");
 	assert(secret({ password: "${app.db.password}" }), "a secret key references a .secret symbol");
 	assert(secret({ password: "prefix ${app.db.password.secret}" }), "the whole value is the reference");
+	assert(secret({ password: ["s3cr3t"] }), "a list under a secret key holds references only");
+	assert(!secret({ password: ["${app.a.password.secret}", "${app.b.password.secret=dev}"] }), "a list of references is accepted");
+	assert(refused("CONFIG_SECRET_LITERAL", function () {
+		service.configMutate({ project: "App", configuration: "lab", path: "sql.connections.lab.password", value: "s3cr3t", dryRun: true }, mcp, env);
+	}), "the last part of the path is the key of the value");
+	assert(refused("CONFIG_SECRET_LITERAL", function () {
+		service.configMutate({ project: "App", configuration: "lab", path: "sql.connections.lab.password", value: ["s3cr3t"], dryRun: true }, mcp, env);
+	}), "also with a list");
+	var referenced = service.configMutate({ project: "App", configuration: "lab", path: "sql.connections.lab.password", value: "${app.lab.password.secret=dev}", dryRun: true }, mcp, env);
+	assert(referenced.ok && referenced.after === "${app.lab.password.secret=dev}", "a reference at a secret path is accepted: " + JSON.stringify(referenced));
 	assert(!secret({ password: "${app.db.password.secret=}", adminPassword: "${app.admin.password.secret=admin}",
 		secretFile: "/run/secrets/db.json", tokenUrl: "https://idp/token", user: "reader" }),
 		"a .secret reference, with a development default or not, a secret file path, a token URL and a user are accepted");
