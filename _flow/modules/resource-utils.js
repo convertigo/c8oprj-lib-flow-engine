@@ -27,6 +27,8 @@
 
 	// The Java sources of the project (libs/src), compiled by the server into the class path of the project
 	var JAVA_SOURCES = "libs/src/";
+	// The jars of the project, downloaded by the server and checked against their sha256
+	var JARS_DESCRIPTOR = "libs/jars.yaml";
 
 	function isAllowedPath(path, paths) {
 		var ext = extension(path);
@@ -35,6 +37,9 @@
 		}
 		if (String(path).indexOf(JAVA_SOURCES) === 0) {
 			return ext === "java";
+		}
+		if (String(path) === JARS_DESCRIPTOR) {
+			return true;
 		}
 		if (String(path).indexOf(paths.path("blocks") + "/") === 0) {
 			return String(path).endsWith(".block.js") || String(path).endsWith(".hooks.js");
@@ -78,6 +83,9 @@
 		}
 		if (String(path).indexOf(JAVA_SOURCES) === 0) {
 			return "javaSource";
+		}
+		if (String(path) === JARS_DESCRIPTOR) {
+			return "jarsDescriptor";
 		}
 		if (String(path).indexOf(paths.path("blocks") + "/") === 0) {
 			if (String(path).endsWith(".block.js")) {

@@ -79,6 +79,13 @@
 				file: engineConfig
 			});
 		}
+		var jars = new env.File(base, "libs/jars.yaml");
+		if (isFile(jars, env)) {
+			out.push({
+				path: "libs/jars.yaml",
+				file: jars
+			});
+		}
 		["blocks", "fragments", "lib", "resources", "frontbuilder", "types"].map(env.sourcePaths.path).concat(["resources", "libs/src"]).forEach(function (path) {
 			collectResourceFiles(new env.File(base, path), base, out, env);
 		});
@@ -368,6 +375,27 @@
 		}
 	}
 
+	// libs/jars.yaml: the jars the server downloads (Maven coordinates or http(s) URLs), each with its sha256, quoted so
+	// that YAML never reads it as a number. The server checks the downloads; this checks the shape before writing.
+	function validateJarsDescriptor(content, env) {
+		function invalid(message) {
+			env.raise("INVALID_JARS_DESCRIPTOR", "libs/jars.yaml: " + message, null,
+				"repositories: [https://repo.maven.apache.org/maven2]\njars:\n  - maven: group:artifact:version\n    sha256: \"<64 hex>\"\n  - url: https://host/file.jar\n    sha256: \"<64 hex>\"");
+		}
+		var root = env.parseYamlSource(String(content || ""), "{}") || {};
+		if (Object.prototype.toString.call(root) !== "[object Object]") invalid("must be a map with repositories and jars");
+		if (root.repositories !== undefined && !(Array.isArray(root.repositories) && root.repositories.every(function (url) {
+			return typeof url === "string" && /^https?:\/\//.test(url);
+		}))) invalid("repositories must be a list of http(s) URLs");
+		if (root.jars !== undefined && !Array.isArray(root.jars)) invalid("jars must be a list");
+		(root.jars || []).forEach(function (jar) {
+			if (!jar || typeof jar !== "object") invalid("each jar is a map with maven or url, and sha256");
+			if (jar.maven !== undefined && !/^[\w.-]+:[\w.-]+:[\w.+-]+(:[\w.-]+)?$/.test(String(jar.maven))) invalid(jar.maven + " is not group:artifact:version[:classifier]");
+			if (jar.maven === undefined && !/^https?:\/\//.test(String(jar.url || ""))) invalid("each jar needs maven or an http(s) url");
+			if (typeof jar.sha256 !== "string" || !/^[0-9a-fA-F]{64}$/.test(jar.sha256)) invalid("each jar needs its sha256, 64 hexadecimal characters in quotes");
+		});
+	}
+
 	function validateResourceContent(path, content, env) {
 		var kind = env.resourceKind(path);
 		var blockId = env.blockIdFromResourcePath(path);
@@ -401,6 +429,8 @@
 			env.validateTypeDescriptorSource(env.resourceName(path), content);
 		} else if (kind === "javaSource") {
 			validateJavaSource(path, content, env);
+		} else if (kind === "jarsDescriptor") {
+			validateJarsDescriptor(content, env);
 		}
 		return {
 			ok: true,
@@ -412,11 +442,11 @@
 		request = request || {};
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
 		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
-		// A Java source is created by a patch from an empty file (--- /dev/null); the other resources have their own
-		// creation APIs (blocks, fragments, frontends).
+		// A Java source or the jar descriptor is created by a patch from an empty file (--- /dev/null); the other
+		// resources have their own creation APIs (blocks, fragments, frontends).
 		var entry = projectResourceFile(request.path, false, env);
 		var created = !fromWorkingCopy && !isFile(entry.file, env);
-		if (created && env.resourceKind(entry.path) !== "javaSource") {
+		if (created && ["javaSource", "jarsDescriptor"].indexOf(env.resourceKind(entry.path)) === -1) {
 			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + entry.path);
 		}
 		var oldContent = fromWorkingCopy ? String(request.baseContent) : created ? "" : sourceForFile(entry.file, env);

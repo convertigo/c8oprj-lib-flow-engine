@@ -41,7 +41,12 @@ var env = {
 	intOption: function (value, fallback) { return value === undefined ? fallback : value; },
 	sha256Hex: function (text) { return String(Packages.org.apache.commons.codec.digest.DigestUtils.sha256Hex(String(text))); },
 	applyUnifiedPatchText: function (content, patch) { return patches.applyUnifiedPatchText(content, patch, { raise: raise }); },
-	blockIdFromResourcePath: function (path) { return utils.blockIdFromPath(path, paths); }
+	blockIdFromResourcePath: function (path) { return utils.blockIdFromPath(path, paths); },
+	parseYamlSource: function (text, fallback) {
+		var yaml = new Packages.com.fasterxml.jackson.databind.ObjectMapper(new Packages.com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
+		var json = new Packages.com.fasterxml.jackson.databind.ObjectMapper();
+		return JSON.parse(String(json.writeValueAsString(yaml.readTree(String(text).trim() ? String(text) : fallback))));
+	}
 };
 
 try {
@@ -94,6 +99,24 @@ try {
 	assert(refused("UNKNOWN_RESOURCE", function () {
 		service.patch({ path: "_flow/lib/missing.js", patch: "--- /dev/null\n+++ b/x\n@@ -0,0 +1 @@\n+({})\n" }, env);
 	}), "other resources are not created by a patch");
+
+	// libs/jars.yaml, the jars the server downloads, is created and edited the same way, its shape checked
+	var sha = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9";
+	var jars = service.patch({
+		path: "libs/jars.yaml",
+		patch: "--- /dev/null\n+++ b/libs/jars.yaml\n@@ -0,0 +1,4 @@\n+jars:\n+  - maven: com.querydsl:querydsl-sql:7.7\n+    sha256: \"" + sha + "\"\n+\n"
+	}, env);
+	assert(jars.created && jars.validation.kind === "jarsDescriptor", "the jar descriptor is created: " + JSON.stringify(jars));
+	assert(service.projectResourceEntries(env).some(function (e) { return e.path === "libs/jars.yaml"; }), "and listed");
+	assert(refused("INVALID_JARS_DESCRIPTOR", function () {
+		service.patch({ path: "libs/jars.yaml", patch: "--- a/x\n+++ b/x\n@@ -3 +3 @@\n-    sha256: \"" + sha + "\"\n+    sha256: " + "1".repeat(64) + "\n" }, env);
+	}), "a sha256 YAML reads as a number is refused");
+	assert(refused("INVALID_JARS_DESCRIPTOR", function () {
+		service.patch({ path: "libs/jars.yaml", patch: "--- a/x\n+++ b/x\n@@ -2 +2 @@\n-  - maven: com.querydsl:querydsl-sql:7.7\n+  - maven: querydsl-sql\n" }, env);
+	}), "Maven coordinates are group:artifact:version");
+	assert(refused("RESOURCE_PATH_NOT_ALLOWED", function () {
+		service.patch({ path: "libs/other.yaml", patch: "--- /dev/null\n+++ b/x\n@@ -0,0 +1 @@\n+a: b\n" }, env);
+	}), "only libs/jars.yaml");
 
 	var removed = service.remove({ path: "libs/src/com/acme/Rows.java" }, env);
 	assert(removed.deleted && !file.exists(), "deleted: " + JSON.stringify(removed));
