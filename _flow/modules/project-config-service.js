@@ -127,6 +127,44 @@
 		return config;
 	}
 
+	// The Convertigo global symbols of the string values, ${name} or ${name=default} (secrets in name.secret symbols),
+	// resolved by the server for a running Flow only: the sources, the trace of the effective configuration and the
+	// schemas keep the references, so that no secret leaves the server. A value is resolved once, its result is never
+	// read again as a reference.
+	// A branch without symbol is returned as it is; a changed one is copied, keys such as __proto__ included.
+	function resolveConfigSymbols(value, env) {
+		if (typeof value === "string") {
+			return value.indexOf("${") === -1 || typeof env.compileSymbols !== "function" ? value : env.compileSymbols(value);
+		}
+		var array = Array.isArray(value);
+		if (!array && !isConfigObject(value)) {
+			return value;
+		}
+		var keys = Object.keys(value), copy = null;
+		keys.forEach(function (key, index) {
+			var resolved = resolveConfigSymbols(value[key], env);
+			if (resolved !== value[key] && copy === null) {
+				copy = array ? value.slice() : Object.create(Object.getPrototypeOf(value));
+				if (!array) {
+					keys.slice(0, index).forEach(function (previous) { define(copy, previous, value[previous]); });
+				}
+			}
+			if (copy !== null) {
+				define(copy, key, resolved);
+			}
+		});
+		return copy === null ? value : copy;
+	}
+
+	function define(target, key, value) {
+		Object.defineProperty(target, key, { value: value, enumerable: true, writable: true, configurable: true });
+	}
+
+	// The configuration a running Flow reads: the effective configuration with its symbols resolved.
+	function runtimeConfig(request, definition, projectEngine, env) {
+		return resolveConfigSymbols(effectiveConfig(request, definition, projectEngine, env), env);
+	}
+
 	function configError(code, message) {
 		var error = new Error(message);
 		error.code = code;
@@ -324,6 +362,8 @@
 		authoringSettings: authoringSettings,
 		authoringNumber: authoringNumber,
 		effectiveConfig: effectiveConfig,
+		resolveConfigSymbols: resolveConfigSymbols,
+		runtimeConfig: runtimeConfig,
 		configurationDefinitions: configurationDefinitions,
 		tagContribution: tagContribution,
 		validateReferencedConfigurations: validateReferencedConfigurations,

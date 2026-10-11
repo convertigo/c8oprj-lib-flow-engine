@@ -796,6 +796,53 @@
 		return projectConfigService().effectiveConfig(request, definition, projectEngine, projectConfigEnv());
 	}
 
+	// The configuration of a running Flow, its Convertigo symbols resolved (see resolveConfigSymbols)
+	function runtimeEffectiveConfig(request, definition, projectEngine) {
+		var env = projectConfigEnv();
+		env.compileSymbols = compileConfigSymbols;
+		return projectConfigService().runtimeConfig(request, definition, projectEngine, env);
+	}
+
+	var reportedUndefinedSymbols = {};
+
+	// @return the text with its ${name} / ${name=default} global symbols replaced by the server, as the properties of
+	//         the Convertigo objects are; an undefined symbol without default becomes empty and is logged once. Without
+	//         the Convertigo engine (standalone tests) the text stays as it is.
+	function compileConfigSymbols(text) {
+		var manager = null;
+		try {
+			var app = Packages.com.twinsoft.convertigo.engine.Engine.theApp;
+			manager = app ? app.databaseObjectsManager : null;
+		} catch (ignoredStandalone) {
+			manager = null;
+		}
+		if (!manager) {
+			return text;
+		}
+		try {
+			return String(manager["getCompiledValue(java.lang.String)"](String(text)));
+		} catch (e) {
+			var undefinedSymbols = e && e.javaException;
+			if (!(undefinedSymbols instanceof Packages.com.twinsoft.convertigo.engine.UndefinedSymbolsException)) {
+				throw e;
+			}
+			var names = [];
+			var iterator = undefinedSymbols.undefinedSymbols().iterator();
+			while (iterator.hasNext()) {
+				var name = String(iterator.next());
+				if (!reportedUndefinedSymbols[name]) {
+					reportedUndefinedSymbols[name] = true;
+					names.push(name);
+				}
+			}
+			if (names.length) {
+				Packages.com.twinsoft.convertigo.engine.Engine.logEngine.warn("Flow configuration: undefined global symbol(s) "
+					+ names.join(", ") + ", replaced by an empty value. Declare them in the global symbols, or give a default: ${name=default}.");
+			}
+			return String(undefinedSymbols.incompletValue());
+		}
+	}
+
 	function configurationDefinitions(projectEngine) {
 		return projectConfigService().configurationDefinitions(projectEngine);
 	}
@@ -4243,7 +4290,7 @@
 			projectDir: projectDir,
 			currentProjectName: currentProjectName,
 			intOption: intOption,
-			effectiveConfig: effectiveConfig,
+			effectiveConfig: runtimeEffectiveConfig,
 			readScopePath: readScopePath,
 			readObjectPath: readObjectPath,
 			writeScopePath: writeScopePath,
