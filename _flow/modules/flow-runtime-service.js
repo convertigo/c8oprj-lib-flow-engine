@@ -488,6 +488,16 @@
 			}
 			return invocationContext;
 		};
+		// The protected authoring primitives check the principal of the root request (authoring-primitive-service)
+		runContextPrototype.configMutate = function (args) {
+			var invocation = null;
+			try {
+				invocation = this.convertigoContext();
+			} catch (standalone) {
+				invocation = null;
+			}
+			return env.configMutate(args || {}, invocation);
+		};
 		runContextPrototype.runNodes = function (nodes) {
 			return executeNodes(this, nodes);
 		};

@@ -1647,6 +1647,81 @@
 		};
 	}
 
+	function authoringPrimitiveService() {
+		return loadEngineModule("authoring-primitive-service.js");
+	}
+
+	function configMutateRequest(request, convertigoContext) {
+		return authoringPrimitiveService().configMutate(request, convertigoContext, authoringPrimitiveEnv());
+	}
+
+	function authoringPrimitiveEnv() {
+		var convertigo = Packages.com.twinsoft.convertigo.engine;
+		function caches(flowEngine) {
+			try {
+				convertigo.flow.FlowEngineBridge.invalidateDataCaches();
+				convertigo.flow.FlowStudioSupport.clearCatalogCache(flowEngine);
+			} catch (standalone) {}
+		}
+		return {
+			raise: raise,
+			log: function (message) {
+				try { convertigo.Engine.logEngine.info(String(message)); } catch (standalone) {}
+			},
+			studioMode: function () {
+				try { return convertigo.Engine.isStudioMode() === true; } catch (standalone) { return false; }
+			},
+			isInternalRequest: function (request) {
+				return request instanceof convertigo.requesters.InternalHttpServletRequest;
+			},
+			isWebAdmin: function (session) {
+				return convertigo.Engine.authenticatedSessionManager.hasRole(session,
+					convertigo.AuthenticatedSessionManager.Role.WEB_ADMIN) === true;
+			},
+			xsrfToken: function (session) {
+				var token = convertigo.enums.SessionAttribute.xsrfToken.get(session);
+				return token === null || token === undefined ? "" : String(token);
+			},
+			sessionUser: function (session) {
+				var user = convertigo.enums.SessionAttribute.authenticatedUser.string(session);
+				return user === null || user === undefined ? "" : String(user);
+			},
+			projectFlowEngine: function (name) {
+				var app = convertigo.Engine.theApp;
+				var project = app && app.databaseObjectsManager ? app.databaseObjectsManager.getOriginalProjectByName(String(name), false) : null;
+				return project ? project.getFlowEngine() : null;
+			},
+			sha256Hex: sha256Hex,
+			parseYamlSource: parseYamlSource,
+			applyEngineMutation: function (source, mutation) {
+				return String(applyMutationRequest({ target: "engine", engineSource: source, mutations: [mutation], includeTree: false }, loadBlocks()).source);
+			},
+			// the working copy, published by the Save of the project
+			draftEngineSource: function (flowEngine, source, mutated, onConflict) {
+				new Packages.org.mozilla.javascript.Synchronizer(function () {
+					if (String(flowEngine.getEngineSource()) !== source) onConflict();
+					flowEngine.setEngineSource(mutated);
+				}, flowEngine)();
+				caches(flowEngine);
+			},
+			// engine.yaml alone, never the other working copies, refused over a working copy of engine.yaml itself
+			saveEngineSource: function (flowEngine, name, source, mutated, onConflict) {
+				new Packages.org.mozilla.javascript.Synchronizer(function () {
+					if (flowEngine.isEngineSourceDirty()) {
+						raise("CONFIG_DRAFT_EXISTS", "engine.yaml of " + name + " has unsaved changes: save the project, or keep this change as a draft.");
+					}
+					if (String(flowEngine.getEngineSource()) !== source) onConflict();
+					var file = new File(flowEngine.getProject().getDirFile(), sourcePaths().path("engine.yaml"));
+					var staging = java.nio.file.Files.createTempFile(file.getParentFile().toPath(), "engine-", ".yaml");
+					java.nio.file.Files.writeString(staging, mutated);
+					java.nio.file.Files.move(staging, file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+						java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+				}, flowEngine)();
+				caches(flowEngine);
+			}
+		};
+	}
+
 	function resourceApi() {
 		return {
 			search: resourceSearchRequest,
@@ -4304,6 +4379,7 @@
 			projectDir: projectDir,
 			currentProjectName: currentProjectName,
 			intOption: intOption,
+			configMutate: configMutateRequest,
 			effectiveConfig: runtimeEffectiveConfig,
 			readScopePath: readScopePath,
 			readObjectPath: readObjectPath,
