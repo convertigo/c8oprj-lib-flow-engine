@@ -1962,6 +1962,15 @@ assertTrue(findNode(localCatalogTree, function (node) {
 	return node.type === "set";
 }) === null,
 	"the local engine catalog did not expose project definitions without the core catalog");
+// a FlowScript block not run yet is a placeholder of the catalog: its implementation is still a Flow
+var flowBackedCatalogNode = findNode(localCatalogTree, function (node) {
+	return node.kind === "block" && node.type === "smoke.flowBacked";
+});
+var flowBackedImplementation = findChild(flowBackedCatalogNode, "implementation");
+assertTrue(flowBackedImplementation !== null && flowBackedImplementation.kind === "blockImplementation" &&
+	flowBackedImplementation.type === "flow" && Array.isArray(flowBackedImplementation.children),
+	"the catalog projected the implementation of a FlowScript block not run yet as code: " +
+	JSON.stringify(flowBackedImplementation && { kind: flowBackedImplementation.kind, type: flowBackedImplementation.type }));
 var frontendWrite = JSON.parse(engine.blockCodeSet(JSON.stringify({
 	name: "smoke.normalize",
 	target: "frontend",

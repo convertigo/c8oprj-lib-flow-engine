@@ -4003,6 +4003,25 @@
 		addRootNodeList(parent, implementationNodes, path, blocks, {}, sourceInfo, sourceBasePath || "nodes");
 	}
 
+	// A block is loaded on its first run: until then the catalog holds a placeholder, without the graph of a
+	// FlowScript implementation nor the hooks. Those blocks are loaded to project them.
+	function projectedCatalogBlock(blocks, blockId) {
+		var block = blocks[blockId];
+		if (!block || block.__flowScriptPlaceholder !== true || typeof block.materialize !== "function") {
+			return block;
+		}
+		try {
+			var runtime = typeof block.implementationRuntime === "function" ? block.implementationRuntime() : "";
+			if (runtime !== "flow" && !(block.__blockDefinition && block.__blockDefinition.hooks)) {
+				return block;
+			}
+			return block.materialize(blocks) || block;
+		} catch (e) {
+			// an invalid source stays a code document, which its editor checks
+			return block;
+		}
+	}
+
 	function addBlockImplementation(parent, block, descriptor, path, blocks) {
 		if (!descriptor || !descriptor.file) {
 			return;
@@ -4243,7 +4262,8 @@
 				var blockId = block.blockId || block.name;
 				var blockPath = parentPath + "." + safeVirtualName("block", blockId);
 				var blockSource = sourceDefinitionForFile(block.file, block.implementation || "");
-				var loadedBlock = blocks[blockId] || {};
+				var catalogBlock = projectedCatalogBlock(blocks, blockId);
+				var loadedBlock = catalogBlock || {};
 				var blockDefinition = normalizeTree(loadedBlock.__blockDefinition || block);
 				blockDefinition.blockId = blockId;
 				blockDefinition.name = block.name || block.localName || blockId;
@@ -4259,8 +4279,8 @@
 					block.icon || block.iconify || "mdi:puzzle-outline");
 				parentNode.children.push(blockNode);
 				addBlockProperties(blockNode, blockDefinition, blockPath);
-				addBlockImplementation(blockNode, blocks[blockId], block, blockPath, blocks);
-				addBlockHooks(blockNode, blocks[blockId], blockPath);
+				addBlockImplementation(blockNode, catalogBlock, block, blockPath, blocks);
+				addBlockHooks(blockNode, catalogBlock, blockPath);
 				addBlockUses(blockNode, blockDefinition, blockPath);
 			});
 		});
