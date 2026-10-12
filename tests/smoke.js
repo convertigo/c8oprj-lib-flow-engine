@@ -4400,6 +4400,13 @@ Packages.org.apache.commons.io.FileUtils.writeStringToFile(new java.io.File(fron
 			kind: "text",
 			type: "string",
 			description: "Displayed text."
+		},
+		legacyText: {
+			label: "Legacy text",
+			kind: "text",
+			type: "string",
+			description: "Compatibility alias for Text.",
+			hidden: true
 		}
 	}
 }, null, 2), "UTF-8");
@@ -5305,6 +5312,11 @@ assertTrue(compactFlowSveltePalette.ok === true &&
 			item.properties.text.label === "Text" && item.properties.text.description === "Displayed text.";
 	}),
 	"compact authoring palette should preserve property labels and documentation");
+// a hidden property is neither offered nor documented by the palette, as in the Properties of the Studio
+assertTrue(compactFlowSveltePalette.items.some(function (item) {
+	return item.id === "project.text" && !item.properties.legacyText &&
+		!(item.documentation.properties || []).some(function (property) { return property.name === "legacyText"; });
+}), "the authoring palette offered or documented a hidden property");
 var flowSvelteContract = JSON.parse(engine.authoringContract(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",
@@ -5315,6 +5327,11 @@ assertTrue(flowSvelteContract.ok === true && flowSvelteContract.items.some(funct
 	return item.id === "project.text" && item.properties && item.properties.text &&
 		item.properties.text.type === "string" && item.properties.text.intents[0] === "literal";
 }), "authoring contract should expose canonical properties without building a tree");
+// the contract keeps a hidden property, which still validates in sources, marked as such
+assertTrue(flowSvelteContract.items.some(function (item) {
+	return item.id === "project.text" && item.properties.legacyText && item.properties.legacyText.hidden === true &&
+		item.properties.text.hidden === undefined;
+}), "the authoring contract did not mark a hidden property");
 var flowSvelteForEachPalette = JSON.parse(engine.authoringPalette(JSON.stringify({
 	surface: "frontend",
 	builder: "svelte",

@@ -5715,6 +5715,11 @@
 			if (definition.required === true) {
 				item.required = true;
 			}
+			// a hidden property (a compatibility alias...) still reads in sources, but is neither offered nor
+			// documented, as in the Properties of the Studio
+			if (definition.hidden === true) {
+				item.hidden = true;
+			}
 			["label", "category", "description", "shortDescription", "longDescription"].forEach(function (key) {
 				if (definition[key] !== undefined && definition[key] !== null && String(definition[key]) !== "") {
 					item[key] = normalizeTree(definition[key]);
@@ -5773,7 +5778,13 @@
 				}
 			});
 		}
+		// the palette offers what a new object sets: a hidden property is neither offered nor documented
 		var properties = descriptorPropertyContract(descriptor.properties);
+		Object.keys(properties).forEach(function (name) {
+			if (properties[name].hidden === true) {
+				delete properties[name];
+			}
+		});
 		if (Object.keys(properties).length) {
 			out.properties = properties;
 		}
