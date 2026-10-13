@@ -1657,7 +1657,7 @@
 			// Only identifier keys lower to named result destinations (destination-contract);
 			// other keys keep the object as one return value.
 			if (fields && fields.every(function (field) { return /^[A-Za-z_$][\w$]*$/.test(String(field.key)); })) {
-				return fields.map(function (field) {
+				var assignments = fields.map(function (field) {
 					return {
 						id: "return" + capitalizedIdentifier(field.key),
 						block: "set",
@@ -1666,6 +1666,12 @@
 						__flowScriptLine: lineNumber
 					};
 				});
+				// Inside a branch or a loop, return also leaves the Flow, as in JavaScript;
+				// the final return of the Flow is its end anyway.
+				if (nested) {
+					assignments.push({ id: "return", block: "return", __flowScriptLine: lineNumber });
+				}
+				return assignments;
 			}
 			return [{
 				id: "returnValue",
