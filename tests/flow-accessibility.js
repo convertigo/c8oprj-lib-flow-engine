@@ -22,10 +22,12 @@ try {
 	var diagnostic = (invalid.diagnostics || []).filter(function (d) { return d.code === "FLOW_ACCESSIBILITY_INVALID"; })[0];
 	assert(!invalid.ok && diagnostic && diagnostic.severity === "error", "another value is refused: " + JSON.stringify(invalid));
 
-	function synced(meta) { return api("syncInputs", { name: "Explore", flowSource: code(meta) }).accessibility; }
+	function syncResponse(meta) { return api("syncInputs", { name: "Explore", flowSource: code(meta) }); }
+	function synced(meta) { return syncResponse(meta).accessibility; }
 	assert(synced({ sourceVersion: 2, accessibility: "private", inputs: inputs }) === "Private", "the bean receives the Convertigo name");
 	assert(synced({ sourceVersion: 2, accessibility: "Hidden" }) === "Hidden", "without inputs, and whatever the case");
-	assert(synced({ sourceVersion: 2, inputs: inputs }) === null, "without declaration, the property of the Flow applies");
+	// without declaration, the property of the Flow applies: no accessibility is sent, as a JSON null reads as a null text in Java
+	assert(!("accessibility" in syncResponse({ sourceVersion: 2, inputs: inputs })), "without declaration, no accessibility is sent");
 	print("flow-accessibility OK");
 } finally {
 	FileUtils.deleteQuietly(project);

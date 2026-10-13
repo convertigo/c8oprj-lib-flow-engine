@@ -2907,16 +2907,21 @@
 		var inputSync = Object.keys(inputDefinitions).length
 			? syncProjectFlowInputs(name, inputDefinitions, request)
 			: { synced: false, created: [], updated: [] };
-		return {
+		var response = {
 			ok: true,
 			flowName: name,
 			projectName: currentProjectName(request),
 			projectDir: String(projectDir() || ""),
 			metadataOnly: declaredMetadata,
 			inputDefinitions: inputDefinitions,
-			inputSync: inputSync,
-			accessibility: flowAccessibilityFromMetadata(flowMetadata)
+			inputSync: inputSync
 		};
+		// Only a declared accessibility is sent: Java reads a JSON null as a null text.
+		var accessibility = flowAccessibilityFromMetadata(flowMetadata);
+		if (accessibility !== null) {
+			response.accessibility = accessibility;
+		}
+		return response;
 	}
 
 	function readProjectFlowWorkingCode(name, draftOnly) {
