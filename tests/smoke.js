@@ -2857,6 +2857,30 @@ var summaryTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow"
 	flowSource: 'const _flow={sourceVersion:2};\nfunction Summary(){\nset({$$id:"initItems",path:"local.items",value:["Paris","Lyon"]});\n}' })));
 assertTrue(findChild(summaryTree, "flow").children[0].summary === "local.items = [\"Paris\",\"Lyon\"]",
 	"describeTree(flow) did not expose data-centric display names");
+// A block may list templates: the first one whose properties are all set, {{out}} the output path of the node.
+assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
+	name: "smoke.greet",
+	code: [
+		"const _meta = {",
+		"\t\"description\": \"Greets someone.\",",
+		"\t\"summary\": [\"greet {{name}} -> {{out}}\", \"greet {{name}}\"],",
+		"\t\"runtime\": \"flow\",",
+		"\t\"properties\": { \"name\": { \"kind\": \"value\", \"type\": \"string\" } },",
+		"\t\"outputs\": { \"out\": { \"type\": \"unknown\" } }",
+		"}",
+		"",
+		"function greet({ input, config, result }) {",
+		"\treturn input.name",
+		"}",
+		""
+	].join("\n")
+}))).ok === true, "blockCodeSet did not create a block with summary templates");
+var summaryListTree = JSON.parse(engine.describeTree(JSON.stringify({ target: "flow",
+	flowSource: 'const _flow={sourceVersion:2};\nfunction Greetings(){\nlocal.first = smoke.greet({$$id:"assigned",name:"Ada"});\n' +
+		'smoke.greet({$$id:"plain",name:"Bob"});\nsmoke.greet({$$id:"unnamed"});\n}' })));
+var greetings = findChild(summaryListTree, "flow").children.map(function (node) { return node.summary; });
+assertTrue(greetings[0] === "greet Ada -> local.first" && greetings[1] === "greet Bob" && greetings[2] === "greet",
+	"describeTree(flow) did not use the first summary template whose properties are set: " + JSON.stringify(greetings));
 var simpleLoopContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: flowSource,
 	node: "pushCurrent",

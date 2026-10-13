@@ -3512,7 +3512,8 @@
 
 	// Human display of a node in the tree: what the block does with its inputs, not
 	// its technical name. A block declares `_meta.summary` as a template over its
-	// properties ("{{left}} equals {{right}}"); without a template the display is the
+	// properties ("{{left}} equals {{right}}"), or a list of templates of which the first
+	// one whose properties are all set is used; without a template the display is the
 	// block local name followed by the node identity. The icon already tells the family.
 	function summaryPropertyText(value) {
 		if (value === undefined || value === null) return "";
@@ -3522,16 +3523,29 @@
 		return String(value);
 	}
 
+	// {{out}} reads the output path of the node, which an assignment sets
 	function nodeSummary(block, catalog, node, id, blockName) {
 		var props = node && node.props && typeof node.props === "object" ? node.props : {};
-		var template = catalog && typeof catalog.summary === "string" ? catalog.summary : "";
-		if (template) {
-			var rendered = template.replace(/\{\{\s*([A-Za-z0-9_.$]+)\s*\}\}/g, function (match, key) {
+		var declared = catalog ? catalog.summary : null;
+		var templates = Object.prototype.toString.call(declared) === "[object Array]" ? declared
+			: typeof declared === "string" && declared ? [declared] : [];
+		var single = templates !== declared;
+		for (var i = 0; i < templates.length; i++) {
+			var missing = false;
+			var rendered = String(templates[i] || "").replace(/\{\{\s*([A-Za-z0-9_.$]+)\s*\}\}/g, function (match, key) {
 				if (key === "$$id" || key === "id" && props.id === undefined) return String(id);
 				var value = props[key];
-				return value === undefined || value === null || value === "" ? "" : summaryPropertyText(value);
+				if ((value === undefined || value === null || value === "") && key === "out" && env.nodeOutputPath) {
+					value = env.nodeOutputPath(node);
+				}
+				if (value === undefined || value === null || value === "") {
+					missing = true;
+					return "";
+				}
+				return summaryPropertyText(value);
 			}).replace(/\s+/g, " ").trim();
-			if (rendered) return summaryText(rendered);
+			// a single template keeps the summary it renders; in a list, the first one whose properties are all set
+			if (rendered && (single || !missing)) return summaryText(rendered);
 		}
 		var label = id;
 		try {
@@ -3544,7 +3558,9 @@
 			label = id;
 		}
 		var localName = String(blockName || "").split(".").pop();
-		return summaryText(localName + " " + summaryPropertyText(label));
+		var text = summaryPropertyText(label);
+		// a display name that starts with the name of the block does not repeat it ("request", not "request request")
+		return summaryText(localName && (text === localName || text.indexOf(localName + " ") === 0) ? text : localName + " " + text);
 	}
 
 	function addNodeSlots(parent, node, nodePath, catalog, blocks, analysisById, sourceInfo, sourceNodePath) {
