@@ -166,6 +166,25 @@
 		return env.normalizeTree(value);
 	}
 
+	function listItems(value, env) {
+		value = strictValue(value, env);
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return value;
+		}
+		return value === undefined || value === null || value === "" ? [] : [value];
+	}
+
+	// Scalars are equal when their texts are; objects and lists never are
+	function sameItem(first, second, env) {
+		first = strictValue(first, env);
+		second = strictValue(second, env);
+		if (first === undefined || first === null || second === undefined || second === null ||
+				typeof first === "object" || typeof second === "object") {
+			return false;
+		}
+		return String(first) === String(second);
+	}
+
 	function expressionFunctions(env) {
 		return {
 			lower: function (value) {
@@ -197,6 +216,20 @@
 			round: function (value, digits) {
 				var factor = Math.pow(10, Number(digits || 0));
 				return Math.round(Number(value) * factor) / factor;
+			},
+			// A single value counts as a list of one item, as a JWT aud claim: oneOf(clientId, claims.aud)
+			oneOf: function (value, list) {
+				return listItems(list, env).some(function (item) {
+					return sameItem(item, value, env);
+				});
+			},
+			overlaps: function (first, second) {
+				var others = listItems(second, env);
+				return listItems(first, env).some(function (item) {
+					return others.some(function (other) {
+						return sameItem(item, other, env);
+					});
+				});
 			},
 			"default": function (value, fallback) {
 				return value === undefined || value === null || value === "" ? fallback : value;

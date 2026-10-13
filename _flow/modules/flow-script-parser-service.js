@@ -1134,7 +1134,7 @@
 				return true;
 			}
 			return ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
-				"length", "list.length", "round", "default", "json"].indexOf(name) !== -1;
+				"length", "list.length", "round", "default", "json", "oneOf", "overlaps"].indexOf(name) !== -1;
 		}
 
 		function parseNaturalFlowScriptCallMember(text) {

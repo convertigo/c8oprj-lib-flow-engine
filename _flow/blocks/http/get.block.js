@@ -53,6 +53,20 @@ const _meta = {
       "type": "object",
       "description": "Optional query parameters object.",
     },
+    "username": {
+      "label": "User name",
+      "category": "Expert",
+      "kind": "template",
+      "type": "string",
+      "description": "Optional user name sent with HTTP Basic authentication (preemptive).",
+    },
+    "password": {
+      "label": "Password",
+      "category": "Expert",
+      "kind": "template",
+      "type": "string",
+      "description": "Password of the HTTP Basic authentication. Read it from config, never write it in the Flow.",
+    },
   },
   "runtime": "rhino",
   "hooks": {
@@ -68,7 +82,9 @@ const _meta = {
 				method: "GET",
 				url: ctx.template(props.url),
 				query: ctx.template(props.query),
-				headers: ctx.template(props.headers)
+				headers: ctx.template(props.headers),
+				username: props.username === undefined ? undefined : ctx.template(props.username),
+				password: props.password === undefined ? undefined : ctx.template(props.password)
 			}, {
 				out: ctx.outputPath(node),
 				id: node.id || "request"

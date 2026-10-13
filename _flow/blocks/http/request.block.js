@@ -58,7 +58,21 @@ const _meta = {
       "label": "Body",
       "kind": "expression",
       "type": "unknown",
-      "description": "Optional request body expression.",
+      "description": "Optional request body expression. An object is sent as JSON, or as form fields with a Content-Type application/x-www-form-urlencoded header.",
+    },
+    "username": {
+      "label": "User name",
+      "category": "Expert",
+      "kind": "template",
+      "type": "string",
+      "description": "Optional user name sent with HTTP Basic authentication (preemptive).",
+    },
+    "password": {
+      "label": "Password",
+      "category": "Expert",
+      "kind": "template",
+      "type": "string",
+      "description": "Password of the HTTP Basic authentication. Read it from config, never write it in the Flow.",
     },
     "connectTimeoutMs": {
       "label": "Connection timeout (ms)",
@@ -100,6 +114,7 @@ const _meta = {
 	var JavaHttpRequest = Packages.java.net.http.HttpRequest;
 	var JavaHttpResponse = Packages.java.net.http.HttpResponse;
 	var StandardCharsets = Packages.java.nio.charset.StandardCharsets;
+	var Base64 = Packages.java.util.Base64;
 
 	var javaHttpClient;
 
@@ -157,6 +172,38 @@ const _meta = {
 		return Object.keys(headers || {}).some(function (key) {
 			return String(key).toLowerCase() === expected;
 		});
+	}
+
+	function headerValue(headers, headerName) {
+		var expected = String(headerName || "").toLowerCase();
+		var value = "";
+		Object.keys(headers || {}).forEach(function (key) {
+			if (String(key).toLowerCase() === expected) {
+				value = String(headers[key]);
+			}
+		});
+		return value;
+	}
+
+	// An object body with a form Content-Type is sent as application/x-www-form-urlencoded fields.
+	function formBody(body, headers) {
+		if (body === undefined || body === null || typeof body !== "object" ||
+				!/application\/x-www-form-urlencoded/i.test(headerValue(headers, "content-type"))) {
+			return body;
+		}
+		var parts = [];
+		Object.keys(body).forEach(function (key) {
+			var value = body[key];
+			if (value === undefined || value === null) {
+				return;
+			}
+			parts.push(URLEncoder.encode(String(key), "UTF-8") + "=" + URLEncoder.encode(String(value), "UTF-8"));
+		});
+		return parts.join("&");
+	}
+
+	function basicAuthorization(username, password) {
+		return "Basic " + String(Base64.getEncoder().encodeToString(new java.lang.String(username + ":" + password).getBytes("UTF-8")));
 	}
 
 	function addHeaders(builder, headers) {
@@ -280,12 +327,17 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			var headers = ctx.template(props.headers) || {};
+			var headers = Object.assign({}, ctx.template(props.headers) || {});
+			var username = props.username === undefined || props.username === null ? "" : String(ctx.template(props.username) || "");
+			if (username && !hasHeader(headers, "authorization")) {
+				var password = props.password === undefined || props.password === null ? "" : String(ctx.template(props.password) || "");
+				headers.Authorization = basicAuthorization(username, password);
+			}
 			var method = String(props.method || "GET").toUpperCase();
 			var url = appendQuery(ctx.template(props.url), ctx.template(props.query));
 			var connectTimeoutMs = props.connectTimeoutMs === undefined ? 60000 : Number(ctx.expr(props.connectTimeoutMs));
 			var readTimeoutMs = props.readTimeoutMs === undefined ? 60000 : Number(ctx.expr(props.readTimeoutMs));
-			var body = props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body);
+			var body = formBody(props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body), headers);
 			var response;
 			if (isFileUrl(url)) {
 				response = runFileHttp(method, url);

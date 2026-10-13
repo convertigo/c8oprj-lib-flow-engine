@@ -31,5 +31,8 @@
   { "block": "duration.format", "input": { "milliseconds": 75432, "showHours": false, "fractionDigits": 1 }, "expected": "01:15.4" },
   { "block": "number.add", "input": { "left": 12.5, "right": 7.5 }, "expected": 20 },
   { "block": "number.subtract", "input": { "left": 20, "right": 7.5 }, "expected": 12.5 },
-  { "block": "number.choose", "input": { "condition": true, "whenTrue": 12, "whenFalse": 4 }, "expected": 12 }
+  { "block": "number.choose", "input": { "condition": true, "whenTrue": 12, "whenFalse": 4 }, "expected": 12 },
+  { "block": "text.match", "input": { "text": "https://login.example/abc/v2.0", "pattern": "^https://([^/]+)/([^/]+)/" }, "expected": { "matched": true, "groups": ["https://login.example/abc/", "login.example", "abc"] } },
+  { "block": "text.split", "input": { "text": " a, b ,, c ", "separator": "," }, "expected": ["a", "b", "c"] },
+  { "block": "date.iso", "input": { "value": 0 }, "expected": "1970-01-01T00:00:00.000Z" }
 ]
