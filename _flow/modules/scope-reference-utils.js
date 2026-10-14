@@ -22,7 +22,7 @@
 			addPath(path);
 			return path;
 		});
-		value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, path) {
+		value.replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, path) {
 			String(path).replace(/\bconfig(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+/g, function (configPath) {
 				addPath(configPath);
 				return configPath;
@@ -51,7 +51,7 @@
 			if (env.isScopePath(text)) {
 				addUnique(refs, text);
 			}
-			text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, path) {
+			text.replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, path) {
 				var ref = String(path).trim();
 				if (env.isScopePath(ref)) {
 					addUnique(refs, ref);
@@ -80,7 +80,7 @@
 	function collectTemplateRefs(value, refs, env) {
 		refs = refs || [];
 		walkTree(value, function (text) {
-			text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expression) {
+			text.replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expression) {
 				collectExpressionRefs(String(expression).trim(), refs, env);
 				return "";
 			});
@@ -92,7 +92,7 @@
 		if (typeof value !== "string") {
 			return null;
 		}
-		var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+		var exact = value.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
 		return exact ? exact[1] : null;
 	}
 

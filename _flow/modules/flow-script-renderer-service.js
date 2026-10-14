@@ -41,7 +41,7 @@
 			}, false);
 		}
 		if (typeof value === "string") {
-			var exact = value.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+			var exact = value.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
 			if (exact) {
 				return renderFlowScriptExpression(exact[1], locals, env);
 			}
@@ -67,7 +67,7 @@
 			return flowScriptInlineValue(expr, env, indent);
 		}
 		expr = String(expr || "").trim();
-		var exact = expr.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+		var exact = expr.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
 		if (exact) {
 			expr = exact[1].trim();
 		}
@@ -80,7 +80,7 @@
 	}
 
 	function renderFlowScriptTemplate(text, locals, env) {
-		return String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expr) {
+		return String(text || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expr) {
 			return "{{ " + renderFlowScriptExpression(expr, locals, env) + " }}";
 		});
 	}
@@ -100,7 +100,7 @@
 		}
 		var out = "`";
 		var index = 0;
-		String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (match, expr, offset) {
+		String(text || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (match, expr, offset) {
 			out += flowScriptTemplateLiteralPart(String(text).substring(index, offset));
 			out += "${" + renderFlowScriptExpression(expr, locals, env) + "}";
 			index = offset + match.length;
@@ -117,7 +117,7 @@
 		}
 		if (kind === "template" || kind === "value" || kind === "configOverrides") {
 			if (typeof value === "string") {
-				var exact = value.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+				var exact = value.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
 				if (exact) {
 					return renderFlowScriptExpression(exact[1], locals, env);
 				}

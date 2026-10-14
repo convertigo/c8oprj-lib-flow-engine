@@ -62,8 +62,10 @@
 		return strictValue(left, env) === strictValue(right, env);
 	}
 
+	// A {{ expression }} ends at the first }} outside its quoted strings, which may hold braces:
+	// {{ config.authority + "{tenantid}/v2.0" }}. The same pattern is used wherever templates are read.
 	function renderTemplate(template, ctx, env) {
-		return String(template || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, path) {
+		return String(template || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, path) {
 			var value = evaluate(ctx, path, env);
 			if (value === undefined || value === null) {
 				return "";
@@ -79,7 +81,7 @@
 		if (typeof value !== "string") {
 			return value;
 		}
-		var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+		var exact = value.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
 		if (exact) {
 			return evaluate(ctx, exact[1], env);
 		}
@@ -109,7 +111,7 @@
 		if (typeof value !== "string") {
 			return function () { return value; };
 		}
-		var exact = value.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+		var exact = value.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
 		if (exact && isSimpleScopePath(exact[1], env)) {
 			var exactParts = String(exact[1]).split(".");
 			return function (ctx) { return readSimpleScopeParts(ctx, exactParts); };

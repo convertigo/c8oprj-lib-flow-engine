@@ -19,7 +19,7 @@
 			return "null";
 		}
 		if (typeof input === "string") {
-			var exact = input.match(/^\s*\{\{\s*([^}]+?)\s*\}\}\s*$/);
+			var exact = input.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
 			if (exact) {
 				return text(exact[1], max);
 			}

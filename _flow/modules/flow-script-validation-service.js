@@ -29,7 +29,7 @@
 		if (exact) {
 			return [exact];
 		}
-		String(value).replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expr) {
+		String(value).replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expr) {
 			out.push(String(expr || "").trim());
 			return _;
 		});

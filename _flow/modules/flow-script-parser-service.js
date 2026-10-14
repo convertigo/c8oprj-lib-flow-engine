@@ -606,7 +606,7 @@
 	
 		function flowScriptRewriteExpression(expr, locals) {
 			expr = String(expr || "").trim();
-			var exact = expr.match(/^\{\{\s*([^}]+?)\s*\}\}$/);
+			var exact = expr.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
 			if (exact) {
 				expr = exact[1].trim();
 			}
@@ -821,7 +821,7 @@
 		}
 	
 		function flowScriptRewriteTemplateText(text, locals) {
-			return String(text || "").replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_, expr) {
+			return String(text || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expr) {
 				return "{{ " + flowScriptRewriteExpression(expr, locals) + " }}";
 			});
 		}
