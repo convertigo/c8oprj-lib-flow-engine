@@ -2787,16 +2787,31 @@
 			variable[setter](next);
 			return true;
 		}
+		// A default naming symbols (${name}) is kept as the source value of the variable, saved as is, and used
+		// compiled, as the bean properties of the former sequences: compare with that source value.
 		function setDefaultIfChanged(variable, value) {
 			if (value === undefined) {
 				return false;
 			}
 			var next = value === null ? null : value;
-			var current = variable.getValueOrNull ? variable.getValueOrNull() : undefined;
+			var source = null;
+			try {
+				source = variable.getCompilablePropertySourceValue ? variable.getCompilablePropertySourceValue("value") : null;
+			} catch (_noSourceValue) {
+			}
+			var current = source !== null && source !== undefined ? source
+				: variable.getValueOrNull ? variable.getValueOrNull() : undefined;
 			if (sameValue(current, next)) {
 				return false;
 			}
-			variable.setValueOrNull(next);
+			if (typeof next === "string" && variable.compileProperty) {
+				variable.setValueOrNull(variable.compileProperty("value", next));
+			} else {
+				if (variable.removeCompilablePropertySourceValue) {
+					variable.removeCompilablePropertySourceValue("value");
+				}
+				variable.setValueOrNull(next);
+			}
 			return true;
 		}
 		var keys = Object.keys(inputDefinitions).filter(function (key) {
