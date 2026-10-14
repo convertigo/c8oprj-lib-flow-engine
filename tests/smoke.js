@@ -1982,6 +1982,26 @@ assertTrue(frontendWrite.ok === true && frontendWrite.target === "frontend" && f
 var frontendRead = JSON.parse(engine.blockCodeGet(JSON.stringify({ name: "smoke.normalize", target: "frontend" })));
 assertTrue(frontendRead.ok === true && frontendRead.code.indexOf("trim()") !== -1 && frontendRead.revision === frontendWrite.revision,
 	"blockCodeGet did not return browser code and its revision");
+// the browser code of a frontend block is its Implementation in the tree, its FlowScript body the fallback
+var frontendCatalogTree = JSON.parse(eval(source).describeTree(JSON.stringify({
+	target: "engine",
+	engineSource: "version: 1\nconfig: {}\n",
+	projectDir: __flowProjectDir,
+	includeFlowCatalog: true,
+	flowCatalogOrigin: "project",
+	includeCatalogLibraries: false,
+	includeFrontendCatalog: false
+})));
+var normalizeCatalogNode = findNode(frontendCatalogTree, function (node) {
+	return node.kind === "block" && node.type === "smoke.normalize";
+});
+var normalizeBrowser = findChild(normalizeCatalogNode, "implementation");
+var normalizeFallback = findChild(normalizeCatalogNode, "flowImplementation");
+assertTrue(normalizeBrowser !== null && normalizeBrowser.type === "javascript" &&
+	JSON.stringify(normalizeBrowser).indexOf("normalize.browser.js") !== -1 &&
+	normalizeFallback !== null && normalizeFallback.type === "flow",
+	"the tree did not show the browser code as the implementation of a frontend block: " +
+	JSON.stringify(normalizeCatalogNode && normalizeCatalogNode.children.map(function (child) { return [child.name, child.type]; })));
 var frontendInvalid = JSON.parse(engine.blockCodeCheck(JSON.stringify({
 	name: "smoke.normalize", target: "frontend", code: "function () { return Packages.java.lang.System }"
 })));

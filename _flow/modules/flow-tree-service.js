@@ -4042,24 +4042,35 @@
 		if (!descriptor || !descriptor.file) {
 			return;
 		}
+		var frontendFile = frontendImplementationFile(block, descriptor);
+		var targets = normalizeTree(block && block.__blockDefinition || descriptor).targets || [];
+		var frontendOnly = Boolean(frontendFile) && targets.length === 1 && String(targets[0]) === "frontend";
 		if (block && block.__graphDefinition) {
+			// The browser code of a frontend block is its implementation; its FlowScript body is only the
+			// fallback the declaration carries (a backend run, for instance).
+			if (frontendOnly) {
+				addJavascriptImplementationNode(parent, frontendFile, path + ".implementation", "implementation", "Implementation");
+			}
 			var flowSource = sourceDefinitionForFile(block.__flowImplementationFile || descriptor.implementationFile || descriptor.file, "flow");
 			flowSource.sourceBlockName = descriptor.blockId || block.name || descriptor.name || "";
 			flowSource.sourceMutationPath = "nodes";
 			flowSource.flowImplementation = true;
 			var flowSourceInfo = sourceObjectInfo(flowSource, sourcePropertyDefinitions(),
 				["implementationKind", "sourceRelativePath", "sourceOrigin", "sourceWritable", "readOnly"]);
-			var flowNode = virtualNode("implementation", "blockImplementation", "flow",
-				path + ".implementation", "Implementation",
+			var flowId = frontendOnly ? "flowImplementation" : "implementation";
+			var flowNode = virtualNode(flowId, "blockImplementation", "flow",
+				path + "." + flowId, frontendOnly ? "Flow fallback" : "Implementation",
 				compact(flowSource), compact(flowSourceInfo), "mdi:source-branch");
 			parent.children.push(flowNode);
 			addImplementationNodes(flowNode, block.__graphDefinition.nodes || [],
-				path + ".implementation.nodes", blocks, ["block:" + block.name], flowSource, "nodes");
+				path + "." + flowId + ".nodes", blocks, ["block:" + block.name], flowSource, "nodes");
+			if (frontendFile && !frontendOnly) {
+				addJavascriptImplementationNode(parent, frontendFile,
+					path + ".frontendImplementation", "frontendImplementation", "Frontend implementation");
+			}
 			return;
 		}
 		var jsFile = block && block.__flowImplementationFile ? block.__flowImplementationFile : descriptor.implementationFile || descriptor.file;
-		var frontendFile = frontendImplementationFile(block, descriptor);
-		var targets = normalizeTree(block && block.__blockDefinition || descriptor).targets || [];
 		if (frontendFile && targets.length === 1 && String(targets[0]) === "frontend") {
 			addJavascriptImplementationNode(parent, frontendFile, path + ".implementation", "implementation", "Implementation");
 			return;
