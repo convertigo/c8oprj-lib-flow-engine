@@ -21,10 +21,10 @@ const _meta = {
   "properties": {
     "key": {
       "label": "Key",
-      "kind": "text",
+      "kind": "template",
       "type": "string",
       "default": "field",
-      "description": "JSON object key.",
+      "description": "JSON object key: a literal such as \"title\", or a value such as input.attribute for a key known at run time.",
     },
     "value": {
       "label": "Value",
@@ -56,7 +56,8 @@ const _meta = {
 				ctx.raise("JSON_TARGET_REQUIRED", "json.field must run inside json.object.");
 			}
 			var value = node.nodes && node.nodes.length ? ctx.runNodes(node.nodes) : ctx.input(props, null);
-			target[String(props.key || "field")] = value;
+			var key = props.key === undefined || props.key === null || props.key === "" ? "field" : ctx.template(props.key);
+			target[String(key === undefined || key === null || key === "" ? "field" : key)] = value;
 			return value;
 		}
 	};

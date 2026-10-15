@@ -436,10 +436,23 @@
 			return out;
 		}
 	
+		// One string literal: the quote that opens it closes it at the very end, so "a" + x + "b"
+		// is an expression, not the string a" + x + "b.
 		function isFlowScriptQuoted(text) {
 			text = String(text || "").trim();
-			return text.length >= 2 && (text.charAt(0) === "\"" && text.charAt(text.length - 1) === "\"" ||
-				text.charAt(0) === "'" && text.charAt(text.length - 1) === "'");
+			var quote = text.charAt(0);
+			if (text.length < 2 || (quote !== "\"" && quote !== "'") || text.charAt(text.length - 1) !== quote) {
+				return false;
+			}
+			for (var i = 1; i < text.length - 1; i++) {
+				var ch = text.charAt(i);
+				if (ch === "\\") {
+					i++;
+				} else if (ch === quote) {
+					return false;
+				}
+			}
+			return true;
 		}
 	
 		function isFlowScriptTemplateLiteral(text) {
@@ -846,7 +859,35 @@
 				}
 				return literal;
 			}
-			return "{{ " + flowScriptRewriteExpression(token, locals) + " }}";
+			return flowScriptExpressionTemplate(token, locals, lineNumber);
+		}
+
+		// A value written as an expression becomes a {{ expression }} evaluated at run time. The
+		// expression ends at the first } outside its strings: a block call (date.now({})) or an object
+		// literal inside it would leave the whole value as plain text, so they are refused here.
+		function flowScriptExpressionTemplate(token, locals, lineNumber) {
+			var expression = flowScriptRewriteExpression(token, locals);
+			var template = "{{ " + expression + " }}";
+			var holds = /^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/.exec(template);
+			if (!holds || holds[1].length !== expression.trim().length) {
+				var call = /([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$.]*)\s*\(\s*\{/.exec(String(token));
+				env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "Unsupported FlowScript expression at line " + lineNumber + ": " + String(token).trim(),
+					null, call
+						? "A block call cannot be nested in an expression: assign it to a local first, for example local.value = " + call[1] + "({ ... }), then use local.value."
+						: "An object literal cannot be used inside an expression: assign it to a local first (local.empty = {}), then use the local.");
+			}
+			return template;
+		}
+
+		// A text property takes the literal written in the source: a scope path there would be kept as
+		// the text "input.name" instead of its value.
+		function flowScriptTextFromToken(blocks, block, key, token, lineNumber) {
+			var text = String(token || "").trim();
+			if (!isFlowScriptQuoted(text) && /^(input|local|config|current|result|session|item)(\.|\[|$)/.test(text)) {
+				env.raise("FLOWSCRIPT_TEXT_PROPERTY_PATH", "Property " + key + " of " + block + " takes a literal text, not the value of " + text + " (line " + lineNumber + ")",
+					null, "Write a quoted literal, or use a block whose property accepts a value.");
+			}
+			return unquoteFlowScriptString(token);
 		}
 	
 		// Engine attributes ($$id, $$disabled, $$comment, $$out) stay on the node;
@@ -890,7 +931,7 @@
 				} else if (kind === "schema") {
 					args[key] = parseFlowScriptMetadataValue(tokens[key], lineNumber);
 				} else if (kind === "text" || kind === "secret") {
-					args[key] = unquoteFlowScriptString(tokens[key]);
+					args[key] = flowScriptTextFromToken(blocks, block, key, tokens[key], lineNumber);
 				} else {
 					args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
 				}
@@ -956,7 +997,7 @@
 			}
 			if (kind === "schema") return parseFlowScriptMetadataValue(token, lineNumber);
 			if (kind === "text" || kind === "secret") {
-				return unquoteFlowScriptString(token);
+				return flowScriptTextFromToken(blocks, block, key, token, lineNumber);
 			}
 			return flowScriptValueFromToken(token, locals, lineNumber);
 		}
@@ -1516,9 +1557,8 @@
 			if (block === "list.map") {
 				var mapNodes = buildNaturalListMapNodes(blocks, imports, varName, args, locals, lineNumber);
 				if (mapNodes) {
-					var mapOptions = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
-					if (Object.keys(mapOptions).some(function (key) { return key !== "props"; }) ||
-						Object.keys(mapOptions.props).some(function (key) { return key !== "items" && key !== "select"; })) {
+					// only the keys matter here: the values (nested block calls of the projection) are lowered above
+					if (naturalFlowScriptObjectFields(args[0]).some(function (field) { return field.key !== "items" && field.key !== "select"; })) {
 						env.raise("FLOW_SOURCE_LOWERING_METADATA_UNSUPPORTED", "Expanded list.map cannot discard additional attributes; use an explicit forEach for this form.");
 					}
 					return mapNodes;

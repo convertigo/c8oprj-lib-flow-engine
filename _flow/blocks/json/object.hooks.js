@@ -23,7 +23,8 @@
 			}
 			var fieldProps = props(field);
 			var key = fieldProps.key;
-			if (key === undefined || key === null || key === "") {
+			if (key === undefined || key === null || key === "" || String(key).indexOf("{{") !== -1) {
+				// a key known at run time only: its field is not part of the static schema
 				return;
 			}
 			var schema = fieldSchema(ctx, field);
