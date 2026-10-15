@@ -190,7 +190,7 @@ try {
 
 	var catalog = JSON.parse(engine.catalog(JSON.stringify({ q: "email", detail: "full" })));
 	var block = catalog.blocks.filter(function (item) { return item.blockId === "email.send"; })[0];
-	assertTrue(block && block.props.values.kind === "value" && block.props.security.kind === "literal" && block.outputs.out.properties.ok.type === "boolean", "catalog exposes email.send");
+	assertTrue(block && block.props.values.kind === "value" && block.props.security.kind === "value" && block.outputs.out.properties.ok.type === "boolean", "catalog exposes email.send");
 	print("email.send: ok (" + messages.length + " messages received)");
 } finally {
 	listener.close();

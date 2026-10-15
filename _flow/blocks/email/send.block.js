@@ -70,7 +70,7 @@ const _meta = {
     },
     "security": {
       "label": "Security",
-      "kind": "literal",
+      "kind": "value",
       "type": "string",
       "enum": [
         "starttls",
@@ -169,7 +169,7 @@ const _meta = {
 					from: text(ctx, props.from),
 					host: text(ctx, props.host),
 					port: value(ctx, props.port),
-					security: props.security,
+					security: value(ctx, props.security),
 					user: text(ctx, props.user),
 					password: text(ctx, props.password),
 					replyTo: text(ctx, props.replyTo),

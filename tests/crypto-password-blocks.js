@@ -78,9 +78,13 @@ assertTrue(one("crypto.equals", { value: "abc", expected: "abc" }) === true, "eq
 assertTrue(one("crypto.equals", { value: "abc", expected: "abd" }) === false, "different values");
 assertTrue(one("crypto.equals", { value: "", expected: "" }) === false, "empty values never match");
 
+// crypto.serverKey: outside a Convertigo server the passphrase is not available
+assertTrue(error("crypto.serverKey", { purpose: "" }).code === "CRYPTO_PURPOSE_REQUIRED", "a purpose is required");
+assertTrue(error("crypto.serverKey", { purpose: "test" }).code === "CRYPTO_SERVER_KEY_UNAVAILABLE", "no server passphrase in the test shell");
+
 // catalog
 var catalog = JSON.parse(engine.catalog(JSON.stringify({ q: "crypto", detail: "full" })));
-["crypto.hash", "crypto.hmac", "crypto.random", "crypto.equals"].forEach(function (id) {
+["crypto.hash", "crypto.hmac", "crypto.random", "crypto.equals", "crypto.serverKey"].forEach(function (id) {
 	assertTrue(catalog.blocks.some(function (item) { return item.blockId === id; }), "catalog exposes " + id);
 });
 var passwords = JSON.parse(engine.catalog(JSON.stringify({ q: "password", detail: "full" })));

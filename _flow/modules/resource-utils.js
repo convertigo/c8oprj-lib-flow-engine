@@ -59,7 +59,8 @@
 			].indexOf(String(path)) !== -1) {
 				return true;
 			}
-			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
+			// html: backend templates such as the emails a Flow sends (read with asset.read, filled by email.send)
+			return ["md", "txt", "json", "xml", "yaml", "yml", "html"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
