@@ -63,7 +63,7 @@ assertTrue(called.result.config.email.smtp.port === 2525 && called.result.config
 project("App", ["LibA", "LibB"], { sql: { pool: { size: 2 } } }, { configParents: { "email.smtp": "LibA" } });
 engine.cacheClear();
 var selected = api("run", { flowSource: flow, includeTrace: false }).result.config;
-assertTrue(selected.email.smtp.host === "a.smtp" && selected.email.smtp.port === 25 && selected.email.smtp.security === undefined,
+assertTrue(selected.email.smtp.host === "a.smtp" && selected.email.smtp.port === 25 && selected.email.smtp.security !== "starttls",
 	"email.smtp comes from LibA (with what LibA inherits from LibBase), not from LibB: " + JSON.stringify(selected.email));
 assertTrue(selected.sql.dialect === "postgres", "the other branches keep the reference order: " + JSON.stringify(selected.sql));
 

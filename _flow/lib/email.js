@@ -5,8 +5,7 @@
  *   TLS, port 465), with TLS 1.2 / 1.3 only;
  * - authentication when a user is set (over any transport: a plain server is the deployer's
  *   choice, as with the SMTP step of the engine);
- * - a {name} placeholder in the subject, text or HTML body takes the value of the same name in
- *   the values map; in the HTML body the value is escaped, so a user name cannot inject markup;
+ * - the subject and bodies are sent as given: render an HTML body with template.freemarker, which escapes the values;
  * - connection, read and write timeouts always apply (30 s by default);
  * - addresses are validated (RFC 822 strict), the message carries both a text and an HTML part
  *   when both are given (multipart/alternative);
@@ -43,29 +42,6 @@
 		}
 		var parsed = Number(value);
 		return isFinite(parsed) ? parsed : fallback;
-	}
-
-	function escapeHtml(value) {
-		return text(value).replace(/[&<>"']/g, function (c) {
-			return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
-		});
-	}
-
-	// {name} placeholders replaced by the values (escaped in HTML); a missing value is an error
-	function fill(template, values, html) {
-		var missing = [];
-		var filled = text(template).replace(/\{\s*([A-Za-z0-9_.-]+)\s*\}/g, function (all, name) {
-			var value = values && Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined;
-			if (value === undefined || value === null) {
-				missing.push(name);
-				return "";
-			}
-			return html ? escapeHtml(value) : text(value);
-		});
-		if (missing.length) {
-			fail("EMAIL_VALUE_MISSING", "No value for the placeholder " + missing.join(", "), 400);
-		}
-		return filled;
 	}
 
 	function javaPlatform() {
@@ -224,11 +200,8 @@
 
 	var api = {};
 
-	api.fill = fill;
-	api.escapeHtml = escapeHtml;
-
 	// options: host, port, security (none | starttls | ssl), user, password, timeoutMs, from,
-	// to, cc, bcc, replyTo, subject, text, html, values ({name} placeholders)
+	// to, cc, bcc, replyTo, subject, text, html
 	api.send = function (options) {
 		options = options || {};
 		var host = text(options.host).trim();
@@ -256,9 +229,8 @@
 		if (to === "") {
 			fail("EMAIL_ADDRESS_INVALID", "The recipient is empty", 400);
 		}
-		var values = options.values && typeof options.values === "object" ? options.values : null;
-		var html = fill(options.html, values, true);
-		var plain = fill(options.text, values, false);
+		var html = text(options.html);
+		var plain = text(options.text);
 		if (html === "" && plain === "") {
 			fail("EMAIL_CONFIGURATION_INVALID", "The email has no text and no HTML body", 400);
 		}
@@ -274,7 +246,7 @@
 			cc: text(options.cc).trim(),
 			bcc: text(options.bcc).trim(),
 			replyTo: text(options.replyTo).trim(),
-			subject: fill(options.subject, values, false),
+			subject: text(options.subject),
 			text: plain,
 			html: html
 		});

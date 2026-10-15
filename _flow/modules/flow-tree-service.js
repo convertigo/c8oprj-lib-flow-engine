@@ -746,11 +746,25 @@
 
 	// Read-only: the configuration the runtime gives this Flow, with the origin of each value.
 	function addEffectiveConfig(out, trace, request, definition) {
-		var description = "Read-only: what this Flow receives at run time. Its Flow defaults, then the project default merged with "
-			+ "the named configurations of its tags, value by value in tag order (the last one wins); a call config replaces whole root branches.";
+		var description = "Read-only: what this Flow receives at run time, merged value by value: its Flow defaults, the configuration "
+			+ "inherited from lib_flow_engine and the referenced projects (in reference order), the project default with the named "
+			+ "configurations of its tags (the last one wins), then the call config. Inherited branches the Flow does not read are not listed.";
 		var result;
 		try { result = trace(request, definition); }
 		catch (e) { description = "The effective configuration cannot be computed: " + String(e && e.message || e); }
+		if (result) {
+			// Inherited branches matter only when the Flow reads them: a library may ship hundreds of settings.
+			var used = Object.create(null);
+			(result.used || []).forEach(function (key) { used[key] = true; });
+			var shownConfig = {};
+			Object.keys(result.config || {}).forEach(function (key) {
+				var inheritedOnly = Object.keys(result.sources || {}).every(function (path) {
+					return !(path === key || path.indexOf(key + ".") === 0) || String(result.sources[path]).indexOf("parent ") === 0;
+				});
+				if (!inheritedOnly || used[key]) shownConfig[key] = result.config[key];
+			});
+			result = Object.assign({}, result, { config: shownConfig });
+		}
 		// A Flow without any configuration keeps its tree unchanged; an error stays visible.
 		if (result && !Object.keys(result.config || {}).some(function (key) { return key !== "bindings" && key !== "binding"; })) return;
 		var folder = virtualNodeFromPlain("effectiveConfig", "scope", "config", "effectiveConfig", "Effective configuration", {},

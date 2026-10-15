@@ -6,6 +6,8 @@ var __flowProjectDir = String(project.getAbsolutePath());
 var files = Packages.org.apache.commons.io.FileUtils;
 var checks = 0;
 function assert(value, message) { checks++; if (!value) throw new Error(message); }
+// The platform defaults inherited from lib_flow_engine (email.smtp) are left out of the comparisons of a project's own configuration.
+function own(config) { var copy = JSON.parse(JSON.stringify(config)); delete copy.email; return copy; }
 function equal(actual, expected, message) { assert(JSON.stringify(actual) === JSON.stringify(expected), message + ": " + JSON.stringify(actual)); }
 try {
 	var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
@@ -30,7 +32,7 @@ try {
 	var run = api("run", request);
 	assert(run.ok, "Tagged runtime failed: " + JSON.stringify(run));
 	// default, then B1 and Mail (first tag), then B2 (last tag), merged value by value; the Flow default keeps its own root keys.
-	equal(run.result.snapshot, {api: {host: "two", commonOnly: true, token: "not-for-the-picker", port: 42}, flowOnly: 1, common: true,
+	equal(own(run.result.snapshot), {api: {host: "two", commonOnly: true, token: "not-for-the-picker", port: 42}, flowOnly: 1, common: true,
 		flag: null, smtp: {host: "mail"}}, "Named configurations merge over default value by value, the last tag winning");
 	function treeNode(nodes, path) {
 		for (var i = 0; i < (nodes || []).length; i++) {

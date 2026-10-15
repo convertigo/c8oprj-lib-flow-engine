@@ -371,7 +371,8 @@
 		var requestRoot = env.requestRootLayer ? env.requestRootLayer(request) : undefined;
 		if (requestRoot) layer(requestRoot.config, "request project " + requestRoot.project);
 		layer(request && request.config, "call");
-		return { config: config, sources: sources, visibility: projectEngine && projectEngine.configVisibility || {} };
+		var used = env.collectConfigKeys ? env.collectConfigKeys(definition) : [];
+		return { config: config, sources: sources, used: used, visibility: projectEngine && projectEngine.configVisibility || {} };
 	}
 
 	function configurationDefinitions(projectEngine) {

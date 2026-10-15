@@ -4,4 +4,14 @@ bindings: {}
 authoring:
   blockCandidate:
     preferExistingScore: 140
-config: {}
+config:
+  # Defaults of the platform, inherited by every Flow project (a project overrides only what it needs).
+  email:
+    smtp:
+      host: "${lib_flow_engine.smtp.host=}"
+      port: "${lib_flow_engine.smtp.port=}"
+      security: "${lib_flow_engine.smtp.security=starttls}"
+      user: "${lib_flow_engine.smtp.user=}"
+      password: "${lib_flow_engine.smtp.password.secret=}"
+      from: "${lib_flow_engine.smtp.from=}"
+      timeoutMs: 30000

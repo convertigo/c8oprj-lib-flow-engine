@@ -111,8 +111,11 @@ var closedPort = closed.getLocalPort();
 closed.close();
 
 // ---- the tests ------------------------------------------------------------------------------
+// Outside the Convertigo engine the symbols of the inherited config (lib_flow_engine.smtp.*) stay unresolved:
+// the tests give an empty platform SMTP account, as a server without those symbols has.
+var platformSmtp = { email: { smtp: { user: "", password: "" } } };
 function run(nodes, input) {
-	return JSON.parse(engine.run(JSON.stringify({ definition: { version: 1, nodes: nodes }, input: input || {}, includeTrace: false })));
+	return JSON.parse(engine.run(JSON.stringify({ definition: { version: 1, nodes: nodes }, input: input || {}, config: platformSmtp, includeTrace: false })));
 }
 
 function one(block, props) {
@@ -140,15 +143,15 @@ function send(props) {
 }
 
 try {
-	// a text and HTML email with escaped placeholders
-	var sent = one("email.send", send({
-		to: "Ada <ada@example.org>, alan@example.org",
-		cc: "grace@example.org",
-		subject: "Welcome {name}",
-		text: "Hello {name}, confirm at {url}",
-		html: "<p>Hello <b>{name}</b>, <a href=\"{url}\">confirm</a></p>",
-		values: { name: "Ada <script>", url: "https://app.example.org/confirm?key=a&b" }
-	}));
+	// a text and HTML email, the HTML rendered by template.freemarker
+	var rendered = JSON.parse(engine.run(JSON.stringify({ definition: { version: 1, nodes: [
+		{ id: "body", block: "template.freemarker", props: { template: "<p>Hello <b>${name}</b>, <a href=\"${url}\">confirm</a></p>",
+			values: { name: "Ada <script>", url: "https://app.example.org/confirm?key=a&b" } }, out: "local.body" },
+		{ id: "it", block: "email.send", props: send({ to: "Ada <ada@example.org>, alan@example.org", cc: "grace@example.org",
+			subject: "Welcome Ada <script>", text: "Hello Ada <script>, confirm at https://app.example.org/confirm?key=a&b",
+			html: "{{ local.body }}" }), out: "result.it" }] }, config: platformSmtp, includeTrace: false })));
+	assertTrue(rendered.ok === true, "render then send: " + JSON.stringify(rendered).substring(0, 600));
+	var sent = rendered.result.it;
 	assertTrue(sent.ok === true && sent.recipients === 3 && /^<.+>$/.test(sent.messageId), "sent to three recipients: " + JSON.stringify(sent));
 	assertTrue(messages.length === 1, "one message received: " + messages.length);
 	var received = messages[0];
@@ -156,9 +159,9 @@ try {
 		"sender and recipients: " + JSON.stringify(received));
 	assertTrue(received.authenticated === false, "no authentication without a user");
 	assertTrue(/multipart\/alternative/.test(received.data) && /text\/plain/.test(received.data) && /text\/html/.test(received.data), "text and HTML parts: " + received.data.substring(0, 800));
-	assertTrue(received.data.indexOf("Hello Ada <script>, confirm at https://app.example.org/confirm?key=a&b") >= 0, "raw values in the text part");
-	assertTrue(received.data.indexOf("Hello <b>Ada &lt;script&gt;</b>") >= 0 && received.data.indexOf("href=\"https://app.example.org/confirm?key=a&amp;b\"") >= 0, "escaped values in the HTML part: " + received.data);
-	assertTrue(received.data.indexOf("Subject: Welcome Ada <script>") >= 0, "subject placeholder");
+	assertTrue(received.data.indexOf("Hello Ada <script>, confirm at https://app.example.org/confirm?key=a&b") >= 0, "the text part as given");
+	assertTrue(received.data.indexOf("Hello <b>Ada &lt;script&gt;</b>") >= 0 && received.data.indexOf("href=\"https://app.example.org/confirm?key=a&amp;b\"") >= 0, "the HTML part escaped by FreeMarker: " + received.data);
+	assertTrue(received.data.indexOf("Subject: Welcome Ada <script>") >= 0, "subject");
 	assertTrue(received.data.indexOf("Cc: grace@example.org") >= 0 && received.data.indexOf("To: Ada <ada@example.org>, alan@example.org") >= 0, "headers: " + received.data.substring(0, 600));
 
 	// authentication
@@ -173,8 +176,15 @@ try {
 	assertTrue(htmlOnly.ok === true && /Content-Type: text\/html/.test(messages[2].data) && !/multipart/.test(messages[2].data), "HTML only: " + messages[2].data.substring(0, 400));
 	var textOnly = one("email.send", send({ to: "ada@example.org", subject: "Hi", text: "Only text" }));
 	assertTrue(textOnly.ok === true && /Content-Type: text\/plain/.test(messages[3].data) && !/multipart/.test(messages[3].data), "text only");
-	var utf8 = one("email.send", send({ to: "ada@example.org", subject: "Café {name}", text: "Été", values: { name: "Élodie" } }));
+	var utf8 = one("email.send", send({ to: "ada@example.org", subject: "Café Élodie", text: "Été" }));
 	assertTrue(utf8.ok === true && /Subject: =\?UTF-8\?/.test(messages[4].data), "UTF-8 subject encoded: " + messages[4].data.substring(0, 400));
+
+	// the SMTP settings default to config.email.smtp (inherited from lib_flow_engine, overridden here by the call config)
+	var configured = JSON.parse(engine.run(JSON.stringify({ definition: { version: 1, nodes: [{ id: "it", block: "email.send",
+		props: { to: "ada@example.org", subject: "Configured", text: "From the platform settings" }, out: "result.it" }] },
+		config: { email: { smtp: { host: "127.0.0.1", port: port, security: "none", from: "Platform <platform@example.org>", user: "", password: "" } } }, includeTrace: false })));
+	assertTrue(configured.ok === true && configured.result.it.ok === true, "send with the configured SMTP: " + JSON.stringify(configured).substring(0, 600));
+	assertTrue(messages[messages.length - 1].from === "<platform@example.org>", "sender from config.email.smtp.from: " + messages[messages.length - 1].from);
 
 	// errors
 	assertTrue(error("email.send", send({ to: "ada@example.org", subject: "Hi", text: "Hi", host: "" })).code === "EMAIL_CONFIGURATION_INVALID", "host required");
@@ -183,14 +193,13 @@ try {
 	assertTrue(error("email.send", send({ to: "ada@example.org", subject: "Hi", text: "Hi", user: "u", password: "" })).code === "EMAIL_CONFIGURATION_INVALID", "a user needs a password");
 	assertTrue(error("email.send", send({ to: "", subject: "Hi", text: "Hi" })).code === "EMAIL_ADDRESS_INVALID", "recipient required");
 	assertTrue(error("email.send", send({ to: "not an address", subject: "Hi", text: "Hi" })).code === "EMAIL_ADDRESS_INVALID", "recipient validated");
-	assertTrue(error("email.send", send({ to: "ada@example.org", subject: "Hi", text: "Hi {name}" })).code === "EMAIL_VALUE_MISSING", "placeholders need values");
 	var unreachable = error("email.send", send({ to: "ada@example.org", subject: "Hi", text: "Hi", port: closedPort, timeoutMs: 2000 }));
 	assertTrue(unreachable.code === "EMAIL_SEND_FAILED" && unreachable.status === 502, "unreachable server: " + JSON.stringify(unreachable));
-	assertTrue(messages.length === 5, "five messages in all: " + messages.length);
+	assertTrue(messages.length === 6, "six messages in all: " + messages.length);
 
 	var catalog = JSON.parse(engine.catalog(JSON.stringify({ q: "email", detail: "full" })));
 	var block = catalog.blocks.filter(function (item) { return item.blockId === "email.send"; })[0];
-	assertTrue(block && block.props.values.kind === "value" && block.props.security.kind === "value" && block.outputs.out.properties.ok.type === "boolean", "catalog exposes email.send");
+	assertTrue(block && !block.props.values && block.props.security.kind === "value" && block.outputs.out.properties.ok.type === "boolean", "catalog exposes email.send");
 	print("email.send: ok (" + messages.length + " messages received)");
 } finally {
 	listener.close();

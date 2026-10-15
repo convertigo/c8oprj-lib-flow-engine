@@ -897,7 +897,8 @@
 		} catch (ignoredStandalone) {
 			manager = null;
 		}
-		if (!manager) {
+		// without the Convertigo engine (standalone tests) the classes resolve to Java packages, not objects
+		if (!manager || typeof manager["getCompiledValue(java.lang.String)"] !== "function") {
 			return text;
 		}
 		try {

@@ -6,6 +6,8 @@ var __flowProjectDir = String(project.getAbsolutePath());
 var files = Packages.org.apache.commons.io.FileUtils;
 var checks = 0;
 function assert(value, message) { checks++; if (!value) throw new Error(message); }
+// The platform defaults inherited from lib_flow_engine (email.smtp) are left out of the comparisons of a project's own configuration.
+function own(config) { var copy = JSON.parse(JSON.stringify(config)); delete copy.email; return copy; }
 function equal(actual, expected, message) { assert(JSON.stringify(actual) === JSON.stringify(expected), message + ": " + JSON.stringify(actual)); }
 function find(node, path) {
 	if (node.path === path) return node;
@@ -76,7 +78,7 @@ try {
 	engine.cacheClear();
 	var run = api("run", { flowSource: source, includeTrace: false });
 	assert(run.ok, "Runtime with unused named configs");
-	equal(run.result.snapshot, definition.config, "Unselected definitions must not affect common config");
+	equal(own(run.result.snapshot), definition.config, "Unselected definitions must not affect common config");
 	var service = eval(String(files.readFileToString(new java.io.File(engineDir, "modules/project-config-service.js"), "UTF-8")));
 	var env = { normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); } };
 	var composed = service.resolveConfigReferences(definition, ["B1", "SmtpSendGrid", "B2"], env);

@@ -6,6 +6,8 @@ var __flowProjectDir = String(project.getAbsolutePath());
 var files = Packages.org.apache.commons.io.FileUtils;
 var checks = 0;
 function assert(value, message) { checks++; if (!value) throw new Error(message); }
+// The platform defaults inherited from lib_flow_engine (email.smtp) are left out of the comparisons of a project's own configuration.
+function own(config) { var copy = JSON.parse(JSON.stringify(config)); delete copy.email; return copy; }
 function equal(actual, expected, message) { assert(JSON.stringify(actual) === JSON.stringify(expected), message + ": " + JSON.stringify(actual)); }
 try {
 	var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
@@ -35,11 +37,11 @@ try {
 	equal(parsed.definition.flow, meta, "Metadata changed at parse boundary");
 	var run = api("run", { flowSource: source, includeTrace: false });
 	assert(run.ok, "Runtime: " + JSON.stringify(run));
-	equal(run.result.snapshot, meta.config, "Flow defaults were ignored or interpreted as node attributes");
+	equal(own(run.result.snapshot), meta.config, "Flow defaults were ignored or interpreted as node attributes");
 	var written = api("flowSourceValidate", { name: "ConfigProof", flowSource: parsed.source, includeMeta: false });
 	assert(written.ok, "Metadata writer");
 	equal(written.definition.flow, meta, "Metadata writer changed values");
-	equal(api("run", { flowSource: written.code, includeTrace: false }).result.snapshot, meta.config, "Writer changed runtime config");
+	equal(own(api("run", { flowSource: written.code, includeTrace: false }).result.snapshot), meta.config, "Writer changed runtime config");
 	var again = api("flowSourceValidate", { name: "ConfigProof", flowSource: written.source });
 	assert(written.code === again.code, "Metadata writer not idempotent");
 	var projectConfig = { greeting: "Project", service: { host: "project" }, projectOnly: true };
@@ -48,7 +50,7 @@ try {
 	var expected = JSON.parse(JSON.stringify(meta.config));
 	expected.greeting = "Request"; expected.service.host = "project"; expected.projectOnly = true;
 	var overridden = api("run", { flowSource: source, config: { greeting: "Request" }, includeTrace: false });
-	equal(overridden.result.snapshot, expected, "Precedence must be Flow defaults < project < request, merged value by value");
+	equal(own(overridden.result.snapshot), expected, "Precedence must be Flow defaults < project < request, merged value by value");
 	var context = api("context", { flowSource: source, node: "read", property: "value", include: ["config"], detail: "normal" });
 	assert(context.ok && JSON.stringify(context).indexOf("greeting") !== -1 && JSON.stringify(context).indexOf("boolean") !== -1,
 		"Picker did not publish effective config: " + JSON.stringify(context));
