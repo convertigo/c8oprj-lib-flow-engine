@@ -77,6 +77,7 @@
 				"destinations", env.fileFingerprint(env.engineModuleFile("destination-contract.js")),
 				"schemas", env.fileFingerprint(env.engineModuleFile("schema-contract.js")),
 				"values", env.fileFingerprint(env.engineModuleFile("property-value-codec.js")),
+				"templates", env.fileFingerprint(env.engineModuleFile("template-syntax.js")),
 				"types", env.typesCacheKey()
 			].join("\n");
 		},
@@ -89,6 +90,8 @@
 					+ String(env.FileUtils.readFileToString(env.engineModuleFile("destination-contract.js"), "UTF-8"))
 					+ ";window.FlowSchemaContract = "
 					+ String(env.FileUtils.readFileToString(env.engineModuleFile("schema-contract.js"), "UTF-8"))
+					+ ";window.FlowTemplateSyntax = "
+					+ String(env.FileUtils.readFileToString(env.engineModuleFile("template-syntax.js"), "UTF-8"))
 					+ ";window.FlowPropertyValueCodec = "
 					+ String(env.FileUtils.readFileToString(env.engineModuleFile("property-value-codec.js"), "UTF-8"))
 					+ ";window.FlowPropertyValueTypes = " + valueTypes(env)

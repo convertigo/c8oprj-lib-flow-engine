@@ -1,7 +1,7 @@
 // FlowScript values written as JavaScript either work as JavaScript or are refused at compile
-// time, never kept as plain text: concatenations that start and end with a string, block calls
-// nested in an expression, object literals in an expression, scope paths given to a text
-// property, and json.field keys known at run time.
+// time, never kept as plain text: concatenations that start and end with a string, object and
+// array literals in an expression, block calls nested in an expression (refused), scope paths
+// given to a text property (refused), and json.field keys known at run time.
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
 var __flowEngineDir = engineDir;
@@ -47,9 +47,14 @@ var nested = refused('  local.expires = date.now({}) + 60000\n  return { expires
 assertTrue(/date\.now/.test(nested.hint) && /assign it to a local first/.test(nested.hint), "hint names the call: " + JSON.stringify(nested));
 refused('  local.big = input.n > 3 ? text.trim({ text: input.s }) : ""\n  return { big: local.big }', "FLOWSCRIPT_EXPRESSION_UNSUPPORTED");
 refused('  return { payload: json.stringify({ value: { at: date.now({}) + 1 } }) }', "FLOWSCRIPT_EXPRESSION_UNSUPPORTED");
-// an object literal inside an expression is refused
-var literal = refused('  local.attributes = default(input.attributes, {})\n  return { attributes: local.attributes }', "FLOWSCRIPT_EXPRESSION_UNSUPPORTED");
-assertTrue(/object literal/.test(literal.hint), "hint about the object literal: " + JSON.stringify(literal));
+// object and array literals are values inside an expression
+var literals = result('  local.attributes = default(input.attributes, {})\n  local.pair = [input.a, { b: input.b, "c d": [1, 2,], }]\n  local.fallback = input.missing ?? { kind: "none" }\n  return { attributes: local.attributes, pair: local.pair, fallback: local.fallback }', { a: 1, b: "x" });
+assertTrue(JSON.stringify(literals) === JSON.stringify({ attributes: {}, pair: [1, { b: "x", "c d": [1, 2] }], fallback: { kind: "none" } }), "literals in expressions: " + JSON.stringify(literals));
+var given = result('  local.attributes = default(input.attributes, {})\n  return { attributes: local.attributes }', { attributes: { mail: "a@b" } });
+assertTrue(given.attributes.mail === "a@b", "default keeps a given value: " + JSON.stringify(given));
+// a method of a scope value is not a block call
+var method = result('  local.word = input.s.trim()\n  return { word: local.word }', { s: "  hi " });
+assertTrue(method.word === "hi", "scope method: " + JSON.stringify(method));
 // the supported forms keep working
 var supported = result('  local.now = date.now({})\n  local.expires = local.now + 60000\n  local.empty = {}\n  local.attributes = default(input.attributes, local.empty)\n  return { ok: local.expires > local.now, attributes: local.attributes }', {});
 assertTrue(supported.ok === true && JSON.stringify(supported.attributes) === "{}", "assign first, then use: " + JSON.stringify(supported));

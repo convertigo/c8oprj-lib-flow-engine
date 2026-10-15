@@ -138,10 +138,10 @@
   function templateLike(kind) {
     return kind === "template" || kind === "value";
   }
+  // A value made of one ${expression} (or a former {{ expression }}) is shown in the expression field.
   function simpleParts(v) {
-    v = String(v || "");
-    var m = v.match(/^\s*\{\{([\s\S]*)\}\}\s*$/);
-    return { expression: m ? m[1].trim() : "" };
+    var exact = window.FlowTemplateSyntax ? window.FlowTemplateSyntax.exactExpression(String(v || "")) : null;
+    return { expression: exact || "" };
   }
   function simpleCandidate(v) {
     return String(v || "").trim() === "" || simpleParts(v).expression !== "";
@@ -149,7 +149,7 @@
   function simpleValue() {
     var input = document.querySelector('[data-simple="expression"]');
     var expr = input ? input.value.trim() : "";
-    return expr ? "{{ " + expr + " }}" : "";
+    return expr ? "${" + expr + "}" : "";
   }
   function setDraft(v, valid, error, initializing) {
     draft = v == null ? "" : String(v);
@@ -242,10 +242,10 @@
       var target = pickerProperty(props);
       var kind = pickerKind(target);
       // A destination, or a frontend property (no backend template syntax), takes the
-      // path itself; backend properties other than paths and expressions embed it as {{ }}.
+      // path itself; backend properties other than paths and expressions embed it as ${}.
       var raw = kind === "path" || kind === "expression" || (target && target.def && target.def.mode === "write")
         || String(state.virtualKind || "").indexOf("frontend") === 0;
-      return raw ? path : "{{ " + path + " }}";
+      return raw ? path : "${" + path + "}";
     }
     return path;
   }
@@ -1036,7 +1036,7 @@
       if (el) {
         var kind = el.getAttribute("data-kind") || "";
         var text =
-          kind === "template" || kind === "value" ? "{{ " + path + " }}" : path;
+          kind === "template" || kind === "value" ? "${" + path + "}" : path;
         var s = el.selectionStart || 0;
         var epos = el.selectionEnd || s;
         el.value = el.value.slice(0, s) + text + el.value.slice(epos);

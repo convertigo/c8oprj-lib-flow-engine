@@ -37,7 +37,7 @@
 			<div class="entries hidden" part="entries"></div>
 			<div part="error" role="alert"></div>
 			<textarea part="input" spellcheck="false"></textarea>
-			<div class="hint">Each selected value is inserted as {{ source }} at the cursor. Plain text stays plain text.</div>
+			<div class="hint">Each selected value is inserted as ${source} at the cursor; write \${ for a literal ${.</div>
 		</div>
 		<div class="picker" part="picker"></div>
 	</div>
@@ -241,7 +241,7 @@
 					var index = this._focusedEntry;
 					var input = index == null ? null : this.shadowRoot.querySelector('[data-entry-value="' + index + '"]');
 					if (!input) return;
-					var text = "{{ " + path + " }}", start = input.selectionStart || 0, end = input.selectionEnd || start;
+					var text = "${" + path + "}", start = input.selectionStart || 0, end = input.selectionEnd || start;
 					input.value = input.value.slice(0, start) + text + input.value.slice(end);
 					this._entries[index].value = input.value; this.syncEntries();
 					input.focus(); input.selectionStart = input.selectionEnd = start + text.length;
@@ -250,7 +250,7 @@
 				if (this._mode === "simple") {
 					var input = this.shadowRoot.querySelector("[data-simple=template]");
 					if (input) {
-						var text = "{{ " + path + " }}";
+						var text = "${" + path + "}";
 						var start = input.selectionStart == null ? input.value.length : input.selectionStart;
 						var end = input.selectionEnd == null ? start : input.selectionEnd;
 						input.value = input.value.slice(0, start) + text + input.value.slice(end);
@@ -263,7 +263,7 @@
 					return;
 				}
 				var textarea = this.shadowRoot.querySelector('[part="input"]');
-				var text = "{{ " + path + " }}";
+				var text = "${" + path + "}";
 				var start = textarea.selectionStart || 0;
 				var end = textarea.selectionEnd || start;
 				this._value = textarea.value.slice(0, start) + text + textarea.value.slice(end);

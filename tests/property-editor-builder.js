@@ -28,6 +28,7 @@ try {
 	write("destination-contract.js", fs.readFileSync(path.join(__dirname, "../_flow/modules/destination-contract.js"), "utf8"));
 	write("schema-contract.js", fs.readFileSync(path.join(__dirname, "../_flow/modules/schema-contract.js"), "utf8"));
 	write("property-value-codec.js", fs.readFileSync(path.join(__dirname, "../_flow/modules/property-value-codec.js"), "utf8"));
+	write("template-syntax.js", fs.readFileSync(path.join(__dirname, "../_flow/modules/template-syntax.js"), "utf8"));
 	write("resources/type-editor-chrome.css",
 		":host { font-size: 12px; }\n@media (pointer: fine) { input { min-height: 32px; } }");
 	const editorFile = write("editors/test.html",

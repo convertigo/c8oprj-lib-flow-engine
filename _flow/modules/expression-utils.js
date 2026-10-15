@@ -461,7 +461,7 @@
 				i += 2;
 				continue;
 			}
-			if ("()?:,+-*/!<>".indexOf(ch) !== -1) {
+			if ("()?:,+-*/!<>{}[]".indexOf(ch) !== -1) {
 				tokens.push({ type: "op", value: ch });
 				i++;
 				continue;
@@ -685,7 +685,56 @@
 				consume(")");
 				return value;
 			}
+			if (peek("[")) {
+				return parseArrayLiteral();
+			}
+			if (peek("{")) {
+				return parseObjectLiteral();
+			}
 			env.raise("INVALID_EXPRESSION", "Invalid expression near: " + token.value);
+		}
+		// [a, b] and { key: value, "other key": value }: each evaluation builds a new array or object.
+		function parseArrayLiteral() {
+			consume("[");
+			var items = [];
+			while (!peek("]")) {
+				items.push(parseExpression());
+				if (!peek(",")) {
+					break;
+				}
+				consume(",");
+			}
+			consume("]");
+			return function (runCtx) {
+				return runArgs(items, runCtx);
+			};
+		}
+		function parseObjectLiteral() {
+			consume("{");
+			var keys = [];
+			var values = [];
+			while (!peek("}")) {
+				var key = consume();
+				if ((key.type !== "id" || String(key.value).indexOf(".") !== -1) && key.type !== "string" && key.type !== "number") {
+					env.raise("INVALID_EXPRESSION", "Invalid object key in expression: " + source, null,
+						"Write keys as names or quoted strings: { name: input.name, \"display name\": local.label }.");
+				}
+				consume(":");
+				keys.push(String(key.value));
+				values.push(parseExpression());
+				if (!peek(",")) {
+					break;
+				}
+				consume(",");
+			}
+			consume("}");
+			return function (runCtx) {
+				var out = {};
+				for (var i = 0; i < keys.length; i++) {
+					out[keys[i]] = values[i](runCtx);
+				}
+				return out;
+			};
 		}
 		var program = parseExpression();
 		if (peek().type !== "eof") {

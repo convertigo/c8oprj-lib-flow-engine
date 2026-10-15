@@ -154,11 +154,11 @@
 			return html || "<div class=\"empty\">No known path yet.</div>";
 		}
 
+		// Values use the notation of template-syntax.js (window.FlowTemplateSyntax): a literal, one ${expression},
+		// or a composition.
 		function parts(value, context, propertyDefinition) {
-			value = String(value || "");
-			var match = value.match(/^\s*\{\{([\s\S]*)\}\}\s*$/);
-			if (match) {
-				var expression = match[1].trim();
+			var expression = window.FlowTemplateSyntax.exactExpression(String(value || ""));
+			if (expression !== null) {
 				return { expression: expression, path: bestPathInExpression(expression, context, propertyDefinition) };
 			}
 			return { expression: "", path: "" };
@@ -192,8 +192,8 @@
 					}
 				}
 				this._value = this._state.value == null ? "" : String(this._state.value);
-				this._mode = /^\s*\{\{[\s\S]*\}\}\s*$/.test(this._value) ? "simple"
-					: this._value.indexOf("{{") >= 0 ? "custom" : "literal";
+				this._mode = window.FlowTemplateSyntax.exactExpression(this._value) !== null ? "simple"
+					: window.FlowTemplateSyntax.hasExpression(this._value) ? "custom" : "literal";
 				this.render();
 				this.emit();
 			}
@@ -206,7 +206,9 @@
 				if (event.type === "flow-value" && event.target !== this) {
 					event.stopPropagation();
 					if (!this._renderingLiteral) {
-						this._value = event.detail.value;
+						// a literal text keeps its ${ as text
+						this._value = typeof event.detail.value === "string"
+							? window.FlowTemplateSyntax.literal(event.detail.value) : event.detail.value;
 						this.emit();
 					}
 					return;
@@ -238,14 +240,14 @@
 			syncSimple() {
 				var input = this.shadowRoot.querySelector("[data-simple=expression]");
 				var expression = input ? input.value.trim() : "";
-				this._value = expression ? "{{ " + expression + " }}" : "";
+				this._value = expression ? "${" + expression + "}" : "";
 				this.emit();
 			}
 
 			pick(path) {
 				if (this._mode === "literal") {
 					this._mode = "simple";
-					this._value = "{{ " + path + " }}";
+					this._value = "${" + path + "}";
 					this.render();
 					this.emit();
 					return;
@@ -265,7 +267,7 @@
 					return;
 				}
 				var textarea = this.shadowRoot.querySelector('textarea[part="input"]');
-				var text = "{{ " + path + " }}";
+				var text = "${" + path + "}";
 				var start = textarea.selectionStart || 0;
 				var end = textarea.selectionEnd || start;
 				this._value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
@@ -307,7 +309,8 @@
 					literal.classList.toggle("hidden", this._mode !== "literal");
 					if (this._mode === "literal" && literal.setState) {
 						this._renderingLiteral = true;
-						try { literal.setState(Object.assign({}, this._state, { value: this.value })); }
+						var text = window.FlowTemplateSyntax.literalText(this.value);
+						try { literal.setState(Object.assign({}, this._state, { value: text === null ? this.value : text })); }
 						finally { this._renderingLiteral = false; }
 					}
 				}

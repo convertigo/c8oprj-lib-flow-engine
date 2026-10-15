@@ -21,7 +21,7 @@ editor._entries.push({ name: 'latitude', value: 'other' });
 editor.syncEntries();
 assert.equal(editor.lastEvent.detail.valid, false);
 assert.equal(JSON.parse(editor.value).latitude, '48.85', 'invalid edits must not replace the last valid object');
-for (const value of ['{{ input.query }}', '{"nested":{"key":1}}', '{"count":2}', '[1,2]']) {
+for (const value of ['${input.query}', '{{ input.query }}', '{"nested":{"key":1}}', '{"count":2}', '[1,2]']) {
   editor.setState({ propertyDefinition: { type: 'object' }, value });
   assert.equal(editor._entries, null);
   assert.equal(editor.value, value, 'unsupported structured values must be preserved');

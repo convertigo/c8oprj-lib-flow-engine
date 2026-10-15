@@ -869,21 +869,19 @@
 		}
 
 		// A value written as an expression becomes a ${expression} evaluated at run time. Expressions do not call
-		// blocks and have no object literal yet: a block call (date.now({})) or an object literal inside one is
-		// refused here.
+		// blocks: a block call (date.now({})) inside one is refused here.
 		function flowScriptExpressionTemplate(token, locals, lineNumber) {
 			var expression = flowScriptRewriteExpression(token, locals);
-			if (hasBraceOutsideStrings(expression)) {
-				var call = /([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$.]*)\s*\(\s*\{/.exec(String(token));
+			var call = nestedBlockCall(expression);
+			if (call) {
 				env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "Unsupported FlowScript expression at line " + lineNumber + ": " + String(token).trim(),
-					null, call
-						? "A block call cannot be nested in an expression: assign it to a local first, for example local.value = " + call[1] + "({ ... }), then use local.value."
-						: "An object literal cannot be used inside an expression: assign it to a local first (local.empty = {}), then use the local.");
+					null, "A block call cannot be nested in an expression: assign it to a local first, for example local.value = " + call + "({ ... }), then use local.value.");
 			}
 			return "${" + expression.trim() + "}";
 		}
 
-		function hasBraceOutsideStrings(text) {
+		// The first call of a dotted name that is not a scope path (a block such as date.now), outside strings.
+		function nestedBlockCall(text) {
 			var quote = "";
 			for (var i = 0; i < text.length; i++) {
 				var ch = text.charAt(i);
@@ -893,13 +891,22 @@
 					} else if (ch === quote) {
 						quote = "";
 					}
-				} else if (ch === "\"" || ch === "'" || ch === "`") {
+					continue;
+				}
+				if (ch === "\"" || ch === "'" || ch === "`") {
 					quote = ch;
-				} else if (ch === "{" || ch === "}") {
-					return true;
+					continue;
+				}
+				var name = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+(?=\s*\()/.exec(text.substring(i));
+				if (name && (i === 0 || !/[\w$.]/.test(text.charAt(i - 1)))) {
+					var root = name[0].split(".")[0];
+					if (!env.isScopePath(root)) {
+						return name[0];
+					}
+					i += name[0].length - 1;
 				}
 			}
-			return false;
+			return null;
 		}
 
 		// A text property takes the literal written in the source: a scope path there would be kept as
