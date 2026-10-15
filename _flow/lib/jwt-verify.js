@@ -2,7 +2,9 @@
  * JWT decoding and verification used by the jwt.decode and jwt.verify blocks.
  *
  * Only compact JWS signed with an asymmetric algorithm (RS256/384/512, ES256/384/512) can be
- * verified: "none" and HS* are always refused. The signing key comes from an inline JWKS, a
+ * verified against a key set: "none" is always refused and HS* only with a shared secret given
+ * explicitly (tokens issued by this server with sign(), or by a trusted peer), never from a key
+ * set. The signing key otherwise comes from an inline JWKS, a
  * JWKS URL or an OpenID discovery document, picked by kid. Issuer, audience (or the OpenID
  * Connect ID token client id rule), exp / nbf / iat with a clock skew, required claims and the
  * at_hash of an access token are then checked. verify() and decode() never throw: they return
@@ -32,6 +34,8 @@
 		ES512: { kty: "EC", crv: "P-521", java: "SHA512withECDSAinP1363Format" }
 	};
 	var CURVES = { "P-256": "secp256r1", "P-384": "secp384r1", "P-521": "secp521r1" };
+	// shared secret algorithms: only for tokens issued by this server or a trusted peer (sign, verify with secret)
+	var HMAC_ALGORITHMS = { HS256: "HmacSHA256", HS384: "HmacSHA384", HS512: "HmacSHA512" };
 
 	function VerificationError(message) {
 		this.message = message;
@@ -128,6 +132,20 @@
 			},
 			utf8: function (data) {
 				return String(new java.lang.String(data, "UTF-8"));
+			},
+			utf8Bytes: function (text) {
+				return new java.lang.String(String(text)).getBytes("UTF-8");
+			},
+			encodeBase64Url: function (bytes) {
+				return String(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
+			},
+			hmac: function (alg, secret, signingInput) {
+				var mac = javax.crypto.Mac.getInstance(HMAC_ALGORITHMS[alg]);
+				mac.init(new javax.crypto.spec.SecretKeySpec(new java.lang.String(String(secret)).getBytes("UTF-8"), HMAC_ALGORITHMS[alg]));
+				return mac.doFinal(new java.lang.String(String(signingInput)).getBytes("US-ASCII"));
+			},
+			constantTimeEquals: function (a, b) {
+				return java.security.MessageDigest.isEqual(a, b);
 			},
 			verifySignature: function (alg, jwk, signingInput, signature) {
 				var verifier = java.security.Signature.getInstance(ALGORITHMS[alg].java);
@@ -361,6 +379,22 @@
 		fail("JWT signature is invalid");
 	}
 
+	// a token signed with a shared secret (HS256/384/512): the algorithm of the header must be one
+	// of the accepted HMAC ones, so a key set never verifies such a token and the reverse
+	function checkHmacSignature(parsed, secret, algorithms) {
+		var header = parsed.header;
+		var alg = nonEmpty(header.alg) ? String(header.alg) : "";
+		if (!HMAC_ALGORITHMS.hasOwnProperty(alg) || !contains(algorithms, alg)) {
+			fail("JWT algorithm " + header.alg + " is not accepted");
+		}
+		if (header.crit != null) {
+			fail("JWT critical header parameters are not supported");
+		}
+		if (!platform().constantTimeEquals(platform().hmac(alg, secret, parsed.signingInput), parsed.signature)) {
+			fail("JWT signature is invalid");
+		}
+	}
+
 	/* --------------------------------------------------------------- claims */
 
 	function audiences(claims) {
@@ -495,9 +529,14 @@
 	api.verify = function (options) {
 		return guard(function () {
 			options = options || {};
+			var secret = nonEmpty(options.secret) ? String(options.secret) : "";
 			var algorithms = textList(options.algorithms);
+			if (secret) {
+				// with a secret only HMAC algorithms apply: the asymmetric default of the block is dropped
+				algorithms = algorithms.filter(function (alg) { return HMAC_ALGORITHMS.hasOwnProperty(alg); });
+			}
 			if (algorithms.length == 0) {
-				algorithms = ["RS256"];
+				algorithms = [secret ? "HS256" : "RS256"];
 			}
 			var skew = options.clockSkewSeconds == null || options.clockSkewSeconds === "" ? DEFAULT_CLOCK_SKEW_SECONDS : Number(options.clockSkewSeconds);
 			if (!isFinite(skew) || skew < 0) {
@@ -507,22 +546,26 @@
 			var parsed = parse(options.token);
 			var source;
 			var discoveryIssuer = null;
-			if (options.jwks != null && options.jwks !== "") {
-				var inline = isString(options.jwks) ? parseJson(String(options.jwks), "jwks") : options.jwks;
-				if (!isArray(inline.keys)) {
-					fail("jwks without keys");
-				}
-				source = { keys: inline.keys };
-			} else if (nonEmpty(options.jwksUri)) {
-				source = { uri: String(options.jwksUri) };
-			} else if (nonEmpty(options.discovery)) {
-				var config = discovery(String(options.discovery));
-				source = { uri: String(config.jwks_uri) };
-				discoveryIssuer = String(config.issuer);
+			if (secret) {
+				checkHmacSignature(parsed, secret, algorithms);
 			} else {
-				fail("jwks, jwksUri or discovery is required");
+				if (options.jwks != null && options.jwks !== "") {
+					var inline = isString(options.jwks) ? parseJson(String(options.jwks), "jwks") : options.jwks;
+					if (!isArray(inline.keys)) {
+						fail("jwks without keys");
+					}
+					source = { keys: inline.keys };
+				} else if (nonEmpty(options.jwksUri)) {
+					source = { uri: String(options.jwksUri) };
+				} else if (nonEmpty(options.discovery)) {
+					var config = discovery(String(options.discovery));
+					source = { uri: String(config.jwks_uri) };
+					discoveryIssuer = String(config.issuer);
+				} else {
+					fail("jwks, jwksUri, discovery or secret is required");
+				}
+				checkSignature(parsed, source, algorithms);
 			}
-			checkSignature(parsed, source, algorithms);
 			checkIssuer(parsed.claims, textList(options.issuer), discoveryIssuer);
 			checkAudience(parsed.claims, nonEmpty(options.clientId) ? String(options.clientId) : "", textList(options.audience));
 			checkTime(parsed.claims, skew, contains(required, "iat"));
@@ -532,6 +575,55 @@
 			}
 			return { ok: true, header: parsed.header, claims: parsed.claims };
 		});
+	};
+
+	/**
+	 * Signs claims with a shared secret. options: claims (object), secret, algorithm (HS256 by
+	 * default, HS384 or HS512), expiresInSeconds (sets exp from now unless the claims carry one),
+	 * header (extra header fields such as kid). iat is set to now unless the claims carry one.
+	 * Returns the compact token; throws a VerificationError on an invalid request.
+	 */
+	api.sign = function (options) {
+		options = options || {};
+		var alg = nonEmpty(options.algorithm) ? String(options.algorithm) : "HS256";
+		if (!HMAC_ALGORITHMS.hasOwnProperty(alg)) {
+			fail("JWT algorithm " + alg + " is not supported for signing (HS256, HS384 or HS512)");
+		}
+		if (!nonEmpty(options.secret)) {
+			fail("JWT secret is required");
+		}
+		var claims = isString(options.claims) ? parseJson(String(options.claims), "claims") : options.claims;
+		if (claims == null || typeof claims !== "object" || isArray(claims)) {
+			fail("JWT claims must be an object");
+		}
+		var now = Math.floor(platform().now() / 1000);
+		var payload = {};
+		for (var key in claims) {
+			if (Object.prototype.hasOwnProperty.call(claims, key)) {
+				payload[key] = claims[key];
+			}
+		}
+		if (payload.iat == null) {
+			payload.iat = now;
+		}
+		if (options.expiresInSeconds != null && options.expiresInSeconds !== "" && payload.exp == null) {
+			var ttl = Number(options.expiresInSeconds);
+			if (!isFinite(ttl) || ttl <= 0) {
+				fail("expiresInSeconds is invalid");
+			}
+			payload.exp = now + Math.floor(ttl);
+		}
+		var header = { alg: alg, typ: "JWT" };
+		if (options.header != null && typeof options.header === "object" && !isArray(options.header)) {
+			for (var name in options.header) {
+				if (Object.prototype.hasOwnProperty.call(options.header, name) && name !== "alg") {
+					header[name] = options.header[name];
+				}
+			}
+		}
+		var signingInput = platform().encodeBase64Url(platform().utf8Bytes(JSON.stringify(header)))
+			+ "." + platform().encodeBase64Url(platform().utf8Bytes(JSON.stringify(payload)));
+		return signingInput + "." + platform().encodeBase64Url(platform().hmac(alg, String(options.secret), signingInput));
 	};
 
 	api.isAllowedUrl = isAllowedUrl;

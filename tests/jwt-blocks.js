@@ -154,7 +154,7 @@ try {
 		{ name: "atHashMismatch", props: { token: sign(rsa, withClaims({ at_hash: atHash("other") })), jwks: inline, accessToken: accessToken },
 			error: "JWT at_hash does not match the access token" },
 		{ name: "atHashMissing", props: { token: signed, jwks: inline, accessToken: accessToken }, error: "JWT at_hash does not match the access token" },
-		{ name: "noKeySource", props: { token: signed }, error: "jwks, jwksUri or discovery is required" },
+		{ name: "noKeySource", props: { token: signed }, error: "jwks, jwksUri, discovery or secret is required" },
 		{ name: "notJwt", props: { token: "opaque-token", jwks: inline }, error: "token is not a signed compact JWT" },
 		{ name: "missing", props: { token: "", jwks: inline }, error: "token is missing" },
 		{ name: "discovery", props: { token: signed, discovery: issuer + "/.well-known/openid-configuration", clientId: "client-1" }, ok: true },

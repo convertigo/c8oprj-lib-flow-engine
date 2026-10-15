@@ -44,6 +44,12 @@ const _meta = {
       "type": "object",
       "description": "Inline JWKS ({ keys: [...] }) for static keys, instead of a URL.",
     },
+    "secret": {
+      "label": "Secret",
+      "kind": "template",
+      "type": "string",
+      "description": "Shared secret of a token issued by jwt.sign (HS256, HS384 or HS512): the token is then verified with it instead of a key set, and Algorithms defaults to HS256. Read it from config.",
+    },
     "issuer": {
       "label": "Issuer",
       "kind": "value",
@@ -133,6 +139,7 @@ const _meta = {
 				discovery: text(ctx, props.discovery),
 				jwksUri: text(ctx, props.jwksUri),
 				jwks: value(ctx, props.jwks),
+				secret: text(ctx, props.secret),
 				issuer: value(ctx, props.issuer),
 				clientId: text(ctx, props.clientId),
 				audience: value(ctx, props.audience),
