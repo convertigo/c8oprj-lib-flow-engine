@@ -133,6 +133,11 @@ assertTrue(fromApp.email.smtp.host === "app.smtp", "the requested project App se
 assertTrue(fromApp.email.smtp.port === 25, "LibA keeps the values App does not set (inherited from LibBase): " + JSON.stringify(fromApp.email));
 assertTrue(fromApp.sql.pool.size === 2 && fromApp.sql.dialect === "ansi", "App's own values only, not its parent LibB: " + JSON.stringify(fromApp.sql));
 assertTrue(String(attributes["convertigo.flow.requestProjectConfig"]).indexOf("app.smtp") !== -1, "computed once per HTTP request");
+// a URL Mapper operation (/api/...) names its project through the requester it runs
+attributes = { "convertigo.requester": { context: { projectName: "App", sequenceName: "Entry" } } };
+context.httpServletRequest.getRequestURI = function () { return "/convertigo/api/orders"; };
+var fromApi = JSON.parse(libEngine.run(JSON.stringify({ flowSource: libFlow, project: "LibA", includeTrace: false }))).result.config;
+assertTrue(fromApi.email.smtp.host === "app.smtp", "a URL Mapper request to App sets the SMTP host of the LibA Flow: " + JSON.stringify(fromApi.email));
 // a request to LibA itself, or without request, keeps the configuration of LibA
 attributes = {};
 context.httpServletRequest.getRequestURI = function () { return "/convertigo/projects/LibA/.json"; };

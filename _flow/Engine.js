@@ -814,8 +814,9 @@
 
 	var REQUEST_ROOT_ATTRIBUTE = "convertigo.flow.requestProjectConfig";
 
-	// The project the HTTP request of the running Flow targets (its __project parameter, else its /projects/<name>/
-	// URL), when it is another project than the Flow's: { project, config } with the configuration that project sets
+	// The project the HTTP request of the running Flow targets (the context of the requester the servlet or the URL
+	// Mapper operation runs, else the __project parameter or the /projects/<name>/ URL), when it is another project
+	// than the Flow's: { project, config } with the configuration that project sets
 	// itself (default, then the named configurations of the tags of the requested requestable), or undefined. It is
 	// computed once per HTTP request (request attribute), and never without a live request (tests, scheduled jobs).
 	function requestRootLayer(request) {
@@ -830,16 +831,32 @@
 			return undefined;
 		}
 		var requested = "";
+		var sequence = "";
 		try {
-			var parameter = http.getParameter("__project");
-			if (parameter != null) {
-				requested = String(parameter);
-			} else {
-				var matched = /\/projects\/([^\/]+)\//.exec(String(http.getRequestURI()));
-				requested = matched ? String(matched[1]) : "";
+			// the requester the servlet or the URL Mapper operation runs for this HTTP request: its context names the
+			// requested project and sequence, whatever the URL (/projects/..., /api/...)
+			var requester = http.getAttribute("convertigo.requester");
+			var requesterContext = requester ? requester.context : null;
+			if (requesterContext && requesterContext.projectName) {
+				requested = String(requesterContext.projectName);
+				sequence = requesterContext.sequenceName ? String(requesterContext.sequenceName) : "";
 			}
 		} catch (e) {
 			requested = "";
+		}
+		try {
+			if (!requested) {
+				var parameter = http.getParameter("__project");
+				if (parameter != null) {
+					requested = String(parameter);
+				} else {
+					var matched = /\/projects\/([^\/]+)\//.exec(String(http.getRequestURI()));
+					requested = matched ? String(matched[1]) : "";
+				}
+				sequence = String(http.getParameter("__sequence") || "");
+			}
+		} catch (e) {
+			requested = requested || "";
 		}
 		if (!requested || requested === currentProjectName(request)) {
 			return undefined;
@@ -857,12 +874,6 @@
 		if (engineFile && engineFile.isFile()) {
 			var definition = parseYamlSource(String(FileUtils.readFileToString(engineFile, "UTF-8")), "version: 1\n") || {};
 			var tagContext = requestRootTagContext(requested);
-			var sequence = "";
-			try {
-				sequence = String(http.getParameter("__sequence") || "");
-			} catch (e) {
-				sequence = "";
-			}
 			var rootRequest = { project: requested, flowQName: sequence ? requested + "." + sequence : "", tagContext: tagContext };
 			layer = projectConfigService().projectConfig(rootRequest, definition, projectConfigEnv());
 		}
