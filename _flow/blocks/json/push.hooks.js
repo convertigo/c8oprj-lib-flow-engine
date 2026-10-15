@@ -14,7 +14,7 @@
 			ctx.visitNodes(node.nodes || []);
 			var declared = ctx.declaredSchema(props.path);
 			if (declared) {
-				if (declared.type !== "array") ctx.checkValueType({type:"array",items:{type:"unknown"}}, "{{ " + props.path + " }}", "path");
+				if (declared.type !== "array") ctx.checkValueType({type:"array",items:{type:"unknown"}}, "${" + props.path + "}", "path");
 				ctx.checkValueType(declared.type === "array" ? declared.items : {type:"unknown"},
 					node.nodes && node.nodes.length ? undefined : props.value, "value");
 				ctx.addSchema(ctx.outputPath(node), declared);

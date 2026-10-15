@@ -7,14 +7,14 @@ const _meta = {
   "properties": {
     "rootDir": {
       "label": "Root directory",
-      "kind": "text",
+      "kind": "template",
       "type": "string",
       "default": "_flow/resources",
       "description": "Project-local root directory to scan.",
     },
     "pattern": {
       "label": "Pattern",
-      "kind": "text",
+      "kind": "template",
       "type": "string",
       "default": "**/*.md",
       "description": "Glob pattern relative to rootDir.",

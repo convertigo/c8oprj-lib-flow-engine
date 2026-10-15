@@ -14,13 +14,13 @@ const _meta = {
   "properties": {
     "path": {
       "label": "Resource path",
-      "kind": "text",
+      "kind": "template",
       "type": "string",
       "description": "Project-local Flow resource path. Takes precedence over uri.",
     },
     "uri": {
       "label": "Resource URI",
-      "kind": "text",
+      "kind": "template",
       "type": "string",
       "description": "Project-local Flow resource URI returned by resource.list/search. MCP guide URIs use resources/read.",
     },

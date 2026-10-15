@@ -81,7 +81,7 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			// literal values, {{ expressions }} rendered
+			// literal values, ${expressions} rendered
 			function value(property) {
 				return props[property] === undefined ? undefined : ctx.template(ctx.literal(props[property]));
 			}

@@ -23,7 +23,7 @@ const _meta = {
       "label": "Text",
       "kind": "template",
       "type": "string",
-      "default": "{{ local.text }}",
+      "default": "${local.text}",
       "description": "Text to split. Scope paths such as local.execution.stdout are accepted.",
     },
     "trim": {

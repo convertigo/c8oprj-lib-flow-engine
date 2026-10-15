@@ -1087,7 +1087,7 @@ var naturalValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 assertTrue(naturalValidation.ok === true &&
 	naturalValidation.definition.nodes[1].props.source === "local.rows" &&
 	naturalValidation.definition.nodes[1].props.path === "[0].title" &&
-	naturalValidation.definition.nodes[4].props.value === "{{ local.titles }}",
+	naturalValidation.definition.nodes[4].props.value === "${local.titles}",
 	"natural FlowScript syntax did not compile to the expected Flow model");
 var naturalRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: naturalFlowScriptSource,
@@ -1362,7 +1362,7 @@ var configUseValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify({
 assertTrue(configUseValidation.ok === true &&
 	configUseValidation.definition.nodes[2].block === "config.use" &&
 	configUseValidation.definition.nodes[2].then.length === 3 &&
-	configUseValidation.definition.nodes[2].props.overrides.http.headers.Authorization === "{{ config.github.token }}" &&
+	configUseValidation.definition.nodes[2].props.overrides.http.headers.Authorization === "${config.github.token}" &&
 	configUseValidation.definition.nodes[2].props.http === undefined,
 	"config.use FlowScript slot did not compile to the expected Flow model");
 var configUseRendered = JSON.parse(engine.flowSourceValidate(JSON.stringify({

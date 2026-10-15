@@ -40,8 +40,8 @@ try {
 	var parsed = check(source);
 	assert(parsed.ok, "Validation: " + JSON.stringify(parsed.diagnostics));
 	var node = parsed.definition.nodes[0];
-	assert(node.id === "readRow" && node.props && node.props.id === "{{ input.id }}", "Parser/canonicalizer lost business id: " + JSON.stringify(node));
-	assert(node.disabled === undefined && node.props.disabled === "{{ input.locked }}", "Business disabled changed structural enable state");
+	assert(node.id === "readRow" && node.props && node.props.id === "${input.id}", "Parser/canonicalizer lost business id: " + JSON.stringify(node));
+	assert(node.disabled === undefined && node.props.disabled === "${input.locked}", "Business disabled changed structural enable state");
 	equal(node.props.nodes, [{ id: 7, props: { id: 8 } }], "Business arrays interpreted as nodes");
 	var executed = run(source);
 	assert(executed.ok, "Execution failed: " + JSON.stringify(executed));
@@ -122,8 +122,8 @@ try {
 	var v2 = check(versionTwo);
 	assert(v2.ok, "Version 2 parsing: " + JSON.stringify(v2));
 	var v2node = v2.definition.nodes[0];
-	assert(v2node.id === "row" && v2node.props.id === "{{ input.id }}", "Version 2 identity collision");
-	assert(v2node.disabled === false && v2node.props.disabled === "{{ input.locked }}", "Version 2 disabled collision");
+	assert(v2node.id === "row" && v2node.props.id === "${input.id}", "Version 2 identity collision");
+	assert(v2node.disabled === false && v2node.props.disabled === "${input.locked}", "Version 2 disabled collision");
 	assert(v2node.props.$id === 1 && v2node.props.$$id === 2 && v2node.props.$$$id === 3, "Version 2 dollar escape");
 	assert(run(versionTwo).result.row.id === 5, "Version 2 runtime");
 	var v2written = api("flowSourceValidate", { name: "PropertyChain", flowSource: v2.source, includeMeta: false });

@@ -11,7 +11,7 @@ const _meta = {
   ],
   "description": "Writes a value to a scope path.",
   "summary": "{{path}} = {{value}}",
-  "longDescription": "Use path to choose the destination and value for the content. A value containing only {{ expression }} keeps the native expression type.",
+  "longDescription": "Use path to choose the destination and value for the content. A value made of one expression keeps the type of its result.",
   "properties": {
     "path": {
       "label": "Destination",
@@ -25,7 +25,7 @@ const _meta = {
       "kind": "value",
       "type": "unknown",
       "default": "",
-      "description": "Value to write. Use {{ expression }} for dynamic values; scope paths are null-safe and support indexes like {{ local.items[0] }}.",
+      "description": "Value to write. Write an expression (scope paths are null-safe and support indexes like local.items[0]), a quoted text, or a template literal such as `Total: ${local.total}`.",
     },
   },
   "runtime": "rhino",

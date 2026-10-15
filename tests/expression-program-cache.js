@@ -22,9 +22,11 @@ function assert(condition, message) {
 const root = path.resolve(__dirname, "..");
 const cacheUtils = loadModule(path.join(root, "_flow/modules/cache-utils.js"));
 const expressions = loadModule(path.join(root, "_flow/modules/expression-utils.js"));
+const templateSyntax = loadModule(path.join(root, "_flow/modules/template-syntax.js"));
 const tokenCache = cacheUtils.createBoundedMapState(32);
 const programCache = cacheUtils.createBoundedMapState(32);
 const env = {
+	templateSyntax,
 	cacheUtils,
 	expressionTokenCache: tokenCache,
 	expressionProgramCache: programCache,
@@ -86,11 +88,15 @@ assert(compiled(context({ name: "  Runtime  " })) === "Runtime ready",
 	"compiled method expression captured the first context");
 
 const compiledTemplate = expressions.compileTemplate({
-	name: "{{ input.name }}",
-	label: "Hello {{ input.name }}",
+	name: "${input.name}",
+	label: "Hello ${input.name}",
+	legacy: "Hello {{ input.name }}",
+	escaped: "Cost \\${input.name}",
 }, env);
 const firstTemplate = compiledTemplate(context({ name: "Flow" }));
 const secondTemplate = compiledTemplate(context({ name: "Runtime" }));
+assert(firstTemplate.legacy === "Hello Flow" && firstTemplate.escaped === "Cost ${input.name}",
+	"former {{ }} placeholders are read, \\${ stays text");
 assert(firstTemplate.name === "Flow" && firstTemplate.label === "Hello Flow",
 	"compiled template returned the wrong first value");
 assert(secondTemplate.name === "Runtime" && secondTemplate.label === "Hello Runtime",

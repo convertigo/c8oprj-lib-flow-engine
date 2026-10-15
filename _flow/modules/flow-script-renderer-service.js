@@ -41,16 +41,24 @@
 			}, false);
 		}
 		if (typeof value === "string") {
-			var exact = value.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
-			if (exact) {
-				return renderFlowScriptExpression(exact[1], locals, env);
-			}
-			if (value.indexOf("{{") !== -1) {
-				return renderFlowScriptTemplateLiteral(value, locals, env);
-			}
-			return JSON.stringify(value);
+			return renderFlowScriptTemplateString(value, locals, env);
 		}
 		return flowScriptInlineValue(value, env);
+	}
+
+	// A value in the notation of template-syntax.js written as FlowScript: a literal as a quoted string, one
+	// expression as the expression, a composition as a template literal.
+	function renderFlowScriptTemplateString(value, locals, env) {
+		var syntax = env.templateSyntax;
+		var exact = syntax.exactExpression(value);
+		if (exact !== null) {
+			return renderFlowScriptExpression(exact, locals, env);
+		}
+		if (syntax.hasExpression(value)) {
+			return renderFlowScriptTemplateLiteral(value, locals, env);
+		}
+		var text = syntax.literalText(value);
+		return JSON.stringify(text === null ? value : text);
 	}
 
 	function flowScriptTopLevelMeta(name, value, lines, env) {
@@ -67,9 +75,9 @@
 			return flowScriptInlineValue(expr, env, indent);
 		}
 		expr = String(expr || "").trim();
-		var exact = expr.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
-		if (exact) {
-			expr = exact[1].trim();
+		var exact = env.templateSyntax.exactExpression(expr);
+		if (exact !== null) {
+			expr = exact;
 		}
 		var replacements = Object.create(null);
 		Object.keys(locals || {}).forEach(function (name) {
@@ -79,56 +87,47 @@
 		return Object.keys(replacements).length ? env.rewriteExpressionReferences(expr, replacements) : expr;
 	}
 
-	function renderFlowScriptTemplate(text, locals, env) {
-		return String(text || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expr) {
-			return "{{ " + renderFlowScriptExpression(expr, locals, env) + " }}";
-		});
-	}
-
+	// Line endings are escaped: the statement parser trims physical lines.
 	function flowScriptTemplateLiteralPart(text) {
 		return String(text || "")
 			.replace(/\\/g, "\\\\")
 			.replace(/`/g, "\\`")
-			.replace(/\$\{/g, "\\${");
+			.replace(/\$\{/g, "\\${")
+			.replace(/\n/g, "\\n")
+			.replace(/\r/g, "\\r")
+			.replace(/\t/g, "\\t");
 	}
 
 	function renderFlowScriptTemplateLiteral(text, locals, env) {
-		// The statement parser trims physical lines. Keep embedded line endings
-		// escaped in a quoted template value so a format/reparse cannot trim data.
-		if (/[\r\n]/.test(String(text || ""))) {
-			return JSON.stringify(renderFlowScriptTemplate(text, locals, env));
+		var parts = env.templateSyntax.parts(text);
+		if (!parts) {
+			return JSON.stringify(String(text));
 		}
-		var out = "`";
-		var index = 0;
-		String(text || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (match, expr, offset) {
-			out += flowScriptTemplateLiteralPart(String(text).substring(index, offset));
-			out += "${" + renderFlowScriptExpression(expr, locals, env) + "}";
-			index = offset + match.length;
-			return match;
-		});
-		out += flowScriptTemplateLiteralPart(String(text || "").substring(index));
-		return out + "`";
+		return "`" + parts.map(function (part) {
+			return part.expression !== undefined
+				? "${" + renderFlowScriptExpression(part.expression, locals, env) + "}"
+				: flowScriptTemplateLiteralPart(part.literal);
+		}).join("") + "`";
 	}
 
 	function renderFlowScriptValue(blocks, node, key, value, locals, env, indent) {
 		var kind = env.flowScriptPropKind(blocks, env.blockName(node), key);
 		if (kind === "expression") {
-			return renderFlowScriptExpression(value, locals, env, indent);
+			return value && typeof value === "object"
+				? renderFlowScriptTemplateValue(value, locals, env, indent)
+				: renderFlowScriptExpression(value, locals, env, indent);
 		}
-		if (kind === "template" || kind === "value" || kind === "configOverrides") {
+		if (kind === "template" || kind === "value" || kind === "binding" || kind === "configOverrides") {
 			if (typeof value === "string") {
-				var exact = value.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
-				if (exact) {
-					return renderFlowScriptExpression(exact[1], locals, env);
-				}
-				if (value.indexOf("{{") !== -1) {
-					return renderFlowScriptTemplateLiteral(value, locals, env);
-				}
-				return JSON.stringify(value);
+				return renderFlowScriptTemplateString(value, locals, env);
 			}
 			if (value && typeof value === "object") {
 				return renderFlowScriptTemplateValue(value, locals, env, indent);
 			}
+		}
+		// A fixed value holding an expression (a former template) is written as one so that it reads back unchanged.
+		if (kind !== "text" && kind !== "secret" && kind !== "schema" && typeof value === "string" && env.templateSyntax.hasExpression(value)) {
+			return kind === "path" ? renderFlowScriptTemplateLiteral(value, locals, env) : renderFlowScriptTemplateString(value, locals, env);
 		}
 		return flowScriptInlineValue(value, env, indent);
 	}
@@ -386,7 +385,6 @@
 		flowScriptString: flowScriptString,
 		flowScriptInlineValue: flowScriptInlineValue,
 		renderFlowScriptExpression: renderFlowScriptExpression,
-		renderFlowScriptTemplate: renderFlowScriptTemplate,
 		flowScriptTemplateLiteralPart: flowScriptTemplateLiteralPart,
 		renderFlowScriptTemplateLiteral: renderFlowScriptTemplateLiteral,
 		renderFlowScriptValue: renderFlowScriptValue,

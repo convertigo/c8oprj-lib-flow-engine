@@ -31,7 +31,7 @@ const _meta = {
       "label": "Key",
       "kind": "value",
       "type": "string",
-      "default": "{{ local.key }}",
+      "default": "${local.key}",
       "description": "Literal key or dotted path to read. Quote arbitrary keys such as display name or x-y; use a source such as current.code for a dynamic key.",
     },
     "defaultValue": {
@@ -65,7 +65,7 @@ const _meta = {
 
 	function looksDynamic(value) {
 		var text = String(value || "").trim();
-		return text.indexOf("{{") !== -1 ||
+		return /\$\{|\{\{/.test(text) ||
 			/^(input|config|local|result|current|request|trace)(\.|\[|$)/.test(text) ||
 			/[()?:+\-*\/<>!=&|]/.test(text);
 	}
@@ -81,7 +81,7 @@ const _meta = {
 		if (text === "") {
 			return "";
 		}
-		if (text.indexOf("{{") !== -1) {
+		if (/\$\{|\{\{/.test(text)) {
 			var rendered = ctx.template(text);
 			return rendered === undefined || rendered === null ? "" : String(rendered);
 		}

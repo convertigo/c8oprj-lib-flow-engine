@@ -11,6 +11,7 @@ function equal(actual, expected, message) {
 }
 try {
   var parser = eval(read(new java.io.File(engineDir, "modules/flow-script-parser-service.js")));
+  var parserEnv = { templateSyntax: eval(read(new java.io.File(engineDir, "modules/template-syntax.js"))) };
   [
     ['model + "/model/" + \'local.model\'', 'local.model + "/model/" + \'local.model\''],
     ['input.model || model . name', 'input.model || local.model . name'],
@@ -20,7 +21,7 @@ try {
     ['model /* model */ + "\\\"model"', 'local.model /* model */ + "\\\"model"'],
     ['model // model\n+ "model"', 'local.model // model\n+ "model"']
   ].forEach(function (fixture) {
-    var lowered = parser.flowScriptRewriteExpression(fixture[0], {model:true, model$:true, $model:true}, {});
+    var lowered = parser.flowScriptRewriteExpression(fixture[0], {model:true, model$:true, $model:true}, parserEnv);
     equal(lowered, fixture[1], 'lowering');
     equal(parser.rewriteExpressionReferences(lowered, {'local.model':'model','local.model$':'model$','local.$model':'$model'}), fixture[0], 'inverse');
   });

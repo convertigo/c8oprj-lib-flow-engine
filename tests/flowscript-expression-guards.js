@@ -55,7 +55,7 @@ var supported = result('  local.now = date.now({})\n  local.expires = local.now 
 assertTrue(supported.ok === true && JSON.stringify(supported.attributes) === "{}", "assign first, then use: " + JSON.stringify(supported));
 
 // a scope path given to a text property is refused instead of being kept as text
-refused('  local.text = asset.read({ path: input.file })\n  return { text: local.text }', "FLOWSCRIPT_TEXT_PROPERTY_PATH");
+refused('  throw({ code: input.code, message: "stop" })', "FLOWSCRIPT_TEXT_PROPERTY_PATH");
 
 // json.field takes a key known at run time
 var keyed = result('  local.attribute = json.object({ $$fields: function () {\n    json.field({ key: input.name, value: input.value })\n  } })\n  return { attribute: local.attribute }', { name: "Token", value: "AAAA" });

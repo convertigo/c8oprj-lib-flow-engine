@@ -10,7 +10,7 @@ const _meta = {
   "properties": {
     "path": {
       "label": "Asset path",
-      "kind": "text",
+      "kind": "template",
       "type": "string",
       "default": "_flow/resources/asset.txt",
       "description": "Project-local textual asset under _flow/resources or resources.",

@@ -67,7 +67,7 @@ assertTrue(validation.definition.nodes[0].props.key === "\u2191convertigo" &&
 	validation.definition.nodes[1].props.key === "display name" &&
 	validation.definition.nodes[2].props.key === "x-y" &&
 	validation.definition.nodes[3].props.key === "data.items" &&
-	validation.definition.nodes[5].props.key === "{{ input.dynamicKey }}",
+	validation.definition.nodes[5].props.key === "${input.dynamicKey}",
 	"object.get keys did not preserve literal/dynamic intent: " + JSON.stringify(validation.definition.nodes));
 
 var run = JSON.parse(engine.run(JSON.stringify({

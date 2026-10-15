@@ -125,7 +125,7 @@
 			ctx.checkValueType = function (expected, value, property) {
 				var dynamic = false;
 				function inspect(value) {
-					if (typeof value === "string" && value.indexOf("{{") >= 0) dynamic = true;
+					if (typeof value === "string" && env.templateSyntax.hasExpression(value)) dynamic = true;
 					else if (value && typeof value === "object") Object.keys(value).forEach(function (key) { inspect(value[key]); });
 				}
 				inspect(value);

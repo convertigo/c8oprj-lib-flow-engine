@@ -25,15 +25,7 @@
 		if (typeof value !== "string") {
 			return out;
 		}
-		var exact = env.exactTemplateExpression ? env.exactTemplateExpression(value) : null;
-		if (exact) {
-			return [exact];
-		}
-		String(value).replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expr) {
-			out.push(String(expr || "").trim());
-			return _;
-		});
-		return out;
+		return env.templateSyntax.expressions(value);
 	}
 
 	function expressionDiagnostic(error, node, blockName, property, expression) {

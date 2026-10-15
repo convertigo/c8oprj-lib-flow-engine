@@ -31,7 +31,7 @@ const _meta = {
       "kind": "value",
       "type": "unknown",
       "default": "",
-      "description": "Field value. Use {{ expression }} for dynamic values.",
+      "description": "Field value. Write an expression, a quoted text or a template literal.",
     },
   },
   "runtime": "rhino",

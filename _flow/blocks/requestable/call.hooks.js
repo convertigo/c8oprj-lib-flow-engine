@@ -8,7 +8,7 @@
 	}
 
 	function hasTemplate(value) {
-		return String(value || "").indexOf("{{") !== -1;
+		return /\$\{|\{\{/.test(String(value || ""));
 	}
 
 	function requestValue(value) {

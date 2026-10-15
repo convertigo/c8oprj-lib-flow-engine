@@ -9,7 +9,7 @@
 		var encoding = definition.valueEncoding || editor.valueEncoding || "typed";
 		if (encoding === "text") return text;
 		if (encoding !== "typed" && encoding !== "json") throw new Error("Unknown editor value encoding: " + encoding);
-		if (editor.expressions === true && /\{\{[\s\S]*\}\}/.test(text)) return text;
+		if (editor.expressions === true && /\$\{[\s\S]*\}|\{\{[\s\S]*\}\}/.test(text)) return text;
 		var shape = encoding === "json" ? type.type : definition.literalType || definition.type || type.type;
 		if (shape === "value" || shape === "literal") shape = "unknown";
 		if (shape === "string") return text;

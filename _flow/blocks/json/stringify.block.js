@@ -23,7 +23,7 @@ const _meta = {
       "label": "Value",
       "kind": "value",
       "type": "unknown",
-      "default": "{{ local.value }}",
+      "default": "${local.value}",
       "description": "Value to serialize as JSON.",
     },
     "pretty": {

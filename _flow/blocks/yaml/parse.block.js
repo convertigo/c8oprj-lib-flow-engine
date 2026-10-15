@@ -19,7 +19,7 @@ const _meta = {
       "label": "YAML text",
       "kind": "template",
       "type": "string",
-      "default": "{{ local.text }}",
+      "default": "${local.text}",
       "description": "YAML text to parse.",
     },
   },

@@ -45,14 +45,14 @@ try {
     assert(result.ok, "Runtime failed: " + JSON.stringify(result));
     return result.result;
   }
-  var code = 'const _flow={sourceVersion:2};\nfunction FormatProof(){\nset({$$id:"capture",$$comment:"Keep",$$disabled:false,path:"result.row",value:{z:0,a:false,empty:"",nil:null,rows:[{id:5}],label:"Hi {{ input.name }}\\n  preserved"}})\n}';
+  var code = 'const _flow={sourceVersion:2};\nfunction FormatProof(){\nset({$$id:"capture",$$comment:"Keep",$$disabled:false,path:"result.row",value:{z:0,a:false,empty:"",nil:null,rows:[{id:5}],label:`Hi ${input.name}\\n  preserved`}})\n}';
   var before = validate(code);
   var written = write(before.source);
   var expectedCall = [
     '  set({', '    $$id: "capture",', '    $$comment: "Keep",', '    $$disabled: false,',
     '    path: "result.row",', '    value: {', '      z: 0,', '      a: false,',
     '      empty: "",', '      nil: null,', '      rows: [', '        {', '          id: 5,',
-    '        },', '      ],', '      label: "Hi {{ input.name }}\\n  preserved",', '    },', '  })'
+    '        },', '      ],', '      label: `Hi ${input.name}\\n  preserved`,', '    },', '  })'
   ].join("\n");
   assert(written.code.indexOf(expectedCall) !== -1, "Call layout changed:\n" + written.code);
   equal(written.definition, before.definition, "AST changed");
@@ -61,7 +61,7 @@ try {
   assert(written.code.slice(-1) === "\n" && written.code.indexOf("\r") === -1, "Expected LF and final newline");
   var changed = api("applyMutation", { target: "flow", flowSource: written.code,
     mutation: { op: "replace", nodeId: "capture", property: "value", value: {
-      z: 1, a: false, empty: "", nil: null, rows: [{id:5}], label: "Hi {{ input.name }}\n  preserved"
+      z: 1, a: false, empty: "", nil: null, rows: [{id:5}], label: "Hi ${input.name}\n  preserved"
     } } });
   assert(changed.ok, "Mutation failed: " + JSON.stringify(changed));
   var changedCode = write(validate(changed.source).source).code;

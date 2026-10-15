@@ -19,9 +19,9 @@
 			return "null";
 		}
 		if (typeof input === "string") {
-			var exact = input.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
-			if (exact) {
-				return text(exact[1], max);
+			var exact = env.templateSyntax.exactExpression(input);
+			if (exact !== null) {
+				return text(exact, max);
 			}
 			return text(input, max);
 		}

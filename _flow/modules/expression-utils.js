@@ -62,10 +62,10 @@
 		return strictValue(left, env) === strictValue(right, env);
 	}
 
-	// A {{ expression }} ends at the first }} outside its quoted strings, which may hold braces:
-	// {{ config.authority + "{tenantid}/v2.0" }}. The same pattern is used wherever templates are read.
+	// Values use the notation of template-syntax.js: ${expression} (the former {{ expression }} is still read), \${
+	// for a literal ${. A value made of one expression keeps the type of its result; a composition is text.
 	function renderTemplate(template, ctx, env) {
-		return String(template || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, path) {
+		return env.templateSyntax.render(String(template === undefined || template === null ? "" : template), function (path) {
 			var value = evaluate(ctx, path, env);
 			if (value === undefined || value === null) {
 				return "";
@@ -81,9 +81,9 @@
 		if (typeof value !== "string") {
 			return value;
 		}
-		var exact = value.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
-		if (exact) {
-			return evaluate(ctx, exact[1], env);
+		var exact = env.templateSyntax.exactExpression(value);
+		if (exact !== null) {
+			return evaluate(ctx, exact, env);
 		}
 		return renderTemplate(value, ctx, env);
 	}
@@ -111,19 +111,23 @@
 		if (typeof value !== "string") {
 			return function () { return value; };
 		}
-		var exact = value.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
-		if (exact && isSimpleScopePath(exact[1], env)) {
-			var exactParts = String(exact[1]).split(".");
+		var syntax = env.templateSyntax;
+		var exact = syntax.exactExpression(value);
+		if (exact !== null && isSimpleScopePath(exact, env)) {
+			var exactParts = String(exact).split(".");
 			return function (ctx) { return readSimpleScopeParts(ctx, exactParts); };
 		}
-		if (exact) {
-			var expression = exact[1];
-			return function (ctx) { return evaluate(ctx, expression, env); };
+		if (exact !== null) {
+			return function (ctx) { return evaluate(ctx, exact, env); };
 		}
-		if (value.indexOf("{{") !== -1) {
+		if (syntax.hasExpression(value)) {
 			return function (ctx) { return renderTemplate(value, ctx, env); };
 		}
-		return function () { return value; };
+		var text = syntax.literalText(value);
+		if (text === null) {
+			text = value;
+		}
+		return function () { return text; };
 	}
 
 	function compileTree(value, env) {

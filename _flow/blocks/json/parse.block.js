@@ -23,7 +23,7 @@ const _meta = {
       "label": "JSON text",
       "kind": "template",
       "type": "string",
-      "default": "{{ local.text }}",
+      "default": "${local.text}",
       "description": "JSON text to parse.",
     },
   },

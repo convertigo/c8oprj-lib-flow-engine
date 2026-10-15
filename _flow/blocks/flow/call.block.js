@@ -65,7 +65,7 @@ const _meta = {
 
 	function flowName(ctx, value) {
 		value = value === undefined || value === null ? "" : value;
-		return String(value).indexOf("{{") === -1 ? String(value) : ctx.render(value);
+		return !/\$\{|\{\{/.test(String(value)) ? String(value) : ctx.render(value);
 	}
 
 	return {

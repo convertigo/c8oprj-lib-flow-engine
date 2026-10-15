@@ -22,13 +22,6 @@
 			addPath(path);
 			return path;
 		});
-		value.replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, path) {
-			String(path).replace(/\bconfig(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+/g, function (configPath) {
-				addPath(configPath);
-				return configPath;
-			});
-			return "";
-		});
 	}
 
 	function walkTree(value, callback) {
@@ -51,12 +44,10 @@
 			if (env.isScopePath(text)) {
 				addUnique(refs, text);
 			}
-			text.replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, path) {
-				var ref = String(path).trim();
+			env.templateSyntax.expressions(text).forEach(function (ref) {
 				if (env.isScopePath(ref)) {
 					addUnique(refs, ref);
 				}
-				return "";
 			});
 		});
 		return refs;
@@ -80,20 +71,15 @@
 	function collectTemplateRefs(value, refs, env) {
 		refs = refs || [];
 		walkTree(value, function (text) {
-			text.replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expression) {
-				collectExpressionRefs(String(expression).trim(), refs, env);
-				return "";
+			env.templateSyntax.expressions(text).forEach(function (expression) {
+				collectExpressionRefs(expression, refs, env);
 			});
 		});
 		return refs;
 	}
 
-	function exactTemplateExpression(value) {
-		if (typeof value !== "string") {
-			return null;
-		}
-		var exact = value.match(/^\s*\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}\s*$/);
-		return exact ? exact[1] : null;
+	function exactTemplateExpression(value, env) {
+		return env.templateSyntax.exactExpression(value);
 	}
 
 	function collectConfigKeys(value, keys) {

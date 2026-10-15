@@ -7,14 +7,14 @@ const _meta = {
   ],
   "description": "Renders a text template with Flow expressions.",
   "summary": "render {{template}}",
-  "longDescription": "Replaces {{ expression }} placeholders with values from the current Flow scopes. An exact {{ expression }} keeps the native value type; mixed text produces a string.",
+  "longDescription": "Composes a text from a template literal such as `Hello ${input.name}`: each ${expression} is replaced by its value in the current Flow scopes; a template made of one expression keeps the type of its result. For an email or a document from a file, use template.freemarker.",
   "properties": {
     "template": {
       "label": "Template",
-      "kind": "text",
+      "kind": "template",
       "type": "string",
       "default": "",
-      "description": "Template text containing optional {{ expression }} placeholders.",
+      "description": "Template literal such as `Hello ${input.name}`; a quoted string stays text.",
     },
   },
   "outputs": {

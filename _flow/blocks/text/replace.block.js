@@ -23,7 +23,7 @@ const _meta = {
       "label": "Text",
       "kind": "template",
       "type": "string",
-      "default": "{{ local.text }}",
+      "default": "${local.text}",
       "description": "Text in which to replace literal matches.",
     },
     "search": {

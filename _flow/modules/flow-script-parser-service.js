@@ -109,7 +109,7 @@
 				error.code = "FLOWSCRIPT_INVALID_ARGUMENTS";
 				error.details = {
 					line: lineNumber,
-					expected: "Use an object literal such as { id: \"step\", path: \"result.value\", value: \"{{ local.value }}\" }."
+					expected: "Use an object literal such as { id: \"step\", path: \"result.value\", value: local.value }."
 				};
 				throw error;
 			}
@@ -619,9 +619,9 @@
 	
 		function flowScriptRewriteExpression(expr, locals) {
 			expr = String(expr || "").trim();
-			var exact = expr.match(/^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/);
-			if (exact) {
-				expr = exact[1].trim();
+			var exact = env.templateSyntax.exactExpression(expr);
+			if (exact !== null) {
+				expr = exact;
 			}
 			var replacements = Object.create(null);
 			Object.keys(locals || {}).forEach(function (name) {
@@ -780,12 +780,13 @@
 				return undefined;
 			}
 			body = body.substring(1, body.length - 1);
+			var parts = [];
 			var out = "";
 			for (var i = 0; i < body.length; i++) {
 				var ch = body.charAt(i);
 				if (ch === "\\" && i + 1 < body.length) {
 					var escaped = body.charAt(++i);
-					out += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
+					out += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped === "r" ? "\r" : escaped;
 					continue;
 				}
 				if (ch === "$" && body.charAt(i + 1) === "{") {
@@ -825,18 +826,19 @@
 						env.raise("FLOWSCRIPT_INVALID_TEMPLATE_LITERAL", "Unclosed template literal expression at line " + lineNumber + ": " + token);
 					}
 					var expression = body.substring(start, i).trim();
-					out += "{{ " + flowScriptRewriteExpression(expression, locals) + " }}";
+					if (out !== "") {
+						parts.push({ literal: out });
+						out = "";
+					}
+					parts.push({ expression: flowScriptRewriteExpression(expression, locals) });
 					continue;
 				}
 				out += ch;
 			}
-			return out;
-		}
-	
-		function flowScriptRewriteTemplateText(text, locals) {
-			return String(text || "").replace(/\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}/g, function (_, expr) {
-				return "{{ " + flowScriptRewriteExpression(expr, locals) + " }}";
-			});
+			if (out !== "") {
+				parts.push({ literal: out });
+			}
+			return env.templateSyntax.compose(parts);
 		}
 	
 		function flowScriptValueFromToken(token, locals, lineNumber) {
@@ -853,30 +855,51 @@
 				return array;
 			}
 			var literal = flowScriptLiteralTokenValue(token, lineNumber);
+			if (typeof literal === "string") {
+				// A quoted string is a literal text: its ${ stay text. The {{ expression }} of former sources are
+				// still read as expressions until every source is migrated.
+				return env.templateSyntax.map(literal, function (expression) {
+					return flowScriptRewriteExpression(expression, locals);
+				}, true);
+			}
 			if (literal !== undefined) {
-				if (typeof literal === "string" && literal.indexOf("{{") !== -1) {
-					return flowScriptRewriteTemplateText(literal, locals);
-				}
 				return literal;
 			}
 			return flowScriptExpressionTemplate(token, locals, lineNumber);
 		}
 
-		// A value written as an expression becomes a {{ expression }} evaluated at run time. The
-		// expression ends at the first } outside its strings: a block call (date.now({})) or an object
-		// literal inside it would leave the whole value as plain text, so they are refused here.
+		// A value written as an expression becomes a ${expression} evaluated at run time. Expressions do not call
+		// blocks and have no object literal yet: a block call (date.now({})) or an object literal inside one is
+		// refused here.
 		function flowScriptExpressionTemplate(token, locals, lineNumber) {
 			var expression = flowScriptRewriteExpression(token, locals);
-			var template = "{{ " + expression + " }}";
-			var holds = /^\{\{\s*((?:[^}"'`]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)+?)\s*\}\}$/.exec(template);
-			if (!holds || holds[1].length !== expression.trim().length) {
+			if (hasBraceOutsideStrings(expression)) {
 				var call = /([A-Za-z_$][\w$]*\.[A-Za-z_$][\w$.]*)\s*\(\s*\{/.exec(String(token));
 				env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "Unsupported FlowScript expression at line " + lineNumber + ": " + String(token).trim(),
 					null, call
 						? "A block call cannot be nested in an expression: assign it to a local first, for example local.value = " + call[1] + "({ ... }), then use local.value."
 						: "An object literal cannot be used inside an expression: assign it to a local first (local.empty = {}), then use the local.");
 			}
-			return template;
+			return "${" + expression.trim() + "}";
+		}
+
+		function hasBraceOutsideStrings(text) {
+			var quote = "";
+			for (var i = 0; i < text.length; i++) {
+				var ch = text.charAt(i);
+				if (quote) {
+					if (ch === "\\") {
+						i++;
+					} else if (ch === quote) {
+						quote = "";
+					}
+				} else if (ch === "\"" || ch === "'" || ch === "`") {
+					quote = ch;
+				} else if (ch === "{" || ch === "}") {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		// A text property takes the literal written in the source: a scope path there would be kept as
@@ -932,8 +955,10 @@
 					args[key] = parseFlowScriptMetadataValue(tokens[key], lineNumber);
 				} else if (kind === "text" || kind === "secret") {
 					args[key] = flowScriptTextFromToken(blocks, block, key, tokens[key], lineNumber);
-				} else {
+				} else if (kind === "binding") {
 					args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
+				} else {
+					args[key] = flowScriptFixedValueFromToken(tokens[key], locals, lineNumber);
 				}
 			});
 			return args;
@@ -968,7 +993,7 @@
 			var catalog = env.blockCatalog(blocks && blocks[block]) || {};
 			if (env.destinationContract.isWriteProperty(catalog, key)) {
 				// Literal destinations must round-trip exactly, including invalid ones:
-				// do not turn false into local.false or strip {{ }} from a template.
+				// do not turn false into local.false or strip ${} from a template.
 				var literal = flowScriptLiteralTokenValue(token, lineNumber);
 				if (literal === undefined) {
 					literal = isFlowScriptTemplateLiteral(token) || isFlowScriptObjectLiteral(token) || isFlowScriptArrayLiteral(token)
@@ -998,6 +1023,19 @@
 			if (kind === "schema") return parseFlowScriptMetadataValue(token, lineNumber);
 			if (kind === "text" || kind === "secret") {
 				return flowScriptTextFromToken(blocks, block, key, token, lineNumber);
+			}
+			if (kind === "binding") {
+				return flowScriptValueFromToken(token, locals, lineNumber);
+			}
+			return flowScriptFixedValueFromToken(token, locals, lineNumber);
+		}
+
+		// A fixed property (literal, select, number...) takes a quoted string as written, ${ included; other values
+		// (expressions, former {{ }} templates, objects) read as dynamic values.
+		function flowScriptFixedValueFromToken(token, locals, lineNumber) {
+			var literal = flowScriptLiteralTokenValue(token, lineNumber);
+			if (typeof literal === "string" && !isFlowScriptObjectLiteral(String(token).trim()) && literal.indexOf("{{") === -1) {
+				return literal;
 			}
 			return flowScriptValueFromToken(token, locals, lineNumber);
 		}
@@ -1392,7 +1430,7 @@
 							id: "push" + cap,
 							block: "json.push",
 							path: "local." + varName,
-							value: "{{ local." + itemName + " }}",
+							value: "${local." + itemName + "}",
 							__flowScriptLine: lineNumber
 						}
 					]
@@ -1534,7 +1572,7 @@
 							id: "push" + cap,
 							block: "json.push",
 							path: "local." + varName,
-							value: "{{ local." + itemName + " }}",
+							value: "${local." + itemName + "}",
 							__flowScriptLine: lineNumber
 						}
 					]
@@ -2216,7 +2254,6 @@
 			flowScriptValueObjectFromToken: flowScriptValueObjectFromToken,
 			flowScriptValueArrayFromToken: flowScriptValueArrayFromToken,
 			flowScriptTemplateLiteralToTemplate: flowScriptTemplateLiteralToTemplate,
-			flowScriptRewriteTemplateText: flowScriptRewriteTemplateText,
 			flowScriptValueFromToken: flowScriptValueFromToken,
 			normalizeNaturalFlowScriptProps: normalizeNaturalFlowScriptProps,
 			flowScriptPropertyValueFromToken: flowScriptPropertyValueFromToken,
@@ -2327,9 +2364,6 @@
 		},
 		flowScriptTemplateLiteralToTemplate: function (token, locals, lineNumber, env) {
 			return create(env).flowScriptTemplateLiteralToTemplate(token, locals, lineNumber);
-		},
-		flowScriptRewriteTemplateText: function (text, locals, env) {
-			return create(env).flowScriptRewriteTemplateText(text, locals);
 		},
 		flowScriptValueFromToken: function (token, locals, lineNumber, env) {
 			return create(env).flowScriptValueFromToken(token, locals, lineNumber);

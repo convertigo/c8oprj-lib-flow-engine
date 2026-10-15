@@ -10,7 +10,7 @@ const _meta = {
       "label": "XML text",
       "kind": "template",
       "type": "string",
-      "default": "{{ local.text }}",
+      "default": "${local.text}",
       "description": "XML text to parse.",
     },
   },

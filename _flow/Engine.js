@@ -720,8 +720,13 @@
 		return loadEngineModule("scope-reference-utils.js");
 	}
 
+	function templateSyntax() {
+		return loadEngineModule("template-syntax.js");
+	}
+
 	function scopeReferenceEnv() {
 		return {
+			templateSyntax: templateSyntax(),
 			isScopePath: isScopePath,
 			scopeNames: scopeNames
 		};
@@ -744,7 +749,7 @@
 	}
 
 	function exactTemplateExpression(value) {
-		return scopeReferenceUtils().exactTemplateExpression(value);
+		return scopeReferenceUtils().exactTemplateExpression(value, scopeReferenceEnv());
 	}
 
 	function collectConfigKeys(value, keys) {
@@ -1275,6 +1280,7 @@
 			"schema-contract.js",
 			"typed-scope-contract.js",
 			"scope-path-utils.js",
+			"template-syntax.js",
 			"flow-script-parser-service.js",
 			"flow-repository-service.js",
 			"flow-source-service.js"
@@ -1290,6 +1296,7 @@
 			"block-code-compiler-service.js",
 			"block-file-loader-service.js",
 			"block-policy-service.js",
+			"template-syntax.js",
 			"flow-script-parser-service.js",
 			"graph-block-runtime-service.js"
 		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
@@ -1341,6 +1348,7 @@
 
 	function expressionUtilsEnv() {
 		return {
+			templateSyntax: templateSyntax(),
 			raise: raise,
 			normalizeTree: normalizeTree,
 			isScopePath: isScopePath,
@@ -3165,6 +3173,7 @@
 
 	function flowScriptRendererEnv() {
 		return {
+			templateSyntax: templateSyntax(),
 			rewriteExpressionReferences: flowScriptParserService().rewriteExpressionReferences,
 			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			File: File,
@@ -3197,10 +3206,6 @@
 
 	function renderFlowScriptExpression(expr, locals) {
 		return flowScriptRendererService().renderFlowScriptExpression(expr, locals, flowScriptRendererEnv());
-	}
-
-	function renderFlowScriptTemplate(text, locals) {
-		return flowScriptRendererService().renderFlowScriptTemplate(text, locals, flowScriptRendererEnv());
 	}
 
 	function flowScriptTemplateLiteralPart(text) {
@@ -3273,6 +3278,7 @@
 
 	function flowScriptParserEnv() {
 		return {
+			templateSyntax: templateSyntax(),
 			destinationContract: destinationContract(),
 			sourceAttributeNameCodec: sourceAttributeNameCodec,
 			parseYamlSource: parseYamlSource,
@@ -3391,10 +3397,6 @@
 
 	function flowScriptTemplateLiteralToTemplate(token, locals, lineNumber) {
 		return flowScriptParserService().flowScriptTemplateLiteralToTemplate(token, locals, lineNumber, flowScriptParserEnv());
-	}
-
-	function flowScriptRewriteTemplateText(text, locals) {
-		return flowScriptParserService().flowScriptRewriteTemplateText(text, locals, flowScriptParserEnv());
 	}
 
 	function flowScriptValueFromToken(token, locals, lineNumber) {
@@ -3520,6 +3522,7 @@
 
 	function flowScriptValidationEnv() {
 		return {
+			templateSyntax: templateSyntax(),
 			normalizeTree: normalizeTree,
 			addUnique: addUnique,
 			joinPath: joinPath,
@@ -4654,6 +4657,7 @@
 
 	function flowAnalysisServiceEnv() {
 		return {
+			templateSyntax: templateSyntax(),
 			schemaContract: schemaContract(),
 			destinationContract: destinationContract(),
 			nodeEngineProperties: nodeEngineProperties,
@@ -10718,6 +10722,7 @@
 
 	function flowSummaryEnv() {
 		return {
+			templateSyntax: templateSyntax(),
 			nodeOutputPath: nodeOutputPath,
 			normalizeTree: normalizeTree,
 			nodeProps: nodeProps

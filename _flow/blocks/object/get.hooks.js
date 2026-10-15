@@ -10,7 +10,7 @@
 		if (text === "") {
 			return null;
 		}
-		if (text.indexOf("{{") !== -1 ||
+		if (/\$\{|\{\{/.test(text) ||
 				/^(input|config|local|result|current|request|trace)(\.|\[|$)/.test(text) ||
 				/[()?:+*\/<>!=&|]/.test(text)) {
 			return null;

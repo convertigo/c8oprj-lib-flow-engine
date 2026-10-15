@@ -23,7 +23,7 @@
 			}
 			var fieldProps = props(field);
 			var key = fieldProps.key;
-			if (key === undefined || key === null || key === "" || String(key).indexOf("{{") !== -1) {
+			if (key === undefined || key === null || key === "" || /\$\{|\{\{/.test(String(key))) {
 				// a key known at run time only: its field is not part of the static schema
 				return;
 			}

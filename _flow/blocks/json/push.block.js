@@ -14,7 +14,7 @@ const _meta = {
   ],
   "description": "Pushes a value into an array stored in a scope path.",
   "summary": "push {{value}} into {{path}}",
-  "longDescription": "Use path for the target array and value for the pushed content. A value containing only {{ expression }} keeps the native expression type.",
+  "longDescription": "Use path for the target array and value for the pushed content. A value made of one expression keeps the type of its result.",
   "slots": [
     {
       "name": "nodes",
@@ -35,8 +35,8 @@ const _meta = {
       "label": "Value",
       "kind": "value",
       "type": "unknown",
-      "default": "{{ current }}",
-      "description": "Value to push. Use {{ expression }} for dynamic values.",
+      "default": "${current}",
+      "description": "Value to push. Write an expression such as current, a quoted text or a template literal.",
     },
   },
   "runtime": "rhino",
