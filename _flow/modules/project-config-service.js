@@ -90,25 +90,159 @@
 		return number;
 	}
 
-	function effectiveConfig(request, definition, projectEngine, env) {
-		var config = Object.create(null);
-		var meta = definition && definition.flow || {};
-		// Flow defaults, the project configuration and the call config replace each other by root branch (deep merging
-		// stays explicit in config.use). Inside the project configuration, the named configurations selected by the
-		// tags merge over default, value by value, in tag order: the last one wins.
-		[meta.config, projectConfig(request, projectEngine, env), request && request.config].forEach(function (layer) {
-			if (layer === undefined) return;
-			if (!layer || Object.prototype.toString.call(layer) !== "[object Object]") {
-				var error = new Error("Flow configuration must be an object of literal defaults.");
-				error.code = "FLOW_CONFIG_OBJECT_REQUIRED";
-				throw error;
-			}
-			Object.keys(layer).forEach(function (key) {
-				config[key] = layer[key];
+	// The parents of a project's configuration, weakest first: the configuration of lib_flow_engine, then the
+	// configuration of each referenced Flow project in the order of the project references, each preceded by its own
+	// parents (depth first, a project already listed is not repeated). Each entry carries its own configuration and,
+	// as "cumulative", the merge of its parents and its own: what configParents selects a branch from.
+	function parentConfigs(env) {
+		var projectRoot = env.projectDir && env.projectDir();
+		var cache = env.configDefinitionCache;
+		var listKey = "parents-files:" + (projectRoot ? env.canonicalPath(projectRoot) : "none");
+		var cached = cache && env.readRuntimeCache ? env.readRuntimeCache(cache, listKey, "files") : null;
+		if (cached) {
+			var hit = env.readRuntimeCache(cache, "parents:" + listKey, filesFingerprint(cached.files, env));
+			if (hit) return hit;
+		}
+		var files = [];
+		var computed = computeParentConfigs(projectRoot, files, env);
+		if (cache && env.writeRuntimeCache) {
+			env.writeRuntimeCache(cache, listKey, "files", { files: files }, "Flow configuration parents");
+			env.writeRuntimeCache(cache, "parents:" + listKey, filesFingerprint(files, env), computed, "Flow configuration parents");
+		}
+		return computed;
+	}
+
+	function filesFingerprint(files, env) {
+		return files.map(function (file) { return env.canonicalPath(file) + "=" + env.fileFingerprint(file); }).join("\n");
+	}
+
+	function computeParentConfigs(projectRoot, files, env) {
+		var engineFile = engineDefinitionFile(env);
+		if (engineFile) files.push(engineFile);
+		var engineConfig = loadEngineDefinition(env).config;
+		var parents = [];
+		var byName = Object.create(null);
+		function add(name, config, cumulative) {
+			if (!name || byName[name]) return;
+			byName[name] = { name: name, config: config, cumulative: cumulative };
+			parents.push(byName[name]);
+		}
+		var engineName = env.engineProviderName ? env.engineProviderName() : "lib_flow_engine";
+		var base = isConfigObject(engineConfig) ? engineConfig : {};
+		add(engineName, base, base);
+		var visiting = Object.create(null);
+		function visit(root, inherited) {
+			if (!root || typeof env.referencedProjectRoots !== "function") return inherited;
+			var key = env.canonicalPath(root);
+			if (visiting[key]) return inherited;
+			visiting[key] = true;
+			files.push(new env.File(root, "c8oProject.yaml"));
+			var cumulative = inherited;
+			env.referencedProjectRoots(root).forEach(function (childRoot) {
+				var name = env.projectNameForRoot ? env.projectNameForRoot(childRoot) : String(childRoot.getName());
+				if (!name || byName[name]) {
+					if (name && byName[name]) cumulative = mergeConfig(cumulative, byName[name].cumulative);
+					return;
+				}
+				var childAncestors = visit(childRoot, base);
+				var childEngineFile = new env.File(childRoot, env.sourcePaths.path("engine.yaml"));
+				files.push(childEngineFile);
+				var definition = readYamlFile(childEngineFile, "version: 1\n", env);
+				var own = isConfigObject(definition.config) ? definition.config : {};
+				var childCumulative = mergeConfig(childAncestors, own);
+				add(name, own, childCumulative);
+				cumulative = mergeConfig(cumulative, childCumulative);
 			});
+			delete visiting[key];
+			return cumulative;
+		}
+		if (projectRoot) visit(projectRoot, base);
+		return { list: parents, byName: byName };
+	}
+
+	function pathParts(path) {
+		return String(path || "").split(".").filter(function (part) { return part !== ""; });
+	}
+
+	function valueAt(value, parts) {
+		return parts.reduce(function (current, part) {
+			return isConfigObject(current) && Object.prototype.hasOwnProperty.call(current, part) ? current[part] : undefined;
+		}, value);
+	}
+
+	// A copy of value with the branch at parts replaced (or removed when replacement is undefined).
+	function withBranch(value, parts, replacement) {
+		var copy = mergeConfig({}, value);
+		var target = copy;
+		for (var i = 0; i < parts.length - 1; i++) {
+			target[parts[i]] = isConfigObject(target[parts[i]]) ? mergeConfig({}, target[parts[i]]) : {};
+			target = target[parts[i]];
+		}
+		if (replacement === undefined) delete target[parts[parts.length - 1]];
+		else target[parts[parts.length - 1]] = replacement;
+		return copy;
+	}
+
+	// configParents: { "email.smtp": "lib_flow_engine" } takes that branch from the named parent, whatever the order of
+	// the references (the C++ Base::member of the configuration).
+	function selectedParents(projectEngine) {
+		var selection = projectEngine && projectEngine.configParents;
+		if (selection === undefined || selection === null) return [];
+		if (!isConfigObject(selection)) {
+			configError("FLOW_CONFIG_PARENTS_OBJECT_REQUIRED", "configParents must map config branches to parent project names.");
+		}
+		return Object.keys(selection).map(function (branch) {
+			var parent = selection[branch];
+			if (typeof parent !== "string" || !pathParts(branch).length) {
+				configError("FLOW_CONFIG_PARENT_INVALID", "configParents." + branch + " must name a parent project.");
+			}
+			return { branch: branch, parent: parent };
 		});
-		// Clone only the winning root values, not branches discarded by overrides.
-		Object.keys(config).forEach(function (key) { config[key] = env.normalizeTree(config[key]); });
+	}
+
+	// The inherited configuration: the parents merged in order, then the branches configParents selects.
+	function inheritedConfig(projectEngine, env, parents) {
+		parents = parents || parentConfigs(env);
+		var merged = {};
+		parents.list.forEach(function (parent) { merged = mergeConfig(merged, parent.config); });
+		selectedParents(projectEngine).forEach(function (selection) {
+			var parent = parents.byName[selection.parent];
+			if (!parent) {
+				configError("FLOW_CONFIG_PARENT_UNKNOWN", "configParents." + selection.branch + " names " + selection.parent
+					+ ", which is not a parent of this project: reference that project, or choose one of "
+					+ parents.list.map(function (item) { return item.name; }).join(", ") + ".");
+			}
+			var parts = pathParts(selection.branch);
+			var value = valueAt(parent.cumulative, parts);
+			merged = withBranch(merged, parts, value === undefined ? undefined : mergeConfig({}, { v: value }).v);
+		});
+		return merged;
+	}
+
+	function checkedLayer(layer) {
+		if (layer !== undefined && (!layer || Object.prototype.toString.call(layer) !== "[object Object]")) {
+			var error = new Error("Flow configuration must be an object of literal defaults.");
+			error.code = "FLOW_CONFIG_OBJECT_REQUIRED";
+			throw error;
+		}
+		return layer;
+	}
+
+	// The configuration of a Flow, weakest first, merged value by value (objects merge, any other value replaces):
+	// the defaults of the Flow, the inherited configuration of the parents, the project configuration (default then
+	// the named configurations of its tags), the configuration of the project the HTTP request targets when it is
+	// another project (it wins for the values it sets itself: a library takes the settings of each application that
+	// uses it), then the configuration given by the call.
+	function effectiveConfig(request, definition, projectEngine, env) {
+		var meta = definition && definition.flow || {};
+		var merged = {};
+		var requestRoot = env.requestRootLayer ? env.requestRootLayer(request) : undefined;
+		[checkedLayer(meta.config), inheritedConfig(projectEngine, env), checkedLayer(projectConfig(request, projectEngine, env)),
+			checkedLayer(requestRoot && requestRoot.config), checkedLayer(request && request.config)].forEach(function (layer) {
+			if (layer !== undefined) merged = mergeConfig(merged, layer);
+		});
+		var config = Object.create(null);
+		Object.keys(merged).forEach(function (key) { config[key] = env.normalizeTree(merged[key]); });
 		var keys = env.collectConfigKeys(definition);
 		["bindings", "binding"].forEach(function (key) {
 			if (keys.indexOf(key) === -1) {
@@ -127,11 +261,6 @@
 		return config;
 	}
 
-	// The Convertigo global symbols of the string values, ${name} or ${name=default} (secrets in name.secret symbols),
-	// resolved by the server for a running Flow only: the sources, the trace of the effective configuration and the
-	// schemas keep the references, so that no secret leaves the server. A value is resolved once, its result is never
-	// read again as a reference.
-	// A branch without symbol is returned as it is; a changed one is copied, keys such as __proto__ included.
 	function resolveConfigSymbols(value, env) {
 		if (typeof value === "string") {
 			return value.indexOf("${") === -1 || typeof env.compileSymbols !== "function" ? value : env.compileSymbols(value);
@@ -198,47 +327,50 @@
 		return mergeConfig(common, tagged);
 	}
 
-	// The configuration the runtime gives a Flow, with the origin of each value (leaf path -> origin).
+	// The configuration the runtime gives a Flow, with the origin of each value (leaf path -> origin), layer by layer
+	// as effectiveConfig merges them.
 	function effectiveConfigTrace(request, definition, projectEngine, env) {
 		var meta = definition && definition.flow || {};
-		var sources = Object.create(null), projectSources = Object.create(null);
-		function forget(map, path) {
-			Object.keys(map).forEach(function (key) { if (key === path || key.indexOf(path + ".") === 0) delete map[key]; });
+		var sources = Object.create(null);
+		function forget(path) {
+			Object.keys(sources).forEach(function (key) { if (key === path || key.indexOf(path + ".") === 0) delete sources[key]; });
 		}
-		function mark(map, value, path, origin) {
+		function mark(value, path, origin) {
 			if (isConfigObject(value) && Object.keys(value).length) {
-				Object.keys(value).forEach(function (key) { mark(map, value[key], path + "." + key, origin); });
-			} else map[path] = origin;
+				Object.keys(value).forEach(function (key) { mark(value[key], path ? path + "." + key : key, origin); });
+			} else { forget(path); sources[path] = origin; }
 		}
-		function mergeMark(current, value, path, origin) {
-			if (isConfigObject(value) && isConfigObject(current)) {
-				Object.keys(value).forEach(function (key) { mergeMark(current[key], value[key], path + "." + key, origin); });
-			} else { forget(projectSources, path); mark(projectSources, value, path, origin); }
+		// A layer merged over the previous ones: an object value merges, any other value replaces the whole branch.
+		function layer(value, origin) {
+			if (!isConfigObject(value)) return;
+			Object.keys(value).forEach(function (key) { mergeMark(value[key], key, origin); });
 		}
-		function replaceRoots(layer, origin, layerSources) {
-			if (!isConfigObject(layer)) return;
-			Object.keys(layer).forEach(function (key) {
-				forget(sources, key);
-				if (!layerSources) { mark(sources, layer[key], key, origin); return; }
-				Object.keys(layerSources).forEach(function (path) {
-					if (path === key || path.indexOf(key + ".") === 0) sources[path] = layerSources[path];
-				});
-			});
+		function mergeMark(value, path, origin) {
+			if (isConfigObject(value) && Object.keys(value).length) {
+				Object.keys(sources).forEach(function (key) { if (key === path) delete sources[key]; });
+				Object.keys(value).forEach(function (key) { mergeMark(value[key], path + "." + key, origin); });
+			} else mark(value, path, origin);
 		}
 		var config = effectiveConfig(request, definition, projectEngine, env);
-		var common = projectEngine && projectEngine.config, project = isConfigObject(common) ? common : {};
-		Object.keys(project).forEach(function (key) { mark(projectSources, project[key], key, "default"); });
+		layer(meta.config, "Flow default");
+		var parents = parentConfigs(env);
+		parents.list.forEach(function (parent) { layer(parent.config, "parent " + parent.name); });
+		selectedParents(projectEngine).forEach(function (selection) {
+			var parent = parents.byName[selection.parent];
+			if (!parent) return;
+			var parts = pathParts(selection.branch);
+			forget(selection.branch);
+			mark(valueAt(parent.cumulative, parts), selection.branch, "parent " + parent.name + " (configParents)");
+		});
+		var common = projectEngine && projectEngine.config;
+		layer(isConfigObject(common) ? common : {}, "default");
 		var definitions = configurationDefinitions(projectEngine);
 		taggedReferences(request, projectEngine).forEach(function (reference) {
-			var value = definitions[reference.name];
-			Object.keys(value).forEach(function (key) {
-				mergeMark(project[key], value[key], key, reference.name + " (tag " + reference.tag + ")");
-			});
-			project = mergeConfig(project, value);
+			layer(definitions[reference.name], reference.name + " (tag " + reference.tag + ")");
 		});
-		replaceRoots(meta.config, "Flow default");
-		replaceRoots(project, null, projectSources);
-		replaceRoots(request && request.config, "call");
+		var requestRoot = env.requestRootLayer ? env.requestRootLayer(request) : undefined;
+		if (requestRoot) layer(requestRoot.config, "request project " + requestRoot.project);
+		layer(request && request.config, "call");
 		return { config: config, sources: sources, visibility: projectEngine && projectEngine.configVisibility || {} };
 	}
 
@@ -369,6 +501,10 @@
 		validateReferencedConfigurations: validateReferencedConfigurations,
 		resolveTaggedConfig: resolveTaggedConfig,
 		effectiveConfigTrace: effectiveConfigTrace,
+		parentConfigs: parentConfigs,
+		projectConfig: projectConfig,
+		taggedReferences: taggedReferences,
+		inheritedConfig: inheritedConfig,
 		resolveConfigReferences: resolveConfigReferences
 	};
 })();

@@ -772,7 +772,15 @@
 			fileFingerprint: fileFingerprint,
 			readRuntimeCache: readRuntimeMapCache,
 			writeRuntimeCache: writeRuntimeMapCache,
-			configDefinitionCache: runtimeState.caches.configDefinitions
+			configDefinitionCache: runtimeState.caches.configDefinitions,
+			// configuration parents: the Flow projects a project references, in the order of its references
+			referencedProjectRoots: function (root) {
+				return catalogLoaderService().referencedProjectRoots(catalogLoaderEnv(), sourcePaths().root, root);
+			},
+			projectNameForRoot: projectNameForRoot,
+			engineProviderName: function () {
+				return flowProviderName(engineDir(), "lib_flow_engine");
+			}
 		};
 	}
 
@@ -800,7 +808,80 @@
 	function runtimeEffectiveConfig(request, definition, projectEngine) {
 		var env = projectConfigEnv();
 		env.compileSymbols = compileConfigSymbols;
+		env.requestRootLayer = requestRootLayer;
 		return projectConfigService().runtimeConfig(request, definition, projectEngine, env);
+	}
+
+	var REQUEST_ROOT_ATTRIBUTE = "convertigo.flow.requestProjectConfig";
+
+	// The project the HTTP request of the running Flow targets (its __project parameter, else its /projects/<name>/
+	// URL), when it is another project than the Flow's: { project, config } with the configuration that project sets
+	// itself (default, then the named configurations of the tags of the requested requestable), or undefined. It is
+	// computed once per HTTP request (request attribute), and never without a live request (tests, scheduled jobs).
+	function requestRootLayer(request) {
+		var convertigoContext = typeof context === "undefined" ? null : context;
+		var http = null;
+		try {
+			http = convertigoContext ? convertigoContext.httpServletRequest : null;
+		} catch (e) {
+			http = null;
+		}
+		if (!http) {
+			return undefined;
+		}
+		var requested = "";
+		try {
+			var parameter = http.getParameter("__project");
+			if (parameter != null) {
+				requested = String(parameter);
+			} else {
+				var matched = /\/projects\/([^\/]+)\//.exec(String(http.getRequestURI()));
+				requested = matched ? String(matched[1]) : "";
+			}
+		} catch (e) {
+			requested = "";
+		}
+		if (!requested || requested === currentProjectName(request)) {
+			return undefined;
+		}
+		var stored = http.getAttribute(REQUEST_ROOT_ATTRIBUTE);
+		if (stored != null) {
+			var parsed = JSON.parse(String(stored));
+			if (parsed.project === requested) {
+				return parsed.config ? parsed : undefined;
+			}
+		}
+		var layer = null;
+		var root = loadedProjectRootForName(requested) || (projectDir() ? new File(projectDir().getParentFile(), requested) : null);
+		var engineFile = root ? new File(root, sourcePaths().path("engine.yaml")) : null;
+		if (engineFile && engineFile.isFile()) {
+			var definition = parseYamlSource(String(FileUtils.readFileToString(engineFile, "UTF-8")), "version: 1\n") || {};
+			var tagContext = requestRootTagContext(requested);
+			var sequence = "";
+			try {
+				sequence = String(http.getParameter("__sequence") || "");
+			} catch (e) {
+				sequence = "";
+			}
+			var rootRequest = { project: requested, flowQName: sequence ? requested + "." + sequence : "", tagContext: tagContext };
+			layer = projectConfigService().projectConfig(rootRequest, definition, projectConfigEnv());
+		}
+		var value = { project: requested, config: layer && Object.keys(layer).length ? layer : null };
+		http.setAttribute(REQUEST_ROOT_ATTRIBUTE, JSON.stringify(value));
+		return value.config ? value : undefined;
+	}
+
+	function requestRootTagContext(projectName) {
+		try {
+			var manager = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager;
+			var project = manager.getOriginalProjectByName(String(projectName), false);
+			if (!project) {
+				return null;
+			}
+			return JSON.parse(String(Packages.com.twinsoft.convertigo.engine.tags.TagManager.get().runContext(project)));
+		} catch (e) {
+			return null;
+		}
 	}
 
 	var reportedUndefinedSymbols = {};

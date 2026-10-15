@@ -46,9 +46,9 @@ try {
 	files.writeStringToFile(new java.io.File(project, "_flow/engine.yaml"), JSON.stringify({ version: 1, config: projectConfig }), "UTF-8");
 	engine.cacheClear();
 	var expected = JSON.parse(JSON.stringify(meta.config));
-	expected.greeting = "Request"; expected.service = { host: "project" }; expected.projectOnly = true;
+	expected.greeting = "Request"; expected.service.host = "project"; expected.projectOnly = true;
 	var overridden = api("run", { flowSource: source, config: { greeting: "Request" }, includeTrace: false });
-	equal(overridden.result.snapshot, expected, "Precedence must be Flow defaults < project < request, replacing root branches");
+	equal(overridden.result.snapshot, expected, "Precedence must be Flow defaults < project < request, merged value by value");
 	var context = api("context", { flowSource: source, node: "read", property: "value", include: ["config"], detail: "normal" });
 	assert(context.ok && JSON.stringify(context).indexOf("greeting") !== -1 && JSON.stringify(context).indexOf("boolean") !== -1,
 		"Picker did not publish effective config: " + JSON.stringify(context));
