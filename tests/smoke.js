@@ -2,6 +2,14 @@ var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_
 var engineFile = new java.io.File(engineDir, "Engine.js");
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(engineFile, "UTF-8"));
 var __flowEngineDir = String(new java.io.File(engineDir).getAbsolutePath());
+// The smoke reads Flow Svelte sources with Node.js: a Convertigo engine on the classpath (a server image, not the
+// Studio) runs Node.js only when its server_build setting allows the builds of the web Studio.
+try {
+	var smokeEngineProperties = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager;
+	smokeEngineProperties.setProperty(smokeEngineProperties.PropertyName.SERVER_BUILD, "studio");
+} catch (e) {
+	// no Convertigo engine: Node.js always runs
+}
 // Project references and caches must belong to this run, not fixed names in the
 // user's global temp directory. A second or parallel campaign must be independent.
 var smokeOriginalTmpDir = String(java.lang.System.getProperty("java.io.tmpdir"));
