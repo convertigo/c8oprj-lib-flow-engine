@@ -509,6 +509,16 @@
 		});
 	}
 
+	// The runtime converts the value (type-conversion.js): a text to a number, any value to a text... A type that is not
+	// a JSON type (requestable, path...) names a text.
+	function convertibleSchemaType(expected, actual, env) {
+		var known = ["string", "number", "integer", "boolean", "array", "object", "null", "any", "unknown"];
+		var types = splitTypes(expected).map(function (type) {
+			return known.indexOf(type) === -1 ? "string" : type;
+		});
+		return !!env.typeConversion && env.typeConversion.convertible(types.join("|"), actual);
+	}
+
 	function propertyTypeMismatchDiagnostic(node, input, descriptor, actual) {
 		var expected = String(descriptor && descriptor.type || "").trim();
 		return {
@@ -562,7 +572,8 @@
 				}
 				var actual = env.schemaSimpleType(schema);
 				if (descriptor.kind === "expression" && expected === "array" && input.propertyValueType !== "array") {
-					if (actual === "array" || actual === "unknown") {
+					// a JSON text or a single value converts to an array; an object is more likely the wrong path
+					if (actual !== "object" && actual !== "null") {
 						return;
 					}
 					var candidates = arrayPathCandidates(input.path, schema, env);
@@ -585,11 +596,12 @@
 				if (!input.exactRef) {
 					return;
 				}
-				if (projectBlock && isLooseType(expected) && isActionableUnknownPropertyType(actual)) {
+				// a property declared any or unknown is generic on purpose: only a missing type asks for one
+				if (projectBlock && expected === "" && isActionableUnknownPropertyType(actual)) {
 					diagnostics.push(projectBlockUnknownPropertyDiagnostic(node, input, actual));
 					return;
 				}
-				if (expected === "array" || compatibleSchemaType(expected, actual)) {
+				if (expected === "array" || compatibleSchemaType(expected, actual) || convertibleSchemaType(expected, actual, env)) {
 					return;
 				}
 				diagnostics.push(propertyTypeMismatchDiagnostic(node, input, descriptor, actual));

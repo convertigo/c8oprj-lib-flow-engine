@@ -437,6 +437,10 @@
 		runContextPrototype.template = function (value) {
 			return renderTemplateTree(this, value);
 		};
+		// A value converted to a declared type, as the inputs of a Flow: { ok, value } or { ok: false, message }.
+		runContextPrototype.convert = function (value, schema) {
+			return env.typeConversion.convert(value, schema);
+		};
 		runContextPrototype.input = function (props, fallback) {
 			return inputValue(this, props || {}, fallback);
 		};
@@ -1114,27 +1118,67 @@
 			return normalizeTree(value);
 		}
 
-		// A declared number, integer or boolean input comes as text over HTTP: it takes its type, as
-		// through the MCP or a Flow call, so that === compares the same values whatever the caller.
+		// The declared inputs of a Flow receive their values converted to their types (type-conversion.js), whatever the
+		// caller (HTTP text, the MCP, a Flow call), so that === compares the same values. An absent input takes its
+		// default (its ${symbols} compiled); for an input that is not a text, "" (an empty form field) and the text "null"
+		// (a null sent as a form parameter) are absent and null; null is kept with nullable: true, else it is absent; a
+		// required input must be given; a value that does not convert is a 400 error.
 		function typedInputs(input, definition) {
 			var meta = definition && (definition.flow || definition._flow) || {};
 			var declared = meta.inputs || meta.input || definition && (definition.inputs || definition.input);
 			if (!declared || typeof declared !== "object" || !input || typeof input !== "object") {
 				return input;
 			}
+			var conversion = env.typeConversion;
 			Object.keys(declared).forEach(function (name) {
-				var type = declared[name] && declared[name].type;
-				var text = typeof input[name] === "string" ? input[name].trim() : null;
-				if (text === null) {
+				var declaration = declared[name] && typeof declared[name] === "object" ? declared[name] : {};
+				var declaredTypes = conversion.types(declaration);
+				var value = input[name];
+				var textual = !declaredTypes.length || declaredTypes.indexOf("string") !== -1 ||
+					declaredTypes.indexOf("any") !== -1 || declaredTypes.indexOf("unknown") !== -1;
+				if (!textual && value === "") {
+					value = undefined;
+				}
+				if (!textual && value === "null") {
+					value = null;
+				}
+				if (value === null && declaration.nullable !== true) {
+					value = undefined;
+				}
+				if (value === undefined) {
+					if (declaration["default"] === undefined) {
+						if (declaration.required === true) {
+							inputError("FLOW_INPUT_REQUIRED", name, "Input " + name + " is required.", "");
+						}
+						delete input[name];
+						return;
+					}
+					value = defaultValue(declaration["default"]);
+				}
+				if (value === null) {
+					input[name] = null;
 					return;
 				}
-				if (type === "number" && /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) || type === "integer" && /^-?\d+$/.test(text)) {
-					input[name] = Number(text);
-				} else if (type === "boolean" && /^(?:true|false)$/i.test(text)) {
-					input[name] = text.toLowerCase() === "true";
+				var converted = conversion.convert(value, declaration);
+				if (!converted.ok) {
+					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + ": " + converted.message,
+						"Send a value of type " + declaredTypes.join(" or ") + ".");
 				}
+				input[name] = converted.value;
 			});
 			return input;
+		}
+
+		function defaultValue(value) {
+			value = normalizeTree(value);
+			if (typeof value === "string" && value.indexOf("${") !== -1 && typeof env.compileSymbols === "function") {
+				return env.compileSymbols(value);
+			}
+			return value;
+		}
+
+		function inputError(code, name, message, hint) {
+			return throwFlowError({ code: code, message: message, hint: hint, status: 400, details: { input: name } });
 		}
 
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {

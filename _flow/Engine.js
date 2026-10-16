@@ -3523,6 +3523,7 @@
 	function flowScriptValidationEnv() {
 		return {
 			templateSyntax: templateSyntax(),
+			typeConversion: loadEngineModule("type-conversion.js"),
 			normalizeTree: normalizeTree,
 			addUnique: addUnique,
 			joinPath: joinPath,
@@ -4522,6 +4523,8 @@
 			projectPackages: projectPackages,
 			schemaContract: schemaContract(),
 			typedScopeContract: loadEngineModule("typed-scope-contract.js"),
+			typeConversion: loadEngineModule("type-conversion.js"),
+			compileSymbols: compileConfigSymbols,
 			nodeOutputPath: nodeOutputPath,
 			File: File,
 			blockName: blockName,

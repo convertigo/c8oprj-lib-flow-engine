@@ -2116,10 +2116,10 @@ assertTrue(sourceMutationResponse.ok === true &&
 	"applySourceMutation did not preserve canonical FlowScript block source");
 var stringLatitudeBlockSource = [
 	"const _meta = {",
-	"\t\"description\": \"Block with an intentionally narrow latitude contract.\",",
+	"\t\"description\": \"Block with a latitude contract a number does not convert to.\",",
 	"\t\"runtime\": \"flow\",",
 	"\t\"properties\": {",
-	"\t\t\"latitude\": { \"type\": \"string\" }",
+	"\t\t\"latitude\": { \"type\": \"object\" }",
 	"\t},",
 	"\t\"outputs\": {",
 	"\t\t\"out\": { \"type\": \"object\" }",
@@ -2166,7 +2166,7 @@ assertTrue(propertyTypeMismatchValidation.ok === true &&
 			diagnostic.block === "smoke.stringLatitude" &&
 			diagnostic.property === "latitude" &&
 			diagnostic.path === "current.latitude" &&
-			diagnostic.expected === "string" &&
+			diagnostic.expected === "object" &&
 			diagnostic.actual === "number" &&
 			diagnostic.next.indexOf("_meta.properties.latitude.type to number") !== -1 &&
 			diagnostic.hint.indexOf("block contract feedback") !== -1;

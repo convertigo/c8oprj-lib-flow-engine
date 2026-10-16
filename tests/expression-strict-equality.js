@@ -123,7 +123,7 @@ var guardFlow = [
 });
 
 // A declared number, integer or boolean input given as text (HTTP variables) takes its type, so
-// === answers the same for an HTTP or an MCP caller; other text stays as it came.
+// === answers the same for an HTTP or an MCP caller; a text that does not convert is refused.
 var typedFlow = [
 	"const _flow = {",
 	"  inputs: {",
@@ -150,9 +150,12 @@ var fromMcp = run(typedFlow, { limit: 0, page: 3, exact: false, label: "0" });
 	assertTrue(typed.limit === 0 && typed.limitIsZero === true && typed.page === 3 && typed.exact === false && typed.label === "0",
 		"Declared inputs did not take their type: " + JSON.stringify(typed));
 });
-var untouched = run(typedFlow, { limit: "", page: "3.5", exact: "yes" });
-assertTrue(untouched.limit === "" && untouched.page === "3.5" && untouched.exact === "yes",
-	"Text that is not of the declared type stays as it came: " + JSON.stringify(untouched));
+var converted = run(typedFlow, { limit: "", page: "3.5" });
+assertTrue(converted.limit === 20 && converted.page === 3,
+	"An empty field takes the default and an integer is truncated: " + JSON.stringify(converted));
+var refused = JSON.parse(engine.run(JSON.stringify({ flowSource: typedFlow, input: { exact: "yes" }, includeTrace: false })));
+assertTrue(refused.ok === false && refused.error.code === "FLOW_INPUT_TYPE_INVALID" && refused.error.status === 400,
+	"A text that does not convert to the declared type is refused: " + JSON.stringify(refused));
 
 // Rhino Java wrappers written by a block compare as their JavaScript values.
 var javaValues = run([
