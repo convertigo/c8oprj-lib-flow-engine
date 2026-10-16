@@ -3531,7 +3531,7 @@
 			schemaSimpleType: schemaSimpleType,
 			schemaForSchemasPath: schemaForSchemasPath,
 			blockName: blockName,
-			blockCatalog: blockCatalog,
+			blockCatalog: readOnlyBlockCatalog,
 			flowScriptSlotNames: flowScriptSlotNames,
 			flowScriptArgKeys: flowScriptArgKeys,
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
@@ -4245,6 +4245,18 @@
 		return block && typeof block.catalog === "function" ? block.catalog() : {};
 	}
 
+	// The catalog of a block for the code that only reads it (analysis, checks): computed once per block object instead
+	// of a deep copy per node and per property. A reloaded block is a new object.
+	function readOnlyBlockCatalog(block) {
+		if (!block || typeof block.catalog !== "function") {
+			return {};
+		}
+		if (!Object.prototype.hasOwnProperty.call(block, "__readOnlyCatalog")) {
+			Object.defineProperty(block, "__readOnlyCatalog", { value: block.catalog(), enumerable: false, configurable: true });
+		}
+		return block.__readOnlyCatalog;
+	}
+
 	function graphBlockStackLabel(stack) {
 		return (stack || []).map(function (name) {
 			return String(name || "");
@@ -4678,7 +4690,7 @@
 			collectExpressionRefs: collectExpressionRefs,
 			inferSchema: inferSchema,
 			itemSchema: itemSchema,
-			blockCatalog: blockCatalog,
+			blockCatalog: readOnlyBlockCatalog,
 			blockName: blockName,
 			nodePath: nodePath,
 			raise: raise,

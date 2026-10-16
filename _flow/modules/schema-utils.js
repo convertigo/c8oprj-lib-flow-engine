@@ -137,46 +137,68 @@
 		return false;
 	}
 
-	function paths(schema, prefix, env) {
-		schema = env.normalizeTree(schema);
-		prefix = String(prefix || "");
-		if (schema && typeof schema === "object" && schema.type === "array") {
-			var arrayOut = prefix ? [prefix] : [];
-			if (schema.items) {
-				paths(schema.items, arrayItemPath(prefix), env).forEach(function (path) {
-					addUnique(arrayOut, path);
-				});
+	// Paths, array paths and leaves of a schema: the schema is made plain once, then walked (a copy at each level made
+	// the walk quadratic on large schemas); each list keeps the first occurrence of a path.
+	function uniqueList() {
+		var list = [];
+		var seen = Object.create(null);
+		return {
+			list: list,
+			add: function (value) {
+				if (!seen[value]) {
+					seen[value] = true;
+					list.push(value);
+				}
 			}
-			return arrayOut;
+		};
+	}
+
+	function paths(schema, prefix, env) {
+		var out = uniqueList();
+		collectPaths(env.normalizeTree(schema), String(prefix || ""), out);
+		return out.list;
+	}
+
+	function collectPaths(schema, prefix, out) {
+		if (schema && typeof schema === "object" && schema.type === "array") {
+			if (prefix) {
+				out.add(prefix);
+			}
+			if (schema.items) {
+				collectPaths(schema.items, arrayItemPath(prefix), out);
+			}
+			return;
 		}
 		if (isLeaf(schema)) {
-			return prefix ? [prefix] : [];
+			if (prefix) {
+				out.add(prefix);
+			}
+			return;
 		}
 		var source = schema.properties || schema;
 		var filterMeta = !schema.properties;
 		var keys = Object.keys(source || {}).filter(function (key) {
 			return !filterMeta || !isMetaKey(key);
 		});
-		if (keys.length === 0) {
-			return prefix ? [prefix] : [];
+		if (prefix) {
+			out.add(prefix);
 		}
-		var out = prefix ? [prefix] : [];
 		keys.forEach(function (key) {
 			var childPrefix = joinPath(prefix, key);
 			var child = source[key];
 			if (isLeaf(child)) {
-				addUnique(out, childPrefix);
+				out.add(childPrefix);
 			} else {
-				paths(child, childPrefix, env).forEach(function (path) {
-					addUnique(out, path);
-				});
+				collectPaths(child, childPrefix, out);
 			}
 		});
-		return out;
 	}
 
 	function simpleType(schema, env) {
-		schema = env.normalizeTree(schema);
+		return plainSimpleType(env.normalizeTree(schema));
+	}
+
+	function plainSimpleType(schema) {
 		if (!schema || typeof schema !== "object") {
 			return schema === null ? "null" : typeof schema;
 		}
@@ -190,61 +212,68 @@
 	}
 
 	function arrayPaths(schema, prefix, env) {
-		schema = env.normalizeTree(schema);
-		prefix = String(prefix || "");
-		var out = [];
+		var out = uniqueList();
+		collectArrayPaths(env.normalizeTree(schema), String(prefix || ""), out);
+		return out.list;
+	}
+
+	function collectArrayPaths(schema, prefix, out) {
 		if (!schema || typeof schema !== "object") {
-			return out;
+			return;
 		}
 		if (schema.type === "array") {
 			if (prefix) {
-				addUnique(out, prefix);
+				out.add(prefix);
 			}
 			if (schema.items) {
-				arrayPaths(schema.items, arrayItemPath(prefix), env).forEach(function (path) {
-					addUnique(out, path);
-				});
+				collectArrayPaths(schema.items, arrayItemPath(prefix), out);
 			}
-			return out;
+			return;
 		}
 		if (isLeaf(schema)) {
-			return out;
+			return;
 		}
 		var source = schema.properties || schema;
 		var filterMeta = !schema.properties;
 		Object.keys(source || {}).filter(function (key) {
 			return !filterMeta || !isMetaKey(key);
 		}).forEach(function (key) {
-			arrayPaths(source[key], joinPath(prefix, key), env).forEach(function (path) {
-				addUnique(out, path);
-			});
+			collectArrayPaths(source[key], joinPath(prefix, key), out);
 		});
-		return out;
 	}
 
 	function leafEntries(schema, prefix, env) {
-		schema = env.normalizeTree(schema);
-		prefix = String(prefix || "");
+		var out = [];
+		collectLeafEntries(env.normalizeTree(schema), String(prefix || ""), out);
+		return out;
+	}
+
+	function collectLeafEntries(schema, prefix, out) {
 		if (!schema || typeof schema !== "object") {
-			return prefix ? [{ path: prefix, type: simpleType(schema, env) }] : [];
+			if (prefix) {
+				out.push({ path: prefix, type: plainSimpleType(schema) });
+			}
+			return;
 		}
 		if (schema.type === "array") {
-			return schema.items ? leafEntries(schema.items, arrayItemPath(prefix), env) : [];
+			if (schema.items) {
+				collectLeafEntries(schema.items, arrayItemPath(prefix), out);
+			}
+			return;
 		}
 		if (isLeaf(schema)) {
-			return prefix ? [{ path: prefix, type: simpleType(schema, env) }] : [];
+			if (prefix) {
+				out.push({ path: prefix, type: plainSimpleType(schema) });
+			}
+			return;
 		}
 		var source = schema.properties || schema;
 		var filterMeta = !schema.properties;
-		var out = [];
 		Object.keys(source || {}).filter(function (key) {
 			return !filterMeta || !isMetaKey(key);
 		}).forEach(function (key) {
-			leafEntries(source[key], joinPath(prefix, key), env).forEach(function (entry) {
-				out.push(entry);
-			});
+			collectLeafEntries(source[key], joinPath(prefix, key), out);
 		});
-		return out;
 	}
 
 	function atPath(schema, path, env) {
