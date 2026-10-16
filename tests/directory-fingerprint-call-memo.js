@@ -42,6 +42,12 @@ var seen = engineCall("describeTree", "{}", function () {
 assertTrue(walks === 2, "a read-only call walks each directory once: " + walks);
 assertTrue(seen[0] === seen[1] && seen[1] === seen[3] && seen[2] !== seen[0], "and gets the same fingerprint: " + seen);
 
+["flowCodeCheck", "analyze"].forEach(function(operation) {
+	walks=0;
+	engineCall(operation,"{}",function(){directoryFingerprint(dir);directoryFingerprint(dir);});
+	assertTrue(walks===1,operation+" reads one catalog version during the call");
+});
+
 walks = 0;
 engineCall("applySourceMutation", "{}", function () {
 	directoryFingerprint(dir);
@@ -120,4 +126,45 @@ loadTraits([traitDir]);
 loadTraits([traitDir]);
 assertTrue(traitLoads === 2, "outside a call, each time: " + traitLoads);
 
-print("directory-fingerprint-call-memo: once per read-only call, per thread");
+// Module validation is shared only inside a read-only operation. A later call
+// must still observe a changed source, and mutations must never reuse the memo.
+var moduleChecks = 0, moduleCompiles = 0, moduleVersion = "one";
+var runtimeState = { caches: { engineModules: {} } };
+function engineModuleFile(name) {
+	moduleChecks++;
+	return { isFile: function () { return true; },
+		getAbsolutePath: function () { return "/engine/modules/" + name; } };
+}
+function fileFingerprint(file) { return moduleVersion; }
+function readRuntimeMapCache(cache, key, fingerprint) {
+	var entry = cache[key];
+	return entry && entry.fingerprint === fingerprint ? entry.value : null;
+}
+function writeRuntimeMapCache(cache, key, fingerprint, value) {
+	cache[key] = { fingerprint: fingerprint, value: value };
+	return value;
+}
+var FileUtils = { readFileToString: function () { return moduleVersion; } };
+function evalCompiledSource(text) { moduleCompiles++; return { version: text }; }
+var loadEngineModule = eval(functionSource("loadEngineModule"));
+// Use the module file's actual path without involving the path-only test stub.
+canonicalPath = function (file) { return file.getAbsolutePath(); };
+engineCall("flowCodeCheck", "{}", function () {
+	var first = loadEngineModule("schema-utils.js");
+	assertTrue(loadEngineModule("schema-utils.js") === first, "same module instance within the call");
+});
+assertTrue(moduleChecks === 1 && moduleCompiles === 1, "validate and compile once per read-only call");
+moduleVersion = "two";
+engineCall("flowCodeCheck", "{}", function () {
+	assertTrue(loadEngineModule("schema-utils.js").version === "two", "a later call sees a changed module");
+});
+assertTrue(moduleChecks === 2 && moduleCompiles === 2, "module hot reload is retained");
+engineCall("run", "{}", function () {
+	loadEngineModule("schema-utils.js");
+	loadEngineModule("schema-utils.js");
+});
+assertTrue(moduleChecks === 4 && moduleCompiles === 2, "writes validate each time and retain the runtime cache");
+try { withReadOnlyMemo(function () { loadEngineModule("schema-utils.js"); throw new Error("expected"); }); } catch (expected) {}
+assertTrue(callFingerprints.get() == null, "module memo is released on failure too");
+
+print("directory-fingerprint-call-memo: once per read-only call, per thread; module reload retained");

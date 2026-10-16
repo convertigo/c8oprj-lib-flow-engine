@@ -248,6 +248,18 @@
 		return out;
 	}
 
+	function summary(schema, env) {
+		// These walkers only read the schema. Normalize once at the boundary,
+		// retaining Java-value conversion without copying it for each result list.
+		schema = env.normalizeTree(schema);
+		var paths = uniqueList(), arrays = uniqueList(), leaves = [];
+		collectPaths(schema, "", paths);
+		collectArrayPaths(schema, "", arrays);
+		collectLeafEntries(schema, "", leaves);
+		return { type: plainSimpleType(schema), paths: paths.list.slice(0, 20),
+			arrayPaths: arrays.list.slice(0, 20), leafPaths: leaves.slice(0, 20) };
+	}
+
 	function collectLeafEntries(schema, prefix, out) {
 		if (!schema || typeof schema !== "object") {
 			if (prefix) {
@@ -394,6 +406,7 @@
 		simpleType: simpleType,
 		arrayPaths: arrayPaths,
 		leafEntries: leafEntries,
+		summary: summary,
 		atPath: atPath,
 		unwrapDocument: unwrapDocument,
 		hasContent: hasContent,

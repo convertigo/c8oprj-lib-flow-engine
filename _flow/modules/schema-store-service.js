@@ -117,13 +117,7 @@
 	}
 
 	function summary(schema, env) {
-		schema = env.normalizeTree(schema);
-		return {
-			type: env.schemaSimpleType(schema),
-			paths: env.schemaPaths(schema, "").slice(0, 20),
-			arrayPaths: env.schemaArrayPaths(schema, "").slice(0, 20),
-			leafPaths: env.schemaLeafEntries(schema, "").slice(0, 20)
-		};
+		return env.summarizeSchema(schema);
 	}
 
 	function learnResultSchema(request, definition, value, env) {

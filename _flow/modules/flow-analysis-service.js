@@ -462,6 +462,13 @@
 				}
 				existing = normalizeTree(existing);
 				inferred = normalizeTree(inferred);
+				return mergeGraphBlockSchemaPlain(existing, inferred);
+			}
+			// The boundary above owns both normalized copies; recursive merges create
+			// new containers and can safely read those copies without cloning subtrees.
+			function mergeGraphBlockSchemaPlain(existing, inferred) {
+				if (!existing) return inferred;
+				if (!inferred) return existing;
 				var existingType = schemaTypeName(existing);
 				var inferredType = schemaTypeName(inferred);
 				if (existingType === "unknown") {
@@ -479,14 +486,14 @@
 						properties[key] = existing.properties[key];
 					});
 					Object.keys(inferred.properties || {}).forEach(function (key) {
-						properties[key] = mergeGraphBlockSchema(properties[key], inferred.properties[key]);
+						properties[key] = mergeGraphBlockSchemaPlain(properties[key], inferred.properties[key]);
 					});
 					return { type: "object", properties: properties };
 				}
 				if (existingType === "array" && inferredType === "array") {
 					return {
 						type: "array",
-						items: mergeGraphBlockSchema(existing.items, inferred.items) || { type: "unknown" }
+						items: mergeGraphBlockSchemaPlain(existing.items, inferred.items) || { type: "unknown" }
 					};
 				}
 				return existing;
@@ -747,18 +754,18 @@
 		}
 
 		function schemaForSchemasPath(schemas, path) {
-			var best = "";
-			Object.keys(schemas || {}).forEach(function (basePath) {
-				if (pathExtends(path, basePath)) {
-					if (basePath.length > best.length) {
-						best = basePath;
-					}
+			// Only prefixes ending at a path boundary can match; do not scan every
+			// other schema collected by the analysis for each input property.
+			var basePath = path;
+			while (basePath) {
+				if (schemas && Object.prototype.propertyIsEnumerable.call(schemas, basePath)) {
+					return schemaAtPath(schemas[basePath], pathRemainder(path, basePath));
 				}
-			});
-			if (!best) {
-				return null;
+				var boundary = Math.max(basePath.lastIndexOf("."), basePath.lastIndexOf("["));
+				if (boundary < 0) break;
+				basePath = basePath.substring(0, boundary);
 			}
-			return schemaAtPath(schemas[best], pathRemainder(path, best));
+			return null;
 		}
 
 		function schemaForAnalysisPath(ctx, path) {

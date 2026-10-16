@@ -1223,6 +1223,8 @@
 	// per entry on a network file system). Per thread, as a background build shares the scope; the calls that write
 	// (mutations, actions) always walk.
 	var MEMOIZED_FINGERPRINT_OPERATIONS = {
+		flowCodeCheck: true,
+		analyze: true,
 		describeTree: true,
 		authoringTree: true,
 		authoringPalette: true,
@@ -1304,6 +1306,12 @@
 	}
 
 	function loadEngineModule(name) {
+		// A read-only operation sees one version of each module. Checking the same
+		// file for every schema/path helper dominated otherwise warm analyses.
+		var memo = callFingerprints.get();
+		var memoKey = "\u0000module:" + name;
+		var known = memo ? memo.get(memoKey) : null;
+		if (known != null) return known;
 		var file = engineModuleFile(name);
 		if (!file.isFile()) {
 			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
@@ -1313,6 +1321,7 @@
 		var fingerprint = fileFingerprint(file);
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (cached) {
+			if (memo) memo.put(memoKey, cached);
 			return cached;
 		}
 		var source = String(FileUtils.readFileToString(file, "UTF-8"));
@@ -1322,7 +1331,9 @@
 				null, "A Flow engine module must evaluate to an object.");
 		}
 		module.__flowFile = String(file.getAbsolutePath());
-		return writeRuntimeMapCache(cache, key, fingerprint, module, "Flow engine modules");
+		var loaded = writeRuntimeMapCache(cache, key, fingerprint, module, "Flow engine modules");
+		if (memo) memo.put(memoKey, loaded);
+		return loaded;
 	}
 
 	function schemaUtils() {
@@ -1465,6 +1476,7 @@
 
 	function schemaStoreEnv() {
 		return {
+			summarizeSchema: function (schema) { return schemaUtils().summary(schema, schemaUtilsEnv()); },
 			File: File,
 			FileUtils: FileUtils,
 			safeFilePart: safeFilePart,
@@ -4024,7 +4036,10 @@
 	}
 
 	function flowCodeCheckRequest(blocks, request) {
-		return flowCodeService().flowCodeCheckRequest(blocks, request, flowCodeServiceEnv());
+		// The MCP runtime calls this capability directly, without engineCall.
+		return withReadOnlyMemo(function () {
+			return flowCodeService().flowCodeCheckRequest(blocks, request, flowCodeServiceEnv());
+		});
 	}
 
 	function flowCodeRunRequest(blocks, request) {
