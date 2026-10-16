@@ -7464,7 +7464,7 @@
 	}
 
 	function ensureFrontendDocumentDependencies(resourceRoot) {
-		var npm = frontendExecutable("npm");
+		var npm = frontendExecutable("npm", "authoring");
 		// packages installed in the builder folder before a local working directory was set are installed again there
 		frontendBuilderInstallPrefix(resourceRoot);
 		var fingerprint = frontendDependencyFingerprint(resourceRoot, npm);
@@ -8844,7 +8844,9 @@
 
 	/**
 	 * Node.js, npm and npx build: a server runs them only when its configuration runs the builds started from the
-	 * web Studio (server_build studio or all). An engine before this setting always builds.
+	 * web Studio (server_build studio or all). An engine before this setting always builds. The authoring companion
+	 * (reading and editing the Flow Svelte sources for the trees of the Studio and the MCP) is not a build: it always
+	 * runs, with its tooling.
 	 */
 	function frontendCheckServerBuild(name) {
 		if (!/^(node|npm|npx)$/.test(String(name))) {
@@ -8864,8 +8866,17 @@
 		}
 	}
 
-	function frontendExecutable(name) {
-		frontendCheckServerBuild(name);
+	var FRONTEND_AUTHORING_SCRIPTS = ["src-builder/frontDocumentCli.ts", "src-builder/sourceMutateCli.ts"];
+
+	function frontendScriptPurpose(script) {
+		return FRONTEND_AUTHORING_SCRIPTS.indexOf(String(script || "")) !== -1 ? "authoring" : "build";
+	}
+
+	// purpose "authoring" for the companion that reads and edits the sources, else a build
+	function frontendExecutable(name, purpose) {
+		if (purpose !== "authoring") {
+			frontendCheckServerBuild(name);
+		}
 		var path = String(Packages.java.lang.System.getenv("PATH") || "");
 		var parts = path.split(String(File.pathSeparator));
 		var home = String(Packages.java.lang.System.getProperty("user.home") || "");
@@ -9016,14 +9027,15 @@
 		args = args || [];
 		var scriptFile = new File(toolRoot, script);
 		var tsxCli = new File(toolRoot, "node_modules/tsx/dist/cli.mjs");
+		var purpose = frontendScriptPurpose(script);
 		if (tsxCli.isFile()) {
-			var command = [frontendExecutable("node"), String(tsxCli.getAbsolutePath()), String(scriptFile.getAbsolutePath())];
+			var command = [frontendExecutable("node", purpose), String(tsxCli.getAbsolutePath()), String(scriptFile.getAbsolutePath())];
 			args.forEach(function (arg) {
 				command.push(arg);
 			});
 			return command;
 		}
-		var fallback = [frontendExecutable("npm"), "--prefix", String(toolRoot.getAbsolutePath()), "exec", "--", "tsx", String(scriptFile.getAbsolutePath())];
+		var fallback = [frontendExecutable("npm", purpose), "--prefix", String(toolRoot.getAbsolutePath()), "exec", "--", "tsx", String(scriptFile.getAbsolutePath())];
 		args.forEach(function (arg) {
 			fallback.push(arg);
 		});
@@ -9039,7 +9051,7 @@
 		var selection = frontendProviderSelection(resourceRoot, script);
 		var command;
 		if (selection.kind === "compiled") {
-			command = [frontendExecutable("node"), String(selection.bundle)];
+			command = [frontendExecutable("node", frontendScriptPurpose(script)), String(selection.bundle)];
 			args.forEach(function (arg) { command.push(arg); });
 		} else {
 			command = frontendTsxCommandForToolRoot(selection.toolRoot, script, args);
