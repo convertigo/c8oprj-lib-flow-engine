@@ -167,4 +167,23 @@ assertTrue(moduleChecks === 4 && moduleCompiles === 2, "writes validate each tim
 try { withReadOnlyMemo(function () { loadEngineModule("schema-utils.js"); throw new Error("expected"); }); } catch (expected) {}
 assertTrue(callFingerprints.get() == null, "module memo is released on failure too");
 
+// MCP invokes the internal capability during Engine.run, bypassing engineCall.
+// It must get the same read-only boundary as the public flowCodeCheck method.
+function flowCodeServiceEnv() { return {}; }
+function flowCodeService() {
+	return { flowCodeCheckRequest: function () {
+		directoryFingerprint(dir);
+		directoryFingerprint(dir);
+		loadEngineModule("schema-utils.js");
+		loadEngineModule("schema-utils.js");
+		return { ok: true };
+	} };
+}
+var flowCodeCheckRequest = eval(functionSource("flowCodeCheckRequest"));
+walks = 0;
+var checksBefore = moduleChecks;
+assertTrue(flowCodeCheckRequest({}, {}).ok, "direct MCP capability succeeds");
+assertTrue(walks === 1 && moduleChecks === checksBefore + 1, "direct MCP capability memoizes directories and modules");
+assertTrue(callFingerprints.get() == null, "direct MCP capability releases its memo");
+
 print("directory-fingerprint-call-memo: once per read-only call, per thread; module reload retained");
