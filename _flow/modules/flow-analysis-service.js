@@ -139,15 +139,20 @@
 				reportType(checked, property);
 				return checked;
 			};
+			// Indexes belong to this analysis context, never to shared modules or
+			// serialized arrays. Each adder also tolerates hooks replacing a list.
+			var addUniquePath = env.createUniqueAdder();
+			var addUniqueRead = env.createUniqueAdder();
+			var addUniqueWrite = env.createUniqueAdder();
 			ctx.addPath = function (path) {
-				addUnique(ctx.paths, path);
+				addUniquePath(ctx.paths, path);
 			};
 			ctx.addRead = function (path) {
-				addUnique(ctx.reads, path);
+				addUniqueRead(ctx.reads, path);
 				ctx.addPath(path);
 			};
 			ctx.addWrite = function (path) {
-				addUnique(ctx.writes, path);
+				addUniqueWrite(ctx.writes, path);
 				ctx.addPath(path);
 				if (ctx.currentNodeInfo && typeof path === "string" && path !== "") {
 					ctx.providers[path] = {

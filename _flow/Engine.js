@@ -736,6 +736,10 @@
 		return scopeReferenceUtils().addUnique(items, value);
 	}
 
+	function createUniqueAdder() {
+		return scopeReferenceUtils().createUniqueAdder();
+	}
+
 	function collectScopeRefs(value, refs) {
 		return scopeReferenceUtils().collectScopeRefs(value, refs, scopeReferenceEnv());
 	}
@@ -4687,6 +4691,7 @@
 
 	function flowAnalysisServiceEnv() {
 		return {
+			createUniqueAdder: createUniqueAdder,
 			templateSyntax: templateSyntax(),
 			schemaContract: schemaContract(),
 			destinationContract: destinationContract(),

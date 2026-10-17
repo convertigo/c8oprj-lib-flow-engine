@@ -1,8 +1,28 @@
 (function () {
-	function addUnique(items, value) {
-		if (typeof value === "string" && value !== "" && items.indexOf(value) === -1) {
+	function addUnique(items, value, positions) {
+		if (typeof value !== "string" || value === "") return;
+		// Only cache a positive lookup, and validate its position before reuse.
+		// Hooks and graph-scope restoration may edit an array in place, even
+		// without changing its length. A cached absence would then be unsafe.
+		if (positions && positions[value] !== undefined && items[positions[value]] === value) return;
+		var position = items.indexOf(value);
+		if (position === -1) {
+			position = items.length;
 			items.push(value);
 		}
+		if (positions) positions[value] = position;
+	}
+
+	function createUniqueAdder() {
+		var previousItems;
+		var positions;
+		return function (items, value) {
+			if (items !== previousItems) {
+				previousItems = items;
+				positions = Object.create(null);
+			}
+			addUnique(items, value, positions);
+		};
 	}
 
 	function addConfigKey(keys, value) {
@@ -92,6 +112,7 @@
 
 	return {
 		addUnique: addUnique,
+		createUniqueAdder: createUniqueAdder,
 		collectScopeRefs: collectScopeRefs,
 		collectExpressionRefs: collectExpressionRefs,
 		collectTemplateRefs: collectTemplateRefs,
