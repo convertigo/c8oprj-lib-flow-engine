@@ -61,6 +61,51 @@ equal(special, ["__proto__", "constructor", "toString", "hasOwnProperty"], "Prot
 equal(special, ["__proto__", "constructor", "toString", "hasOwnProperty"], "Non-reference values changed the list");
 assert(Object.keys(special).join(",") === "0,1,2,3", "The index leaked into array metadata");
 
+var batch = [], batchExpected = [], batchAdd = utils.createUniqueAdder();
+var batchValues = [];
+for (var n = 0; n < 300; n++) batchValues.push("local.field" + (n % 91));
+batchValues.push("__proto__", "constructor", "", null, false);
+function baselineAll(items, values) { values.forEach(function (value) { utils.addUnique(items, value); }); }
+batchAdd.all(batch, batchValues);
+baselineAll(batchExpected, batchValues);
+equal(batch, batchExpected, "A batch changed order or filtering");
+batch.splice(0, batch.length, "new.external", "local.field44");
+batchExpected.splice(0, batchExpected.length, "new.external", "local.field44");
+batchAdd.all(batch, batchValues);
+baselineAll(batchExpected, batchValues);
+equal(batch, batchExpected, "A batch reused a stale index after restoration");
+batch.reverse(); batchExpected.reverse();
+batchAdd(batch, "local.field17"); utils.addUnique(batchExpected, "local.field17");
+equal(batch, batchExpected, "Single additions after a batch duplicated a moved entry");
+batchAdd.all(batch, ["small.batch", "local.field17", "small.batch"]);
+baselineAll(batchExpected, ["small.batch", "local.field17", "small.batch"]);
+equal(batch, batchExpected, "Small batches changed semantics");
+
+var service = eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(root, "modules/flow-analysis-service.js"), "UTF-8")));
+var fields = [];
+for (var n = 0; n < 30; n++) fields.push("field" + n);
+var env = {
+	scopeNames: ["input", "local", "result"],
+	intOption: function (value, fallback) { return value === undefined ? fallback : value; },
+	createUniqueAdder: utils.createUniqueAdder,
+	addUnique: utils.addUnique,
+	normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); },
+	schemaPaths: function () { return fields; },
+	joinPath: function (base, leaf) { return base + "." + leaf; }
+};
+var context = service.createAnalysisContext({}, {}, {}, env);
+context.addSchema("local.data", {type:"object"});
+var expectedPaths = ["input", "local", "result", "config", "local.data"].concat(fields.map(function (field) { return "local.data." + field; }));
+equal(context.paths, expectedPaths, "Context batch changed path publication");
+context.paths.splice(0, context.paths.length, "local.data.field9");
+context.addSchema("local.other", {type:"object"});
+assert(context.paths.indexOf("local.other.field29") !== -1, "Context batch lost paths after restoring a list");
+var originalAddPath = context.addPath, publications = [];
+context.addPath = function (path) { publications.push(path); originalAddPath(path); };
+context.addSchema("local.hook", {type:"object"});
+equal(publications, ["local.hook"].concat(fields.map(function (field) { return "local.hook." + field; })), "Batch bypassed an overridden publication hook");
+
 // Compare mixed external edits, restores, and additions against the original
 // array contract. This covers same-length replacement and stale positions.
 var actual = [], expected = [], indexed = utils.createUniqueAdder(), seed = 7;

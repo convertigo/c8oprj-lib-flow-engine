@@ -144,9 +144,10 @@
 			var addUniquePath = env.createUniqueAdder();
 			var addUniqueRead = env.createUniqueAdder();
 			var addUniqueWrite = env.createUniqueAdder();
-			ctx.addPath = function (path) {
+			function addPath(path) {
 				addUniquePath(ctx.paths, path);
-			};
+			}
+			ctx.addPath = addPath;
 			ctx.addRead = function (path) {
 				addUniqueRead(ctx.reads, path);
 				ctx.addPath(path);
@@ -210,9 +211,13 @@
 						}
 					});
 				}
-				schemaPaths(normalized, "").forEach(function (path) {
-					ctx.addPath(joinSchemaPath(basePath, path));
-				});
+				var descendants = schemaPaths(normalized, "");
+				if (ctx.addPath === addPath && descendants.length >= 16) {
+					addUniquePath.all(ctx.paths, descendants.map(function (path) { return joinSchemaPath(basePath, path); }));
+				} else {
+					// Preserve a hook's replacement of the path publication method.
+					descendants.forEach(function (path) { ctx.addPath(joinSchemaPath(basePath, path)); });
+				}
 			};
 			ctx.schemaForOutput = function (node, property, outPath) {
 				return readOutputSchema(request, definition, node, property || "out", outPath || "");

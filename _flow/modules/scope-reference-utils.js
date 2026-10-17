@@ -16,13 +16,34 @@
 	function createUniqueAdder() {
 		var previousItems;
 		var positions;
-		return function (items, value) {
+		var add = function (items, value) {
 			if (items !== previousItems) {
 				previousItems = items;
 				positions = Object.create(null);
 			}
 			addUnique(items, value, positions);
 		};
+		add.all = function (items, values) {
+			if (values.length < 16) {
+				for (var i = 0; i < values.length; i++) add(items, values[i]);
+				return;
+			}
+			// A batch is synchronous and owns its writes. Rebuild from the actual
+			// list once, so both new and repeated entries avoid a scan per value.
+			previousItems = items;
+			positions = Object.create(null);
+			for (var i = 0; i < items.length; i++) {
+				if (typeof items[i] === "string") positions[items[i]] = i;
+			}
+			for (var i = 0; i < values.length; i++) {
+				var value = values[i];
+				if (typeof value === "string" && value !== "" && positions[value] === undefined) {
+					positions[value] = items.length;
+					items.push(value);
+				}
+			}
+		};
+		return add;
 	}
 
 	function addConfigKey(keys, value) {
