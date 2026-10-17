@@ -3,6 +3,8 @@
 		Object.defineProperty(out, key, { value: value, enumerable: true, configurable: true, writable: true });
 	}
 	function jsValue(value, env) {
+		// A try/catch makes Rhino allocate an activation scope on every call.
+		// Keep the primitive guard outside the Java conversion's catch scope.
 		if (value === undefined || value === null) {
 			return value;
 		}
@@ -10,6 +12,10 @@
 		if (valueType === "string" || valueType === "boolean" || valueType === "number") {
 			return value;
 		}
+		return unwrapJavaValue(value, env);
+	}
+
+	function unwrapJavaValue(value, env) {
 		try {
 			if (env.NativeJavaObject && value instanceof env.NativeJavaObject) {
 				value = value.unwrap();
@@ -103,6 +109,8 @@
 		return sanitizeValue(value, env, seen, String(where || "result"));
 	}
 
+	// Nested callbacks also require an activation scope. Isolate the array
+	// callback so every primitive/object visit can use ordinary local variables.
 	function normalizeArray(value, env) {
 		return value.map(function (item) {
 			return normalize(item, env);
