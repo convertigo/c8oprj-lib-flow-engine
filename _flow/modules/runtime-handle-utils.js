@@ -103,23 +103,29 @@
 		return sanitizeValue(value, env, seen, String(where || "result"));
 	}
 
+	function normalizeArray(value, env) {
+		return value.map(function (item) {
+			return normalize(item, env);
+		});
+	}
+
 	function normalize(value, env) {
 		value = jsValue(value, env);
 		if (isHandle(value)) {
 			return summary(value);
 		}
 		if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			return value.map(function (item) {
-				return normalize(item, env);
-			});
+			return normalizeArray(value, env);
 		}
 		if (value && typeof value === "object") {
 			var out = {};
-			Object.keys(value).forEach(function (key) {
+			var keys = Object.keys(value);
+			for (var i = 0; i < keys.length; i++) {
+				var key = keys[i];
 				var child = normalize(value[key], env);
 				if (key === "__proto__") defineDataProperty(out, key, child);
 				else out[key] = child;
-			});
+			}
 			return out;
 		}
 		return value;
