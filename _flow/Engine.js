@@ -3574,7 +3574,8 @@
 		return flowScriptValidationService().validateRequest(blocks, request, flowScriptValidationEnv());
 	}
 
-	function flowScriptGetRequest(blocks, request) {
+	// Code consumers that validate later must not analyze the saved source here.
+	function flowScriptReadRequest(blocks, request) {
 		request = request || {};
 		var flow = getProjectFlow(request.name || request.flowName, blocks, request);
 		var codeInfo = flow.format === "flowscript" ? {
@@ -3585,7 +3586,6 @@
 			canonical: true
 		} : flowScriptCodeFromMirror(blocks, request.name || request.flowName || flow.name, flow.source, request);
 		var code = codeInfo.code;
-		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: code }));
 		return {
 			ok: true,
 			name: flow.name,
@@ -3597,10 +3597,17 @@
 			codeMirrorStale: codeInfo.stale,
 			revision: sha256Hex(code),
 			code: code,
-			sourceHash: sha256Hex(flow.source),
-			diagnostics: validation.diagnostics,
-			next: "Patch with flow-source-patch using revision=" + sha256Hex(code) + "."
+			sourceHash: sha256Hex(flow.source)
 		};
+	}
+
+	function flowScriptGetRequest(blocks, request) {
+		request = request || {};
+		var current = flowScriptReadRequest(blocks, request);
+		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: current.code }));
+		current.diagnostics = validation.diagnostics;
+		current.next = "Patch with flow-source-patch using revision=" + current.revision + ".";
+		return current;
 	}
 
 	function flowScriptPatchRequest(blocks, request) {
@@ -3665,7 +3672,7 @@
 			discardLoadedFlowSourceDraft: discardLoadedFlowSourceDraft,
 			projectFlowBean: projectFlowBean,
 			projectFlowBeanLookup: projectFlowBeanLookup,
-			flowScriptGetRequest: flowScriptGetRequest,
+			flowScriptReadRequest: flowScriptReadRequest,
 			normalizeFlowScriptCode: normalizeFlowScriptCode,
 			stripFlowScriptMirrorHeader: stripFlowScriptMirrorHeader,
 			setProjectFlow: setProjectFlow,

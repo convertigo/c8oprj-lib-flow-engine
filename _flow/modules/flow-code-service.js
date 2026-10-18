@@ -17,7 +17,7 @@
 		var discardLoadedFlowSourceDraft = env.discardLoadedFlowSourceDraft;
 		var projectFlowBean = env.projectFlowBean;
 		var projectFlowBeanLookup = env.projectFlowBeanLookup;
-		var flowScriptGetRequest = env.flowScriptGetRequest;
+		var flowScriptReadRequest = env.flowScriptReadRequest;
 		var normalizeFlowScriptCode = env.normalizeFlowScriptCode;
 		var stripFlowScriptMirrorHeader = env.stripFlowScriptMirrorHeader;
 		var setProjectFlow = env.setProjectFlow;
@@ -404,7 +404,7 @@
 				return draft;
 			}
 		}
-		var current = flowScriptGetRequest(blocks, Object.assign({}, request, { name: name, includeHeader: false }));
+		var current = flowScriptReadRequest(blocks, Object.assign({}, request, { name: name, includeHeader: false }));
 		return {
 			ok: true,
 			qname: flowCodeQName(request, name),

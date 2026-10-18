@@ -311,7 +311,7 @@ var isolatedFlowCodeEnv = {
 		return { name: name, code: code, revision: "dbo:" + String(code).length, file: "/draft/" + name + ".flow.js" };
 	},
 	discardProjectFlowWorkingCopy: function () { return false; },
-	flowScriptGetRequest: function () {
+	flowScriptReadRequest: function () {
 		var error = new Error("missing");
 		error.code = "UNKNOWN_FLOW";
 		throw error;
