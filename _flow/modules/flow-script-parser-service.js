@@ -1214,13 +1214,22 @@
 			return null;
 		}
 
+		// The methods an expression calls on a value (expression-utils.js): on a scope path they read as JavaScript.
+		var FLOWSCRIPT_VALUE_METHODS = ["trim", "toLowerCase", "toUpperCase", "includes", "startsWith", "endsWith", "indexOf",
+			"lastIndexOf", "slice", "substring", "split", "replace", "replaceAll", "padStart", "padEnd", "charAt", "concat",
+			"repeat", "trimStart", "trimEnd", "localeCompare", "normalize", "join", "at", "toFixed", "toString", "toPrecision"];
+
 		function isFlowScriptExpressionCallName(name) {
 			name = String(name || "");
 			if (name.match(/\.(trim|toLowerCase|toUpperCase|includes|startsWith|endsWith)$/)) {
 				return true;
 			}
+			var dot = name.lastIndexOf(".");
+			if (dot > 0 && FLOWSCRIPT_VALUE_METHODS.indexOf(name.substring(dot + 1)) !== -1 && env.isScopePath(name.substring(0, dot))) {
+				return true;
+			}
 			return ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
-				"length", "list.length", "round", "default", "json", "oneOf", "overlaps"].indexOf(name) !== -1;
+				"length", "list.length", "round", "default", "json", "oneOf", "overlaps", "String", "Number"].indexOf(name) !== -1;
 		}
 
 		function parseNaturalFlowScriptCallMember(text) {
@@ -1663,7 +1672,8 @@
 				}]);
 			}
 			var sliceMethod = parseNaturalFlowScriptSliceMethod(rhs);
-			if (sliceMethod) {
+			// items.slice(1, 3) on a scope path is a JavaScript expression (expression-utils.js)
+			if (sliceMethod && !env.isScopePath(sliceMethod.items)) {
 				env.raise("FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE",
 					"Unsupported JavaScript-style slice at line " + lineNumber + ": " + rhs,
 					null,

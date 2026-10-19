@@ -240,6 +240,12 @@
 			"default": function (value, fallback) {
 				return value === undefined || value === null || value === "" ? fallback : value;
 			},
+			String: function (value) {
+				return value === null || value === undefined ? "" : String(value);
+			},
+			Number: function (value) {
+				return Number(value);
+			},
 			json: function (value) {
 				return JSON.stringify(env.sanitizeRuntimeValue(value));
 			}
@@ -421,6 +427,17 @@
 				tokens.push({ type: "string", value: value });
 				continue;
 			}
+			// .name after a call, an index, a parenthesis or a string: a member of that value (s.trim().toLowerCase())
+			var previous = tokens.length ? tokens[tokens.length - 1] : null;
+			if (ch === "." && isIdentStart(text.charAt(i + 1)) && previous &&
+					(previous.type === "string" || previous.type === "op" && (previous.value === ")" || previous.value === "]"))) {
+				var memberStart = ++i;
+				while (i < text.length && isIdentPart(text.charAt(i))) {
+					i++;
+				}
+				tokens.push({ type: "member", value: text.substring(memberStart, i) });
+				continue;
+			}
 			if (isDigit(ch) || ch === "." && isDigit(text.charAt(i + 1))) {
 				var start = i++;
 				while (i < text.length && (isDigit(text.charAt(i)) || text.charAt(i) === ".")) {
@@ -481,7 +498,8 @@
 		}
 		function peek(value) {
 			var token = tokens[position];
-			return value === undefined ? token : token.value === value;
+			// an operator, never a string literal that spells one ("-", ",", ")")
+			return value === undefined ? token : token.type === "op" && token.value === value;
 		}
 		function consume(value) {
 			if (value !== undefined && !peek(value)) {
@@ -603,6 +621,65 @@
 			}
 			return args;
 		}
+		// The methods an expression may call on a value, as in JavaScript; nothing else is invoked.
+		var STRING_METHODS = ["trim", "toLowerCase", "toUpperCase", "includes", "startsWith", "endsWith", "indexOf",
+			"lastIndexOf", "slice", "substring", "split", "replace", "replaceAll", "padStart", "padEnd", "charAt", "concat",
+			"repeat", "trimStart", "trimEnd", "localeCompare", "normalize"];
+		var ARRAY_METHODS = ["includes", "indexOf", "lastIndexOf", "slice", "join", "concat", "at"];
+		var NUMBER_METHODS = ["toFixed", "toString", "toPrecision"];
+		function callMethod(receiver, method, values) {
+			if (receiver === null || receiver === undefined) {
+				return undefined;
+			}
+			if (receiver instanceof Packages.java.lang.String || receiver instanceof Packages.java.lang.CharSequence) {
+				receiver = String(receiver);
+			}
+			if (typeof receiver === "string" && STRING_METHODS.indexOf(method) !== -1) {
+				if ((method === "replace" || method === "replaceAll") && typeof values[0] !== "string") {
+					env.raise("INVALID_EXPRESSION", "replace takes a text pattern in an expression, not a regular expression.");
+				}
+				if (method === "replaceAll") {
+					return receiver.split(String(values[0])).join(String(values[1]));
+				}
+				return String.prototype[method].apply(receiver, values);
+			}
+			if (Object.prototype.toString.call(receiver) === "[object Array]" && ARRAY_METHODS.indexOf(method) !== -1) {
+				if (method === "at") {
+					var index = Number(values[0]);
+					return receiver[index < 0 ? receiver.length + index : index];
+				}
+				return Array.prototype[method].apply(receiver, values);
+			}
+			if (typeof receiver === "number" && NUMBER_METHODS.indexOf(method) !== -1) {
+				return Number.prototype[method].apply(receiver, values);
+			}
+			env.raise("INVALID_EXPRESSION", "Unsupported method in an expression: " + method, null,
+				"Text: " + STRING_METHODS.join(", ") + ". Lists: " + ARRAY_METHODS.join(", ") + ". Numbers: " +
+				NUMBER_METHODS.join(", ") + ". Use a block for anything else.");
+		}
+		function parsePostfix(program) {
+			while (peek().type === "member") {
+				var member = consume().value;
+				if (peek("(")) {
+					consume("(");
+					var memberArgs = parseArgs();
+					consume(")");
+					program = (function (receiverProgram, method, argPrograms) {
+						return function (runCtx) {
+							return callMethod(receiverProgram(runCtx), method, runArgs(argPrograms, runCtx));
+						};
+					})(program, member, memberArgs);
+				} else {
+					program = (function (receiverProgram, name) {
+						return function (runCtx) {
+							var receiver = receiverProgram(runCtx);
+							return receiver === null || receiver === undefined ? undefined : receiver[name];
+						};
+					})(program, member);
+				}
+			}
+			return program;
+		}
 		function methodProgram(name, args) {
 			var index = String(name || "").lastIndexOf(".");
 			if (index === -1) {
@@ -610,9 +687,16 @@
 			}
 			var receiverPath = name.substring(0, index);
 			var method = name.substring(index + 1);
-			if (!env.isScopePath(receiverPath) ||
-					["trim", "toLowerCase", "toUpperCase", "includes", "startsWith", "endsWith"].indexOf(method) === -1) {
+			if (!env.isScopePath(receiverPath)) {
 				return null;
+			}
+			if (["trim", "toLowerCase", "toUpperCase", "includes", "startsWith", "endsWith"].indexOf(method) === -1) {
+				if (STRING_METHODS.indexOf(method) === -1 && ARRAY_METHODS.indexOf(method) === -1 && NUMBER_METHODS.indexOf(method) === -1) {
+					return null;
+				}
+				return function (runCtx) {
+					return callMethod(runCtx.read(receiverPath), method, runArgs(args, runCtx));
+				};
 			}
 			return function (runCtx) {
 				var receiver = runCtx.read(receiverPath);
@@ -639,7 +723,7 @@
 			var token = peek();
 			if (token.type === "number" || token.type === "string") {
 				consume();
-				return constant(token.value);
+				return parsePostfix(constant(token.value));
 			}
 			if (token.type === "id") {
 				var name = consume().value;
@@ -648,13 +732,13 @@
 					var args = parseArgs();
 					consume(")");
 					if (fns[name]) {
-						return function (runCtx) {
+						return parsePostfix(function (runCtx) {
 							return fns[name].apply(null, runArgs(args, runCtx));
-						};
+						});
 					}
 					var method = methodProgram(name, args);
 					if (method) {
-						return method;
+						return parsePostfix(method);
 					}
 					env.raise("INVALID_EXPRESSION", "Unknown expression function: " + name, null, unknownFunctionHint(name));
 				}
@@ -683,10 +767,10 @@
 				consume("(");
 				var value = parseExpression();
 				consume(")");
-				return value;
+				return parsePostfix(value);
 			}
 			if (peek("[")) {
-				return parseArrayLiteral();
+				return parsePostfix(parseArrayLiteral());
 			}
 			if (peek("{")) {
 				return parseObjectLiteral();

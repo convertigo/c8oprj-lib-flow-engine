@@ -39,10 +39,14 @@ const _meta = {
     },
     "direction": {
       "label": "Direction",
-      "kind": "text",
+      "kind": "value",
       "type": "string",
+      "enum": [
+        "asc",
+        "desc",
+      ],
       "default": "asc",
-      "description": "Sort direction: asc or desc.",
+      "description": "Sort direction: asc or desc, a literal or an expression such as input.sortDir.",
     },
   },
   "runtime": "rhino",
@@ -73,7 +77,7 @@ const _meta = {
 				}
 			}
 			var previous = ctx.scopes.current;
-			var direction = String(props.direction || props.order || "asc").toLowerCase() === "desc" ? -1 : 1;
+			var direction = String(ctx.template(props.direction || props.order || "asc") || "asc").toLowerCase() === "desc" ? -1 : 1;
 			var by = props.by === undefined ? "current" : props.by;
 			try {
 				var decorated = [];
