@@ -906,12 +906,16 @@
 		var origin = String(request.origin || "").trim();
 		var provider = String(request.provider || "").trim();
 		var namespace = String(request.namespace || "").trim();
+		// Without a filter, the blocks of the project itself; origin:"all" also searches the referenced libraries.
+		if (!origin && !provider && !namespace) {
+			origin = "project";
+		}
 		return Object.keys(blocks || {}).sort().map(function (name) {
 			var block = blocks[name];
 			if (String(block && block.__flowFormat || "") !== "flowscript-block") {
 				return null;
 			}
-			if (origin && String(block.__flowOrigin || "") !== origin) {
+			if (origin && origin !== "all" && String(block.__flowOrigin || "") !== origin) {
 				return null;
 			}
 			if (provider && String(block.__flowProvider || "") !== provider) {
@@ -920,7 +924,12 @@
 			if (namespace && String(name).indexOf(namespace + ".") !== 0) {
 				return null;
 			}
-			return getBlockSource(blocks, name, Object.assign({}, request, { detail: "full" }));
+			try {
+				return getBlockSource(blocks, name, Object.assign({}, request, { detail: "full" }));
+			} catch (e) {
+				// a block of another library that does not validate here does not fail the search
+				return null;
+			}
 		}).filter(function (target) {
 			return target && (target.format === "flowscript" || target.format === "blockjs") && target.code;
 		});

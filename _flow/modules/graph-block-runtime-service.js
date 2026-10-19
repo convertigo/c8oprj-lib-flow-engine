@@ -175,6 +175,23 @@
 		return out ? definition.name + " -> " + out : definition.name;
 	}
 
+	// The values of an array or object literal given to an expression property ([local.row], { a: input.x }): its
+	// elements written as ${...} are evaluated, any other text (a former {{ }} included) stays as written.
+	function renderExpressionLiteral(ctx, value) {
+		if (typeof value === "string") {
+			return /^\s*\$\{/.test(value) ? ctx.template(value) : value;
+		}
+		if (value && Object.prototype.toString.call(value) === "[object Array]") {
+			return value.map(function (item) { return renderExpressionLiteral(ctx, item); });
+		}
+		if (value && typeof value === "object") {
+			var out = {};
+			Object.keys(value).forEach(function (key) { out[key] = renderExpressionLiteral(ctx, value[key]); });
+			return out;
+		}
+		return value;
+	}
+
 	function resolveGraphBlockProp(ctx, descriptor, value) {
 		descriptor = descriptor || {};
 		var kind = descriptor.kind || descriptor.type || "";
@@ -184,7 +201,7 @@
 		}
 		if (kind === "expression") {
 			if (value && typeof value === "object") {
-				return ctx.literal(value);
+				return renderExpressionLiteral(ctx, ctx.literal(value));
 			}
 			return ctx.expr(value);
 		}
@@ -217,9 +234,10 @@
 			return function (ctx) { return resolveGraphBlockProp(ctx, descriptor, value); };
 		}
 		if (kind === "expression") {
-			return value && typeof value === "object"
-				? function (ctx) { return ctx.literal(value); }
-				: function (ctx) { return ctx.expr(value); };
+			if (value && typeof value === "object") {
+				return function (ctx) { return renderExpressionLiteral(ctx, ctx.literal(value)); };
+			}
+			return function (ctx) { return ctx.expr(value); };
 		}
 		if (kind === "literal" || kind === "text" || kind === "schema" || kind === "secret") {
 			return function (ctx) { return ctx.literal(value); };

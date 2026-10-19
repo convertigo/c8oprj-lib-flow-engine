@@ -60,8 +60,8 @@
 			].indexOf(String(path)) !== -1) {
 				return true;
 			}
-			// html: backend templates such as the emails a Flow sends (read with asset.read, filled by email.send)
-			return ["md", "txt", "json", "xml", "yaml", "yml", "html"].indexOf(ext) !== -1;
+			// html, ftl, ftlh: backend templates such as the emails a Flow sends (asset.read, template.freemarker)
+			return ["md", "txt", "json", "xml", "yaml", "yml", "html", "ftl", "ftlh", "csv"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
@@ -120,6 +120,9 @@
 		}
 		if (String(path).indexOf(PROJECT_DOCS) === 0) {
 			return "projectDocument";
+		}
+		if (String(path).indexOf(paths.path("resources") + "/") === 0) {
+			return "flowResource";
 		}
 		if (String(path).indexOf(paths.path("types/editors") + "/") === 0) {
 			return "typeEditor";

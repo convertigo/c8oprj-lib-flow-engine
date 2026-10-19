@@ -29,13 +29,13 @@ const _meta = {
       "label": "Revision",
       "kind": "text",
       "type": "string",
-      "description": "Expected draft revision returned by flow.code.check.",
+      "description": "Required: the revision of the working copy returned by code-set, code-patch or code-check.",
     },
     "code": {
       "label": "Code",
       "kind": "text",
       "type": "string",
-      "description": "Optional full FlowScript code. If omitted, the draft is promoted.",
+      "description": "Optional full FlowScript code. Without code, the working copy of that revision is promoted.",
     },
     "saveProject": {
       "label": "Save project",

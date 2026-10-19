@@ -446,7 +446,7 @@
 		// an empty file (--- /dev/null); the other resources have their own creation APIs (blocks, fragments, frontends).
 		var entry = projectResourceFile(request.path, false, env);
 		var created = !fromWorkingCopy && !isFile(entry.file, env);
-		if (created && ["javaSource", "jarsDescriptor", "projectDocument", "publicResource"].indexOf(env.resourceKind(entry.path)) === -1) {
+		if (created && ["javaSource", "jarsDescriptor", "projectDocument", "publicResource", "flowResource"].indexOf(env.resourceKind(entry.path)) === -1) {
 			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + entry.path);
 		}
 		var oldContent = fromWorkingCopy ? String(request.baseContent) : created ? "" : sourceForFile(entry.file, env);

@@ -852,6 +852,8 @@
 		compileTemplate: compileTree,
 		expressionFunctions: expressionFunctions,
 		tokenize: tokenize,
+		// compiles without evaluating: unknown functions, methods and identifiers are reported at check time
+		parse: function (source, env) { return compileExpressionProgram(null, String(source || ""), env); },
 		evaluate: evaluate
 	};
 }())

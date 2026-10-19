@@ -694,7 +694,7 @@
 	}
 
 	function tokenizeExpression(source) {
-		return expressionUtils().tokenize(source, expressionUtilsEnv());
+		return expressionUtils().parse(source, expressionUtilsEnv());
 	}
 
 	function evaluateExpression(ctx, source) {
