@@ -1,0 +1,14 @@
+// Use the Convertigo plugin's resolved runtime, without another dependency set
+// or a Convertigo server. No load/export/deploy task is needed by this test.
+gradle.projectsEvaluated {
+    def target = gradle.rootProject
+    target.tasks.register('flowPerformanceGuard', JavaExec) {
+        group = 'verification'
+        description = 'Checks deterministic code-check work budgets (no timing threshold).'
+        classpath = target.buildscript.configurations.classpath
+        mainClass = 'org.mozilla.javascript.tools.shell.Main'
+        jvmArgs '-Djava.awt.headless=true'
+        args '-version', '200', target.file('tests/code-check-performance-budget.js').absolutePath,
+            target.file('_flow').absolutePath
+    }
+}

@@ -645,6 +645,22 @@ differs. A tag `vX.Y.Z` builds the CAR at version `X.Y.Z` and publishes it on
 the GitHub release of the tag (`-beta` tags as pre-releases). No server is
 deployed while the `C8O_SERVER` secrets are empty.
 
+The `performance_guard` CI job runs before the CAR build, without loading or
+deploying a Convertigo project:
+
+```sh
+sh gradlew --no-daemon -I tools/performance-guard.gradle flowPerformanceGuard
+```
+
+`tests/code-check-performance-budget.js` counts work on a self-contained Flow
+using a referenced graph block. It covers cold/repeated public checks and the
+read-only capability nested in `Engine.run`, as used by MCP. Module validation
+and `c8oProject.yaml` reads must occur at most once per module/file and operation;
+source analysis has a budget of one, plus initial graph validation on a cold
+catalog. Aggregate ceilings are documented in the test. Instrumentation lives
+only in the test's in-memory Engine: there is no runtime probe or timing limit.
+The full `tools/run-tests.sh` runner includes this test too.
+
 ## Validation
 
 Use the standalone smoke test before touching Java integration:

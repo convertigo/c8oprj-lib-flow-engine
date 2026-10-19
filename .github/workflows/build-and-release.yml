@@ -26,7 +26,23 @@ on:
       - '**'
 
 jobs:
+  performance_guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Check deterministic code-check budgets
+        run: sh gradlew --no-daemon -I tools/performance-guard.gradle flowPerformanceGuard
+
   build_and_deploy:
+    needs: performance_guard
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
