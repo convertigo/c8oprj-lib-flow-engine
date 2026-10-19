@@ -1216,9 +1216,9 @@
 				icon: descriptor.icon || "mdi:puzzle-plus-outline",
 				insert: insert,
 				defaults: insert,
+				// The result of the block goes to its Output ($$out), an engine attribute: no target property.
 				properties: Object.assign({
-					id: { label: "Id", type: "string" },
-					target: { label: "Result target", type: "string" }
+					id: { label: "Id", type: "string" }
 				}, properties),
 				implementation: {
 					block: blockId,

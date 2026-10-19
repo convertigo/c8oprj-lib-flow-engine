@@ -7894,17 +7894,8 @@
 	function frontendRunActionLocked(request, blocks, action) {
 		var actionStartedAt = JavaSystem.nanoTime();
 		var info = frontbuilderSettingsForRequest(request);
-		if (action === "build") {
-			var activeDev = frontendDevEntry(request, info);
-			if (activeDev) {
-				return failure("frontbuilder", {
-					code: "FRONTBUILDER_BUILD_BLOCKED_DEV_ACTIVE",
-					message: "Production build is deferred while Svelte dev mode is active.",
-					hint: "Stop dev mode first. Dirty production output is rebuilt automatically after the dev server stops.",
-					devStatus: String(activeDev.status || "running")
-				});
-			}
-		}
+		// An explicit production build runs while Svelte dev mode is active: it builds in its own SvelteKit folder and
+		// publishes atomically, so the dev server keeps serving; only the automatic catch-up waits for dev to stop.
 		var modelPath = frontendModelPath(request, info);
 		if (!modelPath || !sourceView(request).isFile(modelPath)) {
 			return failure("frontbuilder", {

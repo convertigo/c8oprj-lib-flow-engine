@@ -70,9 +70,9 @@ var runAction = functionSource("frontendRunAction", "frontendActionSteps");
 assertTrue(runAction.indexOf("request.productionBuildFingerprint") >= 0 &&
 	runAction.indexOf("currentProductionFingerprint") >= 0,
 	"a background production build must retain the fingerprint it actually started from");
-assertTrue(runAction.indexOf('action === "build"') >= 0 &&
-	runAction.indexOf("FRONTBUILDER_BUILD_BLOCKED_DEV_ACTIVE") >= 0,
-	"an explicit production build must be rejected while a dev process is active");
+assertTrue(runAction.indexOf("FRONTBUILDER_BUILD_BLOCKED_DEV_ACTIVE") < 0 &&
+	runAction.indexOf("atomicOutput.kit.getAbsolutePath()") >= 0,
+	"an explicit production build runs while a dev process is active, in its own SvelteKit folder");
 
 var schedule = functionSource("frontendScheduleProductionBuild", "frontendStopDev");
 assertTrue(schedule.indexOf("stableRequest.productionBuildFingerprint = activeState.currentFingerprint") <

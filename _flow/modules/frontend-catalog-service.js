@@ -126,6 +126,15 @@
 				description: "Application CSS class names from a literal, expression or schema-backed source.",
 				// Offered on every UI block, never declared by its source.
 				common: true
+			},
+			style: {
+				label: "Style",
+				category: "Base properties",
+				kind: "binding",
+				type: "string",
+				"default": "",
+				description: "Inline CSS declarations from a literal, expression or schema-backed source, typically custom properties driven by state: \"--angle:\" + page.second * 6 + \"deg\".",
+				common: true
 			}
 		}, properties);
 		return descriptor;
