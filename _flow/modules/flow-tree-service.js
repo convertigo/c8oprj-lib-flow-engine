@@ -261,11 +261,11 @@
 		var propertyDefinitions = {};
 		var propertyOrder = [];
 		var defaults = {};
-		function information(name, label, description, value) {
+		function information(name, label, description, value, category) {
 			// Information must not overwrite an identically named business property.
 			while (Object.prototype.hasOwnProperty.call(propertyDefinitions, name)) name = "_" + name;
 			info[name] = value;
-			propertyDefinitions[name] = propertyDefinition(label, "Information", description, { readOnly: true });
+			propertyDefinitions[name] = propertyDefinition(label, category || "Information", description, { readOnly: true });
 			propertyOrder.push(name);
 		}
 		Object.keys(props).forEach(function (key) {
@@ -280,8 +280,8 @@
 			info.propertyDefaults = defaults;
 		}
 		if (catalog) {
-			information("blockType", "Block type", "Public identifier of the block contract.",
-				String(catalog.blockId || catalog.name || ""));
+			information("blockType", "Block", "Public identifier of the block contract.",
+				String(catalog.blockId || catalog.name || ""), "Expert");
 			["icon", "iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"].forEach(function (key) {
 				if (catalog[key] !== undefined && catalog[key] !== null && String(catalog[key]) !== "") {
 					info[key] = String(catalog[key]);
@@ -3020,6 +3020,7 @@
 				String(node && node.kind || ""),
 				String(node && node.type || ""),
 				String(node && node.descriptorId || ""),
+				String(node && node.block || ""),
 				node.outputs,
 				!!node.out,
 				["sourceKind", "sourceVersion", "sourceRelativePath", "sourceWritable", "traits", "slots"]
@@ -3085,6 +3086,16 @@
 			definitions[key] = resolvedPropertyDefinition(information[name]);
 			definitions[key].definitionPath = name;
 		});
+		// Which block or component this node is: the Flow block id (date.format), else its catalog descriptor.
+		var blockPath = node.block !== undefined ? "block" : node.descriptorId !== undefined ? "descriptorId" :
+			node.type !== undefined ? "type" : "";
+		if (blockPath) {
+			var blockKey = "blockType";
+			while (Object.prototype.hasOwnProperty.call(definitions, blockKey)) blockKey = "_" + blockKey;
+			definitions[blockKey] = resolvedPropertyDefinition(propertyDefinition("Block", "Expert",
+				"Flow block or component implemented by this node.", { readOnly: true }));
+			definitions[blockKey].definitionPath = blockPath;
+		}
 		return definitions;
 	}
 
