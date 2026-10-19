@@ -29,6 +29,7 @@
 	var JAVA_SOURCES = "libs/src/";
 	// The jars of the project, downloaded by the server and checked against their sha256
 	var JARS_DESCRIPTOR = "libs/jars.yaml";
+	var PROJECT_DOCS = "docs/";
 
 	function isAllowedPath(path, paths) {
 		var ext = extension(path);
@@ -64,6 +65,10 @@
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;
+		}
+		// project documentation (analysis, decisions, progress) written by its authors and agents
+		if (String(path).indexOf(PROJECT_DOCS) === 0) {
+			return ["md", "txt", "json", "yaml", "yml", "csv"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf(paths.path("frontbuilder") + "/") === 0) {
 			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte")
@@ -112,6 +117,9 @@
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return "publicResource";
+		}
+		if (String(path).indexOf(PROJECT_DOCS) === 0) {
+			return "projectDocument";
 		}
 		if (String(path).indexOf(paths.path("types/editors") + "/") === 0) {
 			return "typeEditor";
@@ -177,6 +185,9 @@
 		if (text.indexOf("resources/") === 0) {
 			prefix = "resources/";
 			uriPrefix = "flow://public/";
+		} else if (text.indexOf(PROJECT_DOCS) === 0) {
+			prefix = PROJECT_DOCS;
+			uriPrefix = "flow://docs/";
 		} else if (text.indexOf(prefix) !== 0) {
 			return "";
 		}

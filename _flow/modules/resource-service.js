@@ -13,7 +13,7 @@
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
-				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + ", public resources/ or the Java sources libs/src/ (*.java). Use the flowCode* APIs for Flow sources.");
+				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + ", public resources/, project documents docs/ or the Java sources libs/src/ (*.java). Use the flowCode* APIs for Flow sources.");
 		}
 		var file = new env.File(base, normalized);
 		var basePath = env.canonicalPath(base);
@@ -442,11 +442,11 @@
 		request = request || {};
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
 		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
-		// A Java source or the jar descriptor is created by a patch from an empty file (--- /dev/null); the other
-		// resources have their own creation APIs (blocks, fragments, frontends).
+		// A Java source, the jar descriptor, a project document (docs/) or a public resource is created by a patch from
+		// an empty file (--- /dev/null); the other resources have their own creation APIs (blocks, fragments, frontends).
 		var entry = projectResourceFile(request.path, false, env);
 		var created = !fromWorkingCopy && !isFile(entry.file, env);
-		if (created && ["javaSource", "jarsDescriptor"].indexOf(env.resourceKind(entry.path)) === -1) {
+		if (created && ["javaSource", "jarsDescriptor", "projectDocument", "publicResource"].indexOf(env.resourceKind(entry.path)) === -1) {
 			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + entry.path);
 		}
 		var oldContent = fromWorkingCopy ? String(request.baseContent) : created ? "" : sourceForFile(entry.file, env);
