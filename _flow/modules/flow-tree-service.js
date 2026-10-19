@@ -261,11 +261,11 @@
 		var propertyDefinitions = {};
 		var propertyOrder = [];
 		var defaults = {};
-		function information(name, label, description, value, category) {
+		function information(name, label, description, value) {
 			// Information must not overwrite an identically named business property.
 			while (Object.prototype.hasOwnProperty.call(propertyDefinitions, name)) name = "_" + name;
 			info[name] = value;
-			propertyDefinitions[name] = propertyDefinition(label, category || "Information", description, { readOnly: true });
+			propertyDefinitions[name] = propertyDefinition(label, "Information", description, { readOnly: true });
 			propertyOrder.push(name);
 		}
 		Object.keys(props).forEach(function (key) {
@@ -280,8 +280,8 @@
 			info.propertyDefaults = defaults;
 		}
 		if (catalog) {
-			information("blockType", "Block", "Public identifier of the block contract.",
-				String(catalog.blockId || catalog.name || ""), "Expert");
+			information("blockType", "Block type", "Public identifier of the block contract.",
+				String(catalog.blockId || catalog.name || ""));
 			["icon", "iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"].forEach(function (key) {
 				if (catalog[key] !== undefined && catalog[key] !== null && String(catalog[key]) !== "") {
 					info[key] = String(catalog[key]);
@@ -3092,7 +3092,7 @@
 		if (blockPath) {
 			var blockKey = "blockType";
 			while (Object.prototype.hasOwnProperty.call(definitions, blockKey)) blockKey = "_" + blockKey;
-			definitions[blockKey] = resolvedPropertyDefinition(propertyDefinition("Block", "Expert",
+			definitions[blockKey] = resolvedPropertyDefinition(propertyDefinition("Block type", "Information",
 				"Flow block or component implemented by this node.", { readOnly: true }));
 			definitions[blockKey].definitionPath = blockPath;
 		}
