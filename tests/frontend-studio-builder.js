@@ -51,8 +51,8 @@ assert(builders[0].state.built === false && builders[1].state.built === true,
 assert(builders[0].target === "Project.CustomEngine", "Action target uses the supplied identity");
 assert(builders[0].commands.serve.payload.builder === "customer", "Commands retain builder selection");
 assert(builders[0].available && builders[0].commands.build.enabled, "Draft-only model is available");
-assert(builders[1].state.serving && !builders[1].commands.build.enabled,
-	"Active Dev disables production, as in the context menu");
+assert(builders[1].state.serving && builders[1].commands.build.enabled,
+	"Production stays enabled while Dev is active, as in the context menu");
 assert(builders[1].state.url === "http://127.0.0.1:28080/convertigo/gw/ticket/"
 	&& builders[1].state.productionUrl === "http://127.0.0.1:28080/convertigo/projects/Project/built-output/",
 	"A serving builder gives the address of its development server and of its built application, to share");

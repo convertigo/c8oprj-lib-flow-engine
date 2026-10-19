@@ -10382,7 +10382,7 @@
 			generate: command("generate", "Update generated source",
 				"Regenerate the Svelte sources under the project private directory.", "Svelte build"),
 			build: background(command("build", "Build prod",
-				"Generate and build production assets under DisplayObjects/mobile. Stop Dev first; dirty production is rebuilt automatically after Dev stops.", "Svelte build", !dev)),
+				"Generate and build production assets under DisplayObjects/mobile, also while Dev runs (the viewer keeps serving).", "Svelte build")),
 			built: command("openBuilt", "Open built prod",
 				"Open the built production frontend in a Studio browser.", "Svelte build")
 		};

@@ -83,8 +83,8 @@ var contextMenu = functionSource("contextMenuRequest", "contextMenuItem");
 var builderCommands = functionSource("frontendBuilderCommands", "frontendStudioBuilders");
 assertTrue(contextMenu.indexOf("frontendBuilderCommands(info, hasModel, dev)") >= 0 &&
 	builderCommands.indexOf('command("build", "Build prod"') >= 0 &&
-	builderCommands.indexOf('rebuilt automatically after Dev stops') >= 0 &&
-	builderCommands.indexOf('"Svelte build", !dev)') >= 0,
-	"the Studio menu and Build panel must share commands that disable production while Dev is active");
+	builderCommands.indexOf('also while Dev runs') >= 0 &&
+	builderCommands.indexOf('"Svelte build", !dev)') < 0,
+	"the Studio menu and Build panel share commands that keep production enabled while Dev is active");
 
 print("frontend-dev-activation-contract OK");
