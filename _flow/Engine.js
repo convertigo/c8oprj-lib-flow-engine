@@ -1987,6 +1987,7 @@
 			writeRuntimeCache: writeRuntimeMapCache,
 			flowProviderName: flowProviderName,
 			projectNameForRoot: projectNameForRoot,
+			projectDescriptorSource: projectDescriptorSource,
 			projectRootForName: loadedProjectRootForName,
 			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
 			reserveFlowScriptBlockFile: reserveFlowScriptBlockFile,
@@ -4167,15 +4168,30 @@
 		return "";
 	}
 
+	// A descriptor is shared by name lookup and reference discovery. Like the
+	// directory fingerprints, this snapshot lives only for a read-only operation.
+	// A later request, a runtime execution or a mutation always checks disk again.
+	function projectDescriptorSource(root) {
+		var memo = callFingerprints.get();
+		var key = "project-descriptor:" + String(root.getAbsolutePath());
+		if (memo && memo.containsKey(key)) {
+			var known = memo.get(key);
+			return known == null ? null : String(known);
+		}
+		var descriptor = new File(root, "c8oProject.yaml");
+		var source = descriptor.isFile() ? String(FileUtils.readFileToString(descriptor, "UTF-8")) : null;
+		if (memo) memo.put(key, source);
+		return source;
+	}
+
 	function projectNameForRoot(root) {
 		if (!root) {
 			return "";
 		}
 		root = new File(root);
 		try {
-			var descriptor = new File(root, "c8oProject.yaml");
-			if (descriptor.isFile()) {
-				var source = String(FileUtils.readFileToString(descriptor, "UTF-8"));
+			var source = projectDescriptorSource(root);
+			if (source !== null) {
 				var match = source.match(/^\s*\u2193([A-Za-z0-9_.-]+)\s+\[core\.Project\]\s*:/m);
 				if (match) {
 					return String(match[1]);

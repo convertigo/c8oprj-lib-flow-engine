@@ -75,11 +75,15 @@
 		if (!projectRoot) {
 			return roots;
 		}
-		var descriptor = new env.File(projectRoot, "c8oProject.yaml");
-		if (!descriptor.isFile()) {
-			return roots;
+		var source;
+		if (typeof env.projectDescriptorSource === "function") {
+			source = env.projectDescriptorSource(projectRoot);
+			if (source === null) return roots;
+		} else {
+			var descriptor = new env.File(projectRoot, "c8oProject.yaml");
+			if (!descriptor.isFile()) return roots;
+			source = String(env.FileUtils.readFileToString(descriptor, "UTF-8"));
 		}
-		var source = String(env.FileUtils.readFileToString(descriptor, "UTF-8"));
 		var parent = projectRoot.getParentFile();
 		var currentName = projectNameFromRoot(projectRoot, env);
 		var engineName = env.flowProviderName(env.engineDir(), "lib_flow_engine");

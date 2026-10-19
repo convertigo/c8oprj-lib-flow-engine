@@ -32,6 +32,8 @@ function assertTrue(value, message) {
 var BUILDER_INSTALL_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
 var relocatedBuilderModules = {};
 var projectRootAbove = extract("projectRootAbove");
+var callFingerprints = new java.lang.ThreadLocal();
+var projectDescriptorSource = extract("projectDescriptorSource");
 var projectNameForRoot = extract("projectNameForRoot");
 var frontendRunCommandFor = extract("frontendRunCommandFor");
 var frontendBuilderInstallPrefix = extract("frontendBuilderInstallPrefix");
