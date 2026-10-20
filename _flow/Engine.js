@@ -2905,6 +2905,27 @@
 			variable[setter](next);
 			return true;
 		}
+		// As Flow.flowInputDefaultValue in Java: Convertigo variables persist scalars and rows. An object or an
+		// array default reaching setValueOrNull as a script object is read back as "[object Object]": rows
+		// become scalars, nested structures become JSON text.
+		function flowInputDefaultValue(value, multiValued) {
+			if (value === undefined || value === null) {
+				return value;
+			}
+			function scalar(item) {
+				return item !== null && typeof item === "object" ? JSON.stringify(item) : item;
+			}
+			if (!multiValued) {
+				return scalar(value);
+			}
+			var rows = new Packages.java.util.ArrayList();
+			(Array.isArray(value) ? value : [value]).forEach(function (item) {
+				if (item !== undefined && item !== null) {
+					rows.add(scalar(item));
+				}
+			});
+			return rows;
+		}
 		// A default naming symbols (${name}) is kept as the source value of the variable, saved as is, and used
 		// compiled, as the bean properties of the former sequences: compare with that source value.
 		function setDefaultIfChanged(variable, value) {
@@ -2953,7 +2974,8 @@
 			} else if (!existing) {
 				variable.setDescription("Flow input " + key);
 			}
-			changed = setDefaultIfChanged(variable, definition.default) || changed;
+			changed = setDefaultIfChanged(variable, flowInputDefaultValue(definition.default,
+				variable instanceof RequestableMultiValuedVariable)) || changed;
 			changed = setBooleanIfChanged(variable, "isRequired", "setRequired", definition.required) || changed;
 			if (variable.setSchemaType) {
 				changed = setStringIfChanged(variable, "getSchemaType", "setSchemaType", flowInputSchemaType(type)) || changed;
