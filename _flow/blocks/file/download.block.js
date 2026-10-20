@@ -9,7 +9,6 @@ const _meta = {
       "kind": "value",
       "type": "string",
       "label": "Text content",
-      "default": null,
       "description": "Text content. Supply content or url, never both.",
       "nullable": true,
     },
