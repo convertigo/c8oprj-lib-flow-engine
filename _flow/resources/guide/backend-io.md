@@ -67,8 +67,18 @@ or unsafe headings and inconsistent column counts are errors.
 to property keys or their unique `title`. Without a schema all cells remain
 strings, including `001` and `=1+1` (the parser never evaluates formulas).
 Optional `columns: ["label", "id"]` chooses fields and order; entries can
-also be `{key:"label", header:"Nom du poste"}`. Missing or ambiguous headings
+also be `{field:"label", header:"Nom du poste"}`. Missing or ambiguous headings
 are refused. `header:false` requires ordered `columns`.
+
+For the data contract, pass `rowSchema: local.schema` from `data.rowSchema`
+and `resource: local.resource` from its provider (for example `sql.table`).
+The schema's `key`/`values` envelope is preserved in each returned row; the
+Resource supplies human labels and logical date types. `int64` and `decimal`
+remain exact strings as in the data contract. Alternatively pass
+`local.schema.properties.values` for flat values only. `columns` uses the
+same `{field,header}` selection as `data.exportCsv`. Dates must still be ISO,
+not a localized export display; the parser never guesses a locale date.
+No optimistic revision is invented: read it before updating an existing row.
 
 Types follow Flow input conversion, including JSON object/array cells.
 Dates and date-times must be strict ISO; `2026-02-30` is refused. Convert a
