@@ -247,6 +247,9 @@
 		}
 		if (details !== undefined && details !== null) {
 			out.details = details;
+			// Early parser/correction errors keep the same bounded diagnostic surface
+			// as validation errors; MCP consumers can inspect scored mock guidance.
+			if (Array.isArray(details.diagnostics)) out.diagnostics = details.diagnostics;
 		}
 		return out;
 	}

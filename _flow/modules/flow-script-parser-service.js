@@ -49,11 +49,19 @@
 
 	function unknownBlock(blocks, name, lineNumber, env) {
 		var candidates = env.blockCandidates ? env.blockCandidates(blocks, name, 5) : [];
+		var decision = env.blockCandidateDecision ? env.blockCandidateDecision(candidates) : {recommendation:"mock",tool:"flow-block-mock",bestBlock:"",bestScore:0,preferExistingScore:140};
+		var preferExisting = decision.recommendation === "existing";
+		var create = {tool:decision.tool,name:name,block:preferExisting ? decision.bestBlock : name};
+		if (preferExisting) create.alternativeTool = "flow-block-mock";
+		else if (candidates.length) { create.candidateTool = "flow-block-get"; create.candidateBlock = decision.bestBlock; }
 		var error = new Error("Unknown Flow block: " + name + " at line " + lineNumber + ".");
 		error.code = "UNKNOWN_BLOCK";
 		error.hint = "Inspect the suggested blocks; do not substitute one unless its contract matches the intended behavior.";
 		error.details = [{severity:"error", code:"UNKNOWN_BLOCK", line:lineNumber, block:name, message:error.message,
-			candidates:candidates, candidateDecision:env.blockCandidateDecision ? env.blockCandidateDecision(candidates) : {recommendation:"mock"}}];
+			candidates:candidates, candidateDecision:decision, create:create,
+			mock:{tool:"flow-block-mock",name:name,when:"Use this when no suggested block matches the intended domain contract."},
+			next:"Inspect a candidate only if its contract matches; otherwise create " + name + " with flow-block-mock, typed properties and typed outputs, then implement the domain block.",
+			hint:error.hint}];
 		throw error;
 	}
 

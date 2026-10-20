@@ -13,6 +13,9 @@ try {
  var unknown=api('flowCodeSet',{name:'Unknown',code:'function Unknown({input,result}) {\n local.t = text.upper({ value: text.trim({ value: input.name }) })\n}'});
  assert(!unknown.ok && unknown.error.code==='UNKNOWN_BLOCK','Unknown outer call must precede nested safety: '+JSON.stringify(unknown.error));
  assert(JSON.stringify(unknown).indexOf('candidates')>=0,'Unknown block needs suggestions');
+ var mockGuidance=api('flowCodeSet',{name:'DomainUnknown',code:'function DomainUnknown({input,config,result}) {\n var item = domain.fetchWeatherItem({zone:input.zone,forecastUrl:config.services.weather.forecastUrl})\n result.item = item\n}'});
+ var rich=(mockGuidance.error&&mockGuidance.error.diagnostics||[])[0];
+ assert(rich&&rich.code==='UNKNOWN_BLOCK'&&rich.candidateDecision.recommendation==='mock'&&rich.create.tool==='flow-block-mock'&&rich.create.candidateTool==='flow-block-get'&&rich.mock.name==='domain.fetchWeatherItem','Early unknown diagnostics retain public scored mock/create guidance: '+JSON.stringify(mockGuidance));
  var passiveUnknown=api('flowCodeCheck',{name:'Unknown',code:'function Unknown({input,result}) {\n local.t = text.upper({ value: text.trim({ value: input.name }) })\n}'});
  assert(!passiveUnknown.ok&&passiveUnknown.error.code==='UNKNOWN_BLOCK'&&JSON.stringify(passiveUnknown).indexOf('candidates')>=0,'Passive code-check resolves unknown vocabulary before nested properties, without corrections: '+JSON.stringify(passiveUnknown));
  var literal=api('flowCodeSet',{name:'LiteralPath',code:'function LiteralPath({result}) {\n result.text = file.readText({path:"docs/flow-port/fixtures/input.csv"})\n}'});
