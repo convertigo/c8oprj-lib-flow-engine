@@ -126,6 +126,19 @@
 		return Object.keys(properties).length ? { type: "object", properties: properties } : { type: "unknown" };
 	}
 
+	// A Flow output schema is computed while Convertigo builds its project's XML
+	// schema, on the builder's worker threads. Asking the SchemaManager for that
+	// same project there waits for the lock held by the build itself.
+	function insideProjectSchemaBuild() {
+		var frames = new Packages.java.lang.Throwable().getStackTrace();
+		for (var i = 0; i < frames.length; i++) {
+			if (String(frames[i].getClassName()).indexOf("com.twinsoft.convertigo.engine.XmlSchemaBuilder") === 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	function learnedXsdOutputSchema(target, env) {
 		var root = env.projectDir();
 		if (!root || !target || !target.project || !target.connector || !target.requestable) {
@@ -202,6 +215,9 @@
 					return null;
 				}
 			} catch (_ignoreConnectorType) {
+			}
+			if (insideProjectSchemaBuild()) {
+				return learnedXsdOutputSchema(target, env);
 			}
 			var project = dbo.getProject();
 			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
