@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "description": "Download UTF-8 text content or a fetched HTTP(S) URL. Uses a Blob, bounds bytes, sanitizes the filename, and revokes its object URL.",
-  "icon": "mdi:download",
+  "icon": "mdi:tray-arrow-down",
   "private": false,
   "properties": {
     "content": {

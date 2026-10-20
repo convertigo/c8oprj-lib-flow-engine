@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "description": "Publishes a UTF-8 text attachment through Convertigo's existing .bin requester. Call last after validation; JSON/MCP calls return only the file manifest.",
-  "icon": "mdi:download",
+  "icon": "mdi:tray-arrow-down",
   "private": false,
   "properties": {
     "content": {
