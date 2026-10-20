@@ -2,6 +2,9 @@
 var root=new java.io.File(arguments[0]),files=Packages.org.apache.commons.io.FileUtils,checks=0;
 function assert(v,m){checks++;if(!v)throw new Error(m);}
 var source=new java.io.File(root,'blocks/project/cacheRemove.block.js');assert(source.isFile(),'F18: application cache invalidation block must exist');
+var __flowEngineDir=String(root.getCanonicalPath()),engine=eval(String(files.readFileToString(new java.io.File(root,'Engine.js'),'UTF-8')));
+var discovered=JSON.parse(engine.catalog(JSON.stringify({query:'project.cacheRemove',detail:'signature'})));
+assert((discovered.blocks||[]).some(function(b){return b.block==='project.cacheRemove';}),'F18: application cache invalidation must be discoverable without includeInternal');
 var code=String(files.readFileToString(source,'UTF-8')),cache=eval(code.substring(code.indexOf('(function')));
 var map=new java.util.HashMap(),other=new java.util.HashMap(),legacy=new java.util.HashMap();legacy.put('table','id');map.put('table_id_cache',legacy);other.put('table_id_cache','other project');
 var ctx={props:function(n){return n;},template:function(v){return v;},canContinue:function(){return true;},convertigoContext:function(){return {project:{get:function(k){return map.get(k);},set:function(k,v){if(v===null)map.remove(k);else map.put(k,v);}}};},raise:function(code,message){var e=new Error(message);e.code=code;throw e;}};

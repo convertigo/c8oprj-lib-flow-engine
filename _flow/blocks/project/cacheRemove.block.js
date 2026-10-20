@@ -5,6 +5,7 @@ const _meta = {
   "targets": [
     "backend"
   ],
+  "visibility": "public",
   "description": "Invalidates one application cache key of the current Convertigo project, including legacy context.project.get/set caches. Does not clear response caches or the Flow engine catalog.",
   "properties": {
     "key": {
