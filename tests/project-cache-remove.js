@@ -11,4 +11,13 @@ assert(!cache.run(ctx,{key:'table_id_cache'}).removed,'Idempotent absence is exp
 ['','a\nkey',new Array(257).join('k')].forEach(function(key){var caught=false;try{cache.run(ctx,{key:key});}catch(e){caught=e.code==='PROJECT_CACHE_KEY_INVALID';}assert(caught,'Unsafe cache key refused');});
 ctx.canContinue=function(){return false;};map.put('keep','value');var cancelled=false;try{cache.run(ctx,{key:'keep'});}catch(e){cancelled=e.code==='FLOW_EXECUTION_CANCELLED';}assert(cancelled&&map.containsKey('keep'),'Cancellation precedes mutation');
 ctx.canContinue=function(){return true;};ctx.convertigoContext=function(){return {};};var unavailable=false;try{cache.run(ctx,{key:'key'});}catch(e){unavailable=e.code==='PROJECT_CACHE_UNAVAILABLE';}assert(unavailable,'No fake success without a native project cache');
+// A code-run HTTP context belongs to MCP; invalidate the named execution project instead.
+var requested='TargetApp',resolved='',target=new java.util.HashMap(),host=new java.util.HashMap();target.put('shared','app');host.put('shared','mcp');
+var fakeManager={getOriginalProjectByName:function(name){resolved=String(name);return {get:function(k){return target.get(k);},set:function(k,v){target.remove(k);}};}};
+var fakeEngine={theApp:{databaseObjectsManager:fakeManager}};
+var PackagesMock={java:Packages.java,com:{twinsoft:{convertigo:{engine:{Engine:fakeEngine}}}}};
+var scoped=(function(Packages){return eval(code.substring(code.indexOf('(function')));})(PackagesMock);
+ctx.read=function(path){assert(path==='request.project','Execution metadata only');return requested;};
+ctx.convertigoContext=function(){return {project:{getName:function(){return 'lib_flow_mcp';},get:function(k){return host.get(k);},set:function(k,v){host.remove(k);}}};};
+var scopedResult=scoped.run(ctx,{key:'shared'});assert(scopedResult.removed&&resolved==='TargetApp'&&!target.containsKey('shared')&&String(host.get('shared'))==='mcp','MCP invocation cannot redirect invalidation to the host project');
 print('project-cache-remove OK ('+checks+' assertions)');
