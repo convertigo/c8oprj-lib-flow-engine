@@ -49,6 +49,12 @@ try {
 	assert(metadata.ok && metadata.code.indexOf('keep license') >= 0 && metadata.code.indexOf('keep input comment') >= 0 && metadata.code.indexOf('config: {x:1}') >= 0, 'Additive metadata correction preserves comments and unrelated values: ' + JSON.stringify(metadata));
 	var rawText = set('RawText', '  result.value = "date.now() input.ghost ${input.literal}"');
 	assert(rawText.ok && !(rawText.fixes || []).length && !rawText.inputDefinitions, 'Strings must not be interpreted as calls or reads: ' + JSON.stringify(rawText));
+	var dynamic = set('DynamicInput','  const key = "selected"\n  result.value = input[key]');
+	assert(!dynamic.ok && !hasFix(dynamic,'FLOWSCRIPT_INPUT_DECLARED') && !dynamic.inputDefinitions && JSON.stringify(dynamic.error).indexOf('INVALID_EXPRESSION') >= 0,'Unsupported dynamic indexing keeps its diagnostic and must not invent an input literally named key: '+JSON.stringify(dynamic));
+	var literalKey = set('LiteralInput','  result.value = input["selected"]');
+	assert(literalKey.inputDefinitions && literalKey.inputDefinitions.selected.type === 'any','A quoted bracket key is a statically known input, independently of expression support');
+	var inputWrite = set('InputWrite','  input.produced = 1\n  result.value = 1');
+	assert(!inputWrite.ok && !hasFix(inputWrite,'FLOWSCRIPT_INPUT_DECLARED') && JSON.stringify(inputWrite.error).indexOf('FLOWSCRIPT_UNSUPPORTED_SYNTAX') >= 0,'An unsupported input write keeps its diagnostic and is not a public input read: '+JSON.stringify(inputWrite));
 	var method = set('Slice', '  result.value = input.rows.slice(1, 3)');
 	assert(method.ok && !hasFix(method, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED'), 'Run-1 F-02: scope methods are expressions, never positional blocks: ' + JSON.stringify(method));
 	[

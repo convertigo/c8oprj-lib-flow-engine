@@ -276,9 +276,10 @@
 			if (kind(node) === "VariableInitializer" && kind(node.getTarget()) === "Name" && String(node.getTarget().getIdentifier()) === headerName && kind(node.getParent().getParent()) === "AstRoot") header = node.getInitializer();
 			var k = kind(node), input = k === "PropertyGet" ? node.getTarget() : k === "ElementGet" ? node.getTarget() : null;
 			if (!input || kind(input) !== "Name" || String(input.getIdentifier()) !== "input") return;
-			var name = k === "PropertyGet" ? String(node.getProperty().getIdentifier()) : propertyName(node.getElement());
+			var name = k === "PropertyGet" ? String(node.getProperty().getIdentifier()) : kind(node.getElement()) === "StringLiteral" ? String(node.getElement().getValue()) : "";
 			if (!name) return;
 			var type = "any", parent = node.getParent();
+			if (kind(parent) === "Assignment" && parent.getLeft() === node && String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(parent.getOperator())) === "=") return;
 			if (kind(parent) === "PropertyGet" && parent.getTarget() === node && String(parent.getProperty().getIdentifier()) !== "length" && !(kind(parent.getParent()) === "FunctionCall" && parent.getParent().getTarget() === parent)) type = "object";
 			if (kind(parent) === "ElementGet" && parent.getTarget() === node) type = kind(parent.getElement()) === "NumberLiteral" ? "array" : "object";
 			if (kind(parent) === "ObjectProperty" && parent.getValue() === node) {
