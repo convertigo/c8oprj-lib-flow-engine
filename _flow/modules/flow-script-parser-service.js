@@ -29,6 +29,34 @@
 	// Authoring only. Never execute submitted code, guess a block name, or move
 	// an operation across a conditional/per-item boundary. The ordinary compiler
 	// remains the authority for every transformed source.
+	// Called only for an unresolved namespace. A child block call would otherwise
+	// fail expression parsing before the existing rich UNKNOWN_BLOCK validation.
+	function containsNestedBlockCall(blocks, token) {
+		try {
+			var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+			options.setLanguageVersion(200);
+			var ast = new Packages.org.mozilla.javascript.Parser(options).parse("(" + String(token) + ");", "unknown-block-property", 1), found = false;
+			ast.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({visit:function (node) {
+				if (String(node.getClass().getSimpleName()) === "FunctionCall") {
+					var name = String(node.getTarget().toSource()).replace(/\s/g, "");
+					if (blocks[name] || /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) && !/^(input|local|current|result|request|config|trace)\./.test(name)) found = true;
+				}
+				return !found;
+			}}));
+			return found;
+		} catch (_notExpressionSyntax) { return false; }
+	}
+
+	function unknownBlock(blocks, name, lineNumber, env) {
+		var candidates = env.blockCandidates ? env.blockCandidates(blocks, name, 5) : [];
+		var error = new Error("Unknown Flow block: " + name + " at line " + lineNumber + ".");
+		error.code = "UNKNOWN_BLOCK";
+		error.hint = "Inspect the suggested blocks; do not substitute one unless its contract matches the intended behavior.";
+		error.details = [{severity:"error", code:"UNKNOWN_BLOCK", line:lineNumber, block:name, message:error.message,
+			candidates:candidates, candidateDecision:env.blockCandidateDecision ? env.blockCandidateDecision(candidates) : {recommendation:"mock"}}];
+		throw error;
+	}
+
 	function correctSource(blocks, source, request, env) {
 		source = String(source || "");
 		request = request || {};
@@ -134,13 +162,7 @@
 			if (kind(node) !== "FunctionCall") return;
 			var name = text(node.getTarget()).replace(/\s/g, "");
 			if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) || /^(input|local|current|result|request|config|trace)\./.test(name) || blockName(node)) return;
-			var candidates = env.blockCandidates ? env.blockCandidates(blocks, name, 5) : [];
-			var error = new Error("Unknown Flow block: " + name + " at line " + line(start(node)) + ".");
-			error.code = "UNKNOWN_BLOCK";
-			error.hint = "Inspect the suggested blocks; do not substitute one unless its contract matches the intended behavior.";
-			error.details = [{severity:"error", code:"UNKNOWN_BLOCK", line:line(start(node)), block:name, message:error.message,
-				candidates:candidates, candidateDecision:env.blockCandidateDecision ? env.blockCandidateDecision(candidates) : {recommendation:"mock"}}];
-			throw error;
+			unknownBlock(blocks, name, line(start(node)), env);
 		});
 		for (var pass = 0; pass < 128; pass++) {
 			var calls = [];
@@ -1244,6 +1266,9 @@
 		// Engine attributes ($$id, $$disabled, $$comment, $$out) stay on the node;
 		// every other attribute is a business value stored in node.props.
 		function normalizeNaturalFlowScriptProps(blocks, block, parsed, locals, lineNumber) {
+			// Resolve namespace vocabulary before parsing its property expressions.
+			// Passive checks use this path too and must not run source corrections.
+			if (!blocks[block] && /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(block) && !/^(input|local|current|result|request|config|trace)\./.test(block) && Object.keys(parsed.tokens || {}).some(function (key) { return containsNestedBlockCall(blocks, parsed.tokens[key]); })) unknownBlock(blocks, block, lineNumber, env);
 			var codec = env.sourceAttributeNameCodec();
 			var node = {};
 			var propertyTokens = Object.create(null);

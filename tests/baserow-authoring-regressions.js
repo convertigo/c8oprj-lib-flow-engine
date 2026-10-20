@@ -13,6 +13,8 @@ try {
  var unknown=api('flowCodeSet',{name:'Unknown',code:'function Unknown({input,result}) {\n local.t = text.upper({ value: text.trim({ value: input.name }) })\n}'});
  assert(!unknown.ok && unknown.error.code==='UNKNOWN_BLOCK','Unknown outer call must precede nested safety: '+JSON.stringify(unknown.error));
  assert(JSON.stringify(unknown).indexOf('candidates')>=0,'Unknown block needs suggestions');
+ var passiveUnknown=api('flowCodeCheck',{name:'Unknown',code:'function Unknown({input,result}) {\n local.t = text.upper({ value: text.trim({ value: input.name }) })\n}'});
+ assert(!passiveUnknown.ok&&passiveUnknown.error.code==='UNKNOWN_BLOCK'&&JSON.stringify(passiveUnknown).indexOf('candidates')>=0,'Passive code-check resolves unknown vocabulary before nested properties, without corrections: '+JSON.stringify(passiveUnknown));
  var literal=api('flowCodeSet',{name:'LiteralPath',code:'function LiteralPath({result}) {\n result.text = file.readText({path:"docs/flow-port/fixtures/input.csv"})\n}'});
  assert(literal.ok && !(literal.diagnostics||[]).some(function(d){return d.code==='FLOWSCRIPT_INPUT_NOT_DECLARED';}) && !(literal.inputVariables||[]).length,'Literal input.csv is not a scope access: '+JSON.stringify(literal));
  var expression=api('flowCodeCheck',{name:'RealInput',code:'function RealInput({input,result}) {\n result.text = input.actual\n}'});

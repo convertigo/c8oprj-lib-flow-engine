@@ -3345,6 +3345,8 @@
 
 	function flowScriptParserEnv() {
 		return {
+			blockCandidates: flowScriptBlockCandidates,
+			blockCandidateDecision: flowScriptBlockCandidateDecision,
 			templateSyntax: templateSyntax(),
 			destinationContract: destinationContract(),
 			sourceAttributeNameCodec: sourceAttributeNameCodec,
