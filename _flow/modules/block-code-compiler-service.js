@@ -103,8 +103,14 @@
 		}
 
 		function compileFlowScriptBlockCode(blocks, name, code, request) {
+			var originalMeta = request && request.correctSource === true
+				? Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extractFlowScriptBlockMeta(code).meta || {})) : {};
 			var corrected = request && request.correctSource === true
-				? env.flowScriptCorrectSource(blocks, code, Object.assign({}, request, { blockMode: true }))
+				? env.flowScriptCorrectSource(blocks, code, Object.assign({}, request, {
+					blockMode: true, correctingBlock: name,
+					declaredProperties: originalMeta.properties || originalMeta.props || {},
+					blockContract: { props: originalMeta.properties || originalMeta.props || {}, outputs: originalMeta.outputs || originalMeta.output || {}, dynamicProperties: originalMeta.dynamicProperties }
+				}))
 				: { code: code, fixes: [] };
 			code = corrected.code;
 			var extracted = extractFlowScriptBlockMeta(code);

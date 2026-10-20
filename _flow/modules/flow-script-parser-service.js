@@ -76,14 +76,14 @@
 			}
 		}
 		function catalog(name) {
-			if (!Object.prototype.hasOwnProperty.call(catalogs, name)) catalogs[name] = env.blockCatalog(blocks[name]) || {};
+			if (!Object.prototype.hasOwnProperty.call(catalogs, name)) catalogs[name] = name === request.correctingBlock && request.blockContract ? request.blockContract : env.blockCatalog(blocks[name]) || {};
 			return catalogs[name];
 		}
 		function blockName(call) {
 			if (kind(call) !== "FunctionCall") return "";
 			var name = text(call.getTarget()).replace(/\s/g, "");
 			if (/^(input|local|current|result|request|config|trace)(\.|$)/.test(name)) return "";
-			return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(name) && blocks[name] ? name : "";
+			return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(name) && (blocks[name] || name === request.correctingBlock && request.blockContract) ? name : "";
 		}
 		function jsonType(type) {
 			return type === "integer" ? "number" : /^(string|number|boolean|array|object)$/.test(type) ? type
@@ -137,7 +137,12 @@
 				var call = calls[c], name = blockName(call), args = list(call.getArguments());
 				if (args.length === 1 && kind(args[0]) === "ObjectLiteral") continue;
 				var keys = positionalKeys(name, args);
-				if (keys === null) continue; // The compiler reports the signature, with no guessed order.
+				if (keys === null) {
+					var signatureError = new Error("Positional arguments do not uniquely identify the properties of " + name + " at line " + line(start(call)) + ".");
+					signatureError.code = "FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE";
+					signatureError.hint = "Use named properties: " + name + "({ " + properties(name).join(", ") + " }). No positional property order is assumed.";
+					throw signatureError;
+				}
 				var before = text(call), after = before;
 				// Insert names around the existing arguments, keeping comments,
 				// whitespace and trailing commas exactly where the author put them.
@@ -297,13 +302,17 @@
 			constrain(name, type);
 		});
 		var inputsField = field(header, request.blockMode ? "properties" : "inputs") || field(header, request.blockMode ? "props" : "input");
-		var inputs = inputsField && inputsField.getValue(), missing = Object.keys(inputSchemas).filter(function (name) { return !field(inputs, name); }).sort();
+		var inputs = inputsField && inputsField.getValue(), declared = request.blockMode && request.declaredProperties || {};
+		var missing = Object.keys(inputSchemas).filter(function (name) { return !field(inputs, name) && !(!inputs && Object.prototype.hasOwnProperty.call(declared, name)); }).sort();
 		if (missing.length && (!header || kind(header) === "ObjectLiteral") && (!inputs || kind(inputs) === "ObjectLiteral")) {
 			var members = missing.map(function (name) {
 				var schema = { type: inputSchemas[name].type };
 				if (schema.type === "array") schema.items = inputItems[name] || { type: "any" };
 				if (request.blockMode) schema.kind = "value";
 				return JSON.stringify(name) + ": " + JSON.stringify(schema);
+			});
+			if (!inputs) Object.keys(declared).reverse().forEach(function (name) {
+				members.unshift(JSON.stringify(name) + ": " + JSON.stringify(declared[name]));
 			});
 			var offset, addition;
 			function append(object, value) {

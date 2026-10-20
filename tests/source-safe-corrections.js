@@ -91,6 +91,14 @@ try {
 	assert(localBlock.ok && hasFix(localBlock, 'FLOW_BLOCK_INPUT_DECLARED') && localBlock.code.indexOf('"label"') >= 0, 'Block properties are added and exposed: ' + JSON.stringify(localBlock));
 	var inferredRun = set('CallInferred', '  result.value = fixture.inferred({label:"PCA"})');
 	assert(inferredRun.ok && api('flowCodeRun',{name:'CallInferred'}).result.value === 'PCA', 'Corrected block executes normally');
+	var blockPatch = api('blockCodePatch',{name:'fixture.inferred',revision:localBlock.revision,code:'const _meta = {properties:{label:{type:"string",kind:"value"}},outputs:{out:{type:"string"}}}\nfunction inferred({input}) { return text.trim(input.label) }'});
+	assert(blockPatch.ok && hasFix(blockPatch,'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED') && hasFix(blockPatch,'FLOWSCRIPT_BLOCK_CALL_LIFTED'),'Block patches use the same explicit correction contract: '+JSON.stringify(blockPatch));
+	var outOfBand = api('blockCodeSet',{name:'fixture.externalContract',properties:{existing:{type:'integer',kind:'value',default:7}},code:'function externalContract({input}) { return {existing:input.existing,extra:input.extra} }'});
+	assert(outOfBand.ok && hasFix(outOfBand,'FLOW_BLOCK_INPUT_DECLARED') && outOfBand.code.indexOf('"integer"') >= 0 && outOfBand.code.indexOf('"default": 7') >= 0,'An added input must preserve a contract supplied by the caller: '+JSON.stringify(outOfBand));
+	var selfOld = api('blockCodeSet',{name:'fixture.self',code:'const _meta = {properties:{first:{type:"string",kind:"value"},second:{type:"number",kind:"value"}},outputs:{out:{type:"any"}}}\nfunction self({input}) { return input.first }'});
+	assert(selfOld.ok,'Self-call contract fixture failed');
+	var selfNew = api('blockCodeSet',{name:'fixture.self',dry:true,code:'const _meta = {properties:{first:{type:"number",kind:"value"},second:{type:"string",kind:"value"}},outputs:{out:{type:"any"}}}\nfunction self({input}) {\n  local.value = fixture.self(3,"PCA")\n  return local.value\n}'});
+	assert(selfNew.ok && selfNew.fixes.some(function(fix){return fix.code==='FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED' && fix.after.indexOf('"first": 3') >= 0 && fix.after.indexOf('"second": "PCA"') >= 0;}),'A self call must use the submitted contract, not the previous cached block: '+JSON.stringify(selfNew));
 	var nested = api('flowCodeGet',{name:'Nested'});
 	var patch = api('flowCodePatch',{name:'Nested',revision:nested.revision,code:code('Nested','  result.value = text.trim({text:text.trim({text:" patch "})})')});
 	assert(patch.ok && hasFix(patch,'FLOWSCRIPT_BLOCK_CALL_LIFTED'), 'code-patch shares the same correction path: ' + JSON.stringify(patch));
