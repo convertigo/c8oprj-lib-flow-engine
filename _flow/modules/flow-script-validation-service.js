@@ -654,6 +654,7 @@
 			diagnostics.push(diagnostic);
 		});
 		repetitionStyleDiagnostics(definition, env).forEach(function (diagnostic) {
+			if (request.authoringCorrections === true) diagnostic.severity = "error";
 			diagnostics.push(diagnostic);
 		});
 		localConfigStyleDiagnostics(definition).forEach(function (diagnostic) {

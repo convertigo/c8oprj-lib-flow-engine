@@ -2047,10 +2047,10 @@ var missingBlockInputSet = JSON.parse(engine.blockCodeSet(JSON.stringify({
 	code: missingBlockInputSource
 })));
 assertTrue(missingBlockInputSet.ok === true &&
-	missingBlockInputSet.warnings.some(function (warning) {
-		return warning.code === "FLOW_BLOCK_INPUT_NOT_DECLARED" &&
-			warning.missingInputs.indexOf("value") !== -1;
-	}), "FlowScript block input property warning was not reported");
+	missingBlockInputSet.fixes.some(function (fix) {
+		return fix.code === "FLOW_BLOCK_INPUT_DECLARED";
+	}) && missingBlockInputSet.code.indexOf('"value"') !== -1,
+	"FlowScript block input property correction was not reported");
 var flowBackedBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
 	name: "smoke.flowBacked",
 	detail: "full"

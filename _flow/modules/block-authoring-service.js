@@ -128,7 +128,7 @@
 			if (code.trim() === "") {
 				raise("MISSING_BLOCK_CODE", "block.code.set requires .block.js code.");
 			}
-			var compiled = compileProjectBlockCode(blocks, name, code, request);
+			var compiled = compileProjectBlockCode(blocks, name, code, Object.assign({}, request, { correctSource: true }));
 			if (request.dry === true || request.dryRun === true || String(request.dry || "") === "true" || String(request.dryRun || "") === "true") {
 				return {
 					ok: true,
@@ -137,6 +137,7 @@
 					format: compiled.runtime === "rhino" ? "blockjs" : "flowscript",
 					canonical: true,
 					revision: compiled.revision,
+					fixes: compiled.fixes || [],
 					descriptor: publicBlockDescriptor(compiled.descriptor),
 					code: compiled.code,
 					implementationSource: compiled.source,
@@ -179,6 +180,8 @@
 				file: String(codeFile.getAbsolutePath()),
 				codeFile: String(codeFile.getAbsolutePath()),
 				revision: compiled.revision,
+				fixes: compiled.fixes || [],
+				code: compiled.fixes && compiled.fixes.length ? compiled.code : undefined,
 				warnings: (compiled.warnings || (compiled.diagnostics || []).filter(function (diagnostic) {
 					return diagnostic.severity === "warning";
 				})),

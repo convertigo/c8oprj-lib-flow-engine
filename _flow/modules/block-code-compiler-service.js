@@ -103,6 +103,10 @@
 		}
 
 		function compileFlowScriptBlockCode(blocks, name, code, request) {
+			var corrected = request && request.correctSource === true
+				? env.flowScriptCorrectSource(blocks, code, Object.assign({}, request, { blockMode: true }))
+				: { code: code, fixes: [] };
+			code = corrected.code;
 			var extracted = extractFlowScriptBlockMeta(code);
 			var functionCode = ensureFlowScriptBlockFunction(name, extracted.code);
 			var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extracted.meta || {}));
@@ -119,7 +123,8 @@
 				code: functionCode,
 				sourceVersion: meta.sourceVersion,
 				includeHeader: false,
-				blockMode: true
+				blockMode: true,
+				authoringCorrections: request && request.correctSource === true
 			});
 			if (!validation.ok) {
 				var error = new Error("FlowScript block validation failed: " + name);
@@ -139,6 +144,7 @@
 				source: validation.source,
 				definition: validation.definition,
 				diagnostics: validation.diagnostics,
+				fixes: corrected.fixes,
 				warnings: flowScriptBlockAuthoringWarnings(name, functionCode, meta, validation.definition)
 			};
 		}

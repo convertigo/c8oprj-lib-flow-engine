@@ -2408,6 +2408,7 @@
 			ensureFlowScriptBlockFunction: ensureFlowScriptBlockFunction,
 			graphBlockCatalog: graphBlockCatalog,
 			flowScriptValidateRequest: flowScriptValidateRequest,
+			flowScriptCorrectSource: flowScriptCorrectSource,
 			flowScriptBlockCodeSource: flowScriptBlockCodeSource,
 			rhinoBlockCodeSource: rhinoBlockCodeSource,
 			sha256Hex: sha256Hex,
@@ -3593,6 +3594,10 @@
 		return flowScriptValidationService().validateDefinition(blocks, definition, flowScriptValidationEnv());
 	}
 
+	function flowScriptCorrectSource(blocks, code, request) {
+		return flowScriptParserService().correctSource(blocks, code, request, { blockCatalog: readOnlyBlockCatalog });
+	}
+
 	function flowScriptValidateRequest(blocks, request) {
 		return flowScriptValidationService().validateRequest(blocks, request, flowScriptValidationEnv());
 	}
@@ -3687,6 +3692,7 @@
 			renderFlowScript: renderFlowScript,
 			sha256Hex: sha256Hex,
 			flowScriptValidateRequest: flowScriptValidateRequest,
+			flowScriptCorrectSource: flowScriptCorrectSource,
 			readProjectFlowWorkingCode: readProjectFlowWorkingCode,
 			writeProjectFlowWorkingCode: writeProjectFlowWorkingCode,
 			discardProjectFlowWorkingCopy: discardProjectFlowWorkingCopy,

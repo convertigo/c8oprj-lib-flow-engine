@@ -286,6 +286,26 @@
 		return sha256Hex(code);
 	}
 
+	function flowCodeCorrect(blocks, request, code) {
+		try {
+			return env.flowScriptCorrectSource ? env.flowScriptCorrectSource(blocks, code, request) : { code: code, fixes: [] };
+		} catch (error) {
+			return { code: code, fixes: [], error: flowCodeError(String(error.code || "FLOWSCRIPT_PARSE_FAILED"),
+				String(error.message || error), error.hint || "Fix the source and retry.", flowCodeExceptionDetails(error, request)) };
+		}
+	}
+
+	function flowCodeCorrections(out, corrected) {
+		if (corrected.fixes && corrected.fixes.length) {
+			out.fixes = corrected.fixes;
+			out.code = corrected.code;
+			out.warnings = (out.warnings || []).concat(corrected.fixes.map(function (fix) {
+				return { severity: "warning", code: fix.code, line: fix.line, message: "Automatic correction applied; inspect fixes and the returned source." };
+			}));
+		}
+		return out;
+	}
+
 	function flowCodeValidate(blocks, request, name, code) {
 		try {
 			var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
@@ -536,7 +556,8 @@
 				warnings: []
 			};
 		}
-		var normalized = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
+		var corrected = flowCodeCorrect(blocks, request, normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code)));
+		var normalized = corrected.code;
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
 		// No loaded Flow owns a new (or file only) Flow yet: the project's FlowEngine keeps its working copy, for
 		// every runtime and the Studio. The mirror only serves a standalone runtime, without a loaded project; and
@@ -555,7 +576,7 @@
 			};
 		}
 		var revision = written && written.revision ? written.revision : memoryDrafts[draftKey].revision;
-		var checked = flowCodeValidate(blocks, request, name, normalized);
+		var checked = corrected.error ? { error: corrected.error, validation: null, warnings: [] } : flowCodeValidate(blocks, Object.assign({}, request, { authoringCorrections: true }), name, normalized);
 		var out = {
 			ok: checked.error === null && checked.validation && checked.validation.ok === true,
 			qname: flowCodeQName(request, name),
@@ -578,7 +599,7 @@
 			out.error = checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
 				"Patch the working copy and retry flow-code-check.", flowCodeDiagnosticReport(checked.validation.diagnostics, request));
 		}
-		return out;
+		return flowCodeCorrections(out, corrected);
 	}
 
 	function flowCodeSetRequest(blocks, request) {
@@ -618,7 +639,10 @@
 				warnings: []
 			};
 		}
-		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { name: name, code: code }));
+		var corrected = flowCodeCorrect(blocks, request, code);
+		if (corrected.error) return { ok: false, name: name, error: corrected.error, warnings: [] };
+		code = corrected.code;
+		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { name: name, code: code, authoringCorrections: true }));
 		var warnings = flowCodeDiagnostics(validation.diagnostics, "warning");
 		if (!validation.ok) {
 			return {
@@ -639,7 +663,7 @@
 			? saved.codeRevision
 			: flowCodeRevisionForSource(blocks, name, validation.source, request);
 		var inputSync = flowCodeSyncInputs(name, validation, request);
-		return flowCodeAddInputReport({
+		return flowCodeCorrections(flowCodeAddInputReport({
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
@@ -652,7 +676,7 @@
 			oldRevision: current ? current.revision : null,
 			inputSync: inputSync,
 			warnings: warnings
-		}, validation);
+		}, validation), corrected);
 	}
 
 	function flowCodePatchRequest(blocks, request) {
@@ -1090,6 +1114,9 @@
 			};
 		}
 		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
+		var suppliedCode = request.code !== undefined && request.code !== null;
+		var selectedRevision = !expectedRevision && !suppliedCode;
+		if (selectedRevision) expectedRevision = current.revision;
 		if (!expectedRevision) {
 			return {
 				ok: false,
@@ -1116,7 +1143,8 @@
 				warnings: []
 			};
 		}
-		var checked = flowCodeValidate(blocks, request, name, current.code);
+		var corrected = flowCodeCorrect(blocks, request, current.code);
+		var checked = corrected.error ? { error: corrected.error, validation: null, warnings: [] } : flowCodeValidate(blocks, Object.assign({}, request, { authoringCorrections: true }), name, corrected.code);
 		if (checked.error || !checked.validation || !checked.validation.ok) {
 			return {
 				ok: false,
@@ -1129,8 +1157,16 @@
 				warnings: checked.warnings
 			};
 		}
+		if (!suppliedCode) {
+			var latest = flowCodeDraftRead(name, request);
+			if (!latest || latest.revision !== current.revision) return {
+				ok: false, name: name, revision: latest ? latest.revision : "", draft: true,
+				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH", "Working copy changed during validation.", "Read/check the current revision before promoting."), warnings: []
+			};
+		}
+		if (selectedRevision) corrected.fixes.push({ code: "FLOW_CODE_CHECKED_REVISION_SELECTED", line: 0, before: "", after: String(current.revision) });
 		var saved = setProjectFlow(blocks, name, checked.validation.source, Object.assign({}, request, {
-			code: current.code,
+			code: corrected.code,
 			draft: false,
 			official: true,
 			promote: true,
@@ -1144,7 +1180,7 @@
 		if (discardLoadedFlowSourceDraft) {
 			discardLoadedFlowSourceDraft(name, request);
 		}
-		return flowCodeAddInputReport({
+		return flowCodeCorrections(flowCodeAddInputReport({
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
@@ -1160,7 +1196,7 @@
 			inputSync: inputSync,
 			warnings: checked.warnings,
 			saved: saved
-		}, checked.validation);
+		}, checked.validation), corrected);
 	}
 
 		return {

@@ -26,6 +26,300 @@
 			});
 	}
 
+	// Authoring only. Never execute submitted code, guess a block name, or move
+	// an operation across a conditional/per-item boundary. The ordinary compiler
+	// remains the authority for every transformed source.
+	function correctSource(blocks, source, request, env) {
+		source = String(source || "");
+		request = request || {};
+		var fixes = [], catalogs = Object.create(null), original = source;
+		function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
+		function start(node) { return Number(node.getAbsolutePosition()); }
+		function end(node) { return start(node) + Number(node.getLength()); }
+		function text(node) { return source.substring(start(node), end(node)); }
+		function list(value) {
+			var out = [];
+			for (var i = 0; value && i < value.size(); i++) out.push(value.get(i));
+			return out;
+		}
+		function visit(root, callback) {
+			root.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (node) {
+				return callback(node) !== false;
+			} }));
+		}
+		function line(offset) { return source.substring(0, offset).split(/\r\n|\r|\n/).length; }
+		function fix(code, offset, before, after) { fixes.push({ code: code, line: line(offset), before: before, after: after }); }
+		function fail(node, message) {
+			var error = new Error(message + " at line " + line(start(node)) + ".");
+			error.code = "FLOWSCRIPT_BLOCK_CALL_UNSAFE_CONTEXT";
+			error.hint = "Assign the block explicitly inside the intended branch or iterator, preserving evaluation order.";
+			throw error;
+		}
+		function parse() {
+			// `if({...})` is a Flow block call, not a JS if statement. Mask only
+			// that token, outside comments/strings, without changing offsets.
+			var masked = source.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|\bif\s*(?=\(\s*\{)/g,
+				function (token) { return /^if\b/.test(token) ? "i_" + token.substring(2) : token; });
+			try {
+				var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+				options.setLanguageVersion(200);
+				options.setRecordingComments(true);
+				options.setErrorReporter(new Packages.org.mozilla.javascript.ErrorReporter({
+					warning: function () {}, error: function (message) { throw new Error(String(message)); },
+					runtimeError: function (message) { return new Packages.org.mozilla.javascript.EvaluatorException(String(message)); }
+				}));
+				return new Packages.org.mozilla.javascript.Parser(options).parse(masked, "flow-source-corrections", 1);
+			} catch (_notJavaScript) {
+				// Other supported DSL spellings keep their existing diagnostics;
+				// an uncertain parse is never a license to rewrite raw text.
+				return null;
+			}
+		}
+		function catalog(name) {
+			if (!Object.prototype.hasOwnProperty.call(catalogs, name)) catalogs[name] = env.blockCatalog(blocks[name]) || {};
+			return catalogs[name];
+		}
+		function blockName(call) {
+			if (kind(call) !== "FunctionCall") return "";
+			var name = text(call.getTarget()).replace(/\s/g, "");
+			if (/^(input|local|current|result|request|config|trace)(\.|$)/.test(name)) return "";
+			return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(name) && blocks[name] ? name : "";
+		}
+		function jsonType(type) {
+			return type === "integer" ? "number" : /^(string|number|boolean|array|object)$/.test(type) ? type
+				: type === "requestable" ? "string" : "any";
+		}
+		function valueType(node) {
+			var k = kind(node);
+			if (k === "StringLiteral") return "string";
+			if (k === "NumberLiteral" || k === "UnaryExpression" && /^(\+|-)/.test(text(node))) return "number";
+			if (k === "KeywordLiteral") return /^(true|false)$/.test(text(node)) ? "boolean" : "any";
+			if (k === "ObjectLiteral") return "object";
+			if (k === "ArrayLiteral") return "array";
+			var name = blockName(node), out = name && catalog(name).outputs;
+			return out ? jsonType((out.out || out).type) : "any";
+		}
+		function properties(name) {
+			var descriptor = catalog(name), props = descriptor.props || {};
+			return Object.keys(props).filter(function (key) {
+				var prop = props[key] || {};
+				return !prop.hidden && !/^\$\$/.test(key) && !(prop.kind === "path" && prop.mode === "write");
+			});
+		}
+		function positionalKeys(name, args) {
+			var props = catalog(name).props || {}, keys = properties(name), solutions = [];
+			if (!args.length) return [];
+			if (args.length > keys.length || args.length > 6 || keys.length > 12 || catalog(name).dynamicProperties) return null;
+			function search(index, chosen) {
+				if (solutions.length > 1) return;
+				if (index === args.length) { solutions.push(chosen.slice()); return; }
+				var actual = valueType(args[index]);
+				keys.forEach(function (key) {
+					var expected = jsonType(props[key].type);
+					if (chosen.indexOf(key) < 0 && (actual === "any" || expected === "any" || actual === expected)) {
+						chosen.push(key); search(index + 1, chosen); chosen.pop();
+					}
+				});
+			}
+			search(0, []);
+			return solutions.length === 1 ? solutions[0] : null;
+		}
+		// Innermost first; reparsing keeps exact ranges when a nested positional
+		// call and its parent both need named arguments. The bound is explicit.
+		var ast = parse();
+		if (!ast) return { code: source, fixes: [] };
+		for (var pass = 0; pass < 128; pass++) {
+			var calls = [];
+			visit(ast, function (node) { if (blockName(node)) calls.push(node); });
+			var changed = false;
+			calls.sort(function (a, b) { return start(b) - start(a); });
+			for (var c = 0; c < calls.length; c++) {
+				var call = calls[c], name = blockName(call), args = list(call.getArguments());
+				if (args.length === 1 && kind(args[0]) === "ObjectLiteral") continue;
+				var keys = positionalKeys(name, args);
+				if (keys === null) continue; // The compiler reports the signature, with no guessed order.
+				var before = text(call), after = before;
+				// Insert names around the existing arguments, keeping comments,
+				// whitespace and trailing commas exactly where the author put them.
+				for (var argumentIndex = args.length - 1; argumentIndex >= 0; argumentIndex--) {
+					var argumentOffset = start(args[argumentIndex]) - start(call);
+					after = after.substring(0, argumentOffset) + JSON.stringify(keys[argumentIndex]) + ": " + after.substring(argumentOffset);
+				}
+				var open = end(call.getTarget());
+				while (/\s/.test(source.charAt(open)) || source.substr(open, 2) === "/*" || source.substr(open, 2) === "//") {
+					if (source.substr(open, 2) === "/*") open = source.indexOf("*/", open + 2) + 2;
+					else if (source.substr(open, 2) === "//") { while (open < source.length && !/[\r\n]/.test(source.charAt(open))) open++; }
+					else open++;
+				}
+				open -= start(call);
+				after = after.substring(0, after.length - 1) + "})";
+				after = after.substring(0, open + 1) + "{" + after.substring(open + 1);
+				fix("FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED", start(call), before, after);
+				source = source.substring(0, start(call)) + after + source.substring(end(call));
+				changed = true; break;
+			}
+			if (!changed) break;
+			ast = parse();
+			if (!ast) return { code: original, fixes: [] };
+		}
+		var statements = [], edits = [], names = Object.create(null), sequence = 0;
+		visit(ast, function (node) {
+			if (kind(node) === "Name") names[String(node.getIdentifier())] = true;
+			if (/^(ExpressionStatement|ReturnStatement|VariableDeclaration)$/.test(kind(node))) statements.push(node);
+		});
+		function temporary() {
+			var name;
+			do { name = "autoBlock" + (++sequence); } while (names[name] || source.indexOf(name) >= 0);
+			names[name] = true; return "local." + name;
+		}
+		statements.forEach(function (statement) {
+			if (kind(statement.getParent()) !== "Block" && kind(statement.getParent()) !== "Scope") return;
+			var calls = [], direct = null, expression = kind(statement) === "ExpressionStatement" ? statement.getExpression() : null;
+			if (kind(expression) === "Assignment") direct = expression.getRight();
+			if (kind(expression) === "FunctionCall") direct = expression;
+			if (kind(statement) === "VariableDeclaration") {
+				var declarations = list(statement.getVariables());
+				if (declarations.length === 1) direct = declarations[0].getInitializer();
+			}
+			visit(statement, function (node) {
+				if (kind(node) === "FunctionNode") return false;
+				if (blockName(node) && node !== direct) calls.push(node);
+			});
+			calls = calls.filter(function (call) {
+				for (var parent = call.getParent(); parent && parent !== statement; parent = parent.getParent()) {
+					if (kind(parent) !== "ObjectProperty" || kind(parent.getParent().getParent()) !== "FunctionCall") continue;
+					var outer = parent.getParent().getParent(), name = blockName(outer);
+					var key = text(parent.getKey()).replace(/^["']|["']$/g, "");
+					var prop = name && (catalog(name).props || {})[key];
+					// Existing inline list projections already execute per element.
+					// Other lazy contexts keep the compiler's explicit diagnostic.
+					if (prop && prop.current) return false;
+				}
+				return true;
+			});
+			if (!calls.length) return;
+			var replacements = [], prefix = [];
+			function replaced(node) {
+				var value = text(node), offset = start(node);
+				replacements.filter(function (replacement) { return replacement.start >= offset && replacement.end <= end(node); })
+					.sort(function (a, b) { return b.start - a.start; }).forEach(function (replacement) {
+						value = value.substring(0, replacement.start - offset) + replacement.value + value.substring(replacement.end - offset);
+					});
+				return value;
+			}
+			calls.sort(function (a, b) { return end(a) - end(b) || start(b) - start(a); });
+			calls.forEach(function (call) {
+				var parent = call.getParent();
+				while (parent && parent !== statement) {
+					var k = kind(parent);
+					if (k === "ConditionalExpression" || k === "InfixExpression" && /^(\&\&|\|\||\?\?)$/.test(String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(parent.getOperator())))) {
+						fail(call, "A block in a conditional expression cannot be lifted unconditionally");
+					}
+					if (k === "FunctionCall" && !blockName(parent)) fail(call, "A block nested in an expression call requires an explicit intermediate");
+					if (k === "ObjectProperty" && kind(parent.getParent().getParent()) === "FunctionCall") {
+						var outer = parent.getParent().getParent(), outerName = blockName(outer), key = text(parent.getKey()).replace(/^["']|["']$/g, "");
+						var prop = outerName && (catalog(outerName).props || {})[key];
+						if (prop && (prop.current || prop.kind === "literal" || prop.kind === "text" || prop.kind === "path")) fail(call, "A block inside a lazy or literal property cannot be lifted");
+						if (list(parent.getParent().getElements()).some(function (field) { return text(field.getKey()).replace(/^["']|["']$/g, "") === "$$disabled"; })) fail(call, "A nested block cannot be moved ahead of its parent's disabled guard");
+					}
+					parent = parent.getParent();
+				}
+				// Earlier reads may observe values changed by the lifted block.
+				// Refuse rather than silently changing their evaluation order.
+				visit(statement, function (node) {
+					if (kind(node) === "FunctionNode") return false;
+					if (start(node) >= start(call)) return false;
+					if (expression && kind(expression) === "Assignment" && start(node) >= start(expression.getLeft()) && end(node) <= end(expression.getLeft())) return false;
+					if (replacements.some(function (replacement) { return start(node) >= replacement.start && end(node) <= replacement.end; })) return false;
+					if (kind(node) === "Name" && /^(input|local|current|result|request|config|trace)$/.test(String(node.getIdentifier()))) fail(call, "An earlier scope read could change if the block were lifted");
+				});
+				var destination = temporary();
+				prefix.push(destination + " = " + replaced(call));
+				// Keep only the maximal replacement span, after its children have
+				// been used to build the intermediate node's arguments.
+				replacements = replacements.filter(function (replacement) { return replacement.start < start(call) || replacement.end > end(call); });
+				replacements.push({ start: start(call), end: end(call), value: destination });
+			});
+			var before = text(statement), indent = source.substring(0, start(statement)).split(/\r\n|\r|\n/).pop().match(/^\s*/)[0];
+			var after = prefix.join("\n" + indent) + "\n" + indent + replaced(statement);
+			fix("FLOWSCRIPT_BLOCK_CALL_LIFTED", start(statement), before, after);
+			edits.push({ start: start(statement), end: end(statement), value: after });
+		});
+		edits.sort(function (a, b) { return b.start - a.start; }).forEach(function (edit) {
+			source = source.substring(0, edit.start) + edit.value + source.substring(edit.end);
+		});
+		ast = parse();
+		if (!ast) return { code: original, fixes: [] };
+		// Infer only constraints actually present in contracts or member reads.
+		// Unconstrained/conflicting reads use any: adding a declaration must not
+		// introduce a guessed coercion, a required flag or a default value.
+		var inputSchemas = Object.create(null), inputItems = Object.create(null), header = null, headerName = request.blockMode ? "_meta" : "_flow";
+		function propertyName(node) { return kind(node) === "Name" ? String(node.getIdentifier()) : kind(node) === "StringLiteral" ? String(node.getValue()) : ""; }
+		function field(object, name) {
+			if (kind(object) !== "ObjectLiteral") return null;
+			return list(object.getElements()).filter(function (entry) { return propertyName(entry.getKey()) === name; })[0] || null;
+		}
+		function constrain(name, type) {
+			var previous = inputSchemas[name];
+			if (!previous) inputSchemas[name] = { type: type };
+			else if (type !== "any" && previous.type !== type) {
+				if (previous.type === "any" && !previous.conflict) previous.type = type;
+				else { previous.type = "any"; previous.conflict = true; }
+			}
+		}
+		visit(ast, function (node) {
+			if (kind(node) === "VariableInitializer" && kind(node.getTarget()) === "Name" && String(node.getTarget().getIdentifier()) === headerName && kind(node.getParent().getParent()) === "AstRoot") header = node.getInitializer();
+			var k = kind(node), input = k === "PropertyGet" ? node.getTarget() : k === "ElementGet" ? node.getTarget() : null;
+			if (!input || kind(input) !== "Name" || String(input.getIdentifier()) !== "input") return;
+			var name = k === "PropertyGet" ? String(node.getProperty().getIdentifier()) : propertyName(node.getElement());
+			if (!name) return;
+			var type = "any", parent = node.getParent();
+			if (kind(parent) === "PropertyGet" && parent.getTarget() === node && String(parent.getProperty().getIdentifier()) !== "length" && !(kind(parent.getParent()) === "FunctionCall" && parent.getParent().getTarget() === parent)) type = "object";
+			if (kind(parent) === "ElementGet" && parent.getTarget() === node) type = kind(parent.getElement()) === "NumberLiteral" ? "array" : "object";
+			if (kind(parent) === "ObjectProperty" && parent.getValue() === node) {
+				var outer = parent.getParent().getParent(), nameOfBlock = blockName(outer), descriptor = nameOfBlock && (catalog(nameOfBlock).props || {})[propertyName(parent.getKey())];
+				if (descriptor) type = descriptor.type === "integer" ? "integer" : jsonType(descriptor.type);
+				if (descriptor && descriptor.type === "array") {
+					var itemTypes = [];
+					list(parent.getParent().getElements()).forEach(function (property) {
+						var sibling = (catalog(nameOfBlock).props || {})[propertyName(property.getKey())];
+						if (!sibling || !sibling.current || sibling.sourceProperty !== propertyName(parent.getKey())) return;
+						visit(property.getValue(), function (read) {
+							if (kind(read) === "FunctionNode") return false;
+							if (kind(read) !== "PropertyGet" || kind(read.getTarget()) !== "Name" || String(read.getTarget().getIdentifier()) !== "current") return;
+							if (kind(read.getParent()) === "FunctionCall" && read.getParent().getTarget() === read) return;
+							if (String(read.getProperty().getIdentifier()) !== "length") itemTypes.push("object");
+						});
+					});
+					if (itemTypes.length) inputItems[name] = {type:"object"};
+				}
+			}
+			constrain(name, type);
+		});
+		var inputsField = field(header, request.blockMode ? "properties" : "inputs") || field(header, request.blockMode ? "props" : "input");
+		var inputs = inputsField && inputsField.getValue(), missing = Object.keys(inputSchemas).filter(function (name) { return !field(inputs, name); }).sort();
+		if (missing.length && (!header || kind(header) === "ObjectLiteral") && (!inputs || kind(inputs) === "ObjectLiteral")) {
+			var members = missing.map(function (name) {
+				var schema = { type: inputSchemas[name].type };
+				if (schema.type === "array") schema.items = inputItems[name] || { type: "any" };
+				if (request.blockMode) schema.kind = "value";
+				return JSON.stringify(name) + ": " + JSON.stringify(schema);
+			});
+			var offset, addition;
+			function append(object, value) {
+				var entries = list(object.getElements());
+				offset = entries.length ? end(entries[entries.length - 1]) : start(object) + 1;
+				addition = (entries.length ? ", " : " ") + value;
+			}
+			if (inputs) append(inputs, members.join(", "));
+			else if (header) append(header, JSON.stringify(request.blockMode ? "properties" : "inputs") + ": { " + members.join(", ") + " }");
+			else { offset = 0; addition = "const " + headerName + " = { " + JSON.stringify(request.blockMode ? "properties" : "inputs") + ": { " + members.join(", ") + " } }\n"; }
+			fix(request.blockMode ? "FLOW_BLOCK_INPUT_DECLARED" : "FLOWSCRIPT_INPUT_DECLARED", offset, "", addition);
+			source = source.substring(0, offset) + addition + source.substring(offset);
+		}
+		return { code: source, fixes: fixes };
+	}
+
 	function create(env) {
 		function flowScriptDefaultLiteral(value) {
 			if (value === undefined) {
@@ -502,7 +796,10 @@
 		}
 	
 		function parseFlowScriptObjectLiteral(text, lineNumber, staticMetadata) {
-			text = String(text || "").trim();
+			// Argument corrections preserve comments. Parse them as trivia, not
+			// as part of a property name; never touch quoted business text.
+			text = String(text || "").replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g,
+				function (token) { return token.charAt(0) === "/" ? token.replace(/[^\r\n]/g, " ") : token; }).trim();
 			if (!isFlowScriptObjectLiteral(text)) {
 				env.raise("FLOWSCRIPT_INVALID_OBJECT", "Expected object literal at line " + lineNumber + ": " + text);
 			}
@@ -2303,6 +2600,7 @@
 	}
 
 	return {
+		correctSource: correctSource,
 		parseFlowScriptArgs: function (text, lineNumber, env) {
 			return create(env).parseFlowScriptArgs(text, lineNumber);
 		},
