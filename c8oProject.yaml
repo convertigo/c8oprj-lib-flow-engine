@@ -1,9 +1,11 @@
 ↑convertigo: 8.5.0.m006
 ↓lib_flow_engine [core.Project]: 
   comment: Experimental runtime for Convertigo Flow objects, including portable calendar/date blocks for Rhino and the browser.
-  version: 0.1.91
+  version: 0.1.92
   ↓QualifCoreData [flow.Flow]: 🗏 sequences/QualifCoreData.yaml
   ↓QualifWeatherInline [flow.Flow]: 🗏 sequences/QualifWeatherInline.yaml
+  ↓sample_AsyncJobPoll [flow.Flow]: 🗏 sequences/sample_AsyncJobPoll.yaml
+  ↓sample_CsvImport [flow.Flow]: 🗏 sequences/sample_CsvImport.yaml
   ↓sample_DatePca [flow.Flow]: 🗏 sequences/sample_DatePca.yaml
   ↓sample_json_object_output [flow.Flow]: 🗏 sequences/sample_json_object_output.yaml
   ↓sample_list_filter_sort_map [flow.Flow]: 🗏 sequences/sample_list_filter_sort_map.yaml

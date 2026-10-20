@@ -152,39 +152,8 @@
 		return out;
 	}
 
-	function flowCodeInputVariablesFrom(value) {
-		var variables = {};
-		function scanText(text) {
-			text = String(text || "");
-			var re = /\binput(?:\.([A-Za-z_$][\w$]*)|\[\s*["']([^"']+)["']\s*\])/g;
-			var match;
-			while ((match = re.exec(text)) !== null) {
-				var name = String(match[1] || match[2] || "").trim();
-				if (name) {
-					variables[name] = true;
-				}
-			}
-		}
-		function walk(any) {
-			if (any === null || any === undefined) {
-				return;
-			}
-			if (typeof any === "string") {
-				scanText(any);
-				return;
-			}
-			if (Object.prototype.toString.call(any) === "[object Array]") {
-				any.forEach(walk);
-				return;
-			}
-			if (typeof any === "object") {
-				Object.keys(any).forEach(function (key) {
-					walk(any[key]);
-				});
-			}
-		}
-		walk(value);
-		return Object.keys(variables).sort();
+	function flowCodeInputVariablesFrom(definition) {
+		return env.inputVariablesFromDefinition ? env.inputVariablesFromDefinition(definition) : [];
 	}
 
 	function flowCodeFlowMetaFrom(definition) {
@@ -208,7 +177,9 @@
 	function flowCodeAddInputReport(out, validation) {
 		var definition = validation && validation.definition || {};
 		var inputDefinitions = flowCodeInputDefinitionsFrom(definition);
-		var inputVariables = flowCodeInputVariablesFrom(definition);
+		var inputVariables = (validation && validation.inputVariables || []).slice();
+		var metadata = flowCodeFlowMetaFrom(definition);
+		if (metadata.authenticatedContextRequired !== undefined) out.flowMetadata = { authenticatedContextRequired: metadata.authenticatedContextRequired };
 		Object.keys(inputDefinitions).forEach(function (name) {
 			if (inputVariables.indexOf(name) === -1) {
 				inputVariables.push(name);
@@ -233,10 +204,9 @@
 			return null;
 		}
 		var inputDefinitions = flowCodeInputDefinitionsFrom(validation.definition);
-		if (!Object.keys(inputDefinitions).length) {
-			return null;
-		}
-		return syncProjectFlowInputs(name, inputDefinitions, request || {});
+		var metadata = flowCodeFlowMetaFrom(validation.definition);
+		if (!Object.keys(inputDefinitions).length && metadata.authenticatedContextRequired === undefined) return null;
+		return syncProjectFlowInputs(name, inputDefinitions, Object.assign({}, request || {}, {flowMetadata:metadata}));
 	}
 
 	function flowCodeParseDiagnostics(error) {

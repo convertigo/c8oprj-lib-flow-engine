@@ -128,6 +128,20 @@
 		// call and its parent both need named arguments. The bound is explicit.
 		var ast = parse();
 		if (!ast) return { code: source, fixes: [] };
+		// Diagnose an unknown vocabulary item before examining nested-call safety.
+		// Scope methods and ordinary expression functions are not block names.
+		visit(ast, function (node) {
+			if (kind(node) !== "FunctionCall") return;
+			var name = text(node.getTarget()).replace(/\s/g, "");
+			if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) || /^(input|local|current|result|request|config|trace)\./.test(name) || blockName(node)) return;
+			var candidates = env.blockCandidates ? env.blockCandidates(blocks, name, 5) : [];
+			var error = new Error("Unknown Flow block: " + name + " at line " + line(start(node)) + ".");
+			error.code = "UNKNOWN_BLOCK";
+			error.hint = "Inspect the suggested blocks; do not substitute one unless its contract matches the intended behavior.";
+			error.details = [{severity:"error", code:"UNKNOWN_BLOCK", line:line(start(node)), block:name, message:error.message,
+				candidates:candidates, candidateDecision:env.blockCandidateDecision ? env.blockCandidateDecision(candidates) : {recommendation:"mock"}}];
+			throw error;
+		});
 		for (var pass = 0; pass < 128; pass++) {
 			var calls = [];
 			visit(ast, function (node) { if (blockName(node)) calls.push(node); });

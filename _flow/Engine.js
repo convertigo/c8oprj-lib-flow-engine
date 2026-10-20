@@ -2873,6 +2873,22 @@
 		var RequestableMultiValuedVariable = Packages.com.twinsoft.convertigo.beans.variables.RequestableMultiValuedVariable;
 		var created = [];
 		var updated = [];
+		var metadataUpdated = [];
+		var metadata = args && args.flowMetadata || {};
+		// Validate the complete native contract before changing any bean.
+		if (metadata.authenticatedContextRequired !== undefined && typeof metadata.authenticatedContextRequired !== "boolean") raise("FLOW_AUTHENTICATION_INVALID", "_flow.authenticatedContextRequired must be a boolean.");
+		Object.keys(inputDefinitions).forEach(function (key) {
+			var spec = inputDefinitions[key] || {}, visibility = spec.visibility;
+			if (spec.isFileUpload !== undefined && typeof spec.isFileUpload !== "boolean") raise("FLOW_INPUT_UPLOAD_INVALID", "input." + key + ".isFileUpload must be a boolean.");
+			if (visibility !== undefined && (typeof visibility !== "number" || !isFinite(visibility) || Math.floor(visibility) !== visibility || visibility < -1 || visibility > 15)) raise("FLOW_INPUT_VISIBILITY_INVALID", "input." + key + ".visibility must be -1 or an integer bitmask from 0 to 15.");
+		});
+		if (metadata.authenticatedContextRequired !== undefined) {
+			if (typeof metadata.authenticatedContextRequired !== "boolean") raise("FLOW_AUTHENTICATION_INVALID", "_flow.authenticatedContextRequired must be a boolean.");
+			if (Boolean(flow.getAuthenticatedContextRequired()) !== metadata.authenticatedContextRequired) {
+				flow.setAuthenticatedContextRequired(metadata.authenticatedContextRequired);
+				metadataUpdated.push("authenticatedContextRequired");
+			}
+		}
 		function sameValue(left, right) {
 			if (left === right) {
 				return true;
@@ -2978,6 +2994,14 @@
 			changed = setDefaultIfChanged(variable, flowInputDefaultValue(definition.default,
 				variable instanceof RequestableMultiValuedVariable)) || changed;
 			changed = setBooleanIfChanged(variable, "isRequired", "setRequired", definition.required) || changed;
+			changed = setBooleanIfChanged(variable, "getIsFileUpload", "setIsFileUpload", definition.isFileUpload) || changed;
+			if (definition.visibility !== undefined) {
+				var visibility = definition.visibility;
+				if (typeof visibility !== "number" || !isFinite(visibility) || Math.floor(visibility) !== visibility || visibility < -1 || visibility > 15) {
+					raise("FLOW_INPUT_VISIBILITY_INVALID", "input." + key + ".visibility must be -1 or an integer bitmask from 0 to 15.");
+				}
+				if (Number(variable.getVisibility()) !== visibility) { variable.setVisibility(visibility); changed = true; }
+			}
 			if (variable.setSchemaType) {
 				changed = setStringIfChanged(variable, "getSchemaType", "setSchemaType", flowInputSchemaType(type)) || changed;
 			}
@@ -2988,13 +3012,14 @@
 				updated.push(key);
 			}
 		});
-		if (created.length || updated.length) {
+		if (created.length || updated.length || metadataUpdated.length) {
 			flow.changed();
 		}
 		return {
 			synced: true,
 			created: created,
 			updated: updated,
+			metadataUpdated: metadataUpdated,
 			projectName: lookup.projectName || "",
 			flowName: lookup.flowName || String(name || "")
 		};
@@ -3059,9 +3084,10 @@
 		if (!declaredMetadata && !Object.keys(inputDefinitions).length) {
 			var definition = parseSource(sourceForFlowRequest(request, blocks || loadBlocks()));
 			inputDefinitions = flowInputDefinitionsFromDefinition(definition);
+			flowMetadata = definition.flow || definition._flow || {};
 		}
-		var inputSync = Object.keys(inputDefinitions).length
-			? syncProjectFlowInputs(name, inputDefinitions, request)
+		var inputSync = Object.keys(inputDefinitions).length || flowMetadata && flowMetadata.authenticatedContextRequired !== undefined
+			? syncProjectFlowInputs(name, inputDefinitions, Object.assign({}, request, { flowMetadata: flowMetadata }))
 			: { synced: false, created: [], updated: [] };
 		var response = {
 			ok: true,
@@ -3070,7 +3096,8 @@
 			projectDir: String(projectDir() || ""),
 			metadataOnly: declaredMetadata,
 			inputDefinitions: inputDefinitions,
-			inputSync: inputSync
+			inputSync: inputSync,
+			flowMetadata: flowMetadata && flowMetadata.authenticatedContextRequired !== undefined ? { authenticatedContextRequired: flowMetadata.authenticatedContextRequired } : {}
 		};
 		// Only a declared accessibility is sent: Java reads a JSON null as a null text.
 		var accessibility = flowAccessibilityFromMetadata(flowMetadata);
@@ -3562,6 +3589,7 @@
 
 	function flowScriptValidationEnv() {
 		return {
+			inputExpressionTokens: function (text) { return expressionUtils().tokenize(text, expressionUtilsEnv()); },
 			templateSyntax: templateSyntax(),
 			typeConversion: loadEngineModule("type-conversion.js"),
 			normalizeTree: normalizeTree,
@@ -3595,7 +3623,7 @@
 	}
 
 	function flowScriptCorrectSource(blocks, code, request) {
-		return flowScriptParserService().correctSource(blocks, code, request, { blockCatalog: readOnlyBlockCatalog });
+		return flowScriptParserService().correctSource(blocks, code, request, { blockCatalog: readOnlyBlockCatalog, blockCandidates: flowScriptBlockCandidates, blockCandidateDecision: flowScriptBlockCandidateDecision });
 	}
 
 	function flowScriptValidateRequest(blocks, request) {
@@ -3693,6 +3721,7 @@
 			sha256Hex: sha256Hex,
 			flowScriptValidateRequest: flowScriptValidateRequest,
 			flowScriptCorrectSource: flowScriptCorrectSource,
+			inputVariablesFromDefinition: function (definition) { return flowScriptValidationService().inputVariablesFromDefinition(loadBlocks(), definition, flowScriptValidationEnv()); },
 			readProjectFlowWorkingCode: readProjectFlowWorkingCode,
 			writeProjectFlowWorkingCode: writeProjectFlowWorkingCode,
 			discardProjectFlowWorkingCopy: discardProjectFlowWorkingCopy,

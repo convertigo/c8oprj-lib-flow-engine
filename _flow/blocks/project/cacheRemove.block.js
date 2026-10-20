@@ -1,0 +1,50 @@
+const _meta = {
+  "sourceVersion": 2,
+  "version": 1,
+  "description": "Invalidates one application cache key of the current Convertigo project, including legacy context.project.get/set caches. Does not clear response caches or the Flow engine catalog.",
+  "icon": "mdi:puzzle-outline",
+  "private": false,
+  "properties": {
+    "key": {
+      "type": "string",
+      "kind": "value",
+      "description": "Exact application cache key (1..255 characters), not a property path.",
+    },
+  },
+  "outputs": {
+    "out": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+        },
+        "removed": {
+          "type": "boolean",
+        },
+      },
+    },
+  },
+  "runtime": "rhino",
+  "targets": [
+    "backend",
+  ],
+  "summary": "invalidate project cache {{key}}",
+  "tags": [
+    "project",
+    "cache",
+    "invalidate",
+    "clear",
+    "legacy",
+  ],
+}
+
+// Use Rhino 1.9.0 features: https://mozilla.github.io/rhino/compat/engines.html
+(function(){return {run:function(ctx,node){
+ var key=String(ctx.template(ctx.props(node).key)||'');
+ if(!key||key.length>255||/[\x00-\x1f\x7f]/.test(key))ctx.raise('PROJECT_CACHE_KEY_INVALID','project.cacheRemove needs an application key of 1..255 characters, without controls.');
+ if(!ctx.canContinue())ctx.raise('FLOW_EXECUTION_CANCELLED','Project cache invalidation cancelled.');
+ var project=ctx.convertigoContext().project;
+ if(!project||typeof project.get!=='function'||typeof project.set!=='function')ctx.raise('PROJECT_CACHE_UNAVAILABLE','A live Convertigo project application cache is required.');
+ var previous=project.get(key);project.set(key,null);
+ return {key:key,removed:previous!==null&&previous!==undefined};
+}};}())

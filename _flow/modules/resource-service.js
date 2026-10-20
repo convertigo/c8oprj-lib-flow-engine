@@ -72,6 +72,8 @@
 			return [];
 		}
 		var out = [];
+		var ignoreFile = new env.File(base, ".httpignore");
+		if (isFile(ignoreFile, env)) out.push({path:".httpignore",file:ignoreFile});
 		var engineConfig = new env.File(base, env.sourcePaths.path("engine.yaml"));
 		if (isFile(engineConfig, env)) {
 			out.push({
@@ -446,11 +448,12 @@
 		// an empty file (--- /dev/null); the other resources have their own creation APIs (blocks, fragments, frontends).
 		var entry = projectResourceFile(request.path, false, env);
 		var created = !fromWorkingCopy && !isFile(entry.file, env);
-		if (created && ["javaSource", "jarsDescriptor", "projectDocument", "publicResource", "flowResource", "frontendBlock"].indexOf(env.resourceKind(entry.path)) === -1) {
+		if (created && ["javaSource", "jarsDescriptor", "projectDocument", "publicResource", "flowResource", "frontendBlock", "httpIgnore"].indexOf(env.resourceKind(entry.path)) === -1) {
 			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + entry.path);
 		}
 		var oldContent = fromWorkingCopy ? String(request.baseContent) : created ? "" : sourceForFile(entry.file, env);
 		var oldHash = env.sha256Hex(oldContent);
+		if (entry.path === ".httpignore" && !request.baseHash) env.raise("RESOURCE_BASE_HASH_REQUIRED", ".httpignore changes require the hash read by flow-resource-get (empty file hash for creation).");
 		if (fromWorkingCopy && request.dryRun !== true) {
 			env.raise("RESOURCE_WORKING_COPY_WRITE", "A working copy patch is only previewed; its owner stores the result.",
 				null, "Pass dryRun:true with baseContent.");
@@ -460,6 +463,13 @@
 				null, "Read the resource again and patch from the new hash.");
 		}
 		var applied = env.applyUnifiedPatchText(oldContent, request.patch || request.unifiedDiff || request.diff || "");
+		if (entry.path === ".httpignore") {
+			var content = String(applied.content), patterns = function (text) { return String(text).split(/\r?\n/).map(function (line) { return line.trim(); }).filter(function (line) { return line && line.charAt(0) !== "#"; }); };
+			var before = patterns(oldContent), after = patterns(content);
+			if (new java.lang.String(content).getBytes("UTF-8").length > 65536 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(content)) env.raise("RESOURCE_HTTPIGNORE_INVALID", ".httpignore must be bounded UTF-8 text (64 KiB), without control characters.");
+			if (after.indexOf("/" + env.sourcePaths.root + "/") < 0 && after.indexOf(env.sourcePaths.root + "/") < 0) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore must keep /" + env.sourcePaths.root + "/ private.");
+			if (before.some(function (line) { return after.indexOf(line) < 0; }) || after.some(function (line) { return line.charAt(0) === "!" && before.indexOf(line) < 0; })) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", "flow-resource-patch may add exclusions; removing existing rules or adding an unignore rule could expose private resources.");
+		}
 		var validation = request.validate === false
 			? { ok: true, skipped: true }
 			: validateResourceContent(entry.path, applied.content, env);
@@ -485,6 +495,7 @@
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
 		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
 		var entry = projectResourceFile(request.path, !fromWorkingCopy, env);
+		if (entry.path === ".httpignore") env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore cannot be deleted through this API.");
 		var oldContent = fromWorkingCopy ? String(request.baseContent) : sourceForFile(entry.file, env);
 		var oldHash = env.sha256Hex(oldContent);
 		if (fromWorkingCopy && request.dryRun !== true) {

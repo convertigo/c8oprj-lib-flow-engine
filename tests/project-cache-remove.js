@@ -1,0 +1,14 @@
+// F18: invalidate actual legacy-map values through the project store, never a fake success.
+var root=new java.io.File(arguments[0]),files=Packages.org.apache.commons.io.FileUtils,checks=0;
+function assert(v,m){checks++;if(!v)throw new Error(m);}
+var source=new java.io.File(root,'blocks/project/cacheRemove.block.js');assert(source.isFile(),'F18: application cache invalidation block must exist');
+var code=String(files.readFileToString(source,'UTF-8')),cache=eval(code.substring(code.indexOf('(function')));
+var map=new java.util.HashMap(),other=new java.util.HashMap(),legacy=new java.util.HashMap();legacy.put('table','id');map.put('table_id_cache',legacy);other.put('table_id_cache','other project');
+var ctx={props:function(n){return n;},template:function(v){return v;},canContinue:function(){return true;},convertigoContext:function(){return {project:{get:function(k){return map.get(k);},set:function(k,v){if(v===null)map.remove(k);else map.put(k,v);}}};},raise:function(code,message){var e=new Error(message);e.code=code;throw e;}};
+var removed=cache.run(ctx,{key:'table_id_cache'});assert(removed.removed&&!map.containsKey('table_id_cache'),'Removes a legacy Java Map');
+assert(String(other.get('table_id_cache'))==='other project','Invalidation is isolated to the current project');
+assert(!cache.run(ctx,{key:'table_id_cache'}).removed,'Idempotent absence is explicit');
+['','a\nkey',new Array(257).join('k')].forEach(function(key){var caught=false;try{cache.run(ctx,{key:key});}catch(e){caught=e.code==='PROJECT_CACHE_KEY_INVALID';}assert(caught,'Unsafe cache key refused');});
+ctx.canContinue=function(){return false;};map.put('keep','value');var cancelled=false;try{cache.run(ctx,{key:'keep'});}catch(e){cancelled=e.code==='FLOW_EXECUTION_CANCELLED';}assert(cancelled&&map.containsKey('keep'),'Cancellation precedes mutation');
+ctx.canContinue=function(){return true;};ctx.convertigoContext=function(){return {};};var unavailable=false;try{cache.run(ctx,{key:'key'});}catch(e){unavailable=e.code==='PROJECT_CACHE_UNAVAILABLE';}assert(unavailable,'No fake success without a native project cache');
+print('project-cache-remove OK ('+checks+' assertions)');

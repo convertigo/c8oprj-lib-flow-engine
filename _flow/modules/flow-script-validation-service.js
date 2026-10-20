@@ -209,51 +209,35 @@
 		return diagnostics;
 	}
 
-	function scanInputVariablesInValue(value, variables) {
-		if (value === null || value === undefined) {
-			return;
-		}
-		if (typeof value === "string") {
-			var re = /\binput(?:\.([A-Za-z_$][\w$]*)|\[\s*["']([^"']+)["']\s*\])/g;
-			var match;
-			while ((match = re.exec(value)) !== null) {
-				var name = String(match[1] || match[2] || "").trim();
-				if (name) {
-					variables[name] = true;
-				}
-			}
-			return;
-		}
-		if (Object.prototype.toString.call(value) === "[object Array]") {
-			value.forEach(function (item) {
-				scanInputVariablesInValue(item, variables);
-			});
-			return;
-		}
-		if (typeof value === "object") {
-			Object.keys(value).forEach(function (key) {
-				scanInputVariablesInValue(value[key], variables);
-			});
-		}
-	}
-
-	function scanInputVariablesInNodes(nodes, variables) {
-		(nodes || []).forEach(function (node) {
-			scanInputVariablesInValue(node && node.props || node, variables);
-			["nodes", "then", "else", "fields"].forEach(function (slot) {
-				if (Object.prototype.toString.call(node && node[slot]) === "[object Array]") {
-					scanInputVariablesInNodes(node[slot], variables);
-				}
-			});
-		});
-	}
-
-	function inputVariablesFromDefinition(definition) {
+	// Values use template-literal content: scan its expressions only. Literal text,
+	// including paths such as fixtures/input.csv, is never an input access.
+	function inputVariablesFromDefinition(blocks, definition, env) {
 		var variables = {};
-		(definition.helpers || []).forEach(function (helper) {
-			scanInputVariablesInNodes(helper.nodes || [], variables);
-		});
-		scanInputVariablesInNodes(definition.nodes || [], variables);
+		function expression(text) {
+			try {
+				(env.inputExpressionTokens(String(text)) || []).forEach(function (token) {
+					if (token.type !== "id") return;
+					var match = /^input\.([A-Za-z_$][\w$]*)/.exec(String(token.value));
+					if (match) variables[match[1]] = true;
+				});
+			} catch (_invalidExpressionAlreadyDiagnosed) {}
+		}
+		function value(any, raw) {
+			if (typeof any === "string") {
+				if (raw) expression(any);
+				else templateExpressions(any, env).forEach(expression);
+			} else if (Array.isArray(any)) any.forEach(function (item) { value(item, false); });
+			else if (any && typeof any === "object") Object.keys(any).forEach(function (key) { value(any[key], false); });
+		}
+		function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				var name = env.blockName(node), descriptor = blocks[name] && env.blockCatalog(blocks[name]) || {}, props = descriptor.props || {};
+				Object.keys(node.props || {}).forEach(function (key) { value(node.props[key], props[key] && props[key].kind === "expression"); });
+				["nodes", "then", "else", "fields"].forEach(function (slot) { if (Array.isArray(node[slot])) walk(node[slot]); });
+			});
+		}
+		(definition.helpers || []).forEach(function (helper) { walk(helper.nodes); });
+		walk(definition.nodes);
 		return Object.keys(variables).sort();
 	}
 
@@ -288,12 +272,17 @@
 		}];
 	}
 
-	function inputContractDiagnostics(definition, request) {
+	function inputContractDiagnostics(blocks, definition, request, env, variables) {
 		request = request || {};
 		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) return [];
 		var definitions = inputDefinitionsFromDefinition(definition);
 		var diagnostics = [];
+		var meta = flowMetaFromDefinition(definition);
+		if (meta.authenticatedContextRequired !== undefined && typeof meta.authenticatedContextRequired !== "boolean") diagnostics.push({severity:"error", code:"FLOW_AUTHENTICATION_INVALID", message:"_flow.authenticatedContextRequired must be a boolean."});
 		Object.keys(definitions).forEach(function (name) {
+			var declared = definitions[name] || {};
+			if (declared.isFileUpload !== undefined && typeof declared.isFileUpload !== "boolean") diagnostics.push({severity:"error",code:"FLOW_INPUT_UPLOAD_INVALID",message:"input."+name+".isFileUpload must be a boolean."});
+			if (declared.visibility !== undefined && (typeof declared.visibility !== "number" || !isFinite(declared.visibility) || Math.floor(declared.visibility) !== declared.visibility || declared.visibility < -1 || declared.visibility > 15)) diagnostics.push({severity:"error",code:"FLOW_INPUT_VISIBILITY_INVALID",message:"input."+name+".visibility must be -1 or an integer bitmask from 0 to 15."});
 			var schema = definitions[name];
 			if (!schema || schema.type !== "array" || schema.items !== undefined ||
 					!Array.isArray(schema["default"]) || !schema["default"].some(function (item) { return item !== null && typeof item === "object"; })) return;
@@ -303,7 +292,7 @@
 				hint: 'Declare items: { type: "object" } (or the intended element schema). Untyped array elements intentionally keep their type; JSON-looking strings are not decoded implicitly.'
 			});
 		});
-		var variables = inputVariablesFromDefinition(definition);
+		variables = variables || inputVariablesFromDefinition(blocks, definition, env);
 		var missing = variables.filter(function (name) { return definitions[name] === undefined; });
 		if (missing.length) diagnostics.push({
 			severity: request.strictInputContract === true ? "error" : "warning",
@@ -650,7 +639,8 @@
 		accessibilityDiagnostics(definition).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
-		inputContractDiagnostics(definition, request).forEach(function (diagnostic) {
+		var inputVariables = inputVariablesFromDefinition(activeBlocks, definition, env);
+		inputContractDiagnostics(activeBlocks, definition, request, env, inputVariables).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		repetitionStyleDiagnostics(definition, env).forEach(function (diagnostic) {
@@ -681,6 +671,7 @@
 			code: code,
 			definition: clean,
 			source: source,
+			inputVariables: inputVariables,
 			diagnosticCount: report.diagnosticCount,
 			diagnosticsShown: report.diagnosticsShown,
 			hasMore: report.hasMore,
@@ -690,6 +681,7 @@
 	}
 
 	return {
+		inputVariablesFromDefinition: inputVariablesFromDefinition,
 		validateDefinition: validateDefinition,
 		analysisDiagnostics: analysisDiagnostics,
 		diagnosticReport: diagnosticReport,

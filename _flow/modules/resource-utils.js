@@ -33,6 +33,7 @@
 
 	function isAllowedPath(path, paths) {
 		var ext = extension(path);
+		if (String(path) === ".httpignore") return true;
 		if (String(path) === paths.path("engine.yaml")) {
 			return true;
 		}
@@ -84,6 +85,7 @@
 	}
 
 	function kind(path, paths) {
+		if (String(path) === ".httpignore") return "httpIgnore";
 		if (String(path) === paths.path("engine.yaml")) {
 			return "projectConfig";
 		}
@@ -150,6 +152,7 @@
 	}
 
 	function mimeType(path) {
+		if (String(path) === ".httpignore") return "text/plain";
 		var ext = extension(path);
 		if (ext === "md") {
 			return "text/markdown";
