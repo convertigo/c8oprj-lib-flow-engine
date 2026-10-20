@@ -290,28 +290,28 @@
 
 	function inputContractDiagnostics(definition, request) {
 		request = request || {};
-		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) {
-			return [];
-		}
-		var variables = inputVariablesFromDefinition(definition);
-		if (!variables.length) {
-			return [];
-		}
+		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) return [];
 		var definitions = inputDefinitionsFromDefinition(definition);
-		var missing = variables.filter(function (name) {
-			return definitions[name] === undefined;
+		var diagnostics = [];
+		Object.keys(definitions).forEach(function (name) {
+			var schema = definitions[name];
+			if (!schema || schema.type !== "array" || schema.items !== undefined ||
+					!Array.isArray(schema["default"]) || !schema["default"].some(function (item) { return item !== null && typeof item === "object"; })) return;
+			diagnostics.push({
+				severity: "warning", code: "FLOWSCRIPT_ARRAY_INPUT_ITEMS_REQUIRED", path: "_flow.inputs." + name,
+				message: "input." + name + " has object/array defaults but no items schema. Convertigo variables can deliver each element as JSON text.",
+				hint: 'Declare items: { type: "object" } (or the intended element schema). Untyped array elements intentionally keep their type; JSON-looking strings are not decoded implicitly.'
+			});
 		});
-		if (!missing.length) {
-			return [];
-		}
-		return [{
+		var variables = inputVariablesFromDefinition(definition);
+		var missing = variables.filter(function (name) { return definitions[name] === undefined; });
+		if (missing.length) diagnostics.push({
 			severity: request.strictInputContract === true ? "error" : "warning",
-			code: "FLOWSCRIPT_INPUT_NOT_DECLARED",
-			inputVariables: variables,
-			missingInputs: missing,
+			code: "FLOWSCRIPT_INPUT_NOT_DECLARED", inputVariables: variables, missingInputs: missing,
 			message: "FlowScript reads " + missing.map(function (name) { return "input." + name; }).join(", ") + " without declaring them in _flow.inputs.",
 			hint: "Declare request inputs before the function so Studio, SDK callers, test cases and MCP agree on the Flow contract. Example: " + inputDeclarationSnippet(missing)
-		}];
+		});
+		return diagnostics;
 	}
 
 	function walkDefinitionNodes(nodes, visitor) {

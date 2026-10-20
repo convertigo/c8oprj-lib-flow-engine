@@ -61,7 +61,7 @@
 				return true;
 			}
 			// html, ftl, ftlh: backend templates such as the emails a Flow sends (asset.read, template.freemarker)
-			return ["md", "txt", "json", "xml", "yaml", "yml", "html", "ftl", "ftlh", "csv"].indexOf(ext) !== -1;
+			return ["md", "txt", "json", "xml", "yaml", "yml", "html", "ftl", "ftlh", "csv", "sql"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf("resources/") === 0) {
 			return ["md", "txt", "json", "xml", "yaml", "yml"].indexOf(ext) !== -1;

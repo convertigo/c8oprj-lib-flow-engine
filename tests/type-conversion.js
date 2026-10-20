@@ -112,4 +112,15 @@ assertTrue(found.indexOf("FLOWSCRIPT_PROPERTY_TYPE_MISMATCH") === -1 && found.in
 var objectInput = flow({ o: { type: "object" } }, "  local.first = list.take({ items: input.o, count: 1 })\n  return { first: local.first }");
 assertTrue(warnings(objectInput).indexOf("FLOWSCRIPT_EXPECTED_ARRAY") !== -1, "an object where an array is expected still warns");
 
+// Native Convertigo array variables carry JSON object items as strings. Only
+// an explicit item contract converts them; arbitrary text arrays stay untouched.
+eq(value(['{"id":1}'], "array"), ['{"id":1}'], "untyped JSON strings stay strings");
+eq(value(['{"id":1}'], "array", { items: { type: "object" } }), [{id:1}], "declared object items decode");
+var objectDefault = flow({ posts: {type:"array", default:[{id:1}]} }, "  return { posts: input.posts }");
+assertTrue(warnings(objectDefault).indexOf("FLOWSCRIPT_ARRAY_INPUT_ITEMS_REQUIRED") !== -1, "object defaults need an item schema at the native boundary");
+var typedDefault = flow({ posts: {type:"array", items:{type:"object"}, default:[{id:1}]} }, "  return { posts: input.posts }");
+assertTrue(warnings(typedDefault).indexOf("FLOWSCRIPT_ARRAY_INPUT_ITEMS_REQUIRED") === -1, "typed defaults are unambiguous");
+var textDefault = flow({ posts: {type:"array", default:["literal JSON"]} }, "  return { posts: input.posts }");
+assertTrue(warnings(textDefault).indexOf("FLOWSCRIPT_ARRAY_INPUT_ITEMS_REQUIRED") === -1, "ordinary string arrays need no warning");
+
 print("type conversion: ok");

@@ -9,6 +9,7 @@ const _flow = {
     },
     "posts": {
       "type": "array",
+      "items": { "type": "object" },
       "default": [
         {
           "id": "same-day",
