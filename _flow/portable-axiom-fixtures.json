@@ -1,38 +1,926 @@
 [
-  { "block": "text.trim", "input": { "text": "  Flow  " }, "expected": "Flow" },
-  { "block": "text.replace", "input": { "text": "Flow Flow", "search": "Flow", "replacement": "Block" }, "expected": "Block Block" },
-  { "block": "text.lines", "input": { "text": " a\r\n\r\n b ", "trim": true, "skipEmpty": true }, "expected": ["a", "b"] },
-  { "block": "list.take", "input": { "items": [0, 1, 2, 3], "offset": 1, "count": 2 }, "expected": [1, 2] },
-  { "block": "list.compact", "input": { "items": [null, "", "a", ["b", null]], "flatten": true, "skipEmptyString": true }, "expected": ["a", "b"] },
-  { "block": "list.pluck", "input": { "items": [{ "meta": { "name": "a" } }, {}, { "meta": { "name": "b" } }], "path": "meta.name", "skipMissing": true }, "expected": ["a", "b"] },
-  { "block": "list.search", "input": { "items": [{ "name": "Alpha" }, { "name": "Beta" }, "alphabet"], "query": "alpha", "limit": 2 }, "expected": [{ "name": "Alpha" }, "alphabet"] },
-  { "block": "object.get", "input": { "source": { "a": { "b": 3 } }, "key": "a.b", "defaultValue": 0 }, "expected": 3 },
-  { "block": "object.keys", "input": { "source": { "a": 1, "b": 2 } }, "expected": ["a", "b"] },
-  { "block": "object.values", "input": { "source": { "a": 1, "b": 2 } }, "expected": [1, 2] },
-  { "block": "object.firstEntry", "input": { "source": { "a": 1, "b": 2 } }, "expected": { "key": "a", "value": 1 } },
-  { "block": "object.merge", "input": { "target": { "a": 1, "b": 1 }, "source": { "b": 2, "c": 3 } }, "expected": { "a": 1, "b": 2, "c": 3 } },
-  { "block": "object.pick", "input": { "source": { "a": 1, "nested": { "b": 2 } }, "keys": ["a", "nested.b"] }, "expected": { "a": 1, "b": 2 } },
-  { "block": "json.parse", "input": { "text": "{\"a\":1}" }, "expected": { "a": 1 } },
-  { "block": "json.safeParse", "input": { "text": "[1,2]" }, "expected": { "ok": true, "value": [1, 2], "error": "" } },
-  { "block": "json.stringify", "input": { "value": { "a": 1 }, "pretty": false }, "expected": "{\"a\":1}" },
-  { "block": "json.select", "input": { "source": { "rows": [{ "name": "first" }] }, "path": "rows[0].name" }, "expected": "first" },
-  { "block": "json.items", "input": { "source": { "items": [1, null, 2] }, "path": "items", "includeScalar": true }, "expected": [1, 2] },
-  { "block": "value.toText", "input": { "value": 42 }, "expected": "42" },
-  { "block": "value.toNumber", "input": { "value": "12.5", "fallback": 0 }, "expected": 12.5 },
-  { "block": "value.toBoolean", "input": { "value": "yes" }, "expected": true },
-  { "block": "compare.equal", "input": { "left": "1", "right": 1 }, "expected": false },
-  { "block": "compare.notEqual", "input": { "left": "1", "right": 1 }, "expected": true },
-  { "block": "compare.greater", "input": { "left": 3, "right": 2 }, "expected": true },
-  { "block": "compare.less", "input": { "left": "a", "right": "b" }, "expected": true },
-  { "block": "list.first", "input": { "items": ["a", "b"] }, "expected": "a" },
-  { "block": "list.last", "input": { "items": ["a", "b"] }, "expected": "b" },
-  { "block": "list.count", "input": { "items": ["a", "b"] }, "expected": 2 },
-  { "block": "list.sum", "input": { "items": [2, "3.5", null, "invalid", -1] }, "expected": 4.5 },
-  { "block": "duration.format", "input": { "milliseconds": 75432, "showHours": false, "fractionDigits": 1 }, "expected": "01:15.4" },
-  { "block": "number.add", "input": { "left": 12.5, "right": 7.5 }, "expected": 20 },
-  { "block": "number.subtract", "input": { "left": 20, "right": 7.5 }, "expected": 12.5 },
-  { "block": "number.choose", "input": { "condition": true, "whenTrue": 12, "whenFalse": 4 }, "expected": 12 },
-  { "block": "text.match", "input": { "text": "https://login.example/abc/v2.0", "pattern": "^https://([^/]+)/([^/]+)/" }, "expected": { "matched": true, "groups": ["https://login.example/abc/", "login.example", "abc"] } },
-  { "block": "text.split", "input": { "text": " a, b ,, c ", "separator": "," }, "expected": ["a", "b", "c"] },
-  { "block": "date.iso", "input": { "value": 0 }, "expected": "1970-01-01T00:00:00.000Z" }
+  {
+    "block": "text.trim",
+    "input": {
+      "text": "  Flow  "
+    },
+    "expected": "Flow"
+  },
+  {
+    "block": "text.replace",
+    "input": {
+      "text": "Flow Flow",
+      "search": "Flow",
+      "replacement": "Block"
+    },
+    "expected": "Block Block"
+  },
+  {
+    "block": "text.lines",
+    "input": {
+      "text": " a\r\n\r\n b ",
+      "trim": true,
+      "skipEmpty": true
+    },
+    "expected": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "block": "list.take",
+    "input": {
+      "items": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "offset": 1,
+      "count": 2
+    },
+    "expected": [
+      1,
+      2
+    ]
+  },
+  {
+    "block": "list.compact",
+    "input": {
+      "items": [
+        null,
+        "",
+        "a",
+        [
+          "b",
+          null
+        ]
+      ],
+      "flatten": true,
+      "skipEmptyString": true
+    },
+    "expected": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "block": "list.pluck",
+    "input": {
+      "items": [
+        {
+          "meta": {
+            "name": "a"
+          }
+        },
+        {},
+        {
+          "meta": {
+            "name": "b"
+          }
+        }
+      ],
+      "path": "meta.name",
+      "skipMissing": true
+    },
+    "expected": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "block": "list.search",
+    "input": {
+      "items": [
+        {
+          "name": "Alpha"
+        },
+        {
+          "name": "Beta"
+        },
+        "alphabet"
+      ],
+      "query": "alpha",
+      "limit": 2
+    },
+    "expected": [
+      {
+        "name": "Alpha"
+      },
+      "alphabet"
+    ]
+  },
+  {
+    "block": "object.get",
+    "input": {
+      "source": {
+        "a": {
+          "b": 3
+        }
+      },
+      "key": "a.b",
+      "defaultValue": 0
+    },
+    "expected": 3
+  },
+  {
+    "block": "object.keys",
+    "input": {
+      "source": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    "expected": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "block": "object.values",
+    "input": {
+      "source": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    "expected": [
+      1,
+      2
+    ]
+  },
+  {
+    "block": "object.firstEntry",
+    "input": {
+      "source": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    "expected": {
+      "key": "a",
+      "value": 1
+    }
+  },
+  {
+    "block": "object.merge",
+    "input": {
+      "target": {
+        "a": 1,
+        "b": 1
+      },
+      "source": {
+        "b": 2,
+        "c": 3
+      }
+    },
+    "expected": {
+      "a": 1,
+      "b": 2,
+      "c": 3
+    }
+  },
+  {
+    "block": "object.pick",
+    "input": {
+      "source": {
+        "a": 1,
+        "nested": {
+          "b": 2
+        }
+      },
+      "keys": [
+        "a",
+        "nested.b"
+      ]
+    },
+    "expected": {
+      "a": 1,
+      "b": 2
+    }
+  },
+  {
+    "block": "json.parse",
+    "input": {
+      "text": "{\"a\":1}"
+    },
+    "expected": {
+      "a": 1
+    }
+  },
+  {
+    "block": "json.safeParse",
+    "input": {
+      "text": "[1,2]"
+    },
+    "expected": {
+      "ok": true,
+      "value": [
+        1,
+        2
+      ],
+      "error": ""
+    }
+  },
+  {
+    "block": "json.stringify",
+    "input": {
+      "value": {
+        "a": 1
+      },
+      "pretty": false
+    },
+    "expected": "{\"a\":1}"
+  },
+  {
+    "block": "json.select",
+    "input": {
+      "source": {
+        "rows": [
+          {
+            "name": "first"
+          }
+        ]
+      },
+      "path": "rows[0].name"
+    },
+    "expected": "first"
+  },
+  {
+    "block": "json.items",
+    "input": {
+      "source": {
+        "items": [
+          1,
+          null,
+          2
+        ]
+      },
+      "path": "items",
+      "includeScalar": true
+    },
+    "expected": [
+      1,
+      2
+    ]
+  },
+  {
+    "block": "value.toText",
+    "input": {
+      "value": 42
+    },
+    "expected": "42"
+  },
+  {
+    "block": "value.toNumber",
+    "input": {
+      "value": "12.5",
+      "fallback": 0
+    },
+    "expected": 12.5
+  },
+  {
+    "block": "value.toBoolean",
+    "input": {
+      "value": "yes"
+    },
+    "expected": true
+  },
+  {
+    "block": "compare.equal",
+    "input": {
+      "left": "1",
+      "right": 1
+    },
+    "expected": false
+  },
+  {
+    "block": "compare.notEqual",
+    "input": {
+      "left": "1",
+      "right": 1
+    },
+    "expected": true
+  },
+  {
+    "block": "compare.greater",
+    "input": {
+      "left": 3,
+      "right": 2
+    },
+    "expected": true
+  },
+  {
+    "block": "compare.less",
+    "input": {
+      "left": "a",
+      "right": "b"
+    },
+    "expected": true
+  },
+  {
+    "block": "list.first",
+    "input": {
+      "items": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": "a"
+  },
+  {
+    "block": "list.last",
+    "input": {
+      "items": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": "b"
+  },
+  {
+    "block": "list.count",
+    "input": {
+      "items": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": 2
+  },
+  {
+    "block": "list.sum",
+    "input": {
+      "items": [
+        2,
+        "3.5",
+        null,
+        "invalid",
+        -1
+      ]
+    },
+    "expected": 4.5
+  },
+  {
+    "block": "duration.format",
+    "input": {
+      "milliseconds": 75432,
+      "showHours": false,
+      "fractionDigits": 1
+    },
+    "expected": "01:15.4"
+  },
+  {
+    "block": "number.add",
+    "input": {
+      "left": 12.5,
+      "right": 7.5
+    },
+    "expected": 20
+  },
+  {
+    "block": "number.subtract",
+    "input": {
+      "left": 20,
+      "right": 7.5
+    },
+    "expected": 12.5
+  },
+  {
+    "block": "number.choose",
+    "input": {
+      "condition": true,
+      "whenTrue": 12,
+      "whenFalse": 4
+    },
+    "expected": 12
+  },
+  {
+    "block": "text.match",
+    "input": {
+      "text": "https://login.example/abc/v2.0",
+      "pattern": "^https://([^/]+)/([^/]+)/"
+    },
+    "expected": {
+      "matched": true,
+      "groups": [
+        "https://login.example/abc/",
+        "login.example",
+        "abc"
+      ]
+    }
+  },
+  {
+    "block": "text.split",
+    "input": {
+      "text": " a, b ,, c ",
+      "separator": ","
+    },
+    "expected": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "block": "date.iso",
+    "input": {
+      "value": 0
+    },
+    "expected": "1970-01-01T00:00:00.000Z"
+  },
+  {
+    "block": "date.today",
+    "input": {
+      "at": "2026-03-14T23:30:00Z",
+      "timeZone": "Europe/Paris"
+    },
+    "expected": "2026-03-15"
+  },
+  {
+    "block": "date.today",
+    "input": {
+      "at": "2026-03-14T23:30:00Z",
+      "timeZone": "UTC"
+    },
+    "expected": "2026-03-14"
+  },
+  {
+    "block": "date.today",
+    "input": {
+      "at": "2026-01-01T01:30:00Z",
+      "timeZone": "America/New_York"
+    },
+    "expected": "2025-12-31"
+  },
+  {
+    "block": "date.today",
+    "input": {
+      "at": "2026-01-01T20:30:00Z",
+      "timeZone": "Asia/Kolkata"
+    },
+    "expected": "2026-01-02"
+  },
+  {
+    "block": "date.now",
+    "input": {
+      "at": "2026-03-14T23:30:00Z",
+      "timeZone": "Europe/Paris",
+      "format": "iso"
+    },
+    "expected": "2026-03-15T00:30:00"
+  },
+  {
+    "block": "date.now",
+    "input": {
+      "at": "2026-07-30T12:34:56.999Z",
+      "timeZone": "Europe/Paris",
+      "format": "iso"
+    },
+    "expected": "2026-07-30T14:34:56"
+  },
+  {
+    "block": "date.now",
+    "input": {
+      "at": "2026-01-30T12:34:56Z",
+      "timeZone": "Europe/Paris",
+      "format": "iso"
+    },
+    "expected": "2026-01-30T13:34:56"
+  },
+  {
+    "block": "date.now",
+    "input": {
+      "at": "1970-01-01T00:00:00Z",
+      "format": "timestamp"
+    },
+    "expected": 0
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2025-12-31",
+      "months": 2,
+      "days": 15
+    },
+    "expected": "2026-03-15"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2026-01-31",
+      "months": 1
+    },
+    "expected": "2026-02-28"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2024-01-31",
+      "months": 1
+    },
+    "expected": "2024-02-29"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2024-02-29",
+      "years": 1
+    },
+    "expected": "2025-02-28"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2024-02-29",
+      "years": 1,
+      "months": 1
+    },
+    "expected": "2025-03-28"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2026-03-31",
+      "months": -1
+    },
+    "expected": "2026-02-28"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2026-01-01",
+      "days": -1
+    },
+    "expected": "2025-12-31"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2026-03-31T23:30:00",
+      "hours": 1,
+      "minutes": 45
+    },
+    "expected": "2026-04-01T01:15:00"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2026-01-01",
+      "hours": 12
+    },
+    "expected": "2026-01-01T12:00:00"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2026-01-30T12:00:00Z",
+      "timeZone": "Europe/Paris",
+      "days": 1
+    },
+    "expected": "2026-01-31T13:00:00"
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "2026-02-30",
+      "days": 1
+    },
+    "expected": null
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "9999-12-31",
+      "days": 1
+    },
+    "expected": null
+  },
+  {
+    "block": "date.add",
+    "input": {
+      "value": "0099-01-31",
+      "months": 1
+    },
+    "expected": "0099-02-28"
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "2026-02-30"
+    },
+    "expected": null
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "2024-02-29"
+    },
+    "expected": "2024-02-29"
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "1900-02-29"
+    },
+    "expected": null
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "2000-02-29"
+    },
+    "expected": "2000-02-29"
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "2026-03-01T12:34"
+    },
+    "expected": "2026-03-01T12:34:00"
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "2026-03-01T12:34:56.1+00:00"
+    },
+    "expected": "2026-03-01T12:34:56.100Z"
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": " 2026-01-01"
+    },
+    "expected": null
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "2026-01-01T24:00:00"
+    },
+    "expected": null
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "2026-01-01T12:00:60Z"
+    },
+    "expected": null
+  },
+  {
+    "block": "date.parse",
+    "input": {
+      "value": "0000-01-01"
+    },
+    "expected": null
+  },
+  {
+    "block": "date.isValid",
+    "input": {
+      "value": "2026-02-30"
+    },
+    "expected": false
+  },
+  {
+    "block": "date.isValid",
+    "input": {
+      "value": "2026-02-28"
+    },
+    "expected": true
+  },
+  {
+    "block": "date.isValid",
+    "input": {
+      "value": "2026-02-28T23:59:59+02:00"
+    },
+    "expected": true
+  },
+  {
+    "block": "date.isValid",
+    "input": {
+      "value": ""
+    },
+    "expected": false
+  },
+  {
+    "block": "date.isValid",
+    "input": {
+      "value": "2026-13-01"
+    },
+    "expected": false
+  },
+  {
+    "block": "date.isValid",
+    "input": {
+      "value": "2026-01-00"
+    },
+    "expected": false
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-03-15",
+      "pattern": "dd/MM/yyyy",
+      "locale": "fr-FR"
+    },
+    "expected": "15/03/2026"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-03-15",
+      "pattern": "long",
+      "locale": "fr-FR"
+    },
+    "expected": "dimanche 15 mars 2026"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-03-15T12:34:56",
+      "pattern": "dd/MM/yyyy HH:mm",
+      "locale": "fr-FR"
+    },
+    "expected": "15/03/2026 12:34"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-03-14T23:30:00Z",
+      "pattern": "yyyy-MM-dd HH:mm:ss",
+      "timeZone": "Europe/Paris",
+      "locale": "fr-FR"
+    },
+    "expected": "2026-03-15 00:30:00"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-02-30",
+      "pattern": "dd/MM/yyyy",
+      "fallback": "invalid"
+    },
+    "expected": "invalid"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-03-15",
+      "pattern": "EEE d MMM yyyy",
+      "locale": "en-GB"
+    },
+    "expected": "Sun 15 Mar 2026"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-03-15",
+      "pattern": "yyyy-MM-dd 'literal' 'x''y'"
+    },
+    "expected": "2026-03-15 literal x'y"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-03-15",
+      "pattern": "invalid",
+      "fallback": "invalid"
+    },
+    "expected": "invalid"
+  },
+  {
+    "block": "date.format",
+    "input": {
+      "value": "2026-07-30T12:34:56Z",
+      "locale": "en-GB",
+      "options": {
+        "timeZone": "UTC",
+        "hour": "2-digit",
+        "minute": "2-digit",
+        "second": "2-digit"
+      }
+    },
+    "expected": "12:34:56"
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-03-14",
+      "to": "2026-03-15"
+    },
+    "expected": 1
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-03-15",
+      "to": "2026-03-15"
+    },
+    "expected": 0
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-03-16",
+      "to": "2026-03-15"
+    },
+    "expected": -1
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-03-28T12:00:00+01:00",
+      "to": "2026-03-29T12:00:00+02:00",
+      "timeZone": "Europe/Paris",
+      "unit": "days"
+    },
+    "expected": 1
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-03-28T12:00:00+01:00",
+      "to": "2026-03-29T12:00:00+02:00",
+      "timeZone": "Europe/Paris",
+      "unit": "hours"
+    },
+    "expected": 23
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-10-24T12:00:00+02:00",
+      "to": "2026-10-25T12:00:00+01:00",
+      "timeZone": "Europe/Paris",
+      "unit": "hours"
+    },
+    "expected": 25
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-03-15T00:00:00",
+      "to": "2026-03-15T01:30:00",
+      "unit": "minutes"
+    },
+    "expected": 90
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-03-15T00:00:59",
+      "to": "2026-03-15T00:00:00",
+      "unit": "minutes"
+    },
+    "expected": 0
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-02-30",
+      "to": "2026-03-01"
+    },
+    "expected": null
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-03-14",
+      "right": "2026-03-15"
+    },
+    "expected": -1
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-03-15",
+      "right": "2026-03-15"
+    },
+    "expected": 0
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-03-16",
+      "right": "2026-03-15"
+    },
+    "expected": 1
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-03-15T01:00:00+01:00",
+      "right": "2026-03-15T00:00:00Z",
+      "timeZone": "Europe/Paris"
+    },
+    "expected": 0
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-02-30",
+      "right": "2026-03-15"
+    },
+    "expected": null
+  }
 ]

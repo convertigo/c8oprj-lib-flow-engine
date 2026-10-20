@@ -1,0 +1,6 @@
+accessibility: Private
+↓at [variables.RequestableVariable-1792484058548]: 
+  description: Reference instant; empty uses the actual clock.
+  value: 2026-03-14T23:30:00Z
+↓posts [variables.RequestableMultiValuedVariable-1792484058550]: 
+  description: Flow input posts
