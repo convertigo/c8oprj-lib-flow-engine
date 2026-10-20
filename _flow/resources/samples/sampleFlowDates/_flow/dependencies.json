@@ -1,0 +1,7 @@
+{
+  "format": "convertigo-flow-dependencies",
+  "projects": {
+    "lib_flow_engine": "0.1.87",
+    "lib_flow_frontbuilder_svelte": "0.1.32"
+  }
+}

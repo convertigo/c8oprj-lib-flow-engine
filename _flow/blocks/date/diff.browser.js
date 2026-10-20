@@ -1,5 +1,5 @@
-function (input) {
-  input=input||{};
+function(input){
+input=input||{};
 
   function pad(v,n){var s=String(v);while(s.length<n)s="0"+s;return s;}
   function make(y,m,d,h,mi,s,ms){var x=new Date(0);x.setUTCFullYear(y,m-1,d);x.setUTCHours(h||0,mi||0,s||0,ms||0);return x;}
@@ -56,5 +56,5 @@ function (input) {
     return out;
   }
 
-  var a=parse(input.from),b=parse(input.to);if(!a||!b)return null;var unit=input.unit||"days",x=local(a,input),y=local(b,input);if(unit==="days")return (make(y.getUTCFullYear(),y.getUTCMonth()+1,y.getUTCDate()).getTime()-make(x.getUTCFullYear(),x.getUTCMonth()+1,x.getUTCDate()).getTime())/86400000;var scale={hours:3600000,minutes:60000,seconds:1000,milliseconds:1}[unit];if(!scale)return null;var delta=((b.offset!==null?b.epoch:y.getTime())-(a.offset!==null?a.epoch:x.getTime()))/scale;return delta<0?Math.ceil(delta):Math.floor(delta);
+var a=parse(input.from),b=parse(input.to);if(!a||!b)return null;var unit=input.unit||"days",x=local(a,input),y=local(b,input);if(unit==="days")return (make(y.getUTCFullYear(),y.getUTCMonth()+1,y.getUTCDate()).getTime()-make(x.getUTCFullYear(),x.getUTCMonth()+1,x.getUTCDate()).getTime())/86400000;var scale={hours:3600000,minutes:60000,seconds:1000,milliseconds:1}[unit];if(!scale)return null;var delta=((b.offset!==null?b.epoch:y.getTime())-(a.offset!==null?a.epoch:x.getTime()))/scale;var whole=delta<0?Math.ceil(delta):Math.floor(delta);return whole===0?0:whole;
 }

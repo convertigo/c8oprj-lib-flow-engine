@@ -1,5 +1,5 @@
 function (input) {
-  input=input||{};
+ input=input||{};
 
   function pad(v,n){var s=String(v);while(s.length<n)s="0"+s;return s;}
   function make(y,m,d,h,mi,s,ms){var x=new Date(0);x.setUTCFullYear(y,m-1,d);x.setUTCHours(h||0,mi||0,s||0,ms||0);return x;}
@@ -56,5 +56,5 @@ function (input) {
     return out;
   }
 
-  var a=parse(input.left),b=parse(input.right);if(!a||!b)return null;var x=local(a,input).getTime(),y=local(b,input).getTime();return x<y?-1:x>y?1:0;
+var a=parse(input.left),b=parse(input.right);if(!a||!b)return null;var both=a.offset!==null&&b.offset!==null,x=both?a.epoch:local(a,input).getTime(),y=both?b.epoch:local(b,input).getTime();return x<y?-1:x>y?1:0;
 }

@@ -512,7 +512,11 @@ var dynamicPortableFixtureBlocks = ["date.now"];
 // Stateful collection blocks (effects: state) cannot be pure input/expected axioms;
 // their runtime contract is covered by tests/typed-collections-runtime.js.
 dynamicPortableFixtureBlocks = dynamicPortableFixtureBlocks.concat(["json.array", "json.map", "json.push", "json.put"]);
-var coveredPortableBlocks = portableFixtureBlocks.concat(dynamicPortableFixtureBlocks);
+// A block may have several deterministic calendar/DST cases and also a live
+// clock observation. Count identities here; execute every fixture below.
+var coveredPortableBlocks = portableFixtureBlocks.concat(dynamicPortableFixtureBlocks).filter(function (id, index, all) {
+	return all.indexOf(id) === index;
+});
 assertTrue(portableCatalogBlocks.length === coveredPortableBlocks.length && portableCatalogBlocks.every(function (block) {
 	var relativeFile = block.implementations && block.implementations.frontend && block.implementations.frontend.file;
 	return coveredPortableBlocks.indexOf(block.blockId) >= 0 && relativeFile

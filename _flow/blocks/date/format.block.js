@@ -8,6 +8,7 @@ const _meta = {
   ],
   "effects": [],
   "icon": "mdi:calendar-clock-outline",
+  "longDescription": "date.format({value:'2026-03-15',pattern:'dd/MM/yyyy',locale:'fr-FR'}) -> '15/03/2026'; pattern:'long' -> 'dimanche 15 mars 2026'. Patterns support yyyy, M/MM/MMM/MMMM, d/dd, EEE/EEEE, H/HH, m/mm, s/ss, punctuation and single-quoted literals. Invalid text/pattern returns fallback. For exact portable text set pattern, locale and the same timeZone. Without pattern, existing browser Intl locale/options behavior is unchanged.",
   "description": "Formats ISO dates/date-times on both runtimes. pattern=dd/MM/yyyy or long gives deterministic text; the existing browser locale/options mode is unchanged.",
   "summary": "format {{value}}",
   "tags": [
@@ -38,7 +39,7 @@ const _meta = {
       "kind": "value",
       "type": "string",
       "default": "",
-      "description": "Optional locale such as fr-FR. Empty uses the browser locale."
+      "description": "BCP 47 language. Pattern mode uses config.date.locale on the server or fr-FR; empty keeps the browser locale in legacy options mode."
     },
     "options": {
       "label": "Options",
@@ -46,7 +47,7 @@ const _meta = {
       "kind": "value",
       "type": "object",
       "default": {},
-      "description": "Intl.DateTimeFormat options such as hour, minute and second."
+      "description": "Legacy browser Intl options, including clock selectors. Use pattern for deterministic server/browser formatting."
     },
     "fallback": {
       "label": "Fallback",

@@ -1,6 +1,7 @@
 const _meta = {
   "sourceVersion": 2,
   "version": 1,
+  "longDescription": "date.parse({value:'2024-02-29'}) -> '2024-02-29'; invalid input -> null. Strict ISO date, or date-time with HH:mm, optional seconds and up to three fractional digits, and optional Z or +/-HH:mm. No whitespace, rollover, locale date syntax or epoch guessing. Canonical output includes seconds for a date-time.",
   "description": "Parse a strict Gregorian ISO date/date-time to canonical ISO text, or null. Rejects 2026-02-30, whitespace and non-ISO text.",
   "icon": "mdi:calendar-clock-outline",
   "private": false,

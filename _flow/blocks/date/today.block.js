@@ -1,6 +1,7 @@
 const _meta = {
   "sourceVersion": 2,
   "version": 1,
+  "longDescription": "date.today({timeZone:'Europe/Paris'}) -> yyyy-MM-dd. Empty timeZone reads config.date.timeZone on the server (UTC fallback). A page passes the same public setting explicitly. at optionally freezes an ISO instant with Z/offset for tests. See sample_DatePca and test_DateCalendar.",
   "description": "Today's ISO yyyy-MM-dd in an explicit timeZone or config.date.timeZone (UTC fallback). Optional at freezes the reference instant.",
   "icon": "mdi:calendar-clock-outline",
   "private": false,

@@ -922,5 +922,42 @@
       "right": "2026-03-15"
     },
     "expected": null
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-10-25T02:30:00+02:00",
+      "right": "2026-10-25T02:30:00+01:00",
+      "timeZone": "Europe/Paris"
+    },
+    "expected": -1
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-10-25T02:30:00+01:00",
+      "right": "2026-10-25T02:30:00+02:00",
+      "timeZone": "Europe/Paris"
+    },
+    "expected": 1
+  },
+  {
+    "block": "date.compare",
+    "input": {
+      "left": "2026-10-25T02:30:00+02:00",
+      "right": "2026-10-25T02:00:00+01:00",
+      "timeZone": "Europe/Paris"
+    },
+    "expected": -1
+  },
+  {
+    "block": "date.diff",
+    "input": {
+      "from": "2026-10-25T02:30:00+02:00",
+      "to": "2026-10-25T02:30:00+01:00",
+      "unit": "minutes",
+      "timeZone": "Europe/Paris"
+    },
+    "expected": 60
   }
 ]

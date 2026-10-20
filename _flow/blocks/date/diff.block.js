@@ -1,6 +1,7 @@
 const _meta = {
   "sourceVersion": 2,
   "version": 1,
+  "longDescription": "date.diff({from:'2026-03-14',to:'2026-03-15',unit:'days'}) -> 1. days compares civil dates in timeZone, independent of 23/25-hour DST days. Other units truncate elapsed milliseconds toward zero; offset timestamps retain their instant, unzoned date-times use a floating UTC clock. Invalid values -> null.",
   "description": "Signed difference from -> to. days counts civil calendar dates (DST safe); hours/minutes/seconds/milliseconds count whole elapsed units for offset timestamps. Invalid input gives null.",
   "icon": "mdi:calendar-clock-outline",
   "private": false,

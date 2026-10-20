@@ -154,8 +154,9 @@ const _meta = {
       }catch(e){if(e.code)throw e;return null;}
     },
     compare:function(input,defaults){
-      var d=delta(input.left,input.right,input,defaults);if(!d)return null;
-      var n=Number(d.a.compareTo(d.b));return n<0?-1:n>0?1:0;
+      var first=parse(input.left),second=parse(input.right);if(!first||!second)return null;
+      var n=first.offset&&second.offset?Number(first.dt.toInstant(first.offset).compareTo(second.dt.toInstant(second.offset))):Number(local(first,input,defaults).compareTo(local(second,input,defaults)));
+      return n<0?-1:n>0?1:0;
     },
     diff:function(input,defaults){
       var d=delta(input.from,input.to,input,defaults);if(!d)return null;
@@ -165,7 +166,8 @@ const _meta = {
       if(!scales[unit])return null;
       var start=d.first.offset?d.first.dt.toInstant(d.first.offset):d.a.toInstant(T.ZoneOffset.UTC);
       var end=d.second.offset?d.second.dt.toInstant(d.second.offset):d.b.toInstant(T.ZoneOffset.UTC);
-      return Math.trunc((Number(end.toEpochMilli())-Number(start.toEpochMilli()))/scales[unit]);
+      var whole=Math.trunc((Number(end.toEpochMilli())-Number(start.toEpochMilli()))/scales[unit]);
+      return whole===0?0:whole;
     },
     format:function(input,defaults){
       var fallback=text(input.fallback),p=parse(input.value),dt;

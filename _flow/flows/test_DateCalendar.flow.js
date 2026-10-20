@@ -120,6 +120,14 @@ function test_DateCalendar({result}) {
  if({condition: local.actual !== 0,$$then:function(){throw({code:"DATE_PARITY_MISMATCH",message:"Case 58: date.compare",status:500})}})
  local.actual = date.compare({"left":"2026-02-30","right":"2026-03-15"})
  if({condition: local.actual !== null,$$then:function(){throw({code:"DATE_PARITY_MISMATCH",message:"Case 59: date.compare",status:500})}})
+ local.actual = date.compare({"left":"2026-10-25T02:30:00+02:00","right":"2026-10-25T02:30:00+01:00","timeZone":"Europe/Paris"})
+ if({condition: local.actual !== -1,$$then:function(){throw({code:"DATE_PARITY_MISMATCH",message:"Case 60: date.compare",status:500})}})
+ local.actual = date.compare({"left":"2026-10-25T02:30:00+01:00","right":"2026-10-25T02:30:00+02:00","timeZone":"Europe/Paris"})
+ if({condition: local.actual !== 1,$$then:function(){throw({code:"DATE_PARITY_MISMATCH",message:"Case 61: date.compare",status:500})}})
+ local.actual = date.compare({"left":"2026-10-25T02:30:00+02:00","right":"2026-10-25T02:00:00+01:00","timeZone":"Europe/Paris"})
+ if({condition: local.actual !== -1,$$then:function(){throw({code:"DATE_PARITY_MISMATCH",message:"Case 62: date.compare",status:500})}})
+ local.actual = date.diff({"from":"2026-10-25T02:30:00+02:00","to":"2026-10-25T02:30:00+01:00","unit":"minutes","timeZone":"Europe/Paris"})
+ if({condition: local.actual !== 60,$$then:function(){throw({code:"DATE_PARITY_MISMATCH",message:"Case 63: date.diff",status:500})}})
  result.passed=true
- result.assertions=60
+ result.assertions=64
 }

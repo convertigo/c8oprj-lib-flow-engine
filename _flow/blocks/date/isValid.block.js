@@ -1,6 +1,7 @@
 const _meta = {
   "sourceVersion": 2,
   "version": 1,
+  "longDescription": "date.isValid({value:'2026-02-30'}) -> false. Uses exactly the strict date.parse grammar/calendar. Use this before comparisons or persistence, and keep a missing last-update date distinct from a valid hand-over date. See the no-history and invalid cases in sample_DatePca.",
   "description": "True for a strict Gregorian ISO date/date-time; false for missing text or invalid calendar dates such as 2026-02-30.",
   "icon": "mdi:calendar-clock-outline",
   "private": false,

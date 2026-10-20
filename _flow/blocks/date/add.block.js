@@ -1,6 +1,7 @@
 const _meta = {
   "sourceVersion": 2,
   "version": 1,
+  "longDescription": "date.add({value:'2025-12-31',months:2,days:15}) -> '2026-03-15'. Apply years, then months, days, hours and minutes; each amount is an integer, omitted means zero. Civil arithmetic clamps each year/month step. A date stays a date unless hours/minutes are added; a date-time returns local ISO text. Invalid values or year overflow outside 0001..9999 return null.",
   "description": "Calendar arithmetic: years, months, days, hours, then minutes. Short months clamp like LocalDate.plusMonths. Invalid input/overflow returns null.",
   "icon": "mdi:calendar-clock-outline",
   "private": false,

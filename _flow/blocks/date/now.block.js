@@ -8,6 +8,7 @@ const _meta = {
   ],
   "effects": [],
   "icon": "mdi:clock-outline",
+  "longDescription": "Compatibility: date.now({}) remains Unix milliseconds. date.now({format:'iso',timeZone:'Europe/Paris'}) returns local yyyy-MM-ddTHH:mm:ss without offset or fractions. at optionally freezes the instant. config.date.timeZone supplies the server default; pages pass the same setting explicitly.",
   "description": "Current Unix milliseconds by default, preserving clocks. format=iso returns yyyy-MM-ddTHH:mm:ss in timeZone; at optionally freezes the instant.",
   "summary": "now",
   "tags": [
