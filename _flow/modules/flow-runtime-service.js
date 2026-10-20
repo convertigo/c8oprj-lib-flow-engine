@@ -1080,6 +1080,12 @@
 					ok: true,
 					result: result
 				};
+				// A Flow replacing a sequence keeps the XML its XPath consumers read: _flow.xml.arrayItem names
+				// the elements of arrays in the XML response (Convertigo writes "item" by default).
+				var xmlMeta = definition && (definition.flow || definition._flow) || {};
+				if (xmlMeta.xml && typeof xmlMeta.xml.arrayItem === "string" && /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(xmlMeta.xml.arrayItem)) {
+					out.xml = { arrayItem: xmlMeta.xml.arrayItem };
+				}
 				if (ctx.schemaUpdates && ctx.schemaUpdates.length > 0) {
 					out.schemaUpdates = snapshot(ctx.schemaUpdates);
 				}
