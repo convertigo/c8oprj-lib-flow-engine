@@ -18,5 +18,8 @@ try{
  unsafe.forEach(function(p){assert(!api('resourcePatch',{path:'.httpignore',baseHash:now.hash,patch:p,validate:false}).ok,'No removal, reopening, or validation bypass');});
  assert(!api('resourceDelete',{path:'.httpignore',baseHash:now.hash}).ok,'Privacy file cannot be deleted');
  ['../.httpignore','nested/.httpignore','.env','c8oProject.yaml'].forEach(function(p){assert(!api('resourcePatch',{path:p,patch:patch}).ok,'Only exact project root allowed: '+p);});
+ var ordered='!private.txt\nprivate.txt\n/_flow/\n';files.writeStringToFile(new java.io.File(project,'.httpignore'),ordered,'UTF-8');var orderedHash=String(Packages.org.apache.commons.codec.digest.DigestUtils.sha256Hex(ordered));
+ assert(!api('resourcePatch',{path:'.httpignore',baseHash:orderedHash,patch:'@@ -1,3 +1,3 @@\n-!private.txt\n private.txt\n+!private.txt\n /_flow/\n',dryRun:true,validate:false}).ok,'Moving an existing unignore after an exclusion must not reopen a private file');
+ assert(!api('resourcePatch',{path:'.httpignore',baseHash:orderedHash,patch:'@@ -3,0 +4 @@\n+!private.txt\n',dryRun:true,validate:false}).ok,'Duplicating an existing unignore must not reopen a private file');
  print('baserow-httpignore OK ('+checks+' assertions)');
 }finally{files.deleteDirectory(project);}

@@ -468,7 +468,11 @@
 			var before = patterns(oldContent), after = patterns(content);
 			if (new java.lang.String(content).getBytes("UTF-8").length > 65536 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(content)) env.raise("RESOURCE_HTTPIGNORE_INVALID", ".httpignore must be bounded UTF-8 text (64 KiB), without control characters.");
 			if (after.indexOf("/" + env.sourcePaths.root + "/") < 0 && after.indexOf(env.sourcePaths.root + "/") < 0) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore must keep /" + env.sourcePaths.root + "/ private.");
-			if (before.some(function (line) { return after.indexOf(line) < 0; }) || after.some(function (line) { return line.charAt(0) === "!" && before.indexOf(line) < 0; })) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", "flow-resource-patch may add exclusions; removing existing rules or adding an unignore rule could expose private resources.");
+			// Ignore rule order is semantic. Keep the old sequence (duplicates included)
+			// and the exact unignore sequence: moving/copying an existing ! rule can reopen a path.
+			var cursor = 0; after.forEach(function (line) { if (line === before[cursor]) cursor++; });
+			var unignore = function (rules) { return rules.filter(function (line) { return line.charAt(0) === "!"; }).join("\n"); };
+			if (cursor !== before.length || unignore(before) !== unignore(after)) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", "flow-resource-patch may add exclusions only; keep existing rules in order and do not add, move or copy an unignore rule.");
 		}
 		var validation = request.validate === false
 			? { ok: true, skipped: true }
