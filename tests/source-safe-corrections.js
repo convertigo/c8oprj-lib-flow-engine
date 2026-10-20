@@ -27,6 +27,8 @@ try {
 		'  local.due = date.add({ value: "2025-12-31", months: 2, days: 15 })\n  result.value = date.diff({ from: local.due, to: "2026-03-16" })', {}, 'FLOWSCRIPT_BLOCK_CALL_LIFTED');
 	same('Arithmetic', '  result.value = date.compare({ left: "2026-03-15", right: "2026-03-16" }) + 1',
 		'  local.comparison = date.compare({ left: "2026-03-15", right: "2026-03-16" })\n  result.value = local.comparison + 1', {}, 'FLOWSCRIPT_BLOCK_CALL_LIFTED');
+	same('NestedNow', '  result.value = date.now({at:"2026-01-01T00:00:00Z"}) + 1',
+		'  local.now = date.now({at:"2026-01-01T00:00:00Z"})\n  result.value = local.now + 1', {}, 'FLOWSCRIPT_BLOCK_CALL_LIFTED');
 	same('Positional', '  result.value = text.trim("été")', '  result.value = text.trim({ text: "été" })', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
 	var commented = same('PositionalComment', '  result.value = text.trim( /* keep argument comment */ " PCA " )', '  result.value = text.trim({ text: " PCA " })', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
 	assert(commented.code.indexOf('keep argument comment') >= 0, 'Named-argument correction preserves argument comments');
@@ -81,6 +83,8 @@ try {
 	refused('Disabled', '  result.value = text.trim({$$disabled:true,text:text.trim({text:" a "})})', 'FLOWSCRIPT_BLOCK_CALL_UNSAFE_CONTEXT');
 	var ambiguous = refused('Ambiguous', '  result.value = list.sort(input.items, "name")', 'FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE');
 	assert(!hasFix(ambiguous,'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED'), 'Do not invent positional property ordering');
+	var destination = refused('AmbiguousDestination','  set("local.target")','FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE');
+	assert(!hasFix(destination,'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED'),'A write path is also a possible business argument; never guess value instead');
 	refused('RepeatedCalls', '  local.a = http.get({url: "https://example.invalid/a"})\n  local.b = http.get({url: "https://example.invalid/b"})\n  local.c = http.get({url: "https://example.invalid/c"})\n  local.d = http.get({url: "https://example.invalid/d"})', 'FLOWSCRIPT_REPEATED_EXTERNAL_CALLS');
 	refused('Unknown', '  result.value = missing.block({value:1})', 'UNKNOWN_BLOCK');
 	var localBlock = api('blockCodeSet', {name:'fixture.inferred',code:'const _meta = {properties:{},outputs:{out:{type:"string"}}}\nfunction inferred({input}) { return input.label }'});

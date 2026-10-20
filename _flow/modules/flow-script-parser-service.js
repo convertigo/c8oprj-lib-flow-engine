@@ -103,7 +103,7 @@
 			var descriptor = catalog(name), props = descriptor.props || {};
 			return Object.keys(props).filter(function (key) {
 				var prop = props[key] || {};
-				return !prop.hidden && !/^\$\$/.test(key) && !(prop.kind === "path" && prop.mode === "write");
+				return !prop.hidden && !/^\$\$/.test(key);
 			});
 		}
 		function positionalKeys(name, args) {
