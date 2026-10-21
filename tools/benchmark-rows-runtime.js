@@ -12,6 +12,9 @@ function loadEngine(root) {
 }
 var engines = [{label:"candidate", engine:loadEngine(__flowEngineDir)}];
 if (arguments[5]) engines.unshift({label:"baseline",engine:loadEngine(arguments[5])});
+// Seventh argument: cells,array by default. Baselines predating rows.* run cells
+// only; the same candidate runs both variants with the exact same business output.
+var modes = String(arguments[6] || "cells,array").split(",");
 var thread = java.lang.management.ManagementFactory.getThreadMXBean();
 var threadId = java.lang.Thread.currentThread().getId();
 if (!thread.isThreadAllocatedMemorySupported()) throw new Error("Thread allocation counting is unavailable");
@@ -51,26 +54,31 @@ function expected(input) {
 }
 shapes.forEach(function(shape) {
   var counts = shape.split("x"), input = inputFor(Number(counts[0]), Number(counts[1]));
-  var request = {name:"RowsCells", flowQName:"qualificationFlowRuntimePerf.RowsCells",
-    flowSource:String(files.readFileToString(new File(__flowProjectDir, "_flow/flows/RowsCells.flow.js"), "UTF-8")),
-    input:input, includeTrace:false}, reference = expected(input);
-  var encoded = JSON.stringify(request);
+  var reference = expected(input), entries=[];
+  engines.forEach(function(entry){modes.forEach(function(mode){
+    if(mode!=="cells"&&mode!=="array")throw new Error("Mode takes cells or array");
+    if(entry.label==="baseline"&&mode==="array")return;
+    var name=mode==="array"?"RowsArray":"RowsCells";
+    var request={name:name,flowQName:"qualificationFlowRuntimePerf."+name,
+      flowSource:String(files.readFileToString(new File(__flowProjectDir,"_flow/flows/"+name+".flow.js"),"UTF-8")),input:input,includeTrace:false};
+    entries.push({label:entry.label,engine:entry.engine,mode:mode,request:request,encoded:JSON.stringify(request)});
+  });});
   for (var pass = 0; pass < warmup + samples; pass++) {
-    var order = pass % 2 ? engines.slice().reverse() : engines;
+    var offset=pass%entries.length,order=entries.slice(offset).concat(entries.slice(0,offset));
     order.forEach(function (entry) {
-    var record = measure(function () { return String(entry.engine.run(encoded)); });
+    var record = measure(function () { return String(entry.engine.run(entry.encoded)); });
     var response = JSON.parse(record.value);
     if (!response.ok || JSON.stringify(response.result) !== reference) throw new Error("Runtime parity failed: " + record.value.slice(0, 1800));
     delete record.value;
-    record.kind = "runtime"; record.engine = entry.label; record.shape = shape; record.pass = pass + 1; record.warmup = pass < warmup;
+    record.kind = "runtime"; record.engine = entry.label; record.mode=entry.mode; record.shape = shape; record.pass = pass + 1; record.warmup = pass < warmup;
     record.resultBytes = new java.lang.String(reference).getBytes("UTF-8").length;
     print("MEASURE " + JSON.stringify(record));
     });
   }
-  request.profile = true;
-  engines.forEach(function (entry) {
-  var profiled = JSON.parse(String(entry.engine.run(JSON.stringify(request))));
+  entries.forEach(function (entry) {
+  entry.request.profile=true;
+  var profiled = JSON.parse(String(entry.engine.run(JSON.stringify(entry.request))));
   if (!profiled.ok || JSON.stringify(profiled.result) !== reference) throw new Error("Profile parity failed");
-  print("PROFILE " + JSON.stringify({engine:entry.label,shape:shape,profile:profiled.profile}));
+  print("PROFILE " + JSON.stringify({engine:entry.label,mode:entry.mode,shape:shape,profile:profiled.profile}));
   });
 });

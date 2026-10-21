@@ -1,0 +1,265 @@
+[
+  [
+    "read",
+    {
+      "rows": [
+        {}
+      ],
+      "path": "$.a[bad]"
+    },
+    "ROWS_PATH_INVALID"
+  ],
+  [
+    "read",
+    {
+      "rows": [
+        "not JSON"
+      ]
+    },
+    "ROWS_JSON_INVALID"
+  ],
+  [
+    "read",
+    {
+      "rows": [
+        {
+          "a": [
+            1,
+            2,
+            3
+          ]
+        }
+      ],
+      "path": "$.a[*]",
+      "maxCells": 2
+    },
+    "ROWS_LIMIT_EXCEEDED"
+  ],
+  [
+    "read",
+    {
+      "rows": [
+        1,
+        2
+      ],
+      "maxRows": 1
+    },
+    "ROWS_LIMIT_EXCEEDED"
+  ],
+  [
+    "read",
+    {
+      "rows": [
+        {}
+      ],
+      "skipMissing": "yes"
+    },
+    "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "read",
+    {
+      "rows": [
+        {}
+      ],
+      "path": "$..x"
+    },
+    "ROWS_PATH_INVALID"
+  ],
+  [
+    "distinct",
+    {
+      "rows": [
+        null
+      ],
+      "columns": [
+        "x"
+      ]
+    },
+    "ROWS_ROW_INVALID"
+  ],
+  [
+    "select",
+    {
+      "rows": [
+        {
+          "a": 1,
+          "b": 2
+        }
+      ],
+      "columns": [
+        "a",
+        "b"
+      ],
+      "rename": {
+        "a": "b"
+      }
+    },
+    "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "select",
+    {
+      "rows": [
+        {
+          "a": 1,
+          "b": 2
+        }
+      ],
+      "rename": {
+        "a": "b"
+      }
+    },
+    "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "formatCells",
+    {
+      "rows": [
+        {
+          "d": "2026-02-30"
+        }
+      ],
+      "columns": [
+        {
+          "name": "d",
+          "type": "date"
+        }
+      ]
+    },
+    "ROWS_DATE_INVALID"
+  ],
+  [
+    "formatCells",
+    {
+      "rows": [
+        {
+          "n": "abc"
+        }
+      ],
+      "columns": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ]
+    },
+    "ROWS_VALUE_INVALID"
+  ],
+  [
+    "formatCells",
+    {
+      "rows": [
+        {
+          "b": "false"
+        }
+      ],
+      "columns": [
+        {
+          "name": "b",
+          "type": "boolean"
+        }
+      ]
+    },
+    "ROWS_VALUE_INVALID"
+  ],
+  [
+    "formatCells",
+    {
+      "rows": [
+        {}
+      ],
+      "columns": [
+        {
+          "name": "a",
+          "type": "bogus"
+        }
+      ]
+    },
+    "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "formatCells",
+    {
+      "rows": [
+        {}
+      ],
+      "columns": [
+        {
+          "name": "a"
+        },
+        {
+          "name": "a"
+        }
+      ]
+    },
+    "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "formatCells",
+    {
+      "rows": [
+        {}
+      ],
+      "columns": [
+        {
+          "name": "a",
+          "decimals": 30
+        }
+      ]
+    },
+    "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "group",
+    {
+      "rows": [
+        {
+          "n": "abc"
+        }
+      ],
+      "aggregations": [
+        {
+          "type": "sum",
+          "column": "n",
+          "key": "n"
+        }
+      ]
+    },
+    "ROWS_AGGREGATE_VALUE_INVALID"
+  ],
+  [
+    "group",
+    {
+      "rows": [
+        {}
+      ],
+      "aggregations": [
+        {
+          "type": "bogus",
+          "key": "n"
+        }
+      ]
+    },
+    "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "group",
+    {
+      "rows": [
+        {}
+      ],
+      "aggregations": [
+        {
+          "type": "count",
+          "key": "n"
+        },
+        {
+          "type": "count",
+          "key": "n"
+        }
+      ]
+    },
+    "ROWS_OPTIONS_INVALID"
+  ]
+]

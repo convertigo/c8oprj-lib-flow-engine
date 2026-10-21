@@ -1,24 +1,110 @@
 # Efficient row processing and runtime profiling
 
+Process a whole table with one block execution; use the row primitives below
+instead of a loop of Flow blocks per cell.
+
 Use the data provider's filters, column projection, ordering and pagination before
-transferring rows. Use `list.filter` for a local predicate, and `list.map` for a
-single expression. When formatting requires blocks, keep the blocks visible in a
-`forEach` body; a custom Rhino loop is not needed.
+transferring rows. Use `list.filter` for a local predicate and `list.map` for a
+single expression. For typed cells, distinct rows, grouping and projection, use
+the portable `rows.*` blocks. Properties and column paths are prepared once per
+array, and the internal array loop creates no Flow node per row or cell. These
+primitives contain no HTTP calls or application orchestration.
 
 ```javascript
 local.rows = list.filter({ items: input.rows, where: current.active === true })
-json.array({ path: "result.rows", itemType: { type: "object" } })
-forEach({ items: local.rows, $$nodes: function () {
-  local.row = current
-  local.formatted = { id: local.row.id }
-  forEach({ items: input.columns, $$nodes: function () {
-    local.column = current
-    local.value = object.get({ source: local.row, key: local.column.name })
-    json.put({ path: "local.formatted", key: local.column.name, value: local.value })
-  } })
-  json.push({ path: "result.rows", value: local.formatted })
-} })
+result.rows = rows.formatCells({
+  rows: local.rows,
+  columns: input.columns,
+  keepColumns: ["id"],
+  escapeHtml: true,
+})
 ```
+
+`columns` is an ordered array of descriptors, for example:
+
+```json
+[
+  {"name":"label","type":"text"},
+  {"name":"amount","type":"number","decimals":2},
+  {"name":"enabled","type":"boolean","trueText":"Oui","falseText":"Non"},
+  {"name":"due","type":"date","pattern":"dd/MM/yyyy"}
+]
+```
+
+Each cell is `{value, text}`. `value` retains its JSON type; null/missing uses
+`nullText` (empty by default). Optional `key` renames the column; optional `path`
+reads nested JSON. `valuesOnly:true` returns raw selected values without cells.
+`includeNumeric:true` adds a strict decimal-text flag. Numeric text is accepted
+only when finite, booleans must be booleans, and ISO dates are strict (30 February
+fails). Date patterns support `yyyy`, `M/MM/MMM/MMMM`, `d/dd`, `EEE/EEEE`, `H/HH`,
+`m/mm`, `s/ss`, punctuation and `long`. Dates without offsets retain their civil
+date/time; timestamps with offsets use the column's IANA `timeZone` (UTC default).
+Set the same `locale` (fr-FR default) and zone on both runtimes.
+
+## Whole-array contracts
+
+| Block | Contract |
+| --- | --- |
+| `rows.formatCells` | `{rows, columns, keepColumns?, valuesOnly?, escapeHtml?, includeNumeric?}` → cell rows. |
+| `rows.distinct` | `{rows, columns, valueKey?}` → first row of each unique tuple, preserving order. Empty columns keeps all rows. |
+| `rows.group` | `{rows, groupColumns, aggregations, valueKey?, skipInvalid?}` → one row per group in first-occurrence order. |
+| `rows.select` | `{rows, firstColumns?, columns?, columnsOrder?, rename?}` → projected, ordered, renamed row objects. |
+| `rows.read` | `{rows, path, defaultValue?, skipMissing?}` → one path result per element, or per JSON text element. |
+
+`rows.distinct` and `rows.group` default to raw values (`valueKey:""`). For
+formatted cells, pass `valueKey:"value"`. Equality is type-sensitive and
+structural: numeric 1 differs from text "1", object key order does not matter,
+and missing equals null. Composite keys cannot collide through separators.
+
+An aggregation is `{type:"sum",column:"amount",key:"total"}`; supported types
+are `count`, `sum`, `avg`, `min`, `max`. Count counts rows. Sum/average accept
+finite numbers or numeric text; min/max accept consistently typed numbers or
+text (ISO dates sort chronologically). Null, missing and empty text are skipped;
+invalid values fail unless `skipInvalid:true` is explicitly chosen. Empty input
+returns `[]`; no group columns creates one global group for nonempty input.
+Count/sum with no values give 0; avg/min/max give null. The output copies the
+first row of each group and writes raw aggregate values at the chosen keys.
+Format the aggregates afterwards if cells are wanted.
+
+```javascript
+local.totals = rows.group({
+  rows: input.rows,
+  groupColumns: ["status"],
+  aggregations: [
+    {type:"count", key:"count"},
+    {type:"sum", column:"amount", key:"total"},
+  ],
+})
+result.rows = rows.select({
+  rows: local.totals,
+  columns: ["status", "count", "total"],
+  rename: {status:"label"},
+})
+```
+
+Selection strings are literal keys, including dots; a string beginning with `$`
+is an explicit JSON path. Use `{path:"$.customer.name", key:"name"}` for a nested
+projection. An explicit `columns:[]` keeps only `firstColumns`; omitting columns
+keeps every column, after `firstColumns` and `columnsOrder`. Conflicting output
+keys are refused. Inputs are never mutated; nested values can be shared with the
+output, as with `list.take`.
+
+`rows.read` supports `$`, `.key`, `[index]`, quoted keys and `[*]`, including a
+relative dotted path. Wildcards produce an array **per input element**, not a
+flattened list. A missing scalar path uses `defaultValue` (null by default);
+explicit null/false/0/empty text are preserved. `skipMissing:true` omits missing
+paths. Invalid JSON and invalid paths are errors. No eval, recursive descent or
+inherited-property traversal. Text elements are parsed once; this is not a
+streaming JSON parser.
+
+All five blocks run on Rhino and in the browser with the same contract. Default
+limits are 100,000 rows and 1,000,000 row × column operations / wildcard results
+(`maxRows` / `maxCells`). Hard ceilings are 1,000,000 / 10,000,000, at most 4096
+column/aggregation descriptors and JSON paths of 64 segments / 2048 characters.
+Excess fails with `ROWS_LIMIT_EXCEEDED`; invalid options/values have explicit
+`ROWS_*` codes. Long loops check cancellation. No user values or results are
+cached across calls. Baserow-specific HTML and field options belong in a provider
+adapter, not in this generic kernel.
 
 Capture `current` in a named local before entering another loop. Prepare metadata
 once outside the loop. Append with `json.push` and update entries with `json.put`;
@@ -52,6 +138,13 @@ dependencies classpath and the same initialization used by `tools/run-tests.sh`:
 java -cp '<dependencies-jar>' org.mozilla.javascript.tools.shell.Main -version 200 \
   tools/benchmark-rows-runtime.js _flow tests/fixtures/runtime-rows 20 10 20x8,100x12
 ```
+
+The default bench alternates `RowsCells` (Flow block per cell) and `RowsArray`
+(`rows.formatCells` once per array), with identical input, local filtering,
+projection and exact expected output checked after every run. Pass a sixth
+argument with an older engine `_flow` to include its cell baseline; the seventh
+argument selects `cells,array` (default) or one variant. Profiles are separate
+from timing. The array version executes three nodes regardless of row/cell count.
 
 When using server webapp jars, initialize engine logging/properties as in the
 standalone test setup. `MEASURE` lines contain wall time, thread CPU time and

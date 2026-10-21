@@ -959,5 +959,492 @@
       "timeZone": "Europe/Paris"
     },
     "expected": 60
+  },
+  {
+    "block": "rows.formatCells",
+    "input": {
+      "rows": [
+        {
+          "id": 1,
+          "n": "3.5",
+          "b": false,
+          "when": "2026-03-15",
+          "text": "<A&B>\"'"
+        }
+      ],
+      "columns": [
+        {
+          "name": "n",
+          "type": "number"
+        },
+        {
+          "name": "b",
+          "type": "boolean"
+        },
+        {
+          "name": "when",
+          "type": "date"
+        },
+        {
+          "name": "text"
+        }
+      ],
+      "keepColumns": [
+        "id"
+      ],
+      "escapeHtml": true
+    },
+    "expected": [
+      {
+        "id": 1,
+        "n": {
+          "value": "3.5",
+          "text": "3.50"
+        },
+        "b": {
+          "value": false,
+          "text": "Non"
+        },
+        "when": {
+          "value": "2026-03-15",
+          "text": "15/03/2026"
+        },
+        "text": {
+          "value": "<A&B>\"'",
+          "text": "&lt;A&amp;B&gt;&quot;&#39;"
+        }
+      }
+    ]
+  },
+  {
+    "block": "rows.formatCells",
+    "input": {
+      "rows": [
+        {
+          "d": "2026-03-29T01:30:00Z"
+        }
+      ],
+      "columns": [
+        {
+          "name": "d",
+          "type": "datetime",
+          "pattern": "dd/MM/yyyy HH:mm:ss",
+          "timeZone": "Europe/Paris"
+        }
+      ]
+    },
+    "expected": [
+      {
+        "d": {
+          "value": "2026-03-29T01:30:00Z",
+          "text": "29/03/2026 03:30:00"
+        }
+      }
+    ]
+  },
+  {
+    "block": "rows.formatCells",
+    "input": {
+      "rows": [
+        {
+          "d": "2026-03-15"
+        }
+      ],
+      "columns": [
+        {
+          "name": "d",
+          "type": "date",
+          "pattern": "long"
+        }
+      ]
+    },
+    "expected": [
+      {
+        "d": {
+          "value": "2026-03-15",
+          "text": "dimanche 15 mars 2026"
+        }
+      }
+    ]
+  },
+  {
+    "block": "rows.formatCells",
+    "input": {
+      "rows": [
+        {
+          "n": 0,
+          "b": false,
+          "s": ""
+        },
+        {}
+      ],
+      "columns": [
+        {
+          "name": "n",
+          "type": "number"
+        },
+        {
+          "name": "b",
+          "type": "boolean"
+        },
+        {
+          "name": "s"
+        }
+      ],
+      "valuesOnly": true
+    },
+    "expected": [
+      {
+        "n": 0,
+        "b": false,
+        "s": ""
+      },
+      {
+        "n": null,
+        "b": null,
+        "s": null
+      }
+    ]
+  },
+  {
+    "block": "rows.distinct",
+    "input": {
+      "rows": [
+        {
+          "x": 1,
+          "id": "first"
+        },
+        {
+          "x": "1"
+        },
+        {
+          "x": 1,
+          "id": "last"
+        },
+        {
+          "x": null
+        },
+        {}
+      ],
+      "columns": [
+        "x"
+      ]
+    },
+    "expected": [
+      {
+        "x": 1,
+        "id": "first"
+      },
+      {
+        "x": "1"
+      },
+      {
+        "x": null
+      }
+    ]
+  },
+  {
+    "block": "rows.distinct",
+    "input": {
+      "rows": [
+        {
+          "x": {
+            "a": 1,
+            "b": 2
+          }
+        },
+        {
+          "x": {
+            "b": 2,
+            "a": 1
+          }
+        }
+      ],
+      "columns": [
+        "x"
+      ]
+    },
+    "expected": [
+      {
+        "x": {
+          "a": 1,
+          "b": 2
+        }
+      }
+    ]
+  },
+  {
+    "block": "rows.distinct",
+    "input": {
+      "rows": [
+        {
+          "x": {
+            "value": "a"
+          }
+        },
+        {
+          "x": {
+            "value": "a"
+          }
+        },
+        {
+          "x": {
+            "value": "b"
+          }
+        }
+      ],
+      "columns": [
+        "x"
+      ],
+      "valueKey": "value"
+    },
+    "expected": [
+      {
+        "x": {
+          "value": "a"
+        }
+      },
+      {
+        "x": {
+          "value": "b"
+        }
+      }
+    ]
+  },
+  {
+    "block": "rows.group",
+    "input": {
+      "rows": [
+        {
+          "g": "a",
+          "n": 2
+        },
+        {
+          "g": "a",
+          "n": "4"
+        },
+        {
+          "g": "b",
+          "n": null
+        }
+      ],
+      "groupColumns": [
+        "g"
+      ],
+      "aggregations": [
+        {
+          "type": "count",
+          "key": "count"
+        },
+        {
+          "type": "sum",
+          "column": "n",
+          "key": "sum"
+        },
+        {
+          "type": "avg",
+          "column": "n",
+          "key": "avg"
+        }
+      ]
+    },
+    "expected": [
+      {
+        "g": "a",
+        "n": 2,
+        "count": 2,
+        "sum": 6,
+        "avg": 3
+      },
+      {
+        "g": "b",
+        "n": null,
+        "count": 1,
+        "sum": 0,
+        "avg": null
+      }
+    ]
+  },
+  {
+    "block": "rows.group",
+    "input": {
+      "rows": [
+        {
+          "n": 3
+        },
+        {
+          "n": 1
+        },
+        {
+          "n": 9
+        }
+      ],
+      "groupColumns": [],
+      "aggregations": [
+        {
+          "type": "min",
+          "column": "n",
+          "key": "low"
+        },
+        {
+          "type": "max",
+          "column": "n",
+          "key": "high"
+        }
+      ]
+    },
+    "expected": [
+      {
+        "n": 3,
+        "low": 1,
+        "high": 9
+      }
+    ]
+  },
+  {
+    "block": "rows.group",
+    "input": {
+      "rows": [],
+      "aggregations": [
+        {
+          "type": "count",
+          "key": "count"
+        }
+      ]
+    },
+    "expected": []
+  },
+  {
+    "block": "rows.select",
+    "input": {
+      "rows": [
+        {
+          "a": 1,
+          "id": 2,
+          "secret": 3,
+          "nested": {
+            "name": "N"
+          }
+        }
+      ],
+      "firstColumns": [
+        "id"
+      ],
+      "columns": [
+        "a",
+        {
+          "path": "$.nested.name",
+          "key": "label"
+        }
+      ],
+      "rename": {
+        "a": "value"
+      }
+    },
+    "expected": [
+      {
+        "id": 2,
+        "value": 1,
+        "label": "N"
+      }
+    ]
+  },
+  {
+    "block": "rows.select",
+    "input": {
+      "rows": [
+        {
+          "x.y": 1,
+          "a": 2,
+          "z": 3
+        }
+      ],
+      "columnsOrder": [
+        "z"
+      ],
+      "rename": {
+        "a": "b"
+      }
+    },
+    "expected": [
+      {
+        "z": 3,
+        "x.y": 1,
+        "b": 2
+      }
+    ]
+  },
+  {
+    "block": "rows.read",
+    "input": {
+      "rows": [
+        {
+          "a": {
+            "x": 0
+          }
+        },
+        {
+          "a": {
+            "x": null
+          }
+        },
+        {
+          "a": {
+            "x": false
+          }
+        },
+        {}
+      ],
+      "path": "$.a.x",
+      "defaultValue": "missing"
+    },
+    "expected": [
+      0,
+      null,
+      false,
+      "missing"
+    ]
+  },
+  {
+    "block": "rows.read",
+    "input": {
+      "rows": [
+        {
+          "a": [
+            {
+              "id": 1
+            },
+            {
+              "id": 2
+            }
+          ]
+        },
+        {
+          "a": []
+        }
+      ],
+      "path": "$.a[*].id"
+    },
+    "expected": [
+      [
+        1,
+        2
+      ],
+      []
+    ]
+  },
+  {
+    "block": "rows.read",
+    "input": {
+      "rows": [
+        "{\"x.y\":[0,3]}",
+        "{}"
+      ],
+      "path": "$[\"x.y\"][1]",
+      "skipMissing": true
+    },
+    "expected": [
+      3
+    ]
   }
 ]
