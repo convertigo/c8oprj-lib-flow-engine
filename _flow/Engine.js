@@ -24,6 +24,7 @@
 	var compiledScriptCacheSizeValue = 0;
 	var compiledScriptCacheClock = 0;
 	var compiledScriptCacheLimit = 1024;
+	var delegatedModuleEvaluations = 0;
 	var compiledScriptStats = {
 		hits: 0,
 		misses: 0,
@@ -308,7 +309,8 @@
 			limit: compiledScriptCacheLimit,
 			hits: compiledScriptStats.hits,
 			misses: compiledScriptStats.misses,
-			evictions: compiledScriptStats.evictions
+			evictions: compiledScriptStats.evictions,
+			delegatedModuleEvaluations: delegatedModuleEvaluations
 		};
 	}
 
@@ -388,8 +390,16 @@
 		// Share only compiled engine-module code through Convertigo's established
 		// Rhino cache. Evaluated exports/closures still belong to the fresh scope.
 		if (cx && !cx.isInterpretedMode() && String(sourceName || "").indexOf(canonicalPath(engineDir()) + "/modules/") === 0) {
-			return Packages.com.twinsoft.convertigo.engine.util.RhinoUtils.evalCachedJavascript(
-				cx, compiledScriptScope(cx), source, String(sourceName), 1, null);
+			// RhinoUtils does get/compile/put, not an atomic cache fill. Parallel XSD
+			// workers must not all compile the same large module on a cold generation.
+			var moduleLock = sharedLock("engineModuleEvaluation:" + String(sourceName));
+			moduleLock.lock();
+			try {
+				var exports = Packages.com.twinsoft.convertigo.engine.util.RhinoUtils.evalCachedJavascript(
+					cx, compiledScriptScope(cx), source, String(sourceName), 1, null);
+				delegatedModuleEvaluations++;
+				return exports;
+			} finally { moduleLock.unlock(); }
 		}
 		var script = compileScript(source, sourceName, fingerprint);
 		if (!cx || !script) {
