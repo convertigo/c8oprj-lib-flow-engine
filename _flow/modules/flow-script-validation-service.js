@@ -631,15 +631,21 @@
 		var definition = env.parseFlowScript(blocks, code, request.blockMode === true
 			? { sourceVersion: request.sourceVersion } : undefined);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
-		var native = request.blockMode === true || !env.nativePropertyContract ? null
-			: env.nativePropertyContract().sourceMetadata(code, flowMetaFromDefinition(definition), env.typeConversion, false);
+		var native = null, nativeDiagnostics = [];
+		if (request.blockMode !== true && env.nativePropertyContract) {
+			try { native = env.nativePropertyContract().sourceMetadata(code, flowMetaFromDefinition(definition), env.typeConversion, false); }
+			catch (error) {
+				if (!Array.isArray(error.details)) throw error;
+				nativeDiagnostics = error.details;
+			}
+		}
 		if (native) definition.flow = native.value;
-		var diagnostics = [].concat(validateDefinition(blocks, definition, env, request.target || "backend"));
+		var diagnostics = nativeDiagnostics.concat(validateDefinition(blocks, definition, env, request.target || "backend"));
 		if (native) native.normalizations.forEach(function (note) {
 			diagnostics.push({severity:"warning",code:note.code,line:note.line,path:note.property,property:note.property,
 				actual:note.before,expected:note.after,message:note.property+" is normalized from "+JSON.stringify(note.before)+" to "+JSON.stringify(note.after)+". code-set writes and reports this correction."});
 		});
-		accessibilityDiagnostics(definition).forEach(function (diagnostic) {
+		(nativeDiagnostics.length ? [] : accessibilityDiagnostics(definition)).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		var inputVariables = inputVariablesFromDefinition(activeBlocks, definition, env);
