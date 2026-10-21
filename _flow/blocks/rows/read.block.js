@@ -52,7 +52,7 @@ const _meta = {
     "defaultValue": {
       "label": "Missing value",
       "kind": "value",
-      "type": "any",
+      "type": "unknown",
       "description": "Used only for a missing path. Explicit null, false, 0 and empty text are preserved.",
       "default": null
     },
