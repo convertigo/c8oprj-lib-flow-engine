@@ -28,5 +28,12 @@ try {
  assert(analysis.ok,'Typed row contracts validate: '+JSON.stringify(analysis));
  var schema=JSON.parse(String(engine.outputSchema(JSON.stringify({flowSource:source}))));
  assert(JSON.stringify(schema).indexOf('"text":{"type":"string"}')>=0,'Cell output schema has text: '+JSON.stringify(schema));
- print('ROWS_PARITY '+JSON.stringify({values:results,errors:errors.length,assertions:cases.length+errors.length+8}));
+ var header='const _flow={sourceVersion:2,inputs:{rows:{type:"array",items:{type:"object",properties:{constructor:{type:"number"},n:{type:"number"}}}}}};\n';
+ var special=header+'function Shape({input,result}){\nresult.rows=rows.select({rows:input.rows,columns:["constructor"],rename:{}})\n}\n';
+ var specialSchema=JSON.parse(String(engine.outputSchema(JSON.stringify({flowSource:special}))));
+ assert(specialSchema.schema.properties.rows.items.properties.constructor.type==='number','Projection schemas preserve own constructor keys: '+JSON.stringify(specialSchema));
+ var emptyKey=header+'function Shape({input,result}){\nresult.rows=rows.formatCells({rows:input.rows,columns:[{name:"n",key:""}]})\n}\n';
+ var emptySchema=JSON.parse(String(engine.outputSchema(JSON.stringify({flowSource:emptyKey}))));
+ assert(Object.prototype.hasOwnProperty.call(emptySchema.schema.properties.rows.items.properties,''),'An empty literal alias is not replaced by the source name');
+ print('ROWS_PARITY '+JSON.stringify({values:results,errors:errors.length,assertions:cases.length+errors.length+10}));
 } finally { files.deleteDirectory(temporary); }

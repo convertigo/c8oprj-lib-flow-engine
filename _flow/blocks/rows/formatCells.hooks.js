@@ -4,11 +4,11 @@
   if(item && item.type==="object") {
     var source=item.properties||{}, properties={};
     if(Array.isArray(p.columns)) {
-      (Array.isArray(p.keepColumns)?p.keepColumns:[]).forEach(function(k){if(source[k])Object.defineProperty(properties,k,{value:source[k],enumerable:true});});
+      (Array.isArray(p.keepColumns)?p.keepColumns:[]).forEach(function(k){if(Object.prototype.hasOwnProperty.call(source,k))Object.defineProperty(properties,k,{value:source[k],enumerable:true});});
       p.columns.forEach(function(c){if(typeof c==="string")c={name:c};if(!c||typeof c.name!=="string")return;
-        var value=source[c.name]||{type:"any"}, cell=p.valuesOnly===true?value:{type:"object",properties:{value:value,text:{type:"string"}}};
+        var value=Object.prototype.hasOwnProperty.call(source,c.name)?source[c.name]:{type:"any"}, cell=p.valuesOnly===true?value:{type:"object",properties:{value:value,text:{type:"string"}}};
         if(p.includeNumeric===true&&p.valuesOnly!==true)cell.properties.numeric={type:"boolean"};
-        Object.defineProperty(properties,c.key||c.name,{value:cell,enumerable:true});
+        Object.defineProperty(properties,c.key===undefined?c.name:c.key,{value:cell,enumerable:true});
       });schema.items={type:"object",properties:properties};
     }
   }
