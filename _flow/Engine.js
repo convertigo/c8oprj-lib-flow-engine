@@ -1182,8 +1182,13 @@
 		};
 	}
 
-	function clearRuntimeCaches() {
-		sharedServerJavaMap("flow.engine.generatedSchemaDependencies.v1", localGeneratedDependencies).clear();
+	function clearRuntimeCaches(localOnly) {
+		// Pool refresh/disposal clears the runtime, not the shared generation's
+		// dependencies. Explicit Studio/MCP clears must also reject in-flight results.
+		if (localOnly !== true) {
+			generatedSchemaEpoch().incrementAndGet();
+			sharedServerJavaMap("flow.engine.generatedSchemaDependencies.v1", localGeneratedDependencies).clear();
+		}
 		var result = runtimeCacheService().clear(runtimeCacheEnv());
 		runtimeState.blockArtifactCompilerFingerprint = null;
 		runtimeState.flowPlanCompilerFingerprint = null;
@@ -7104,19 +7109,26 @@
 		var key = canonicalPath(engineDir()) + "\n" + root, now = Number(JavaSystem.currentTimeMillis());
 		var saved = registry.get(key), previous = saved == null ? null : JSON.parse(String(saved));
 		if (previous && previous.generation === generation && now >= previous.at && now - previous.at < 1000) return previous;
-		var config = [loadProjectEngineDefinition(), projectConfigService().parentConfigs(projectConfigEnv())];
-		var parts = [engineCodeFingerprint(), blocksCacheKey(), typesCacheKey(), directoryFingerprint(projectSchemasDir()),
-			directoryFingerprint(new File(projectDir(), sourcePaths().path("fragments"))),
-			directoryFingerprint(new File(engineDir(), "fragments")), JSON.stringify(config)];
-		referencedProjectRoots(sourcePaths().path("fragments")).forEach(function (reference) {
-			parts.push(directoryFingerprint(new File(reference, sourcePaths().path("fragments"))));
-		});
-		var next = { generation: generation, at: now, fingerprint: sha256Hex(parts.join("\n")) };
-		if (generation === generatedSchemaGeneration()) {
-			registry.put(key, new JavaString(JSON.stringify(next)));
-			while (registry.size() > 64) { var keys = registry.keySet().iterator(); if (keys.hasNext()) registry.remove(keys.next()); else break; }
-		}
-		return next;
+		var lock = sharedLock("generatedSchemaDependencies:" + key);
+		lock.lock();
+		try {
+			now = Number(JavaSystem.currentTimeMillis());
+			saved = registry.get(key); previous = saved == null ? null : JSON.parse(String(saved));
+			if (previous && previous.generation === generation && now >= previous.at && now - previous.at < 1000) return previous;
+			var config = [loadProjectEngineDefinition(), projectConfigService().parentConfigs(projectConfigEnv())];
+			var parts = [engineCodeFingerprint(), blocksCacheKey(), typesCacheKey(), directoryFingerprint(projectSchemasDir()),
+				directoryFingerprint(new File(projectDir(), sourcePaths().path("fragments"))),
+				directoryFingerprint(new File(engineDir(), "fragments")), JSON.stringify(config)];
+			referencedProjectRoots(sourcePaths().path("fragments")).forEach(function (reference) {
+				parts.push(directoryFingerprint(new File(reference, sourcePaths().path("fragments"))));
+			});
+			var next = { generation: generation, at: Number(JavaSystem.currentTimeMillis()), fingerprint: sha256Hex(parts.join("\n")) };
+			if (generation === generatedSchemaGeneration()) {
+				registry.put(key, new JavaString(JSON.stringify(next)));
+				while (registry.size() > 64) { var keys = registry.keySet().iterator(); if (keys.hasNext()) registry.remove(keys.next()); else break; }
+			}
+			return next;
+		} finally { lock.unlock(); }
 	}
 	function generatedSchemaIdentity(request, blocks) {
 		if (!projectDir()) return null;
@@ -11246,8 +11258,12 @@
 			return staticCall("cacheInfo", cacheInfoRequest);
 		},
 
-		cacheClear: function () {
-			return staticCall("cacheClear", clearRuntimeCaches);
+		cacheClear: function (requestJson) {
+			// FlowEngineBridge.clearEngineRuntimeDataCaches passes the empty JSON
+			// argument for pool refresh AND disposal. Public cache.clear/Studio actions
+			// call clearRuntimeCaches() directly; standalone explicit clears use no args.
+			var localOnly = requestJson !== undefined && requestJson !== null && String(requestJson) === "{}";
+			return staticCall("cacheClear", function () { return clearRuntimeCaches(localOnly); });
 		},
 
 		catalog: function (requestJson) {

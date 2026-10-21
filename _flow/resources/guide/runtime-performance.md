@@ -74,6 +74,10 @@ dynamic Flow contracts or custom analysis hooks use the ordinary uncached path.
 Studio/MCP changes invalidate immediately. External filesystem changes require
 the normal reload/cache invalidation; the metadata fallback rechecks after one
 second. Unchanged contracts can survive promotion of another Flow in the project.
+Refreshing or disposing one pooled Rhino runtime clears its local caches only;
+it does not erase shared dependencies already computed for the new generation.
+Explicit `cache.clear` and Studio cache-clear actions still invalidate them and
+reject publication of an older in-flight schema analysis.
 
 Compiled engine module code is shared through Convertigo's Rhino script cache;
 each evaluation still creates independent exports and closures. Nothing caches a
