@@ -239,4 +239,23 @@ assertTrue(lastInternalRequest.values.users instanceof Array &&
 assertTrue(lastInternalRequest.values.metadata === '["one","two"]',
 	"scalar requestable input no longer preserves JSON array serialization");
 
+// New engines use the checked requestable boundary, also for same-engine Flow calls.
+var nativeCalls = 0, nativeRaw = [], nativeRequests = [];
+function NativeJsonRequester(request) { this.request = request; this.context = {nativeJsonResponse: {}}; }
+NativeJsonRequester.prototype.setRawResult = function (raw) { this.raw = raw; };
+NativeJsonRequester.prototype.processRequest = function () {
+	nativeCalls++; nativeRaw.push(this.raw); nativeRequests.push(this.request.values);
+	return this.raw ? '{"result":[]}' : '{"document":{"rows":[1],"attr":{"version":"test"}}}';
+};
+packages.com.twinsoft.convertigo.engine.requesters.NativeJsonRequester = NativeJsonRequester;
+implementation = (function (Packages) { return eval(runtimeSource); })(packages);
+targetDbo = targetFlow; targetEngineQName = "lib_flow_engine.Engine";
+var checked = runContext("lib_flow_engine.Engine", {ok:true,result:{}});
+var raw = implementation.run(checked, {props:{requestable:"ChildProject.Child", input:{value:{nested:true}}}});
+assertTrue(Array.isArray(raw) && raw.length === 0, "Native same-engine call changed a root array.");
+assertTrue(nativeCalls === 1 && nativeRaw[0] && checked.calls.length === 0, "Native call bypassed the regular checked boundary.");
+assertTrue(nativeRequests[0].value === '{"nested":true}', "Native request lost structured input.");
+var bounded = implementation.run(checked, {props:{requestable:"ChildProject.Child",input:{__nocache:true}}});
+assertTrue(nativeCalls === 2 && !nativeRaw[1] && bounded.attr.version === "test", "Regular native call lost document metadata.");
+assertTrue(nativeRequests[1].__nocache === 'true' && nativeRequests[1].__removeContext === 'true', "Native call lost cache/context controls.");
 print("requestable-flow-reentrancy OK");

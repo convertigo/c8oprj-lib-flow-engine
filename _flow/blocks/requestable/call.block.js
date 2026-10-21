@@ -42,6 +42,8 @@ const _meta = {
 (function () {
 	var HashMap = Packages.java.util.HashMap;
 	var InternalRequester = Packages.com.twinsoft.convertigo.engine.requesters.InternalRequester;
+	var NativeJsonRequester = Packages.com.twinsoft.convertigo.engine.requesters.NativeJsonRequester;
+	var nativeBoundaryAvailable = typeof NativeJsonRequester === "function";
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
 	var XMLUtils = Packages.com.twinsoft.convertigo.engine.util.XMLUtils;
 
@@ -294,11 +296,18 @@ const _meta = {
 		if (!target || !target.project || !target.requestable) {
 			ctx.raise("INVALID_REQUESTABLE_TARGET", "Invalid requestable target.");
 		}
-		if (canRunFlowDirect(ctx, target, input)) {
+		if (!nativeBoundaryAvailable && canRunFlowDirect(ctx, target, input)) {
 			return runFlowDirect(ctx, target, input);
 		}
 		var request = requestFromTarget(target);
 		putInput(request, input, target);
+		if (nativeBoundaryAvailable) {
+			var requester = new NativeJsonRequester(request, ctx.convertigoContext().httpServletRequest);
+			var rawResult = canRunFlowDirect(ctx, target, input);
+			requester.setRawResult(rawResult);
+			var result = JSON.parse(String(requester.processRequest()));
+			return rawResult && requester.context.nativeJsonResponse !== null ? result.result : unwrapDocument(result);
+		}
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();
 		return unwrapDocument(JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true, true))));
 	}
