@@ -48,7 +48,7 @@
 	}
 
 	function isHandle(value) {
-		return value && value.__flowHandle === true;
+		return value != null && (typeof value === "object" || typeof value === "function") && value.__flowHandle === true;
 	}
 
 	function type(value) {
@@ -72,6 +72,9 @@
 
 	function sanitizeValue(value, env, seen, rejectWhere) {
 		value = jsValue(value, env);
+		if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+			return value;
+		}
 		if (isHandle(value)) {
 			if (rejectWhere) {
 				env.raise("RUNTIME_HANDLE_IN_RESULT", "Runtime handles cannot be written to " + rejectWhere + ". Convert them to serializable data first.");
@@ -119,6 +122,9 @@
 
 	function normalize(value, env) {
 		value = jsValue(value, env);
+		if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+			return value;
+		}
 		if (isHandle(value)) {
 			return summary(value);
 		}

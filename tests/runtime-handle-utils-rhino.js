@@ -72,4 +72,21 @@ assertTrue(normalized.boxed.text === "boxed" && normalized.boxed.bool === false 
 assertTrue(JSON.stringify(normalized.handle) === '{"handle":"test","id":"h1","state":"closed"}', "A handle leaked instead of its summary.");
 assertTrue(runtimeHandles.normalize(new Packages.java.lang.Integer(9), env) === 9, "A root Java value was not converted.");
 
+// Primitive JSON leaves must not invoke a boxed String/Number prototype accessor.
+// Rhino allocates the complete native wrapper (including method slots) for that access.
+var boxedReads = 0;
+Object.defineProperty(String.prototype, "__flowHandle", { configurable: true, get: function () { boxedReads++; return true; } });
+Object.defineProperty(Number.prototype, "__flowHandle", { configurable: true, get: function () { boxedReads++; return true; } });
+try {
+	var primitiveData = { text: "payload", integer: 42, flag: true };
+	assertTrue(JSON.stringify(runtimeHandles.normalize(primitiveData, env)) === JSON.stringify(primitiveData), "Normalization interpreted a primitive as a handle.");
+	assertTrue(JSON.stringify(runtimeHandles.sanitizeSerializable(primitiveData, "result", env)) === JSON.stringify(primitiveData), "Serialization interpreted a primitive as a handle.");
+	assertTrue(!runtimeHandles.contains(primitiveData, env), "Primitive reported as handle.");
+	assertTrue(!runtimeHandles.isHandle("payload") && !runtimeHandles.isHandle(42), "Primitive handle detection changed.");
+	assertTrue(boxedReads === 0, "Runtime traversals boxed primitive leaves.");
+} finally {
+	delete String.prototype.__flowHandle;
+	delete Number.prototype.__flowHandle;
+}
+
 print("runtime-handle-utils-rhino OK");
