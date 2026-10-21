@@ -70,6 +70,14 @@
 		return out;
 	}
 
+	// Keep callbacks out of the recursive visitor: Rhino otherwise creates an
+	// activation scope even for every primitive leaf. Preserve map overrides/holes.
+	function sanitizeArray(value, env, seen, rejectWhere) {
+		return value.map(function (item) {
+			return sanitizeValue(item, env, seen, rejectWhere);
+		});
+	}
+
 	function sanitizeValue(value, env, seen, rejectWhere) {
 		value = jsValue(value, env);
 		if (value === null || (typeof value !== "object" && typeof value !== "function")) {
@@ -82,9 +90,7 @@
 			return summary(value);
 		}
 		if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			return value.map(function (item) {
-				return sanitizeValue(item, env, seen, rejectWhere);
-			});
+			return sanitizeArray(value, env, seen, rejectWhere);
 		}
 		if (value && typeof value === "object") {
 			seen = seen || [];
@@ -93,11 +99,13 @@
 			}
 			seen.push(value);
 			var out = {};
-			Object.keys(value).forEach(function (key) {
+			var keys = Object.keys(value);
+			for (var i = 0; i < keys.length; i++) {
+				var key = keys[i];
 				var child = sanitizeValue(value[key], env, seen, rejectWhere);
 				if (key === "__proto__") defineDataProperty(out, key, child);
 				else out[key] = child;
-			});
+			}
 			seen.pop();
 			return out;
 		}
@@ -188,11 +196,10 @@
 				found = contains(value[i], env, seen);
 			}
 		} else {
-			Object.keys(value).forEach(function (key) {
-				if (!found) {
-					found = contains(value[key], env, seen);
-				}
-			});
+			var keys = Object.keys(value);
+			for (var k = 0; k < keys.length && !found; k++) {
+				found = contains(value[keys[k]], env, seen);
+			}
 		}
 		seen.pop();
 		return found;

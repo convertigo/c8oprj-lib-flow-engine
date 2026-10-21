@@ -72,6 +72,39 @@ assertTrue(normalized.boxed.text === "boxed" && normalized.boxed.bool === false 
 assertTrue(JSON.stringify(normalized.handle) === '{"handle":"test","id":"h1","state":"closed"}', "A handle leaked instead of its summary.");
 assertTrue(runtimeHandles.normalize(new Packages.java.lang.Integer(9), env) === 9, "A root Java value was not converted.");
 
+// Sanitization must preserve the observable traversal contract, not just JSON
+// text: isolated aliases, own special keys, sparse arrays and map overrides.
+var cleanSource = JSON.parse('{"__proto__":{"safe":true},"constructor":"own","text":"é☃"}');
+var branch = { value: 7 };
+cleanSource.left = branch;
+cleanSource.right = branch;
+cleanSource.boxed = source.boxed;
+cleanSource.sparse = source.sparse;
+cleanSource.values = source.values;
+cleanSource.self = cleanSource;
+var reads = [];
+Object.defineProperty(cleanSource, "first", { enumerable: true, get: function () { reads.push("first"); return 1; } });
+Object.defineProperty(cleanSource, "second", { enumerable: true, get: function () { reads.push("second"); return 2; } });
+var sanitized = runtimeHandles.sanitizeSerializable(cleanSource, "result", env);
+assertTrue(sanitized !== cleanSource && sanitized.left !== branch && sanitized.left !== sanitized.right, "Sanitization leaked mutable aliases.");
+assertTrue(Object.getPrototypeOf(sanitized) === Object.prototype && Object.prototype.hasOwnProperty.call(sanitized, "__proto__") && sanitized.__proto__.safe === true, "Sanitization changed an own special key or prototype.");
+assertTrue(sanitized.constructor === "own" && sanitized.text === "é☃", "An ordinary JSON property changed.");
+assertTrue(sanitized.self === "[Circular]" && cleanSource.self === cleanSource, "Object cycles or source state changed.");
+assertTrue(reads.join(",") === "first,second", "Enumerable accessors changed order or multiplicity.");
+assertTrue(sanitized.sparse.length === 3 && !(0 in sanitized.sparse) && sanitized.sparse[1] === "present" && !(2 in sanitized.sparse) && mapCalls === 2, "Sanitization changed map overrides or holes.");
+assertTrue(sanitized.boxed.text === "boxed" && sanitized.boxed.bool === false && sanitized.boxed.integer === 7 && sanitized.boxed.double === 8.5, "Sanitization changed Java scalar conversions.");
+assertTrue(sanitized.values[0] === undefined && sanitized.values[1] === null && sanitized.values[2] === false && sanitized.values[3] === 0 && sanitized.values[4] === "" && isNaN(sanitized.values[5]) && 1 / sanitized.values[6] === -Infinity, "Sanitization changed primitive leaves.");
+assertTrue(!runtimeHandles.contains(cleanSource, env), "A cycle or ordinary JSON property was mistaken for a handle.");
+var guarded = { first: { nested: [source.handle] } };
+var lateRead = false;
+Object.defineProperty(guarded, "later", { enumerable: true, get: function () { lateRead = true; throw new Error("must short circuit"); } });
+assertTrue(runtimeHandles.contains(guarded, env) && !lateRead, "Handle detection did not short circuit.");
+var rejected = false;
+try { runtimeHandles.sanitizeSerializable({ nested: [source.handle] }, "result", env); }
+catch (e) { rejected = e.code === "RUNTIME_HANDLE_IN_RESULT"; }
+assertTrue(rejected, "Nested handle escaped the output boundary.");
+assertTrue(runtimeHandles.sanitize({ nested: [source.handle] }, env).nested[0].handle === "test", "Diagnostic sanitization lost a handle summary.");
+
 // Primitive JSON leaves must not invoke a boxed String/Number prototype accessor.
 // Rhino allocates the complete native wrapper (including method slots) for that access.
 var boxedReads = 0;
