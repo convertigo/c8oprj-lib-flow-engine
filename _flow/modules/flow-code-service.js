@@ -864,19 +864,14 @@
 		var matcher = flowCodeRgMatcher(request);
 		var context = Math.max(0, Math.min(20, Number(request.context || request.contextLines || 2)));
 		var limit = Math.max(1, Math.min(100, Number(request.limit || 20)));
-		var targets = [];
-		if (request.qname || request.name || request.flowName) {
-			targets.push(flowCodeGetRequest(blocks, request));
-		} else {
-			listProjectFlows().flows.forEach(function (flow) {
-				targets.push(flowCodeGetRequest(blocks, Object.assign({}, request, { name: flow.name, qname: null })));
+		var targetRequests = request.qname || request.name || request.flowName ? [request]
+			: listProjectFlows().flows.map(function (flow) {
+				return Object.assign({}, request, { name: flow.name, qname: null });
 			});
-		}
-		var extracts = [];
-		targets.forEach(function (target) {
-			if (extracts.length >= limit) {
-				return;
-			}
+		var extracts = [], singleRevision = null;
+		for (var i = 0; i < targetRequests.length && extracts.length < limit; i++) {
+			var target = flowCodeGetRequest(blocks, targetRequests[i]);
+			if (targetRequests.length === 1) singleRevision = target.revision;
 			flowCodeRgExtract(target.code, matcher, context, limit - extracts.length).forEach(function (extract) {
 				extracts.push(Object.assign({
 					qname: target.qname,
@@ -884,11 +879,11 @@
 					revision: target.revision
 				}, extract));
 			});
-		});
+		}
 		return {
 			ok: true,
 			qname: request.qname ? String(request.qname) : null,
-			revision: targets.length === 1 ? targets[0].revision : null,
+			revision: singleRevision,
 			extracts: extracts
 		};
 	}

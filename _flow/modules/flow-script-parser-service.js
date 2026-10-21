@@ -2581,7 +2581,15 @@
 				});
 				var imports = {};
 				parseFlowScriptImports(split.prelude, imports);
-				var helperBlocks = Object.assign({}, blocks || {}, helperBlockDefinitions(helpers));
+				// Catalog properties can lazily compile graph blocks. Reading every property
+				// here makes a small source prepare the entire catalog, including unrelated
+				// libraries. Keep descriptors lazy and do not mutate the shared catalog.
+				var helperBlocks = blocks || {};
+				if (helpers.length) {
+					helperBlocks = Object.defineProperties({}, Object.assign(
+						Object.getOwnPropertyDescriptors(helperBlocks),
+						Object.getOwnPropertyDescriptors(helperBlockDefinitions(helpers))));
+				}
 				helpers.forEach(function (helper) {
 					helper.nodes = parseFlowScriptBodyNodes(helperBlocks, Object.assign({}, imports),
 						helperParamLocals(helper.params), helper.__flowScriptBody);
