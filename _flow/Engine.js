@@ -2856,7 +2856,17 @@
 		return projectFlowBeanLookup(name, request).flow;
 	}
 
+	function nativePropertyContract() { return loadEngineModule("native-property-contract.js"); }
+	function nativeFlowMetadata(meta, code, rewrite) {
+		return code === undefined ? nativePropertyContract().metadata(meta || {}, loadEngineModule("type-conversion.js"))
+			: nativePropertyContract().sourceMetadata(String(code), meta || {}, loadEngineModule("type-conversion.js"), rewrite === true);
+	}
+
 	function syncProjectFlowInputs(name, inputDefinitions, args) {
+		// Preflight before even reading a native variable (that read can reenter Java synchronization).
+		var native = nativeFlowMetadata(Object.assign({}, args && args.flowMetadata || {}, {inputs:inputDefinitions || {}}));
+		inputDefinitions = native.value.inputs;
+		args = Object.assign({}, args || {}, {flowMetadata:native.value});
 		var lookup = projectFlowBeanLookup(name, args);
 		var flow = lookup.flow;
 		if (!flow || !inputDefinitions || typeof inputDefinitions !== "object") {
@@ -2875,13 +2885,7 @@
 		var updated = [];
 		var metadataUpdated = [];
 		var metadata = args && args.flowMetadata || {};
-		// Validate the complete native contract before changing any bean.
-		if (metadata.authenticatedContextRequired !== undefined && typeof metadata.authenticatedContextRequired !== "boolean") raise("FLOW_AUTHENTICATION_INVALID", "_flow.authenticatedContextRequired must be a boolean.");
-		Object.keys(inputDefinitions).forEach(function (key) {
-			var spec = inputDefinitions[key] || {}, visibility = spec.visibility;
-			if (spec.isFileUpload !== undefined && typeof spec.isFileUpload !== "boolean") raise("FLOW_INPUT_UPLOAD_INVALID", "input." + key + ".isFileUpload must be a boolean.");
-			if (visibility !== undefined && (typeof visibility !== "number" || !isFinite(visibility) || Math.floor(visibility) !== visibility || visibility < -1 || visibility > 15)) raise("FLOW_INPUT_VISIBILITY_INVALID", "input." + key + ".visibility must be -1 or an integer bitmask from 0 to 15.");
-		});
+
 		if (metadata.authenticatedContextRequired !== undefined) {
 			if (typeof metadata.authenticatedContextRequired !== "boolean") raise("FLOW_AUTHENTICATION_INVALID", "_flow.authenticatedContextRequired must be a boolean.");
 			if (Boolean(flow.getAuthenticatedContextRequired()) !== metadata.authenticatedContextRequired) {
@@ -2915,7 +2919,7 @@
 				return false;
 			}
 			var next = Boolean(value);
-			var current = variable[getter] ? Boolean(variable[getter]()) : false;
+			var current = variable[getter] ? String(variable[getter]()) === "true" : false;
 			if (current === next) {
 				return false;
 			}
@@ -2986,7 +2990,7 @@
 				variable.setName(key);
 				changed = true;
 			}
-			if (definition.description !== undefined && definition.description !== null && String(definition.description) !== "") {
+			if (definition.description !== undefined) {
 				changed = setStringIfChanged(variable, "getDescription", "setDescription", definition.description) || changed;
 			} else if (!existing) {
 				variable.setDescription("Flow input " + key);
@@ -3019,6 +3023,7 @@
 			synced: true,
 			created: created,
 			updated: updated,
+			normalizations: native.normalizations,
 			metadataUpdated: metadataUpdated,
 			projectName: lookup.projectName || "",
 			flowName: lookup.flowName || String(name || "")
@@ -3061,7 +3066,7 @@
 		if (value === undefined || value === null) {
 			return null;
 		}
-		var name = String(value).toLowerCase();
+		var name = String(value).trim().toLowerCase();
 		if (!/^(private|hidden|public)$/.test(name)) {
 			raise("FLOW_ACCESSIBILITY_INVALID", "_flow.accessibility must be \"private\", \"hidden\" or \"public\".");
 		}
@@ -3086,6 +3091,9 @@
 			inputDefinitions = flowInputDefinitionsFromDefinition(definition);
 			flowMetadata = definition.flow || definition._flow || {};
 		}
+		var native = nativeFlowMetadata(flowMetadata || {}, flowSource, false);
+		flowMetadata = native.value;
+		inputDefinitions = flowInputDefinitionsFromFlowScriptMetadata(flowMetadata);
 		var inputSync = Object.keys(inputDefinitions).length || flowMetadata && flowMetadata.authenticatedContextRequired !== undefined
 			? syncProjectFlowInputs(name, inputDefinitions, Object.assign({}, request, { flowMetadata: flowMetadata }))
 			: { synced: false, created: [], updated: [] };
@@ -3095,6 +3103,7 @@
 			projectName: currentProjectName(request),
 			projectDir: String(projectDir() || ""),
 			metadataOnly: declaredMetadata,
+			normalizations: native.normalizations,
 			inputDefinitions: inputDefinitions,
 			inputSync: inputSync,
 			flowMetadata: flowMetadata && flowMetadata.authenticatedContextRequired !== undefined ? { authenticatedContextRequired: flowMetadata.authenticatedContextRequired } : {}
@@ -3593,6 +3602,7 @@
 		return {
 			inputExpressionTokens: function (text) { return expressionUtils().tokenize(text, expressionUtilsEnv()); },
 			templateSyntax: templateSyntax(),
+			nativePropertyContract: nativePropertyContract,
 			typeConversion: loadEngineModule("type-conversion.js"),
 			normalizeTree: normalizeTree,
 			addUnique: addUnique,
@@ -3625,7 +3635,11 @@
 	}
 
 	function flowScriptCorrectSource(blocks, code, request) {
-		return flowScriptParserService().correctSource(blocks, code, request, { blockCatalog: readOnlyBlockCatalog, blockCandidates: flowScriptBlockCandidates, blockCandidateDecision: flowScriptBlockCandidateDecision });
+		var native = request && request.blockMode === true ? {code:code,fixes:[]}
+			: nativeFlowMetadata(parseFlowScriptTopLevelObjectFromCode(code, "flow"), code, true);
+		var corrected = flowScriptParserService().correctSource(blocks, native.code, request, { blockCatalog: readOnlyBlockCatalog, blockCandidates: flowScriptBlockCandidates, blockCandidateDecision: flowScriptBlockCandidateDecision });
+		corrected.fixes = native.fixes.concat(corrected.fixes || []);
+		return corrected;
 	}
 
 	function flowScriptValidateRequest(blocks, request) {
@@ -4156,6 +4170,7 @@
 
 	function flowSourceServiceEnv() {
 		return {
+			nativeFlowMetadata: nativeFlowMetadata,
 			FileUtils: FileUtils,
 			sourceFromDefinition: sourceFromDefinition,
 			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
@@ -4633,6 +4648,7 @@
 			return flowRuntimeServiceEnvInstance;
 		}
 		flowRuntimeServiceEnvInstance = {
+			nativePropertyContract: nativePropertyContract,
 			projectPackages: projectPackages,
 			schemaContract: schemaContract(),
 			typedScopeContract: loadEngineModule("typed-scope-contract.js"),
@@ -5027,6 +5043,7 @@
 
 	function flowTreeServiceEnv() {
 		return {
+			nativeFlowMetadata: nativeFlowMetadata,
 			sources: sourceView(currentActiveRequest()),
 			sourceView: sourceView,
 			sourcePaths: sourcePaths(),

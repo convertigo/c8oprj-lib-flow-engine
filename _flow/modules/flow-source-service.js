@@ -56,7 +56,10 @@
 
 	function setProjectFlow(blocks, name, source, args) {
 		source = sourceForMaybeFlowScript(blocks, args, sourceForWriteRequest(args, source));
-		source = sourceFromDefinition(parseSource(source));
+		var definition = parseSource(source);
+		var native = env.nativeFlowMetadata ? env.nativeFlowMetadata(definition.flow || {}) : null;
+		if (native) definition.flow = native.value;
+		source = sourceFromDefinition(definition);
 		var analysis = analyzeFlowSource(blocks, source);
 		var codeFile = env.writeProjectFlowWorkingCopy
 			? env.writeProjectFlowWorkingCopy(blocks, name, source, args)
@@ -66,6 +69,7 @@
 		}
 		return {
 			ok: true,
+			normalizations: native ? native.normalizations : [],
 			name: String(name),
 			format: "flowscript",
 			file: codeFile.file,

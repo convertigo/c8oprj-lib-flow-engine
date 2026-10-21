@@ -40,8 +40,8 @@ try {
  sync({authenticatedContextRequired:true});
  assert(__nativeProbeFlow.getAuthenticatedContextRequired(),'Auth-only metadata does not require an input');
  __nativeProbeFlow=null;
- [{visibility:'-1'}, {visibility:16}, {isFileUpload:'false'}].forEach(function(props,i){var r=api('flowCodeSet',{name:'Bad'+i,code:'const _flow = '+JSON.stringify({inputs:{x:Object.assign({type:'string'},props)}})+'\nfunction Bad'+i+'({result}) { result.ok = true }'});assert(!r.ok,'Invalid native metadata accepted '+JSON.stringify(props));});
- var badAuth=api('flowCodeSet',{name:'BadAuth',code:'const _flow = {authenticatedContextRequired:"false"}\nfunction BadAuth({result}) { result.ok = true }'});assert(!badAuth.ok,'Authentication must not coerce string false to true');
+ [{visibility:'Bogus'}, {visibility:16}, {isFileUpload:'yes'}].forEach(function(props,i){var r=api('flowCodeSet',{name:'Bad'+i,code:'const _flow = '+JSON.stringify({inputs:{x:Object.assign({type:'string'},props)}})+'\nfunction Bad'+i+'({result}) { result.ok = true }'});assert(!r.ok,'Invalid native metadata accepted '+JSON.stringify(props));});
+ var badAuth=api('flowCodeSet',{name:'BadAuth',code:'const _flow = {authenticatedContextRequired:"yes"}\nfunction BadAuth({result}) { result.ok = true }'});assert(!badAuth.ok,'Authentication must refuse an unknown boolean spelling');
  if(failures.length)throw new Error(failures.join('\n'));
  print('baserow-authoring-regressions OK ('+checks+' assertions)');
 }finally{files.deleteDirectory(project);}

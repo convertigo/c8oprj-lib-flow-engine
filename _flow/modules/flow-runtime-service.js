@@ -438,6 +438,7 @@
 			return renderTemplateTree(this, value);
 		};
 		// A value converted to a declared type, as the inputs of a Flow: { ok, value } or { ok: false, message }.
+		runContextPrototype.nativePropertyContract = function () { return env.nativePropertyContract(); };
 		runContextPrototype.convert = function (value, schema) {
 			return env.typeConversion.convert(value, schema);
 		};

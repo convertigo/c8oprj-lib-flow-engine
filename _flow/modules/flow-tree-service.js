@@ -7484,6 +7484,8 @@
 		mutations.forEach(function (mutation) {
 			applyOneMutation(definition, mutation, blocks);
 		});
+		var native = target === "flow" && env.nativeFlowMetadata ? env.nativeFlowMetadata(definition.flow || {}) : null;
+		if (native) definition.flow = native.value;
 		if (target === "engine" && env.validateConfigurations) env.validateConfigurations(definition, request, configNamesBefore);
 		else if (target === "engine" && env.configurationDefinitions) env.configurationDefinitions(definition);
 		var renamedNodes = [];
@@ -7520,6 +7522,7 @@
 			selectionMutationPath: mutations[mutations.length - 1].selectionMutationPath || "",
 			children: tree.children
 		};
+		if (native && native.normalizations.length) out.normalizations = native.normalizations;
 		if (renamedNodes.length) out.renamedNodes = renamedNodes;
 		if (target === "flow") {
 			out.analysis = analyzeFlowSource(blocks, source);

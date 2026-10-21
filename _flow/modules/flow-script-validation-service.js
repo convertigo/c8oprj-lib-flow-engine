@@ -278,11 +278,7 @@
 		var definitions = inputDefinitionsFromDefinition(definition);
 		var diagnostics = [];
 		var meta = flowMetaFromDefinition(definition);
-		if (meta.authenticatedContextRequired !== undefined && typeof meta.authenticatedContextRequired !== "boolean") diagnostics.push({severity:"error", code:"FLOW_AUTHENTICATION_INVALID", message:"_flow.authenticatedContextRequired must be a boolean."});
 		Object.keys(definitions).forEach(function (name) {
-			var declared = definitions[name] || {};
-			if (declared.isFileUpload !== undefined && typeof declared.isFileUpload !== "boolean") diagnostics.push({severity:"error",code:"FLOW_INPUT_UPLOAD_INVALID",message:"input."+name+".isFileUpload must be a boolean."});
-			if (declared.visibility !== undefined && (typeof declared.visibility !== "number" || !isFinite(declared.visibility) || Math.floor(declared.visibility) !== declared.visibility || declared.visibility < -1 || declared.visibility > 15)) diagnostics.push({severity:"error",code:"FLOW_INPUT_VISIBILITY_INVALID",message:"input."+name+".visibility must be -1 or an integer bitmask from 0 to 15."});
 			var schema = definitions[name];
 			if (!schema || schema.type !== "array" || schema.items !== undefined ||
 					!Array.isArray(schema["default"]) || !schema["default"].some(function (item) { return item !== null && typeof item === "object"; })) return;
@@ -635,7 +631,14 @@
 		var definition = env.parseFlowScript(blocks, code, request.blockMode === true
 			? { sourceVersion: request.sourceVersion } : undefined);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
+		var native = request.blockMode === true || !env.nativePropertyContract ? null
+			: env.nativePropertyContract().sourceMetadata(code, flowMetaFromDefinition(definition), env.typeConversion, false);
+		if (native) definition.flow = native.value;
 		var diagnostics = [].concat(validateDefinition(blocks, definition, env, request.target || "backend"));
+		if (native) native.normalizations.forEach(function (note) {
+			diagnostics.push({severity:"warning",code:note.code,line:note.line,path:note.property,property:note.property,
+				actual:note.before,expected:note.after,message:note.property+" is normalized from "+JSON.stringify(note.before)+" to "+JSON.stringify(note.after)+". code-set writes and reports this correction."});
+		});
 		accessibilityDiagnostics(definition).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
