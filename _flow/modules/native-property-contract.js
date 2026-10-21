@@ -72,7 +72,7 @@
    if(!inputs||typeof inputs!=='object'||Array.isArray(inputs))invalid('_flow.'+which,inputs,'an object of named input schemas');
    Object.keys(inputs).forEach(function(name){
     var spec=inputs[name],path='_flow.'+which+'.'+name;
-    if(!/^[A-Za-z_$][\w$]*$/.test(name)||/^__/.test(name))invalid(path,name,'an input name without the reserved __ prefix');
+    if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)||/^__/.test(name))invalid(path,name,'a native input name matching [A-Za-z_][A-Za-z0-9_]* without the reserved __ prefix');
     if(!spec||typeof spec!=='object'||Array.isArray(spec))invalid(path,spec,'an input schema object');
     ['required','multi','multiValued','isFileUpload','nullable'].forEach(function(key){
      check(spec,key,{type:'boolean',code:key==='isFileUpload'?'FLOW_INPUT_UPLOAD_INVALID':'FLOW_INPUT_PROPERTY_INVALID'},path+'.'+key);

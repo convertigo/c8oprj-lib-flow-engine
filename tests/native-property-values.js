@@ -31,6 +31,11 @@ try{
  ['Bogus','abc','yes',{},60,null].forEach(function(v){rejected({inputs:{x:{type:v}}},'_flow.inputs.x.type');});
  rejected({inputs:{x:{type:'integer',default:'abc'}}},'_flow.inputs.x.default');
  rejected({inputs:{x:{type:'string',description:{bad:true}}}},'_flow.inputs.x.description');
+ // DBO.setName normalizes dollar signs; reject the external signature instead of renaming it.
+ var nativeName=new Packages.com.twinsoft.convertigo.beans.variables.RequestableVariable();nativeName.setName('$records');
+ assert(String(nativeName.getName())==='_records','The real native bean silently normalizes a dollar sign');
+ rejected({inputs:{'$records':{type:'integer'}}},'_flow.inputs.$records');
+ rejected({inputs:{'cost$value':{type:'integer'}}},'_flow.inputs.cost$value');
  // Each source fix must say what changed; no string truthiness and no fallback enum.
  var raw={accessibility:' Private ',authenticatedContextRequired:' TRUE ',inputs:{x:{type:' INTEGER ',required:' false ',visibility:' -1 ',description:'Keep text spaces '},files:{type:'array',isFileUpload:'TRUE',multi:' true '}}};
  var check=api('flowCodeCheck',{name:'Probe',code:code(raw),maxDiagnostics:25});
