@@ -258,4 +258,16 @@ assertTrue(nativeRequests[0].value === '{"nested":true}', "Native request lost s
 var bounded = implementation.run(checked, {props:{requestable:"ChildProject.Child",input:{__nocache:true}}});
 assertTrue(nativeCalls === 2 && !nativeRaw[1] && bounded.attr.version === "test", "Regular native call lost document metadata.");
 assertTrue(nativeRequests[1].__nocache === 'true' && nativeRequests[1].__removeContext === 'true', "Native call lost cache/context controls.");
+var objectCalls = 0;
+NativeJsonRequester.prototype.processRequest = function () { throw new Error("Unexpected JSON text round trip"); };
+NativeJsonRequester.prototype.processRequestAsObject = function (scope) {
+	assertTrue(scope === checked, "Native object conversion lost the caller's scope.");
+	objectCalls++;
+	return this.raw ? {result: [null, true, {nested: 1.5}]} : {document: {rows: [1], attr: {version: "test"}}};
+};
+var objects = implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {}}});
+assertTrue(Array.isArray(objects) && objects[0] === null && objects[1] === true && objects[2].nested === 1.5,
+	"Native object result changed JSON types.");
+bounded = implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {__nocache: true}}});
+assertTrue(objectCalls === 2 && bounded.attr.version === "test", "Object transfer lost regular requestable metadata.");
 print("requestable-flow-reentrancy OK");

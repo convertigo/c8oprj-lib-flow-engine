@@ -305,7 +305,9 @@ const _meta = {
 			var requester = new NativeJsonRequester(request, ctx.convertigoContext().httpServletRequest);
 			var rawResult = canRunFlowDirect(ctx, target, input);
 			requester.setRawResult(rawResult);
-			var result = JSON.parse(String(requester.processRequest()));
+			var result = typeof requester.processRequestAsObject === "function"
+				? requester.processRequestAsObject(ctx)
+				: JSON.parse(String(requester.processRequest()));
 			return rawResult && requester.context.nativeJsonResponse !== null ? result.result : unwrapDocument(result);
 		}
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();
