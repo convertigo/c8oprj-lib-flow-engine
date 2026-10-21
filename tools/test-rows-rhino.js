@@ -23,6 +23,7 @@ try {
  assert(kernel.distinct({rows:[{a:'x|b=y',b:'z'},{a:'x',b:'y|b=z'}],columns:['a','b']}).length===2,'No composite key delimiter collisions');
  var original=JSON.stringify(data);kernel.formatCells({rows:[data],columns:[{name:'x',type:'number'}]});assert(JSON.stringify(data)===original,'Input unchanged');
  try{kernel.read({rows:[{}]},{canContinue:function(){return false;}});throw new Error('Cancellation ignored');}catch(e){assert(e.code==='FLOW_EXECUTION_CANCELLED','Cancellation diagnostic');}
+ try{kernel.formatCells({rows:[{}]});throw new Error('Missing schema was accepted');}catch(e){assert(e.code==='ROWS_OPTIONS_INVALID','A missing column schema must not silently produce empty rows');}
  var source='const _flow={sourceVersion:2,inputs:{rows:{type:"array",items:{type:"object",properties:{n:{type:"number"}}}}}};\nfunction Shape({input,result}){\nresult.rows=rows.formatCells({rows:input.rows,columns:[{name:"n",type:"number"}]})\n}\n';
  var analysis=JSON.parse(String(engine.flowCodeCheck(JSON.stringify({code:source}))));
  assert(analysis.ok,'Typed row contracts validate: '+JSON.stringify(analysis));
@@ -39,5 +40,5 @@ try {
  assert(Object.prototype.hasOwnProperty.call(specialSchema.items.properties,'constructor')&&specialSchema.items.properties.constructor.type==='number','Projection hook preserves own constructor keys');
  var emptySchema=hookSchema('formatCells',{columns:[{name:'n',key:''}]});
  assert(Object.prototype.hasOwnProperty.call(emptySchema.items.properties,''),'An empty literal alias is not replaced by the source name');
- print('ROWS_PARITY '+JSON.stringify({values:results,errors:errors.length,assertions:cases.length+errors.length+10}));
+ print('ROWS_PARITY '+JSON.stringify({values:results,errors:errors.length,assertions:cases.length+errors.length+11}));
 } finally { files.deleteDirectory(temporary); }

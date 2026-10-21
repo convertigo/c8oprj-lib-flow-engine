@@ -8,6 +8,7 @@ const json=value=>JSON.parse(JSON.stringify(value));
 for(const f of cases){const before=JSON.stringify(f.input);assert.deepEqual(json(peers.get(f.block.slice(5))(f.input)),f.expected,f.block);assert.equal(JSON.stringify(f.input),before,'Inputs unchanged');}
 for(const [name,input,code] of errors)assert.throws(()=>peers.get(name)(input),error=>error.code===code,name+' '+code);
 assert.throws(()=>peers.get('read')({rows:[{}]},{canContinue:()=>false}),error=>error.code==='FLOW_EXECUTION_CANCELLED');
+assert.throws(()=>peers.get('formatCells')({rows:[{}]}),error=>error.code==='ROWS_OPTIONS_INVALID');
 const malicious=JSON.parse('{"__proto__":{"polluted":true},"constructor":1,"x":0}');
 assert.deepEqual(json(peers.get('select')({rows:[malicious],columns:['__proto__','constructor','x']})),[malicious]);
 assert.equal({}.polluted,undefined);

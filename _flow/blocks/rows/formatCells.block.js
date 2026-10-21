@@ -44,6 +44,7 @@ const _meta = {
     },
     "columns": {
       "label": "Column schema",
+      "required": true,
       "kind": "value",
       "type": "array",
       "description": "Ordered column descriptors: name, optional key/path, type (text/number/integer/boolean/date/datetime/json), decimals, nullText, trueText/falseText, pattern, locale and timeZone. Date defaults: dd/MM/yyyy, fr-FR, UTC."

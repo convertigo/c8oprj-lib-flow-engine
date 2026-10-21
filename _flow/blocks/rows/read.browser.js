@@ -217,7 +217,7 @@ function (input, control) {
     };
   }
   function formatCells(input, control) {
-    var columns=options(input.columns,'columns'), keep=options(input.keepColumns,'keepColumns'), seen=Object.create(null);
+    var columns=options(array(input.columns,'columns'),'columns'), keep=options(input.keepColumns,'keepColumns'), seen=Object.create(null);
     var budget={remaining:integer(input.maxCells,1000000,10000000,'maxCells')};
     keep.forEach(function(k){text(k,undefined,'keepColumns[]');});
     var numeric=bool(input.includeNumeric,false,'includeNumeric'), escape=bool(input.escapeHtml,false,'escapeHtml'), valuesOnly=bool(input.valuesOnly,false,'valuesOnly');
