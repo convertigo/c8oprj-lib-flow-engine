@@ -425,7 +425,7 @@
 		return canonicalFlowDefinition(parseYamlSource(source, "version: 1\nnodes: []\n"));
 	}
 
-	function response(value, rejectRuntimeHandlesAt, functionProfile) {
+	function response(value, rejectRuntimeHandlesAt, functionProfile, detach) {
 		var sanitizeStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var payload = value || {};
 		var internalProfile = functionProfile && payload.profile ? payload.profile : null;
@@ -435,6 +435,17 @@
 		payload = rejectRuntimeHandlesAt
 			? sanitizeSerializableRuntimeValue(payload, rejectRuntimeHandlesAt)
 			: sanitizeRuntimeValue(payload);
+		if (detach) {
+			if (internalProfile) {
+				functionProfile.responseSanitizeMs = Number(JavaSystem.nanoTime() - sanitizeStarted) / 1000000;
+				functionProfile.responseMode = "object";
+				internalProfile.functionCall = functionProfile;
+				payload.profile = internalProfile;
+			}
+			// Execute the Java copy inside flowRunCall's error boundary. Nothing
+			// belonging to this realm may be used after the bridge releases it.
+			return detach(payload);
+		}
 		if (internalProfile) {
 			functionProfile.responseSanitizeMs = Number(JavaSystem.nanoTime() - sanitizeStarted) / 1000000;
 			var stringifyMarkerName = "__flowProfileStringifyPlaceholder_4072209";
@@ -11074,7 +11085,7 @@
 		return value;
 	}
 
-	function flowRunCall(requestJson) {
+	function flowRunCall(requestJson, detach) {
 		try {
 			var parseStarted = JavaSystem.nanoTime();
 			var request = parseRequest(requestJson);
@@ -11084,9 +11095,9 @@
 			} : null;
 			var activeStarted = profileRequest ? JavaSystem.nanoTime() : 0;
 			var value = runWithActiveRequest(request, functionProfile, activeStarted);
-			return response(value, "result", functionProfile);
+			return response(value, "result", functionProfile, detach);
 		} catch (e) {
-			return response(failure("run", e));
+			return response(failure("run", e), "", null, detach);
 		}
 	}
 
@@ -11138,6 +11149,12 @@
 
 		run: function (requestJson) {
 			return flowRunCall(requestJson);
+		},
+
+		// Optional bridge protocol; standalone callers can inspect the sanitized
+		// object synchronously. Java supplies the owning-realm detachment function.
+		runObject: function (requestJson, detach) {
+			return flowRunCall(requestJson, detach || function (payload) { return payload; });
 		},
 
 		analyze: function (requestJson) {
