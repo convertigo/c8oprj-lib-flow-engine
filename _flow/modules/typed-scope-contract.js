@@ -3,11 +3,16 @@
 	// writes (a reactive frontend can notify here); schema rules remain identical.
 	function create(env) {
 		var roots = new WeakMap(), values = new WeakMap();
+		// Static destinations belong to this execution; never retain values or a block local frame.
+		var paths = Object.create(null), pathCount = 0, emptySchemas = [], defaultRoots = env.destinations.policy().roots;
 		function own(value, key) { return Object.prototype.hasOwnProperty.call(value, key); }
 		function fail(code, message) { env.raise(code, message); }
 		function parts(path) {
-			var checked = env.destinations.validate(path, { roots: env.roots || env.destinations.policy().roots, required: true });
+			var allowedRoots = env.roots || defaultRoots;
+			if (typeof path === "string" && own(paths, path) && allowedRoots.indexOf(paths[path][0]) >= 0) return paths[path];
+			var checked = env.destinations.validate(path, { roots: allowedRoots, required: true });
 			if (!checked.valid) fail(checked.code, checked.message);
+			if (typeof path === "string" && pathCount < 256) { paths[path] = checked.parts; pathCount++; }
 			return checked.parts;
 		}
 		function assertValue(schema, value, path) {
@@ -32,24 +37,33 @@
 			}
 			return value;
 		}
-		function table(scopes, names) { return scopes[names[0]] && roots.get(scopes[names[0]]) || {}; }
+		function table(scopes, names) { return scopes[names[0]] && roots.get(scopes[names[0]]); }
 		function validateWrite(scopes, path, value) {
-			var names = String(path).split("."), relative = names.slice(1).join("."), declarations = table(scopes, names);
-			Object.keys(declarations).forEach(function (key) {
+			// Most writes are scratch locals. A collection declared under result must not
+			// make every assignment in every called block allocate a path and a callback.
+			var text = String(path), dot = text.indexOf("."), rootName = text.substring(0, dot);
+			var declarations = scopes[rootName] && roots.get(scopes[rootName]);
+			if (!declarations) return;
+			var relative = text.substring(dot + 1), keys = Object.keys(declarations);
+			for (var i = 0; i < keys.length; i++) {
+				var key = keys[i];
 				if (relative === key) assertValue(declarations[key], value, path);
 				else if (relative.indexOf(key + ".") === 0) {
 					var expected = child(declarations[key], relative.substring(key.length + 1).split("."));
 					if (expected === false) fail("VALUE_TYPE_MISMATCH", path + ": this field is not part of the declared type.");
 					if (expected) assertValue(expected, value, path);
 				} else if (key.indexOf(relative + ".") === 0) {
-					assertValue(declarations[key], readOwn(value, key.substring(relative.length + 1).split(".")), names[0] + "." + key);
+					assertValue(declarations[key], readOwn(value, key.substring(relative.length + 1).split(".")), rootName + "." + key);
 				}
-			});
+			}
 		}
 		function schemaFor(path) {
 			var names = parts(path), scopes = env.scopes(), relative = names.slice(1).join("."), declarations = table(scopes, names);
-			var best = "";
-			Object.keys(declarations).forEach(function (key) { if ((relative === key || relative.indexOf(key + ".") === 0) && key.length > best.length) best = key; });
+			var best = "", keys = declarations ? Object.keys(declarations) : emptySchemas;
+			for (var i = 0; i < keys.length; i++) {
+				var key = keys[i];
+				if ((relative === key || relative.indexOf(key + ".") === 0) && key.length > best.length) best = key;
+			}
 			var value = env.read(path);
 			return best ? child(declarations[best], relative === best ? [] : relative.substring(best.length + 1).split("."))
 				: value && typeof value === "object" ? values.get(value) : null;
@@ -76,6 +90,7 @@
 		// whole array (a declaration below the path, or a covering type that is not an array).
 		function appendedItemSchemas(scopes, path) {
 			var names = String(path).split("."), relative = names.slice(1).join("."), declarations = table(scopes, names);
+			if (!declarations) return emptySchemas;
 			var schemas = [];
 			var keys = Object.keys(declarations);
 			for (var i = 0; i < keys.length; i++) {
@@ -132,6 +147,7 @@
 		// needs the whole map (a declaration below the path, or rules on the whole map).
 		function putEntrySchemas(scopes, path, key) {
 			var names = String(path).split("."), relative = names.slice(1).join("."), declarations = table(scopes, names);
+			if (!declarations) return emptySchemas;
 			var schemas = [];
 			var keys = Object.keys(declarations);
 			for (var i = 0; i < keys.length; i++) {

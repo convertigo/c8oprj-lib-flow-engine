@@ -315,15 +315,23 @@
 			hotPath[name] = Number(hotPath[name] || 0) + profileDuration(started);
 		}
 
-		function recordProfile(ctx, kind, name, started) {
+		function allocatedBytes() {
+			return typeof env.threadAllocatedBytes === "function" ? env.threadAllocatedBytes() : null;
+		}
+		function recordProfile(ctx, kind, name, started, allocatedStart) {
 			if (!ctx || !ctx.profile) {
 				return;
 			}
-			ctx.profile.blocks.push({
+			var record = {
 				kind: kind,
 				name: String(name || ""),
 				durationMs: profileDuration(started)
-			});
+			};
+			if (allocatedStart !== null && allocatedStart !== undefined) {
+				var end = allocatedBytes();
+				if (end !== null) record.allocatedBytes = Math.max(0, Number(end - allocatedStart));
+			}
+			ctx.profile.blocks.push(record);
 		}
 
 		function runtimeBlock(blocks, name) {
@@ -755,6 +763,7 @@
 				if (!preparedHit) validateNodeDestinations(block, node);
 				profileAdd(ctx, "executeNodePropsMs", propsStarted);
 				var runStarted = profiled ? nanoTime() : 0;
+				var runAllocated = profiled ? allocatedBytes() : null;
 				var result;
 				ensureCanContinue(ctx, node);
 				try {
@@ -766,7 +775,7 @@
 						result = block.run(ctx, node);
 					}
 				} finally {
-					recordProfile(ctx, "node", name, runStarted);
+					recordProfile(ctx, "node", name, runStarted, runAllocated);
 					profileAdd(ctx, "executeNodeRunMs", runStarted);
 				}
 				var commitStarted = profiled ? nanoTime() : 0;
@@ -835,6 +844,7 @@
 			}
 			profileAdd(ctx, "callBlockFrameEnterMs", frameStarted);
 			var started = profiled ? nanoTime() : 0;
+			var callAllocated = profiled ? allocatedBytes() : null;
 			try {
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
@@ -859,7 +869,7 @@
 				profileAdd(ctx, "callBlockCommitMs", commitStarted);
 				return result;
 			} finally {
-				recordProfile(ctx, "call", name, started);
+				recordProfile(ctx, "call", name, started, callAllocated);
 				var restoreStarted = profiled ? nanoTime() : 0;
 				ctx.scopes.input = previousInput;
 				ctx.scopes.props = previousProps;

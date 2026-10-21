@@ -73,8 +73,7 @@ const _meta = {
     return rendered === undefined || rendered === null ? "" : String(rendered);
   }
 
-  function match(value, pattern, ignoreCase) {
-    var found = new RegExp(pattern, ignoreCase ? "i" : "").exec(value);
+  function matched(found) {
     if (found === null) {
       return { matched: false, groups: [] };
     }
@@ -86,10 +85,25 @@ const _meta = {
   }
 
   return {
+    prepareNode: function (node, helpers) {
+      var props = helpers.props, resolveText = helpers.compileValue(props.text), resolvePattern = helpers.compileValue(props.pattern);
+      var resolveCase = helpers.compileValue(props.ignoreCase === undefined ? false : props.ignoreCase);
+      var staticPattern = typeof props.pattern === "string" && !/\$\{|\{\{/.test(props.pattern);
+      var staticCase = typeof props.ignoreCase !== "string" || !/\$\{|\{\{/.test(props.ignoreCase);
+      var regexp = staticPattern && staticCase ? new RegExp(props.pattern, props.ignoreCase === true || String(props.ignoreCase) === "true" ? "i" : "") : null;
+      return function (ctx) {
+        var value = resolveText(ctx), pattern = regexp;
+        if (!pattern) {
+          var spelling = resolvePattern(ctx), ignoreCase = resolveCase(ctx);
+          pattern = new RegExp(spelling == null ? "" : String(spelling), ignoreCase === true || String(ignoreCase) === "true" ? "i" : "");
+        }
+        return matched(pattern.exec(value == null ? "" : String(value)));
+      };
+    },
     run: function (ctx, node) {
       var props = ctx.props(node);
       var ignoreCase = props.ignoreCase === undefined ? false : ctx.input({ value: props.ignoreCase });
-      return match(text(ctx, props.text), text(ctx, props.pattern), ignoreCase === true || String(ignoreCase) === "true");
+      return matched(new RegExp(text(ctx, props.pattern), ignoreCase === true || String(ignoreCase) === "true" ? "i" : "").exec(text(ctx, props.text)));
     }
   };
 }())

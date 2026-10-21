@@ -52,6 +52,10 @@ const _meta = {
 	}
 
 	return {
+		prepareNode: function (node, helpers) {
+			var resolve = helpers.compileValue(helpers.props.value), pretty = helpers.props.pretty === true ? 2 : 0;
+			return function (ctx) { return JSON.stringify(resolve(ctx), null, pretty); };
+		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return JSON.stringify(ctx.input(props), null, props.pretty === true ? 2 : 0);

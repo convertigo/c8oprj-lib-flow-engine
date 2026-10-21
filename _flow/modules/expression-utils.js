@@ -78,14 +78,8 @@
 	}
 
 	function renderValue(value, ctx, env) {
-		if (typeof value !== "string") {
-			return value;
-		}
-		var exact = env.templateSyntax.exactExpression(value);
-		if (exact !== null) {
-			return evaluate(ctx, exact, env);
-		}
-		return renderTemplate(value, ctx, env);
+		if (typeof value !== "string" || value.indexOf("${") < 0 && value.indexOf("{{") < 0) return value;
+		return compileValue(value, env)(ctx);
 	}
 
 	function renderTree(ctx, value, env) {
@@ -107,27 +101,38 @@
 		return value;
 	}
 
+	// A value program captures its notation, never its evaluated data or the current
+	// frame. The bounded expression cache is runtime-local and cleared with modules.
 	function compileValue(value, env) {
-		if (typeof value !== "string") {
-			return function () { return value; };
-		}
+		if (typeof value !== "string") return function () { return value; };
+		if (value.indexOf("${") < 0 && value.indexOf("{{") < 0) return function () { return value; };
+		var cache = env.expressionProgramCache, utils = env.cacheUtils;
+		var cacheKey = "\u0000value-v1:" + value;
+		var cacheable = cache && utils && value.length <= 8192;
+		var known = cacheable ? utils.readBoundedMap(cache, cacheKey, "") : null;
+		if (known) return known;
+		var program = compileValueProgram(value, env);
+		return cacheable ? utils.writeBoundedMap(cache, cacheKey, "", program) : program;
+	}
+
+	function compileValueProgram(value, env) {
 		var syntax = env.templateSyntax;
 		var exact = syntax.exactExpression(value);
-		if (exact !== null && isSimpleScopePath(exact, env)) {
-			var exactParts = String(exact).split(".");
-			return function (ctx) { return readSimpleScopeParts(ctx, exactParts); };
-		}
-		if (exact !== null) {
-			return function (ctx) { return evaluate(ctx, exact, env); };
-		}
-		if (syntax.hasExpression(value)) {
-			return function (ctx) { return renderTemplate(value, ctx, env); };
-		}
-		var text = syntax.literalText(value);
-		if (text === null) {
-			text = value;
-		}
-		return function () { return text; };
+		if (exact !== null) return compile(exact, env);
+		var parts = syntax.parts(value);
+		if (!parts) return function () { return value; };
+		var programs = parts.map(function (part) { return part.expression !== undefined ? compile(part.expression, env) : null; });
+		return function (ctx) {
+			var out = "";
+			for (var i = 0; i < parts.length; i++) {
+				if (!programs[i]) { out += parts[i].literal; continue; }
+				var item = programs[i](ctx);
+				if (item === undefined || item === null) continue;
+				out += env.isRuntimeHandle(item) ? JSON.stringify(env.runtimeHandleSummary(item))
+					: isStructuredValue(item) ? JSON.stringify(item) : String(item);
+			}
+			return out;
+		};
 	}
 
 	function compileTree(value, env) {

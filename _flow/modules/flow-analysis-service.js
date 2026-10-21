@@ -928,6 +928,7 @@
 				info.inputs = effects.inputs;
 				info.outputs = effects.outputs;
 				ctx.nodes.push(info);
+				if (env.observeAnalysisBlock) env.observeAnalysisBlock(block);
 				if (effects.valid && typeof block.analyze === "function") {
 					block.analyze(ctx, node);
 				}
@@ -1030,6 +1031,7 @@
 				info.inputs = effects.inputs;
 				info.outputs = effects.outputs;
 				ctx.nodes.push(info);
+				if (env.observeAnalysisBlock) env.observeAnalysisBlock(block);
 				if (effects.valid && hasChildSlots(catalog) && typeof block.analyzeShallow === "function") {
 					block.analyzeShallow(ctx, node);
 				} else if (effects.valid && !hasChildSlots(catalog) && typeof block.analyze === "function") {

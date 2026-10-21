@@ -35,10 +35,13 @@ const counting = { getSchemaForProject: () => { calls++; throw new Error('no sch
 const building = load(['com.twinsoft.convertigo.engine.XmlSchemaBuilder$3',
   'com.twinsoft.convertigo.engine.XmlSchemaBuilderExecutor$1'], counting);
 assert.equal(building.outputSchema(target, env), null);
+assert.equal(building.outputSchema(target, env, { buildProjectSchema: true }), null);
 assert.equal(calls, 0, 'a schema build must not re-enter the SchemaManager for its project');
 
 const request = load(['com.twinsoft.convertigo.engine.requesters.GenericRequester'], counting);
 request.outputSchema(target, env);
-assert.equal(calls, 1, 'outside a schema build the project schema is still read');
+assert.equal(calls, 0, 'automatic analysis must not trigger a whole-project schema build');
+request.outputSchema(target, env, { buildProjectSchema: true });
+assert.equal(calls, 1, 'an explicit requestable schema inspection can still build the project schema');
 
 console.log('requestable schema build reentry tests passed');

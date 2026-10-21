@@ -139,8 +139,8 @@
 		return false;
 	}
 
-	function learnedXsdOutputSchema(target, env) {
-		var root = env.projectDir();
+	function learnedXsdOutputSchema(target, env, projectRoot) {
+		var root = projectRoot || env.projectDir();
 		if (!root || !target || !target.project || !target.connector || !target.requestable) {
 			return null;
 		}
@@ -172,8 +172,9 @@
 		}
 	}
 
-	function outputSchema(target, env) {
+	function outputSchema(target, env, options) {
 		target = target || {};
+		options = options || {};
 		var projectName = String(target.project || "").trim();
 		var connectorName = String(target.connector || "").trim();
 		var requestableName = String(target.requestable || target.sequence || target.transaction || "").trim();
@@ -205,7 +206,7 @@
 					return env.objectSchema(env.declaredOutputSchema(definition) || env.readResultSchema(request, definition) || {});
 				});
 			}
-			var learnedSchema = learnedXsdOutputSchema(target, env);
+			var learnedSchema = learnedXsdOutputSchema(target, env, String(dbo.getProject().getDirPath()));
 			if (learnedSchema) {
 				return learnedSchema;
 			}
@@ -216,8 +217,11 @@
 				}
 			} catch (_ignoreConnectorType) {
 			}
-			if (insideProjectSchemaBuild()) {
-				return learnedXsdOutputSchema(target, env);
+			// Catalogue/tree/check operations only need a contract if one is already
+			// known. Never build every Flow in a legacy requestable's project here.
+			// The explicit requestable.schema operation can request that expensive work.
+			if (options.buildProjectSchema !== true || insideProjectSchemaBuild()) {
+				return null;
 			}
 			var project = dbo.getProject();
 			var schema = Packages.com.twinsoft.convertigo.engine.Engine.theApp.schemaManager.getSchemaForProject(project.getName());
@@ -633,7 +637,7 @@
 					"Call requestable.list first and reuse one returned qname or localRequestable. Current-project requestables start with a dot.")
 			};
 		}
-		var output = outputSchema(target, env);
+		var output = outputSchema(target, env, { buildProjectSchema: true });
 		var learned = false;
 		var sample;
 		if (!output && request.learn === true) {

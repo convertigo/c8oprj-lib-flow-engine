@@ -16,7 +16,7 @@ function replaceOnce(text, anchor, replacement) {
 var __checkBudget = {
 	active: null,
 	capabilityRuns: [],
-	start: function () { this.active = { modules: {}, analyses: 0, descriptors: {} }; },
+	start: function () { this.active = { modules: {}, analyses: 0, definitionAnalyses: 0, descriptors: {} }; },
 	count: function (kind, key) {
 		if (!this.active) return;
 		var counts = this.active[kind];
@@ -46,6 +46,8 @@ source = replaceOnce(source, "if (known != null) return known;\n\t\tvar file = e
 	"if (known != null) return known;\n\t\t__checkBudget.count('modules', name); var file = engineModuleFile(name);");
 source = replaceOnce(source, "function analyzeFlowSource(blocks, flowSource, request) {",
 	"function analyzeFlowSource(blocks, flowSource, request) { if (__checkBudget.active) __checkBudget.active.analyses++;");
+source = replaceOnce(source, "function analyzeFlowDefinition(blocks, definition, request) {",
+	"function analyzeFlowDefinition(blocks, definition, request) { if (__checkBudget.active) __checkBudget.active.definitionAnalyses++;");
 source = replaceOnce(source, "function flowCodeCheckRequest(blocks, request) {",
 	"function flowCodeCheckRequest(blocks, request) { return __checkBudget.capability(function () { return budgetedFlowCodeCheckRequest(blocks, request); }); }\n" +
 	"\tfunction budgetedFlowCodeCheckRequest(blocks, request) {");
@@ -115,6 +117,21 @@ try {
 		assertTrue(execution.ok && execution.result.report.ok, "Nested MCP capability failed: " + JSON.stringify(execution));
 		assertTrue(__checkBudget.capabilityRuns.length === 1, "Nested capability was not observed exactly once");
 		budget("mcp-capability-" + phase, __checkBudget.capabilityRuns[0]);
+	});
+	// The XSD bridge is read-only too. It used to bypass the operation memo,
+	// repeating the same module validations and project descriptor reads per node.
+	var schemaRequest = JSON.stringify({ flowName: "Reference", flowQName: "BudgetConsumer.Reference", flowSource: code.join("\n"), allowRequestableSchema: false });
+	["cold", "warm"].forEach(function (phase) {
+		__checkBudget.start();
+		var report = JSON.parse(String(engine.outputSchema(schemaRequest)));
+		var counts = __checkBudget.active; __checkBudget.active = null;
+		assertTrue(report.ok && report.schema.properties.record, "Native output schema lost the inferred record");
+		var modules = 0, descriptors = 0;
+		Object.keys(counts.modules).forEach(function (name) { assertTrue(counts.modules[name] === 1, "XSD validates module repeatedly: " + name + " = " + counts.modules[name]); modules++; });
+		Object.keys(counts.descriptors).forEach(function (file) { assertTrue(counts.descriptors[file] === 1, "XSD rereads a project descriptor"); descriptors++; });
+		assertTrue(modules <= 48 && descriptors <= 4, "Native output schema exceeded its deterministic metadata budget");
+		assertTrue(counts.definitionAnalyses === (phase === "cold" ? 1 : 0), "An unchanged Flow output schema must not be reanalyzed");
+		print("BUDGET " + JSON.stringify({operation:"output-schema-" + phase,moduleValidations:modules,analyses:counts.definitionAnalyses,descriptorReads:descriptors}));
 	});
 	print("code-check-performance-budget: " + checks + " checks passed");
 } finally {

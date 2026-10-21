@@ -81,6 +81,7 @@
 		var schema = env.inferSchema(value);
 		file.getParentFile().mkdirs();
 		env.FileUtils.writeStringToFile(file, JSON.stringify(schema, null, 2), "UTF-8");
+		if (env.invalidateGeneratedSchemaDependencies) env.invalidateGeneratedSchemaDependencies();
 		return {
 			learned: true,
 			file: String(file.getAbsolutePath()),
@@ -89,6 +90,7 @@
 	}
 
 	function clearConvertigoSchemaCache(request, env) {
+		if (env.invalidateGeneratedSchemaDependencies) env.invalidateGeneratedSchemaDependencies();
 		try {
 			var projectName = env.currentProjectName(request);
 			if (projectName) {
@@ -176,6 +178,7 @@
 				block: request.block || ""
 			}, request.property || "out", request.out || request.path || "", env);
 			var deleted = file && file.isFile() ? file["delete"]() : false;
+			if (deleted) clearConvertigoSchemaCache(request, env);
 			return {
 				ok: true,
 				deleted: deleted,
@@ -186,6 +189,7 @@
 		var existed = flowDir.isDirectory();
 		if (existed) {
 			env.FileUtils.deleteDirectory(flowDir);
+			clearConvertigoSchemaCache(request, env);
 		}
 		return {
 			ok: true,

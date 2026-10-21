@@ -116,6 +116,34 @@ const _meta = {
 	}
 
 	return {
+		prepareNode: function (node, helpers) {
+			var props = helpers.props, rawSource = props.source;
+			var source = typeof rawSource === "string" ? helpers.compileExpression(rawSource) : helpers.compileValue(rawSource == null ? {} : rawSource);
+			var rawKey = props.key, key;
+			if (typeof rawKey !== "string") {
+				var value = helpers.compileValue(rawKey);
+				key = function (ctx) { return rawKey == null ? "" : String(value(ctx)); };
+			} else {
+				var text = rawKey.trim();
+				if (/\$\{|\{\{/.test(text)) {
+					var render = helpers.compileValue(text);
+					key = function (ctx) { var v = render(ctx); return v == null ? "" : String(v); };
+				} else if (!looksDynamic(text)) key = function () { return text; };
+				else {
+					var expression = null;
+					try { expression = helpers.compileExpression(text); } catch (_literalKey) { }
+					key = function (ctx) { if (!expression) return text; try { return String(expression(ctx)); } catch (_literalKey) { return text; } };
+				}
+			}
+			var fallback;
+			return function (ctx) {
+				var object = source(ctx), name = key(ctx), value = readDirect(object, name);
+				if (value === undefined && name.indexOf(".") !== -1) value = ctx.readObjectPath(object, name);
+				if (value !== undefined || props.defaultValue === undefined) return value;
+				if (!fallback) fallback = helpers.compileValue(props.defaultValue);
+				return fallback(ctx);
+			};
+		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var source = sourceValue(ctx, props.source);

@@ -385,6 +385,12 @@
 	function evalCompiledSource(source, sourceName, fingerprint) {
 		source = String(source || "");
 		var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+		// Share only compiled engine-module code through Convertigo's established
+		// Rhino cache. Evaluated exports/closures still belong to the fresh scope.
+		if (cx && !cx.isInterpretedMode() && String(sourceName || "").indexOf(canonicalPath(engineDir()) + "/modules/") === 0) {
+			return Packages.com.twinsoft.convertigo.engine.util.RhinoUtils.evalCachedJavascript(
+				cx, compiledScriptScope(cx), source, String(sourceName), 1, null);
+		}
 		var script = compileScript(source, sourceName, fingerprint);
 		if (!cx || !script) {
 			return eval(source);
@@ -1167,6 +1173,7 @@
 	}
 
 	function clearRuntimeCaches() {
+		sharedServerJavaMap("flow.engine.generatedSchemaDependencies.v1", localGeneratedDependencies).clear();
 		var result = runtimeCacheService().clear(runtimeCacheEnv());
 		runtimeState.blockArtifactCompilerFingerprint = null;
 		runtimeState.flowPlanCompilerFingerprint = null;
@@ -1228,6 +1235,7 @@
 	// (mutations, actions) always walk.
 	var MEMOIZED_FINGERPRINT_OPERATIONS = {
 		flowCodeCheck: true,
+		outputSchema: true,
 		analyze: true,
 		describeTree: true,
 		authoringTree: true,
@@ -1480,6 +1488,7 @@
 
 	function schemaStoreEnv() {
 		return {
+			invalidateGeneratedSchemaDependencies: function () { generatedSchemaEpoch().incrementAndGet(); },
 			summarizeSchema: function (schema) { return schemaUtils().summary(schema, schemaUtilsEnv()); },
 			File: File,
 			FileUtils: FileUtils,
@@ -4219,6 +4228,7 @@
 	}
 
 	function flowOutputSchema(name) {
+		if (generatedSchemaCapture) generatedSchemaCapture.safe = false;
 		var flow = getProjectFlow(name, loadBlocks());
 		var definition = parseSource(flow.source);
 		return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: name }, definition) || {});
@@ -4632,6 +4642,17 @@
 		return iconService().iconCatalogRequest(request, iconServiceEnv());
 	}
 
+	var allocationMemoryBean = null;
+	function threadAllocatedBytes() {
+		try {
+			if (allocationMemoryBean === null) {
+				allocationMemoryBean = Packages.java.lang.management.ManagementFactory.getThreadMXBean();
+				if (!allocationMemoryBean.isThreadAllocatedMemorySupported()) allocationMemoryBean = false;
+				else if (!allocationMemoryBean.isThreadAllocatedMemoryEnabled()) allocationMemoryBean.setThreadAllocatedMemoryEnabled(true);
+			}
+			return allocationMemoryBean ? Number(allocationMemoryBean.getThreadAllocatedBytes(Packages.java.lang.Thread.currentThread().getId())) : null;
+		} catch (_unsupportedAllocationCounter) { allocationMemoryBean = false; return null; }
+	}
 	function flowRuntimeService() {
 		if (!flowRuntimeServiceModule) {
 			flowRuntimeServiceModule = loadEngineModule("flow-runtime-service.js");
@@ -4754,7 +4775,8 @@
 			currentConvertigoContext: function () {
 				return typeof context === "undefined" ? null : context;
 			},
-			nanoTime: function () { return Number(JavaSystem.nanoTime()); }
+			nanoTime: function () { return Number(JavaSystem.nanoTime()); },
+			threadAllocatedBytes: threadAllocatedBytes
 		};
 		return flowRuntimeServiceEnvInstance;
 	}
@@ -4817,6 +4839,10 @@
 			currentProjectName: currentProjectName,
 			mergeSchema: mergeSchema,
 			requestableOutputSchema: requestableOutputSchema,
+			observeAnalysisBlock: function (block) {
+				if (generatedSchemaCapture && block && block.__flowOrigin !== "core" && block.__graphHooks &&
+					(typeof block.__graphHooks.analyze === "function" || typeof block.__graphHooks.analyzeShallow === "function")) generatedSchemaCapture.safe = false;
+			},
 			schemaAtPath: schemaAtPath,
 			collectScopeRefs: collectScopeRefs,
 			collectTemplateRefs: collectTemplateRefs,
@@ -7046,10 +7072,68 @@
 		return null;
 	}
 
-	function outputSchemaRequest(request, blocks) {
-		return flowTreeService().outputSchemaRequest(request, blocks, flowTreeServiceEnv());
+	var generatedSchemaCapture = null;
+	var localGeneratedSchemas = new ConcurrentHashMap();
+	var generatedSchemaStats = { hits: 0, misses: 0, writes: 0, bypasses: 0 };
+	function generatedSchemaRegistry() {
+		return sharedServerJavaMap("flow.engine.generatedOutputSchemas.v1", localGeneratedSchemas);
 	}
-
+	var localGeneratedDependencies = new ConcurrentHashMap();
+	var localGeneratedSchemaSignal = new ConcurrentHashMap();
+	function generatedSchemaEpoch() {
+		var signals = sharedServerJavaMap("flow.engine.generatedSchemaSignal.v1", localGeneratedSchemaSignal);
+		if (signals.get("epoch") == null) signals.putIfAbsent("epoch", new Packages.java.util.concurrent.atomic.AtomicLong());
+		return signals.get("epoch");
+	}
+	function generatedSchemaGeneration() {
+		return String(FlowEngineBridge.cacheGeneration()) + ":" + String(FlowEngineBridge.dataGeneration()) + ":" + String(generatedSchemaEpoch().get());
+	}
+	function generatedSchemaDependencies() {
+		var root = canonicalPath(projectDir()), generation = generatedSchemaGeneration();
+		var registry = sharedServerJavaMap("flow.engine.generatedSchemaDependencies.v1", localGeneratedDependencies);
+		var key = canonicalPath(engineDir()) + "\n" + root, now = Number(JavaSystem.currentTimeMillis());
+		var saved = registry.get(key), previous = saved == null ? null : JSON.parse(String(saved));
+		if (previous && previous.generation === generation && now >= previous.at && now - previous.at < 1000) return previous;
+		var config = [loadProjectEngineDefinition(), projectConfigService().parentConfigs(projectConfigEnv())];
+		var parts = [engineCodeFingerprint(), blocksCacheKey(), typesCacheKey(), directoryFingerprint(projectSchemasDir()),
+			directoryFingerprint(new File(projectDir(), sourcePaths().path("fragments"))),
+			directoryFingerprint(new File(engineDir(), "fragments")), JSON.stringify(config)];
+		referencedProjectRoots(sourcePaths().path("fragments")).forEach(function (reference) {
+			parts.push(directoryFingerprint(new File(reference, sourcePaths().path("fragments"))));
+		});
+		var next = { generation: generation, at: now, fingerprint: sha256Hex(parts.join("\n")) };
+		if (generation === generatedSchemaGeneration()) {
+			registry.put(key, new JavaString(JSON.stringify(next)));
+			while (registry.size() > 64) { var keys = registry.keySet().iterator(); if (keys.hasNext()) registry.remove(keys.next()); else break; }
+		}
+		return next;
+	}
+	function generatedSchemaIdentity(request, blocks) {
+		if (!projectDir()) return null;
+		var root = canonicalPath(projectDir()), name = String(request.flowQName || request.flowName || request.name || "");
+		if (!name) return null;
+		var dependencies = generatedSchemaDependencies();
+		return { key: root + "\n" + name, generation: dependencies.generation,
+			fingerprint: sha256Hex(dependencies.fingerprint + "\n" + String(request.flowSource) + "\n" + JSON.stringify(request.tagContext || {})) };
+	}
+	function outputSchemaRequest(request, blocks) {
+		return loadEngineModule("flow-output-schema-cache.js").run(request, {
+			identity: function (value) { return generatedSchemaIdentity(value, blocks); },
+			valid: function (identity) { return identity.generation === generatedSchemaGeneration(); },
+			read: function (key) { return generatedSchemaRegistry().get(key); },
+			write: function (key, encoded) {
+				var cache = generatedSchemaRegistry();
+				// Only Java strings cross Rhino scopes/threads; readers get independent JSON.
+				cache.put(key, new JavaString(encoded));
+				while (cache.size() > 256) { var keys = cache.keySet().iterator(); if (keys.hasNext()) cache.remove(keys.next()); else break; }
+			},
+			count: function (name) { generatedSchemaStats[name]++; },
+			capture: function (capture, build) {
+				var previous = generatedSchemaCapture; generatedSchemaCapture = capture;
+				try { return build(); } finally { generatedSchemaCapture = previous; }
+			}
+		}, function () { return flowTreeService().outputSchemaRequest(request, blocks || loadBlocks(), flowTreeServiceEnv()); });
+	}
 	function nodeOutputSchemaRequest(request, blocks) {
 		return flowTreeService().nodeOutputSchemaRequest(request, blocks, flowTreeServiceEnv());
 	}
@@ -11090,7 +11174,7 @@
 
 		outputSchema: function (requestJson) {
 			return engineCall("outputSchema", requestJson, function (request) {
-				return outputSchemaRequest(request, loadBlocks());
+				return outputSchemaRequest(request);
 			});
 		},
 

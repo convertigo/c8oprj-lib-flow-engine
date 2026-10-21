@@ -15,7 +15,10 @@ const _meta = {
   hooks: {file: "put.hooks.js"}
 };
 (function () {
-  return {run: function (ctx, node) {
+  return {prepareNode: function (node, helpers) {
+    var path = helpers.props.path, key = helpers.compileValue(helpers.props.key), value = helpers.compileValue(helpers.props.value);
+    return function (ctx) { return ctx.collections.put(path, key(ctx), value(ctx)); };
+  }, run: function (ctx, node) {
     var props = ctx.props(node);
     return ctx.collections.put(props.path, ctx.template(props.key), ctx.input(props));
   }};
