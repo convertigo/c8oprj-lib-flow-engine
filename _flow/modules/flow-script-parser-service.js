@@ -2382,9 +2382,13 @@
 		function parseFlowScriptTopLevelObject(prelude, name) {
 			var out = {};
 			var seen = false;
-			var re = new RegExp("^(?:const|let|var)\\s+_" + name + "\\s*=\\s*([\\s\\S]+)$");
+			// Only the head of a statement is matched: a capture of the rest with [\\s\\S]+$ took minutes of Rhino
+			// regular expression work on a large statement and held the request.
+			var re = new RegExp("^(?:const|let|var)\\s+_" + name + "\\s*=\\s*");
 			flowScriptStatements(prelude).forEach(function (statement) {
-				var match = statement.text.match(re);
+				var text = String(statement.text);
+				var head = re.exec(text.slice(0, 1024));
+				var match = head && text.length > head[0].length ? [text, text.slice(head[0].length)] : null;
 				if (!match) {
 					return;
 				}
