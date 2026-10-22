@@ -9,6 +9,7 @@ var env = {
 		throw error;
 	},
 	NativeJavaObject: Packages.org.mozilla.javascript.NativeJavaObject,
+	JavaObject: Packages.java.lang.Object,
 	JavaString: Packages.java.lang.String,
 	JavaBoolean: Packages.java.lang.Boolean,
 	JavaNumber: Packages.java.lang.Number
@@ -123,3 +124,17 @@ try {
 }
 
 print("runtime-handle-utils-rhino OK");
+
+// Keep the Java conversion protocol for user-defined and inherited getClass.
+var classReads = 0;
+var customClass = {};
+Object.defineProperty(customClass, "getClass", { get: function () { classReads++; throw new Error("expected"); } });
+assertTrue(runtimeHandles.jsValue(customClass, env) === customClass && classReads === 1, "getClass accessor fallback changed.");
+var customScalar = Object.create({ getClass: function () { return { getName: function () { return "java.lang.String"; } }; } });
+customScalar.toString = function () { return "custom"; };
+assertTrue(runtimeHandles.jsValue(customScalar, env) === "custom", "Inherited Java conversion protocol changed.");
+var noPrototype = Object.create(null); noPrototype.value = 4;
+assertTrue(runtimeHandles.normalize(noPrototype, env).value === 4, "Null prototype container changed.");
+var javaArray = java.lang.reflect.Array.newInstance(java.lang.String, 1); javaArray[0] = "array";
+assertTrue(runtimeHandles.jsValue(javaArray, env) === javaArray, "Java array identity changed.");
+assertTrue(runtimeHandles.jsValue(function () {}, env) instanceof Function, "Callable identity changed.");

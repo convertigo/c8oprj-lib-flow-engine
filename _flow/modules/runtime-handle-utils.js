@@ -12,6 +12,11 @@
 		if (valueType === "string" || valueType === "boolean" || valueType === "number") {
 			return value;
 		}
+		// Ordinary JavaScript containers need no Java unwrapping/catch activation.
+		// Keep the compatibility path for custom getClass (including inherited
+		// accessors); real host wrappers implement java.lang.Object in Rhino.
+		if (env.JavaObject && (valueType === "object" || valueType === "function") &&
+			!(value instanceof env.JavaObject) && !("getClass" in value)) return value;
 		return unwrapJavaValue(value, env);
 	}
 

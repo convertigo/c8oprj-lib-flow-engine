@@ -5,6 +5,7 @@
 	var JavaBoolean = Packages.java.lang.Boolean;
 	var JavaNumber = Packages.java.lang.Number;
 	var JavaString = Packages.java.lang.String;
+	var JavaObject = Packages.java.lang.Object;
 	var NativeJavaObject = Packages.org.mozilla.javascript.NativeJavaObject;
 	var ObjectMapper = Packages.com.fasterxml.jackson.databind.ObjectMapper;
 	var YAMLFactory = Packages.com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -1431,6 +1432,7 @@
 		return {
 			raise: raise,
 			NativeJavaObject: NativeJavaObject,
+			JavaObject: JavaObject,
 			JavaString: JavaString,
 			JavaBoolean: JavaBoolean,
 			JavaNumber: JavaNumber
