@@ -21,6 +21,15 @@ try {
  assert(({}).polluted===undefined,'No prototype pollution');
  assert(JSON.stringify(kernel.read({rows:[{}],path:'$.constructor'}))==='[null]','No inherited property traversal');
  assert(kernel.distinct({rows:[{a:'x|b=y',b:'z'},{a:'x',b:'y|b=z'}],columns:['a','b']}).length===2,'No composite key delimiter collisions');
+ var inheritedWrites=0;
+ Object.defineProperty(Object.prototype,'poisonedColumn',{configurable:true,set:function(){inheritedWrites++;throw new Error('inherited setter');}});
+ try {
+  var ownRow=JSON.parse('{"poisonedColumn":7}');
+  var safe=kernel.select({rows:[ownRow],columns:['poisonedColumn']})[0];
+  var descriptor=Object.getOwnPropertyDescriptor(safe,'poisonedColumn');
+  assert(inheritedWrites===0 && descriptor.value===7 && descriptor.writable && descriptor.enumerable && descriptor.configurable,'Projection must define own data over inherited accessors');
+  assert(Object.getPrototypeOf(safe)===Object.prototype,'Projection changed its prototype');
+ } finally { delete Object.prototype.poisonedColumn; }
  var original=JSON.stringify(data);kernel.formatCells({rows:[data],columns:[{name:'x',type:'number'}]});assert(JSON.stringify(data)===original,'Input unchanged');
  try{kernel.read({rows:[{}]},{canContinue:function(){return false;}});throw new Error('Cancellation ignored');}catch(e){assert(e.code==='FLOW_EXECUTION_CANCELLED','Cancellation diagnostic');}
  try{kernel.formatCells({rows:[{}]});throw new Error('Missing schema was accepted');}catch(e){assert(e.code==='ROWS_OPTIONS_INVALID','A missing column schema must not silently produce empty rows');}

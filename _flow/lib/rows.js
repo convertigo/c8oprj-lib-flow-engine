@@ -4,7 +4,13 @@
 (function () {
   var own = Object.prototype.hasOwnProperty;
   function has(o, k) { return o !== null && typeof o === 'object' && own.call(o, k); }
-  function put(o, k, v) { Object.defineProperty(o, k, {value:v, enumerable:true, writable:true, configurable:true}); }
+  function put(o, k, v) {
+    // Every destination here is a fresh own-data container. Ordinary keys can
+    // use assignment; inherited properties (especially __proto__ and setters)
+    // still require definition as an own writable data property.
+    if (k in Object.prototype) Object.defineProperty(o, k, {value:v, enumerable:true, writable:true, configurable:true});
+    else o[k] = v;
+  }
   function error(code, message) { throw {code:code, message:message, status:400}; }
   function invalid(message) { error('ROWS_OPTIONS_INVALID', message); }
   function integer(v, fallback, max, name) {

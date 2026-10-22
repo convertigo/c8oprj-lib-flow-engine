@@ -18,3 +18,7 @@ const output=cp.execFileSync('java',['-Xmx1024m','-Djava.awt.headless=true','-cp
 const line=output.split('\n').find(l=>l.startsWith('ROWS_PARITY '));assert.ok(line,output);
 const result=JSON.parse(line.slice(12));assert.deepEqual(result.values,cases.map(f=>f.expected));
 console.log(`rows-bulk-parity: ${result.assertions} Rhino assertions + browser parity, failures, cancellation, own keys, no mutation and generated-peer check passed`);
+
+const poisoned=vm.createContext({});
+const kernelSource=fs.readFileSync(path.join(root,'_flow/lib/rows.js'),'utf8');
+vm.runInContext('var kernel='+kernelSource+';Object.defineProperty(Object.prototype,"poisonedColumn",{configurable:true,set:function(){throw Error("setter called");}});var projected=kernel.select({rows:[{poisonedColumn:7}],columns:["poisonedColumn"]})[0];if(!Object.getOwnPropertyDescriptor(projected,"poisonedColumn").writable||projected.poisonedColumn!==7)throw Error("own data lost");',poisoned);
