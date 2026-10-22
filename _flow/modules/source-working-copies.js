@@ -44,7 +44,8 @@
 		}
 		function read(file) {
 			var text = draft(file);
-			return text === null ? String(env.FileUtils.readFileToString(file, "UTF-8")) : text;
+			if (text !== null) return text;
+			return env.readSourceFile ? String(env.readSourceFile(file)) : String(env.FileUtils.readFileToString(file, "UTF-8"));
 		}
 		function isFile(file) {
 			if (!paths.length) return file.isFile();

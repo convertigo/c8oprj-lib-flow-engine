@@ -34,5 +34,12 @@ var invalid = false;
 try { module.create({ sourceDrafts: writes, sourceRemovals: [String(retained)] }, env); }
 catch (error) { invalid = String(error).indexOf("FLOW_SOURCE_ENTRY_CONFLICT") >= 0; }
 assert(invalid, "Contradictory changes are rejected");
+var savedReads = 0;
+var sharedEnv = Object.assign({}, env, { readSourceFile: function (file) { savedReads++; return "shared saved text"; } });
+var sharedView = module.create({ sourceDrafts: writes, sourceRemovals: [String(old)] }, sharedEnv);
+assert(sharedView.read(retained) === "" && sharedView.read(moved) === "saved" && savedReads === 0, "Drafts bypass the shared saved-source reader");
+try { sharedView.read(old); } catch (expectedRemoval) { }
+assert(savedReads === 0, "Removals cannot expose a cached saved source");
+assert(module.create({}, sharedEnv).read(old) === "shared saved text" && savedReads === 1, "Saved files use the server reader");
 files.deleteDirectory(sandbox.toFile());
 print("source-working-copies OK");

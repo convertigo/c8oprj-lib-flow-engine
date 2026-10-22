@@ -7396,7 +7396,7 @@
 
 	function sourceView(request) {
 		return loadEngineModule("source-working-copies.js").create(request, {
-			File: File, FileUtils: FileUtils, hash: sha256Hex, canonicalPath: canonicalPathOf
+			File: File, FileUtils: FileUtils, readSourceFile: readSourceFile, hash: sha256Hex, canonicalPath: canonicalPathOf
 		});
 	}
 
