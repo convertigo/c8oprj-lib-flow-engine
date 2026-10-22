@@ -82,6 +82,7 @@ try {
 	var nativeFingerprintsGenerations = 0;
 	var rememberNativeFingerprints = eval(functionSource("rememberNativeFingerprints"));
 	var lookups = 0;
+	var sharedModuleBridge = false;
 	var Packages = { com: { convertigo: {} } };
 	Object.defineProperty(Packages.com.convertigo, "libflowengine", { get: function () {
 		lookups++;

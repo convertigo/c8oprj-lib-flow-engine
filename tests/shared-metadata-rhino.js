@@ -25,11 +25,12 @@ try {
 	var file = write("_flow/blocks/proof/echo.block.js", block("saved"));
 	var a = instance(), b = instance();
 	assert(run(a, { input: { value: "A" } }).value === "saved", "Saved block");
-	var first = total("execution-snapshot"), descriptors = total("block-catalog");
+	var first = total("execution-snapshot"), descriptors = total("block-catalog"), headers = total("block-header");
 	var second = run(b, { input: { value: "B" } });
 	assert(second.input === "B" && second.value === "saved", "Inputs cannot travel with a shared plan");
 	assert(first === 1 && total("execution-snapshot") === first, "Second runtime rebuilt the plan");
 	assert(descriptors > 0 && total("block-catalog") === descriptors, "Second runtime rebuilt descriptors");
+	assert(headers > 0 && total("block-header") === headers, "Second runtime reparsed immutable block headers");
 	var drafts = {}; drafts[file] = block("draft");
 	assert(run(a, { sourceDrafts: drafts }).value === "draft", "Hot plan ignored a draft");
 	assert(total("execution-snapshot") === first, "Draft plan entered shared registry");

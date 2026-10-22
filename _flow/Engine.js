@@ -17,6 +17,8 @@
 	var ConcurrentHashMap = Packages.java.util.concurrent.ConcurrentHashMap;
 	var ReentrantLock = Packages.java.util.concurrent.locks.ReentrantLock;
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
+	var sharedModuleBridge = false;
+	try { sharedModuleBridge = typeof FlowEngineBridge.evalSharedModule === "function"; } catch (olderEngine) { }
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
@@ -391,19 +393,11 @@
 	function evalCompiledSource(source, sourceName, fingerprint) {
 		source = String(source || "");
 		var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
-		// Share only compiled engine-module code through Convertigo's established
-		// Rhino cache. Evaluated exports/closures still belong to the fresh scope.
-		if (cx && !cx.isInterpretedMode() && String(sourceName || "").indexOf(canonicalPath(engineDir()) + "/modules/") === 0) {
-			// RhinoUtils does get/compile/put, not an atomic cache fill. Parallel XSD
-			// workers must not all compile the same large module on a cold generation.
-			var moduleLock = sharedLock("engineModuleEvaluation:" + String(sourceName));
-			moduleLock.lock();
-			try {
-				var exports = Packages.com.twinsoft.convertigo.engine.util.RhinoUtils.evalCachedJavascript(
-					cx, compiledScriptScope(cx), source, String(sourceName), 1, null);
-				delegatedModuleEvaluations++;
-				return exports;
-			} finally { moduleLock.unlock(); }
+		if (cx && sharedModuleBridge &&
+			String(sourceName || "").indexOf(canonicalPath(engineDir()) + "/modules/") === 0) {
+			var exports = FlowEngineBridge.evalSharedModule(cx, compiledScriptScope(cx), source, String(sourceName));
+			delegatedModuleEvaluations++;
+			return exports;
 		}
 		var script = compileScript(source, sourceName, fingerprint);
 		if (!cx || !script) {
@@ -1116,12 +1110,17 @@
 		return cacheUtils().createBoundedMapState(limit);
 	}
 
+	function readSourceFile(file) {
+		return sharedModuleBridge ? String(FlowEngineBridge.readSourceFile(file))
+			: String(FileUtils.readFileToString(file, "UTF-8"));
+	}
+
 	function loadBootstrapModule(name) {
 		var file = engineModuleFile(name);
 		if (!file.isFile()) {
 			raise("MISSING_ENGINE_MODULE", "Flow engine module not found: " + file.getAbsolutePath());
 		}
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var source = readSourceFile(file);
 		var sourceName = canonicalPath(file);
 		var fingerprint = file.lastModified() + ":" + file.length();
 		var module = evalCompiledSource(source, sourceName, fingerprint);
@@ -1178,6 +1177,9 @@
 			}
 			if (known === undefined) {
 				rememberNativeFingerprints(generation, true);
+			}
+			if (sharedModuleBridge) {
+				return String(FlowEngineBridge.serverDirectoryFingerprint(dir, function () { return String(fingerprints.directory(String(dir.getPath()))); }));
 			}
 			return String(fingerprints.directory(String(dir.getPath())));
 		} catch (e) {
@@ -1324,6 +1326,10 @@
 	}
 
 	function fileFingerprint(file) {
+		if (file && sharedModuleBridge) {
+			var shared = FlowEngineBridge.serverFileFingerprint(file);
+			if (shared !== null) return String(shared);
+		}
 		return fingerprintUtils().fileFingerprint(file, fingerprintEnv());
 	}
 
@@ -1434,7 +1440,7 @@
 			if (memo) memo.put(memoKey, cached);
 			return cached;
 		}
-		var source = String(FileUtils.readFileToString(file, "UTF-8"));
+		var source = readSourceFile(file);
 		var module = evalCompiledSource(source, key, fingerprint);
 		if (!module || typeof module !== "object") {
 			raise("INVALID_ENGINE_MODULE", "Invalid Flow engine module: " + file.getAbsolutePath(),
@@ -2387,7 +2393,9 @@
 		return {
 			normalizeTree: normalizeTree,
 			parseFlowScriptMetadataValue: function (text, lineNumber) {
-				return flowScriptParserService().parseFlowScriptMetadataValue(text, lineNumber, flowScriptParserEnv());
+				return sharedMetadataSnapshot("block-header\n" + sha256Hex(String(text)), "1", function () {
+					return { value: flowScriptParserService().parseFlowScriptMetadataValue(text, lineNumber, flowScriptParserEnv()) };
+				}).value;
 			},
 			normalizeFlowScriptCode: normalizeFlowScriptCode,
 			formatMetadataLiteral: flowScriptInlineValue,
@@ -3237,7 +3245,7 @@
 		var native = nativeFlowMetadata(flowMetadata || {}, flowSource, false);
 		flowMetadata = native.value;
 		inputDefinitions = flowInputDefinitionsFromFlowScriptMetadata(flowMetadata);
-		var inputSync = Object.keys(inputDefinitions).length || flowMetadata && flowMetadata.authenticatedContextRequired !== undefined
+		var inputSync = request.metadataOnly !== true && (Object.keys(inputDefinitions).length || flowMetadata && flowMetadata.authenticatedContextRequired !== undefined)
 			? syncProjectFlowInputs(name, inputDefinitions, Object.assign({}, request, { flowMetadata: flowMetadata }))
 			: { synced: false, created: [], updated: [] };
 		var response = {
@@ -3705,7 +3713,10 @@
 	}
 
 	function parseFlowScriptTopLevelObjectFromCode(code, name) {
-		return flowScriptParserService().parseFlowScriptTopLevelObjectFromCode(code, name, flowScriptParserEnv());
+		// Only JSON metadata is shared; parser nodes and scopes remain local.
+		return sharedMetadataSnapshot("source-header\n" + String(name) + "\n" + sha256Hex(String(code)), "1", function () {
+			return { value: flowScriptParserService().parseFlowScriptTopLevelObjectFromCode(code, name, flowScriptParserEnv()) };
+		}).value;
 	}
 
 	function flowScriptIntentUtils() {

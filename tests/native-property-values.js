@@ -58,6 +58,11 @@ try{
  var invalidSync=sync({authenticatedContextRequired:false,inputs:{x:{type:'string',required:'yes',description:'must not write'}}});
  assert(!invalidSync.ok,'syncInputs rejects invalid source directly');
  assert(__nativeProbeFlow.getAuthenticatedContextRequired()&&String(x.getDescription())==='Keep text spaces ','Whole batch refused before the first bean change');
+ var readOnly=api('syncInputs',{name:'Probe',project:'Probe',metadataOnly:true,flowSource:code({authenticatedContextRequired:false,inputs:{fresh:{type:'string',required:true}},accessibility:'private'})});
+ assert(readOnly.ok&&readOnly.flowMetadata.authenticatedContextRequired===false&&readOnly.accessibility==='Private'&&readOnly.inputDefinitions.fresh.required,'Read-only contract retains authentication, visibility and required inputs');
+ assert(!readOnly.inputSync.synced&&__nativeProbeFlow.getVariable('fresh')===null&&__nativeProbeFlow.getAuthenticatedContextRequired(),'Server contract reads do not edit the loaded project bean');
+ var invalidReadOnly=api('syncInputs',{name:'Probe',metadataOnly:true,flowSource:code({authenticatedContextRequired:'yes'})});
+ assert(!invalidReadOnly.ok,'Read-only contract still validates metadata');
  __nativeProbeFlow=null;
  var mutation=api('applyMutation',{target:'flow',definition:{flow:{inputs:{x:{type:'string'}}},nodes:[]},mutation:{op:'replace',path:'flow.inputs.x.required',value:'yes'},includeTree:false});
  assert(!mutation.ok,'Authoring metadata mutations cannot bypass validation: '+JSON.stringify(mutation));

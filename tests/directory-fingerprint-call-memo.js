@@ -145,6 +145,7 @@ function writeRuntimeMapCache(cache, key, fingerprint, value) {
 	return value;
 }
 var FileUtils = { readFileToString: function () { return moduleVersion; } };
+function readSourceFile(file) { return String(FileUtils.readFileToString(file, "UTF-8")); }
 function evalCompiledSource(text) { moduleCompiles++; return { version: text }; }
 var loadEngineModule = eval(functionSource("loadEngineModule"));
 // Use the module file's actual path without involving the path-only test stub.
