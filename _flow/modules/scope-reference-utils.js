@@ -47,9 +47,12 @@
 	}
 
 	function addConfigKey(keys, value) {
-		if (typeof value !== "string") {
-			return;
-		}
+		if (typeof value !== "string" || value.indexOf("config.") === -1) return;
+		addConfigPaths(keys, value);
+	}
+
+	// Keep callback activations off the ordinary strings in a definition.
+	function addConfigPaths(keys, value) {
 		function addPath(path) {
 			if (path.indexOf("config.") !== 0) {
 				return;
@@ -65,17 +68,18 @@
 		});
 	}
 
+	function walkArray(value, callback) {
+		value.forEach(function (item) { walkTree(item, callback); });
+	}
+
 	function walkTree(value, callback) {
 		if (typeof value === "string") {
 			callback(value);
 		} else if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			value.forEach(function (item) {
-				walkTree(item, callback);
-			});
+			walkArray(value, callback);
 		} else if (value && typeof value === "object") {
-			Object.keys(value).forEach(function (key) {
-				walkTree(value[key], callback);
-			});
+			var keys = Object.keys(value);
+			for (var i = 0; i < keys.length; i++) walkTree(value[keys[i]], callback);
 		}
 	}
 

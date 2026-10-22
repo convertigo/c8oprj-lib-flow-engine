@@ -126,3 +126,16 @@ for (var step = 0; step < 1500; step++) {
 	equal(actual, expected, "Mutation parity failed at step " + step);
 }
 print("scope reference unique index tests passed");
+
+var traversalOrder=[], foreachCalls=0;
+var sparse=new Array(3); sparse[1]="config.second.field";
+sparse.forEach=function(callback){foreachCalls++;return Array.prototype.forEach.call(this,callback);};
+var tree={first:"plain text",rows:sparse,last:"config.first config.second"};
+Object.defineProperty(tree,"getter",{enumerable:true,get:function(){traversalOrder.push("getter");return "config.third.deep";}});
+Object.defineProperty(tree,"hidden",{enumerable:false,get:function(){throw Error("hidden read");}});
+equal(utils.collectConfigKeys(tree),["second","first","third"],"Config reference order or deduplication changed");
+assert(foreachCalls===1 && traversalOrder.join(",")==="getter","Reference traversal changed array overrides or getters");
+var existing=["first"];
+assert(utils.collectConfigKeys({value:"xconfig.ignored config.first config.__proto__ config.$valid"},existing)===existing,"Caller reference accumulator was replaced");
+equal(existing,["first","__proto__","$valid"],"Reference boundaries or special names changed");
+equal(utils.collectConfigKeys([null,undefined,false,1,"config.","configuration.x"]),[],"Nonreferences were added");
