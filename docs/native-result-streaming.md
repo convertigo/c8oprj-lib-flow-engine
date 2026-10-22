@@ -9,19 +9,27 @@ their implementation and lifecycle tests land.
 
 `Engine.run(requestJson)` keeps its string response contract. Java execution
 feature-detects `Engine.runObject(requestJson, detach)`. This operation performs
-the same run, handle rejection and sanitization, then calls `detach(envelope)`
+the same run and result policy, then calls `detach(envelope)`
 inside its structured-error boundary. It must return the exact token supplied
 by that callback. The callback makes fresh JSONObject/JSONArray containers and
 immutable Java scalars while the runtime is borrowed. No Scriptable, function,
 prototype, getter, Java host object or realm reference crosses this boundary.
 Aliases are copied independently. Only JSON scalar values are shared.
 
+Since local engine 0.1.105, bridges may expose `detach.sanitize(envelope, policy)`.
+Ordinary data trees are checked, sanitized and detached in one Java walk, without
+an intermediate Rhino tree. If any accessor, host value, custom prototype, array
+map/species or conversion hook needs the provider policy, the speculative copy is
+discarded before executing user code and the original policy runs exactly once.
+This retains getter/toJSON order, handle rejection and cycle behavior. Cyclic
+arrays that exhaust the old sanitizer are reported as a structured result error.
+Result writes keep their eager handle guard: mutable trees can change afterwards.
+
 The copy preserves JSON omission/null rules, sparse arrays, own keys including
 `__proto__`, `toJSON`, finite numbers and the existing Java scalar conversion.
 Getters and `toJSON` finish before the runtime is released. Cycles and BigInts
 that reach the JSON boundary fail there, within the run error envelope. The
-existing sanitizer still owns its cycle/handle policy; this change does not
-remove it. Standalone synchronous callers may omit `detach` and receive the
+provider sanitizer owns exceptional-value and diagnostic handle policies. Standalone synchronous callers may omit `detach` and receive the
 sanitized JavaScript object; **they do not receive an object detached from their
 realm** and must not retain it as a servlet response.
 
@@ -32,7 +40,9 @@ copied into an internal caller's realm, or converted to XML when the requester,
 project options or attachment projection require it. Existing access checks,
 context isolation and billing stay in the requestable lifecycle.
 
-`JsonResponse` writes detached values after execution. Its servlet entry point
+`JsonResponse` writes detached values after execution. Boundary-owned container
+types permit direct escaped-string writes, preserving JSON options and UTF-16
+escaping without constructing another escaped String for each cell/key. Its servlet entry point
 owns/closes the writer and checks PrintWriter's error state after flushing.
 An I/O failure cannot retain a runtime lease because detachment and release have
 already completed. This is **incremental serialization of a materialized result**,

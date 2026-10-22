@@ -434,6 +434,20 @@
 		if (internalProfile) {
 			delete payload.profile;
 		}
+		// A bridge exposing this capability owns one fused policy/copy walk.
+		// Older bridges and standalone callers keep the existing JS policy.
+		if (detach && typeof detach.sanitize === "function") {
+			if (internalProfile) {
+				functionProfile.responseMode = "object";
+				functionProfile.responseSanitizeMode = "fused";
+				internalProfile.functionCall = functionProfile;
+				payload.profile = internalProfile;
+			}
+			return detach.sanitize(payload, function (value, seen) {
+				return rejectRuntimeHandlesAt ? sanitizeSerializableRuntimeValue(value, rejectRuntimeHandlesAt, seen)
+					: sanitizeRuntimeValue(value, seen);
+			});
+		}
 		payload = rejectRuntimeHandlesAt
 			? sanitizeSerializableRuntimeValue(payload, rejectRuntimeHandlesAt)
 			: sanitizeRuntimeValue(payload);

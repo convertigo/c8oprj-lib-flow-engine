@@ -97,3 +97,17 @@ engine.runObject(objectRequest);
 assertTrue(opened.length === countBefore, "Disabled execution retained a prior allocation collector.");
 engine.runObject(JSON.stringify({ definition: { version: 1, nodes: [{ block: "unknown.test" }] }, includeTrace: false }), function (v) { return v; }, allocationTrace);
 assertTrue(pending.length === 0 && opened.length === closed.length, "Failed node retained an allocation span.");
+
+var fusedCalls = 0;
+function fusedDetach() { throw new Error("The legacy detachment path must not run when the capability is available."); }
+fusedDetach.sanitize = function (payload, policy) { fusedCalls++; return policy(payload); };
+var fused = engine.runObject(objectRequest, fusedDetach);
+assertTrue(fusedCalls === 1 && JSON.stringify(fused.result) === JSON.stringify(objectResponse.result), "Fused protocol changed the public result.");
+var fusedProfile = engine.runObject(JSON.stringify({ definition: { version: 1, nodes: [] }, profile: true, includeTrace: false }), fusedDetach);
+assertTrue(fusedProfile.profile.functionCall.responseSanitizeMode === "fused" && fusedProfile.profile.functionCall.responseSanitizeMs === undefined,
+	"Fused profile reported a fictitious separate sanitization duration.");
+fusedDetach.sanitize = function (payload, policy) {
+	if (payload.ok) { var error = new Error("synthetic fused failure"); error.code = "FUSED_TEST"; throw error; }
+	return policy(payload);
+};
+assertTrue(engine.runObject(objectRequest, fusedDetach).error.code === "FUSED_TEST", "Fused failure escaped the structured error boundary.");
