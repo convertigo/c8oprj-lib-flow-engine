@@ -65,7 +65,15 @@
 			return String(implementation.runtime || "");
 		},
 		catalog: function () {
-			return this.__flowLoaderEnv.normalizeTree(this.__flowLoaderEnv.graphBlockCatalog(placeholderDescriptor(this)));
+			// The public contract remains a detached, mutable descriptor. Building it
+			// repeatedly also recomposes every property, slot and trait.
+			var env = this.__flowLoaderEnv;
+			var key = env.catalogContextKey ? env.catalogContextKey() : "";
+			var entry = this.__flowCatalog;
+			if (!entry || entry.key !== key) {
+				entry = this.__flowCatalog = { key: key, value: env.graphBlockCatalog(placeholderDescriptor(this)) };
+			}
+			return env.normalizeTree(entry.value);
 		},
 		displayName: function (node) {
 			var block = materializePlaceholder(this);

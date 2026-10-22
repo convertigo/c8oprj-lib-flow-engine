@@ -2568,6 +2568,7 @@
 			sourceForFile: sourceForFile,
 			sha256Hex: sha256Hex,
 			blockCompilerFingerprint: blockArtifactCompilerFingerprint(),
+			catalogContextKey: blockCatalogContextKey,
 			projectGeneration: projectGeneration,
 			blockSourceFingerprint: function (file) {
 				var draft = frontendDraftForFile(currentActiveRequest(), file);
@@ -4469,16 +4470,25 @@
 		return block && typeof block.catalog === "function" ? block.catalog() : {};
 	}
 
-	// The catalog of a block for the code that only reads it (analysis, checks): computed once per block object instead
+	// The catalog of a block for code that only reads it (analysis, checks, execution): computed once per block object instead
 	// of a deep copy per node and per property. A reloaded block is a new object.
+	function blockCatalogContextKey() {
+		// Core placeholder objects can be reused by two projects in one realm.
+		// Their trait composition and in-memory authoring drafts belong to the caller.
+		return String(projectDir() || "") + "\n" + sourceDraftsFingerprint();
+	}
+
 	function readOnlyBlockCatalog(block) {
 		if (!block || typeof block.catalog !== "function") {
 			return {};
 		}
-		if (!Object.prototype.hasOwnProperty.call(block, "__readOnlyCatalog")) {
-			Object.defineProperty(block, "__readOnlyCatalog", { value: block.catalog(), enumerable: false, configurable: true });
+		var key = blockCatalogContextKey();
+		var entry = block.__readOnlyCatalog;
+		if (!entry || entry.key !== key) {
+			entry = { key: key, value: block.catalog() };
+			Object.defineProperty(block, "__readOnlyCatalog", { value: entry, enumerable: false, configurable: true });
 		}
-		return block.__readOnlyCatalog;
+		return entry.value;
 	}
 
 	function graphBlockStackLabel(stack) {
@@ -4496,7 +4506,7 @@
 
 	function expandNodeSlotNames(blocks, node) {
 		var names = [];
-		var catalog = blockCatalog(blocks && blocks[blockName(node)]);
+		var catalog = readOnlyBlockCatalog(blocks && blocks[blockName(node)]);
 		slotDefinitions(catalog).forEach(function (definition) {
 			addUnique(names, definition.name);
 			(definition.aliases || []).forEach(function (alias) {
@@ -4850,7 +4860,7 @@
 			notifySourceMutation: notifySourceMutation,
 			mergedContext: mergedContext,
 			catalogDefinition: catalogDefinition,
-			blockCatalog: blockCatalog,
+			blockCatalog: readOnlyBlockCatalog,
 			getBlockSource: getBlockSource,
 			createProjectBlock: createProjectBlock,
 			duplicateProjectBlock: duplicateProjectBlock,
@@ -10966,7 +10976,7 @@
 	}
 
 	// called for every node of a walk: the slot names only need the block catalog
-	var childSlotNamesEnv = { blockName: blockName, blockCatalog: blockCatalog };
+	var childSlotNamesEnv = { blockName: blockName, blockCatalog: readOnlyBlockCatalog };
 
 	function childSlotNamesForMutation(blocks, node) {
 		return flowTreeService().childSlotNamesForMutation(blocks, node, childSlotNamesEnv);

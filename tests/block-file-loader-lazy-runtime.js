@@ -16,6 +16,8 @@ function file(name) {
 
 let sourceReads = 0;
 let compiles = 0;
+let catalogs = 0;
+let catalogContext = "projectA";
 let materializationLocks = 0;
 let materializationUnlocks = 0;
 const env = {
@@ -28,20 +30,21 @@ const env = {
 	}),
 	blockSourceFingerprint: () => "source",
 	blockCompilerFingerprint: "compiler",
+	catalogContextKey: () => catalogContext,
 	sourceForFile: (value) => {
 		sourceReads += 1;
 		return `const _meta = { runtime: "rhino" }; function ${value.getName().replace(/\..*$/, "")}() {}`;
 	},
 	extractFlowScriptBlockMeta: () => ({ meta: { runtime: "rhino" } }),
 	flowScriptBlockMetaFromRequest: () => ({}),
-	normalizeTree: (value) => value,
+	normalizeTree: (value) => JSON.parse(JSON.stringify(value)),
 	blockCodeRuntimeFromMeta: (meta) => meta.runtime,
 	flowScriptBlockDescriptorFromMeta: (name, meta) => ({
 		name,
 		implementation: { runtime: meta.runtime },
 		props: {},
 	}),
-	graphBlockCatalog: (descriptor) => descriptor,
+	graphBlockCatalog: (descriptor) => { catalogs++; return descriptor; },
 	compileProjectBlockCode: (_blocks, name) => {
 		compiles += 1;
 		return { descriptor: { name, implementation: { runtime: "rhino" }, props: {} } };
@@ -73,6 +76,24 @@ assert.deepStrictEqual(Object.keys(blocks.first).filter((name) => typeof blocks.
 assert.strictEqual(blocks.first.implementationRuntime(), "rhino");
 assert.strictEqual(sourceReads, 1, "reading one descriptor should not parse another block");
 assert.strictEqual(compiles, 0, "reading metadata should not compile a runner");
+
+// Catalogue consumers own their copies; hot lookups do not reconstruct metadata.
+const firstCatalog = blocks.first.catalog();
+firstCatalog.props.changedByCaller = { type: "string" };
+assert.strictEqual(blocks.first.catalog().props.changedByCaller, undefined);
+assert.strictEqual(catalogs, 1, "one descriptor construction for repeated reads");
+catalogContext = "projectB";
+blocks.first.catalog();
+assert.strictEqual(catalogs, 2, "a different project must recompose core traits");
+catalogContext = "projectB-with-draft";
+blocks.first.catalog();
+assert.strictEqual(catalogs, 3, "a changed draft must recompose metadata");
+const reloaded = {};
+loader.reserveFlowScriptBlockFile(reloaded, file("first"), "core", "engine", null, env);
+reloaded.first.catalog();
+assert.strictEqual(catalogs, 4, "a reloaded block owns a fresh descriptor");
+assert.notStrictEqual(reloaded.first.__flowCatalog, blocks.first.__flowCatalog,
+	"runtime-local descriptors must not leak between block instances");
 
 loader.materializeFlowScriptBlock(blocks, "first");
 assert.strictEqual(compiles, 1, "the first used block should compile exactly once");
