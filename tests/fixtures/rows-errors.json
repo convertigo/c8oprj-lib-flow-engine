@@ -261,5 +261,29 @@
       ]
     },
     "ROWS_OPTIONS_INVALID"
+  ],
+  [
+    "read",
+    {
+      "rows": [
+        "{\"a\":[1,2,3]}"
+      ],
+      "sanitize": {
+        "maxNodes": 3
+      }
+    },
+    "ROWS_READ_BOUNDS"
+  ],
+  [
+    "read",
+    {
+      "rows": [
+        "{\"a\":{\"b\":{\"c\":1}}}"
+      ],
+      "sanitize": {
+        "maxDepth": 2
+      }
+    },
+    "ROWS_READ_BOUNDS"
   ]
 ]

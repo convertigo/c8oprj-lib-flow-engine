@@ -1,0 +1,15 @@
+# Java row kernels (0.1.107)
+
+`rows.read`, `rows.select` and `rows.formatCells` keep their JavaScript reference and generated browser peers. The backend can execute ordinary JSON in the Java 17 helpers `libs/src/com/convertigo/libflowengine/{Rows,Cells}.java`, loaded by the existing project-library generation mechanism (#1220). No class, request scope, provider credential or row is cached globally. Providers and formatting policy stay in the library, outside the server engine.
+
+The helpers use the runtime-provided Rhino, Jackson, Jettison and engine JSON APIs. This extends the earlier JDK-only helper guideline; no dependency JAR is bundled. Build with `CONVERTIGO_DEPENDENCIES_JAR` pointing to the complete engine runtime classpath JAR, then `java tools/LibsBuild.java`. Commit `libs/build` and its source fingerprint. Old runtimes or unsupported JavaScript objects use the reference implementation.
+
+The default `formatCells` text profile is unchanged. The explicit `profile: "table"` accepts schema, columnNames, hidden, valuesOnly, defaultTimezone and includeFields; it implements the historical table HTML/lean representation. `select` descriptors optionally specify defaultValue and nullAsMissing. `read.sanitize` can redact literal strings, drop exact keys and mask keys case-insensitively, with bounded nodes/depth. `protectedReadVersion: 1` is the capability marker for providers requiring that protection; they must retain their original protected fallback when absent.
+
+Java kernels keep owned JSON data until JavaScript observes it. The engine's `JsonData` provides an ordinary object view, real arrays, immutable owned backing data and safe detachment; mutation/reflection materializes a view before performing normal Rhino behavior. Getter/custom-prototype/host/exotic objects decline the optimized path without speculative getter execution. Numeric keys, negative zero, decimal rounding and non-finite numbers retain the reference boundary semantics.
+
+`preparePipeline` is an internal producer-local facility: a private closure owns compiled projections and table plans for the lifetime of one exclusive producer. It must never be put in a shared registry. Row limits, cancellation, pagination, output completion, backpressure and lease release remain controlled by the producer. The retained package binding ends with that private realm; thread Context, TCCL and MDC restoration still occurs on each call.
+
+The engine adapter `org.mozilla.javascript.MaterializedObject` deliberately targets Rhino 1.9.1 package-private reflection APIs. It must share Rhino's defining loader and be tested on a Rhino upgrade. Java availability checks otherwise select the JS fallback.
+
+Validation: `tests/rows-java-parity.js` executes the same 76 synthetic cases through Rhino reference, Java and generated browser peers, including HTML, lean, nulls, hidden columns, numeric key order, dates and rounding; 16 error contracts and 20 prepared pipelines are also checked. `http.request` adds opt-in responseType=text; default auto parsing remains unchanged.

@@ -41,6 +41,7 @@ try {
 			{ id: "json", block: "http.post", props: { url: base + "/json", body: "input.json" }, out: "result.json" },
 			{ id: "explicit", block: "http.request", props: { method: "PUT", url: base + "/explicit", headers: { Authorization: "Bearer kept" },
 				username: "ignored", password: "ignored" }, out: "result.explicit" },
+			{ id: "text", block: "http.request", props: {url:base+"/text",responseType:"text"}, out:"result.text" },
 			{ id: "get", block: "http.get", props: { url: base + "/get", username: "user", password: "" }, out: "result.get" }
 		] },
 		input: { form: { code: "a b+c/é", redirect_uri: "https://app.example/cb?x=1&y=2", skipped: null }, json: { code: "a b+c/é" }, secret: "s3cr:et" },
@@ -48,6 +49,7 @@ try {
 	})));
 	assertTrue(run.ok === true, "Flow failed: " + JSON.stringify(run).substring(0, 2000));
 	var basic = "Basic " + String(java.util.Base64.getEncoder().encodeToString(new java.lang.String("client id:s3cr:et").getBytes("UTF-8")));
+	assertTrue(typeof run.result.text.body === "string" && run.result.text.body === run.result.text.text,"Text response bypasses JSON parsing");
 	var formEcho = run.result.form.body;
 	assertTrue(formEcho.authorization === basic, "Basic authorization: " + formEcho.authorization);
 	assertTrue(formEcho.contentType === "application/x-www-form-urlencoded", "form content type: " + formEcho.contentType);

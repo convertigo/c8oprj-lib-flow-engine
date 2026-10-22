@@ -27,6 +27,7 @@ const _meta = {
     },
   },
   "properties": {
+    "responseType": {"kind":"value","type":"string","enum":["auto","text"],"default":"auto","description":"auto parses JSON bodies; text leaves the original response text in body for a downstream reader."},
     "method": {
       "label": "Method",
       "kind": "text",
@@ -223,7 +224,7 @@ const _meta = {
 		builder.setEntity(new StringEntity(text, "UTF-8"));
 	}
 
-	function readResponse(response, allocationTrace) {
+	function readResponse(response, allocationTrace, responseType) {
 		var entity = response.getEntity();
 		var status = response.getStatusLine() ? response.getStatusLine().getStatusCode() : 200;
 		var contentTypeHeader = entity && entity.getContentType ? entity.getContentType() : null;
@@ -231,7 +232,7 @@ const _meta = {
 		var text = entity ? String(EntityUtils.toString(entity, "UTF-8")) : "";
 		var body = text;
 		var trimmed = text.trim();
-		if (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+		if (responseType !== "text" && (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[")) {
 			var allocation = allocationTrace ? allocationTrace.open("boundary", "http-parse", "") : null;
 			try { body = JSON.parse(text); } finally { if (allocation) allocation.close(); }
 		}
@@ -244,10 +245,10 @@ const _meta = {
 		};
 	}
 
-	function responseObject(status, contentType, headers, text, allocationTrace) {
+	function responseObject(status, contentType, headers, text, allocationTrace, responseType) {
 		var body = text;
 		var trimmed = text.trim();
-		if (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+		if (responseType !== "text" && (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[")) {
 			var allocation = allocationTrace ? allocationTrace.open("boundary", "http-parse", "") : null;
 			try { body = JSON.parse(text); } finally { if (allocation) allocation.close(); }
 		}
@@ -274,21 +275,21 @@ const _meta = {
 		return String(url || "").match(/^file:/i) !== null;
 	}
 
-	function runFileHttp(method, url, allocationTrace) {
+	function runFileHttp(method, url, allocationTrace, responseType) {
 		method = String(method || "GET").toUpperCase();
 		if (method !== "GET" && method !== "HEAD") {
 			throw new Error("Unsupported file URL HTTP method: " + method);
 		}
 		var file = new File(URI.create(String(url)));
 		if (!file.isFile()) {
-			return responseObject(404, "", {}, "", allocationTrace);
+			return responseObject(404, "", {}, "", allocationTrace, responseType);
 		}
 		var contentType = String(Files.probeContentType(file.toPath()) || "");
 		var text = method === "HEAD" ? "" : String(FileUtils.readFileToString(file, "UTF-8"));
-		return responseObject(200, contentType, contentType ? { "content-type": contentType } : {}, text, allocationTrace);
+		return responseObject(200, contentType, contentType ? { "content-type": contentType } : {}, text, allocationTrace, responseType);
 	}
 
-	function runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace) {
+	function runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace, responseType) {
 		var builder = JavaHttpRequest.newBuilder(URI.create(String(url)))
 			.timeout(Duration.ofMillis(readTimeoutMs));
 		Object.keys(headers || {}).forEach(function (key) {
@@ -305,10 +306,10 @@ const _meta = {
 		}
 		var response = javaClient(connectTimeoutMs).send(builder.build(), JavaHttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 		var contentType = String(response.headers().firstValue("content-type").orElse(""));
-		return responseObject(response.statusCode(), contentType, javaHeaders(response), String(response.body()), allocationTrace);
+		return responseObject(response.statusCode(), contentType, javaHeaders(response), String(response.body()), allocationTrace, responseType);
 	}
 
-	function runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace) {
+	function runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace, responseType) {
 		var builder = RequestBuilder.create(method).setUri(url);
 		builder.setConfig(RequestConfig.custom()
 			.setRedirectsEnabled(true)
@@ -320,7 +321,7 @@ const _meta = {
 		var client = Engine.theApp && Engine.theApp.httpClient4 ? Engine.theApp.httpClient4 : HttpUtils.makeHttpClient(false);
 		var httpResponse = client.execute(builder.build());
 		try {
-			return readResponse(httpResponse, allocationTrace);
+			return readResponse(httpResponse, allocationTrace, responseType);
 		} finally {
 			httpResponse.close();
 		}
@@ -329,6 +330,8 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
+			var responseType=props.responseType===undefined?"auto":String(ctx.template(props.responseType));
+			if(responseType!=="auto"&&responseType!=="text")ctx.throwFlow({code:"HTTP_RESPONSE_TYPE_INVALID",message:"responseType takes auto or text.",status:400},node);
 			var headers = Object.assign({}, ctx.template(props.headers) || {});
 			var username = props.username === undefined || props.username === null ? "" : String(ctx.template(props.username) || "");
 			if (username && !hasHeader(headers, "authorization")) {
@@ -342,12 +345,12 @@ const _meta = {
 			var body = formBody(props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body), headers);
 			var response;
 			if (isFileUrl(url)) {
-				response = runFileHttp(method, url, ctx.allocationTrace);
+				response = runFileHttp(method, url, ctx.allocationTrace, responseType);
 			} else {
 				try {
-					response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace);
+					response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace, responseType);
 				} catch (e) {
-					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace);
+					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace, responseType);
 				}
 			}
 			if (ctx.outputPath(node) && response.status < 400 && ctx.learnOutputSchema) {

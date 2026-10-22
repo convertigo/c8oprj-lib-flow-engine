@@ -7,6 +7,8 @@
 	var JavaString = Packages.java.lang.String;
 	var JavaObject = Packages.java.lang.Object;
 	var NativeJavaObject = Packages.org.mozilla.javascript.NativeJavaObject;
+	var JsonData = Packages.com.twinsoft.convertigo.engine.util.JsonData;
+	if (typeof JsonData.containsNoHandles !== "function") JsonData = null;
 	var ObjectMapper = Packages.com.fasterxml.jackson.databind.ObjectMapper;
 	var YAMLFactory = Packages.com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
@@ -1494,6 +1496,7 @@
 		return {
 			raise: raise,
 			NativeJavaObject: NativeJavaObject,
+			JsonData: JsonData,
 			JavaObject: JavaObject,
 			JavaString: JavaString,
 			JavaBoolean: JavaBoolean,

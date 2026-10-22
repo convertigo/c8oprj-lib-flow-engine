@@ -615,8 +615,11 @@ mapping with FlowScript, and keep Rhino for the one missing primitive.
 
 ## Java Helpers (libs/src)
 
-`libs/src` holds the Java of the engine (JDK only, Java 17), such as
-`com.convertigo.libflowengine.Fingerprints`. Each helper keeps a JS fallback
+`libs/src` holds Java 17 helpers. `Fingerprints` uses only the JDK; the
+whole-array `Rows`/`Cells` helpers also use the runtime-provided Rhino, Jackson,
+Jettison and JSON boundary APIs. Do not bundle duplicate dependency JARs.
+Building these helpers requires the matching candidate engine classes; see
+[docs/java-row-kernels.md](docs/java-row-kernels.md). Each helper keeps a JS fallback
 computing the same result, used when the classes are not available (engine
 before 8.5, or a project call without the packages of its project).
 
@@ -627,7 +630,7 @@ even when it does not compile (`server_build` none). After any change of
 `libs/src`, run from the project folder, then commit `libs/build`:
 
 ```sh
-java tools/LibsBuild.java
+CONVERTIGO_DEPENDENCIES_JAR=/path/to/runtime-classpath.jar java tools/LibsBuild.java
 ```
 
 `tests/libs-build-in-sync.js` fails while `libs/build` does not match

@@ -211,6 +211,9 @@
 	}
 
 	function assertSerializable(value, where, env) {
+		// Native JSON rows remain data until observed or mutated. The Java visitor
+		// declines getters, host values and handles without invoking user code.
+		if (env.JsonData && env.JsonData.containsNoHandles(value)) return;
 		if (contains(value, env)) {
 			env.raise("RUNTIME_HANDLE_IN_RESULT", "Runtime handles cannot be written to " + where + ". Convert them to serializable data first.");
 		}

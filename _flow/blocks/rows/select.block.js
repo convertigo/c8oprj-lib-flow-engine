@@ -3,7 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:table",
   "description": "Selects, orders and renames columns across a whole array in one execution.",
-  "longDescription": "Missing fields are omitted. Input objects are not modified. Keys such as __proto__ are preserved as data. Column strings beginning with $ use JSON paths; all other strings, including dots, are literal column names.",
+  "longDescription": "Path descriptors accept defaultValue for missing values and nullAsMissing:true for null. Missing fields are omitted. Input objects are not modified. Keys such as __proto__ are preserved as data. Column strings beginning with $ use JSON paths; all other strings, including dots, are literal column names.",
   "summary": "select columns of {{rows}}",
   "targets": [
     "backend",

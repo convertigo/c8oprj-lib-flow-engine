@@ -1,6 +1,11 @@
 (function () { return {analyze:function(ctx,node) {
   var p=ctx.props(node), out=ctx.outputPath(node), item=ctx.itemSchemaFor(p.rows);
   var schema={type:"array",items:{type:"object"}};
+  if(p.profile==="table") {
+    schema.items={type:"object",additionalProperties:{type:"object",properties:{displayName:{type:"string"},type:{type:"string"},value:{type:"any"},displayValue:{type:"string"},hidden:{type:"boolean"}}}};
+    if(p.includeFields===true)schema={type:"object",properties:{rows:schema,fields:{type:"object"}}};
+    ctx.addSchema(out,schema);return;
+  }
   if(item && item.type==="object") {
     var source=item.properties||{}, properties={};
     if(Array.isArray(p.columns)) {

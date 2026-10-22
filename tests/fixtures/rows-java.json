@@ -1,0 +1,2230 @@
+[
+  {
+    "name": "basic-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "id": 1,
+          "n": "1.25",
+          "choice": {
+            "value": "OK",
+            "color": "blue"
+          },
+          "empty": null
+        },
+        {
+          "n": "-0.25",
+          "extra": "x"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        },
+        {
+          "name": "choice",
+          "type": "single_select"
+        },
+        {
+          "name": "empty",
+          "type": "text"
+        }
+      ],
+      "valuesOnly": false,
+      "hiddenColumns": [
+        "n"
+      ]
+    }
+  },
+  {
+    "name": "literal-keys-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "__proto__": "safe",
+          "constructor": "own",
+          "with.dot": "x",
+          "2": "two",
+          "1": "one"
+        }
+      ],
+      "schema": [],
+      "valuesOnly": false,
+      "hiddenColumns": "xxwith.dotyy"
+    }
+  },
+  {
+    "name": "column-exclusion-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "2.5",
+          "choice": {
+            "value": "OK",
+            "color": "unknown"
+          }
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        },
+        {
+          "name": "choice",
+          "type": "single_select"
+        },
+        {
+          "name": "empty",
+          "type": "text"
+        }
+      ],
+      "columnNames": [
+        "choice"
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "late-null-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": null
+        },
+        {
+          "n": "1"
+        },
+        {
+          "n": null
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        },
+        {
+          "name": "choice",
+          "type": "single_select"
+        },
+        {
+          "name": "empty",
+          "type": "text"
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "basic-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "id": 1,
+          "n": "1.25",
+          "choice": {
+            "value": "OK",
+            "color": "blue"
+          },
+          "empty": null
+        },
+        {
+          "n": "-0.25",
+          "extra": "x"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        },
+        {
+          "name": "choice",
+          "type": "single_select"
+        },
+        {
+          "name": "empty",
+          "type": "text"
+        }
+      ],
+      "valuesOnly": true,
+      "hiddenColumns": [
+        "n"
+      ]
+    }
+  },
+  {
+    "name": "literal-keys-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "__proto__": "safe",
+          "constructor": "own",
+          "with.dot": "x",
+          "2": "two",
+          "1": "one"
+        }
+      ],
+      "schema": [],
+      "valuesOnly": true,
+      "hiddenColumns": "xxwith.dotyy"
+    }
+  },
+  {
+    "name": "column-exclusion-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "2.5",
+          "choice": {
+            "value": "OK",
+            "color": "unknown"
+          }
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        },
+        {
+          "name": "choice",
+          "type": "single_select"
+        },
+        {
+          "name": "empty",
+          "type": "text"
+        }
+      ],
+      "columnNames": [
+        "choice"
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "late-null-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": null
+        },
+        {
+          "n": "1"
+        },
+        {
+          "n": null
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        },
+        {
+          "name": "choice",
+          "type": "single_select"
+        },
+        {
+          "name": "empty",
+          "type": "text"
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "rating-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": 1
+        },
+        {
+          "v": 3
+        },
+        {
+          "v": "2foo"
+        },
+        {
+          "v": -1
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "rating",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "rating-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": 1
+        },
+        {
+          "v": 3
+        },
+        {
+          "v": "2foo"
+        },
+        {
+          "v": -1
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "rating",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "boolean-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": true
+        },
+        {
+          "v": false
+        },
+        {
+          "v": 1
+        },
+        {
+          "v": 0
+        },
+        {
+          "v": "TRUE"
+        },
+        {
+          "v": "false"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "boolean",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "boolean-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": true
+        },
+        {
+          "v": false
+        },
+        {
+          "v": 1
+        },
+        {
+          "v": 0
+        },
+        {
+          "v": "TRUE"
+        },
+        {
+          "v": "false"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "boolean",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "number-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.005"
+        },
+        {
+          "v": "2.675"
+        },
+        {
+          "v": "-1.005"
+        },
+        {
+          "v": "-0.001"
+        },
+        {
+          "v": "1,25"
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": 1e+21
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "number",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "number-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.005"
+        },
+        {
+          "v": "2.675"
+        },
+        {
+          "v": "-1.005"
+        },
+        {
+          "v": "-0.001"
+        },
+        {
+          "v": "1,25"
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": 1e+21
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "number",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "autonumber-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.5"
+        },
+        {
+          "v": "2"
+        },
+        {
+          "v": "-1.5"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "autonumber",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "autonumber-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.5"
+        },
+        {
+          "v": "2"
+        },
+        {
+          "v": "-1.5"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "autonumber",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "email-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": " a&b@example.invalid "
+        },
+        {
+          "v": ""
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "email",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "email-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": " a&b@example.invalid "
+        },
+        {
+          "v": ""
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "email",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "phone_number-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": " +33 (0)1 23 "
+        },
+        {
+          "v": "words"
+        },
+        {
+          "v": ""
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "phone_number",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "phone_number-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": " +33 (0)1 23 "
+        },
+        {
+          "v": "words"
+        },
+        {
+          "v": ""
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "phone_number",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "url-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "example.invalid/a?x=1&b=2"
+        },
+        {
+          "v": "mailto:a@example.invalid"
+        },
+        {
+          "v": ""
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "url",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "url-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "example.invalid/a?x=1&b=2"
+        },
+        {
+          "v": "mailto:a@example.invalid"
+        },
+        {
+          "v": ""
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "url",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "text-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "<x>&\""
+        },
+        {
+          "v": 4
+        },
+        {
+          "v": false
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "text",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "text-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "<x>&\""
+        },
+        {
+          "v": 4
+        },
+        {
+          "v": false
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "text",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "round-0",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "1.005"
+        },
+        {
+          "n": "2.675"
+        },
+        {
+          "n": "-1.005"
+        },
+        {
+          "n": "-0.0001"
+        },
+        {
+          "n": "0.125"
+        },
+        {
+          "n": "100.95"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "round-1",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "1.005"
+        },
+        {
+          "n": "2.675"
+        },
+        {
+          "n": "-1.005"
+        },
+        {
+          "n": "-0.0001"
+        },
+        {
+          "n": "0.125"
+        },
+        {
+          "n": "100.95"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "round-2",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "1.005"
+        },
+        {
+          "n": "2.675"
+        },
+        {
+          "n": "-1.005"
+        },
+        {
+          "n": "-0.0001"
+        },
+        {
+          "n": "0.125"
+        },
+        {
+          "n": "100.95"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        }
+      ]
+    }
+  },
+  {
+    "name": "round-20",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "1.005"
+        },
+        {
+          "n": "2.675"
+        },
+        {
+          "n": "-1.005"
+        },
+        {
+          "n": "-0.0001"
+        },
+        {
+          "n": "0.125"
+        },
+        {
+          "n": "100.95"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 20
+        }
+      ]
+    }
+  },
+  {
+    "name": "round--2",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "1.005"
+        },
+        {
+          "n": "2.675"
+        },
+        {
+          "n": "-1.005"
+        },
+        {
+          "n": "-0.0001"
+        },
+        {
+          "n": "0.125"
+        },
+        {
+          "n": "100.95"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": -2
+        }
+      ]
+    }
+  },
+  {
+    "name": "round-28",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "1.005"
+        },
+        {
+          "n": "2.675"
+        },
+        {
+          "n": "-1.005"
+        },
+        {
+          "n": "-0.0001"
+        },
+        {
+          "n": "0.125"
+        },
+        {
+          "n": "100.95"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 28
+        }
+      ]
+    }
+  },
+  {
+    "name": "round-bad",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "n": "1.005"
+        },
+        {
+          "n": "2.675"
+        },
+        {
+          "n": "-1.005"
+        },
+        {
+          "n": "-0.0001"
+        },
+        {
+          "n": "0.125"
+        },
+        {
+          "n": "100.95"
+        }
+      ],
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": "bad"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-h:mm:ss",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "h:mm:ss"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-h:mm",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "h:mm"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-d h",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "d h"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-d h m",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "d h m"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-d h m s",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "d h m s"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-d h:mm:ss.sss",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "d h:mm:ss.sss"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-h:mm:ss.s",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "h:mm:ss.s"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duration-h:mm:ss.ss",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": 0
+        },
+        {
+          "v": "90.125"
+        },
+        {
+          "v": -90061.9995
+        },
+        {
+          "v": "bad"
+        },
+        {
+          "v": "1,25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "duration",
+          "duration_format": "h:mm:ss.ss"
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-EUUTC12",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "EU",
+          "date_force_timezone": "UTC",
+          "date_time_format": "12",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-EUUTC24",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "EU",
+          "date_force_timezone": "UTC",
+          "date_time_format": "24",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-EUEurope/Paris12",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "EU",
+          "date_force_timezone": "Europe/Paris",
+          "date_time_format": "12",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-EUEurope/Paris24",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "EU",
+          "date_force_timezone": "Europe/Paris",
+          "date_time_format": "24",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-USUTC12",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "US",
+          "date_force_timezone": "UTC",
+          "date_time_format": "12",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-USUTC24",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "US",
+          "date_force_timezone": "UTC",
+          "date_time_format": "24",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-USEurope/Paris12",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "US",
+          "date_force_timezone": "Europe/Paris",
+          "date_time_format": "12",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-USEurope/Paris24",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "US",
+          "date_force_timezone": "Europe/Paris",
+          "date_time_format": "24",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-ISOUTC12",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "ISO",
+          "date_force_timezone": "UTC",
+          "date_time_format": "12",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-ISOUTC24",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "ISO",
+          "date_force_timezone": "UTC",
+          "date_time_format": "24",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-ISOEurope/Paris12",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "ISO",
+          "date_force_timezone": "Europe/Paris",
+          "date_time_format": "12",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "date-ISOEurope/Paris24",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "2024-03-31T01:30:00Z"
+        },
+        {
+          "v": "2024-02-15T13:42:00"
+        },
+        {
+          "v": "2024-12-25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "date",
+          "date_format": "ISO",
+          "date_force_timezone": "Europe/Paris",
+          "date_time_format": "24",
+          "date_include_time": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "formula-formulanumberFalse",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "formula",
+          "formula_type": "number",
+          "array_formula_type": "",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "formula-formulanumberTrue",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "formula",
+          "formula_type": "number",
+          "array_formula_type": "",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "formula-formulaarraynumberFalse",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": [
+            "1.25",
+            "2.5"
+          ]
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "formula",
+          "formula_type": "array",
+          "array_formula_type": "number",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "formula-formulaarraynumberTrue",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": [
+            "1.25",
+            "2.5"
+          ]
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "formula",
+          "formula_type": "array",
+          "array_formula_type": "number",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "formula-countnumberFalse",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "count",
+          "formula_type": "number",
+          "array_formula_type": "",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "formula-countnumberTrue",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": "1.25"
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "count",
+          "formula_type": "number",
+          "array_formula_type": "",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "formula-lookuparraydateFalse",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": [
+            "2024-02-15"
+          ]
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "lookup",
+          "formula_type": "array",
+          "array_formula_type": "date",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "formula-lookuparraydateTrue",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": [
+            "2024-02-15"
+          ]
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "lookup",
+          "formula_type": "array",
+          "array_formula_type": "date",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "formula-rollupbooleanFalse",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": true
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "rollup",
+          "formula_type": "boolean",
+          "array_formula_type": "",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "formula-rollupbooleanTrue",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "v": true
+        }
+      ],
+      "schema": [
+        {
+          "name": "v",
+          "type": "rollup",
+          "formula_type": "boolean",
+          "array_formula_type": "",
+          "number_decimal_places": 2
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "nested-False",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "a": [
+            {
+              "value": "a",
+              "color": "red"
+            },
+            {
+              "name": "b",
+              "color": "green"
+            }
+          ],
+          "file": [
+            {
+              "url": "https://example.invalid/a",
+              "is_image": true
+            },
+            {
+              "url": "https://example.invalid/b",
+              "is_image": false,
+              "visible_name": "b.txt"
+            }
+          ],
+          "button": {
+            "url": "https://example.invalid",
+            "label": "open"
+          },
+          "nested": {
+            "value": [
+              {
+                "value": "nested",
+                "color": "pink"
+              }
+            ]
+          }
+        }
+      ],
+      "schema": [],
+      "valuesOnly": false
+    }
+  },
+  {
+    "name": "nested-True",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": [
+        {
+          "a": [
+            {
+              "value": "a",
+              "color": "red"
+            },
+            {
+              "name": "b",
+              "color": "green"
+            }
+          ],
+          "file": [
+            {
+              "url": "https://example.invalid/a",
+              "is_image": true
+            },
+            {
+              "url": "https://example.invalid/b",
+              "is_image": false,
+              "visible_name": "b.txt"
+            }
+          ],
+          "button": {
+            "url": "https://example.invalid",
+            "label": "open"
+          },
+          "nested": {
+            "value": [
+              {
+                "value": "nested",
+                "color": "pink"
+              }
+            ]
+          }
+        }
+      ],
+      "schema": [],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "rows-null",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": null,
+      "schema": []
+    }
+  },
+  {
+    "name": "rows-single",
+    "operation": "formatCells",
+    "input": {
+      "profile": "table",
+      "includeFields": true,
+      "rows": {
+        "id": 1,
+        "n": 2
+      },
+      "schema": [
+        {
+          "name": "n",
+          "type": "number",
+          "number_decimal_places": 2
+        },
+        {
+          "name": "choice",
+          "type": "single_select"
+        },
+        {
+          "name": "empty",
+          "type": "text"
+        }
+      ]
+    }
+  },
+  {
+    "name": "portable-100",
+    "operation": "formatCells",
+    "input": {
+      "rows": [
+        {
+          "id": 1,
+          "n": "3.5",
+          "b": false,
+          "when": "2026-03-15",
+          "text": "<A&B>\"'"
+        }
+      ],
+      "columns": [
+        {
+          "name": "n",
+          "type": "number"
+        },
+        {
+          "name": "b",
+          "type": "boolean"
+        },
+        {
+          "name": "when",
+          "type": "date"
+        },
+        {
+          "name": "text"
+        }
+      ],
+      "keepColumns": [
+        "id"
+      ],
+      "escapeHtml": true
+    }
+  },
+  {
+    "name": "portable-101",
+    "operation": "formatCells",
+    "input": {
+      "rows": [
+        {
+          "d": "2026-03-29T01:30:00Z"
+        }
+      ],
+      "columns": [
+        {
+          "name": "d",
+          "type": "datetime",
+          "pattern": "dd/MM/yyyy HH:mm:ss",
+          "timeZone": "Europe/Paris"
+        }
+      ]
+    }
+  },
+  {
+    "name": "portable-102",
+    "operation": "formatCells",
+    "input": {
+      "rows": [
+        {
+          "d": "2026-03-15"
+        }
+      ],
+      "columns": [
+        {
+          "name": "d",
+          "type": "date",
+          "pattern": "long"
+        }
+      ]
+    }
+  },
+  {
+    "name": "portable-103",
+    "operation": "formatCells",
+    "input": {
+      "rows": [
+        {
+          "n": 0,
+          "b": false,
+          "s": ""
+        },
+        {}
+      ],
+      "columns": [
+        {
+          "name": "n",
+          "type": "number"
+        },
+        {
+          "name": "b",
+          "type": "boolean"
+        },
+        {
+          "name": "s"
+        }
+      ],
+      "valuesOnly": true
+    }
+  },
+  {
+    "name": "portable-110",
+    "operation": "select",
+    "input": {
+      "rows": [
+        {
+          "a": 1,
+          "id": 2,
+          "secret": 3,
+          "nested": {
+            "name": "N"
+          }
+        }
+      ],
+      "firstColumns": [
+        "id"
+      ],
+      "columns": [
+        "a",
+        {
+          "path": "$.nested.name",
+          "key": "label"
+        }
+      ],
+      "rename": {
+        "a": "value"
+      }
+    }
+  },
+  {
+    "name": "portable-111",
+    "operation": "select",
+    "input": {
+      "rows": [
+        {
+          "x.y": 1,
+          "a": 2,
+          "z": 3
+        }
+      ],
+      "columnsOrder": [
+        "z"
+      ],
+      "rename": {
+        "a": "b"
+      }
+    }
+  },
+  {
+    "name": "portable-112",
+    "operation": "read",
+    "input": {
+      "rows": [
+        {
+          "a": {
+            "x": 0
+          }
+        },
+        {
+          "a": {
+            "x": null
+          }
+        },
+        {
+          "a": {
+            "x": false
+          }
+        },
+        {}
+      ],
+      "path": "$.a.x",
+      "defaultValue": "missing"
+    }
+  },
+  {
+    "name": "portable-113",
+    "operation": "read",
+    "input": {
+      "rows": [
+        {
+          "a": [
+            {
+              "id": 1
+            },
+            {
+              "id": 2
+            }
+          ]
+        },
+        {
+          "a": []
+        }
+      ],
+      "path": "$.a[*].id"
+    }
+  },
+  {
+    "name": "portable-114",
+    "operation": "read",
+    "input": {
+      "rows": [
+        "{\"x.y\":[0,3]}",
+        "{}"
+      ],
+      "path": "$[\"x.y\"][1]",
+      "skipMissing": true
+    }
+  },
+  {
+    "name": "projection-defaults",
+    "operation": "select",
+    "input": {
+      "rows": [
+        {
+          "a": null
+        },
+        {
+          "a": false
+        },
+        {
+          "a": 0
+        },
+        {}
+      ],
+      "columns": [
+        {
+          "key": "x",
+          "path": "$.a",
+          "defaultValue": "empty",
+          "nullAsMissing": true
+        },
+        {
+          "key": "y",
+          "path": "$.a",
+          "defaultValue": "missing"
+        }
+      ]
+    }
+  },
+  {
+    "name": "redact-json",
+    "operation": "read",
+    "input": {
+      "rows": [
+        "{\"x\":\"fixture-secret\",\"Password\":\"hidden\",\"__proto__\":{\"a\":1},\"rows\":[{\"id\":1,\"nested\":\"fixture-secret-extra\"}]}"
+      ],
+      "sanitize": {
+        "redactions": [
+          "fixture-secret"
+        ],
+        "dropKeys": [
+          "__proto__"
+        ],
+        "maskKeys": [
+          "password"
+        ],
+        "maxNodes": 20,
+        "maxDepth": 4
+      }
+    }
+  }
+]

@@ -33,8 +33,8 @@ import javax.tools.ToolProvider;
 /**
  * Compiles libs/src into libs/build/classes, with the fingerprint of the sources in libs/build/src.sha256, as the export
  * of a project in Convertigo does: a server takes these classes instead of compiling the sources (it compiles them only
- * when the fingerprint differs), and uses them even when it does not compile (server_build none). The sources use only
- * the JDK. Run it from the project folder, before committing a change of libs/src: java tools/LibsBuild.java
+ * when the fingerprint differs), and uses them even when it does not compile (server_build none). The row kernels also use the engine-provided JSON and Rhino APIs. Supply the engine runtime
+ * classpath in CONVERTIGO_DEPENDENCIES_JAR (no additional dependency is bundled). Run it from the project folder, before committing a change of libs/src: java tools/LibsBuild.java
  */
 public class LibsBuild {
 	public static void main(String[] args) throws Exception {
@@ -60,6 +60,9 @@ public class LibsBuild {
 			}
 		}
 		var options = new ArrayList<String>(Arrays.asList("--release", "17", "-encoding", "UTF-8", "-d", classes.getPath()));
+		var classpath = System.getenv("CONVERTIGO_DEPENDENCIES_JAR");
+		if (classpath == null || classpath.isBlank()) classpath = System.getProperty("java.class.path");
+		options.add("-classpath"); options.add(classpath);
 		options.addAll(javaFiles);
 		if (ToolProvider.getSystemJavaCompiler().run(null, null, null, options.toArray(new String[0])) != 0) {
 			throw new IllegalStateException("libs/src does not compile");

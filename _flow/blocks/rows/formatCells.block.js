@@ -3,7 +3,7 @@ const _meta = {
   "version": 1,
   "icon": "mdi:table",
   "description": "Formats a whole row array into typed value/text cells in one execution.",
-  "longDescription": "Each formatted cell is {value, text}, plus numeric when requested. Null/missing becomes {value:null,text:nullText}. Values retain their JSON type. No arbitrary expressions or block calls in column descriptors. Invalid numbers, booleans and strict ISO dates fail explicitly. Literal names (including dots) stay literal; use path for nested JSON. A domain-specific HTML profile, including Baserow HTML, belongs in its provider library.",
+  "longDescription": "Each formatted cell is {value, text}, plus numeric when requested. Null/missing becomes {value:null,text:nullText}. Values retain their JSON type. No arbitrary expressions or block calls in column descriptors. Invalid numbers, booleans and strict ISO dates fail explicitly. Literal names (including dots) stay literal; use path for nested JSON. The explicit table profile preserves HTML/lean table cells, schema metadata, nulls, hidden flags and literal column order. It returns an array, or {rows,fields} with includeFields. The default text profile is unchanged.",
   "summary": "format cells of {{rows}}",
   "targets": [
     "backend",
@@ -32,6 +32,12 @@ const _meta = {
     "formatCells"
   ],
   "properties": {
+    "profile": {"kind":"value","type":"string","enum":["text","table"],"default":"text","description":"text returns value/text cells; table preserves HTML-compatible table cells."},
+    "schema": {"kind":"value","type":"array","description":"Table profile field descriptors: name, type, formula_type and display options."},
+    "columnNames": {"kind":"value","type":"array","description":"Table profile: optional literal field names whose schema applies."},
+    "hiddenColumns": {"kind":"value","type":"array","description":"Table profile: literal names carrying hidden:true."},
+    "includeFields": {"kind":"value","type":"boolean","default":false,"description":"Table profile returns {rows,fields}; lean fields describe non-null values in this page."},
+    "defaultTimezone": {"kind":"value","type":"string","default":"UTC","description":"Table profile fallback IANA timezone."},
     "rows": {
       "label": "Rows",
       "kind": "expression",
@@ -44,7 +50,6 @@ const _meta = {
     },
     "columns": {
       "label": "Column schema",
-      "required": true,
       "kind": "value",
       "type": "array",
       "description": "Ordered column descriptors: name, optional key/path, type (text/number/integer/boolean/date/datetime/json), decimals, nullText, trueText/falseText, pattern, locale and timeZone. Date defaults: dd/MM/yyyy, fr-FR, UTC."
@@ -63,7 +68,7 @@ const _meta = {
       "label": "Values only",
       "kind": "value",
       "type": "boolean",
-      "description": "Return raw values instead of cells; column selection and bounds still apply.",
+      "description": "text: raw values; table: lean cells without HTML, with field metadata when requested.",
       "default": false
     },
     "escapeHtml": {
