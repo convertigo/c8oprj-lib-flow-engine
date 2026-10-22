@@ -81,3 +81,19 @@ assertTrue(profiled.ok && profiled.profile.functionCall.responseMode === "object
 Packages.org.apache.commons.io.FileUtils.deleteDirectory(projectDir);
 
 print("runtime-response-safety OK");
+
+var opened = [], closed = [], pending = [];
+var allocationTrace = { open: function (kind, id, type) {
+    var token = kind + ":" + id + ":" + type;
+    opened.push(token); pending.push(token);
+    return { close: function () { assertTrue(pending.pop() === token, "Allocation spans closed out of order."); closed.push(token); } };
+} };
+var attributed = engine.runObject(objectRequest, function (v) { return v; }, allocationTrace);
+assertTrue(attributed.ok && JSON.stringify(attributed.result) === JSON.stringify(objectResponse.result), "Attribution changed execution results.");
+assertTrue(opened.length === closed.length && pending.length === 0 && opened.some(function (name) { return name.indexOf("node:") === 0; }), "Node attribution was not balanced.");
+assertTrue(opened.some(function (name) { return name.indexOf("boundary:input-parse:") === 0; }), "Input parsing was not attributed.");
+var countBefore = opened.length;
+engine.runObject(objectRequest);
+assertTrue(opened.length === countBefore, "Disabled execution retained a prior allocation collector.");
+engine.runObject(JSON.stringify({ definition: { version: 1, nodes: [{ block: "unknown.test" }] }, includeTrace: false }), function (v) { return v; }, allocationTrace);
+assertTrue(pending.length === 0 && opened.length === closed.length, "Failed node retained an allocation span.");

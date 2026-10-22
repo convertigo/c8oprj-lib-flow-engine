@@ -20,6 +20,7 @@
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
 	var projectDirOverride = null;
 	var activeRequestFallback = null;
+	var allocationProfiler = null;
 	var compiledScriptCache = {};
 	var compiledScriptCacheSizeValue = 0;
 	var compiledScriptCacheClock = 0;
@@ -598,11 +599,13 @@
 	}
 
 	function sanitizeRuntimeValue(value, seen) {
-		return runtimeHandleUtils().sanitize(value, runtimeHandleEnv(), seen);
+		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "sanitizeRuntimeValue", "") : null;
+		try { return runtimeHandleUtils().sanitize(value, runtimeHandleEnv(), seen); } finally { if (allocation) allocation.close(); }
 	}
 
 	function sanitizeSerializableRuntimeValue(value, where, seen) {
-		return runtimeHandleUtils().sanitizeSerializable(value, where, runtimeHandleEnv(), seen);
+		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "sanitizeSerializableRuntimeValue", "") : null;
+		try { return runtimeHandleUtils().sanitizeSerializable(value, where, runtimeHandleEnv(), seen); } finally { if (allocation) allocation.close(); }
 	}
 
 	function containsRuntimeHandle(value, seen) {
@@ -610,11 +613,13 @@
 	}
 
 	function assertNoRuntimeHandle(value, where) {
-		runtimeHandleUtils().assertSerializable(value, where, runtimeHandleEnv());
+		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "handle-check", "") : null;
+		try { runtimeHandleUtils().assertSerializable(value, where, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
 	}
 
 	function normalizeTree(value) {
-		return runtimeHandleUtils().normalize(value, runtimeHandleEnv());
+		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "normalizeTree", "") : null;
+		try { return runtimeHandleUtils().normalize(value, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
 	}
 
 	function mergedContext(base, override) {
@@ -4802,6 +4807,7 @@
 				return typeof context === "undefined" ? null : context;
 			},
 			nanoTime: function () { return Number(JavaSystem.nanoTime()); },
+			allocationTrace: function () { return allocationProfiler; },
 			threadAllocatedBytes: threadAllocatedBytes
 		};
 		return flowRuntimeServiceEnvInstance;
@@ -11085,10 +11091,14 @@
 		return value;
 	}
 
-	function flowRunCall(requestJson, detach) {
+	function flowRunCall(requestJson, detach, allocationTrace) {
+		var previousAllocationProfiler = allocationProfiler;
+		allocationProfiler = allocationTrace || null;
 		try {
 			var parseStarted = JavaSystem.nanoTime();
-			var request = parseRequest(requestJson);
+			var allocation = allocationProfiler ? allocationProfiler.open("boundary", "input-parse", "") : null;
+			var request;
+			try { request = parseRequest(requestJson); } finally { if (allocation) allocation.close(); }
 			var profileRequest = request.profile === true || request.profile === "envelope";
 			var functionProfile = profileRequest ? {
 				parseRequestMs: Number(JavaSystem.nanoTime() - parseStarted) / 1000000
@@ -11098,7 +11108,7 @@
 			return response(value, "result", functionProfile, detach);
 		} catch (e) {
 			return response(failure("run", e), "", null, detach);
-		}
+		} finally { allocationProfiler = previousAllocationProfiler; }
 	}
 
 	function projectCall(operation, requestJson, callback) {
@@ -11153,8 +11163,8 @@
 
 		// Optional bridge protocol; standalone callers can inspect the sanitized
 		// object synchronously. Java supplies the owning-realm detachment function.
-		runObject: function (requestJson, detach) {
-			return flowRunCall(requestJson, detach || function (payload) { return payload; });
+		runObject: function (requestJson, detach, allocationTrace) {
+			return flowRunCall(requestJson, detach || function (payload) { return payload; }, allocationTrace);
 		},
 
 		analyze: function (requestJson) {

@@ -734,6 +734,14 @@
 				: installPreparedNode(node, ctx.blocks, ctx.preparedNodes, ctx.preparation);
 		}
 
+		function executeAttributedNode(ctx, node) {
+			if (ctx.stopped || !node || node.disabled) return undefined;
+			var ordinal = ctx.allocationNodeIds.get(node);
+			if (ordinal === undefined) { ordinal = ctx.allocationNodeCount++; ctx.allocationNodeIds.set(node, ordinal); }
+			var allocation = ctx.allocationTrace.open("node", String(ctx.request.flowQName || ctx.request.flowName || "") + ":" + ordinal + ":" + String(node.id || nodePath(node) || ""), blockName(node));
+			try { return executeNode(ctx, node); } finally { if (allocation) allocation.close(); }
+		}
+
 		function executeNode(ctx, node) {
 			if (ctx.stopped || !node || node.disabled) {
 				return undefined;
@@ -792,6 +800,14 @@
 		}
 
 		function callBlock(ctx, name, props, options) {
+			if (ctx.allocationTrace) {
+				var allocation = ctx.allocationTrace.open("call", String(options && options.id || "call:" + name), String(name));
+				try { return callBlockBody(ctx, name, props, options); } finally { if (allocation) allocation.close(); }
+			}
+			return callBlockBody(ctx, name, props, options);
+		}
+
+		function callBlockBody(ctx, name, props, options) {
 			name = String(name || "");
 			options = options || {};
 			if (!name) {
@@ -891,7 +907,7 @@
 					break;
 				}
 				var node = nodes[i];
-				result = executeNode(ctx, node);
+				result = ctx.allocationTrace ? executeAttributedNode(ctx, node) : executeNode(ctx, node);
 			}
 			return result;
 		}
@@ -1247,6 +1263,8 @@
 			var frameStarted = frameProfile ? nanoTime() : 0;
 			var ctx = Object.create(runContextPrototype);
 			ctx.request = request;
+			var allocationTrace = env.allocationTrace && env.allocationTrace();
+			if (allocationTrace) { ctx.allocationTrace = allocationTrace; ctx.allocationNodeIds = new WeakMap(); ctx.allocationNodeCount = 0; }
 			ctx.definition = definition;
 			ctx.blocks = blocks;
 			ctx.preparedNodes = plan && plan.preparedNodes || null;

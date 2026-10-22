@@ -223,7 +223,7 @@ const _meta = {
 		builder.setEntity(new StringEntity(text, "UTF-8"));
 	}
 
-	function readResponse(response) {
+	function readResponse(response, allocationTrace) {
 		var entity = response.getEntity();
 		var status = response.getStatusLine() ? response.getStatusLine().getStatusCode() : 200;
 		var contentTypeHeader = entity && entity.getContentType ? entity.getContentType() : null;
@@ -232,7 +232,8 @@ const _meta = {
 		var body = text;
 		var trimmed = text.trim();
 		if (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
-			body = JSON.parse(text);
+			var allocation = allocationTrace ? allocationTrace.open("boundary", "http-parse", "") : null;
+			try { body = JSON.parse(text); } finally { if (allocation) allocation.close(); }
 		}
 		return {
 			status: status,
@@ -243,11 +244,12 @@ const _meta = {
 		};
 	}
 
-	function responseObject(status, contentType, headers, text) {
+	function responseObject(status, contentType, headers, text, allocationTrace) {
 		var body = text;
 		var trimmed = text.trim();
 		if (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
-			body = JSON.parse(text);
+			var allocation = allocationTrace ? allocationTrace.open("boundary", "http-parse", "") : null;
+			try { body = JSON.parse(text); } finally { if (allocation) allocation.close(); }
 		}
 		return {
 			status: status,
@@ -272,21 +274,21 @@ const _meta = {
 		return String(url || "").match(/^file:/i) !== null;
 	}
 
-	function runFileHttp(method, url) {
+	function runFileHttp(method, url, allocationTrace) {
 		method = String(method || "GET").toUpperCase();
 		if (method !== "GET" && method !== "HEAD") {
 			throw new Error("Unsupported file URL HTTP method: " + method);
 		}
 		var file = new File(URI.create(String(url)));
 		if (!file.isFile()) {
-			return responseObject(404, "", {}, "");
+			return responseObject(404, "", {}, "", allocationTrace);
 		}
 		var contentType = String(Files.probeContentType(file.toPath()) || "");
 		var text = method === "HEAD" ? "" : String(FileUtils.readFileToString(file, "UTF-8"));
-		return responseObject(200, contentType, contentType ? { "content-type": contentType } : {}, text);
+		return responseObject(200, contentType, contentType ? { "content-type": contentType } : {}, text, allocationTrace);
 	}
 
-	function runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs) {
+	function runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace) {
 		var builder = JavaHttpRequest.newBuilder(URI.create(String(url)))
 			.timeout(Duration.ofMillis(readTimeoutMs));
 		Object.keys(headers || {}).forEach(function (key) {
@@ -303,10 +305,10 @@ const _meta = {
 		}
 		var response = javaClient(connectTimeoutMs).send(builder.build(), JavaHttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 		var contentType = String(response.headers().firstValue("content-type").orElse(""));
-		return responseObject(response.statusCode(), contentType, javaHeaders(response), String(response.body()));
+		return responseObject(response.statusCode(), contentType, javaHeaders(response), String(response.body()), allocationTrace);
 	}
 
-	function runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs) {
+	function runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace) {
 		var builder = RequestBuilder.create(method).setUri(url);
 		builder.setConfig(RequestConfig.custom()
 			.setRedirectsEnabled(true)
@@ -318,7 +320,7 @@ const _meta = {
 		var client = Engine.theApp && Engine.theApp.httpClient4 ? Engine.theApp.httpClient4 : HttpUtils.makeHttpClient(false);
 		var httpResponse = client.execute(builder.build());
 		try {
-			return readResponse(httpResponse);
+			return readResponse(httpResponse, allocationTrace);
 		} finally {
 			httpResponse.close();
 		}
@@ -340,12 +342,12 @@ const _meta = {
 			var body = formBody(props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body), headers);
 			var response;
 			if (isFileUrl(url)) {
-				response = runFileHttp(method, url);
+				response = runFileHttp(method, url, ctx.allocationTrace);
 			} else {
 				try {
-					response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs);
+					response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace);
 				} catch (e) {
-					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs);
+					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace);
 				}
 			}
 			if (ctx.outputPath(node) && response.status < 400 && ctx.learnOutputSchema) {
