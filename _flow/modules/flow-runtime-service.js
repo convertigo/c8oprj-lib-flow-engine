@@ -458,6 +458,8 @@
 		};
 		runContextPrototype.isHandle = isRuntimeHandle;
 		runContextPrototype.handleSummary = runtimeHandleSummary;
+		runContextPrototype.createRowsPlan = function (plan) { return env.createRowsPlan(this, plan); };
+		runContextPrototype.resultWithRows = function (handle, field, fields) { return env.resultWithRows(this, handle, field, fields); };
 		runContextPrototype.createHandle = function (type, value, options) {
 			return createRuntimeHandle(this, type, value, options);
 		};

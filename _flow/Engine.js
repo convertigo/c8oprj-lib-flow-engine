@@ -427,9 +427,57 @@
 		return canonicalFlowDefinition(parseYamlSource(source, "version: 1\nnodes: []\n"));
 	}
 
+	// Identity registries are intentionally private. JSON markers and ordinary
+	// runtime handles cannot manufacture or duplicate a one-shot source.
+	var rowPlans = new WeakMap(), rowResults = new WeakMap();
+	function createRowsPlan(ctx, spec) {
+		if (ctx.parentRun) raise("ROW_STREAM_NESTED", "A nested Flow must use a bounded materializing requester.");
+		var transform = spec.transform || {}, names = transform.blocks || [], sources = {};
+		if (!Array.isArray(names) || !names.length || names.length > 32) raise("ROW_STREAM_PLAN", "Declare bounded row transform blocks.");
+		for (var i = 0; i < names.length; i++) {
+			var name = String(names[i]), source = getBlockSource(ctx.blocks, name, {detail:"full"});
+			if (source.implementationRuntime !== "rhino") raise("ROW_STREAM_BLOCK", "Row transforms require declared Rhino blocks.");
+			Object.defineProperty(sources, name, {value:source.implementationSource, enumerable:true});
+		}
+		var libraries = transform.libraries || [];
+		if (!Array.isArray(libraries) || libraries.length > 16) raise("ROW_STREAM_LIBRARIES", "Declare bounded producer libraries.");
+		for (var l = 0; l < libraries.length; l++) {
+			var library = safeFilePart(libraries[l]);
+			sources["$lib." + library] = String(FileUtils.readFileToString(new File(engineDir(), "lib/" + library + ".js"), "UTF-8"));
+		}
+		var plan = {
+			http:spec.http, limits:spec.limits, take:spec.take || 0, collect:spec.collect === true,
+			transform:{blocks:sources, input:transform.input || {}, entry:String(transform.entry || ""), finish:String(transform.finish || ""),
+				bootstrap:String(FileUtils.readFileToString(new File(engineDir(), "modules/row-producer-runtime.js"), "UTF-8"))}
+		};
+		// Copy while still in the invocation, so later mutations cannot alter authority.
+		plan = normalizeTree(plan);
+		var handle = createRuntimeHandle(ctx, "row-plan", null, {close:function (_, h) { rowPlans.delete(h); }});
+		rowPlans.set(handle, plan);
+		return handle;
+	}
+	function resultWithRows(ctx, handle, field, fields) {
+		var plan = rowPlans.get(handle);
+		if (!plan || handle.__flowHandleClosed) raise("ROW_STREAM_CONSUMED", "Expected an unconsumed registered row plan.");
+		rowPlans.delete(handle); closeRuntimeHandle(ctx, handle);
+		plan.field = String(field || "data"); plan.fields = normalizeTree(fields || {});
+		var result = normalizeTree(plan.fields);
+		Object.defineProperty(result, plan.field, {value:[], enumerable:true});
+		rowResults.set(result, plan);
+		ctx.returnValue(result);
+		return result;
+	}
+
 	function response(value, rejectRuntimeHandlesAt, functionProfile, detach) {
 		var sanitizeStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var payload = value || {};
+		var rowPlan = payload.ok === true && payload.result && rowResults.get(payload.result);
+		if (rowPlan) {
+			rowResults.delete(payload.result);
+			if (!detach || typeof detach.rows !== "function") raise("ROW_STREAM_UNAVAILABLE", "This bridge does not support bounded row results.");
+			return detach.rows(payload, rowPlan, function (value, seen) { return sanitizeSerializableRuntimeValue(value, "row result", seen); });
+		}
+
 		var internalProfile = functionProfile && payload.profile ? payload.profile : null;
 		if (internalProfile) {
 			delete payload.profile;
@@ -4819,6 +4867,8 @@
 			flowCode: flowCodeApi(),
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
+			createRowsPlan: createRowsPlan,
+			resultWithRows: resultWithRows,
 			currentConvertigoContext: function () {
 				return typeof context === "undefined" ? null : context;
 			},
