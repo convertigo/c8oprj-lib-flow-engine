@@ -524,7 +524,7 @@
 			return executeNodes(this, nodes);
 		};
 		runContextPrototype.callBlock = function (name, props, options) {
-			return callBlock(this, name, props, options);
+			return this.allocationTrace ? callAttributedBlock(this, name, props, options) : callBlock(this, name, props, options);
 		};
 		runContextPrototype.catalog = function () {
 			return catalogDefinition(this.blocks);
@@ -799,15 +799,12 @@
 			}
 		}
 
-		function callBlock(ctx, name, props, options) {
-			if (ctx.allocationTrace) {
-				var allocation = ctx.allocationTrace.open("call", String(options && options.id || "call:" + name), String(name));
-				try { return callBlockBody(ctx, name, props, options); } finally { if (allocation) allocation.close(); }
-			}
-			return callBlockBody(ctx, name, props, options);
+		function callAttributedBlock(ctx, name, props, options) {
+			var allocation = ctx.allocationTrace.open("call", String(options && options.id || "call:" + name), String(name));
+			try { return callBlock(ctx, name, props, options); } finally { if (allocation) allocation.close(); }
 		}
 
-		function callBlockBody(ctx, name, props, options) {
+		function callBlock(ctx, name, props, options) {
 			name = String(name || "");
 			options = options || {};
 			if (!name) {
