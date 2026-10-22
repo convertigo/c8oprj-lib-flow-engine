@@ -942,6 +942,19 @@
 		}
 
 		function compileFlowSnapshot(request, blocks, identity, compilerFingerprint) {
+			var revision = blocks && blocks.__flowCatalogFingerprint;
+			if (!identity || !revision || typeof env.sharedMetadataSnapshot !== "function") {
+				return buildFlowSnapshot(request, blocks, identity, compilerFingerprint);
+			}
+			var snapshot = env.sharedMetadataSnapshot("execution-snapshot\n" + String(projectDir() || "") + "\n"
+				+ String(request.flowQName || request.name || request.flowName || "Flow"),
+				identity + "\n" + compilerFingerprint + "\n" + revision, function () {
+					return buildFlowSnapshot(request, blocks, identity, compilerFingerprint);
+				});
+			return flowSnapshotService.freeze(snapshot);
+		}
+
+		function buildFlowSnapshot(request, blocks, identity, compilerFingerprint) {
 			if (!flowSnapshotService) {
 				raise("FLOW_SNAPSHOT_SERVICE_UNAVAILABLE", "Flow execution snapshot service is unavailable.");
 			}

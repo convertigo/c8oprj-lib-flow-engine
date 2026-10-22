@@ -14,7 +14,8 @@
 			project = env.projectDir();
 		}
 		var name = request.flowQName || request.name || request.flowName || "Flow";
-		return String(project || "") + "\n" + String(name);
+		return String(project || "") + "\n" + String(name) + "\n"
+			+ (env.sourceDraftsFingerprint ? env.sourceDraftsFingerprint() : "");
 	}
 
 	function read(request, env) {

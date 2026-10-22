@@ -175,6 +175,7 @@
 		serialize: serialize,
 		deserialize: deserialize,
 		hydrate: hydrate,
-		validate: validate
+		validate: validate,
+		freeze: deepFreeze
 	};
 }())

@@ -48,4 +48,26 @@ assert.strictEqual(reserves, 2);
 assert.strictEqual(loads, 0, "loading the core catalog should not compile every block runner");
 assert.strictEqual(Object.keys(blocks).length, 2);
 
+// Project-specific revisions must not discard reusable core placeholders;
+// a changed trait composition must, because descriptors embed its defaults.
+const coreCache = new Map();
+let projectRevision = "project-a:0", traitRevision = "traits-1";
+const scoped = Object.assign({}, env, {
+	engineDir: () => new FakeFile("/engine"),
+	catalogTypesFingerprint: () => projectRevision,
+	catalogDependencyRevisions: () => projectRevision,
+	catalogTraitsFingerprint: () => traitRevision,
+	sourceRevision: () => "0",
+	readRuntimeCache: (_cache, key) => coreCache.get(key),
+	writeRuntimeCache: (_cache, key, _fingerprint, value) => { coreCache.set(key, value); return value; },
+});
+loader.loadBlocksUncached(scoped);
+const reservedCore = reserves;
+projectRevision = "project-b:1";
+loader.loadBlocksUncached(scoped);
+assert.strictEqual(reserves, reservedCore, "another project rebuilt core placeholders");
+traitRevision = "traits-2";
+loader.loadBlocksUncached(scoped);
+assert.strictEqual(reserves, reservedCore + 2, "changed traits retained old descriptors");
+
 console.log("catalog loader lazy core tests passed");

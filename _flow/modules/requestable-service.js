@@ -580,32 +580,45 @@
 		}
 		var limit = Math.max(1, Math.min(500, Number(request.limit || 100)));
 		var query = String(request.query || request.q || "").trim();
-		var dbom = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager;
-		var project = dbom.getOriginalProjectByName(projectName, false);
 		var requestables = [];
-		var sequenceIterator = project.getSequencesList().iterator();
-		while (sequenceIterator.hasNext()) {
-			var sequence = sequenceIterator.next();
-			var sequenceClass = String(sequence.getClass().getName());
-			requestables.push(targetPublic({
-				kind: sequenceClass === "com.twinsoft.convertigo.beans.flow.Flow" ? "flow" : "sequence",
-				project: projectName,
-				requestable: String(sequence.getName())
-			}, projectName));
-		}
-		var connectorIterator = project.getConnectorsList().iterator();
-		while (connectorIterator.hasNext()) {
-			var connector = connectorIterator.next();
-			var transactionIterator = connector.getTransactionsList().iterator();
-			while (transactionIterator.hasNext()) {
-				var transaction = transactionIterator.next();
+		var bridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
+		if (typeof bridge.requestableProjectCatalog === "function") {
+			var snapshot = JSON.parse(String(bridge.requestableProjectCatalog(projectName)));
+			(snapshot.children || []).forEach(function (entry) {
+				if (entry.kind === "connector") {
+					(entry.children || []).forEach(function (transaction) {
+						requestables.push(targetPublic({ kind: "transaction", project: projectName,
+							connector: entry.name, requestable: transaction.name, transaction: transaction.name }, projectName));
+					});
+				} else requestables.push(targetPublic({ kind: entry.kind, project: projectName, requestable: entry.name }, projectName));
+			});
+		} else {
+			var dbom = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager;
+			var project = dbom.getOriginalProjectByName(projectName, false);
+			var sequenceIterator = project.getSequencesList().iterator();
+			while (sequenceIterator.hasNext()) {
+				var sequence = sequenceIterator.next();
+				var sequenceClass = String(sequence.getClass().getName());
 				requestables.push(targetPublic({
-					kind: "transaction",
+					kind: sequenceClass === "com.twinsoft.convertigo.beans.flow.Flow" ? "flow" : "sequence",
 					project: projectName,
-					connector: String(connector.getName()),
-					requestable: String(transaction.getName()),
-					transaction: String(transaction.getName())
+					requestable: String(sequence.getName())
 				}, projectName));
+			}
+			var connectorIterator = project.getConnectorsList().iterator();
+			while (connectorIterator.hasNext()) {
+				var connector = connectorIterator.next();
+				var transactionIterator = connector.getTransactionsList().iterator();
+				while (transactionIterator.hasNext()) {
+					var transaction = transactionIterator.next();
+					requestables.push(targetPublic({
+						kind: "transaction",
+						project: projectName,
+						connector: String(connector.getName()),
+						requestable: String(transaction.getName()),
+						transaction: String(transaction.getName())
+					}, projectName));
+				}
 			}
 		}
 		requestables = requestables.filter(function (entry) {

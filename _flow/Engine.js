@@ -1267,6 +1267,7 @@
 		// Pool refresh/disposal clears the runtime, not the shared generation's
 		// dependencies. Explicit Studio/MCP clears must also reject in-flight results.
 		if (localOnly !== true) {
+			if (typeof FlowEngineBridge.clearSharedMetadata === "function") FlowEngineBridge.clearSharedMetadata();
 			generatedSchemaEpoch().incrementAndGet();
 			sharedServerJavaMap("flow.engine.generatedSchemaDependencies.v1", localGeneratedDependencies).clear();
 		}
@@ -1297,6 +1298,7 @@
 		runPlanHeadEnvInstance = {
 			cache: runtimeState.caches.runPlanHeads,
 			projectDir: projectDir,
+			sourceDraftsFingerprint: sourceDraftsFingerprint,
 			currentTimeMillis: function () { return new Date().getTime(); },
 			probeIntervalMs: 60000,
 			writeRuntimeBoundedCache: writeRuntimeBoundedMapCache,
@@ -1394,7 +1396,7 @@
 			"flow-script-parser-service.js",
 			"flow-repository-service.js",
 			"flow-source-service.js"
-		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
+		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).concat([fileFingerprint(new File(engineDir(), "Engine.js"))]).join("\n");
 		return runtimeState.flowPlanCompilerFingerprint;
 	}
 
@@ -1409,7 +1411,7 @@
 			"template-syntax.js",
 			"flow-script-parser-service.js",
 			"graph-block-runtime-service.js"
-		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).join("\n");
+		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).concat([fileFingerprint(new File(engineDir(), "Engine.js"))]).join("\n");
 		return runtimeState.blockArtifactCompilerFingerprint;
 	}
 
@@ -2107,6 +2109,17 @@
 			blockCache: runtimeState.caches.blocks,
 			coreBlockCache: runtimeState.caches.coreBlocks,
 			blockCatalogHeadCache: runtimeState.caches.blockCatalogHeads,
+			catalogTraitsFingerprint: function () { return catalogLoaderService().traitsCacheKey(catalogLoaderEnv()); },
+			catalogTypesFingerprint: function () { return typesCacheKey(); },
+			catalogDependencyRevisions: function () {
+				if (typeof FlowEngineBridge.metadataSourceRevision !== "function") return "";
+				return [projectDir()].concat(referencedProjectRoots(sourcePaths().root)).filter(function (root) { return !!root; })
+					.map(function (root) { return String(root) + ":" + FlowEngineBridge.metadataSourceRevision(String(root)); }).join("\n");
+			},
+			sourceRevision: function (root) {
+				return typeof FlowEngineBridge.metadataSourceRevision === "function"
+					? String(FlowEngineBridge.metadataSourceRevision(String(root))) : "";
+			},
 			withBlockCatalogBuild: function (key, callback) {
 				key = String(key || "");
 				var candidate = new ReentrantLock();
@@ -2328,8 +2341,30 @@
 	}
 
 
+	// The registry contains Java strings only. Every caller parses into its own realm;
+	// authoring working copies stay local and never enter the shared registry.
+	function sharedMetadataSnapshot(key, revision, build) {
+		if (typeof FlowEngineBridge.sharedMetadata !== "function" || sourceDraftsFingerprint()) return build();
+		var text = FlowEngineBridge.sharedMetadata(canonicalPath(engineDir()) + "\n" + key, sha256Hex(revision), function () {
+			return JSON.stringify(build());
+		});
+		return JSON.parse(String(text));
+	}
+
 	function graphBlockCatalog(definition) {
-		return graphBlockDescriptorService().catalog(definition, graphBlockDescriptorEnv());
+		// Executable source is irrelevant to the descriptor and must not enter this cache.
+		var metadata = {};
+		Object.keys(definition || {}).forEach(function (key) {
+			if (key !== "__rhinoCode" && key !== "__flowCode" && key !== "__graphDefinition") metadata[key] = definition[key];
+		});
+		var traits = definition.traits && Object.keys(definition.traits).length ? loadTraits() : null;
+		var revision = fileFingerprint(new File(engineDir(), "Engine.js")) + "\n" + fileFingerprint(engineModuleFile("graph-block-descriptor-service.js")) + "\n"
+			+ fileFingerprint(engineModuleFile("trait-composition.js")) + "\n"
+			+ JSON.stringify(metadata) + "\n" + JSON.stringify(traits);
+		return sharedMetadataSnapshot("block-catalog\n" + String(projectDir() || "") + "\n"
+			+ String(definition.__flowBlockId || definition.blockId || definition.name || ""), revision, function () {
+			return graphBlockDescriptorService().catalog(definition, graphBlockDescriptorEnv());
+		});
 	}
 
 	function validateGraphBlockDefinition(name, definition) {
@@ -4805,6 +4840,7 @@
 			writeRunPlanHead: writeRunPlanHead,
 			flowPlanCompilerFingerprint: flowPlanCompilerFingerprint,
 			flowSnapshotService: flowExecutionSnapshotService(),
+			sharedMetadataSnapshot: sharedMetadataSnapshot,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,

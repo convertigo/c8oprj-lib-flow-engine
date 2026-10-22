@@ -146,14 +146,22 @@
 			"engine", env.canonicalPath(env.engineDir()),
 			"core", env.directoryFingerprint(coreBlocksDir)
 		];
+		if (env.catalogTraitsFingerprint) coreKey.push("traits", env.catalogTraitsFingerprint());
+		if (env.sourceRevision) coreKey.push("revision", env.sourceRevision(env.engineDir().getParentFile()));
 		var key = coreKey.slice();
+		// Project type paths and revisions belong to the composed catalog, not
+		// the reusable core placeholders. Trait composition can affect both.
+		if (env.catalogTypesFingerprint) key.push("types", env.catalogTypesFingerprint());
+		if (env.catalogDependencyRevisions) key.push("dependencies-revision", env.catalogDependencyRevisions());
 		var localBlocksDir = env.projectBlocksDir();
 		if (localBlocksDir && env.canonicalPath(localBlocksDir) !== env.canonicalPath(coreBlocksDir)) {
 			referencedProjectRoots(env, env.sourcePaths.path("blocks")).forEach(function (root) {
 				var refBlocksDir = referencedBlocksDir(root, env);
 				key.push("reference", env.canonicalPath(root), env.directoryFingerprint(refBlocksDir));
+				if (env.sourceRevision) key.push("revision", env.sourceRevision(root));
 			});
 			key.push("project", env.canonicalPath(env.projectDir()), env.directoryFingerprint(localBlocksDir));
+			if (env.sourceRevision) key.push("revision", env.sourceRevision(env.projectDir()));
 			// The recorded definer versions select historical defaults.
 			var dependencies = new env.File(env.projectDir(), env.sourcePaths.path("dependencies.json"));
 			key.push("dependencies", dependencies.isFile() ? dependencies.lastModified() + ":" + dependencies.length() : "none");
@@ -465,6 +473,7 @@
 
 	return {
 		loadTraits: loadTraits,
+		traitsCacheKey: traitsCacheKey,
 		blockIdFromDescriptorFile: blockIdFromDescriptorFile,
 		referencedProjectRoots: referencedProjectRoots,
 		loadBlockDir: loadBlockDir,
