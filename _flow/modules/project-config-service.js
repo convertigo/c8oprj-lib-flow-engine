@@ -464,6 +464,12 @@
 		return references;
 	}
 
+	// The named configurations the tags of the requested Flow select, in order: with the project, the Flow and the
+	// global symbols, they decide its runtime configuration.
+	function taggedConfigNames(request, projectEngine) {
+		return taggedReferences(request, projectEngine).map(function (reference) { return reference.name; });
+	}
+
 	function resolveTaggedConfig(request, projectEngine, env) {
 		return resolveConfigReferences(projectEngine, taggedReferences(request, projectEngine).map(function (reference) {
 			return reference.name;
@@ -495,6 +501,7 @@
 		authoringSettings: authoringSettings,
 		authoringNumber: authoringNumber,
 		effectiveConfig: effectiveConfig,
+		taggedConfigNames: taggedConfigNames,
 		resolveConfigSymbols: resolveConfigSymbols,
 		runtimeConfig: runtimeConfig,
 		configurationDefinitions: configurationDefinitions,

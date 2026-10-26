@@ -2,6 +2,8 @@
 (function () {
 	var globalScope = this;
 	var sharedRuntime = typeof __flowRuntimeApi === "undefined" ? null : __flowRuntimeApi;
+	// runtime configurations of the revision, by project, Flow and named configurations, valid for a symbols generation
+	var runtimeConfigs = sharedRuntime && typeof sharedRuntime.symbolsGeneration === "function" ? sharedRuntime.newCache(512) : null;
 	var File = Packages.java.io.File;
 	var Arrays = Packages.java.util.Arrays;
 	var JavaBoolean = Packages.java.lang.Boolean;
@@ -928,12 +930,22 @@
 		return projectConfigService().effectiveConfig(request, definition, projectEngine, projectConfigEnv());
 	}
 
-	// The configuration of a running Flow, its Convertigo symbols resolved (see resolveConfigSymbols)
+	// The configuration of a running Flow, its Convertigo symbols resolved (see resolveConfigSymbols). A shared runtime
+	// resolves it once for the revision, while the global symbols do not change, when no layer comes from the request
+	// itself: the merge of the layers and the symbols are the same for every request.
 	function runtimeEffectiveConfig(request, definition, projectEngine) {
 		var env = projectConfigEnv();
 		env.compileSymbols = compileConfigSymbols;
 		env.requestRootLayer = requestRootLayer;
-		return projectConfigService().runtimeConfig(request, definition, projectEngine, env);
+		var service = projectConfigService();
+		if (!runtimeConfigs || !request || request.config !== undefined || !request.flowQName || requestRootLayer(request) !== undefined) {
+			return service.runtimeConfig(request, definition, projectEngine, env);
+		}
+		var key = String(projectDir() || "") + "|" + String(request.flowQName) + "|" + service.taggedConfigNames(request, projectEngine).join("\n");
+		var symbols = String(sharedRuntime.symbolsGeneration());
+		var config = runtimeConfigs.read(key, symbols);
+		return config !== null ? config
+			: runtimeConfigs.write(key, symbols, flowExecutionSnapshotService().freeze(service.runtimeConfig(request, definition, projectEngine, env)));
 	}
 
 	var REQUEST_ROOT_ATTRIBUTE = "convertigo.flow.requestProjectConfig";
