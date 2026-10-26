@@ -1,5 +1,9 @@
 (function () {
-	var memoryDrafts = {};
+	var localMemoryDrafts = {};
+	function memoryDrafts() {
+		if (typeof __flowExecutionState === "undefined") return localMemoryDrafts;
+		return __flowExecutionState.memoryDrafts || (__flowExecutionState.memoryDrafts = {});
+	}
 
 	function create(env) {
 		env = env || {};
@@ -347,14 +351,14 @@
 			};
 		}
 		var draftKey = flowCodeDraftKey(request, name);
-		var draft = memoryDrafts[draftKey];
+		var draft = memoryDrafts()[draftKey];
 		if (!draft) {
 			return null;
 		}
 		// A loaded Flow owns its working copy: without one, the Studio saved,
 		// reloaded or discarded it, and the mirror must not bring it back.
 		if (flowBeanExists(name, request)) {
-			delete memoryDrafts[draftKey];
+			delete memoryDrafts()[draftKey];
 			return null;
 		}
 		return {
@@ -485,8 +489,8 @@
 			memoryDiscarded = discardLoadedFlowSourceDraft(name, request);
 		}
 		var draftKey = flowCodeDraftKey(request, name);
-		var discarded = memoryDrafts[draftKey] !== undefined;
-		delete memoryDrafts[draftKey];
+		var discarded = memoryDrafts()[draftKey] !== undefined;
+		delete memoryDrafts()[draftKey];
 		var official = flowCodeOfficialRead(blocks, request, name);
 		return {
 			ok: true,
@@ -539,16 +543,16 @@
 		var draftKey = flowCodeDraftKey(request, name);
 		if (shared) {
 			written = shared;
-			delete memoryDrafts[draftKey];
+			delete memoryDrafts()[draftKey];
 		} else {
-			memoryDrafts[draftKey] = {
+			memoryDrafts()[draftKey] = {
 				code: normalized,
 				revision: written && written.revision ? written.revision : sha256Hex(normalized),
 				file: written && written.file || "",
 				codeFile: written && (written.codeFile || written.file) || ""
 			};
 		}
-		var revision = written && written.revision ? written.revision : memoryDrafts[draftKey].revision;
+		var revision = written && written.revision ? written.revision : memoryDrafts()[draftKey].revision;
 		var checked = corrected.error ? { error: corrected.error, validation: null, warnings: [] } : flowCodeValidate(blocks, Object.assign({}, request, { authoringCorrections: true }), name, normalized);
 		var out = {
 			ok: checked.error === null && checked.validation && checked.validation.ok === true,
@@ -1143,7 +1147,7 @@
 		}));
 		var inputSync = flowCodeSyncInputs(name, checked.validation, request);
 		var draftCleared = current.draft === true;
-		delete memoryDrafts[flowCodeDraftKey(request, name)];
+		delete memoryDrafts()[flowCodeDraftKey(request, name)];
 		// The saved file replaces the working copy kept by the FlowEngine for a Flow without a Flow object.
 		if (discardLoadedFlowSourceDraft) {
 			discardLoadedFlowSourceDraft(name, request);

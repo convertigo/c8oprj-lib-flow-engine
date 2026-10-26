@@ -262,6 +262,9 @@ const _meta = {
 	}
 
 	function javaClient(connectTimeoutMs) {
+		// Resolve against this call's Packages; cached blocks must not retain a project generation.
+		var sharedClients = Packages.com.convertigo.libflowengine.SharedHttpClients;
+		if (typeof sharedClients.get === "function") return sharedClients.get(connectTimeoutMs);
 		if (!javaHttpClient) {
 			javaHttpClient = JavaHttpClient.newBuilder()
 				.connectTimeout(Duration.ofMillis(connectTimeoutMs))

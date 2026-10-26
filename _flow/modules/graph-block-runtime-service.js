@@ -344,12 +344,15 @@
 		}
 		var propsStarted = profiled ? nanoTime() : 0;
 		var resolvedProps;
+		var bindings = ctx.allocationTrace ? ctx.allocationTrace.open("runtime", "input-bindings", graphName) : null;
+		try {
 		if (prepared) {
 			profileCount(ctx, "graphBlockPreparedRunnerHits");
 			resolvedProps = prepared.resolveProps(ctx);
 		} else {
 			resolvedProps = resolveGraphBlockProps(ctx, node, catalog);
 		}
+		} finally { if (bindings) bindings.close(); }
 		profileAdd(ctx, "graphBlockResolvePropsMs", propsStarted);
 		var frameStarted = profiled ? nanoTime() : 0;
 		ctx.scopes.props = resolvedProps;
@@ -406,6 +409,15 @@
 		});
 	}
 
+	function implementationFor(ctx, block) {
+		var rhino = block.__graphRhino;
+		if (!rhino.factory) return rhino.script;
+		var instances = ctx.implementationInstances || (ctx.implementationInstances = new Map());
+		var instance = instances.get(block);
+		if (!instance) { instance = rhino.factory(); instances.set(block, instance); }
+		return instance;
+	}
+
 	var graphBlockPrototype = {
 		catalog: function () {
 			return normalizeTree(this.__graphRuntimeCatalog);
@@ -442,12 +454,25 @@
 		run: function (ctx, node) {
 			var rhino = this.__graphRhino;
 			if (rhino) {
-				return rhino.script[rhino.entry](ctx, node);
+				return implementationFor(ctx, this)[rhino.entry](ctx, node);
 			}
 			return runGraphBlock(ctx, node, this);
 		},
 		prepareNode: function (node, helpers) {
 			var rhino = this.__graphRhino;
+			if (rhino && rhino.factory) {
+				var self = this;
+				return function (ctx) {
+					var implementation = implementationFor(ctx, self);
+					var runners = ctx.implementationRunners || (ctx.implementationRunners = new Map());
+					var runner = runners.get(node);
+					if (runner === undefined) {
+						runner = typeof implementation.prepareNode === "function" ? implementation.prepareNode(node, helpers) : null;
+						runners.set(node, runner);
+					}
+					return runner ? runner(ctx, node) : implementation[rhino.entry](ctx, node);
+				};
+			}
 			if (rhino && typeof rhino.script.prepareNode === "function") {
 				return rhino.script.prepareNode(node, helpers);
 			}
@@ -472,6 +497,14 @@
 			definition: definition.__graphDefinition,
 			file: file
 		} : loadFlowBlockImplementation(definition, file)) : null;
+		if (rhino && env.sharedRuntime && rhino.script.stateless === true) {
+			// Explicit implementation contract: exports and prepared runners contain
+			// no invocation-owned state. Undeclared implementations get a factory per frame.
+			Object.freeze(rhino.script);
+		} else if (rhino && env.sharedRuntime) {
+			var source = rhino.inline ? String(definition.__rhinoCode) : String(FileUtils.readFileToString(rhino.file, "UTF-8"));
+			rhino.factory = env.implementationFactory(source, "block-implementation:" + blockId);
+		}
 		var hooks = loadBlockHooks(definition, file);
 		var block = Object.assign(Object.create(graphBlockPrototype), {
 			name: blockId,

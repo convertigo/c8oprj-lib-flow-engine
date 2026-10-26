@@ -147,6 +147,8 @@ function writeRuntimeMapCache(cache, key, fingerprint, value) {
 var FileUtils = { readFileToString: function () { return moduleVersion; } };
 function readSourceFile(file) { return String(FileUtils.readFileToString(file, "UTF-8")); }
 function evalCompiledSource(text) { moduleCompiles++; return { version: text }; }
+var sharedRuntime = null;
+var loadEngineModuleUnshared = eval(functionSource("loadEngineModuleUnshared"));
 var loadEngineModule = eval(functionSource("loadEngineModule"));
 // Use the module file's actual path without involving the path-only test stub.
 canonicalPath = function (file) { return file.getAbsolutePath(); };

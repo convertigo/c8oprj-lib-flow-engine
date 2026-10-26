@@ -48,6 +48,7 @@ const _meta = {
 	}
 
 	return {
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var items = ctx.expr(props.items || props["in"]) || [];

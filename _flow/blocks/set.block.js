@@ -41,6 +41,7 @@ const _meta = {
 	}
 
 	return {
+		stateless: true,
 		prepareNode: function (node, helpers) {
 			var write = helpers.compileWrite(helpers.props.path);
 			var resolve = helpers.props.value !== undefined ? helpers.compileValue(helpers.props.value) : null;

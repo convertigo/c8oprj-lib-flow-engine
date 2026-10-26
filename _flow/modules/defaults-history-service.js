@@ -12,6 +12,14 @@
 	var DEPENDENCIES_FORMAT = "convertigo-flow-dependencies";
 	var memo = {};
 
+	function freezeValue(value) {
+		if (value && typeof value === "object" && !Object.isFrozen(value)) {
+			Object.keys(value).forEach(function (key) { freezeValue(value[key]); });
+			Object.freeze(value);
+		}
+		return value;
+	}
+
 	function versionParts(version) {
 		return String(version || "").trim().split(/[.\-_+]/).filter(function (part) { return part !== ""; });
 	}
@@ -40,6 +48,8 @@
 	function cached(file, env, read) {
 		var key = env.canonicalPath(file);
 		var stamp = file.isFile() ? String(file.lastModified()) + ":" + String(file.length()) : "absent";
+		if (typeof __flowRuntimeApi !== "undefined") return __flowRuntimeApi.prepare("history:" + key + ":" + stamp,
+			function () { return freezeValue({value: file.isFile() ? read() : null}); }).value;
 		var entry = memo[key];
 		if (entry && entry.stamp === stamp) {
 			return entry.value;

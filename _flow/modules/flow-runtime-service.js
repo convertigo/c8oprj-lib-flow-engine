@@ -343,7 +343,8 @@
 
 		function canReuseNodeProps(block) {
 			return !!block && (String(block.__flowOrigin || "") === "core" ||
-				String(block.__blockImplementationRuntime || "") === "flow");
+				String(block.__blockImplementationRuntime || "") === "flow" ||
+				env.sharedRuntime && block.__graphRhino && block.__graphRhino.script.stateless === true);
 		}
 
 		function machineNodeIndex(node) {
@@ -355,6 +356,7 @@
 		}
 
 		function preparedNodeFor(ctx, node) {
+			if (ctx && ctx.preparedNodes && typeof ctx.preparedNodes.get === "function") return ctx.preparedNodes.get(node);
 			var index = machineNodeIndex(node);
 			if (index >= 0 && ctx && ctx.preparedNodes && ctx.preparedNodes[index]) {
 				return ctx.preparedNodes[index];
@@ -503,6 +505,9 @@
 			}
 			return invocationContext;
 		};
+		runContextPrototype.tryDirectRequestable = function (target, input) {
+			return env.tryDirectRequestable ? env.tryDirectRequestable(this, target, input) : null;
+		};
 		// The protected authoring primitives check the principal of the root request (authoring-primitive-service)
 		runContextPrototype.configMutate = function (args) {
 			var invocation = null;
@@ -569,12 +574,15 @@
 			if (!this.traceEnabled) {
 				return;
 			}
+			var phase = this.allocationTrace ? this.allocationTrace.open("runtime", "trace", name) : null;
+			try {
 			var trace = this.scopes.trace || (this.scopes.trace = { nodes: [] });
 			trace.nodes.push({
 				id: nodePath(node),
 				block: name,
 				result: snapshot(result)
 			});
+			} finally { if (phase) phase.close(); }
 		};
 		runContextPrototype.raise = raise;
 
@@ -588,7 +596,8 @@
 
 		function prepareNodeRunner(block, node, props) {
 			var trustedRuntime = String(block && block.__flowOrigin || "") === "core" ||
-				String(block && block.__blockImplementationRuntime || "") === "flow";
+				String(block && block.__blockImplementationRuntime || "") === "flow" ||
+				env.sharedRuntime && block && block.__graphRhino && block.__graphRhino.script.stateless === true;
 			if (!block || !trustedRuntime ||
 					typeof block.prepareNode !== "function" || !props) {
 				return null;
@@ -612,6 +621,7 @@
 		function hostRequestable() {
 			try {
 				var convertigoContext = currentConvertigoContext();
+				if (convertigoContext && typeof convertigoContext.isRunning === "function") return convertigoContext;
 				var requested = convertigoContext && convertigoContext.requestedObject;
 				return requested && typeof requested.isRunning === "function" ? requested : null;
 			} catch (e) {
@@ -672,7 +682,8 @@
 				validateNodeDestinations(block, node, properties);
 				var reusableProps = canReuseNodeProps(block) ? properties : null;
 				if (reusableProps && typeof Object.freeze === "function") {
-					Object.freeze(reusableProps);
+					if (env.sharedRuntime) flowSnapshotService.freeze(reusableProps);
+					else Object.freeze(reusableProps);
 				}
 				var preparedRunner = prepareNodeRunner(block, node, reusableProps);
 				var preparedOut = nodeOut(node);
@@ -688,7 +699,9 @@
 					};
 				preparedNode.execute = prepareNodeExecutor(node, block, name, preparedNode.out, preparedWriter, preparedRunner);
 				var index = machineNodeIndex(node);
-				if (index >= 0 && preparedNodes) {
+				if (preparedNodes && typeof preparedNodes.set === "function") {
+					preparedNodes.set(node, preparedNode);
+				} else if (index >= 0 && preparedNodes) {
 					preparedNodes[index] = preparedNode;
 				} else {
 					Object.defineProperty(node, "__flowRuntimeNode", {
@@ -730,10 +743,18 @@
 		}
 
 		function ensurePreparedNode(ctx, node) {
+			var profiler = ctx.allocationTrace;
+			var phase = profiler ? profiler.open("runtime", "node-prepare", "") : null;
+			try {
 			var prepared = preparedNodeFor(ctx, node);
+			if (env.sharedRuntime && !prepared) {
+				var local = ctx.dynamicPreparedNodes || (ctx.dynamicPreparedNodes = new Map());
+				return local.get(node) || installPreparedNode(node, ctx.blocks, local, null);
+			}
 			return prepared && prepared.catalog === ctx.blocks
 				? prepared
 				: installPreparedNode(node, ctx.blocks, ctx.preparedNodes, ctx.preparation);
+			} finally { if (phase) phase.close(); }
 		}
 
 		function executeAttributedNode(ctx, node) {
@@ -901,6 +922,11 @@
 		function executeNodes(ctx, nodes) {
 			var result;
 			nodes = nodes || [];
+			var chain = !ctx.profile && !ctx.allocationTrace && ctx.executionChains && ctx.executionChains.get(nodes);
+			if (chain) {
+				for (var step = 0; step < chain.length && !ctx.stopped; step++) result = chain[step](ctx);
+				return result;
+			}
 			for (var i = 0; i < nodes.length; i++) {
 				if (ctx.stopped) {
 					break;
@@ -992,6 +1018,9 @@
 		}
 
 		function compileFlowPlan(request, blocks) {
+			var profiler = (env.allocationTrace && env.allocationTrace());
+			var phase = profiler ? profiler.open("runtime", "plan-compile", "") : null;
+			try {
 			var identity = flowPlanIdentity(request);
 			var cacheKey = "";
 			var compilerFingerprint = flowPlanCompilerFingerprint ? flowPlanCompilerFingerprint() : "";
@@ -1008,9 +1037,72 @@
 				return writeRuntimeBoundedCache(flowPlanCache, cacheKey, compilerFingerprint, plan, "compiled Flow plans");
 			}
 			return plan;
+			} finally { if (phase) phase.close(); }
 		}
 
 		function resolveRunPlan(request, blocks) {
+			if (env.sharedRuntime) {
+				var identity = flowPlanIdentity(request);
+				// Requests resolved by name or authoring helpers may supply another catalog.
+				// Never alias these requests under an empty source identity.
+				if (!identity || blocks) {
+					var uncached = resolveRunPlanUnshared(request, blocks);
+					if (!Object.isFrozen(uncached.plan)) preparePublishedPlan(uncached.plan);
+					return uncached;
+				}
+				return env.sharedRuntime.prepare("plan:" + String(projectDir() || "") + ":" + String(request.flowQName || request.name || request.flowName || "") + "\n" + identity, function () {
+					var resolved = resolveRunPlanUnshared(request, blocks);
+					preparePublishedPlan(resolved.plan);
+					// Cold construction is attributed by the allocation profiler. Stored
+					// plans must not report the first caller's timings on every hot call.
+					resolved.headHit = true; resolved.loadBlocksMs = 0; resolved.compilePlanMs = 0;
+					return Object.freeze(resolved);
+				});
+			}
+			return resolveRunPlanUnshared(request, blocks);
+		}
+
+		function preparePublishedPlan(plan) {
+			if (Object.isFrozen(plan)) return plan;
+			plan.preparedNodes = new Map();
+			plan.executionChains = new Map();
+			plan.inputContract = compileInputContract(plan.definition);
+			plan.preparation = { mode: "eager", preparedNodes: 0, preparedRunners: 0, preparedWriters: 0, materializedBlocks: 0 };
+			var seen = new Set();
+			function visit(value) {
+				if (!value || typeof value !== "object" || seen.has(value)) return;
+				seen.add(value);
+				if (Array.isArray(value)) {
+					value.forEach(visit);
+					var chain = value.map(function (node) { var entry = plan.preparedNodes.get(node); return entry && entry.execute; });
+					if (chain.every(function (run) { return typeof run === "function"; })) plan.executionChains.set(value, Object.freeze(chain));
+					Object.freeze(value); return;
+				}
+				if (blockName(value)) {
+					var prepared = installPreparedNode(value, plan.blocks, plan.preparedNodes, plan.preparation);
+					if (prepared) {
+						if (prepared.block.__graphDefinition) visit(prepared.block.__graphDefinition.nodes);
+						Object.freeze(prepared);
+					}
+				}
+				Object.keys(value).forEach(function (key) { if (key !== "props") visit(value[key]); });
+				Object.freeze(value);
+			}
+			visit(plan.definition.nodes);
+			flowSnapshotService.freeze(plan.definition);
+			Object.keys(plan.blocks).forEach(function (name) { Object.freeze(plan.blocks[name]); });
+			Object.freeze(plan.blocks);
+			Object.freeze(plan.preparation);
+			var prepared = plan.preparedNodes, chains = plan.executionChains;
+			plan.preparedNodes = Object.freeze({ get: function (node) { return prepared.get(node); } });
+			plan.executionChains = Object.freeze({ get: function (nodes) { return chains.get(nodes); } });
+			return Object.freeze(plan);
+		}
+
+		function resolveRunPlanUnshared(request, blocks) {
+			var profiler = (env.allocationTrace && env.allocationTrace());
+			var phase = profiler ? profiler.open("runtime", "plan-resolve", "") : null;
+			try {
 			var measure = profileEnabled(request);
 			var headEligible = !blocks;
 			if (headEligible) {
@@ -1026,7 +1118,8 @@
 				}
 			}
 			var loadStarted = measure && !blocks ? nanoTime() : 0;
-			blocks = blocks || loadBlocks(true);
+			var metadata = profiler ? profiler.open("runtime", "metadata", "") : null;
+			try { blocks = blocks || loadBlocks(true); } finally { if (metadata) metadata.close(); }
 			var loadMs = measure && loadStarted ? profileDuration(loadStarted) : Number(request.loadBlocksMs || 0);
 			var compileStarted = measure ? nanoTime() : 0;
 			var plan = compileFlowPlan(request, blocks);
@@ -1041,6 +1134,7 @@
 				loadBlocksMs: loadMs,
 				compilePlanMs: compileMs
 			};
+			} finally { if (phase) phase.close(); }
 		}
 
 		function runFlowRequest(request, blocks) {
@@ -1168,19 +1262,31 @@
 		// default (its ${symbols} compiled); for an input that is not a text, "" (an empty form field) and the text "null"
 		// (a null sent as a form parameter) are absent and null; null is kept with nullable: true, else it is absent; a
 		// required input must be given; a value that does not convert is a 400 error.
-		function typedInputs(input, definition) {
+		function compileInputContract(definition) {
+			var meta = definition && (definition.flow || definition._flow) || {};
+			var declared = meta.inputs || meta.input || definition && (definition.inputs || definition.input);
+			return Object.freeze(Object.keys(declared || {}).map(function (name) {
+				var declaration = declared[name] && typeof declared[name] === "object" ? declared[name] : {};
+				var types = env.typeConversion.types(declaration);
+				return Object.freeze({ name: name, declaration: declaration, types: Object.freeze(types),
+					textual: !types.length || types.indexOf("string") !== -1 || types.indexOf("any") !== -1 || types.indexOf("unknown") !== -1 });
+			}));
+		}
+
+		function typedInputs(input, definition, contract, byReference) {
+			var profiler = env.allocationTrace && env.allocationTrace();
+			var phase = profiler ? profiler.open("runtime", "input-contract", "") : null;
+			try {
 			var meta = definition && (definition.flow || definition._flow) || {};
 			var declared = meta.inputs || meta.input || definition && (definition.inputs || definition.input);
 			if (!declared || typeof declared !== "object" || !input || typeof input !== "object") {
 				return input;
 			}
 			var conversion = env.typeConversion;
-			Object.keys(declared).forEach(function (name) {
-				var declaration = declared[name] && typeof declared[name] === "object" ? declared[name] : {};
-				var declaredTypes = conversion.types(declaration);
+			(contract || compileInputContract(definition)).forEach(function (entry) {
+				var name = entry.name, declaration = entry.declaration, declaredTypes = entry.types;
 				var value = input[name];
-				var textual = !declaredTypes.length || declaredTypes.indexOf("string") !== -1 ||
-					declaredTypes.indexOf("any") !== -1 || declaredTypes.indexOf("unknown") !== -1;
+				var textual = entry.textual;
 				if (!textual && value === "") {
 					value = undefined;
 				}
@@ -1204,7 +1310,8 @@
 					input[name] = null;
 					return;
 				}
-				var converted = conversion.convert(value, declaration);
+				var converted = byReference && conversion.convertReference
+					? conversion.convertReference(value, declaration) : conversion.convert(value, declaration);
 				if (!converted.ok) {
 					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + ": " + converted.message,
 						"Send a value of type " + declaredTypes.join(" or ") + ".");
@@ -1212,6 +1319,7 @@
 				input[name] = converted.value;
 			});
 			return input;
+			} finally { if (phase) phase.close(); }
 		}
 
 		function defaultValue(value) {
@@ -1227,6 +1335,9 @@
 		}
 
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {
+			var profiler = (env.allocationTrace && env.allocationTrace());
+			var phase = profiler ? profiler.open("runtime", "context-create", "") : null;
+			try {
 			var totalStarted = frameProfile ? nanoTime() : 0;
 			var captureStarted = frameProfile ? nanoTime() : 0;
 			if (frameProfile) {
@@ -1261,7 +1372,7 @@
 			var scopesStarted = frameProfile ? nanoTime() : 0;
 			var scopes = {
 				request: requestScope,
-				input: typedInputs(frameScopeValue(request, "input"), definition),
+				input: typedInputs(frameScopeValue(request, "input"), definition, plan && plan.inputContract, request.__directInvocation === true),
 				local: {},
 				result: {},
 				trace: request.includeTrace === false ? null : { nodes: [] },
@@ -1280,6 +1391,7 @@
 			ctx.definition = definition;
 			ctx.blocks = blocks;
 			ctx.preparedNodes = plan && plan.preparedNodes || null;
+			if (plan && plan.executionChains) ctx.executionChains = plan.executionChains;
 			ctx.preparation = plan && plan.preparation || null;
 			ctx.returned = undefined;
 			ctx.stopped = false;
@@ -1301,6 +1413,7 @@
 				frameProfile.totalMs = profileDuration(totalStarted);
 			}
 			return ctx;
+			} finally { if (phase) phase.close(); }
 		}
 
 		function installColdContextMethods() {
@@ -1754,6 +1867,7 @@
 			};
 		}
 
+		if (env.sharedRuntime) Object.freeze(runContextPrototype);
 		return {
 			executeNode: executeNode,
 			callBlock: callBlock,
@@ -1772,6 +1886,7 @@
 	var cachedService = null;
 
 	function serviceFor(env) {
+		if (env.sharedRuntime) return env.sharedRuntime.prepare("env:execution-service", function () { return Object.freeze(create(env)); });
 		if (cachedEnv !== env || !cachedService) {
 			cachedEnv = env;
 			cachedService = create(env);
@@ -1800,6 +1915,11 @@
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
 			return serviceFor(env).runFlowRequest.apply(null, args);
+		},
+		resolveRunPlan: function () {
+			var args = Array.prototype.slice.call(arguments);
+			var env = args.pop();
+			return serviceFor(env).resolveRunPlan.apply(null, args);
 		},
 		compileFlowPlan: function () {
 			var args = Array.prototype.slice.call(arguments);

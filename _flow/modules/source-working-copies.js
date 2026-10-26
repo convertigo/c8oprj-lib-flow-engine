@@ -6,6 +6,8 @@
 		var File = env.File;
 		var writes = request.sourceDrafts || request.frontendSourceDrafts || request.drafts || {};
 		var removals = request.sourceRemovals || [];
+		// The returned readers can outlive this request in a compiled catalog.
+		request = null;
 		if (!writes || typeof writes !== "object" || Array.isArray(writes) || !Array.isArray(removals)) {
 			throw new Error("FLOW_SOURCE_WORKING_COPIES_INVALID");
 		}

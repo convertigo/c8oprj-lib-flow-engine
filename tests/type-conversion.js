@@ -124,3 +124,17 @@ var textDefault = flow({ posts: {type:"array", default:["literal JSON"]} }, "  r
 assertTrue(warnings(textDefault).indexOf("FLOWSCRIPT_ARRAY_INPUT_ITEMS_REQUIRED") === -1, "ordinary string arrays need no warning");
 
 print("type conversion: ok");
+
+// Internal data retains identity only when coercion changes nothing.
+var canonicalRows = [{n:1},{n:2}];
+assertTrue(tc.convertReference(canonicalRows,{type:"array",items:{type:"object"}}).value === canonicalRows,"canonical array identity");
+assertTrue(tc.convertReference(canonicalRows[0],{type:"object"}).value === canonicalRows[0],"canonical object identity");
+var textNumbers = ["1","2"];
+var convertedNumbers = tc.convertReference(textNumbers,{type:"array",items:{type:"integer"}});
+eq(convertedNumbers,tc.convert(textNumbers,{type:"array",items:{type:"integer"}}),"reference coercion parity");
+assertTrue(convertedNumbers.value !== textNumbers && textNumbers[0] === "1","coercion owns its new array");
+[[],["1","bad"],["9007199254740993"],[null],[["1"]]].forEach(function(items){
+ [{type:"array",items:{type:"integer"}},{type:["string","array"],items:{type:"array",items:{type:"number"}}}].forEach(function(schema){
+  eq(tc.convertReference(items,schema),tc.convert(items,schema),"reference conversion result and warning");
+ });
+});

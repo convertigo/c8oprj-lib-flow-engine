@@ -49,6 +49,7 @@ const _meta = {
 
 (function () {
 	return {
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.throwFlow({

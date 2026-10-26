@@ -1,6 +1,12 @@
 (function () {
+	function concurrent(state, limit) {
+		if (typeof __flowRuntimeApi !== "undefined") Object.defineProperty(state, "__shared", {
+			value: __flowRuntimeApi.newCache(limit || 1024), enumerable: false
+		});
+		return state;
+	}
 	function createValueState() {
-		return {
+		return concurrent({
 			key: "",
 			value: null,
 			hits: 0,
@@ -8,22 +14,22 @@
 			clears: 0,
 			updatedAt: "",
 			label: ""
-		};
+		}, 1024);
 	}
 
 	function createMapState() {
-		return {
+		return concurrent({
 			entries: {},
 			hits: 0,
 			misses: 0,
 			clears: 0,
 			updatedAt: "",
 			label: ""
-		};
+		}, 1024);
 	}
 
 	function createBoundedMapState(limit) {
-		return {
+		return concurrent({
 			entries: {},
 			limit: Math.max(1, Number(limit || 1024)),
 			size: 0,
@@ -34,7 +40,7 @@
 			clears: 0,
 			updatedAt: "",
 			label: ""
-		};
+		}, limit);
 	}
 
 	function now() {
@@ -42,6 +48,7 @@
 	}
 
 	function readValue(cache, key) {
+		if (cache.__shared) return cache.__shared.read(String(key), "");
 		if (cache.value && cache.key === key) {
 			cache.hits++;
 			return cache.value;
@@ -51,6 +58,7 @@
 	}
 
 	function writeValue(cache, key, value, label) {
+		if (cache.__shared) return cache.__shared.write(String(key), "", value);
 		cache.key = key;
 		cache.value = value;
 		cache.label = label || "";
@@ -59,6 +67,7 @@
 	}
 
 	function readMap(cache, key, fingerprint) {
+		if (cache.__shared) return cache.__shared.read(String(key), fingerprint === undefined ? null : String(fingerprint));
 		var entry = cache.entries[key];
 		if (entry && entry.fingerprint === fingerprint) {
 			cache.hits++;
@@ -69,6 +78,7 @@
 	}
 
 	function writeMap(cache, key, fingerprint, value, label) {
+		if (cache.__shared) return cache.__shared.write(String(key), String(fingerprint), value);
 		cache.entries[key] = {
 			fingerprint: fingerprint,
 			value: value,
@@ -100,6 +110,7 @@
 	}
 
 	function readBoundedMap(cache, key, fingerprint) {
+		if (cache.__shared) return cache.__shared.read(String(key), fingerprint === undefined ? null : String(fingerprint));
 		var entry = cache.entries[key];
 		if (entry && (fingerprint === undefined || entry.fingerprint === fingerprint)) {
 			cache.hits++;
@@ -111,6 +122,7 @@
 	}
 
 	function writeBoundedMap(cache, key, fingerprint, value, label) {
+		if (cache.__shared) return cache.__shared.write(String(key), String(fingerprint), value);
 		var entry = cache.entries[key];
 		if (!entry) {
 			while (cache.size >= cache.limit) {
@@ -132,6 +144,7 @@
 	}
 
 	function clearValue(cache) {
+		if (cache.__shared) cache.__shared.clear();
 		cache.key = "";
 		cache.value = null;
 		cache.clears++;
@@ -139,12 +152,14 @@
 	}
 
 	function clearMap(cache) {
+		if (cache.__shared) cache.__shared.clear();
 		cache.entries = {};
 		cache.clears++;
 		cache.updatedAt = now();
 	}
 
 	function clearBoundedMap(cache) {
+		if (cache.__shared) cache.__shared.clear();
 		cache.entries = {};
 		cache.size = 0;
 		cache.clock = 0;
@@ -154,6 +169,14 @@
 
 	function clearMapWhere(cache, predicate) {
 		var removed = 0;
+		if (cache.__shared && typeof predicate === "function") {
+			var keys = cache.__shared.keys();
+			for (var i = 0; i < keys.length; i++) {
+				var key = String(keys[i]);
+				if (predicate(key, {value: cache.__shared.read(key, null)}) && cache.__shared.remove(key)) removed++;
+			}
+			return removed;
+		}
 		if (!cache.entries || typeof predicate !== "function") {
 			return removed;
 		}
@@ -174,6 +197,7 @@
 	}
 
 	function summary(name, cache, includeEntries) {
+		if (cache.__shared) return { name: name, warm: cache.__shared.size() > 0, entryCount: cache.__shared.size(), hits: cache.__shared.hits(), misses: cache.__shared.misses(), limit: cache.limit };
 		var entries = cache.entries ? Object.keys(cache.entries).sort() : [];
 		var out = {
 			name: name,

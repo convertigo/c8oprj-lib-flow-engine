@@ -299,6 +299,10 @@ const _meta = {
 		if (!nativeBoundaryAvailable && canRunFlowDirect(ctx, target, input)) {
 			return runFlowDirect(ctx, target, input);
 		}
+		if (nativeBoundaryAvailable && ctx.tryDirectRequestable && target.dbo) {
+			var direct = ctx.tryDirectRequestable(target.dbo, input);
+			if (direct && direct.handled === true) return direct.value;
+		}
 		var request = requestFromTarget(target);
 		putInput(request, input, target);
 		if (nativeBoundaryAvailable) {

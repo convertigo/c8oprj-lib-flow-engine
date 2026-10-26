@@ -78,8 +78,8 @@ try {
 		var end = source.lastIndexOf("\n\t}", source.indexOf("\n\tfunction ", start + 1)) + 3;
 		return "(" + source.substring(start, end) + ")";
 	}
-	var nativeFingerprintsByGeneration = {};
-	var nativeFingerprintsGenerations = 0;
+	var nativeFingerprintsByGeneration = new java.util.concurrent.ConcurrentHashMap();
+	var JavaBoolean = java.lang.Boolean;
 	var rememberNativeFingerprints = eval(functionSource("rememberNativeFingerprints"));
 	var lookups = 0;
 	var sharedModuleBridge = false;
@@ -96,7 +96,7 @@ try {
 	__flowGenerationId = "ProjectA#2";
 	__withClasses = true;
 	assertTrue(nativeDirectoryFingerprint(tree) === js, "a generation with the classes computes in Java");
-	assertTrue(nativeFingerprintsByGeneration["ProjectA#1"] === false && nativeFingerprintsByGeneration["ProjectA#2"] === true,
+	assertTrue(String(nativeFingerprintsByGeneration.get("ProjectA#1")) === "false" && String(nativeFingerprintsByGeneration.get("ProjectA#2")) === "true",
 		"only booleans are remembered");
 } finally {
 	FileUtils.deleteQuietly(work);

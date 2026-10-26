@@ -23,6 +23,7 @@ const _meta = {
 
 (function () {
 	return {
+		stateless: true,
 		prepareNode: function (node, helpers) {
 			var resolve = helpers.props.value !== undefined ? helpers.compileValue(helpers.props.value) : null;
 			return function (ctx) {

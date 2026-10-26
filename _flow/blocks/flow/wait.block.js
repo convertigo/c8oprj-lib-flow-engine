@@ -37,7 +37,7 @@ const _meta = {
 }
 
 // Use Rhino 1.9.0 features: https://mozilla.github.io/rhino/compat/engines.html
-(function () { return {run:function(ctx,node) {
+(function () { return {stateless:true,run:function(ctx,node) {
  var delay=Number(ctx.template(ctx.props(node).delayMs)),System=Packages.java.lang.System,Thread=Packages.java.lang.Thread;
  if(!isFinite(delay)||Math.floor(delay)!==delay||delay<0||delay>60000)ctx.raise('WAIT_DELAY_INVALID','flow.wait delayMs must be an integer from 0 to 60000.');
  var start=System.nanoTime(),deadline=start+delay*1000000;

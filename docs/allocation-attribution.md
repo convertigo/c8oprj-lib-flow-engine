@@ -19,6 +19,12 @@ Each `(Allocations)` log fragment has a generated request id, part/parts,
 allocatedBytes, workers and entries. Reassemble every part before using a record.
 An entry includes kind, id, type, count, inclusive and exclusive bytes. Exclusive
 bytes partition the participating threads; never sum inclusive nested spans.
+The collector also reports `inclusiveNanos` and `exclusiveNanos`, measured with
+`System.nanoTime()`. These are elapsed durations, including waits, rather than CPU
+time. A servlet waiting for a worker overlaps that worker's elapsed duration:
+do not sum durations across threads to reconstruct HTTP latency. Runtime phase
+spans identify plan resolution/compilation, node preparation, metadata, input
+contracts/bindings, context creation and traces in addition to the block spans.
 Node ids combine the requestable QName, first-execution ordinal of the node
 object in that invocation, and its authored id. Ordinals distinguish anonymous
 nodes but can differ across branches. Group by type to compare different paths.

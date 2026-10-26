@@ -1,5 +1,7 @@
+// @convertigo-runtime: stateless-v1
 (function () {
 	var globalScope = this;
+	var sharedRuntime = typeof __flowRuntimeApi === "undefined" ? null : __flowRuntimeApi;
 	var File = Packages.java.io.File;
 	var Arrays = Packages.java.util.Arrays;
 	var JavaBoolean = Packages.java.lang.Boolean;
@@ -23,9 +25,25 @@
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
-	var projectDirOverride = null;
-	var activeRequestFallback = null;
-	var allocationProfiler = null;
+
+
+
+	var localExecutionState = {};
+	function executionState() {
+		var state = sharedRuntime ? __flowExecutionState : localExecutionState;
+		if (!state.virtualDefinitionRefs) {
+			state.virtualDefinitionRefs = {}; state.virtualDefinitionEntries = {}; state.virtualDefinitionCount = 0;
+			state.generatedSchemaCapture = null;
+			state.generatedSchemaStats = { hits: 0, misses: 0, writes: 0, bypasses: 0 };
+		}
+		return state;
+	}
+	function initializeExecutionState() {
+		var state = executionState();
+		if (!state.rowPlans) { state.rowPlans = new WeakMap(); state.rowResults = new WeakMap(); }
+		return state;
+	}
+
 	var compiledScriptCache = {};
 	var compiledScriptCacheSizeValue = 0;
 	var compiledScriptCacheClock = 0;
@@ -220,8 +238,8 @@
 	}
 
 	function projectDir() {
-		if (projectDirOverride) {
-			return new File(String(projectDirOverride));
+		if (executionState().projectDirOverride) {
+			return new File(String(executionState().projectDirOverride));
 		}
 		if (typeof __flowProjectDir !== "undefined" && String(__flowProjectDir).trim() !== "") {
 			return new File(String(__flowProjectDir));
@@ -230,28 +248,28 @@
 	}
 
 	function withProjectDir(dir, callback) {
-		var previous = projectDirOverride;
+		var previous = executionState().projectDirOverride;
 		if (dir !== undefined && dir !== null && String(dir).trim() !== "") {
-			projectDirOverride = String(dir);
+			executionState().projectDirOverride = String(dir);
 		}
 		try {
 			return callback();
 		} finally {
-			projectDirOverride = previous;
+			executionState().projectDirOverride = previous;
 		}
 	}
 
 	function currentActiveRequest() {
-		return activeRequestFallback;
+		return executionState().activeRequestFallback;
 	}
 
 	function withActiveRequest(request, callback) {
-		var previous = activeRequestFallback;
-		activeRequestFallback = request;
+		var previous = executionState().activeRequestFallback;
+		executionState().activeRequestFallback = request;
 		try {
 			return callback();
 		} finally {
-			activeRequestFallback = previous;
+			executionState().activeRequestFallback = previous;
 		}
 	}
 
@@ -361,6 +379,9 @@
 			return null;
 		}
 		var key = compiledScriptKey(source, sourceName, fingerprint);
+		if (sharedRuntime) return sharedRuntime.prepare("script:" + key, function () {
+			return cx.compileString(source, String(sourceName || "flow-script"), 1, null);
+		});
 		var cached = compiledScriptCache[key];
 		if (cached) {
 			compiledScriptStats.hits++;
@@ -425,7 +446,7 @@
 
 	// Identity registries are intentionally private. JSON markers and ordinary
 	// runtime handles cannot manufacture or duplicate a one-shot source.
-	var rowPlans = new WeakMap(), rowResults = new WeakMap();
+
 	function createRowsPlan(ctx, spec) {
 		if (ctx.parentRun) raise("ROW_STREAM_NESTED", "A nested Flow must use a bounded materializing requester.");
 		var transform = spec.transform || {}, names = transform.blocks || [], sources = {};
@@ -448,18 +469,18 @@
 		};
 		// Copy while still in the invocation, so later mutations cannot alter authority.
 		plan = normalizeTree(plan);
-		var handle = createRuntimeHandle(ctx, "row-plan", null, {close:function (_, h) { rowPlans.delete(h); }});
-		rowPlans.set(handle, plan);
+		var handle = createRuntimeHandle(ctx, "row-plan", null, {close:function (_, h) { initializeExecutionState().rowPlans.delete(h); }});
+		initializeExecutionState().rowPlans.set(handle, plan);
 		return handle;
 	}
 	function resultWithRows(ctx, handle, field, fields) {
-		var plan = rowPlans.get(handle);
+		var plan = initializeExecutionState().rowPlans.get(handle);
 		if (!plan || handle.__flowHandleClosed) raise("ROW_STREAM_CONSUMED", "Expected an unconsumed registered row plan.");
-		rowPlans.delete(handle); closeRuntimeHandle(ctx, handle);
+		initializeExecutionState().rowPlans.delete(handle); closeRuntimeHandle(ctx, handle);
 		plan.field = String(field || "data"); plan.fields = normalizeTree(fields || {});
 		var result = normalizeTree(plan.fields);
 		Object.defineProperty(result, plan.field, {value:[], enumerable:true});
-		rowResults.set(result, plan);
+		initializeExecutionState().rowResults.set(result, plan);
 		ctx.returnValue(result);
 		return result;
 	}
@@ -467,9 +488,9 @@
 	function response(value, rejectRuntimeHandlesAt, functionProfile, detach) {
 		var sanitizeStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var payload = value || {};
-		var rowPlan = payload.ok === true && payload.result && rowResults.get(payload.result);
+		var rowPlan = payload.ok === true && payload.result && initializeExecutionState().rowResults.get(payload.result);
 		if (rowPlan) {
-			rowResults.delete(payload.result);
+			initializeExecutionState().rowResults.delete(payload.result);
 			if (!detach || typeof detach.rows !== "function") raise("ROW_STREAM_UNAVAILABLE", "This bridge does not support bounded row results.");
 			return detach.rows(payload, rowPlan, function (value, seen) { return sanitizeSerializableRuntimeValue(value, "row result", seen); });
 		}
@@ -658,12 +679,12 @@
 	}
 
 	function sanitizeRuntimeValue(value, seen) {
-		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "sanitizeRuntimeValue", "") : null;
+		var allocation = executionState().allocationProfiler ? executionState().allocationProfiler.open("boundary", "sanitizeRuntimeValue", "") : null;
 		try { return runtimeHandleUtils().sanitize(value, runtimeHandleEnv(), seen); } finally { if (allocation) allocation.close(); }
 	}
 
 	function sanitizeSerializableRuntimeValue(value, where, seen) {
-		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "sanitizeSerializableRuntimeValue", "") : null;
+		var allocation = executionState().allocationProfiler ? executionState().allocationProfiler.open("boundary", "sanitizeSerializableRuntimeValue", "") : null;
 		try { return runtimeHandleUtils().sanitizeSerializable(value, where, runtimeHandleEnv(), seen); } finally { if (allocation) allocation.close(); }
 	}
 
@@ -672,12 +693,12 @@
 	}
 
 	function assertNoRuntimeHandle(value, where) {
-		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "handle-check", "") : null;
+		var allocation = executionState().allocationProfiler ? executionState().allocationProfiler.open("boundary", "handle-check", "") : null;
 		try { runtimeHandleUtils().assertSerializable(value, where, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
 	}
 
 	function normalizeTree(value) {
-		var allocation = allocationProfiler ? allocationProfiler.open("boundary", "normalizeTree", "") : null;
+		var allocation = executionState().allocationProfiler ? executionState().allocationProfiler.open("boundary", "normalizeTree", "") : null;
 		try { return runtimeHandleUtils().normalize(value, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
 	}
 
@@ -893,6 +914,9 @@
 	}
 
 	function loadProjectEngineDefinition() {
+		if (sharedRuntime) return sharedRuntime.prepare("project-config:" + String(projectDir() || ""), function () {
+			return flowExecutionSnapshotService().freeze(projectConfigService().loadProjectEngineDefinition(projectConfigEnv()));
+		});
 		return projectConfigService().loadProjectEngineDefinition(projectConfigEnv());
 	}
 
@@ -995,7 +1019,7 @@
 		}
 	}
 
-	var reportedUndefinedSymbols = {};
+	var reportedUndefinedSymbols = new ConcurrentHashMap();
 
 	// @return the text with its ${name} / ${name=default} global symbols replaced by the server, as the properties of
 	//         the Convertigo objects are; an undefined symbol without default becomes empty and is logged once. Without
@@ -1009,11 +1033,12 @@
 			manager = null;
 		}
 		// without the Convertigo engine (standalone tests) the classes resolve to Java packages, not objects
-		if (!manager || typeof manager["getCompiledValue(java.lang.String)"] !== "function") {
+		if (!manager || !sharedRuntime && typeof manager["getCompiledValue(java.lang.String)"] !== "function") {
 			return text;
 		}
 		try {
-			return String(manager["getCompiledValue(java.lang.String)"](String(text)));
+			return String(sharedRuntime ? sharedRuntime.compileSymbols(String(text))
+				: manager["getCompiledValue(java.lang.String)"](String(text)));
 		} catch (e) {
 			var undefinedSymbols = e && e.javaException;
 			if (!(undefinedSymbols instanceof Packages.com.twinsoft.convertigo.engine.UndefinedSymbolsException)) {
@@ -1023,8 +1048,7 @@
 			var iterator = undefinedSymbols.undefinedSymbols().iterator();
 			while (iterator.hasNext()) {
 				var name = String(iterator.next());
-				if (!reportedUndefinedSymbols[name]) {
-					reportedUndefinedSymbols[name] = true;
+				if (reportedUndefinedSymbols.putIfAbsent(name, true) === null) {
 					names.push(name);
 				}
 			}
@@ -1159,15 +1183,14 @@
 	// Whether the Java fingerprints of lib_flow_engine (libs/src) are seen by the packages of the project of the call
 	// (engine 8.5 and later, its libraries compiled), by generation: only booleans are kept, never the classes of a
 	// generation, which would keep it in memory
-	var nativeFingerprintsByGeneration = {};
-	var nativeFingerprintsGenerations = 0;
+	var nativeFingerprintsByGeneration = new ConcurrentHashMap();
 
 	// @return the fingerprint of a directory computed in Java, null when the classes are not there (the JS walk then
 	//         computes the same string)
 	function nativeDirectoryFingerprint(dir) {
 		var generation = typeof __flowGenerationId === "undefined" ? "" : String(__flowGenerationId);
-		var known = nativeFingerprintsByGeneration[generation];
-		if (known === false) {
+		var known = nativeFingerprintsByGeneration.get(generation);
+		if (known !== null && String(known) === "false") {
 			return null;
 		}
 		try {
@@ -1175,7 +1198,7 @@
 			if (typeof fingerprints.directory !== "function") {
 				throw new Error("not compiled");
 			}
-			if (known === undefined) {
+			if (known === null) {
 				rememberNativeFingerprints(generation, true);
 			}
 			if (sharedModuleBridge) {
@@ -1189,11 +1212,8 @@
 	}
 
 	function rememberNativeFingerprints(generation, available) {
-		if (++nativeFingerprintsGenerations > 256) {
-			nativeFingerprintsByGeneration = {};
-			nativeFingerprintsGenerations = 1;
-		}
-		nativeFingerprintsByGeneration[generation] = available;
+		if (nativeFingerprintsByGeneration.size() > 256) nativeFingerprintsByGeneration.clear();
+		nativeFingerprintsByGeneration.put(generation, JavaBoolean.valueOf(available));
 	}
 
 	function readRuntimeCache(cache, key) {
@@ -1266,6 +1286,10 @@
 	}
 
 	function clearRuntimeCaches(localOnly) {
+		if (sharedRuntime) {
+			FlowEngineBridge.invalidateDataCaches();
+			return { ok: true, invalidated: true };
+		}
 		// Pool refresh/disposal clears the runtime, not the shared generation's
 		// dependencies. Explicit Studio/MCP clears must also reject in-flight results.
 		if (localOnly !== true) {
@@ -1422,6 +1446,23 @@
 	}
 
 	function loadEngineModule(name) {
+		if (sharedRuntime && name === "icon-service.js") {
+			// Process handles / raster availability are authoring state, never part
+			// of a published execution revision.
+			var modules = executionState().modules || (executionState().modules = {});
+			if (!modules[name]) {
+				var file = engineModuleFile(name);
+				modules[name] = Object.freeze(evalCompiledSource(readSourceFile(file), canonicalPath(file), fileFingerprint(file)));
+			}
+			return modules[name];
+		}
+		if (sharedRuntime) return sharedRuntime.prepare("module:" + name, function () {
+			return Object.freeze(loadEngineModuleUnshared(name));
+		});
+		return loadEngineModuleUnshared(name);
+	}
+
+	function loadEngineModuleUnshared(name) {
 		// A read-only operation sees one version of each module. Checking the same
 		// file for every schema/path helper dominated otherwise warm analyses.
 		var memo = callFingerprints.get();
@@ -2163,7 +2204,55 @@
 		return catalogLoaderService().loadBlocksUncached(catalogLoaderEnv());
 	}
 
+	function freezeRuntimeBlock(block) {
+		flowExecutionSnapshotService().freeze(readOnlyBlockCatalog(block));
+		if (block.__readOnlyCatalog) Object.freeze(block.__readOnlyCatalog);
+		if (block.__graphRuntimeCatalog) flowExecutionSnapshotService().freeze(block.__graphRuntimeCatalog);
+		if (block.__blockDefinition) flowExecutionSnapshotService().freeze(block.__blockDefinition);
+		if (block.__graphDefinition) flowExecutionSnapshotService().freeze(block.__graphDefinition);
+		if (block.__graphRhino) Object.freeze(block.__graphRhino);
+		Object.freeze(Object.getPrototypeOf(block));
+		return Object.freeze(block);
+	}
+
+	function sharedCatalog(raw, revisionKey) {
+		var published = {};
+		Object.getOwnPropertyNames(raw).forEach(function (name) {
+			var original = raw[name], descriptor = Object.getOwnPropertyDescriptor(raw, name);
+			if (!descriptor.enumerable || !original || typeof original.catalog !== "function") {
+				if (name === "__flowDefaultsHistory") flowExecutionSnapshotService().freeze(original);
+				Object.defineProperty(published, name, {value: original, enumerable: descriptor.enumerable});
+				return;
+			}
+			if (!original.__flowScriptPlaceholder) { published[name] = freezeRuntimeBlock(original); return; }
+			// Parsing contracts is safe for every catalog entry. Compiling an unused
+			// composite may fail legitimately when its optional provider is absent.
+			var catalog = flowExecutionSnapshotService().freeze(original.catalog());
+			var block = Object.assign({}, original);
+			block.catalog = function () { return normalizeTree(catalog); };
+			block.implementationRuntime = function () { return original.implementationRuntime(); };
+			block.materialize = function () {
+				return sharedRuntime.prepare("block:" + revisionKey + ":" + name, function () {
+					return freezeRuntimeBlock(materializeFlowScriptBlock(raw, name));
+				});
+			};
+			["run", "analyze", "analyzeShallow", "displayName"].forEach(function (method) {
+				block[method] = function () { var ready = block.materialize(); return ready[method].apply(ready, arguments); };
+			});
+			Object.defineProperty(block, "__readOnlyCatalog", {value: Object.freeze({key: blockCatalogContextKey(), value: catalog})});
+			if (block.__blockDefinition) flowExecutionSnapshotService().freeze(block.__blockDefinition);
+			published[name] = Object.freeze(block);
+		});
+		return Object.freeze(published);
+	}
+
 	function loadBlocks(allowHot) {
+		if (sharedRuntime) {
+			var key = String(projectDir() || "");
+			return sharedRuntime.prepare("catalog:" + key, function () {
+				return sharedCatalog(catalogLoaderService().loadBlocks(catalogLoaderEnv(), true), key);
+			});
+		}
 		return catalogLoaderService().loadBlocks(catalogLoaderEnv(), allowHot === true);
 	}
 
@@ -2283,6 +2372,17 @@
 	}
 
 	function loadFlowLibrary(name) {
+		if (sharedRuntime) {
+			var factory = sharedRuntime.prepare("library:" + String(projectDir() || "") + ":" + name, function () {
+				var file = flowLibraryFile(name), source = readSourceFile(file);
+				var script = compileScript(source, canonicalPath(file), fileFingerprint(file));
+				return function () {
+					var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+					return script.exec(cx, compiledScriptScope(cx));
+				};
+			});
+			return factory();
+		}
 		return flowLibraryService().load(name, flowLibraryServiceEnv());
 	}
 
@@ -2415,10 +2515,22 @@
 	}
 
 	function graphBlockRuntimeEnv() {
+		return sharedRuntime ? sharedRuntime.prepare("env:graphBlockRuntimeEnv", create_graphBlockRuntimeEnv) : create_graphBlockRuntimeEnv();
+	}
+
+	function create_graphBlockRuntimeEnv() {
 		if (graphBlockRuntimeEnvInstance) {
 			return graphBlockRuntimeEnvInstance;
 		}
 		graphBlockRuntimeEnvInstance = {
+			sharedRuntime: sharedRuntime,
+			implementationFactory: function (source, name) {
+				var script = compileScript(source, name, sha256Hex(source));
+				return function () {
+					var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+					return script.exec(cx, compiledScriptScope(cx));
+				};
+			},
 			nodeOutputPath: nodeOutputPath,
 			effectiveConfig: effectiveConfig,
 			File: File,
@@ -4373,7 +4485,7 @@
 	}
 
 	function flowOutputSchema(name) {
-		if (generatedSchemaCapture) generatedSchemaCapture.safe = false;
+		if (executionState().generatedSchemaCapture) executionState().generatedSchemaCapture.safe = false;
 		var flow = getProjectFlow(name, loadBlocks());
 		var definition = parseSource(flow.source);
 		return objectSchema(declaredOutputSchema(definition) || readResultSchema({ flowName: name }, definition) || {});
@@ -4630,9 +4742,9 @@
 	var DETACHED_DEFINITION_KEYS = ["propertyDefinitions", "propertyOrder", "propertyDefaults",
 		"icon", "iconify", "iconUrl", "iconSvg", "iconFile", "iconFile16", "iconFile32"];
 	var VIRTUAL_DEFINITION_MEMO_LIMIT = 20000;
-	var virtualDefinitionRefs = {};
-	var virtualDefinitionEntries = {};
-	var virtualDefinitionCount = 0;
+
+
+
 	var virtualDefinitionsResolvable;
 
 	function virtualDefinitionsRegistry() {
@@ -4667,17 +4779,17 @@
 			parts.push(JSON.stringify(key) + ":" + json);
 		});
 		var entry = "{" + parts.join(",") + "}";
-		var ref = virtualDefinitionRefs[entry];
+		var ref = executionState().virtualDefinitionRefs[entry];
 		if (!ref) {
-			if (virtualDefinitionCount >= VIRTUAL_DEFINITION_MEMO_LIMIT) {
-				virtualDefinitionRefs = {};
-				virtualDefinitionEntries = {};
-				virtualDefinitionCount = 0;
+			if (executionState().virtualDefinitionCount >= VIRTUAL_DEFINITION_MEMO_LIMIT) {
+				executionState().virtualDefinitionRefs = {};
+				executionState().virtualDefinitionEntries = {};
+				executionState().virtualDefinitionCount = 0;
 			}
 			ref = "vd-" + sha256Hex(entry).substring(0, 32);
-			virtualDefinitionRefs[entry] = ref;
-			virtualDefinitionEntries[ref] = entry;
-			virtualDefinitionCount++;
+			executionState().virtualDefinitionRefs[entry] = ref;
+			executionState().virtualDefinitionEntries[ref] = entry;
+			executionState().virtualDefinitionCount++;
 			registry.putIfAbsent(ref, entry);
 		} else if (!registry.containsKey(ref)) {
 			registry.putIfAbsent(ref, entry);
@@ -4694,7 +4806,7 @@
 			return info;
 		}
 		var ref = String(info.definitionRef);
-		var json = virtualDefinitionEntries[ref];
+		var json = executionState().virtualDefinitionEntries[ref];
 		if (!json) {
 			var registry = virtualDefinitionsRegistry();
 			var registered = registry ? registry.get(ref) : null;
@@ -4715,9 +4827,9 @@
 	// Registered entries are immutable and content-addressed: other scopes may still
 	// reference them, so only this scope's memo is dropped.
 	function clearVirtualDefinitions() {
-		virtualDefinitionRefs = {};
-		virtualDefinitionEntries = {};
-		virtualDefinitionCount = 0;
+		executionState().virtualDefinitionRefs = {};
+		executionState().virtualDefinitionEntries = {};
+		executionState().virtualDefinitionCount = 0;
 	}
 
 	function sha256Hex(text) {
@@ -4755,6 +4867,7 @@
 	}
 
 	function iconService() {
+		if (sharedRuntime) return loadEngineModule("icon-service.js");
 		if (!iconServiceModule) {
 			iconServiceModule = loadEngineModule("icon-service.js");
 		}
@@ -4819,10 +4932,15 @@
 	}
 
 	function flowRuntimeServiceEnv() {
+		return sharedRuntime ? sharedRuntime.prepare("env:flowRuntimeServiceEnv", create_flowRuntimeServiceEnv) : create_flowRuntimeServiceEnv();
+	}
+
+	function create_flowRuntimeServiceEnv() {
 		if (flowRuntimeServiceEnvInstance) {
 			return flowRuntimeServiceEnvInstance;
 		}
 		flowRuntimeServiceEnvInstance = {
+			sharedRuntime: sharedRuntime,
 			nativePropertyContract: nativePropertyContract,
 			projectPackages: projectPackages,
 			schemaContract: schemaContract(),
@@ -4932,8 +5050,9 @@
 			currentConvertigoContext: function () {
 				return typeof context === "undefined" ? null : context;
 			},
+			tryDirectRequestable: tryDirectRequestable,
 			nanoTime: function () { return Number(JavaSystem.nanoTime()); },
-			allocationTrace: function () { return allocationProfiler; },
+			allocationTrace: function () { return executionState().allocationProfiler; },
 			threadAllocatedBytes: threadAllocatedBytes
 		};
 		return flowRuntimeServiceEnvInstance;
@@ -4998,8 +5117,8 @@
 			mergeSchema: mergeSchema,
 			requestableOutputSchema: requestableOutputSchema,
 			observeAnalysisBlock: function (block) {
-				if (generatedSchemaCapture && block && block.__flowOrigin !== "core" && block.__graphHooks &&
-					(typeof block.__graphHooks.analyze === "function" || typeof block.__graphHooks.analyzeShallow === "function")) generatedSchemaCapture.safe = false;
+				if (executionState().generatedSchemaCapture && block && block.__flowOrigin !== "core" && block.__graphHooks &&
+					(typeof block.__graphHooks.analyze === "function" || typeof block.__graphHooks.analyzeShallow === "function")) executionState().generatedSchemaCapture.safe = false;
 			},
 			schemaAtPath: schemaAtPath,
 			collectScopeRefs: collectScopeRefs,
@@ -7230,9 +7349,9 @@
 		return null;
 	}
 
-	var generatedSchemaCapture = null;
+
 	var localGeneratedSchemas = new ConcurrentHashMap();
-	var generatedSchemaStats = { hits: 0, misses: 0, writes: 0, bypasses: 0 };
+
 	function generatedSchemaRegistry() {
 		return sharedServerJavaMap("flow.engine.generatedOutputSchemas.v1", localGeneratedSchemas);
 	}
@@ -7292,10 +7411,10 @@
 				cache.put(key, new JavaString(encoded));
 				while (cache.size() > 256) { var keys = cache.keySet().iterator(); if (keys.hasNext()) cache.remove(keys.next()); else break; }
 			},
-			count: function (name) { generatedSchemaStats[name]++; },
+			count: function (name) { executionState().generatedSchemaStats[name]++; },
 			capture: function (capture, build) {
-				var previous = generatedSchemaCapture; generatedSchemaCapture = capture;
-				try { return build(); } finally { generatedSchemaCapture = previous; }
+				var previous = executionState().generatedSchemaCapture; executionState().generatedSchemaCapture = capture;
+				try { return build(); } finally { executionState().generatedSchemaCapture = previous; }
 			}
 		}, function () { return flowTreeService().outputSchemaRequest(request, blocks || loadBlocks(), flowTreeServiceEnv()); });
 	}
@@ -11190,9 +11309,64 @@
 		}
 	}
 
+	function tryDirectRequestable(ctx, target, input) {
+		if (!sharedRuntime || typeof sharedRuntime.openChild !== "function") return null;
+        var invocationStarted = JavaSystem.nanoTime();
+		var reason = sharedRuntime.childEligibility(target, input);
+		if (reason !== null) { sharedRuntime.rejectChild(String(reason)); return null; }
+		var project = target.getProject();
+        var engine = project.getFlowEngine(), targetEngine = engine ? String(engine.getEngineQName()).trim() : "";
+        var callerEngine = String(ctx.request.engineQName || FlowEngineBridge.DEFAULT_ENGINE_QNAME).trim();
+        if (callerEngine !== (targetEngine || String(FlowEngineBridge.DEFAULT_ENGINE_QNAME))) { sharedRuntime.rejectChild("provider"); return null; }
+		var request = {
+			engineQName: ctx.request.engineQName,
+			project: String(project.getName()), projectDir: String(project.getDirPath()),
+			flowName: String(target.getName()), flowQName: String(target.getQName()),
+			flowSource: String(target.getFlowSource()), includeTrace: false,
+			context: { project: String(project.getName()), sequence: String(target.getName()) },
+			__deferResultSerializationSafety: true, __directInvocation: true
+		};
+		// Opting into the light context is a source contract, not an inference from
+		// a block's text. Undeclared/custom Context consumers keep their requester.
+		var resolved;
+		try { resolved = flowRuntimeService().resolveRunPlan(request, null, flowRuntimeServiceEnv()); }
+		catch (unprepared) { sharedRuntime.rejectChild("unprepared-contract"); return null; }
+		var meta = resolved.plan.definition.flow || resolved.plan.definition._flow || {};
+		if (meta.invocation !== "direct-v1") { sharedRuntime.rejectChild("context-contract"); return null; }
+		var requiredAuthentication = meta.authenticatedContextRequired === undefined ? !!target.getAuthenticatedContextRequired() : meta.authenticatedContextRequired === true;
+		var lease = sharedRuntime.openChild(target, input, requiredAuthentication, invocationStarted);
+		if (lease === null) return null;
+		try {
+			request.context.connector = ""; request.context.transaction = "";
+			try { request.context.convertigoUrl = String(lease.getConvertigoUrl()); } catch (noUrl) { request.context.convertigoUrl = ""; }
+			try { request.context.projectUrl = String(lease.getProjectUrl()); } catch (noProjectUrl) { request.context.projectUrl = ""; }
+			try { request.context.absoluteRequestedUrl = String(lease.getAbsoluteRequestedUrl()); } catch (noAbsoluteUrl) { request.context.absoluteRequestedUrl = ""; }
+			request.input = {};
+			var declarations = {};
+			(resolved.plan.inputContract || []).forEach(function (entry) { declarations[entry.name] = entry; });
+			Object.keys(input || {}).forEach(function (key) {
+				var value = input[key], declaration = declarations[key];
+				// Preserve the HTTP input contract for undeclared/text inputs. Typed
+				// JSON objects and arrays need no textual transport inside this realm.
+				if (value === undefined || value === null) value = "";
+				else if (!declaration || declaration.textual || typeof value !== "object" || !sharedRuntime.canonicalData(value)) value = typeof value === "string" ? value : JSON.stringify(value);
+				Object.defineProperty(request.input, key, { value: value, writable: true, enumerable: true, configurable: true });
+			});
+			try { request.tagContext = JSON.parse(String(Packages.com.twinsoft.convertigo.engine.tags.TagManager.get().runContext(project))); }
+			catch (unavailable) { if (ctx.request.tagContext) request.tagContext = ctx.request.tagContext; }
+			Object.defineProperty(request, "__parentRun", { value: ctx });
+			var result;
+			try {
+				result = runWithActiveRequest(request, null, 0);
+				result.result = sharedRuntime.childResult(result.result, function (envelope) { return sanitizeSerializableRuntimeValue(envelope, "result"); });
+			} catch (error) { result = failure("run", error); }
+			return { handled: true, value: result.ok ? result.result : { error: result.error } };
+		} finally { lease.close(); }
+	}
+
 	function runWithActiveRequest(request, functionProfile, activeStarted) {
-		var fallbackPrevious = activeRequestFallback;
-		activeRequestFallback = request;
+		var fallbackPrevious = executionState().activeRequestFallback;
+		executionState().activeRequestFallback = request;
 		var bodyStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var bodyFinished = 0;
 		if (functionProfile) {
@@ -11207,7 +11381,7 @@
 				bodyFinished = JavaSystem.nanoTime();
 				functionProfile.activeBodyMs = Number(bodyFinished - bodyStarted) / 1000000;
 			}
-			activeRequestFallback = fallbackPrevious;
+			executionState().activeRequestFallback = fallbackPrevious;
 		}
 		if (functionProfile) {
 			var activeFinished = JavaSystem.nanoTime();
@@ -11218,11 +11392,11 @@
 	}
 
 	function flowRunCall(requestJson, detach, allocationTrace) {
-		var previousAllocationProfiler = allocationProfiler;
-		allocationProfiler = allocationTrace || null;
+		var previousAllocationProfiler = executionState().allocationProfiler;
+		executionState().allocationProfiler = allocationTrace || null;
 		try {
 			var parseStarted = JavaSystem.nanoTime();
-			var allocation = allocationProfiler ? allocationProfiler.open("boundary", "input-parse", "") : null;
+			var allocation = executionState().allocationProfiler ? executionState().allocationProfiler.open("boundary", "input-parse", "") : null;
 			var request;
 			try { request = parseRequest(requestJson); } finally { if (allocation) allocation.close(); }
 			var profileRequest = request.profile === true || request.profile === "envelope";
@@ -11234,7 +11408,7 @@
 			return response(value, "result", functionProfile, detach);
 		} catch (e) {
 			return response(failure("run", e), "", null, detach);
-		} finally { allocationProfiler = previousAllocationProfiler; }
+		} finally { executionState().allocationProfiler = previousAllocationProfiler; }
 	}
 
 	function projectCall(operation, requestJson, callback) {
@@ -11253,7 +11427,11 @@
 		}
 	}
 
-	return {
+	var api = {
+		// The bridge may re-enter runObject on the same thread/project generation.
+		// Invocation context is stacked by Java; requests and execution frames stay local.
+		supportsNestedExecution: true,
+		supportsStatelessExecution: true,
 		tagContribution: function (requestJson) {
 			return projectCall("tagContribution", requestJson, function () {
 				return { ok: true, descriptor: projectConfigService().tagContribution(loadProjectEngineDefinition()) };
@@ -11664,4 +11842,5 @@
 			});
 		}
 	};
+	return sharedRuntime ? Object.freeze(api) : api;
 }())

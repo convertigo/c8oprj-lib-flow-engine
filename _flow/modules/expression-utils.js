@@ -496,6 +496,9 @@
 
 	function compileExpressionProgram(ctx, source, env) {
 		var tokens = tokensFor(ctx || {}, source, env);
+		// Compiled closures may retain their activation. Keep request state out
+		// of programs published in the revision's expression cache.
+		ctx = null;
 		var position = 0;
 		var fns = expressionFunctions(env);
 		function constant(value) {

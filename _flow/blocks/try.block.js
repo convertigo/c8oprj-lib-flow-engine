@@ -70,6 +70,7 @@ const _meta = {
 	}
 
 	return {
+		stateless: true,
 		prepareNode: function (node, helpers) {
 			var errorPath = helpers.props.error || "local.error";
 			return function (ctx, runNode) {

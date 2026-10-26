@@ -221,5 +221,25 @@
 		});
 	}
 
-	return { convert: convert, convertible: convertible, types: types };
+	// The internal invocation contract can reuse an already canonical JSON tree.
+	// Conversion still owns any new values when coercion is actually required.
+	function convertReference(value, schema) {
+		var expected = types(schema), actual = kindOf(value);
+		if (!expected.length || expected.indexOf("any") !== -1 || expected.indexOf("unknown") !== -1) return ok(value);
+		if (actual === "array" && expected.indexOf("array") !== -1) {
+			if (!schema.items) return ok(value);
+			var changed = null, warning;
+			for (var i = 0; i < value.length; i++) {
+				var item = convertReference(value[i], schema.items);
+				if (!item.ok) return fail("Item " + i + ": " + item.message);
+				warning = warning || item.warning;
+				if (changed === null && (item.value !== value[i] || !(i in value))) changed = value.slice(0, i);
+				if (changed !== null) changed.push(item.value);
+			}
+			return ok(changed === null ? value : changed, warning);
+		}
+		return convert(value, schema);
+	}
+
+	return { convert: convert, convertReference: convertReference, convertible: convertible, types: types };
 }())

@@ -10,7 +10,8 @@ function extract(name) {
 	var end = source.lastIndexOf("\n\t}", source.indexOf("\n\tfunction ", start + 1)) + 3;
 	return eval("(" + source.substring(start, end) + ")");
 }
-var activeRequestFallback = null;
+var localExecutionState = { activeRequestFallback: null };
+function executionState() { return localExecutionState; }
 eval(source.substring(source.indexOf("\tvar ROUTE_SOURCE_PATH"), source.indexOf("\n", source.indexOf("\tvar ROUTE_SOURCE_PATH"))));
 var currentActiveRequest = extract("currentActiveRequest");
 var withActiveRequest = extract("withActiveRequest");

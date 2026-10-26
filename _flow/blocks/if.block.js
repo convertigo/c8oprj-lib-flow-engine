@@ -49,6 +49,7 @@ const _meta = {
 	}
 
 	return {
+		stateless: true,
 		prepareNode: function (node, helpers) {
 			var condition = helpers.compileExpression(helpers.props.condition);
 			return function (ctx, runNode) {

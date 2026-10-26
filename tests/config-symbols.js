@@ -69,7 +69,8 @@ var fakePackages = { com: { twinsoft: { convertigo: { engine: {
 	UndefinedSymbolsException: UndefinedSymbolsException
 } } } } };
 var compileConfigSymbols = (function (Packages) {
-	var reportedUndefinedSymbols = {};
+	var sharedRuntime = null;
+	var reportedUndefinedSymbols = new java.util.concurrent.ConcurrentHashMap();
 	return eval("(" + extract("compileConfigSymbols") + ")");
 })(fakePackages);
 assert(compileConfigSymbols("${ok}") === "value", "a defined symbol is replaced by the server");
@@ -80,13 +81,14 @@ var rethrown = false;
 try { compileConfigSymbols("${broken}"); } catch (e) { rethrown = e.message === "not a symbol error"; }
 assert(rethrown, "another failure is not hidden");
 var standalone = (function (Packages) {
-	var reportedUndefinedSymbols = {};
+	var sharedRuntime = null;
+	var reportedUndefinedSymbols = new java.util.concurrent.ConcurrentHashMap();
 	return eval("(" + extract("compileConfigSymbols") + ")");
 })({ com: { twinsoft: { convertigo: { engine: { Engine: { theApp: null } } } } } });
 assert(standalone("${ok}") === "${ok}", "without the Convertigo engine, the text stays as it is");
 
 // Only the running Flows read the resolved configuration
-var runtimeEnv = extract("flowRuntimeServiceEnv");
+var runtimeEnv = extract("create_flowRuntimeServiceEnv");
 assert(runtimeEnv.indexOf("effectiveConfig: runtimeEffectiveConfig") > 0, "the runtime service reads the resolved configuration");
 var analysisEnv = extract("flowAnalysisServiceEnv");
 assert(analysisEnv.indexOf("effectiveConfig: effectiveConfig,") > 0, "the analysis (schemas) keeps the references");
