@@ -5,7 +5,7 @@ import java.io.*;
 import java.util.*;
 import java.util.regex.*;
 import com.fasterxml.jackson.core.*;
-import org.codehaus.jettison.json.*;
+import org.codehaus.jettison.json.JSONException;
 import org.mozilla.javascript.*;
 import com.twinsoft.convertigo.engine.util.JsonData;
 import com.twinsoft.convertigo.engine.util.DetachedJson;
@@ -17,6 +17,11 @@ import com.twinsoft.convertigo.engine.util.DetachedJson;
  */
 public final class Rows {
 	static final Object MISSING = new Object();
+	// The realm is borrowed only for the duration of one kernel call.
+	private static final ThreadLocal<Scriptable> DIRECT_SCOPE = new ThreadLocal<>();
+	private static Object result(Object value, Scriptable scope) throws JSONException {
+		return RhinoCollections.unwrap(value, scope);
+	}
 	static final Pattern INDEX = Pattern.compile("0|[1-9][0-9]{0,9}");
 
 	static final class Unsupported extends RuntimeException {
@@ -42,32 +47,38 @@ public final class Rows {
 		fail("ROWS_OPTIONS_INVALID", message);
 	}
 
-	static JSONObject object() {
-		return JsonData.newObject();
+	static Map<String, Object> object(Object... pairs) {
+		var scope = DIRECT_SCOPE.get();
+		var result = scope == null ? JsonData.newObject() : RhinoCollections.object(scope);
+		for (int i = 0; i < pairs.length; i += 2) result.put((String) pairs[i], pairs[i + 1]);
+		return result;
 	}
 
-	static JSONArray array() {
-		return JsonData.newArray();
+	static List<Object> array(Object... items) {
+		var scope = DIRECT_SCOPE.get();
+		var result = scope == null ? JsonData.newArray() : RhinoCollections.array(scope);
+		Collections.addAll(result, items);
+		return result;
 	}
 
 	static boolean nil(Object v) {
-		return v == null || v == JSONObject.NULL || v == JSONObject.EXPLICIT_NULL;
+		return v == null;
 	}
 
-	static Object get(JSONObject o, String key) {
-		return o.has(key) ? o.opt(key) : MISSING;
+	static Object get(Map<?, ?> o, String key) {
+		return o.containsKey(key) ? o.get(key) : MISSING;
 	}
 
 	static Object value(Object o, Object key) {
-		if (o instanceof JSONObject object)
+		if (o instanceof Map<?, ?> object)
 			return get(object, String.valueOf(key));
-		if (o instanceof JSONArray a) {
+		if (o instanceof List<?> a) {
 			String s = String.valueOf(key);
 			if (s.matches("0|[1-9][0-9]*")) {
 				try {
 					int i = Integer.parseInt(s);
-					if (i < a.length())
-						return a.opt(i);
+					if (i < a.size())
+						return a.get(i);
 				} catch (NumberFormatException ignored) {
 				}
 			}
@@ -102,26 +113,26 @@ public final class Rows {
 		return (int) n;
 	}
 
-	static JSONArray options(Object value, String name, boolean required) {
+	static List<?> options(Object value, String name, boolean required) {
 		if (value == MISSING && !required)
 			return array();
-		if (!(value instanceof JSONArray))
+		if (!(value instanceof List<?>))
 			invalid(name + " takes an array.");
-		var a = (JSONArray) value;
-		if (a.length() > 4096)
+		var a = (List<?>) value;
+		if (a.size() > 4096)
 			invalid(name + " has at most 4096 entries.");
 		return a;
 	}
 
-	static JSONObject row(Object v) {
-		if (!(v instanceof JSONObject))
+	static Map<?, ?> row(Object v) {
+		if (!(v instanceof Map<?, ?>))
 			fail("ROWS_ROW_INVALID", "Each row must be an object.");
-		return (JSONObject) v;
+		return (Map<?, ?>) v;
 	}
 
-	static Iterable<String> keys(JSONObject object) {
+	static Iterable<String> keys(Map<?, ?> object) {
 		boolean indexed = false;
-		for (var it = object.keys(); it.hasNext();) {
+		for (var it = object.keySet().iterator(); it.hasNext();) {
 			long n = ScriptRuntime.indexFromString((String) it.next());
 			if (n >= 0 && n < 4294967295L) {
 				indexed = true;
@@ -129,10 +140,10 @@ public final class Rows {
 			}
 		}
 		if (!indexed)
-			return () -> object.keys();
+			return () -> object.keySet().stream().map(key -> (String) key).iterator();
 		var indices = new TreeMap<Long, String>();
 		var other = new ArrayList<String>();
-		for (var it = object.keys(); it.hasNext();) {
+		for (var it = object.keySet().iterator(); it.hasNext();) {
 			var key = (String) it.next();
 			long n = ScriptRuntime.indexFromString(key);
 			if (n >= 0 && n < 4294967295L)
@@ -174,7 +185,7 @@ public final class Rows {
 	static final class Budget {
 		int remaining;
 
-		Budget(JSONObject p) {
+		Budget(Map<?, ?> p) {
 			remaining = integer(get(p, "maxCells"), 1000000, 10000000, "maxCells");
 		}
 
@@ -184,13 +195,13 @@ public final class Rows {
 		}
 	}
 
-	static JSONArray check(JSONObject p, int width, Control control) {
+	static List<?> check(Map<?, ?> p, int width, Control control) {
 		var v = get(p, "rows");
-		if (!(v instanceof JSONArray))
+		if (!(v instanceof List<?>))
 			invalid("rows takes an array.");
-		var a = (JSONArray) v;
-		if (a.length() > integer(get(p, "maxRows"), 100000, 1000000, "maxRows")
-				|| (long) a.length() * Math.max(width, 1) > integer(get(p, "maxCells"), 1000000, 10000000, "maxCells"))
+		var a = (List<?>) v;
+		if (a.size() > integer(get(p, "maxRows"), 100000, 1000000, "maxRows")
+				|| (long) a.size() * Math.max(width, 1) > integer(get(p, "maxCells"), 1000000, 10000000, "maxCells"))
 			fail("ROWS_LIMIT_EXCEEDED", "Row/cell budget exceeded; filter, project or page the source first.");
 		control.tick(0);
 		return a;
@@ -307,13 +318,13 @@ public final class Rows {
 				var next = new ArrayList<Object>();
 				for (var item : current) {
 					if (part == null) {
-						if (item instanceof JSONObject object)
+						if (item instanceof Map<?, ?> object)
 							for (var k : keys(object)) {
 								next.add(object.get(k));
 								budget.spend();
 							}
-						else if (item instanceof JSONArray a)
-							for (int i = 0; i < a.length(); i++) {
+						else if (item instanceof List<?> a)
+							for (int i = 0; i < a.size(); i++) {
 								next.add(a.get(i));
 								budget.spend();
 							}
@@ -327,13 +338,13 @@ public final class Rows {
 			}
 			var result = array();
 			for (var v : current)
-				result.put(v);
+				result.add(v);
 			return result;
 		}
 	}
 
 	interface Reader {
-		Object read(JSONObject row) throws JSONException;
+		Object read(Map<?, ?> row) throws JSONException;
 	}
 
 	static Reader reader(String name, Budget budget) {
@@ -347,7 +358,7 @@ public final class Rows {
 	}
 
 	static final class Sanitizer {
-		final JSONArray redactions, drop, mask;
+		final List<?> redactions, drop, mask;
 		final int maxNodes, maxDepth;
 		int visits;
 
@@ -357,7 +368,7 @@ public final class Rows {
 			drop = options(get(p, "dropKeys"), "sanitize.dropKeys", false);
 			mask = options(get(p, "maskKeys"), "sanitize.maskKeys", false);
 			for (var a : List.of(redactions, drop, mask))
-				for (int i = 0; i < a.length(); i++)
+				for (int i = 0; i < a.size(); i++)
 					text(a.get(i), null, "sanitize entries");
 			maxNodes = integer(get(p, "maxNodes"), 100000, 10000000, "sanitize.maxNodes");
 			maxDepth = integer(get(p, "maxDepth"), 50, 128, "sanitize.maxDepth");
@@ -367,14 +378,14 @@ public final class Rows {
 			if (++visits > maxNodes || depth > maxDepth)
 				fail("ROWS_READ_BOUNDS", "JSON response exceeds the structural safety limit.");
 			if (value instanceof String text) {
-				for (int i = 0; i < redactions.length(); i++) {
-					String secret = redactions.getString(i);
+				for (int i = 0; i < redactions.size(); i++) {
+					String secret = (String) redactions.get(i);
 					if (!secret.isEmpty() && text.contains(secret))
 						text = text.replace(secret, "[redacted]");
 				}
 				return text;
 			}
-			if (value instanceof JSONObject object) {
+			if (value instanceof Map<?, ?> object) {
 				var out = object();
 				for (var key : keys(object)) {
 					if (Cells.contains(mask, key.toLowerCase(Locale.ROOT)))
@@ -384,27 +395,27 @@ public final class Rows {
 				}
 				return out;
 			}
-			if (value instanceof JSONArray a) {
+			if (value instanceof List<?> a) {
 				var out = array();
-				for (int i = 0; i < a.length(); i++)
-					out.put(copy(a.get(i), depth + 1));
+				for (int i = 0; i < a.size(); i++)
+					out.add(copy(a.get(i), depth + 1));
 				return out;
 			}
 			return value;
 		}
 	}
 
-	static Object read(JSONObject p, Control control) throws Exception {
+	static Object read(Map<?, ?> p, Control control) throws Exception {
 		var path = new PathPlan(get(p, "path"));
 		var rows = check(p, 1, control);
 		var out = array();
 		var skip = bool(get(p, "skipMissing"), false, "skipMissing");
 		var fallback = get(p, "defaultValue");
 		if (fallback == MISSING)
-			fallback = JSONObject.EXPLICIT_NULL;
+			fallback = null;
 		var budget = new Budget(p);
 		var sanitizer = get(p, "sanitize") == MISSING ? null : new Sanitizer(get(p, "sanitize"));
-		for (int i = 0; i < rows.length(); i++) {
+		for (int i = 0; i < rows.size(); i++) {
 			control.tick(i);
 			var source = rows.get(i);
 			if (source instanceof String text) {
@@ -422,9 +433,9 @@ public final class Rows {
 			}
 			var v = path.read(source, budget);
 			if (v != MISSING)
-				out.put(v);
+				out.add(v);
 			else if (!skip)
-				out.put(fallback);
+				out.add(fallback);
 		}
 		return out;
 	}
@@ -432,19 +443,19 @@ public final class Rows {
 	record Projection(String key, String identity, Reader read) {
 	}
 
-	static Object select(JSONObject p, Control control) throws Exception {
+	static Object select(Map<?, ?> p, Control control) throws Exception {
 		return new Selection(p).apply(p, control);
 	}
 
 	static final class Selection {
-		final JSONArray columns;
-		final JSONObject rename;
+		final List<?> columns;
+		final Map<?, ?> rename;
 		final Budget budget;
 		final int limit;
 		final ArrayList<Projection> plans = new ArrayList<>();
 		final LinkedHashMap<String, String> outputs = new LinkedHashMap<>();
 
-		Selection(JSONObject p) throws Exception {
+		Selection(Map<?, ?> p) throws Exception {
 			var first = options(get(p, "firstColumns"), "firstColumns", false);
 			var order = options(get(p, "columnsOrder"), "columnsOrder", false);
 			var columnSpec = get(p, "columns");
@@ -454,7 +465,7 @@ public final class Rows {
 				text(rename.get(key), null, "rename");
 			budget = new Budget(p);
 			for (var specs : List.of(first, columns == null ? order : columns))
-				for (int i = 0; i < specs.length(); i++) {
+				for (int i = 0; i < specs.size(); i++) {
 					var spec = specs.get(i);
 					String name, identity;
 					Reader read;
@@ -487,12 +498,12 @@ public final class Rows {
 			limit = budget.remaining;
 		}
 
-		Object apply(JSONObject p, Control control) throws Exception {
+		Object apply(Map<?, ?> p, Control control) throws Exception {
 			budget.remaining = limit;
 
 			var rows = check(p, Math.max(plans.size(), 1), control);
 			var out = array();
-			for (int i = 0; i < rows.length(); i++) {
+			for (int i = 0; i < rows.size(); i++) {
 				control.tick(i);
 				var source = row(rows.get(i));
 				var target = object();
@@ -505,12 +516,12 @@ public final class Rows {
 					for (var key : keys(source)) {
 						budget.spend();
 						String to = text(get(rename, key), key, "rename");
-						if (!target.has(to))
+						if (!target.containsKey(to))
 							target.put(to, source.get(key));
 						else if (!outputs.containsKey(to) || !outputs.get(to).equals(key))
 							invalid("Two columns write the same output key.");
 					}
-				out.put(target);
+				out.add(target);
 			}
 			return out;
 		}
@@ -551,14 +562,14 @@ public final class Rows {
 			while ((next = p.nextToken()) != JsonToken.END_ARRAY) {
 				if (next == null)
 					throw new IOException("Incomplete JSON");
-				a.put(parse(p, next, depth + 1));
+				a.add(parse(p, next, depth + 1));
 			}
 			yield a;
 		}
 		case VALUE_STRING -> p.getText();
 		case VALUE_TRUE -> true;
 		case VALUE_FALSE -> false;
-		case VALUE_NULL -> JSONObject.EXPLICIT_NULL;
+		case VALUE_NULL -> null;
 		case VALUE_NUMBER_INT, VALUE_NUMBER_FLOAT -> {
 			double n = p.getDoubleValue();
 			if (!Double.isFinite(n))
@@ -580,12 +591,12 @@ public final class Rows {
 			return ScriptRuntime.numberToString(n.doubleValue(), 10);
 		if (v instanceof Boolean b)
 			return b ? "true" : "false";
-		if (v instanceof JSONArray a) {
+		if (v instanceof List<?> a) {
 			var s = new StringBuilder();
-			for (int i = 0; i < a.length(); i++) {
+			for (int i = 0; i < a.size(); i++) {
 				if (i > 0)
 					s.append(',');
-				var item = a.opt(i);
+				var item = a.get(i);
 				if (!nil(item) && item != MISSING)
 					s.append(js(item));
 			}
@@ -603,16 +614,16 @@ public final class Rows {
 	}
 
 	private static void write(JsonGenerator out, Object v) throws Exception {
-		if (v instanceof JSONObject o) {
+		if (v instanceof Map<?, ?> o) {
 			out.writeStartObject();
 			for (var k : keys(o)) {
 				out.writeFieldName(k);
 				write(out, o.get(k));
 			}
 			out.writeEndObject();
-		} else if (v instanceof JSONArray a) {
+		} else if (v instanceof List<?> a) {
 			out.writeStartArray();
-			for (int i = 0; i < a.length(); i++)
+			for (int i = 0; i < a.size(); i++)
 				write(out, a.get(i));
 			out.writeEndArray();
 		} else if (nil(v) || v == MISSING)
@@ -632,7 +643,7 @@ public final class Rows {
 		if (depth > 128)
 			throw new Unsupported();
 		if (v == null)
-			return JSONObject.EXPLICIT_NULL;
+			return null;
 		if (Undefined.isUndefined(v))
 			return MISSING;
 		if (v instanceof CharSequence s)
@@ -644,9 +655,6 @@ public final class Rows {
 				throw new Unsupported();
 			return n;
 		}
-		var nativeData = JsonData.peek(v);
-		if (nativeData != Scriptable.NOT_FOUND)
-			return nativeData;
 		if (!(v instanceof ScriptableObject s))
 			throw new Unsupported();
 		if (s.getClass() != NativeObject.class && s.getClass() != NativeArray.class)
@@ -665,7 +673,7 @@ public final class Rows {
 			if (s instanceof NativeArray a) {
 				if (a.getLength() > 1000000 || a.has("map", a) || a.has("constructor", a))
 					throw new Unsupported();
-				var out = array();
+				var out = DIRECT_SCOPE.get() == null ? array() : null;
 				for (int i = 0; i < a.getLength(); i++) {
 					var getter = a.getGetterOrSetter(null, i, false);
 					if (getter != null && !Undefined.isUndefined(getter) || !a.has(i, a))
@@ -673,11 +681,11 @@ public final class Rows {
 					var item = input(a.get(i, a), scope, seen, depth + 1);
 					if (item == MISSING)
 						throw new Unsupported();
-					out.put(item);
+					if (out != null) out.add(item);
 				}
-				return out;
+				return out == null ? RhinoCollections.read(a, scope) : out;
 			}
-			var out = object();
+			var out = DIRECT_SCOPE.get() == null ? object() : null;
 			for (var id : s.getIds()) {
 				if (id instanceof Symbol)
 					throw new Unsupported();
@@ -688,10 +696,10 @@ public final class Rows {
 					throw new Unsupported();
 				var item = input(id instanceof Number n ? s.get(n.intValue(), s) : s.get(key, s), scope, seen,
 						depth + 1);
-				if (item != MISSING)
-					out.put(key, item);
+				if (item == MISSING) throw new Unsupported();
+				if (out != null) out.put(key, item);
 			}
-			return out;
+			return out == null ? RhinoCollections.read(s, scope) : out;
 		} finally {
 			seen.remove(s);
 		}
@@ -703,36 +711,38 @@ public final class Rows {
 	 */
 	public static final class Pipeline {
 		private final Scriptable scope;
-		private final JSONArray steps;
+		private final List<?> steps;
 		private final Selection[] selections;
 		private final Cells.TablePlan[] tables;
 
-		private Pipeline(Scriptable scope, JSONArray steps) throws Exception {
+		private Pipeline(Scriptable scope, List<?> steps) throws Exception {
 			this.scope = scope;
 			this.steps = steps;
-			selections = new Selection[steps.length()];
-			tables = new Cells.TablePlan[steps.length()];
-			for (int i = 0; i < steps.length(); i++) {
-				var step = steps.getJSONObject(i);
-				var p = step.getJSONObject("options");
-				var name = step.getString("operation");
+			selections = new Selection[steps.size()];
+			tables = new Cells.TablePlan[steps.size()];
+			for (int i = 0; i < steps.size(); i++) {
+				var step = row(steps.get(i));
+				var p = row(step.get("options"));
+				var name = (String) step.get("operation");
 				if (name.equals("select"))
 					selections[i] = new Selection(p);
-				if (name.equals("formatCells") && "table".equals(p.opt("profile")))
+				if (name.equals("formatCells") && "table".equals(p.get("profile")))
 					tables[i] = new Cells.TablePlan(p);
 			}
 		}
 
 		public synchronized Object apply(Object rows) throws Exception {
+			var previous = DIRECT_SCOPE.get();
+			DIRECT_SCOPE.set(scope);
 			var cx = Context.getCurrentContext();
 			try {
 				if (!com.twinsoft.convertigo.engine.util.SanitizedJson.ordinaryRealm(cx, scope))
 					return null;
 				Object current = input(rows, scope, new IdentityHashMap<>(), 0);
 				Object fields = null;
-				for (int i = 0; i < steps.length(); i++) {
-					var step = steps.getJSONObject(i);
-					var options = step.getJSONObject("options");
+				for (int i = 0; i < steps.size(); i++) {
+					var step = row(steps.get(i));
+					var options = row(step.get("options"));
 					var p = object();
 					for (var key : keys(options))
 						p.put(key, options.get(key));
@@ -740,21 +750,21 @@ public final class Rows {
 					var control = new Control(cx, scope, null);
 					current = selections[i] != null ? selections[i].apply(p, control)
 							: tables[i] != null ? Cells.table(p, control, tables[i])
-									: execute(step.getString("operation"), p, control);
-					if (current instanceof JSONObject envelope && envelope.has("rows")) {
-						fields = envelope.opt("fields");
+									: execute((String) step.get("operation"), p, control);
+					if (current instanceof Map<?, ?> envelope && envelope.containsKey("rows")) {
+						fields = envelope.get("fields");
 						current = envelope.get("rows");
 					}
 				}
-				var out = object().put("rows", current);
+				var out = object("rows", current);
 				if (fields != null)
 					out.put("fields", fields);
-				return JsonData.wrap(out, scope);
+				return result(out, scope);
 			} catch (Unsupported unsupported) {
 				return null;
 			} catch (Failure failure) {
 				throw scriptFailure(cx, scope, failure);
-			}
+			} finally { if (previous == null) DIRECT_SCOPE.remove(); else DIRECT_SCOPE.set(previous); }
 		}
 	}
 
@@ -766,25 +776,25 @@ public final class Rows {
 		try {
 			if (!com.twinsoft.convertigo.engine.util.SanitizedJson.ordinaryRealm(cx, scope))
 				return null;
-			var steps = (JSONArray) input(raw, scope, new IdentityHashMap<>(), 0);
-			if (steps.length() > 8)
+			var steps = (List<?>) input(raw, scope, new IdentityHashMap<>(), 0);
+			if (steps.size() > 8)
 				throw new Unsupported();
-			for (int i = 0; i < steps.length(); i++) {
-				var s = steps.getJSONObject(i);
-				String name = s.getString("operation");
+			for (int i = 0; i < steps.size(); i++) {
+				var s = row(steps.get(i));
+				String name = (String) s.get("operation");
 				if (!List.of("read", "select", "formatCells").contains(name)
-						|| !(s.opt("options") instanceof JSONObject))
+						|| !(s.get("options") instanceof Map<?, ?>))
 					throw new Unsupported();
 			}
 			// Consume/seal the plan without retaining any caller JS value.
-			var holder = JsonData.wrap(object().put("steps", steps), scope);
-			return new Pipeline(scope, ((JSONObject) JsonData.peek(holder)).getJSONArray("steps"));
+			var snapshot = (Map<?, ?>) JsonData.snapshot(object("steps", steps));
+			return new Pipeline(scope, (List<?>) snapshot.get("steps"));
 		} catch (Unsupported | ClassCastException unsupported) {
 			return null;
 		}
 	}
 
-	private static Object execute(String operation, JSONObject p, Control control) throws Exception {
+	private static Object execute(String operation, Map<?, ?> p, Control control) throws Exception {
 		return switch (operation) {
 		case "read" -> read(p, control);
 		case "select" -> select(p, control);
@@ -805,8 +815,8 @@ public final class Rows {
 
 	private static boolean compatibleEngine() {
 		try {
-			return MaterializedObject.class.getClassLoader() == NativeObject.class.getClassLoader()
-					&& JsonData.class.getMethod("newObject") != null;
+			return Map.class.isAssignableFrom(JsonData.class.getMethod("newObject").getReturnType())
+					&& JsonData.class.getMethod("snapshot", Object.class) != null;
 		} catch (ReflectiveOperationException | LinkageError unavailable) {
 			return false;
 		}
@@ -821,6 +831,8 @@ public final class Rows {
 			return null;
 		var scope = ScriptableObject.getTopLevelScope(source);
 		var cx = Context.getCurrentContext();
+		var previous = DIRECT_SCOPE.get();
+		DIRECT_SCOPE.set(scope);
 		try {
 			if (!com.twinsoft.convertigo.engine.util.SanitizedJson.ordinaryRealm(cx, scope))
 				return null;
@@ -834,11 +846,11 @@ public final class Rows {
 			var p = row(input(values, scope, new IdentityHashMap<>(), 0));
 			var control = new Control(cx, scope, callback);
 			Object result = execute(operation, p, control);
-			return JsonData.wrap(result, scope);
+			return result(result, scope);
 		} catch (Unsupported fallback) {
 			return null;
 		} catch (Failure error) {
 			throw scriptFailure(cx, scope, error);
-		}
+		} finally { if (previous == null) DIRECT_SCOPE.remove(); else DIRECT_SCOPE.set(previous); }
 	}
 }

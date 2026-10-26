@@ -6,7 +6,7 @@ import java.time.*;
 import java.time.format.*;
 import java.util.*;
 import java.util.regex.*;
-import org.codehaus.jettison.json.*;
+import org.codehaus.jettison.json.JSONException;
 import org.mozilla.javascript.ScriptRuntime;
 import static com.convertigo.libflowengine.Rows.*;
 
@@ -42,7 +42,7 @@ final class Cells {
 		return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
 	}
 
-	static String option(JSONObject field, String key) {
+	static String option(Map<?, ?> field, String key) {
 		var v = field == null ? MISSING : get(field, key);
 		return v == MISSING || nil(v) ? "" : js(v);
 	}
@@ -87,7 +87,7 @@ final class Cells {
 			String falseText, DateTimeFormatter date, ZoneId zone) {
 	}
 
-	static Object format(JSONObject p, Control control) throws Exception {
+	static Object format(Map<?, ?> p, Control control) throws Exception {
 		String profile = text(get(p, "profile"), "text", "profile");
 		if (profile.equals("table"))
 			return table(p, control);
@@ -97,15 +97,15 @@ final class Cells {
 		var keep = options(get(p, "keepColumns"), "keepColumns", false);
 		var names = new HashSet<String>();
 		var budget = new Budget(p);
-		for (int i = 0; i < keep.length(); i++)
+		for (int i = 0; i < keep.size(); i++)
 			text(keep.get(i), null, "keepColumns[]");
 		boolean numeric = bool(get(p, "includeNumeric"), false, "includeNumeric"),
 				escape = bool(get(p, "escapeHtml"), false, "escapeHtml"),
 				valuesOnly = bool(get(p, "valuesOnly"), false, "valuesOnly");
 		var plans = new ArrayList<TextColumn>();
-		for (int i = 0; i < columns.length(); i++) {
+		for (int i = 0; i < columns.size(); i++) {
 			var spec = columns.get(i);
-			var c = spec instanceof String name ? object().put("name", name) : row(spec);
+			var c = spec instanceof String name ? object("name", name) : row(spec);
 			String name = text(get(c, "name"), null, "columns[].name");
 			if (name == null)
 				invalid("Each column needs a name.");
@@ -158,15 +158,15 @@ final class Cells {
 					text(get(c, "trueText"), "Oui", "columns[].trueText"),
 					text(get(c, "falseText"), "Non", "columns[].falseText"), date, zone));
 		}
-		var rows = check(p, plans.size() + keep.length(), control);
+		var rows = check(p, plans.size() + keep.size(), control);
 		var out = array();
-		for (int i = 0; i < rows.length(); i++) {
+		for (int i = 0; i < rows.size(); i++) {
 			control.tick(i);
 			var source = row(rows.get(i));
 			var target = object();
-			for (int k = 0; k < keep.length(); k++) {
-				String key = keep.getString(k);
-				if (source.has(key))
+			for (int k = 0; k < keep.size(); k++) {
+				String key = (String) keep.get(k);
+				if (source.containsKey(key))
 					target.put(key, source.get(key));
 			}
 			for (int j = 0; j < plans.size(); j++) {
@@ -174,7 +174,7 @@ final class Cells {
 				var plan = plans.get(j);
 				var raw = plan.read.read(source);
 				if (raw == MISSING)
-					raw = JSONObject.EXPLICIT_NULL;
+					raw = null;
 				if (valuesOnly) {
 					target.put(plan.key, raw);
 					continue;
@@ -197,17 +197,17 @@ final class Cells {
 						fail("ROWS_VALUE_INVALID", "Numeric column needs a finite number.");
 					rendered = fixed(n, plan.type.equals("integer") ? 0 : plan.digits);
 				} else
-					rendered = plan.type.equals("json") || raw instanceof JSONObject || raw instanceof JSONArray
+					rendered = plan.type.equals("json") || raw instanceof Map<?, ?> || raw instanceof List<?>
 							? json(raw)
 							: js(raw);
 				if (escape)
 					rendered = escape(rendered).replace("'", "&#39;");
-				var cell = object().put("value", raw).put("text", rendered);
+				var cell = object("value", raw, "text", rendered);
 				if (numeric)
 					cell.put("numeric", DECIMAL.matcher(nil(raw) ? "" : js(raw)).matches());
 				target.put(plan.key, cell);
 			}
-			out.put(target);
+			out.add(target);
 		}
 		return out;
 	}
@@ -234,16 +234,16 @@ final class Cells {
 		}
 	}
 
-	static boolean contains(JSONArray a, String key) {
+	static boolean contains(List<?> a, String key) {
 		if (a == null)
 			return false;
-		for (int i = 0; i < a.length(); i++)
-			if (key.equals(a.opt(i)))
+		for (int i = 0; i < a.size(); i++)
+			if (key.equals(a.get(i)))
 				return true;
 		return false;
 	}
 
-	static String resolved(JSONObject field) {
+	static String resolved(Map<?, ?> field) {
 		if (field == null)
 			return "";
 		String type = option(field, "type");
@@ -252,7 +252,7 @@ final class Cells {
 				: type;
 	}
 
-	static String kind(JSONObject field, String type) {
+	static String kind(Map<?, ?> field, String type) {
 		String f = option(field, "type");
 		if (type.equals("rating") || type.equals("boolean"))
 			return type;
@@ -269,7 +269,7 @@ final class Cells {
 		return type;
 	}
 
-	static String timezone(JSONObject field, String fallback) {
+	static String timezone(Map<?, ?> field, String fallback) {
 		String zone = "";
 		for (var key : List.of("date_force_timezone", "date_timezone", "timezone", "date_time_zone")) {
 			zone = option(field, key);
@@ -282,25 +282,25 @@ final class Cells {
 		return zone.isEmpty() || zone.equalsIgnoreCase("null") ? "UTC" : zone;
 	}
 
-	record Column(JSONObject field, String resolved, String kind, boolean hidden) {
+	record Column(Map<?, ?> field, String resolved, String kind, boolean hidden) {
 	}
 
 	static final class TablePlan {
-		final JSONArray names;
+		final List<?> names;
 		final Object hidden;
-		final Map<String, JSONObject> fields = new HashMap<>();
+		final Map<String, Map<?, ?>> fields = new HashMap<>();
 		final Map<String, Column> plans = new HashMap<>();
 
-		TablePlan(JSONObject p) throws JSONException {
+		TablePlan(Map<?, ?> p) throws JSONException {
 			var schemaValue = get(p, "schema");
 			var schema = schemaValue == MISSING || nil(schemaValue) ? array()
-					: schemaValue instanceof JSONArray a ? a : array().put(schemaValue);
+					: schemaValue instanceof List<?> a ? a : array(schemaValue);
 			var namesValue = get(p, "columnNames");
 			names = namesValue == MISSING || nil(namesValue) ? null
-					: namesValue instanceof JSONArray a ? a : array().put(namesValue);
+					: namesValue instanceof List<?> a ? a : array(namesValue);
 			hidden = get(p, "hiddenColumns");
 
-			for (int i = 0; i < schema.length(); i++) {
+			for (int i = 0; i < schema.size(); i++) {
 				var field = row(schema.get(i));
 				fields.put(js(get(field, "name")), field);
 			}
@@ -308,17 +308,17 @@ final class Cells {
 		}
 	}
 
-	static Object table(JSONObject p, Control control) throws Exception {
+	static Object table(Map<?, ?> p, Control control) throws Exception {
 		return table(p, control, null);
 	}
 
-	static Object table(JSONObject p, Control control, TablePlan layout) throws Exception {
+	static Object table(Map<?, ?> p, Control control, TablePlan layout) throws Exception {
 		var rawRows = get(p, "rows");
 		var rows = rawRows == MISSING || nil(rawRows) ? array()
-				: rawRows instanceof JSONArray a ? a : array().put(rawRows);
-		var bounded = object().put("rows", rows);
+				: rawRows instanceof List<?> a ? a : array(rawRows);
+		var bounded = object("rows", rows);
 		for (var key : List.of("maxRows", "maxCells"))
-			if (p.has(key))
+			if (p.containsKey(key))
 				bounded.put(key, p.get(key));
 		check(bounded, 1, control);
 		if (layout == null)
@@ -332,10 +332,10 @@ final class Cells {
 		var metadata = Boolean.TRUE.equals(get(p, "includeFields")) ? object() : null;
 		var out = array();
 		var budget = new Budget(p);
-		for (int i = 0; i < rows.length(); i++) {
+		for (int i = 0; i < rows.size(); i++) {
 			if (!control.alive())
 				return Boolean.TRUE.equals(get(p, "includeFields"))
-						? object().put("rows", array()).put("fields", object())
+						? object("rows", array(), "fields", object())
 						: array();
 			var source = row(rows.get(i));
 			var target = object();
@@ -345,21 +345,21 @@ final class Cells {
 				if (column == null) {
 					var field = names == null || contains(names, key) ? fields.get(key) : null;
 					String type = resolved(field);
-					column = new Column(field, type, kind(field, type), hidden instanceof JSONArray a ? contains(a, key)
+					column = new Column(field, type, kind(field, type), hidden instanceof List<?> a ? contains(a, key)
 							: hidden instanceof String s && s.contains(key));
 					if (plans.size() >= 4096)
 						plans.clear();
 					plans.put(key, column);
 				}
 				var current = source.get(key);
-				var cell = object().put("displayName", key).put("type", "html");
+				var cell = object("displayName", key, "type", "html");
 				if (nil(current))
-					cell.put("value", JSONObject.EXPLICIT_NULL);
+					cell.put("value", null);
 				else if (lean) {
 					var v = lean(current, column);
 					if (v != MISSING)
 						cell.put("value", v);
-					if (metadata != null && column.field != null && !metadata.has(key))
+					if (metadata != null && column.field != null && !metadata.containsKey(key))
 						metadata.put(key, fieldOptions(column, zone));
 				} else {
 					var formatted = cell(current, column, false, zone);
@@ -371,13 +371,13 @@ final class Cells {
 					cell.put("hidden", true);
 				target.put(key, cell);
 			}
-			out.put(target);
+			out.add(target);
 		}
-		return Boolean.TRUE.equals(get(p, "includeFields")) ? object().put("rows", out).put("fields", metadata) : out;
+		return Boolean.TRUE.equals(get(p, "includeFields")) ? object("rows", out, "fields", metadata) : out;
 	}
 
-	static JSONObject fieldOptions(Column c, String zone) throws JSONException {
-		var out = object().put("type", option(c.field, "type"));
+	static Map<?, ?> fieldOptions(Column c, String zone) throws JSONException {
+		var out = object("type", option(c.field, "type"));
 		var resolved = get(c.field, "formula_type");
 		if (!List.of("formula", "count", "rollup", "lookup").contains(option(c.field, "type"))
 				|| resolved != MISSING && !nil(resolved))
@@ -394,9 +394,9 @@ final class Cells {
 	}
 
 	static Object primitive(Object value) {
-		if (value instanceof JSONObject o) {
+		if (value instanceof Map<?, ?> o) {
 			var v = get(o, "value");
-			if (v != MISSING && !nil(v) && !(v instanceof JSONObject) && !(v instanceof JSONArray))
+			if (v != MISSING && !nil(v) && !(v instanceof Map<?, ?>) && !(v instanceof List<?>))
 				return v;
 			v = get(o, "name");
 			if (v != MISSING && !nil(v) && nilOrMissing(get(o, "is_image")) && nilOrMissing(get(o, "url")))
@@ -410,11 +410,11 @@ final class Cells {
 	}
 
 	static Object lean(Object value, Column column) throws JSONException {
-		if (value instanceof JSONArray array) {
+		if (value instanceof List<?> array) {
 			var result = array();
-			for (int i = 0; i < array.length(); i++) {
+			for (int i = 0; i < array.size(); i++) {
 				var v = lean(array.get(i), column);
-				result.put(v == MISSING ? JSONObject.EXPLICIT_NULL : v);
+				result.add(v == MISSING ? null : v);
 			}
 			return result;
 		}
@@ -424,17 +424,17 @@ final class Cells {
 	}
 
 	static Object leanAny(Object value) throws JSONException {
-		if (value instanceof JSONArray array) {
+		if (value instanceof List<?> array) {
 			var result = array();
-			for (int i = 0; i < array.length(); i++) {
+			for (int i = 0; i < array.size(); i++) {
 				var v = leanAny(array.get(i));
-				result.put(v == MISSING ? JSONObject.EXPLICIT_NULL : v);
+				result.add(v == MISSING ? null : v);
 			}
 			return result;
 		}
-		if (value instanceof JSONObject object) {
+		if (value instanceof Map<?, ?> object) {
 			var v = get(object, "value");
-			if (v != MISSING && !nil(v) && (v instanceof JSONObject || v instanceof JSONArray))
+			if (v != MISSING && !nil(v) && (v instanceof Map<?, ?> || v instanceof List<?>))
 				return leanAny(v);
 			if (!nilOrMissing(v)
 					|| !nilOrMissing(get(object, "name")) && nilOrMissing(get(object, "is_image"))
@@ -452,12 +452,12 @@ final class Cells {
 	}
 
 	static Cell cell(Object element, Column c, boolean nested, String zone) throws Exception {
-		if (element instanceof JSONArray values) {
+		if (element instanceof List<?> values) {
 			var result = array();
 			var html = new StringBuilder();
-			for (int i = 0; i < values.length(); i++) {
+			for (int i = 0; i < values.size(); i++) {
 				var v = cell(values.get(i), c, true, zone);
-				result.put(v.value == MISSING ? JSONObject.EXPLICIT_NULL : v.value);
+				result.add(v.value == MISSING ? null : v.value);
 				html.append(v.html);
 			}
 			return new Cell(result, html + (nested ? "" : CLOSE));
@@ -532,19 +532,19 @@ final class Cells {
 		String html = "";
 		if (nil(element))
 			throw new Unsupported();
-		if (element instanceof JSONArray array) {
+		if (element instanceof List<?> array) {
 			var result = array();
 			var text = new StringBuilder();
-			for (int i = 0; i < array.length(); i++) {
+			for (int i = 0; i < array.size(); i++) {
 				var v = any(array.get(i), true, type);
-				result.put(v.value == MISSING ? JSONObject.EXPLICIT_NULL : v.value);
+				result.add(v.value == MISSING ? null : v.value);
 				text.append(v.html);
 			}
 			value = result;
 			html = text.toString();
-		} else if (element instanceof JSONObject o) {
+		} else if (element instanceof Map<?, ?> o) {
 			var v = get(o, "value");
-			if (!nilOrMissing(v) && (v instanceof JSONObject || v instanceof JSONArray)) {
+			if (!nilOrMissing(v) && (v instanceof Map<?, ?> || v instanceof List<?>)) {
 				var result = any(v, true, type);
 				html = result.html;
 				value = result.value;
@@ -572,7 +572,7 @@ final class Cells {
 		return new Cell(value, html + (nested ? "" : CLOSE));
 	}
 
-	static String number(Object value, JSONObject field) {
+	static String number(Object value, Map<?, ?> field) {
 		if (nil(value) || "".equals(value) || Boolean.FALSE.equals(value)
 				|| value instanceof Number n && n.doubleValue() == 0)
 			return "";
@@ -592,7 +592,7 @@ final class Cells {
 		return fixed(number, Math.max(0, Math.min(20, places)));
 	}
 
-	static String date(Object value, JSONObject field, String fallback) {
+	static String date(Object value, Map<?, ?> field, String fallback) {
 		if (nil(value) || "".equals(value) || Boolean.FALSE.equals(value)
 				|| value instanceof Number n && n.doubleValue() == 0)
 			return "";
@@ -636,7 +636,7 @@ final class Cells {
 		return text;
 	}
 
-	static String duration(Object value, JSONObject field) {
+	static String duration(Object value, Map<?, ?> field) {
 		if (nil(value) || "".equals(value) || Boolean.FALSE.equals(value)
 				|| value instanceof Number n && n.doubleValue() == 0)
 			return "";

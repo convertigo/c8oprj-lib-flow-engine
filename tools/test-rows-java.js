@@ -22,6 +22,11 @@
   var code=null;try{javaRows.run(f[0],f[1],null);}catch(e){code=e.code;}
   if(code!==f[2])throw Error('Java error parity: '+f[0]+' expected '+f[2]+' got '+code);errorCount++;
  });
+ // Explicit undefined is not JSON data. Keep reference semantics, including
+ // the difference between an absent property and an own undefined property.
+ [{rows:[{x:1}],columns:['x'],maxRows:undefined},{rows:[{x:undefined}],columns:['x']}].forEach(function(input){
+  if(javaRows.run('select',input,null)!==null)throw Error('Explicit undefined must use the JS fallback');
+ });
  var getterReads=0,exotic={rows:[{x:1}]};Object.defineProperty(exotic,'columns',{get:function(){getterReads++;return ['x'];}});
  if(javaRows.run('select',exotic,null)!==null||getterReads!==0)throw Error('Speculative getter invoked');
  var steps=[{operation:'formatCells',options:{profile:'table',includeFields:true,schema:[{name:'x',type:'number',number_decimal_places:2}]}},{operation:'select',options:{columns:['x']}}];
