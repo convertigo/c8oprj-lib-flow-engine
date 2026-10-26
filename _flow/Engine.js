@@ -2882,8 +2882,10 @@
 		// Source inspection is an explicit request for one block. Keep catalog loading
 		// descriptor-only, but materialize this block so canonical code and runtime
 		// sources remain available to block-get/code-get authoring calls.
-		materializeFlowScriptBlock(blocks, String(name || ""));
-		return blockSourceService().getSource(blocks, name, args, blockSourceEnv());
+		var materialized = materializeFlowScriptBlock(blocks, String(name || ""));
+		// A shared catalog retains its immutable placeholder. Its resolved block is
+		// returned separately and must supply the implementation to detached plans.
+		return blockSourceService().getSource(blocks, name, args, blockSourceEnv(), materialized);
 	}
 
 	function typeDescriptorService() {

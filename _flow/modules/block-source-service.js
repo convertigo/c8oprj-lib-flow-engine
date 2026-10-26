@@ -23,9 +23,9 @@
 		}
 	}
 
-	function getSource(blocks, name, args, env) {
+	function getSource(blocks, name, args, env, materialized) {
 		args = args || {};
-		var block = blocks[String(name || "")];
+		var block = materialized || blocks[String(name || "")];
 		if (!block) {
 			env.raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name);
 		}
