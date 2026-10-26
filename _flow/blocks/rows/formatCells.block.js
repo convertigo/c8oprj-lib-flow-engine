@@ -32,12 +32,12 @@ const _meta = {
     "formatCells"
   ],
   "properties": {
-    "profile": {"kind":"value","type":"string","enum":["text","table"],"default":"text","description":"text returns value/text cells; table preserves HTML-compatible table cells."},
-    "schema": {"kind":"value","type":"array","description":"Table profile field descriptors: name, type, formula_type and display options."},
-    "columnNames": {"kind":"value","type":"array","description":"Table profile: optional literal field names whose schema applies."},
-    "hiddenColumns": {"kind":"value","type":"array","description":"Table profile: literal names carrying hidden:true."},
-    "includeFields": {"kind":"value","type":"boolean","default":false,"description":"Table profile returns {rows,fields}; lean fields describe non-null values in this page."},
-    "defaultTimezone": {"kind":"value","type":"string","default":"UTC","description":"Table profile fallback IANA timezone."},
+    "profile": {"kind":"value","label":"Output profile","type":"string","enum":["text","table"],"default":"text","description":"text returns value/text cells; table preserves HTML-compatible table cells."},
+    "schema": {"kind":"value","label":"Table field schema","type":"array","description":"Table profile field descriptors: name, type, formula_type and display options."},
+    "columnNames": {"kind":"value","label":"Schema column names","type":"array","description":"Table profile: optional literal field names whose schema applies."},
+    "hiddenColumns": {"kind":"value","label":"Hidden columns","type":"array","description":"Table profile: literal names carrying hidden:true."},
+    "includeFields": {"kind":"value","label":"Include fields","type":"boolean","default":false,"description":"Table profile returns {rows,fields}; lean fields describe non-null values in this page."},
+    "defaultTimezone": {"kind":"value","label":"Default timezone","type":"string","default":"UTC","description":"Table profile fallback IANA timezone."},
     "rows": {
       "label": "Rows",
       "kind": "expression",

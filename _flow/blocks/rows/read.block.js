@@ -32,7 +32,7 @@ const _meta = {
     "read"
   ],
   "properties": {
-    "sanitize": {"kind":"value","type":"object","description":"Optional protected read: redactions replaces literal string values, dropKeys removes exact keys, maskKeys hides case-insensitive keys. maxNodes (100000) and maxDepth (50) bound work per JSON tree. Secret options must stay in private, untraced calls."},
+    "sanitize": {"kind":"value","label":"Protected read options","type":"object","description":"Optional protected read: redactions replaces literal string values, dropKeys removes exact keys, maskKeys hides case-insensitive keys. maxNodes (100000) and maxDepth (50) bound work per JSON tree. Secret options must stay in private, untraced calls."},
     "rows": {
       "label": "Rows",
       "kind": "expression",
