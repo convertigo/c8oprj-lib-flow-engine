@@ -334,6 +334,8 @@ const _meta = {
 	}
 
 	return {
+		// No state of its own (constants and pure functions): shared by the frames of a runtime revision
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var target = resolveTarget(ctx, ctx.template(props.requestable || ""));

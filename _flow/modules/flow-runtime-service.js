@@ -735,6 +735,7 @@
 			if (plan && plan.definition && plan.blocks) {
 				// Immutable (frozen) definitions keep prepared runners beside the plan.
 				plan.preparedNodes = plan.machineImage === true ? [] : null;
+				plan.inputContract = compileInputContract(plan.definition);
 				plan.preparation = {
 					mode: "lazy",
 					preparedNodes: 0,
@@ -1146,7 +1147,7 @@
 			var deepProfile = request.profile === true;
 			var runStarted = measure ? nanoTime() : 0;
 			var resolveStarted = measure ? nanoTime() : 0;
-			var resolved = resolveRunPlan(request, blocks);
+			var resolved = !blocks && request.__resolvedPlan && request.__resolvedPlan.plan ? request.__resolvedPlan : resolveRunPlan(request, blocks);
 			var profile = measure ? {
 				mode: deepProfile ? "deep" : "envelope",
 				runPlanHeadHit: resolved.headHit,
@@ -1272,8 +1273,12 @@
 			return Object.freeze(Object.keys(declared || {}).map(function (name) {
 				var declaration = declared[name] && typeof declared[name] === "object" ? declared[name] : {};
 				var types = env.typeConversion.types(declaration);
+				var conversion = env.typeConversion;
 				return Object.freeze({ name: name, declaration: declaration, types: Object.freeze(types),
-					textual: !types.length || types.indexOf("string") !== -1 || types.indexOf("any") !== -1 || types.indexOf("unknown") !== -1 });
+					textual: !types.length || types.indexOf("string") !== -1 || types.indexOf("any") !== -1 || types.indexOf("unknown") !== -1,
+					// prepared once with the plan: the conversions of this declaration
+					convert: typeof conversion.compile === "function" ? conversion.compile(declaration) : null,
+					convertReference: typeof conversion.compileReference === "function" ? conversion.compileReference(declaration) : null });
 			}));
 		}
 
@@ -1315,7 +1320,8 @@
 					return;
 				}
 				var converted = byReference && conversion.convertReference
-					? conversion.convertReference(value, declaration) : conversion.convert(value, declaration);
+					? (entry.convertReference ? entry.convertReference(value) : conversion.convertReference(value, declaration))
+					: (entry.convert ? entry.convert(value) : conversion.convert(value, declaration));
 				if (!converted.ok) {
 					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + ": " + converted.message,
 						"Send a value of type " + declaredTypes.join(" or ") + ".");

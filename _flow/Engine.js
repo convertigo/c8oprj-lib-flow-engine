@@ -1019,18 +1019,23 @@
 	// resolves it once for the revision, while the global symbols do not change, when no layer comes from the request
 	// itself: the merge of the layers and the symbols are the same for every request.
 	function runtimeEffectiveConfig(request, definition, projectEngine) {
-		var env = projectConfigEnv();
-		env.compileSymbols = compileConfigSymbols;
-		env.requestRootLayer = requestRootLayer;
+		// The environment of a resolution (sources view, loaders) is built only when the configuration is resolved:
+		// a Flow, or a Flow called by another of its project, that finds its resolved configuration does not build it.
+		function resolutionEnv() {
+			var env = projectConfigEnv();
+			env.compileSymbols = compileConfigSymbols;
+			env.requestRootLayer = requestRootLayer;
+			return env;
+		}
 		var service = projectConfigService();
 		if (!runtimeConfigs || !request || request.config !== undefined || !request.flowQName || requestRootLayer(request) !== undefined) {
-			return service.runtimeConfig(request, definition, projectEngine, env);
+			return service.runtimeConfig(request, definition, projectEngine, resolutionEnv());
 		}
 		var key = String(projectDir() || "") + "|" + String(request.flowQName) + "|" + service.taggedConfigNames(request, projectEngine).join("\n");
 		var symbols = String(sharedRuntime.symbolsGeneration());
 		var config = runtimeConfigs.read(key, symbols);
 		return config !== null ? config
-			: runtimeConfigs.write(key, symbols, flowExecutionSnapshotService().freeze(service.runtimeConfig(request, definition, projectEngine, env)));
+			: runtimeConfigs.write(key, symbols, flowExecutionSnapshotService().freeze(service.runtimeConfig(request, definition, projectEngine, resolutionEnv())));
 	}
 
 	var REQUEST_ROOT_ATTRIBUTE = "convertigo.flow.requestProjectConfig";
@@ -11493,6 +11498,8 @@
 			try { request.tagContext = JSON.parse(String(Packages.com.twinsoft.convertigo.engine.tags.TagManager.get().runContext(project))); }
 			catch (unavailable) { if (ctx.request.tagContext) request.tagContext = ctx.request.tagContext; }
 			Object.defineProperty(request, "__parentRun", { value: ctx });
+			// The plan resolved above for this request (same source, same runtime): the child frame does not look it up again
+			Object.defineProperty(request, "__resolvedPlan", { value: resolved });
 			var result;
 			try {
 				result = runWithActiveRequest(request, null, 0);

@@ -241,5 +241,45 @@
 		return convert(value, schema);
 	}
 
-	return { convert: convert, convertReference: convertReference, convertible: convertible, types: types };
+	// The conversions of one declaration, prepared once (the input contract of a plan): the same results as
+	// convert(value, schema) and convertReference(value, schema), without reading the declared types at each call.
+	function compile(schema) {
+		var all = types(schema);
+		var declared = all.filter(function (type) { return type !== "any" && type !== "unknown"; });
+		if (!declared.length || all.indexOf("any") !== -1 || all.indexOf("unknown") !== -1) {
+			return function (value) { return ok(value); };
+		}
+		var count = declared.length;
+		return function (value) {
+			var kind = kindOf(value);
+			for (var i = 0; i < count; i++) {
+				if (declared[i] === kind || declared[i] === "number" && kind === "number" ||
+						declared[i] === "integer" && kind === "number" && Math.floor(value) === value) {
+					return convertTo(declared[i], value, schema);
+				}
+			}
+			var first;
+			for (var j = 0; j < count; j++) {
+				var converted = convertTo(declared[j], value, schema);
+				if (converted.ok) {
+					return converted;
+				}
+				first = first || converted;
+			}
+			return first;
+		};
+	}
+
+	function compileReference(schema) {
+		var expected = types(schema);
+		var direct = compile(schema);
+		if (!expected.length || expected.indexOf("any") !== -1 || expected.indexOf("unknown") !== -1) return direct;
+		var arrays = expected.indexOf("array") !== -1;
+		return function (value) {
+			return arrays && kindOf(value) === "array" ? convertReference(value, schema) : direct(value);
+		};
+	}
+
+	return { convert: convert, convertReference: convertReference, convertible: convertible, types: types,
+		compile: compile, compileReference: compileReference };
 }())
