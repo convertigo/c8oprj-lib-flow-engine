@@ -476,7 +476,8 @@
 		try { stream = !ctx.parentRun && !!convertigoContext && convertigoContext.rowStreamAccepted === true; } catch (noField) { stream = false; }
 		var state = initializeExecutionState();
 		if (stream && !state.emitted) {
-			var spool = new Packages.com.twinsoft.convertigo.engine.flow.rows.EmitSpool(1000000, 256 * 1024 * 1024);
+			// a relay to the servlet response when the requester can write it before the end of the run
+			var spool = Packages.com.twinsoft.convertigo.engine.flow.rows.EmitSpool.open(convertigoContext, field, 1000000, 256 * 1024 * 1024);
 			state.emitted = {field:field, spool:spool};
 			return {
 				stream: true,
@@ -552,6 +553,12 @@
 			initializeExecutionState().emitted = null;
 			if (payload.ok === true && detach && typeof detach.emitted === "function") {
 				return detach.emitted(payload, emitted.field, emitted.spool, function (value, seen) { return sanitizeSerializableRuntimeValue(value, "emitted result", seen); });
+			}
+			if (emitted.spool.committed()) {
+				// the rows already sent stay: the error ends the response, incomplete
+				var error = payload.error || {};
+				emitted.spool.fail(Packages.com.twinsoft.convertigo.engine.util.JsonValues.object("code", String(error.code || "FLOW_ERROR"),
+					"message", String(error.message || "The streamed result could not complete."), "status", Number(error.status) || 500));
 			}
 			emitted.spool.close();
 		}
