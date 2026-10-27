@@ -1198,6 +1198,10 @@
 			}
 			if (result && result.found) {
 				result.iteration = true;
+				// with parallel, parent (of the nearest loop) and result (of any enclosing loop) are read-only in the slots
+				var parallel = Number(ctx.props(node).parallel) > 1;
+				if (result.parallelParent === undefined) result.parallelParent = parallel;
+				if (parallel) result.parallelResult = true;
 			} else {
 				for (var i = ctx.paths.length - 1; i >= 0; i--) if (added.indexOf(ctx.paths[i]) !== -1) ctx.paths.splice(i, 1);
 				added.forEach(function (path) { delete ctx.schemas[path]; });
@@ -1468,7 +1472,8 @@
 			var mode = request.mode || propertyDefinition && propertyDefinition.mode || "read";
 			var destinationPolicy = mode === "write" ? destinations.policy() : null;
 			// in a slot of forEachChunk, parent (the caller scope) is a destination too
-			if (destinationPolicy && found.iteration) destinationPolicy.roots = destinationPolicy.roots.concat(destinationPolicy.slotRoots || []);
+			if (destinationPolicy && found.iteration && !found.parallelParent) destinationPolicy.roots = destinationPolicy.roots.concat(destinationPolicy.slotRoots || []);
+			if (destinationPolicy && found.parallelResult) destinationPolicy.roots = destinationPolicy.roots.filter(function (root) { return root !== "result"; });
 			if (destinationPolicy) include = include.filter(function (scope) { return destinationPolicy.roots.indexOf(scope) >= 0; });
 			var currentSource = found.currentSource || null;
 			var scopedSchemas = found.scopedSchemas || {};
