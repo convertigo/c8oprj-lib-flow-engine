@@ -139,8 +139,12 @@ public final class Rows {
 				break;
 			}
 		}
-		if (!indexed)
-			return () -> object.keySet().stream().map(key -> (String) key).iterator();
+		if (!indexed) {
+			// JSON object keys are strings: iterate the key set itself, without a stream per object
+			@SuppressWarnings("unchecked")
+			var names = (Iterable<String>) (Iterable<?>) object.keySet();
+			return names;
+		}
 		var indices = new TreeMap<Long, String>();
 		var other = new ArrayList<String>();
 		for (var it = object.keySet().iterator(); it.hasNext();) {
@@ -790,6 +794,79 @@ public final class Rows {
 			var snapshot = (Map<?, ?>) JsonData.snapshot(object("steps", steps));
 			return new Pipeline(scope, (List<?>) snapshot.get("steps"));
 		} catch (Unsupported | ClassCastException unsupported) {
+			return null;
+		}
+	}
+
+	/**
+	 * The same fused kernels for a Java row producer: detached rows in, detached rows out, without any realm. The
+	 * function keeps only the sealed plan and its own budgets, so it belongs to one producer; cancellation is the
+	 * interruption of the producer thread. Null when a step is not a pure row kernel.
+	 */
+	public static java.util.function.Function<Object, Object> javaPipeline(Object raw) {
+		if (!(raw instanceof List<?> list) || list.isEmpty() || list.size() > 8 || DIRECT_SCOPE.get() != null)
+			return null;
+		try {
+			for (var item : list) {
+				var s = row(item);
+				if (!List.of("read", "select", "formatCells").contains(s.get("operation"))
+						|| !(s.get("options") instanceof Map<?, ?>))
+					return null;
+			}
+			var steps = (List<?>) ((Map<?, ?>) JsonData.snapshot(object("steps", list))).get("steps");
+			var selections = new Selection[steps.size()];
+			var tables = new Cells.TablePlan[steps.size()];
+			for (int i = 0; i < steps.size(); i++) {
+				var step = row(steps.get(i));
+				var p = row(step.get("options"));
+				var name = (String) step.get("operation");
+				if (name.equals("select"))
+					selections[i] = new Selection(p);
+				if (name.equals("formatCells") && "table".equals(p.get("profile")))
+					tables[i] = new Cells.TablePlan(p);
+			}
+			var control = new Control(null, null, null);
+			// the options of each step, copied once: only their rows change from one call to the next
+			@SuppressWarnings("unchecked")
+			Map<String, Object>[] params = new Map[steps.size()];
+			for (int i = 0; i < steps.size(); i++) {
+				var options = row(row(steps.get(i)).get("options"));
+				params[i] = new HashMap<>();
+				for (var key : keys(options))
+					params[i].put(key, options.get(key));
+			}
+			return rows -> {
+				try {
+					Object current = rows, fields = null;
+					for (int i = 0; i < steps.size(); i++) {
+						var step = row(steps.get(i));
+						var p = params[i];
+						p.put("rows", current);
+						current = selections[i] != null ? selections[i].apply(p, control)
+								: tables[i] != null ? Cells.table(p, control, tables[i])
+										: execute((String) step.get("operation"), p, control);
+						if (current instanceof Map<?, ?> envelope && envelope.containsKey("rows")) {
+							fields = envelope.get("fields");
+							current = envelope.get("rows");
+						}
+					}
+					var out = object("rows", current);
+					if (fields != null)
+						out.put("fields", fields);
+					return out;
+				} catch (Failure failure) {
+					throw new IllegalStateException(failure.code + ": " + failure.getMessage());
+				} catch (Unsupported unsupported) {
+					throw new IllegalStateException("ROWS_JAVA_UNSUPPORTED: a row needs the reference kernel");
+				} catch (RuntimeException e) {
+					throw e;
+				} catch (Exception e) {
+					throw new IllegalStateException(e);
+				}
+			};
+		} catch (Unsupported | Failure | ClassCastException unsupported) {
+			return null;
+		} catch (Exception unavailable) {
 			return null;
 		}
 	}

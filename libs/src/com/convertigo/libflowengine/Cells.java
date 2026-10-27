@@ -35,6 +35,23 @@ final class Cells {
 			Map.entry("white", "#fff"));
 	static final Pattern INTEGER_PREFIX = Pattern.compile("^[\\s]*([+-]?[0-9]+)");
 	static final Pattern DECIMAL = Pattern.compile("^-?\\d+(\\.\\d+)?$");
+	// compiled once: the cells of every row use them
+	static final Pattern DATE_ONLY = Pattern.compile("^(\\d{4})-(\\d{2})-(\\d{2})$");
+	static final Pattern COMPACT_OFFSET = Pattern.compile("([+-]\\d{2})(\\d{2})$");
+	static final Pattern OFFSET_SUFFIX = Pattern.compile("[zZ]$|[+-]\\d{2}:?\\d{2}$");
+	static final Pattern TIME_PART = Pattern.compile("[T\\s]\\d{2}:\\d{2}");
+	static final Pattern URL_SCHEME = Pattern.compile("^(https?://|mailto:|tel:)", Pattern.CASE_INSENSITIVE);
+	static final java.util.concurrent.ConcurrentHashMap<String, ZoneId> ZONES = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/** text.replaceFirst(String.valueOf(from), String.valueOf(to)) for a literal character, without a regular expression */
+	static String replaceFirstChar(String text, char from, char to) {
+		int index = text.indexOf(from);
+		if (index < 0)
+			return text;
+		char[] chars = text.toCharArray();
+		chars[index] = to;
+		return new String(chars);
+	}
 	static final Pattern ISO = Pattern.compile(
 			"^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:T([0-9]{2}):([0-9]{2})(?::([0-9]{2})(\\.[0-9]{1,3})?)?(Z|[+-][0-9]{2}:[0-9]{2})?)?$");
 
@@ -77,6 +94,11 @@ final class Cells {
 	static String fixed(double value, int digits) {
 		if (Math.abs(value) >= 1e21)
 			return ScriptRuntime.numberToString(value, 10);
+		if (value == Math.rint(value) && Math.abs(value) < 1e15) {
+			// an integer: the same text as its exact decimal expansion, without BigDecimal
+			String integer = Long.toString((long) value);
+			return digits == 0 ? integer : integer + "." + "0".repeat(digits);
+		}
 		String text = new BigDecimal(value).setScale(digits, RoundingMode.HALF_UP).toPlainString();
 		if (value < 0 && new BigDecimal(text).signum() == 0)
 			return "-" + text;
@@ -521,7 +543,7 @@ final class Cells {
 		String text = nil(raw) ? "" : js(raw).trim();
 		if (text.isEmpty())
 			return "";
-		String href = Pattern.compile("^(https?://|mailto:|tel:)", Pattern.CASE_INSENSITIVE).matcher(text).find() ? text
+		String href = URL_SCHEME.matcher(text).find() ? text
 				: "https://" + text;
 		return "<a href=\"" + escape(href) + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + escape(text)
 				+ "</a>";
@@ -576,7 +598,7 @@ final class Cells {
 		if (nil(value) || "".equals(value) || Boolean.FALSE.equals(value)
 				|| value instanceof Number n && n.doubleValue() == 0)
 			return "";
-		String text = js(value), source = text.replaceFirst(",", ".");
+		String text = js(value), source = replaceFirstChar(text, ',', '.');
 		if (!DECIMAL.matcher(source).matches())
 			return text;
 		double number = Double.parseDouble(source);
@@ -599,17 +621,17 @@ final class Cells {
 		String raw = js(value);
 		String year, month, day;
 		int hours = 0, minutes = 0;
-		var only = Pattern.compile("^(\\d{4})-(\\d{2})-(\\d{2})$").matcher(raw);
+		var only = DATE_ONLY.matcher(raw);
 		if (only.matches()) {
 			year = only.group(1);
 			month = only.group(2);
 			day = only.group(3);
 		} else {
 			try {
-				String normalized = raw.replaceFirst(" ", "T").replaceFirst("([+-]\\d{2})(\\d{2})$", "$1:$2");
-				ZoneId zone = ZoneId.of(timezone(field, fallback));
+				String normalized = COMPACT_OFFSET.matcher(replaceFirstChar(raw, ' ', 'T')).replaceFirst("$1:$2");
+				ZoneId zone = ZONES.computeIfAbsent(timezone(field, fallback), ZoneId::of);
 				LocalDateTime time;
-				if (Pattern.compile("[zZ]$|[+-]\\d{2}:?\\d{2}$").matcher(normalized).find())
+				if (OFFSET_SUFFIX.matcher(normalized).find())
 					time = OffsetDateTime.parse(normalized).atZoneSameInstant(zone).toLocalDateTime();
 				else
 					time = LocalDateTime.parse(normalized);
@@ -626,7 +648,7 @@ final class Cells {
 				text = (format.equals("EU") || format.equals("EUROPEAN")) ? day + "/" + month + "/" + year
 						: format.equals("US") ? month + "/" + day + "/" + year : year + "-" + month + "-" + day;
 		Object include = field == null ? MISSING : get(field, "date_include_time");
-		if (truth(include) || nilOrMissing(include) && Pattern.compile("[T\\s]\\d{2}:\\d{2}").matcher(raw).find()) {
+		if (truth(include) || nilOrMissing(include) && TIME_PART.matcher(raw).find()) {
 			if (option(field, "date_time_format").contains("12"))
 				text += " " + (hours % 12 == 0 ? 12 : hours % 12) + ":" + pad(minutes, 2)
 						+ (hours >= 12 ? " PM" : " AM");
@@ -640,7 +662,7 @@ final class Cells {
 		if (nil(value) || "".equals(value) || Boolean.FALSE.equals(value)
 				|| value instanceof Number n && n.doubleValue() == 0)
 			return "";
-		String text = js(value), source = text.replaceFirst(",", ".");
+		String text = js(value), source = replaceFirstChar(text, ',', '.');
 		if (!DECIMAL.matcher(source).matches())
 			return text;
 		double secondsValue = Double.parseDouble(source);

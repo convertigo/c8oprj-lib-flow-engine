@@ -469,6 +469,17 @@
 			transform:{blocks:sources, input:transform.input || {}, entry:String(transform.entry || ""), finish:String(transform.finish || ""),
 				bootstrap:String(FileUtils.readFileToString(new File(engineDir(), "modules/row-producer-runtime.js"), "UTF-8"))}
 		};
+		// Pure row kernels the server may run in Java on each row, the blocks staying for the other cases
+		var java = transform.java;
+		if (java !== undefined && java !== null) {
+			var steps = java.steps;
+			if (spec.collect === true || !Array.isArray(steps) || !steps.length || steps.length > 8 || steps.some(function (step) {
+				return !step || ["read", "select", "formatCells"].indexOf(step.operation) < 0 || !step.options || typeof step.options !== "object";
+			}) || (java.metadata !== undefined && (!java.metadata || typeof java.metadata !== "object" || Array.isArray(java.metadata)))) {
+				raise("ROW_STREAM_PLAN", "Java row transforms are bounded pure row kernels with object metadata.");
+			}
+			plan.transform.java = {steps:steps, metadata:java.metadata || {}};
+		}
 		// Copy while still in the invocation, so later mutations cannot alter authority.
 		plan = normalizeTree(plan);
 		var handle = createRuntimeHandle(ctx, "row-plan", null, {close:function (_, h) { initializeExecutionState().rowPlans.delete(h); }});
