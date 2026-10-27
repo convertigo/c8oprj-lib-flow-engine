@@ -7627,8 +7627,23 @@
 		return sourceView(request).count;
 	}
 
+	// A request without working copies has the empty fingerprint: it is read for each native block call (catalog key of
+	// readOnlyBlockCatalog), so it does not build a source view to say so. Any other value keeps the view, which checks it.
+	function hasNoSourceWorkingCopies(request) {
+		if (!request) return true;
+		var writes = request.sourceDrafts || request.frontendSourceDrafts || request.drafts, removals = request.sourceRemovals;
+		if (removals && !(Array.isArray(removals) && removals.length === 0)) return false;
+		if (!writes) return true;
+		if (typeof writes !== "object" || Array.isArray(writes)) return false;
+		for (var path in writes) {
+			if (Object.prototype.hasOwnProperty.call(writes, path)) return false;
+		}
+		return true;
+	}
+
 	function sourceDraftsFingerprint() {
-		return sourceView(currentActiveRequest()).fingerprint();
+		var request = currentActiveRequest();
+		return hasNoSourceWorkingCopies(request) ? "" : sourceView(request).fingerprint();
 	}
 
 	function frontendDraftForFile(request, file) {
