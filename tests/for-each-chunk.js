@@ -79,6 +79,23 @@ try {
   var inside = api("analyze", {flowSource: counted.written.code});
   assert(inside.ok && !inside.errors.some(function (error) { return error.code === "EMIT_OUTSIDE_FOR_EACH_CHUNK"; }), "Analysis accepts emit inside: " + JSON.stringify(inside.errors));
 
+  // pickers: in the Each slot, chunk.* to read and parent.* to write; neither outside the loop
+  var picked = api("flowSourceValidate", {code: 'const _flow={sourceVersion:2,inputs:{items:{type:"array"}}}\nfunction Picked({input,result}){\n'
+    + 'local.total=0\nforEachChunk({source:input.items,size:3,$$each:function({chunk}){\n'
+    + 'number.add({$$id:"inner",left:1,right:2,$$out:"local.sum"})\n}})\nnumber.add({$$id:"after",left:1,right:2,$$out:"result.sum"})\n}'});
+  assert(picked.ok, "The picker Flow parses: " + JSON.stringify(picked.error));
+  var innerWrite = api("context", {flowSource: picked.source, node: "inner", property: "$$out"});
+  assert(innerWrite.ok && innerWrite.include.indexOf("parent") >= 0, "parent is a destination in the slot: " + JSON.stringify(innerWrite.include));
+  assert(innerWrite.scopes.parent.paths.some(function (entry) { return entry.path === "parent.total"; }), "parent offers the caller locals: " + JSON.stringify(innerWrite.scopes.parent));
+  var innerRead = api("context", {flowSource: picked.source, node: "inner", property: "left"});
+  var chunkPaths = (innerRead.scopes.chunk && innerRead.scopes.chunk.paths || []).map(function (entry) { return entry.path + ":" + (entry.schema && entry.schema.type || entry.type); });
+  assert(innerRead.ok && chunkPaths.indexOf("chunk.rows:array") >= 0 && chunkPaths.indexOf("chunk.index:integer") >= 0 && chunkPaths.indexOf("chunk.last:boolean") >= 0,
+    "chunk offers its typed fields to read: " + JSON.stringify(innerRead.scopes.chunk));
+  var afterWrite = api("context", {flowSource: picked.source, node: "after", property: "$$out"});
+  assert(afterWrite.ok && afterWrite.include.indexOf("parent") < 0, "parent is not a destination after the loop: " + JSON.stringify(afterWrite.include));
+  var afterRead = api("context", {flowSource: picked.source, node: "after", property: "left"});
+  assert(!(afterRead.scopes.chunk && afterRead.scopes.chunk.paths || []).some(function (entry) { return entry.path === "chunk.rows"; }), "chunk is not offered after the loop: " + JSON.stringify(afterRead.scopes.chunk));
+
   var palette = api("blockGet", {name: "forEachChunk", detail: "full"});
   var descriptor = palette.block || palette.descriptor || palette;
   assert(descriptor.slots && descriptor.slots[0].name === "each" && JSON.stringify(descriptor.slots[0].params) === '["chunk"]', "The palette carries the slot variables: " + JSON.stringify(descriptor.slots));

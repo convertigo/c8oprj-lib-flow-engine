@@ -1167,6 +1167,44 @@
 			return current ? { path: current } : null;
 		}
 
+		// The scopes of a slot of forEachChunk: chunk (acc and value for Reduce), and parent, the local of the caller,
+		// writable there. They are offered only to a target inside the slot.
+		function withIterationScope(ctx, node, slotName, callback) {
+			var before = ctx.paths.length, added = [];
+			function add(path, schema) {
+				if (ctx.paths.indexOf(path) === -1) added.push(path);
+				ctx.addPath(path);
+				if (schema) ctx.addSchema(path, schema);
+			}
+			ctx.paths.slice(0, before).forEach(function (path) {
+				if (path.indexOf("local.") === 0) add("parent." + path.slice(6), ctx.schemas[path]);
+			});
+			if (slotName === "reduce") {
+				add("acc"); add("value");
+			} else {
+				var props = ctx.props(node);
+				var sourceSchema = ctx.schemaForPath && typeof props.source === "string" ? ctx.schemaForPath(props.source) : null;
+				var items = sourceSchema && ctx.itemSchema ? ctx.itemSchema(sourceSchema) : null;
+				add("chunk.rows", {type: "array", items: items || {type: "object"}});
+				add("chunk.index", {type: "integer"});
+				add("chunk.last", {type: "boolean"});
+			}
+			ctx.iterationDepth = (ctx.iterationDepth || 0) + 1;
+			var result;
+			try {
+				result = callback();
+			} finally {
+				ctx.iterationDepth--;
+			}
+			if (result && result.found) {
+				result.iteration = true;
+			} else {
+				for (var i = ctx.paths.length - 1; i >= 0; i--) if (added.indexOf(ctx.paths[i]) !== -1) ctx.paths.splice(i, 1);
+				added.forEach(function (path) { delete ctx.schemas[path]; });
+			}
+			return result;
+		}
+
 		function contextResultForTarget(ctx, node, request, path) {
 			var propertySource = currentSourceForProperty(ctx, node, request.property);
 			if (propertySource) {
@@ -1223,6 +1261,10 @@
 							});
 						} else if (name === "config.use" && slot.name === "then") {
 							childResult = ctx.withScopedSchema("config", configOverrideSchema(ctx, node), function () {
+								return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
+							});
+						} else if (name === "forEachChunk" && (slot.name === "each" || slot.name === "reduce")) {
+							childResult = withIterationScope(ctx, node, slot.name, function () {
 								return contextWalkNodes(ctx, slot.nodes || [], request, childPath);
 							});
 						} else {
@@ -1425,6 +1467,8 @@
 			var propertyDefinition = targetPropertyDescriptor(blocks, found.node, request.property);
 			var mode = request.mode || propertyDefinition && propertyDefinition.mode || "read";
 			var destinationPolicy = mode === "write" ? destinations.policy() : null;
+			// in a slot of forEachChunk, parent (the caller scope) is a destination too
+			if (destinationPolicy && found.iteration) destinationPolicy.roots = destinationPolicy.roots.concat(destinationPolicy.slotRoots || []);
 			if (destinationPolicy) include = include.filter(function (scope) { return destinationPolicy.roots.indexOf(scope) >= 0; });
 			var currentSource = found.currentSource || null;
 			var scopedSchemas = found.scopedSchemas || {};
