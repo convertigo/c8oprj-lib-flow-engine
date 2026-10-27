@@ -118,9 +118,12 @@
 			if (writesResult) {
 				env.assertNoRuntimeHandle(value, "result");
 			}
+			// A parallel lane reads the scopes of its caller, shared with the other lanes: no path may write into them
+			var readOnly = scopes.__flowReadOnlyRoots;
 			var current = scopes[parts[0]];
 			for (var i = 1; i < parts.length - 1; i++) {
 				var part = parts[i];
+				if (readOnly && readOnly.indexOf(current) !== -1) readOnlyScope(path, env);
 				if (!current || typeof current !== "object" || Object.prototype.toString.call(current) === "[object Array]") {
 					env.raise("INVALID_SCOPE_PATH", "Destination parent must be an object: " + path);
 				}
@@ -129,12 +132,18 @@
 				}
 				current = current[part];
 			}
+			if (readOnly && readOnly.indexOf(current) !== -1) readOnlyScope(path, env);
 			if (!current || typeof current !== "object" || Object.prototype.toString.call(current) === "[object Array]") {
 				env.raise("INVALID_SCOPE_PATH", "Destination parent must be an object: " + path);
 			}
 			current[parts[parts.length - 1]] = value;
 			return value;
 		};
+	}
+
+	function readOnlyScope(path, env) {
+		env.raise("PARALLEL_SCOPE_READ_ONLY", path + " cannot be written in a parallel chunk: parent, result, input and config "
+			+ "are shared by the chunks there, read-only. Return a value and combine it in reduce, or emit rows.");
 	}
 
 	function joinPath(base, leaf) {
