@@ -906,10 +906,15 @@ public final class Rows {
 	public static Object run(String operation, Object values, Object callback) throws Exception {
 		if (!(values instanceof Scriptable source))
 			return null;
+		var chunk = Chunks.AVAILABLE ? Chunks.rows(source) : null;
 		var scope = ScriptableObject.getTopLevelScope(source);
 		var cx = Context.getCurrentContext();
 		var previous = DIRECT_SCOPE.get();
-		DIRECT_SCOPE.set(scope);
+		// the rows of a chunk stay Java: the kernel runs on detached values and its rows become a chunk again
+		if (chunk == null)
+			DIRECT_SCOPE.set(scope);
+		else
+			DIRECT_SCOPE.remove();
 		try {
 			if (!com.twinsoft.convertigo.engine.util.SanitizedJson.ordinaryRealm(cx, scope))
 				return null;
@@ -920,8 +925,10 @@ public final class Rows {
 				if (getter != null && !Undefined.isUndefined(getter))
 					return null;
 			}
-			var p = row(input(values, scope, new IdentityHashMap<>(), 0));
 			var control = new Control(cx, scope, callback);
+			if (chunk != null)
+				return chunked(operation, source, chunk, scope, cx, control);
+			var p = row(input(values, scope, new IdentityHashMap<>(), 0));
 			Object result = execute(operation, p, control);
 			return result(result, scope);
 		} catch (Unsupported fallback) {
@@ -929,5 +936,64 @@ public final class Rows {
 		} catch (Failure error) {
 			throw scriptFailure(cx, scope, error);
 		} finally { if (previous == null) DIRECT_SCOPE.remove(); else DIRECT_SCOPE.set(previous); }
+	}
+
+	/** A kernel on the rows of a chunk: only its options cross the realm, its rows not at all. */
+	private static Object chunked(String operation, Scriptable source, List<Object> rows, Scriptable scope, Context cx,
+			Control control) throws Exception {
+		if (source.getClass() != NativeObject.class || ((NativeObject) source).getAllIds().length != source.getIds().length)
+			throw new Unsupported();
+		var p = object();
+		for (var id : source.getIds()) {
+			if (!(id instanceof String key))
+				throw new Unsupported();
+			if (key.equals("rows"))
+				continue;
+			var getter = ((NativeObject) source).getGetterOrSetter(key, 0, false);
+			if (getter != null && !Undefined.isUndefined(getter))
+				throw new Unsupported();
+			var value = input(ScriptableObject.getProperty(source, key), scope, new IdentityHashMap<>(), 0);
+			if (value != MISSING)
+				p.put(key, value);
+		}
+		p.put("rows", rows);
+		var result = execute(operation, p, control);
+		if (result instanceof List<?> list)
+			return Chunks.wrap(list, scope);
+		if (result instanceof Map<?, ?> envelope && envelope.get("rows") instanceof List<?> list) {
+			var out = cx.newObject(scope);
+			ScriptableObject.putProperty(out, "rows", Chunks.wrap(list, scope));
+			if (envelope.containsKey("fields")) {
+				DIRECT_SCOPE.set(scope);
+				ScriptableObject.putProperty(out, "fields", result(envelope.get("fields"), scope));
+			}
+			return out;
+		}
+		DIRECT_SCOPE.set(scope);
+		return result(result, scope);
+	}
+
+	/** The row chunks of the engine, absent from an older engine: never loaded when it is absent. */
+	private static final class Chunks {
+		static final boolean AVAILABLE = present();
+
+		static boolean present() {
+			try {
+				Class.forName("com.twinsoft.convertigo.engine.flow.rows.RowChunk", false, Rows.class.getClassLoader());
+				return true;
+			} catch (ClassNotFoundException | LinkageError absent) {
+				return false;
+			}
+		}
+
+		static List<Object> rows(Scriptable source) {
+			return ScriptableObject.getProperty(source, "rows") instanceof com.twinsoft.convertigo.engine.flow.rows.RowChunk chunk
+					? chunk.rows() : null;
+		}
+
+		@SuppressWarnings("unchecked")
+		static Object wrap(List<?> rows, Scriptable scope) {
+			return new com.twinsoft.convertigo.engine.flow.rows.RowChunk((List<Object>) rows, scope);
+		}
 	}
 }
