@@ -566,8 +566,12 @@
 			if (emitted.spool.committed()) {
 				// the rows already sent stay: the error ends the response, incomplete
 				var error = payload.error || {};
-				emitted.spool.fail(Packages.com.twinsoft.convertigo.engine.util.JsonValues.object("code", String(error.code || "FLOW_ERROR"),
-					"message", String(error.message || "The streamed result could not complete."), "status", Number(error.status) || 500));
+				try {
+					emitted.spool.fail(Packages.com.twinsoft.convertigo.engine.util.JsonValues.object("code", String(error.code || "FLOW_ERROR"),
+						"message", String(error.message || "The streamed result could not complete."), "status", Number(error.status) || 500));
+				} catch (gone) {
+					// the client is gone: the error of the run stays the one reported
+				}
 			}
 			emitted.spool.close();
 		}
