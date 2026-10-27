@@ -200,13 +200,23 @@
 		};
 	}
 
-	var api = { platform: null };
+	// stateless: constants and thread-safe caches only, one evaluation may serve every run of a shared runtime (its
+	// object is then frozen). A test may still give its own evaluation another platform.
+	var api = { stateless: true, platform: null };
+	var defaultPlatform = null;
 
 	function platform() {
-		if (api.platform == null) {
-			api.platform = javaPlatform();
+		if (api.platform != null) {
+			return api.platform;
 		}
-		return api.platform;
+		if (defaultPlatform == null) {
+			defaultPlatform = javaPlatform();
+		}
+		// an evaluation of its own (a test) exposes it as before; a shared, frozen one keeps it here
+		if (!Object.isFrozen(api)) {
+			api.platform = defaultPlatform;
+		}
+		return defaultPlatform;
 	}
 
 	/* --------------------------------------------------------------- parse */

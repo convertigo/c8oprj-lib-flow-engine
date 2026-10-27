@@ -2473,10 +2473,19 @@
 			var factory = sharedRuntime.prepare("library:" + String(projectDir() || "") + ":" + name, function () {
 				var file = flowLibraryFile(name), source = readSourceFile(file);
 				var script = compileScript(source, canonicalPath(file), fileFingerprint(file));
-				return function () {
+				var evaluate = function () {
 					var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
 					return script.exec(cx, compiledScriptScope(cx));
 				};
+				// A library that declares stateless: true (module state made of constants and thread-safe caches only,
+				// the contract of a stateless block implementation) is evaluated once for the runtime, its frozen
+				// object serving every run; another one is evaluated for each run, its module state owned by that run.
+				var probe = evaluate();
+				if (probe && typeof probe === "object" && probe.stateless === true) {
+					Object.freeze(probe);
+					return function () { return probe; };
+				}
+				return evaluate;
 			});
 			return factory();
 		}
