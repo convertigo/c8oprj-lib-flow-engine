@@ -23,6 +23,9 @@
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
 	var sharedModuleBridge = false;
 	try { sharedModuleBridge = typeof FlowEngineBridge.evalSharedModule === "function"; } catch (olderEngine) { }
+	// an engine keeping the compiled code of files on disk across restarts (FlowEngineBridge.compileScript)
+	var bytecodeCacheBridge = false;
+	try { bytecodeCacheBridge = typeof FlowEngineBridge.compileScript === "function"; } catch (olderEngine) { }
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
@@ -374,15 +377,31 @@
 		return sourceName + "\n" + fingerprint;
 	}
 
-	function compileScript(source, sourceName, fingerprint) {
+	// The file of a source named by its absolute path (a module, a library, a block script), null for a source of no file
+	// (a draft checked while authoring, a frontend block): only the code of a file is kept compiled on disk.
+	function sourceOrigin(sourceName) {
+		var name = String(sourceName || "");
+		return name !== "" && new File(name).isAbsolute() ? name : null;
+	}
+
+	// cx.compileString, through the disk cache of the engine for the code of a file (origin: its path)
+	function compileSource(cx, source, sourceName, origin) {
+		if (bytecodeCacheBridge && origin) {
+			return FlowEngineBridge.compileScript(cx, source, sourceName, String(origin));
+		}
+		return cx.compileString(source, sourceName, 1, null);
+	}
+
+	function compileScript(source, sourceName, fingerprint, origin) {
 		source = String(source || "");
 		var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
 		if (!cx || typeof cx.compileString !== "function") {
 			return null;
 		}
 		var key = compiledScriptKey(source, sourceName, fingerprint);
+		if (origin === undefined) origin = sourceOrigin(sourceName);
 		if (sharedRuntime) return sharedRuntime.prepare("script:" + key, function () {
-			return cx.compileString(source, String(sourceName || "flow-script"), 1, null);
+			return compileSource(cx, source, String(sourceName || "flow-script"), origin);
 		});
 		var cached = compiledScriptCache[key];
 		if (cached) {
@@ -396,7 +415,7 @@
 				break;
 			}
 		}
-		cached = cx.compileString(source, String(sourceName || "flow-script"), 1, null);
+		cached = compileSource(cx, source, String(sourceName || "flow-script"), origin);
 		compiledScriptCache[key] = {
 			script: cached,
 			usedAt: ++compiledScriptCacheClock
@@ -2477,7 +2496,7 @@
 		if (sharedRuntime) {
 			var factory = sharedRuntime.prepare("library:" + String(projectDir() || "") + ":" + name, function () {
 				var file = flowLibraryFile(name), source = readSourceFile(file);
-				var script = compileScript(source, canonicalPath(file), fileFingerprint(file));
+				var script = compileScript(source, canonicalPath(file), fileFingerprint(file), canonicalPath(file));
 				var evaluate = function () {
 					var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
 					return script.exec(cx, compiledScriptScope(cx));
@@ -2635,8 +2654,9 @@
 		}
 		graphBlockRuntimeEnvInstance = {
 			sharedRuntime: sharedRuntime,
-			implementationFactory: function (source, name) {
-				var script = compileScript(source, name, sha256Hex(source));
+			// file: the file of the implementation, or the block definition holding it
+			implementationFactory: function (source, name, file) {
+				var script = compileScript(source, name, sha256Hex(source), file ? canonicalPath(file) : null);
 				return function () {
 					var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
 					return script.exec(cx, compiledScriptScope(cx));

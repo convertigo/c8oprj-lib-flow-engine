@@ -503,7 +503,7 @@
 			Object.freeze(rhino.script);
 		} else if (rhino && env.sharedRuntime) {
 			var source = rhino.inline ? String(definition.__rhinoCode) : String(FileUtils.readFileToString(rhino.file, "UTF-8"));
-			rhino.factory = env.implementationFactory(source, "block-implementation:" + blockId);
+			rhino.factory = env.implementationFactory(source, "block-implementation:" + blockId, rhino.file);
 		}
 		var hooks = loadBlockHooks(definition, file);
 		var block = Object.assign(Object.create(graphBlockPrototype), {
