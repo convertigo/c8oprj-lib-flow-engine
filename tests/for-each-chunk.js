@@ -71,6 +71,14 @@ try {
   var outside = run('const _flow={sourceVersion:2}\nfunction Outside({result}){\nemit({rows:[1]})\n}');
   assert(!outside.answer.ok && JSON.stringify(outside.answer.error).indexOf("EMIT_OUTSIDE_FOR_EACH_CHUNK") >= 0, "emit needs a forEachChunk with into");
 
+  // the analysis reports emit outside a forEachChunk with into, not inside one
+  var checked = api("analyze", {flowSource: outside.written.code});
+  assert(checked.ok && checked.errors.some(function (error) { return error.code === "EMIT_OUTSIDE_FOR_EACH_CHUNK"; }), "Analysis rejects emit outside: " + JSON.stringify(checked.errors));
+  var noInto = api("analyze", {flowSource: counted.written.code.replace(/into: "data",\s*/, "")});
+  assert(noInto.ok && noInto.errors.some(function (error) { return error.code === "EMIT_OUTSIDE_FOR_EACH_CHUNK"; }), "Analysis rejects emit without into");
+  var inside = api("analyze", {flowSource: counted.written.code});
+  assert(inside.ok && !inside.errors.some(function (error) { return error.code === "EMIT_OUTSIDE_FOR_EACH_CHUNK"; }), "Analysis accepts emit inside: " + JSON.stringify(inside.errors));
+
   var palette = api("blockGet", {name: "forEachChunk", detail: "full"});
   var descriptor = palette.block || palette.descriptor || palette;
   assert(descriptor.slots && descriptor.slots[0].name === "each" && JSON.stringify(descriptor.slots[0].params) === '["chunk"]', "The palette carries the slot variables: " + JSON.stringify(descriptor.slots));
