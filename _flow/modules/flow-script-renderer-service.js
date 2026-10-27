@@ -186,7 +186,7 @@
 			// A capture belongs on the left of the call, not in its business
 			// arguments. Keep explicit metadata for non-assignable values so
 			// rendering never drops data from an invalid/unfinished AST.
-			var assignedOutput = typeof node.out === "string" && /^(local|result)(\.[A-Za-z_$][\w$]*)+$/.test(node.out) ? node.out : "";
+			var assignedOutput = typeof node.out === "string" && /^(local|result|parent)(\.[A-Za-z_$][\w$]*)+$/.test(node.out) ? node.out : "";
 			var callPrefix = assignedOutput ? assignedOutput + " = " : "";
 			var slotNames = flowScriptSlotNames(blocks, node, env);
 			var slots = slotNames.filter(function (slot) {
@@ -202,7 +202,9 @@
 			lines.push(indent + callPrefix + env.blockName(node) + "({");
 			parts.forEach(function (part) { lines.push(indent + "  " + part + ","); });
 			slots.forEach(function (slot) {
-				lines.push(indent + "  " + flowScriptObjectKey(env.sourceAttributeNameCodec().encode("engine", slot)) + ": function () {");
+				var params = env.childSlotParams ? env.childSlotParams(blocks, node, slot) : [];
+				lines.push(indent + "  " + flowScriptObjectKey(env.sourceAttributeNameCodec().encode("engine", slot)) + ": function ("
+					+ (params.length ? "{" + params.join(", ") + "}" : "") + ") {");
 				renderFlowScriptNodes(blocks, node[slot], depth + 2, lines, Object.assign({}, locals), env);
 				lines.push(indent + "  },");
 			});

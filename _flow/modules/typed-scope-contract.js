@@ -4,7 +4,7 @@
 	function create(env) {
 		var roots = new WeakMap(), values = new WeakMap();
 		// Static destinations belong to this execution; never retain values or a block local frame.
-		var paths = Object.create(null), pathCount = 0, emptySchemas = [], defaultRoots = env.destinations.policy().roots;
+		var paths = Object.create(null), pathCount = 0, emptySchemas = [], defaultRoots = env.destinations.policy().roots.concat(env.destinations.policy().slotRoots || []);
 		function own(value, key) { return Object.prototype.hasOwnProperty.call(value, key); }
 		function fail(code, message) { env.raise(code, message); }
 		function parts(path) {

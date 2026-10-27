@@ -12,7 +12,7 @@
 			aliases: slot.aliases || [],
 			inline: slot.inline === true
 		};
-		["scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom"].forEach(function (key) {
+		["scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom", "params", "optional"].forEach(function (key) {
 			if (slot[key] !== undefined && slot[key] !== null) {
 				out[key] = slot[key];
 			}

@@ -462,6 +462,10 @@
 		runContextPrototype.handleSummary = runtimeHandleSummary;
 		runContextPrototype.createRowsPlan = function (plan) { return env.createRowsPlan(this, plan); };
 		runContextPrototype.resultWithRows = function (handle, field, fields) { return env.resultWithRows(this, handle, field, fields); };
+		runContextPrototype.createRowsCursor = function (spec) { return env.createRowsCursor(this, spec); };
+		runContextPrototype.rowsCursorNext = function (handle, size) { return env.rowsCursorNext(this, handle, size); };
+		runContextPrototype.closeRowsCursor = function (handle) { return env.closeRuntimeHandle(this, handle); };
+		runContextPrototype.openEmitSink = function (field, node) { return env.openEmitSink(this, field, node); };
 		runContextPrototype.createHandle = function (type, value, options) {
 			return createRuntimeHandle(this, type, value, options);
 		};

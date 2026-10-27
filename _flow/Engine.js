@@ -26,7 +26,7 @@
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
-	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current"];
+	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current", "parent", "chunk", "acc", "value"];
 
 
 
@@ -449,6 +449,52 @@
 	// Identity registries are intentionally private. JSON markers and ordinary
 	// runtime handles cannot manufacture or duplicate a one-shot source.
 
+	// A source read chunk by chunk (forEachChunk): the paged rows of an HTTP source, pulled when the next chunk is
+	// asked. The cursor is a runtime handle, closed at the latest with its invocation.
+	function createRowsCursor(ctx, spec) {
+		if (!spec || !spec.http || !spec.limits) raise("ROW_CURSOR_PLAN", "A row cursor needs its http and limits.");
+		var cursor = Packages.com.twinsoft.convertigo.engine.flow.rows.RowCursor.open(JSON.stringify({http:spec.http, limits:spec.limits, take:spec.take || 0}));
+		return createRuntimeHandle(ctx, "row-cursor", cursor, {label:"row source", close:function (value) { value.close(); }});
+	}
+
+	// The next rows of a row cursor, at most size, as an array; null after the last row.
+	function rowsCursorNext(ctx, handle, size) {
+		if (handle.__flowHandleClosed === true) raise("ROW_CURSOR_CLOSED", "The row source is closed.");
+		return runtimeHandleValue(handle, "row-cursor").next(size, globalScope);
+	}
+
+	// Where the rows emitted for a result field go: in stream through a spool when this root run's requester writes
+	// streamed rows, else into an array of result, as if forEachChunk were not there.
+	function openEmitSink(ctx, field, node) {
+		field = String(field || "");
+		if (!/^[A-Za-z_$][\w$]*$/.test(field) || ["error", "complete", "attr"].indexOf(field) !== -1) {
+			ctx.throwFlow({code:"EMIT_FIELD_INVALID", message:"forEachChunk into must name a result field (not error, complete or attr).", status:400}, node);
+		}
+		var convertigoContext = null;
+		try { convertigoContext = ctx.convertigoContext(); } catch (noContext) { convertigoContext = null; }
+		var stream = false;
+		try { stream = !ctx.parentRun && !!convertigoContext && convertigoContext.rowStreamAccepted === true; } catch (noField) { stream = false; }
+		var state = initializeExecutionState();
+		if (stream && !state.emitted) {
+			var spool = new Packages.com.twinsoft.convertigo.engine.flow.rows.EmitSpool(1000000, 256 * 1024 * 1024);
+			state.emitted = {field:field, spool:spool};
+			return {
+				stream: true,
+				append: function (rows) { spool.append(rows, Packages.org.mozilla.javascript.Context.getCurrentContext(), globalScope); },
+				close: function () { ctx.write("result." + field, []); }
+			};
+		}
+		var rows = [];
+		return {
+			stream: false,
+			append: function (value) {
+				if (Array.isArray(value)) { for (var i = 0; i < value.length; i++) rows.push(value[i]); }
+				else if (value !== undefined && value !== null) rows.push(value);
+			},
+			close: function () { ctx.write("result." + field, rows); }
+		};
+	}
+
 	function createRowsPlan(ctx, spec) {
 		if (ctx.parentRun) raise("ROW_STREAM_NESTED", "A nested Flow must use a bounded materializing requester.");
 		var transform = spec.transform || {}, names = transform.blocks || [], sources = {};
@@ -501,6 +547,14 @@
 	function response(value, rejectRuntimeHandlesAt, functionProfile, detach) {
 		var sanitizeStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var payload = value || {};
+		var emitted = initializeExecutionState().emitted;
+		if (emitted) {
+			initializeExecutionState().emitted = null;
+			if (payload.ok === true && detach && typeof detach.emitted === "function") {
+				return detach.emitted(payload, emitted.field, emitted.spool, function (value, seen) { return sanitizeSerializableRuntimeValue(value, "emitted result", seen); });
+			}
+			emitted.spool.close();
+		}
 		var rowPlan = payload.ok === true && payload.result && initializeExecutionState().rowResults.get(payload.result);
 		if (rowPlan) {
 			initializeExecutionState().rowResults.delete(payload.result);
@@ -3546,6 +3600,7 @@
 			flowScriptPropKind: flowScriptPropKind,
 			blockName: blockName,
 			childSlotNamesForMutation: childSlotNamesForMutation,
+			childSlotParams: childSlotParams,
 			parseSource: parseSource,
 			analyzeFlowDefinition: analyzeFlowDefinition,
 			safeIdentifier: safeIdentifier,
@@ -5071,6 +5126,10 @@
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
 			createRowsPlan: createRowsPlan,
+			createRowsCursor: createRowsCursor,
+			rowsCursorNext: rowsCursorNext,
+			closeRuntimeHandle: closeRuntimeHandle,
+			openEmitSink: openEmitSink,
 			resultWithRows: resultWithRows,
 			currentConvertigoContext: function () {
 				return typeof context === "undefined" ? null : context;
@@ -11168,6 +11227,16 @@
 
 	// called for every node of a walk: the slot names only need the block catalog
 	var childSlotNamesEnv = { blockName: blockName, blockCatalog: readOnlyBlockCatalog };
+
+	// The variables a slot of a block receives, as its FlowScript function declares them: function ({chunk}) { ... }
+	function childSlotParams(blocks, node, slot) {
+		var block = blocks && blocks[blockName(node)];
+		var slots = block && (blockCatalog(block) || {}).slots || [];
+		for (var i = 0; i < slots.length; i++) {
+			if (slots[i] && slots[i].name === slot && Array.isArray(slots[i].params)) return slots[i].params.slice(0);
+		}
+		return [];
+	}
 
 	function childSlotNamesForMutation(blocks, node) {
 		return flowTreeService().childSlotNamesForMutation(blocks, node, childSlotNamesEnv);

@@ -1,10 +1,11 @@
 (function () {
 	// Pure contract: shared by analysis, execution and browser editors. No Rhino
 	// or DOM dependency. Other execution environments supply their own roots.
-	function policy() { return { roots: ["local", "result"], syntax: "named-path" }; }
+	// parent, the caller scope of an iteration slot, is writable but not offered by pickers.
+	function policy() { return { roots: ["local", "result"], slotRoots: ["parent"], syntax: "named-path" }; }
 	function validate(value, options) {
 		options = options || policy();
-		var roots = options.roots || policy().roots;
+		var roots = (options.roots || policy().roots).concat(options.slotRoots || []);
 		function invalid(reason, message) {
 			return { valid: false, code: "INVALID_DESTINATION", reason: reason, message: message };
 		}

@@ -561,7 +561,7 @@
 					text.match(/^import\s+/) ||
 					text.match(/^return(?:\s|;|$)/) ||
 					text.match(/^(const|let|var)\s+/) ||
-					text.match(/^(local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*\s*=/) ||
+					text.match(/^(local|result|parent)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*\s*=/) ||
 					text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(/));
 			}
 			return false;
@@ -2069,7 +2069,7 @@
 				var block = resolveFlowScriptName(call.name, imports);
 				if (!(blocks && blocks[block]) && isFlowScriptExpressionCallName(block)) {
 					return [{
-						id: env.safeIdentifier(scopePath.replace(/^(local|result)\./, "")),
+						id: env.safeIdentifier(scopePath.replace(/^(local|result|parent)\./, "")),
 						block: "set",
 						path: scopePath,
 						value: flowScriptValueFromToken(rhs, locals, lineNumber),
@@ -2085,11 +2085,11 @@
 				node.block = block;
 				node.__flowScriptLine = lineNumber;
 				bindAssignmentOutput(blocks, node, block, scopePath, lineNumber);
-				if (!node.id) node.id = env.safeIdentifier(scopePath.replace(/^(local|result)\./, ""));
+				if (!node.id) node.id = env.safeIdentifier(scopePath.replace(/^(local|result|parent)\./, ""));
 				return [node];
 			}
 			return [{
-				id: env.safeIdentifier(scopePath.replace(/^(local|result)\./, "")),
+				id: env.safeIdentifier(scopePath.replace(/^(local|result|parent)\./, "")),
 				block: "set",
 				path: scopePath,
 				value: flowScriptValueFromToken(rhs, locals, lineNumber),
@@ -2480,7 +2480,7 @@
 					locals[varName] = true;
 					continue;
 				}
-				var scopeAssignment = line.match(/^((?:local|result)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*)\s*=\s*([\s\S]+)$/);
+				var scopeAssignment = line.match(/^((?:local|result|parent)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*)\s*=\s*([\s\S]+)$/);
 				if (scopeAssignment) {
 					buildNaturalScopeAssignment(blocks, imports, locals, scopeAssignment[1], scopeAssignment[2], lineNumber).forEach(function (node) {
 						addStatementNode(node);

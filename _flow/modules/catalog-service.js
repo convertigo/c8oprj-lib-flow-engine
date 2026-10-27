@@ -104,7 +104,7 @@
 
 	function compactSlotDescriptor(slot) {
 		var out = {};
-		["name", "label", "inline", "scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom"].forEach(function (key) {
+		["name", "label", "inline", "scope", "input", "local", "current", "error", "description", "accepts", "acceptsFrom", "params", "optional"].forEach(function (key) {
 			if (slot && slot[key] !== undefined && slot[key] !== null && slot[key] !== "") {
 				out[key] = slot[key];
 			}
