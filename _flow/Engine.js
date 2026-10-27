@@ -5184,6 +5184,10 @@
 			rowsCursorNext: rowsCursorNext,
 			closeRuntimeHandle: closeRuntimeHandle,
 			openEmitSink: openEmitSink,
+			// threads for the lanes of a parallel loop: only the shared runtime routes the bindings of a lane to its own frame
+			openLanes: function (count, body) {
+				return sharedRuntime && typeof sharedRuntime.openLanes === "function" ? sharedRuntime.openLanes(count, body) : null;
+			},
 			resultWithRows: resultWithRows,
 			currentConvertigoContext: function () {
 				return typeof context === "undefined" ? null : context;
