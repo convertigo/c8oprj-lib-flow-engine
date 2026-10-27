@@ -59,7 +59,7 @@ const _meta = {
       "inline": true,
       "scope": "iteration",
       "params": ["chunk"],
-      "description": "Runs once per chunk with chunk.rows, chunk.index and chunk.last, a fresh local and parent for the caller scope. return gives the value of the chunk."
+      "description": "Runs once per chunk with chunk.rows, chunk.index and chunk.last, a fresh local and parent for the caller scope. return gives the value of the chunk. Reading chunk.last pulls the next chunk ahead."
     },
     {
       "name": "reduce",
@@ -129,6 +129,18 @@ const _meta = {
     }
   }
 
+  // Reading a chunk ahead only serves chunk.last: an Each slot that uses chunk only for its rows and index pulls the
+  // next chunk once the current one is done, so that a failing source stops after the last complete chunk.
+  var readsLast = typeof WeakMap === "function" ? new WeakMap() : null;
+  function needsLast(nodes) {
+    if (!nodes || typeof nodes !== "object") return false;
+    var known = readsLast && readsLast.get(nodes);
+    if (known !== undefined) return known;
+    var uses = /\bchunk\b(?!\s*\.\s*(?:rows|index)\b)/.test(JSON.stringify(nodes));
+    if (readsLast) readsLast.set(nodes, uses);
+    return uses;
+  }
+
   function errorOf(error) {
     var value = error && error.value !== undefined ? error.value : error;
     return {
@@ -157,6 +169,7 @@ const _meta = {
       if (sink) sinks.push(sink);
       var chunks = reader(ctx, node, source, size);
       var hasReduce = !!(node.reduce && node.reduce.length);
+      var lookahead = needsLast(node.each);
       var index = 0, rows = 0, errors = [], acc = null;
       try {
         var next = chunks.next();
@@ -166,10 +179,14 @@ const _meta = {
             ctx.throwFlow({code: "FOR_EACH_CHUNK_LIMIT", message: "forEachChunk reached its maximum number of chunks.", status: 508, details: {maxChunks: maxChunks}}, node);
           }
           var current = next;
-          next = chunks.next();
+          var chunk = {rows: current, index: index};
+          if (lookahead) {
+            next = chunks.next();
+            chunk.last = next === null;
+          }
           var value;
           try {
-            value = runSlot(ctx, node.each, {parent: outer, chunk: {rows: current, index: index, last: next === null}});
+            value = runSlot(ctx, node.each, {parent: outer, chunk: chunk});
           } catch (error) {
             if (onError !== "continue") throw error;
             if (errors.length < 100) errors.push(Object.assign({index: index}, errorOf(error)));
@@ -177,10 +194,11 @@ const _meta = {
           }
           rows += current.length;
           index++;
-          current = null;
+          current = chunk = null;
           if (hasReduce && value !== undefined) {
             acc = runSlot(ctx, node.reduce, {parent: outer, acc: acc, value: value});
           }
+          if (!lookahead) next = chunks.next();
         }
       } finally {
         chunks.close();

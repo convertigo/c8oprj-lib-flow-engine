@@ -16,6 +16,12 @@ if (typeof Packages.com.twinsoft.convertigo.engine.flow.rows.RowCursor !== "func
   for (var i = 1; i <= total; i++) all.push({id: i, Name: "n" + i, Amount: String(i) + ".5", Status: i % 3 ? "open" : null});
   var server = Packages.com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
   var port = server.getAddress().getPort();
+  server.createContext("/count", function (exchange) {
+    var body = new java.lang.String(JSON.stringify({pages: requests})).getBytes("UTF-8");
+    exchange.getResponseHeaders().add("Content-Type", "application/json");
+    exchange.sendResponseHeaders(200, body.length);
+    var out = exchange.getResponseBody(); out.write(body); out.close();
+  });
   server.createContext("/rows/", function (exchange) {
     requests++;
     var query = String(exchange.getRequestURI().getRawQuery() || ""), page = Number((/(?:^|&)page=(\d+)/.exec(query) || [0, 1])[1]);
@@ -58,6 +64,24 @@ if (typeof Packages.com.twinsoft.convertigo.engine.flow.rows.RowCursor !== "func
     assert(JSON.stringify(cursor.result.data[0]).indexOf('"value":1,') > 0 && JSON.stringify(cursor.result.data[total - 1]).indexOf('"value":' + total + ',') > 0, "Rows keep the source order: " + JSON.stringify(cursor.result.data[0]));
     var array = run(flow("input.items"), {items: all});
     assert(array.ok && JSON.stringify(array.result.data) === JSON.stringify(cursor.result.data), "The cursor and the array give the same rows");
+    // the next chunk is read ahead only for chunk.last: otherwise the source is pulled once the chunk is done
+    function ahead(withLast) {
+      requests = 0;
+      var code = 'const _flow={sourceVersion:2,inputs:{url:{type:"string"},countUrl:{type:"string"}}}\nfunction Ahead({input,result}){\n'
+        + 'local.countUrl=input.countUrl\nlocal.first=-1\nlocal.source=proof.pages({url:input.url})\n'
+        + 'forEachChunk({source:local.source,size:100,$$each:function({chunk}){\n'
+        + 'local.seen=http.get({url:parent.countUrl})\n'
+        + 'if({condition:chunk.index===0,$$then:function(){parent.first=local.seen.body.pages}})\n'
+        + (withLast ? 'if({condition:chunk.last,$$then:function(){parent.ended=true}})\n' : '')
+        + '}})\nresult.first=local.first\n}';
+      var answer = run(code, {url: url, countUrl: "http://127.0.0.1:" + port + "/count"});
+      assert(answer.ok, "The read-ahead Flow runs: " + JSON.stringify(answer.error));
+      return answer.result.first;
+    }
+    var without = ahead(false), withLast = ahead(true);
+    assert(without === 1, "Without chunk.last, the first chunk runs after one page: " + without);
+    assert(withLast === 2, "With chunk.last, the next page is read ahead: " + withLast);
+
     // timing on the same machine: the Java chunks against the script arrays, after a warm-up
     function time(input, code) { var t = java.lang.System.nanoTime(); var r = run(code, input); assert(r.ok, "timed run"); return (java.lang.System.nanoTime() - t) / 1e6; }
     var cursorCode = flow("proof.pages({url:input.url})"), arrayCode = flow("input.items");
