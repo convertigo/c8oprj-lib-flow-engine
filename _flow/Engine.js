@@ -460,7 +460,16 @@
 	// The next rows of a row cursor, at most size, as an array; null after the last row.
 	function rowsCursorNext(ctx, handle, size) {
 		if (handle.__flowHandleClosed === true) raise("ROW_CURSOR_CLOSED", "The row source is closed.");
-		return runtimeHandleValue(handle, "row-cursor").next(size, globalScope);
+		try {
+			return runtimeHandleValue(handle, "row-cursor").next(size, globalScope);
+		} catch (e) {
+			// a failed page: the code and status of the source, never its URL nor a Java class
+			var failure = e && e.javaException;
+			if (failure instanceof Packages.com.twinsoft.convertigo.engine.flow.rows.RowStreamException) {
+				ctx.throwFlow({code: String(failure.code()), message: "The row source could not be read.", status: Number(failure.status())});
+			}
+			throw e;
+		}
 	}
 
 	// Where the rows emitted for a result field go: in stream through a spool when this root run's requester writes
