@@ -37,6 +37,14 @@
 	// shared secret algorithms: only for tokens issued by this server or a trusted peer (sign, verify with secret)
 	var HMAC_ALGORITHMS = { HS256: "HmacSHA256", HS384: "HmacSHA384", HS512: "HmacSHA512" };
 
+	// The classes of the JDK and of the engine, resolved with the module (once for a shared runtime): from the engine that
+	// evaluates it (flowEngineClass, kept for the runtime), else by their full names. Through the Packages of a call, each
+	// java.a.B looked up "java.a" as a class again. None without Java.
+	function javaClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : typeof Packages === "undefined" ? null : Packages[name];
+	}
+	var JavaString = javaClass("java.lang.String");
+
 	function VerificationError(message) {
 		this.message = message;
 	}
@@ -47,7 +55,7 @@
 
 	function isString(value) {
 		return typeof value === "string" || value instanceof String ||
-			(value != null && typeof value === "object" && value instanceof java.lang.String);
+			(value != null && typeof value === "object" && JavaString !== null && value instanceof JavaString);
 	}
 
 	function nonEmpty(value) {
@@ -84,18 +92,29 @@
 
 	/* ---------------------------------------------------------------- Java */
 
-	var localCache = new java.util.concurrent.ConcurrentHashMap();
+	var ConcurrentHashMap = javaClass("java.util.concurrent.ConcurrentHashMap");
+	var localCache = new ConcurrentHashMap();
 
 	function javaPlatform() {
+		var Engine = javaClass("com.twinsoft.convertigo.engine.Engine"), Base64 = javaClass("java.util.Base64");
+		var BigInteger = javaClass("java.math.BigInteger"), KeyFactory = javaClass("java.security.KeyFactory");
+		var AlgorithmParameters = javaClass("java.security.AlgorithmParameters"), Signature = javaClass("java.security.Signature");
+		var MessageDigest = javaClass("java.security.MessageDigest"), Mac = javaClass("javax.crypto.Mac");
+		var SecretKeySpec = javaClass("javax.crypto.spec.SecretKeySpec"), RSAPublicKeySpec = javaClass("java.security.spec.RSAPublicKeySpec");
+		var ECGenParameterSpec = javaClass("java.security.spec.ECGenParameterSpec"), ECPoint = javaClass("java.security.spec.ECPoint");
+		var ECPublicKeySpec = javaClass("java.security.spec.ECPublicKeySpec"), JavaClass = javaClass("java.lang.Class");
+		var JavaSystem = javaClass("java.lang.System"), Arrays = javaClass("java.util.Arrays"), URL = javaClass("java.net.URL");
+		var ByteArrayOutputStream = javaClass("java.io.ByteArrayOutputStream"), JavaArray = javaClass("java.lang.reflect.Array");
+		var JavaByte = javaClass("java.lang.Byte");
 		function cacheMap() {
 			try {
-				var servletContext = Packages.com.twinsoft.convertigo.engine.Engine.getServletContext();
+				var servletContext = Engine.getServletContext();
 				if (servletContext == null) {
 					return localCache;
 				}
 				var map = servletContext.getAttribute(CACHE_ATTRIBUTE);
 				if (map == null) {
-					servletContext.setAttribute(CACHE_ATTRIBUTE, new java.util.concurrent.ConcurrentHashMap());
+					servletContext.setAttribute(CACHE_ATTRIBUTE, new ConcurrentHashMap());
 					map = servletContext.getAttribute(CACHE_ATTRIBUTE);
 				}
 				return map;
@@ -105,62 +124,62 @@
 		}
 
 		function publicKey(jwk) {
-			var decoder = java.util.Base64.getUrlDecoder();
+			var decoder = Base64.getUrlDecoder();
 			if (jwk.kty === "RSA") {
-				var modulus = new java.math.BigInteger(1, decoder.decode(String(jwk.n)));
+				var modulus = new BigInteger(1, decoder.decode(String(jwk.n)));
 				if (modulus.bitLength() < 2048) {
 					fail("RSA key too short");
 				}
-				var exponent = new java.math.BigInteger(1, decoder.decode(String(jwk.e)));
-				return java.security.KeyFactory.getInstance("RSA").generatePublic(new java.security.spec.RSAPublicKeySpec(modulus, exponent));
+				var exponent = new BigInteger(1, decoder.decode(String(jwk.e)));
+				return KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(modulus, exponent));
 			}
-			var parameters = java.security.AlgorithmParameters.getInstance("EC");
-			parameters.init(new java.security.spec.ECGenParameterSpec(CURVES[jwk.crv]));
-			var spec = parameters.getParameterSpec(java.lang.Class.forName("java.security.spec.ECParameterSpec"));
-			var point = new java.security.spec.ECPoint(
-				new java.math.BigInteger(1, decoder.decode(String(jwk.x))),
-				new java.math.BigInteger(1, decoder.decode(String(jwk.y))));
-			return java.security.KeyFactory.getInstance("EC").generatePublic(new java.security.spec.ECPublicKeySpec(point, spec));
+			var parameters = AlgorithmParameters.getInstance("EC");
+			parameters.init(new ECGenParameterSpec(CURVES[jwk.crv]));
+			var spec = parameters.getParameterSpec(JavaClass.forName("java.security.spec.ECParameterSpec"));
+			var point = new ECPoint(
+				new BigInteger(1, decoder.decode(String(jwk.x))),
+				new BigInteger(1, decoder.decode(String(jwk.y))));
+			return KeyFactory.getInstance("EC").generatePublic(new ECPublicKeySpec(point, spec));
 		}
 
 		return {
 			now: function () {
-				return Number(java.lang.System.currentTimeMillis());
+				return Number(JavaSystem.currentTimeMillis());
 			},
 			decodeBase64Url: function (text) {
-				return java.util.Base64.getUrlDecoder().decode(String(text));
+				return Base64.getUrlDecoder().decode(String(text));
 			},
 			utf8: function (data) {
-				return String(new java.lang.String(data, "UTF-8"));
+				return String(new JavaString(data, "UTF-8"));
 			},
 			utf8Bytes: function (text) {
-				return new java.lang.String(String(text)).getBytes("UTF-8");
+				return new JavaString(String(text)).getBytes("UTF-8");
 			},
 			encodeBase64Url: function (bytes) {
-				return String(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
+				return String(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
 			},
 			hmac: function (alg, secret, signingInput) {
-				var mac = javax.crypto.Mac.getInstance(HMAC_ALGORITHMS[alg]);
-				mac.init(new javax.crypto.spec.SecretKeySpec(new java.lang.String(String(secret)).getBytes("UTF-8"), HMAC_ALGORITHMS[alg]));
-				return mac.doFinal(new java.lang.String(String(signingInput)).getBytes("US-ASCII"));
+				var mac = Mac.getInstance(HMAC_ALGORITHMS[alg]);
+				mac.init(new SecretKeySpec(new JavaString(String(secret)).getBytes("UTF-8"), HMAC_ALGORITHMS[alg]));
+				return mac.doFinal(new JavaString(String(signingInput)).getBytes("US-ASCII"));
 			},
 			constantTimeEquals: function (a, b) {
-				return java.security.MessageDigest.isEqual(a, b);
+				return MessageDigest.isEqual(a, b);
 			},
 			verifySignature: function (alg, jwk, signingInput, signature) {
-				var verifier = java.security.Signature.getInstance(ALGORITHMS[alg].java);
+				var verifier = Signature.getInstance(ALGORITHMS[alg].java);
 				verifier.initVerify(publicKey(jwk));
-				verifier.update(new java.lang.String(signingInput).getBytes("US-ASCII"));
+				verifier.update(new JavaString(signingInput).getBytes("US-ASCII"));
 				return verifier.verify(signature) == true;
 			},
 			// OpenID Connect at_hash: base64url of the left half of the hash of the ASCII access token
 			accessTokenHash: function (alg, accessToken) {
-				var digest = java.security.MessageDigest.getInstance("SHA-" + alg.substring(2)).digest(new java.lang.String(accessToken).getBytes("US-ASCII"));
-				return String(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(java.util.Arrays.copyOf(digest, digest.length / 2)));
+				var digest = MessageDigest.getInstance("SHA-" + alg.substring(2)).digest(new JavaString(accessToken).getBytes("US-ASCII"));
+				return String(Base64.getUrlEncoder().withoutPadding().encodeToString(Arrays.copyOf(digest, digest.length / 2)));
 			},
 			fetch: function (url) {
 				// ProxySelector and Authenticator are installed by the engine ProxyManager.
-				var connection = new java.net.URL(url).openConnection();
+				var connection = new URL(url).openConnection();
 				connection.setConnectTimeout(5000);
 				connection.setReadTimeout(10000);
 				connection.setInstanceFollowRedirects(false);
@@ -172,8 +191,8 @@
 						fail("HTTP " + status + " from " + url);
 					}
 					var input = connection.getInputStream();
-					var output = new java.io.ByteArrayOutputStream();
-					var buffer = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, 8192);
+					var output = new ByteArrayOutputStream();
+					var buffer = JavaArray.newInstance(JavaByte.TYPE, 8192);
 					var read;
 					while ((read = input.read(buffer)) != -1) {
 						output.write(buffer, 0, read);
@@ -182,7 +201,7 @@
 						}
 					}
 					input.close();
-					return String(new java.lang.String(output.toByteArray(), "UTF-8"));
+					return String(new JavaString(output.toByteArray(), "UTF-8"));
 				} finally {
 					connection.disconnect();
 				}
@@ -192,7 +211,7 @@
 				return value == null ? null : String(value);
 			},
 			cachePut: function (key, value) {
-				cacheMap().put(key, new java.lang.String(value));
+				cacheMap().put(key, new JavaString(value));
 			},
 			cacheClear: function () {
 				cacheMap().clear();

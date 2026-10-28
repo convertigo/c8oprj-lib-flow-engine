@@ -8,8 +8,8 @@
 // This runs Engine.run in the real FlowRuntimeApi of the engine, the way FlowEngineBridge does (shared scope, one frame
 // and the packages of a generation per call), with a class loader of the generation counting the names it is asked for.
 // The Flow uses http.request (a cookie of the Convertigo context of the call), crypto.hash, a Rhino block of no state
-// (text.urlEncode, a factory per frame), an expression method call, while, set and rows.select (the rows library and its
-// Java kernel, a class of the generation). Once warm, a call asks the generation for no class at all, the six names bound
+// (text.urlEncode, a factory per frame), an expression method call, while, set, rows.select (the rows library and its
+// Java kernel, a class of the generation) and jwt.decode (the jwt-verify library). Once warm, a call asks the generation for no class at all, the six names bound
 // by the engine itself apart; the Java kernel of the rows is looked up again, once, for another generation. It needs the
 // engine classes: run it with the complete engine runtime classpath in CONVERTIGO_DEPENDENCIES_JAR.
 var engineDir = new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getCanonicalFile();
@@ -116,6 +116,11 @@ var FlowPackages = java.lang.Class.forName("com.twinsoft.convertigo.engine.flow.
 var initializeChildScope = accessible(FlowPackages.getDeclaredMethod("initializeChildScope", Scriptable, Scriptable));
 var bind = accessible(FlowPackages.getDeclaredMethod("bind", Context, Scriptable, java.lang.Class.forName("java.lang.ClassLoader")));
 
+// a compact JWT, decoded by jwt.decode (lib/jwt-verify.js, a library shared by the runs of a shared runtime)
+function part(value) {
+	return String(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(new java.lang.String(JSON.stringify(value)).getBytes("UTF-8")));
+}
+var token = part({ alg: "RS256", typ: "JWT" }) + "." + part({ user_id: 7, exp: 4102444800, iat: 1 }) + ".c2ln";
 var definition = { version: 1, nodes: [
 	{ id: "login", block: "http.request", props: { url: base + "/login?id={{ input.id }}" }, out: "local.login" },
 	{ id: "whoami", block: "http.request", props: { url: base + "/whoami" }, out: "local.whoami" },
@@ -129,7 +134,9 @@ var definition = { version: 1, nodes: [
 	] },
 	{ id: "count", block: "set", props: { path: "result.n", value: "{{ local.n }}" } },
 	{ id: "table", block: "set", props: { path: "local.rows", value: [{ a: 1, b: 2 }, { a: 3, b: 4 }] } },
-	{ id: "select", block: "rows.select", props: { rows: "local.rows", columns: ["b"] }, out: "result.rows" }
+	{ id: "select", block: "rows.select", props: { rows: "local.rows", columns: ["b"] }, out: "result.rows" },
+	{ id: "jwt", block: "jwt.decode", props: { token: token }, out: "local.jwt" },
+	{ id: "user", block: "set", props: { path: "result.user", value: "{{ local.jwt.claims.user_id }}" } }
 ] };
 
 var BOUND = { "java": true, "javax": true, "org": true, "com": true, "edu": true, "net": true };
@@ -168,7 +175,7 @@ function packageProbes(names) {
 }
 function expected(result, id) {
 	return result.cookie === "sid=" + id && result.upper === "SID=" + id && result.encoded === "a%20b" && result.n === 2
-		&& /^[0-9a-f]{64}$/.test(result.hash) && JSON.stringify(result.rows) === '[{"b":2},{"b":4}]';
+		&& /^[0-9a-f]{64}$/.test(result.hash) && JSON.stringify(result.rows) === '[{"b":2},{"b":4}]' && result.user === 7;
 }
 
 try {
