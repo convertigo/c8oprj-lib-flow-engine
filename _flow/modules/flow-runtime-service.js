@@ -610,7 +610,9 @@
 		// the tasks after it, and its settle must throw. Without the shared runtime or a free thread, inside a lane, or for
 		// one lane, the tasks run one by one on the calling thread with the same contract.
 		// What a task records for its caller (trace, profile, learned output schemas) is given to the caller before its
-		// settle, in task order.
+		// settle, in task order. When a settle throws, the tasks after it that had started are stopped at once (their
+		// blocking calls interrupted) and their indexes are given in details.discardedChunks of the error: their outcomes
+		// are dropped, but their external effects (an HTTP call) may have happened.
 		runContextPrototype.runLanes = function (options) {
 			return runLanes(this, options || {});
 		};
@@ -637,7 +639,7 @@
 				}
 			}
 			var window, submitted = 0, settled = 0, ready = {};
-			var pulling = true, pullFailed = false, pullError, stopIndex = -1, completed = false;
+			var pulling = true, pullFailed = false, pullError, stopIndex = -1, completed = false, settleFailed = -1, thrown;
 			try {
 				window = Number(lanes.window());
 				for (;;) {
@@ -663,7 +665,7 @@
 					var outcome = lanes.poll(50);
 					if (outcome === null || outcome === undefined) continue;
 					if (outcome.failed && options.failFast && (stopIndex < 0 || outcome.index < stopIndex)) {
-						// the tasks after a failed one are useless: none is pulled, the running ones stop at their next block
+						// the tasks after a failed one are useless: none is pulled, the running ones stop at once
 						stopIndex = outcome.index;
 						lanes.stopAfter(stopIndex);
 						if (pulling) {
@@ -677,15 +679,40 @@
 						delete ready[settled];
 						settled++;
 						giveRecords(template, settling);
+						settleFailed = settling.index;
 						options.settle(settling, callerLane);
+						settleFailed = -1;
 					}
 				}
 				if (pullFailed) throw pullError;
 				completed = true;
 				return { lanes: Number(lanes.count()) };
+			} catch (error) {
+				thrown = error;
+				throw error;
 			} finally {
-				if (!completed) lanes.cancel("stopped");
+				if (!completed) {
+					// the tasks after a failed settle are stopped at once (their blocking calls interrupted)
+					if (settleFailed >= 0) lanes.stopAfter(settleFailed);
+					lanes.cancel("stopped");
+				}
 				lanes.close();
+				// once the lanes are closed: which of the tasks after the failed one had started
+				if (thrown !== undefined && settleFailed >= 0) discardedChunks(thrown, lanes, settleFailed);
+			}
+		}
+
+		function discardedChunks(error, lanes, index) {
+			if (typeof lanes.startedAfter !== "function" || !error || typeof error !== "object") return;
+			var started = lanes.startedAfter(index), indexes = [];
+			for (var i = 0; started && i < started.length; i++) indexes.push(Number(started[i]));
+			if (!indexes.length) return;
+			try {
+				var details = error.details;
+				if (details !== undefined && details !== null && (typeof details !== "object" || Array.isArray(details))) return;
+				error.details = Object.assign({}, details || {}, { discardedChunks: indexes });
+			} catch (frozen) {
+				// an error the lane cannot annotate keeps its details
 			}
 		}
 

@@ -36,6 +36,31 @@
     return found;
   }
 
+  // HTTP calls with an effect in the Each slot of a parallel loop that stops at the first error: the chunks after a
+  // failed one may have sent theirs before it is known (at most 2 x parallel - 1 of them), and it is not undone.
+  var READS = ["GET", "HEAD", "OPTIONS"];
+  function sentEffects(node) {
+    var found = [];
+    function walk(nodes) {
+      (Array.isArray(nodes) ? nodes : []).forEach(function (child) {
+        if (!child || typeof child !== "object" || !child.block || child.disabled) return;
+        var method = child.block === "http.request" ? (child.props && child.props.method !== undefined ? child.props.method : "GET")
+          : {"http.post": "POST", "http.put": "PUT", "http.delete": "DELETE"}[child.block];
+        if (method !== undefined && !(typeof method === "string" && READS.indexOf(method.toUpperCase()) >= 0)) {
+          found.push({severity: "warning", code: "FOR_EACH_CHUNK_PARALLEL_EFFECTS", property: "parallel", path: nodePath(child), block: child.block,
+            message: "With parallel and onError stop, the chunks after a failed one may already have sent this request (at most 2 x parallel - 1 of them): "
+              + "their results are dropped (listed in details.discardedChunks of the error), their effects are not undone.",
+            hint: "Make the request idempotent (an upsert by key), or set onError to continue, or parallel to 1."});
+        }
+        Object.keys(child).forEach(function (key) {
+          if (key !== "props" && Array.isArray(child[key])) walk(child[key]);
+        });
+      });
+    }
+    walk(node.each);
+    return found;
+  }
+
   return {
     displayName: function (node) {
       var props = node.props || node;
@@ -49,6 +74,7 @@
       var parallel = typeof props.parallel === "number" && props.parallel > 1;
       if (parallel) {
         sharedWrites(node, !(ctx.parallelChunkLoops > 0)).forEach(function (error) { ctx.errors.push(error); });
+        if (props.onError !== "continue") sentEffects(node).forEach(function (warning) { ctx.errors.push(warning); });
         ctx.parallelChunkLoops = (ctx.parallelChunkLoops || 0) + 1;
       }
       try {

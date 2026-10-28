@@ -274,6 +274,12 @@ const _meta = {
 		return javaHttpClient;
 	}
 
+	function interrupted(error) {
+		var cause = error && error.javaException;
+		return !!cause && (cause instanceof Packages.java.lang.InterruptedException
+			|| cause instanceof Packages.java.nio.channels.ClosedByInterruptException);
+	}
+
 	function isFileUrl(url) {
 		return String(url || "").match(/^file:/i) !== null;
 	}
@@ -353,6 +359,8 @@ const _meta = {
 				try {
 					response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace, responseType);
 				} catch (e) {
+					// an interrupted call (a chunk of a parallel loop stopped after a failed one) is not sent again
+					if (interrupted(e)) throw e;
 					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace, responseType);
 				}
 			}

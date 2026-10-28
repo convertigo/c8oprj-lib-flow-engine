@@ -198,6 +198,20 @@ try {
   assert(traceOne.ok && traceFour.ok && traceOne.trace.nodes.length > 12, "The traced Flows run: " + JSON.stringify([traceOne.error, traceFour.error]));
   assert(traceShape(traceFour) === traceShape(traceOne), "The trace of a parallel loop is the sequential one: " + traceShape(traceFour) + " / " + traceShape(traceOne));
 
+  // a parallel slot sending requests with an effect, stopped at the first error, gets a warning
+  function effects(onError, method) {
+    return api("analyze", {flowSource: source(head + 'function E({input,result}){\nforEachChunk({source:input.items,size:3,parallel:4' + (onError ? ',onError:"' + onError + '"' : '') + ',$$each:function({chunk}){\n'
+      + 'local.r=' + method + '\n}})\n}').code});
+  }
+  function effectWarnings(analysis) {
+    return analysis.errors.filter(function (error) { return error.code === "FOR_EACH_CHUNK_PARALLEL_EFFECTS"; });
+  }
+  var posted = effects("", 'http.post({url:"http://example.invalid/rows",body:chunk.rows})');
+  assert(posted.ok && effectWarnings(posted).length === 1 && effectWarnings(posted)[0].severity === "warning", "A POST in a parallel chunk that stops gets a warning: " + JSON.stringify(posted.errors));
+  assert(effectWarnings(effects("", 'http.request({method:"DELETE",url:"http://example.invalid/rows"})')).length === 1, "A DELETE request too");
+  assert(effectWarnings(effects("", 'http.get({url:"http://example.invalid/rows"})')).length === 0, "A GET does not");
+  assert(effectWarnings(effects("continue", 'http.post({url:"http://example.invalid/rows",body:chunk.rows})')).length === 0, "Nor a POST with onError continue");
+
   // bounds
   var tooMany = run(head + 'function L({input,result}){\nforEachChunk({source:input.items,parallel:65,$$each:function({chunk}){\nlocal.x=1\n}})\n}', {items: items});
   assert(!tooMany.ok && code(tooMany.error) === "FOR_EACH_CHUNK_LIMIT_INVALID", "parallel goes up to 64: " + JSON.stringify(tooMany.error));
