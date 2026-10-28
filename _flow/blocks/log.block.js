@@ -46,12 +46,17 @@ const _meta = {
 }
 
 (function () {
+	// The class of the engine comes from the engine that evaluates the module (flowEngineClass, kept for the runtime),
+	// else by its full name: through the Packages of a call, it looked up com.twinsoft, com.twinsoft.convertigo and
+	// com.twinsoft.convertigo.engine as classes at each log.
+	var Engine = typeof flowEngineClass === "function" ? flowEngineClass("com.twinsoft.convertigo.engine.Engine")
+		: Packages["com.twinsoft.convertigo.engine.Engine"];
+
 	function prop(node, key) {
 		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
 	}
 
 	function logger(name) {
-		var Engine = Packages.com.twinsoft.convertigo.engine.Engine;
 		if (name === "engine") {
 			return Engine.logEngine;
 		}

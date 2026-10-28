@@ -54,14 +54,22 @@ const _meta = {
 }
 
 (function () {
+	// The classes of the JDK come from the engine that evaluates the module (flowEngineClass, kept for the runtime), else
+	// by their full names: through the Packages of a call, each name looked up the names of its packages as classes again.
+	function javaClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
+	}
+	var Base64 = javaClass("java.util.Base64");
+	var MessageDigest = javaClass("java.security.MessageDigest");
+	var JavaString = javaClass("java.lang.String");
 	var ALGORITHMS = { sha256: "SHA-256", sha1: "SHA-1", sha384: "SHA-384", sha512: "SHA-512", md5: "MD5" };
 
 	function encode(bytes, encoding) {
 		if (encoding === "base64") {
-			return String(java.util.Base64.getEncoder().encodeToString(bytes));
+			return String(Base64.getEncoder().encodeToString(bytes));
 		}
 		if (encoding === "base64url") {
-			return String(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
+			return String(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
 		}
 		var hex = "";
 		for (var i = 0; i < bytes.length; i++) {
@@ -79,7 +87,7 @@ const _meta = {
 			if (!algorithm) {
 				return ctx.throwFlow({ code: "CRYPTO_ALGORITHM_INVALID", message: "crypto.hash: unknown algorithm " + props.algorithm, status: 400 }, node);
 			}
-			var digest = java.security.MessageDigest.getInstance(algorithm).digest(new java.lang.String(text).getBytes("UTF-8"));
+			var digest = MessageDigest.getInstance(algorithm).digest(new JavaString(text).getBytes("UTF-8"));
 			return encode(digest, String(props.encoding || "hex"));
 		}
 	};

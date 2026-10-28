@@ -71,7 +71,8 @@ try {
 		nativeDirectoryFingerprint: function () { return null; } };
 	assertTrue(fingerprintUtils.directoryFingerprint(tree, withoutNative) === js, "else the JS walk computes it");
 
-	// Engine.js looks the class up through the packages of the call, and remembers per generation when it is missing
+	// Engine.js looks the class up through the packages of the call, by its full name (projectClass, a runtime serving
+	// every project: no class kept), and remembers per generation when it is missing
 	var source = String(FileUtils.readFileToString(new File(engineDir, "Engine.js"), "UTF-8"));
 	function functionSource(name) {
 		var start = source.indexOf("\n\tfunction " + name + "(") + 2;
@@ -83,13 +84,20 @@ try {
 	var rememberNativeFingerprints = eval(functionSource("rememberNativeFingerprints"));
 	var lookups = 0;
 	var sharedModuleBridge = false;
-	var Packages = { com: { convertigo: {} } };
-	Object.defineProperty(Packages.com.convertigo, "libflowengine", { get: function () {
+	var Packages = {};
+	var nativeClass = function () {};
+	nativeClass.directory = function (path) { return nativeFingerprint(new File(path)); };
+	Object.defineProperty(Packages, "com.convertigo.libflowengine.Fingerprints", { get: function () {
 		lookups++;
-		return __withClasses ? { Fingerprints: { directory: function (path) { return nativeFingerprint(new File(path)); } } } : {};
+		// a class is a function for Rhino, a missing one a Java package
+		return __withClasses ? nativeClass : {};
 	} });
 	var __withClasses = false;
 	var __flowGenerationId = "ProjectA#1";
+	var sharedRuntime = null;
+	var projectPackages = eval(functionSource("projectPackages"));
+	var projectGeneration = eval(functionSource("projectGeneration"));
+	var projectClass = eval(functionSource("projectClass"));
 	var nativeDirectoryFingerprint = eval(functionSource("nativeDirectoryFingerprint"));
 	assertTrue(nativeDirectoryFingerprint(tree) === null && nativeDirectoryFingerprint(tree) === null && lookups === 1,
 		"without the classes: null, looked up once for the generation");

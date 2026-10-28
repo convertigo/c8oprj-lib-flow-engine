@@ -20,6 +20,7 @@ var evaluations = { pure: 0, stateful: 0 };
 var globalScope = this;
 var loadFlowLibrary = (function () {
 	var prepared = {};
+	var RhinoContext = Packages.org.mozilla.javascript.Context;
 	var sharedRuntime = {
 		prepare: function (key, build) { return prepared[key] || (prepared[key] = build()); }
 	};

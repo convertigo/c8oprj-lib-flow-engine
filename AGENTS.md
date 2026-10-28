@@ -175,6 +175,11 @@ Avoid:
 - `async` / `await`
 - `class`
 - function-call spread such as `fn(...args)`
+- `Packages.a.b.C` / `java.a.B` in code run for each call or frame: the packages of
+  a call are new at each call in the shared runtime and look each package up as a
+  class again. Resolve once, in the module: `flowEngineClass("a.b.C")` for the JDK
+  and the engine, `flowProjectClass("a.b.C")` for a class of a project (by
+  generation); see [docs/stateless-runtime.md](docs/stateless-runtime.md)
 
 ## Architecture
 

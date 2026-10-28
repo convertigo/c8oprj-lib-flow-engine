@@ -113,34 +113,45 @@ const _meta = {
 	// again when it failed before being sent. Its cookies are never those of the store the client shares between all the
 	// calls of the server: each call has its cookie context, on the HttpState of its Convertigo context as with the HTTP
 	// connectors, and follows the redirections itself to read and write them at each step.
-	var Engine = Packages.com.twinsoft.convertigo.engine.Engine;
-	var HttpUtils = Packages.com.twinsoft.convertigo.engine.util.HttpUtils;
-	var EntityUtils = Packages.org.apache.http.util.EntityUtils;
-	var RequestBuilder = Packages.org.apache.http.client.methods.RequestBuilder;
-	var RequestConfig = Packages.org.apache.http.client.config.RequestConfig;
-	var CookieSpecs = Packages.org.apache.http.client.config.CookieSpecs;
-	var HttpClientContext = Packages.org.apache.http.client.protocol.HttpClientContext;
-	var RequestAddCookies = Packages.org.apache.http.client.protocol.RequestAddCookies;
-	var ResponseProcessCookies = Packages.org.apache.http.client.protocol.ResponseProcessCookies;
-	var CookieSpecRegistries = Packages.org.apache.http.impl.client.CookieSpecRegistries;
-	var CookieStore = Packages.org.apache.http.client.CookieStore;
-	var BasicCookieStore = Packages.org.apache.http.impl.client.BasicCookieStore;
-	var BasicClientCookie = Packages.org.apache.http.impl.cookie.BasicClientCookie;
-	var ClientCookie = Packages.org.apache.http.cookie.ClientCookie;
-	var HttpHost = Packages.org.apache.http.HttpHost;
-	var HttpRoute = Packages.org.apache.http.conn.routing.HttpRoute;
-	var URIUtils = Packages.org.apache.http.client.utils.URIUtils;
-	var ByteArrayEntity = Packages.org.apache.http.entity.ByteArrayEntity;
-	var LegacyCookie = Packages.org.apache.commons.httpclient.Cookie;
-	var ArrayList = Packages.java.util.ArrayList;
-	var JavaThread = Packages.java.lang.Thread;
-	var URLEncoder = Packages.java.net.URLEncoder;
-	var URI = Packages.java.net.URI;
-	var File = Packages.java.io.File;
-	var Files = Packages.java.nio.file.Files;
-	var FileUtils = Packages.org.apache.commons.io.FileUtils;
-	var StandardCharsets = Packages.java.nio.charset.StandardCharsets;
-	var Base64 = Packages.java.util.Base64;
+	//
+	// The classes of the JDK and of the engine (the client of the engine is httpclient 4 of the engine, never a copy of
+	// the libraries of a project): from the engine that evaluates the module (flowEngineClass, kept for the runtime),
+	// else by their full names. Through the Packages of a call, each name looked up the names of its packages as
+	// classes, and each class of the engine was searched first in the libraries of the project.
+	function javaClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
+	}
+	var Engine = javaClass("com.twinsoft.convertigo.engine.Engine");
+	var HttpUtils = javaClass("com.twinsoft.convertigo.engine.util.HttpUtils");
+	var EntityUtils = javaClass("org.apache.http.util.EntityUtils");
+	var RequestBuilder = javaClass("org.apache.http.client.methods.RequestBuilder");
+	var RequestConfig = javaClass("org.apache.http.client.config.RequestConfig");
+	var CookieSpecs = javaClass("org.apache.http.client.config.CookieSpecs");
+	var HttpClientContext = javaClass("org.apache.http.client.protocol.HttpClientContext");
+	var RequestAddCookies = javaClass("org.apache.http.client.protocol.RequestAddCookies");
+	var ResponseProcessCookies = javaClass("org.apache.http.client.protocol.ResponseProcessCookies");
+	var CookieSpecRegistries = javaClass("org.apache.http.impl.client.CookieSpecRegistries");
+	var CookieStore = javaClass("org.apache.http.client.CookieStore");
+	var BasicCookieStore = javaClass("org.apache.http.impl.client.BasicCookieStore");
+	var BasicClientCookie = javaClass("org.apache.http.impl.cookie.BasicClientCookie");
+	var ClientCookie = javaClass("org.apache.http.cookie.ClientCookie");
+	var HttpHost = javaClass("org.apache.http.HttpHost");
+	var HttpRoute = javaClass("org.apache.http.conn.routing.HttpRoute");
+	var URIUtils = javaClass("org.apache.http.client.utils.URIUtils");
+	var ByteArrayEntity = javaClass("org.apache.http.entity.ByteArrayEntity");
+	var LegacyCookie = javaClass("org.apache.commons.httpclient.Cookie");
+	var ArrayList = javaClass("java.util.ArrayList");
+	var JavaThread = javaClass("java.lang.Thread");
+	var JavaString = javaClass("java.lang.String");
+	var JavaArray = javaClass("java.lang.reflect.Array");
+	var JavaByte = javaClass("java.lang.Byte");
+	var URLEncoder = javaClass("java.net.URLEncoder");
+	var URI = javaClass("java.net.URI");
+	var File = javaClass("java.io.File");
+	var Files = javaClass("java.nio.file.Files");
+	var FileUtils = javaClass("org.apache.commons.io.FileUtils");
+	var StandardCharsets = javaClass("java.nio.charset.StandardCharsets");
+	var Base64 = javaClass("java.util.Base64");
 
 	// as the JDK client used until 0.1.114: at most 5 responses, the fifth returned as is when it redirects again
 	var MAX_RESPONSES = 5;
@@ -149,7 +160,7 @@ const _meta = {
 	var ORIGIN_HEADERS = { "authorization": true, "cookie": true, "origin": true, "referer": true, "host": true };
 	// headers the client computes from the entity
 	var ENTITY_HEADERS = { "content-length": true, "transfer-encoding": true };
-	var NO_BODY = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, 0);
+	var NO_BODY = JavaArray.newInstance(JavaByte.TYPE, 0);
 	var requestCookies = new RequestAddCookies();
 	var responseCookies = new ResponseProcessCookies();
 	var cookieSpecs = null;
@@ -226,7 +237,7 @@ const _meta = {
 	}
 
 	function basicAuthorization(username, password) {
-		return "Basic " + String(Base64.getEncoder().encodeToString(new java.lang.String(username + ":" + password).getBytes("UTF-8")));
+		return "Basic " + String(Base64.getEncoder().encodeToString(new JavaString(username + ":" + password).getBytes("UTF-8")));
 	}
 
 	// The bytes of the body, UTF-8: an object is sent as JSON, with its Content-Type when the headers have none
@@ -237,7 +248,7 @@ const _meta = {
 		if (!hasHeader(headers, "content-type") && typeof body !== "string") {
 			headers["Content-Type"] = "application/json";
 		}
-		return new java.lang.String(typeof body === "string" ? body : JSON.stringify(body)).getBytes(StandardCharsets.UTF_8);
+		return new JavaString(typeof body === "string" ? body : JSON.stringify(body)).getBytes(StandardCharsets.UTF_8);
 	}
 
 	function responseObject(status, contentType, headers, text, allocationTrace, responseType) {

@@ -24,6 +24,7 @@ var FileUtils = { readFileToString: function (file, encoding) {
 } };
 eval(source.substring(source.indexOf("\tvar MEMOIZED_FINGERPRINT_OPERATIONS"), source.indexOf("\tvar callFingerprints")));
 var callFingerprints = new java.lang.ThreadLocal();
+var JavaHashMap = java.util.HashMap;
 function parseRequest(json) { return JSON.parse(json); }
 function withActiveRequest(request, callback) { return callback(); }
 function response(value) { return value; }

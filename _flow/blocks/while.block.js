@@ -49,6 +49,8 @@ const _meta = {
 }
 
 (function () {
+  // the clock, from the engine (flowEngineClass, kept for the runtime), not looked up through the Packages of each call
+  var System = typeof flowEngineClass === "function" ? flowEngineClass("java.lang.System") : Packages["java.lang.System"];
   function execute(ctx, node, condition) {
     var props = ctx.props(node);
     function bounded(key, fallback, maximum) {
@@ -61,10 +63,10 @@ const _meta = {
     }
     var limit = bounded("maxIterations", 1000, 1000000);
     var timeout = bounded("timeoutMs", 60000, 600000);
-    var started = Packages.java.lang.System.nanoTime(), iterations = 0;
+    var started = System.nanoTime(), iterations = 0;
     for (;;) {
       if (!ctx.canContinue()) ctx.throwFlow({code: "FLOW_EXECUTION_CANCELLED", message: "Loop execution cancelled.", status: 499}, node);
-      if ((Packages.java.lang.System.nanoTime() - started) / 1000000 >= timeout) {
+      if ((System.nanoTime() - started) / 1000000 >= timeout) {
         ctx.throwFlow({code: "WHILE_TIMEOUT", message: "The while loop exceeded its time budget.", status: 504,
           details: {iterations: iterations, timeoutMs: timeout}}, node);
       }

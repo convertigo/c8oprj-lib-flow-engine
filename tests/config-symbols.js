@@ -68,8 +68,13 @@ var fakePackages = { com: { twinsoft: { convertigo: { engine: {
 	Engine: { theApp: { databaseObjectsManager: manager }, logEngine: { warn: function (message) { warnings.push(String(message)); } } },
 	UndefinedSymbolsException: UndefinedSymbolsException
 } } } } };
+// the classes Engine.js resolves once for the runtime (engineClass)
+function engineClasses(Packages) {
+	return { EngineClass: Packages.com.twinsoft.convertigo.engine.Engine, UndefinedSymbolsException: Packages.com.twinsoft.convertigo.engine.UndefinedSymbolsException };
+}
 var compileConfigSymbols = (function (Packages) {
 	var sharedRuntime = null;
+	var EngineClass = engineClasses(Packages).EngineClass, UndefinedSymbolsException = engineClasses(Packages).UndefinedSymbolsException;
 	var reportedUndefinedSymbols = new java.util.concurrent.ConcurrentHashMap();
 	return eval("(" + extract("compileConfigSymbols") + ")");
 })(fakePackages);
@@ -82,6 +87,7 @@ try { compileConfigSymbols("${broken}"); } catch (e) { rethrown = e.message === 
 assert(rethrown, "another failure is not hidden");
 var standalone = (function (Packages) {
 	var sharedRuntime = null;
+	var EngineClass = engineClasses(Packages).EngineClass, UndefinedSymbolsException = engineClasses(Packages).UndefinedSymbolsException;
 	var reportedUndefinedSymbols = new java.util.concurrent.ConcurrentHashMap();
 	return eval("(" + extract("compileConfigSymbols") + ")");
 })({ com: { twinsoft: { convertigo: { engine: { Engine: { theApp: null } } } } } });

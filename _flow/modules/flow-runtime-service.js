@@ -1,6 +1,13 @@
 (function () {
-	// resolved once with the module: a lookup through the Packages of a call costs class loader misses at each loop
-	var Synchronizer = typeof Packages !== "undefined" ? Packages.org.mozilla.javascript.Synchronizer : null;
+	// resolved once with the module: a lookup through the Packages of a call costs class loader misses at each loop.
+	// From the engine that evaluates the module (flowEngineClass: its class path, kept for the runtime), else by full name.
+	function engineClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : typeof Packages !== "undefined" ? Packages[name] : null;
+	}
+	var Synchronizer = engineClass("org.mozilla.javascript.Synchronizer");
+	// the cookies of a Convertigo context (commons-httpclient 3, as its HTTP connectors): the class of the engine, which the
+	// field of the context has, never a copy of the libraries of a project
+	var HttpState = engineClass("org.apache.commons.httpclient.HttpState");
 
 	function create(env) {
 		env = env || {};
@@ -226,9 +233,9 @@
 			}
 			var state = invocation.httpState;
 			if (state === null || state === undefined) {
-				state = new Packages.org.mozilla.javascript.Synchronizer(function () {
+				state = new Synchronizer(function () {
 					if (invocation.httpState === null || invocation.httpState === undefined) {
-						invocation.httpState = new Packages.org.apache.commons.httpclient.HttpState();
+						invocation.httpState = new HttpState();
 					}
 					return invocation.httpState;
 				}, invocation)();

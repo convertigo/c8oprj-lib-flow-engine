@@ -858,10 +858,19 @@ return formatRows(rows);
     };
   }
   /* JAVA_DISPATCH_BEGIN: stripped from generated browser peers. */
+  // The Java kernel, a class of the class path of the project of the call (libs/src of lib_flow_engine, compiled by
+  // the server), from the engine that evaluates this library: kept by generation of that class path (flowProjectClass).
+  // Elsewhere looked up by its full name: Packages.com.convertigo.libflowengine.Rows would also look up com.convertigo
+  // and com.convertigo.libflowengine as classes, each with the class loading lock of its name.
+  function rowsKernel() {
+    if(typeof flowProjectClass==='function')return flowProjectClass('com.convertigo.libflowengine.Rows');
+    var kernel=Packages['com.convertigo.libflowengine.Rows'];
+    return typeof kernel==='function'?kernel:null;
+  }
   function nativeKernel(name,input,control) {
     if(typeof Packages==='undefined')return null;
     var kernel;
-    try {kernel=Packages.com.convertigo.libflowengine.Rows;if(typeof kernel.run!=='function'||!kernel.available())return null;}catch(unavailable){return null;}
+    try {kernel=rowsKernel();if(!kernel||typeof kernel.run!=='function'||!kernel.available())return null;}catch(unavailable){return null;}
     return kernel.run(name,input,control||null);
   }
   function optimized(name,reference) {return function(input,control){
@@ -877,7 +886,7 @@ return formatRows(rows);
   var referencePrepare=preparePipeline;
   preparePipeline=function(steps){
     var fallback=referencePrepare(steps),prepared=null;
-    try{var kernel=Packages.com.convertigo.libflowengine.Rows;if(typeof kernel.prepare==='function'&&kernel.available())prepared=kernel.prepare(steps);}catch(unavailable){}
+    try{var kernel=typeof Packages==='undefined'?null:rowsKernel();if(kernel&&typeof kernel.prepare==='function'&&kernel.available())prepared=kernel.prepare(steps);}catch(unavailable){}
     return prepared?function(values){var value=prepared.apply(values);return value===null?fallback(values):value;}:fallback;
   };
   read=optimized('read',read);selectColumns=optimized('select',selectColumns);formatCells=optimized('formatCells',formatCells);

@@ -96,6 +96,10 @@ var packages = {
 	}
 };
 
+// the classes of the JDK and of the engine, by their full names, as the engine gives them to the scripts it evaluates
+function flowEngineClass(name) {
+	return String(name).split(".").reduce(function (value, key) { return value === undefined ? undefined : value[key]; }, packages);
+}
 var implementation = (function (Packages) {
 	return eval(runtimeSource);
 })(packages);
@@ -298,6 +302,8 @@ print('native sequence invocation and legacy/error fallbacks OK');
 function HostText(value){this.value=value;}
 HostText.prototype.toString=function(){return this.value;};
 packages.java.lang.CharSequence=HostText;
+// the classes are resolved with the module
+implementation=(function (Packages) { return eval(runtimeSource); })(packages);
 targetDbo.isNativeExecution=function(){return true;};targetDbo.isJsonNativeOutput=function(){return true;};
 nativeResult=new HostText('{"error":{"code":"918"}}');
 nativeAnswer=implementation.run(checked,{props:{requestable:'ChildProject.Native',input:{__nativeCall:true}}});

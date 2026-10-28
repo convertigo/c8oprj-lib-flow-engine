@@ -26,6 +26,7 @@ function fingerprintUtils() {
 function fingerprintEnv() { return {}; }
 eval(source.substring(source.indexOf("\tvar MEMOIZED_FINGERPRINT_OPERATIONS"), source.indexOf("\tvar callFingerprints")));
 var callFingerprints = new Packages.java.lang.ThreadLocal();
+var JavaHashMap = Packages.java.util.HashMap;
 var directoryFingerprint = eval(functionSource("directoryFingerprint"));
 function parseRequest(json) { return JSON.parse(json); }
 function withActiveRequest(request, callback) { return callback(); }

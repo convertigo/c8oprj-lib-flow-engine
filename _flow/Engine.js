@@ -21,6 +21,40 @@
 	var ConcurrentHashMap = Packages.java.util.concurrent.ConcurrentHashMap;
 	var ReentrantLock = Packages.java.util.concurrent.locks.ReentrantLock;
 	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
+	// The Java packages of the engine. This code is evaluated once for a runtime, before any call: during a call,
+	// Packages (and java, javax, org, com, edu, net) are those of the class path of the project of the call, a new object
+	// at each call in the shared runtime of the server, which looks up again every name it is asked for.
+	var enginePackages = Packages;
+	var engineClasses = new ConcurrentHashMap();
+	/**
+	 * @return a class of the JDK or of the engine, looked up once for the runtime, with the class path of the engine
+	 *         (the libraries of a project never hide it), and by its full name: Packages.a.b.C also looks up "a.b" as a
+	 *         class (and "a" when not known yet), each lookup taking the class loading lock of its name in the class
+	 *         loader of the project of the call. A Java package, as Packages gives it, when there is no such class. The
+	 *         scripts evaluated by the engine (blocks, libraries, modules) reach it as flowEngineClass; a class of a
+	 *         project is projectClass.
+	 */
+	function engineClass(name) {
+		name = String(name);
+		var known = engineClasses.get(name);
+		if (known === null) {
+			// in a JavaScript holder: a Java map gives back the Java class of a Rhino class, not the Rhino class
+			engineClasses.putIfAbsent(name, Object.freeze({ value: enginePackages[name] }));
+			known = engineClasses.get(name);
+		}
+		return known.value;
+	}
+	var RhinoContext = engineClass("org.mozilla.javascript.Context");
+	var NativeJavaClass = engineClass("org.mozilla.javascript.NativeJavaClass");
+	var JavaHashMap = engineClass("java.util.HashMap");
+	var MessageDigest = engineClass("java.security.MessageDigest");
+	var EngineClass = engineClass("com.twinsoft.convertigo.engine.Engine");
+	var TagManager = engineClass("com.twinsoft.convertigo.engine.tags.TagManager");
+	var UndefinedSymbolsException = engineClass("com.twinsoft.convertigo.engine.UndefinedSymbolsException");
+	var JsonValues = engineClass("com.twinsoft.convertigo.engine.util.JsonValues");
+	var RowCursor = engineClass("com.twinsoft.convertigo.engine.flow.rows.RowCursor");
+	var RowStreamException = engineClass("com.twinsoft.convertigo.engine.flow.rows.RowStreamException");
+	var EmitSpool = engineClass("com.twinsoft.convertigo.engine.flow.rows.EmitSpool");
 	var sharedModuleBridge = false;
 	try { sharedModuleBridge = typeof FlowEngineBridge.evalSharedModule === "function"; } catch (olderEngine) { }
 	// an engine keeping the compiled code of files on disk across restarts (FlowEngineBridge.compileScript)
@@ -394,7 +428,7 @@
 
 	function compileScript(source, sourceName, fingerprint, origin) {
 		source = String(source || "");
-		var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+		var cx = RhinoContext.getCurrentContext();
 		if (!cx || typeof cx.compileString !== "function") {
 			return null;
 		}
@@ -429,12 +463,16 @@
 		if (typeof flowSummary !== "undefined") {
 			scope.flowSummary = flowSummary;
 		}
+		// the classes of the JDK and of the engine, kept for the runtime, and those of the class path of the project of the
+		// call, kept by generation (lib/rows.js: its Java kernel)
+		scope.flowEngineClass = engineClass;
+		scope.flowProjectClass = projectClass;
 		return scope;
 	}
 
 	function evalCompiledSource(source, sourceName, fingerprint) {
 		source = String(source || "");
-		var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+		var cx = RhinoContext.getCurrentContext();
 		if (cx && sharedModuleBridge &&
 			String(sourceName || "").indexOf(canonicalPath(engineDir()) + "/modules/") === 0) {
 			var exports = FlowEngineBridge.evalSharedModule(cx, compiledScriptScope(cx), source, String(sourceName));
@@ -472,7 +510,7 @@
 	// asked. The cursor is a runtime handle, closed at the latest with its invocation.
 	function createRowsCursor(ctx, spec) {
 		if (!spec || !spec.http || !spec.limits) raise("ROW_CURSOR_PLAN", "A row cursor needs its http and limits.");
-		var cursor = Packages.com.twinsoft.convertigo.engine.flow.rows.RowCursor.open(JSON.stringify({http:spec.http, limits:spec.limits, take:spec.take || 0}));
+		var cursor = RowCursor.open(JSON.stringify({http:spec.http, limits:spec.limits, take:spec.take || 0}));
 		return createRuntimeHandle(ctx, "row-cursor", cursor, {label:"row source", close:function (value) { value.close(); }});
 	}
 
@@ -484,7 +522,7 @@
 		} catch (e) {
 			// a failed page: the code and status of the source, never its URL nor a Java class
 			var failure = e && e.javaException;
-			if (failure instanceof Packages.com.twinsoft.convertigo.engine.flow.rows.RowStreamException) {
+			if (failure instanceof RowStreamException) {
 				ctx.throwFlow({code: String(failure.code()), message: "The row source could not be read.", status: Number(failure.status())});
 			}
 			throw e;
@@ -505,11 +543,11 @@
 		var state = initializeExecutionState();
 		if (stream && !state.emitted) {
 			// a relay to the servlet response when the requester can write it before the end of the run
-			var spool = Packages.com.twinsoft.convertigo.engine.flow.rows.EmitSpool.open(convertigoContext, field, 1000000, 256 * 1024 * 1024);
+			var spool = EmitSpool.open(convertigoContext, field, 1000000, 256 * 1024 * 1024);
 			state.emitted = {field:field, spool:spool};
 			return {
 				stream: true,
-				append: function (rows) { spool.append(rows, Packages.org.mozilla.javascript.Context.getCurrentContext(), globalScope); },
+				append: function (rows) { spool.append(rows, RhinoContext.getCurrentContext(), globalScope); },
 				close: function () { ctx.write("result." + field, []); }
 			};
 		}
@@ -586,7 +624,7 @@
 				// the rows already sent stay: the error ends the response, incomplete
 				var error = payload.error || {};
 				try {
-					emitted.spool.fail(Packages.com.twinsoft.convertigo.engine.util.JsonValues.object("code", String(error.code || "FLOW_ERROR"),
+					emitted.spool.fail(JsonValues.object("code", String(error.code || "FLOW_ERROR"),
 						"message", String(error.message || "The streamed result could not complete."), "status", Number(error.status) || 500));
 				} catch (gone) {
 					// the client is gone: the error of the run stays the one reported
@@ -1129,12 +1167,12 @@
 
 	function requestRootTagContext(projectName) {
 		try {
-			var manager = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager;
+			var manager = EngineClass.theApp.databaseObjectsManager;
 			var project = manager.getOriginalProjectByName(String(projectName), false);
 			if (!project) {
 				return null;
 			}
-			return JSON.parse(String(Packages.com.twinsoft.convertigo.engine.tags.TagManager.get().runContext(project)));
+			return JSON.parse(String(TagManager.get().runContext(project)));
 		} catch (e) {
 			return null;
 		}
@@ -1148,7 +1186,7 @@
 	function compileConfigSymbols(text) {
 		var manager = null;
 		try {
-			var app = Packages.com.twinsoft.convertigo.engine.Engine.theApp;
+			var app = EngineClass.theApp;
 			manager = app ? app.databaseObjectsManager : null;
 		} catch (ignoredStandalone) {
 			manager = null;
@@ -1162,7 +1200,7 @@
 				: manager["getCompiledValue(java.lang.String)"](String(text)));
 		} catch (e) {
 			var undefinedSymbols = e && e.javaException;
-			if (!(undefinedSymbols instanceof Packages.com.twinsoft.convertigo.engine.UndefinedSymbolsException)) {
+			if (!(undefinedSymbols instanceof UndefinedSymbolsException)) {
 				throw e;
 			}
 			var names = [];
@@ -1174,7 +1212,7 @@
 				}
 			}
 			if (names.length) {
-				Packages.com.twinsoft.convertigo.engine.Engine.logEngine.warn("Flow configuration: undefined global symbol(s) "
+				EngineClass.logEngine.warn("Flow configuration: undefined global symbol(s) "
 					+ names.join(", ") + ", replaced by an empty value. Declare them in the global symbols, or give a default: ${name=default}.");
 			}
 			return String(undefinedSymbols.incompletValue());
@@ -1315,8 +1353,8 @@
 			return null;
 		}
 		try {
-			var fingerprints = Packages.com.convertigo.libflowengine.Fingerprints;
-			if (typeof fingerprints.directory !== "function") {
+			var fingerprints = projectClass("com.convertigo.libflowengine.Fingerprints");
+			if (fingerprints === null || typeof fingerprints.directory !== "function") {
 				throw new Error("not compiled");
 			}
 			if (known === null) {
@@ -1501,7 +1539,7 @@
 		if (callFingerprints.get()) {
 			return callback();
 		}
-		callFingerprints.set(new Packages.java.util.HashMap());
+		callFingerprints.set(new JavaHashMap());
 		try {
 			return callback();
 		} finally {
@@ -1885,14 +1923,14 @@
 
 	function responseBudget(request, options) {
 		return loadEngineModule("response-budget-service.js").create(request, options, {
-			nowMillis: function () { return Packages.java.lang.System.currentTimeMillis(); },
-			utf8Length: function (text) { return new Packages.java.lang.String(String(text || "")).getBytes("UTF-8").length; },
+			nowMillis: function () { return JavaSystem.currentTimeMillis(); },
+			utf8Length: function (text) { return new JavaString(String(text || "")).getBytes("UTF-8").length; },
 			base64UrlEncode: function (text) {
 				return String(Base64.getUrlEncoder().withoutPadding().encodeToString(
-					new Packages.java.lang.String(String(text || "")).getBytes("UTF-8")));
+					new JavaString(String(text || "")).getBytes("UTF-8")));
 			},
 			base64UrlDecode: function (text) {
-				return String(new Packages.java.lang.String(Base64.getUrlDecoder().decode(String(text || "")), "UTF-8"));
+				return String(new JavaString(Base64.getUrlDecoder().decode(String(text || "")), "UTF-8"));
 			},
 			raise: raise
 		});
@@ -2226,7 +2264,7 @@
 			if (typeof Packages === "undefined" || !name) {
 				return null;
 			}
-			var engine = Packages.com.twinsoft.convertigo.engine.Engine;
+			var engine = EngineClass;
 			if (!engine.theApp || !engine.theApp.databaseObjectsManager) {
 				return null;
 			}
@@ -2498,7 +2536,7 @@
 				var file = flowLibraryFile(name), source = readSourceFile(file);
 				var script = compileScript(source, canonicalPath(file), fileFingerprint(file), canonicalPath(file));
 				var evaluate = function () {
-					var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+					var cx = RhinoContext.getCurrentContext();
 					return script.exec(cx, compiledScriptScope(cx));
 				};
 				// A library that declares stateless: true (module state made of constants and thread-safe caches only,
@@ -2658,7 +2696,7 @@
 			implementationFactory: function (source, name, file) {
 				var script = compileScript(source, name, sha256Hex(source), file ? canonicalPath(file) : null);
 				return function () {
-					var cx = Packages.org.mozilla.javascript.Context.getCurrentContext();
+					var cx = RhinoContext.getCurrentContext();
 					return script.exec(cx, compiledScriptScope(cx));
 				};
 			},
@@ -2842,6 +2880,28 @@
 	/** @return the identifier of the class path of the project of the call, empty for an engine without it */
 	function projectGeneration() {
 		return typeof __flowGenerationId === "undefined" || __flowGenerationId === null ? "" : String(__flowGenerationId);
+	}
+
+	/**
+	 * @return a class of the class path of the project of the call (as the helpers of libs/src, compiled by the server
+	 *         into the class path of the projects referencing lib_flow_engine), looked up by its full name (see
+	 *         engineClass); null when that class path has no such class. A shared runtime serves a single generation of
+	 *         the class path: the answer is looked up once per generation and kept in the registry of the runtime, which
+	 *         ends with it, the class wrapped for the shared scope (the Packages of a call wrap it for the scope of that
+	 *         call, which the registry must not keep). A runtime serving every project (Studio,
+	 *         convertigo.javascript.stateless not set) keeps no class of a project: it looks the class up at each call.
+	 */
+	function projectClass(name) {
+		name = String(name);
+		if (sharedRuntime) {
+			// in a JavaScript holder, as in engineClass
+			return sharedRuntime.prepare("class:" + projectGeneration() + "\n" + name, function () {
+				var found = projectPackages()[name];
+				return Object.freeze({ value: typeof found === "function" ? new NativeJavaClass(globalScope, found.__javaObject__) : null });
+			}).value;
+		}
+		var found = projectPackages()[name];
+		return typeof found === "function" ? found : null;
 	}
 
 	function blockFileLoaderService() {
@@ -4968,7 +5028,7 @@
 
 	function sha256Hex(text) {
 		try {
-			var digest = Packages.java.security.MessageDigest.getInstance("SHA-256")
+			var digest = MessageDigest.getInstance("SHA-256")
 				.digest(new JavaString(String(text || "")).getBytes("UTF-8"));
 			var out = "";
 			for (var i = 0; i < digest.length; i++) {
@@ -4986,7 +5046,7 @@
 	}
 
 	function sha256FileHex(file) {
-		var digest = Packages.java.security.MessageDigest.getInstance("SHA-256")
+		var digest = MessageDigest.getInstance("SHA-256")
 			.digest(FileUtils.readFileToByteArray(file));
 		var out = "";
 		for (var i = 0; i < digest.length; i++) {
@@ -11460,7 +11520,7 @@
 		var memoized = MEMOIZED_FINGERPRINT_OPERATIONS[operation] === true;
 		var previousFingerprints = memoized ? callFingerprints.get() : null;
 		if (memoized) {
-			callFingerprints.set(new Packages.java.util.HashMap());
+			callFingerprints.set(new JavaHashMap());
 		}
 		try {
 			var request = parseRequest(requestJson);
@@ -11519,7 +11579,7 @@
 				else if (!declaration || declaration.textual || typeof value !== "object" || !sharedRuntime.canonicalData(value)) value = typeof value === "string" ? value : JSON.stringify(value);
 				Object.defineProperty(request.input, key, { value: value, writable: true, enumerable: true, configurable: true });
 			});
-			try { request.tagContext = JSON.parse(String(Packages.com.twinsoft.convertigo.engine.tags.TagManager.get().runContext(project))); }
+			try { request.tagContext = JSON.parse(String(TagManager.get().runContext(project))); }
 			catch (unavailable) { if (ctx.request.tagContext) request.tagContext = ctx.request.tagContext; }
 			Object.defineProperty(request, "__parentRun", { value: ctx });
 			// The plan resolved above for this request (same source, same runtime): the child frame does not look it up again

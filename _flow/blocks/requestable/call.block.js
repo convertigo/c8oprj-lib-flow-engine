@@ -40,12 +40,24 @@ const _meta = {
 }
 
 (function () {
-	var HashMap = Packages.java.util.HashMap;
-	var InternalRequester = Packages.com.twinsoft.convertigo.engine.requesters.InternalRequester;
-	var NativeJsonRequester = Packages.com.twinsoft.convertigo.engine.requesters.NativeJsonRequester;
+	// Classes of the JDK and of the engine, resolved with the module (shared by the frames of a runtime): from the engine
+	// that evaluates it (flowEngineClass, kept for the runtime), else by full name. Through the Packages of a call, each
+	// use looked up the names of its packages as classes again.
+	function javaClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
+	}
+	var HashMap = javaClass("java.util.HashMap");
+	var JavaArray = javaClass("java.lang.reflect.Array");
+	var JavaString = javaClass("java.lang.String");
+	var CharSequence = javaClass("java.lang.CharSequence");
+	var UUID = javaClass("java.util.UUID");
+	var Engine = javaClass("com.twinsoft.convertigo.engine.Engine");
+	var TagManager = javaClass("com.twinsoft.convertigo.engine.tags.TagManager");
+	var InternalRequester = javaClass("com.twinsoft.convertigo.engine.requesters.InternalRequester");
+	var NativeJsonRequester = javaClass("com.twinsoft.convertigo.engine.requesters.NativeJsonRequester");
 	var nativeBoundaryAvailable = typeof NativeJsonRequester === "function";
-	var FlowEngineBridge = Packages.com.twinsoft.convertigo.engine.flow.FlowEngineBridge;
-	var XMLUtils = Packages.com.twinsoft.convertigo.engine.util.XMLUtils;
+	var FlowEngineBridge = javaClass("com.twinsoft.convertigo.engine.flow.FlowEngineBridge");
+	var XMLUtils = javaClass("com.twinsoft.convertigo.engine.util.XMLUtils");
 
 	function prop(node, key) {
 		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
@@ -68,10 +80,10 @@ const _meta = {
 		}
 		try {
 			if (value && value.getClass && value.getClass().isArray()) {
-				var length = Packages.java.lang.reflect.Array.getLength(value);
+				var length = JavaArray.getLength(value);
 				var items = [];
 				for (var i = 0; i < length; i++) {
-					items.push(Packages.java.lang.reflect.Array.get(value, i));
+					items.push(JavaArray.get(value, i));
 				}
 				return items;
 			}
@@ -102,9 +114,9 @@ const _meta = {
 		if (items === null) {
 			return requestValue(value);
 		}
-		var strings = Packages.java.lang.reflect.Array.newInstance(Packages.java.lang.String, items.length);
+		var strings = JavaArray.newInstance(JavaString, items.length);
 		for (var i = 0; i < items.length; i++) {
-			Packages.java.lang.reflect.Array.set(strings, i, requestValue(items[i]));
+			JavaArray.set(strings, i, requestValue(items[i]));
 		}
 		return strings;
 	}
@@ -166,7 +178,7 @@ const _meta = {
 		for (var i = 0; i < candidates.length; i++) {
 			var candidate = candidates[i];
 			try {
-				var dbo = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager.getDatabaseObjectByQName(qnameFor(candidate));
+				var dbo = Engine.theApp.databaseObjectsManager.getDatabaseObjectByQName(qnameFor(candidate));
 				if (!dbo) {
 					continue;
 				}
@@ -216,7 +228,7 @@ const _meta = {
 	function requestFromTarget(target) {
 		var request = new HashMap();
 		request.put("__project", target.project);
-		request.put("__context", "flow-" + String(Packages.java.util.UUID.randomUUID()));
+		request.put("__context", "flow-" + String(UUID.randomUUID()));
 		request.put("__removeContext", "true");
 		if (target.kind === "transaction") {
 			request.put("__connector", target.connector);
@@ -258,7 +270,7 @@ const _meta = {
 	function calledFlowTagContext(ctx, project) {
 		var name = String(project.getName());
 		try {
-			return JSON.parse(String(Packages.com.twinsoft.convertigo.engine.tags.TagManager.get().runContext(project)));
+			return JSON.parse(String(TagManager.get().runContext(project)));
 		} catch (_tagDomainUnavailable) {
 			var current = ctx.request && ctx.request.tagContext;
 			return current && String(current.project || "") === name ? current : undefined;
@@ -322,7 +334,7 @@ const _meta = {
 			// The native sequence contract falls back to JSON text when an XML step
 			// or an error built a document. Its successful object result stays object-only.
 			if (nativeSequence && (typeof result === "string" ||
-					typeof Packages.java.lang.CharSequence === "function" && result instanceof Packages.java.lang.CharSequence)) {
+					typeof CharSequence === "function" && result instanceof CharSequence)) {
 				result = JSON.parse(String(result));
 			}
 			return rawResult && requester.context.nativeJsonResponse !== null ? result.result : unwrapDocument(result);

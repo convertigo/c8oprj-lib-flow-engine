@@ -40,9 +40,19 @@ const _meta = {
 }
 
 (function () {
+	// The classes of the JDK come from the engine that evaluates the module (flowEngineClass, kept for the runtime), else
+	// by their full names: through the Packages of a call, each name looked up the names of its packages as classes again.
+	function javaClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
+	}
+	var Base64 = javaClass("java.util.Base64");
+	var JavaArray = javaClass("java.lang.reflect.Array");
+	var JavaByte = javaClass("java.lang.Byte");
+	var SecureRandom = javaClass("java.security.SecureRandom");
+
 	function encode(bytes, encoding) {
 		if (encoding === "base64") {
-			return String(java.util.Base64.getEncoder().encodeToString(bytes));
+			return String(Base64.getEncoder().encodeToString(bytes));
 		}
 		if (encoding === "hex") {
 			var hex = "";
@@ -51,7 +61,7 @@ const _meta = {
 			}
 			return hex;
 		}
-		return String(java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
+		return String(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
 	}
 
 	return {
@@ -61,8 +71,8 @@ const _meta = {
 			if (!isFinite(count) || count < 8 || count > 1024) {
 				return ctx.throwFlow({ code: "CRYPTO_RANDOM_SIZE_INVALID", message: "crypto.random: bytes must be between 8 and 1024", status: 400 }, node);
 			}
-			var bytes = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, Math.floor(count));
-			new java.security.SecureRandom().nextBytes(bytes);
+			var bytes = JavaArray.newInstance(JavaByte.TYPE, Math.floor(count));
+			new SecureRandom().nextBytes(bytes);
 			return encode(bytes, String(props.encoding || "base64url"));
 		}
 	};

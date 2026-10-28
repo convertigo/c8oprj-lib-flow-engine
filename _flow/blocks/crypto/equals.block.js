@@ -34,6 +34,14 @@ const _meta = {
 }
 
 (function () {
+	// The classes of the JDK come from the engine that evaluates the module (flowEngineClass, kept for the runtime), else
+	// by their full names: through the Packages of a call, each name looked up the names of its packages as classes again.
+	function javaClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
+	}
+	var MessageDigest = javaClass("java.security.MessageDigest");
+	var JavaString = javaClass("java.lang.String");
+
 	function text(ctx, value) {
 		var rendered = value === undefined || value === null ? "" : ctx.template(value);
 		return rendered === undefined || rendered === null ? "" : String(rendered);
@@ -47,7 +55,7 @@ const _meta = {
 			if (value === "" || expected === "") {
 				return false;
 			}
-			return java.security.MessageDigest.isEqual(new java.lang.String(value).getBytes("UTF-8"), new java.lang.String(expected).getBytes("UTF-8"));
+			return MessageDigest.isEqual(new JavaString(value).getBytes("UTF-8"), new JavaString(expected).getBytes("UTF-8"));
 		}
 	};
 }())

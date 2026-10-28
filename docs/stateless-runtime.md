@@ -31,12 +31,43 @@ capture immutable node properties and compiled expression functions; it must not
 capture a request, session, result, runtime handle or a mutable per-call cache.
 Freezing an export object does **not** freeze the variables captured by functions.
 
-Only the audited control implementations opt in initially: `set`, `if`, `return`,
-`try`, `forEach`, `throw`, `config.use` and `flow.wait`. Other Rhino implementations
+Only audited implementations opt in: the control blocks `set`, `if`, `return`,
+`try`, `forEach`, `while`, `throw`, `config.use` and `flow.wait`, and `requestable.call`.
+Other Rhino implementations
 use a shared compiled factory and a fresh instance per execution context. The
 same rule applies to libraries loaded through `ctx.lib`: their exports remain
 request-owned. Declaring a third-party implementation stateless is a correctness
 contract, not an automatic inference by the engine.
+
+## Java classes
+
+The `Packages` of a call (and `java`, `javax`, `org`, `com`, `edu`, `net`) belong to
+the generation of the class path of its project: a new object at each call, which
+asks that class loader again for every name. `Packages.a.b.C` also asks for `a.b`
+(and `a`) as classes. Code run for each call or each frame (a block function, the
+module of a Rhino implementation that is not stateless) must not look classes up
+through it:
+
+- a class of the JDK or of the engine: `flowEngineClass("a.b.C")`, given by the
+  engine to the scripts it evaluates (blocks, libraries, modules), resolves it once
+  for the runtime with the class path of the engine, by its full name, and keeps it
+  in a concurrent map (a Java map would give back the Java class of a Rhino class,
+  hence a JavaScript holder). Resolve it in the module of the implementation. Without
+  the engine (a test evaluating a block alone), `Packages["a.b.C"]` asks for the full
+  name only;
+- a class of a project (`com.convertigo.libflowengine.*`, compiled from `libs/src`
+  into the class path of the projects): `flowProjectClass("a.b.C")`, null without
+  it. A shared runtime keeps it in its registry by generation identifier
+  (`__flowGenerationId`), wrapped for the shared scope, never for the scope of the
+  call that asked first; the runtime ends with its generation. A runtime serving
+  every project keeps no class of a project and asks again at each call, by the full
+  name only.
+
+`tests/shared-runtime-class-lookups.js` runs `Engine.run` in the `FlowRuntimeApi` of
+the engine, a frame and the packages of a counting class loader per call, as the
+bridge does: once warm, a call (sequential or concurrent) asks its generation for no
+class, the six names bound by the engine apart; another generation asks once for its
+own kernel.
 
 ## Internal invocation contract (`direct-v1`)
 

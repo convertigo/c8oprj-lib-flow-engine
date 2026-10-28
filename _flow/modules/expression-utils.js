@@ -1,4 +1,13 @@
 (function () {
+	// The Java text types, looked up once with the module: from the engine that evaluates it (flowEngineClass, kept for
+	// the runtime), else by their full names. Packages.java.lang.String at each method call of an expression looked up
+	// "java.lang" as a class first, in the class path of the project of the call. None without Java (Node).
+	function javaClass(name) {
+		return typeof flowEngineClass === "function" ? flowEngineClass(name) : typeof Packages === "undefined" ? null : Packages[name];
+	}
+	var JavaString = javaClass("java.lang.String");
+	var JavaCharSequence = javaClass("java.lang.CharSequence");
+
 	function isStructuredValue(value) {
 		return value && (Object.prototype.toString.call(value) === "[object Array]" ||
 			Object.prototype.toString.call(value) === "[object Object]");
@@ -639,7 +648,7 @@
 			if (receiver === null || receiver === undefined) {
 				return undefined;
 			}
-			if (receiver instanceof Packages.java.lang.String || receiver instanceof Packages.java.lang.CharSequence) {
+			if (JavaString !== null && (receiver instanceof JavaString || receiver instanceof JavaCharSequence)) {
 				receiver = String(receiver);
 			}
 			if (typeof receiver === "string" && STRING_METHODS.indexOf(method) !== -1) {
