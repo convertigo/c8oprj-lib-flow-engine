@@ -81,7 +81,7 @@ const _meta = {
       "kind": "expression",
       "type": "integer",
       "default": 60000,
-      "description": "Connection timeout in milliseconds.",
+      "description": "Connection timeout in milliseconds, also the longest wait for a free connection of the pool.",
     },
     "readTimeoutMs": {
       "label": "Read timeout (ms)",
@@ -89,7 +89,16 @@ const _meta = {
       "kind": "expression",
       "type": "integer",
       "default": 60000,
-      "description": "Socket read timeout in milliseconds.",
+      "description": "Socket read timeout in milliseconds: the longest wait for data from the server.",
+    },
+    "cookies": {
+      "label": "Cookies",
+      "category": "Expert",
+      "kind": "value",
+      "type": "string",
+      "enum": ["context", "request"],
+      "default": "context",
+      "description": "context sends and keeps the cookies of the Convertigo context, as the HTTP connectors do (shared with them, kept between calls of a named context); request keeps the cookies received only for the redirections of this call.",
     },
   },
   "runtime": "rhino",
@@ -99,25 +108,51 @@ const _meta = {
 }
 
 (function () {
+	// One client, the one of the Convertigo engine (its pool and proxy settings), and no second one: a request is sent
+	// once. Each request carries an entity, empty without a body, so that the retry handler of the client only sends it
+	// again when it failed before being sent. Its cookies are never those of the store the client shares between all the
+	// calls of the server: each call has its cookie context, on the HttpState of its Convertigo context as with the HTTP
+	// connectors, and follows the redirections itself to read and write them at each step.
 	var Engine = Packages.com.twinsoft.convertigo.engine.Engine;
-	var EntityUtils = Packages.org.apache.http.util.EntityUtils;
 	var HttpUtils = Packages.com.twinsoft.convertigo.engine.util.HttpUtils;
+	var EntityUtils = Packages.org.apache.http.util.EntityUtils;
 	var RequestBuilder = Packages.org.apache.http.client.methods.RequestBuilder;
 	var RequestConfig = Packages.org.apache.http.client.config.RequestConfig;
-	var StringEntity = Packages.org.apache.http.entity.StringEntity;
+	var CookieSpecs = Packages.org.apache.http.client.config.CookieSpecs;
+	var HttpClientContext = Packages.org.apache.http.client.protocol.HttpClientContext;
+	var RequestAddCookies = Packages.org.apache.http.client.protocol.RequestAddCookies;
+	var ResponseProcessCookies = Packages.org.apache.http.client.protocol.ResponseProcessCookies;
+	var CookieSpecRegistries = Packages.org.apache.http.impl.client.CookieSpecRegistries;
+	var CookieStore = Packages.org.apache.http.client.CookieStore;
+	var BasicCookieStore = Packages.org.apache.http.impl.client.BasicCookieStore;
+	var BasicClientCookie = Packages.org.apache.http.impl.cookie.BasicClientCookie;
+	var ClientCookie = Packages.org.apache.http.cookie.ClientCookie;
+	var HttpHost = Packages.org.apache.http.HttpHost;
+	var HttpRoute = Packages.org.apache.http.conn.routing.HttpRoute;
+	var URIUtils = Packages.org.apache.http.client.utils.URIUtils;
+	var ByteArrayEntity = Packages.org.apache.http.entity.ByteArrayEntity;
+	var LegacyCookie = Packages.org.apache.commons.httpclient.Cookie;
+	var ArrayList = Packages.java.util.ArrayList;
+	var JavaThread = Packages.java.lang.Thread;
 	var URLEncoder = Packages.java.net.URLEncoder;
 	var URI = Packages.java.net.URI;
-	var Duration = Packages.java.time.Duration;
 	var File = Packages.java.io.File;
 	var Files = Packages.java.nio.file.Files;
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
-	var JavaHttpClient = Packages.java.net.http.HttpClient;
-	var JavaHttpRequest = Packages.java.net.http.HttpRequest;
-	var JavaHttpResponse = Packages.java.net.http.HttpResponse;
 	var StandardCharsets = Packages.java.nio.charset.StandardCharsets;
 	var Base64 = Packages.java.util.Base64;
 
-	var javaHttpClient;
+	// as the JDK client used until 0.1.114: at most 5 responses, the fifth returned as is when it redirects again
+	var MAX_RESPONSES = 5;
+	var REDIRECTS = { 301: true, 302: true, 303: true, 307: true, 308: true };
+	// headers a redirection to another origin drops, as the JDK client did
+	var ORIGIN_HEADERS = { "authorization": true, "cookie": true, "origin": true, "referer": true, "host": true };
+	// headers the client computes from the entity
+	var ENTITY_HEADERS = { "content-length": true, "transfer-encoding": true };
+	var NO_BODY = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, 0);
+	var requestCookies = new RequestAddCookies();
+	var responseCookies = new ResponseProcessCookies();
+	var cookieSpecs = null;
 
 	function putHeader(headers, name, value) {
 		var key = String(name || "").toLowerCase();
@@ -128,24 +163,11 @@ const _meta = {
 		headers[key] = headers[key] ? headers[key] + ", " + text : text;
 	}
 
-	function apacheHeaders(response) {
+	function responseHeaders(response) {
 		var headers = {};
-		var values = response && response.getAllHeaders ? response.getAllHeaders() : [];
+		var values = response.getAllHeaders();
 		for (var i = 0; i < values.length; i++) {
 			putHeader(headers, values[i].getName(), values[i].getValue());
-		}
-		return headers;
-	}
-
-	function javaHeaders(response) {
-		var headers = {};
-		var entries = response.headers().map().entrySet().iterator();
-		while (entries.hasNext()) {
-			var entry = entries.next();
-			var values = entry.getValue().iterator();
-			while (values.hasNext()) {
-				putHeader(headers, entry.getKey(), values.next());
-			}
 		}
 		return headers;
 	}
@@ -207,42 +229,15 @@ const _meta = {
 		return "Basic " + String(Base64.getEncoder().encodeToString(new java.lang.String(username + ":" + password).getBytes("UTF-8")));
 	}
 
-	function addHeaders(builder, headers) {
-		Object.keys(headers || {}).forEach(function (key) {
-			builder.addHeader(String(key), String(headers[key]));
-		});
-	}
-
-	function addBody(builder, body, headers) {
+	// The bytes of the body, UTF-8: an object is sent as JSON, with its Content-Type when the headers have none
+	function bodyBytes(body, headers) {
 		if (body === undefined || body === null) {
-			return;
+			return NO_BODY;
 		}
-		var text = typeof body === "string" ? body : JSON.stringify(body);
 		if (!hasHeader(headers, "content-type") && typeof body !== "string") {
-			builder.addHeader("Content-Type", "application/json");
+			headers["Content-Type"] = "application/json";
 		}
-		builder.setEntity(new StringEntity(text, "UTF-8"));
-	}
-
-	function readResponse(response, allocationTrace, responseType) {
-		var entity = response.getEntity();
-		var status = response.getStatusLine() ? response.getStatusLine().getStatusCode() : 200;
-		var contentTypeHeader = entity && entity.getContentType ? entity.getContentType() : null;
-		var contentType = String(contentTypeHeader ? contentTypeHeader.getValue() : "");
-		var text = entity ? String(EntityUtils.toString(entity, "UTF-8")) : "";
-		var body = text;
-		var trimmed = text.trim();
-		if (responseType !== "text" && (contentType.indexOf("json") !== -1 || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[")) {
-			var allocation = allocationTrace ? allocationTrace.open("boundary", "http-parse", "") : null;
-			try { body = JSON.parse(text); } finally { if (allocation) allocation.close(); }
-		}
-		return {
-			status: status,
-			contentType: contentType,
-			headers: apacheHeaders(response),
-			body: body,
-			text: text
-		};
+		return new java.lang.String(typeof body === "string" ? body : JSON.stringify(body)).getBytes(StandardCharsets.UTF_8);
 	}
 
 	function responseObject(status, contentType, headers, text, allocationTrace, responseType) {
@@ -261,23 +256,13 @@ const _meta = {
 		};
 	}
 
-	function javaClient(connectTimeoutMs) {
-		// Resolve against this call's Packages; cached blocks must not retain a project generation.
-		var sharedClients = Packages.com.convertigo.libflowengine.SharedHttpClients;
-		if (typeof sharedClients.get === "function") return sharedClients.get(connectTimeoutMs);
-		if (!javaHttpClient) {
-			javaHttpClient = JavaHttpClient.newBuilder()
-				.connectTimeout(Duration.ofMillis(connectTimeoutMs))
-				.followRedirects(JavaHttpClient.Redirect.NORMAL)
-				.build();
-		}
-		return javaHttpClient;
-	}
-
-	function interrupted(error) {
-		var cause = error && error.javaException;
-		return !!cause && (cause instanceof Packages.java.lang.InterruptedException
-			|| cause instanceof Packages.java.nio.channels.ClosedByInterruptException);
+	// the text in the charset of the response, UTF-8 when it has none
+	function readResponse(response, allocationTrace, responseType) {
+		var entity = response.getEntity();
+		var contentType = response.getFirstHeader("Content-Type");
+		var text = entity ? String(EntityUtils.toString(entity, "UTF-8")) : "";
+		return responseObject(Number(response.getStatusLine().getStatusCode()), String(contentType ? contentType.getValue() : ""),
+			responseHeaders(response), text, allocationTrace, responseType);
 	}
 
 	function isFileUrl(url) {
@@ -298,42 +283,209 @@ const _meta = {
 		return responseObject(200, contentType, contentType ? { "content-type": contentType } : {}, text, allocationTrace, responseType);
 	}
 
-	function runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace, responseType) {
-		var builder = JavaHttpRequest.newBuilder(URI.create(String(url)))
-			.timeout(Duration.ofMillis(readTimeoutMs));
-		Object.keys(headers || {}).forEach(function (key) {
-			builder.header(String(key), String(headers[key]));
-		});
-		if (body === undefined || body === null) {
-			builder.method(method, JavaHttpRequest.BodyPublishers.noBody());
-		} else {
-			var text = typeof body === "string" ? body : JSON.stringify(body);
-			if (!hasHeader(headers, "content-type") && typeof body !== "string") {
-				builder.header("Content-Type", "application/json");
-			}
-			builder.method(method, JavaHttpRequest.BodyPublishers.ofString(text, StandardCharsets.UTF_8));
+	// The cookies of the HttpState (commons-httpclient 3, the HTTP connectors) seen as httpclient 4 cookies. A domain
+	// cookie keeps a leading dot in the HttpState: the Redis store of the contexts keeps its domain, not its flags.
+	function clientCookie(legacy) {
+		var domain = String(legacy.getDomain() || "");
+		var cookie = new BasicClientCookie(legacy.getName(), legacy.getValue());
+		cookie.setDomain(domain.charAt(0) === "." ? domain.substring(1) : domain);
+		cookie.setPath(legacy.getPath());
+		cookie.setExpiryDate(legacy.getExpiryDate());
+		cookie.setSecure(legacy.getSecure());
+		cookie.setVersion(legacy.getVersion());
+		cookie.setComment(legacy.getComment());
+		if (legacy.isDomainAttributeSpecified() || domain.charAt(0) === ".") {
+			cookie.setAttribute(ClientCookie.DOMAIN_ATTR, domain);
 		}
-		var response = javaClient(connectTimeoutMs).send(builder.build(), JavaHttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-		var contentType = String(response.headers().firstValue("content-type").orElse(""));
-		return responseObject(response.statusCode(), contentType, javaHeaders(response), String(response.body()), allocationTrace, responseType);
+		if (legacy.isPathAttributeSpecified() && legacy.getPath() !== null) {
+			cookie.setAttribute(ClientCookie.PATH_ATTR, legacy.getPath());
+		}
+		return cookie;
 	}
 
-	function runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, allocationTrace, responseType) {
-		var builder = RequestBuilder.create(method).setUri(url);
-		builder.setConfig(RequestConfig.custom()
-			.setRedirectsEnabled(true)
-			.setConnectTimeout(connectTimeoutMs)
-			.setSocketTimeout(readTimeoutMs)
-			.build());
-		addHeaders(builder, headers);
-		addBody(builder, body, headers);
-		var client = Engine.theApp && Engine.theApp.httpClient4 ? Engine.theApp.httpClient4 : HttpUtils.makeHttpClient(false);
-		var httpResponse = client.execute(builder.build());
-		try {
-			return readResponse(httpResponse, allocationTrace, responseType);
-		} finally {
-			httpResponse.close();
+	function legacyCookie(cookie) {
+		var name = cookie.getName();
+		var domain = cookie.getDomain();
+		if (name === null || domain === null || !String(name).trim()) {
+			return null;
 		}
+		domain = String(domain);
+		var domainAttribute = cookie instanceof ClientCookie && cookie.containsAttribute(ClientCookie.DOMAIN_ATTR);
+		var legacy = new LegacyCookie(domainAttribute && domain.charAt(0) !== "." ? "." + domain : domain, name, cookie.getValue(),
+			cookie.getPath(), cookie.getExpiryDate(), cookie.isSecure());
+		legacy.setDomainAttributeSpecified(domainAttribute);
+		legacy.setPathAttributeSpecified(cookie instanceof ClientCookie && cookie.containsAttribute(ClientCookie.PATH_ATTR));
+		legacy.setVersion(cookie.getVersion());
+		legacy.setComment(cookie.getComment());
+		return legacy;
+	}
+
+	// Stateless over the HttpState, whose methods are synchronized: the parallel chunks of a call share it safely
+	function httpStateCookies(state) {
+		return new CookieStore({
+			addCookie: function (cookie) {
+				var legacy = legacyCookie(cookie);
+				if (legacy) {
+					state.addCookie(legacy);
+				}
+			},
+			getCookies: function () {
+				var legacy = state.getCookies();
+				var cookies = new ArrayList(legacy.length);
+				for (var i = 0; i < legacy.length; i++) {
+					cookies.add(clientCookie(legacy[i]));
+				}
+				return cookies;
+			},
+			clearExpired: function (date) {
+				return state.purgeExpiredCookies(date);
+			},
+			clear: function () {
+				state.clearCookies();
+			}
+		});
+	}
+
+	// The cookie context of a call: the HttpState of its Convertigo context, or cookies of this call only (a run
+	// without Convertigo context, a Flow called directly by another one, or cookies "request")
+	function cookieContext(ctx, mode) {
+		var state = mode === "context" && typeof ctx.convertigoHttpState === "function" ? ctx.convertigoHttpState() : null;
+		var context = HttpClientContext.create();
+		context.setCookieStore(state ? httpStateCookies(state) : new BasicCookieStore());
+		context.setCookieSpecRegistry(cookieSpecs || (cookieSpecs = CookieSpecRegistries.createDefault()));
+		// RFC 6265, as browsers: Max-Age is read, a deleted cookie is removed
+		context.setRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build());
+		return context;
+	}
+
+	// what the client does with its own cookie store before an exchange, here with the cookie context of the call
+	function addCookies(cookies, request, uri) {
+		var target = URIUtils.extractHost(uri);
+		if (target === null) {
+			return;
+		}
+		var secure = String(target.getSchemeName()).toLowerCase() === "https";
+		var port = target.getPort() > 0 ? target.getPort() : secure ? 443 : 80;
+		cookies.setAttribute(HttpClientContext.HTTP_TARGET_HOST, target);
+		cookies.setAttribute(HttpClientContext.HTTP_ROUTE, new HttpRoute(new HttpHost(target.getHostName(), port, target.getSchemeName()), null, secure));
+		requestCookies.process(request, cookies);
+	}
+
+	function requestConfig(connectTimeoutMs, readTimeoutMs) {
+		return RequestConfig.custom()
+			.setConnectTimeout(connectTimeoutMs)
+			// a saturated pool fails instead of waiting for ever
+			.setConnectionRequestTimeout(connectTimeoutMs)
+			.setSocketTimeout(readTimeoutMs)
+			// redirections and cookies are handled by the call; the cookie store of the client is never read nor written
+			.setRedirectsEnabled(false)
+			.setCookieSpec(CookieSpecs.IGNORE_COOKIES)
+			// the path is sent as written
+			.setNormalizeUri(false)
+			.build();
+	}
+
+	function buildRequest(method, uri, headers, bytes, config) {
+		var builder = RequestBuilder.create(method).setUri(uri).setConfig(config);
+		Object.keys(headers).forEach(function (key) {
+			if (!ENTITY_HEADERS[String(key).toLowerCase()]) {
+				builder.addHeader(String(key), String(headers[key]));
+			}
+		});
+		builder.setEntity(new ByteArrayEntity(bytes));
+		return builder.build();
+	}
+
+	// The next URI of a redirection followed as the JDK client did (NORMAL policy): 301, 302, 303, 307 and 308 with a
+	// valid Location, to the same scheme or to https, never from https to http. Null returns the response as is.
+	function redirection(status, response, uri) {
+		if (!REDIRECTS[status]) {
+			return null;
+		}
+		var location = response.getFirstHeader("Location");
+		if (location === null) {
+			return null;
+		}
+		var next;
+		try {
+			next = uri.resolve(URI.create(String(location.getValue())));
+		} catch (invalid) {
+			return null;
+		}
+		var scheme = String(next.getScheme() || "").toLowerCase();
+		return scheme === String(uri.getScheme()).toLowerCase() || scheme === "https" ? next : null;
+	}
+
+	function sameOrigin(uri, next) {
+		return String(uri.getScheme()).toLowerCase() === String(next.getScheme()).toLowerCase()
+			&& String(uri.getRawAuthority()) === String(next.getRawAuthority());
+	}
+
+	// Engine.theApp.httpClient4 when the engine runs (read at each call: the engine replaces it when its proxy settings
+	// change); otherwise a client of this call alone, with the same settings
+	function engineClient(ctx, node) {
+		if (typeof HttpUtils !== "function") {
+			ctx.throwFlow({code: "HTTP_CLIENT_UNAVAILABLE", message: "http.request needs the HTTP client of the Convertigo engine.", status: 500}, node);
+		}
+		var app = Engine.theApp;
+		var shared = app ? app.httpClient4 : null;
+		return shared ? { client: shared, owned: false } : { client: HttpUtils.makeHttpClient(false), owned: true };
+	}
+
+	function send(ctx, node, method, uri, headers, body, cookieMode, config, responseType) {
+		var cookies = cookieContext(ctx, cookieMode);
+		var bytes = bodyBytes(body, headers);
+		var engine = engineClient(ctx, node);
+		try {
+			for (var responses = 1; ; responses++) {
+				// a parallel chunk stopped after a failed one sends nothing more
+				if (JavaThread.currentThread().isInterrupted()) {
+					ctx.throwFlow({code: "FLOW_EXECUTION_CANCELLED", message: "The HTTP call was not sent: its thread was interrupted.", status: 499}, node);
+				}
+				var request = buildRequest(method, uri, headers, bytes, config);
+				addCookies(cookies, request, uri);
+				var response = engine.client.execute(request);
+				var status, next;
+				try {
+					responseCookies.process(response, cookies);
+					status = Number(response.getStatusLine().getStatusCode());
+					next = responses < MAX_RESPONSES ? redirection(status, response, uri) : null;
+					if (next === null) {
+						return readResponse(response, ctx.allocationTrace, responseType);
+					}
+					EntityUtils.consumeQuietly(response.getEntity());
+				} finally {
+					response.close();
+				}
+				// as the JDK client: 303 and a POST redirected by 301 or 302 become a GET without body
+				var nextMethod = status === 303 || (status === 301 || status === 302) && method === "POST" ? "GET" : method;
+				if (status === 303 || nextMethod !== method) {
+					bytes = NO_BODY;
+				}
+				if (!sameOrigin(uri, next)) {
+					headers = Object.keys(headers).reduce(function (kept, key) {
+						if (!ORIGIN_HEADERS[String(key).toLowerCase()]) {
+							kept[key] = headers[key];
+						}
+						return kept;
+					}, {});
+				}
+				method = nextMethod;
+				uri = next;
+			}
+		} finally {
+			if (engine.owned && typeof engine.client.close === "function") {
+				try { engine.client.close(); } catch (closing) { /* the client of this call only */ }
+			}
+		}
+	}
+
+	function timeout(ctx, node, value, name) {
+		var ms = value === undefined ? 60000 : Number(ctx.expr(value));
+		if (!(ms > 0)) {
+			ctx.throwFlow({code: "HTTP_TIMEOUT_INVALID", message: name + " takes a positive number of milliseconds.", status: 400}, node);
+		}
+		return Math.min(Math.ceil(ms), 2147483647);
 	}
 
 	return {
@@ -341,6 +493,10 @@ const _meta = {
 			var props = ctx.props(node);
 			var responseType=props.responseType===undefined?"auto":String(ctx.template(props.responseType));
 			if(responseType!=="auto"&&responseType!=="text")ctx.throwFlow({code:"HTTP_RESPONSE_TYPE_INVALID",message:"responseType takes auto or text.",status:400},node);
+			var cookies = props.cookies === undefined ? "context" : String(ctx.template(props.cookies));
+			if (cookies !== "context" && cookies !== "request") {
+				ctx.throwFlow({code: "HTTP_COOKIES_INVALID", message: "cookies takes context or request.", status: 400}, node);
+			}
 			var headers = Object.assign({}, ctx.template(props.headers) || {});
 			var username = props.username === undefined || props.username === null ? "" : String(ctx.template(props.username) || "");
 			if (username && !hasHeader(headers, "authorization")) {
@@ -349,21 +505,12 @@ const _meta = {
 			}
 			var method = String(props.method || "GET").toUpperCase();
 			var url = appendQuery(ctx.template(props.url), ctx.template(props.query));
-			var connectTimeoutMs = props.connectTimeoutMs === undefined ? 60000 : Number(ctx.expr(props.connectTimeoutMs));
-			var readTimeoutMs = props.readTimeoutMs === undefined ? 60000 : Number(ctx.expr(props.readTimeoutMs));
+			var connectTimeoutMs = timeout(ctx, node, props.connectTimeoutMs, "connectTimeoutMs");
+			var readTimeoutMs = timeout(ctx, node, props.readTimeoutMs, "readTimeoutMs");
 			var body = formBody(props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body), headers);
-			var response;
-			if (isFileUrl(url)) {
-				response = runFileHttp(method, url, ctx.allocationTrace, responseType);
-			} else {
-				try {
-					response = runJavaHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace, responseType);
-				} catch (e) {
-					// an interrupted call (a chunk of a parallel loop stopped after a failed one) is not sent again
-					if (interrupted(e)) throw e;
-					response = runApacheHttp(method, url, headers, body, connectTimeoutMs, readTimeoutMs, ctx.allocationTrace, responseType);
-				}
-			}
+			var response = isFileUrl(url)
+				? runFileHttp(method, url, ctx.allocationTrace, responseType)
+				: send(ctx, node, method, URI.create(url), headers, body, cookies, requestConfig(connectTimeoutMs, readTimeoutMs), responseType);
 			if (ctx.outputPath(node) && response.status < 400 && ctx.learnOutputSchema) {
 				ctx.learnOutputSchema(node, "out", ctx.outputPath(node), response);
 			}
