@@ -149,6 +149,41 @@ try {
   var deep = api("context", {flowSource: picked.source, node: "deep", property: "$$out"});
   assert(deep.ok && deep.include.indexOf("parent") >= 0 && deep.include.indexOf("result") < 0, "A sequential loop in a parallel slot offers its parent, not result: " + JSON.stringify(deep.include));
 
+  // aliases: an object read from the shared scopes stays read-only through local, json.push and json.put included;
+  // an object built in local stays writable, and a sequential loop writes them all
+  function aliased(parallel, statements) {
+    return run(head + 'function Alias({input,result}){\nlocal.o={k:0,deep:{n:0}}\nlocal.list=[1]\nlocal.n=forEachChunk({source:input.items,size:5,parallel:' + parallel + ',$$each:function({chunk}){\n'
+      + statements + '\nreturn chunk.rows.length\n},$$reduce:function({acc,value}){\nreturn acc===null?value:acc+value\n}})\nresult.o=local.o\nresult.list=local.list\nresult.items=input.items\nresult.n=local.n\n}', {items: items});
+  }
+  [["local.alias=parent.o\nlocal.alias.k=chunk.index", "an alias of parent"],
+    ["local.alias=parent.o\nlocal.alias.deep.n=chunk.index", "an object below an alias of parent"],
+    ["local.d=parent.o.deep\nlocal.d.extra.x=1", "a new key under an alias of parent"],
+    ["local.row=chunk.rows[0]\nlocal.row.seen=true", "a row of an array source of the caller input"],
+    ["local.l=parent.list\njson.push({path:\"local.l\",value:chunk.index})", "json.push on an alias of parent"],
+    ["local.alias=parent.o\njson.put({path:\"local.alias\",key:\"x\",value:1})", "json.put on an alias of parent"]].forEach(function (pair) {
+    var refused = aliased(4, pair[0]);
+    assert(!refused.ok && code(refused.error) === "PARALLEL_SCOPE_READ_ONLY", pair[1] + " is refused in parallel: " + JSON.stringify(refused.error || refused.result));
+    var sequential = aliased(1, pair[0]);
+    assert(sequential.ok, pair[1] + " is written in sequence: " + JSON.stringify(sequential.error));
+  });
+  var untouched = aliased(4, "local.alias=parent.o\nlocal.copy=object.merge({target:local.alias,source:{k:9}})\nlocal.copy.more=1\nlocal.mine={a:{b:1}}\nlocal.mine.a.c=2\n"
+    + "local.own=[]\njson.push({path:\"local.own\",value:chunk.index})\njson.put({path:\"local.mine\",key:\"z\",value:3})");
+  assert(untouched.ok && untouched.result.o.k === 0 && untouched.result.list.length === 1 && untouched.result.items[0].seen === undefined && untouched.result.n === 23,
+    "Objects built in a parallel chunk stay writable and the shared ones unchanged: " + JSON.stringify(untouched.error || untouched.result.o));
+  // a parallel loop in a parallel chunk: the objects of the chunk (its parent there) and of the first caller stay read-only
+  function nestedAlias(inner) {
+    return run(head + 'function NA({input,result}){\nlocal.o={k:0}\nlocal.n=forEachChunk({source:input.items,size:6,parallel:3,$$each:function({chunk}){\n'
+      + 'local.mine={k:1}\nlocal.theirs=parent.o\nlocal.inner=forEachChunk({source:chunk.rows,size:2,parallel:2,$$each:function({chunk}){\n' + inner + '\n}})\nreturn 1\n'
+      + '},$$reduce:function({acc,value}){\nreturn acc===null?value:acc+value\n}})\nresult.n=local.n\n}', {items: items});
+  }
+  [["local.b=parent.mine\nlocal.b.k=2", "an object of the enclosing chunk"], ["local.b=parent.theirs\nlocal.b.k=2", "an object of the first caller"],
+    ["local.b=input\nlocal.b.k=2", "the input"]].forEach(function (pair) {
+    var nested = nestedAlias(pair[0]);
+    assert(!nested.ok && code(nested.error) === "PARALLEL_SCOPE_READ_ONLY", "A parallel loop in a parallel chunk keeps " + pair[1] + " read-only: " + JSON.stringify(nested.error || nested.result));
+  });
+  var nestedOwn = nestedAlias("local.b={k:0}\nlocal.b.k=2");
+  assert(nestedOwn.ok && nestedOwn.result.n === 4, "A nested parallel chunk writes what it builds: " + JSON.stringify(nestedOwn.error || nestedOwn.result));
+
   // bounds
   var tooMany = run(head + 'function L({input,result}){\nforEachChunk({source:input.items,parallel:65,$$each:function({chunk}){\nlocal.x=1\n}})\n}', {items: items});
   assert(!tooMany.ok && code(tooMany.error) === "FOR_EACH_CHUNK_LIMIT_INVALID", "parallel goes up to 64: " + JSON.stringify(tooMany.error));

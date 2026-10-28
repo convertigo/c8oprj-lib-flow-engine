@@ -1,4 +1,7 @@
 (function () {
+	// resolved once with the module: a lookup through the Packages of a call costs class loader misses at each loop
+	var Synchronizer = typeof Packages !== "undefined" ? Packages.org.mozilla.javascript.Synchronizer : null;
+
 	function create(env) {
 		env = env || {};
 		var blockName = env.blockName;
@@ -120,7 +123,16 @@
 			var api = env.typedScopeContract.create({
 				schemas: env.schemaContract, destinations: destinations, raise: raise,
 				scopes: function () { return ctx.scopes; },
-				preflight: function (path, value) { if (path.indexOf("result.") === 0) assertNoRuntimeHandle(value, "result"); },
+				preflight: function (path, value) {
+					if (path.indexOf("result.") === 0) assertNoRuntimeHandle(value, "result");
+					// json.push and json.put change their collection in place, before writing it back: in a parallel
+					// lane, never a collection shared with the caller
+					var guard = ctx.scopes.__flowSharedGuard;
+					if (guard && guard.refuses(ctx.read(path), ctx.scopes)) {
+						raise("PARALLEL_SCOPE_READ_ONLY", path + " cannot be changed in a parallel chunk: it is shared by the chunks there, "
+							+ "read-only. Build the collection in local, or return a value and combine it in reduce.");
+					}
+				},
 				read: function (path) { return ctx.read(path); },
 				write: function (path, value) { return ctx.write(path, value); }
 			});
@@ -704,8 +716,60 @@
 					request: request, input: scopes.input, config: config, result: scopes.result,
 					current: scopes.current, props: scopes.props, parent: parent
 				}),
-				shared: Object.freeze(shared)
+				// a lane inside a lane also keeps the objects its caller shares
+				guard: sharedGuard(shared, scopes.__flowSharedGuard || null)
 			});
+		}
+
+		// The objects a lane shares with its caller and the other lanes, read-only there: the scope roots of the caller,
+		// and every object reachable from them, aliases included (local.o = parent.o, then a write of local.o.k; a row
+		// of an array source). The roots are compared at once; an object below them is looked up in the identity set
+		// of the shared objects, built once per loop at the first write that needs it, under a lock for the lanes. The
+		// shared objects are not written during the loop (the caller only reads the source and settles), so the set
+		// stays exact. A Rhino block writing ctx.scopes or an object it read directly is not seen: its author keeps it
+		// to local, as the blocks of the core do.
+		function sharedGuard(roots, outer) {
+			var objects = null;
+			var lookup = function (value) {
+				if (objects === null) objects = reachable(new Set(), roots);
+				return objects.has(value);
+			};
+			// the lanes look up under a lock of their own (any object is a Java monitor)
+			if (typeof Synchronizer === "function") lookup = new Synchronizer(lookup, {});
+			return Object.freeze({
+				// whether a write may not go into container. Past the roots, the scopes the lane writes most are its own:
+				// the fresh local and chunk of a slot, the fresh result of a composite block
+				refuses: function (container, scopes) {
+					if (container === null || typeof container !== "object") return false;
+					if (roots.indexOf(container) >= 0) return true;
+					if (outer && outer.refuses(container, scopes)) return true;
+					if (container === scopes.local || container === scopes.chunk || container === scopes.result) return false;
+					return lookup(container) === true;
+				}
+			});
+		}
+
+		function reachable(seen, roots) {
+			var stack = roots.slice();
+			while (stack.length) {
+				var value = stack.pop();
+				if (seen.has(value)) continue;
+				seen.add(value);
+				// arrays (a row chunk too: its row views are script objects) and plain objects; not the Java objects
+				if (Array.isArray(value)) {
+					for (var i = 0; i < value.length; i++) {
+						var item = value[i];
+						if (item !== null && typeof item === "object" && !seen.has(item)) stack.push(item);
+					}
+				} else if (Object.prototype.toString.call(value) === "[object Object]") {
+					var keys = Object.keys(value);
+					for (var k = 0; k < keys.length; k++) {
+						var entry = value[keys[k]];
+						if (entry !== null && typeof entry === "object" && !seen.has(entry)) stack.push(entry);
+					}
+				}
+			}
+			return seen;
 		}
 
 		// The run context of a lane: the plan and the read-only scopes of the caller; the scopes, handles, block
@@ -729,7 +793,7 @@
 				request: shared.request, input: shared.input, config: shared.config, local: {}, result: shared.result,
 				trace: null, current: shared.current, props: shared.props, parent: shared.parent
 			};
-			Object.defineProperty(scopes, "__flowReadOnlyRoots", { value: template.shared, enumerable: false });
+			Object.defineProperty(scopes, "__flowSharedGuard", { value: template.guard, enumerable: false });
 			lane.scopes = scopes;
 			Object.defineProperty(lane, "__flowLane", { value: true, enumerable: false });
 			var caller = template.caller;
