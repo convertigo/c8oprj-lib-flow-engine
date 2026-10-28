@@ -307,11 +307,24 @@ const _meta = {
 		putInput(request, input, target);
 		if (nativeBoundaryAvailable) {
 			var requester = new NativeJsonRequester(request, ctx.convertigoContext().httpServletRequest);
+			// Explicit native calls retain their business object contract. Keep the
+			// regular requester checks, context and billing; other calls are unchanged.
+			var nativeSequence = String(input && input.__nativeCall) === "true" &&
+				!target.flow && target.kind === "sequence" && target.dbo &&
+				typeof target.dbo.isNativeExecution === "function" && target.dbo.isNativeExecution() &&
+				typeof target.dbo.isJsonNativeOutput === "function" && target.dbo.isJsonNativeOutput() &&
+				typeof requester.processRequestAsObject === "function";
 			var rawResult = canRunFlowDirect(ctx, target, input);
 			requester.setRawResult(rawResult);
 			var result = typeof requester.processRequestAsObject === "function"
 				? requester.processRequestAsObject(ctx)
 				: JSON.parse(String(requester.processRequest()));
+			// The native sequence contract falls back to JSON text when an XML step
+			// or an error built a document. Its successful object result stays object-only.
+			if (nativeSequence && (typeof result === "string" ||
+					typeof Packages.java.lang.CharSequence === "function" && result instanceof Packages.java.lang.CharSequence)) {
+				result = JSON.parse(String(result));
+			}
 			return rawResult && requester.context.nativeJsonResponse !== null ? result.result : unwrapDocument(result);
 		}
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();

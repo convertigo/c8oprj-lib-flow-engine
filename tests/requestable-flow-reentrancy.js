@@ -271,3 +271,38 @@ assertTrue(Array.isArray(objects) && objects[0] === null && objects[1] === true 
 bounded = implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {__nocache: true}}});
 assertTrue(objectCalls === 2 && bounded.attr.version === "test", "Object transfer lost regular requestable metadata.");
 print("requestable-flow-reentrancy OK");
+
+// Native JSON sequences keep the requester boundary while opting into caller-thread execution.
+var opted=true,jsonOutput=true,nativeResult={allowed:true,scope_filter:'{"filters":[]}',types:[null,false,2.5]};
+targetDbo={getProject:function(){return targetProject;},getClass:function(){return {getName:function(){return 'com.twinsoft.convertigo.beans.sequences.GenericSequence';}};},isNativeExecution:function(){return opted;},isJsonNativeOutput:function(){return jsonOutput;}};
+NativeJsonRequester.prototype.processRequestAsObject=function(){nativeRequests.push(this.request.values);return nativeResult;};
+var nativeAnswer=implementation.run(checked,{props:{requestable:'ChildProject.Native',input:{__nocache:true,__nativeCall:true}}});
+assertTrue(nativeRequests[nativeRequests.length-1].__nativeCall==='true','Declared native sequence did not request inline execution');
+assertTrue(nativeRequests[nativeRequests.length-1].__nocache==='true'&&nativeRequests[nativeRequests.length-1].__removeContext==='true','Native sequence lost cache/context controls');
+assertTrue(nativeAnswer.allowed===true&&nativeAnswer.types[1]===false&&nativeAnswer.types[2]===2.5,'Native sequence object types changed');
+nativeResult='{"document":{"error":{"code":"denied"},"value":null}}';
+nativeAnswer=implementation.run(checked,{props:{requestable:'ChildProject.Native',input:{__nativeCall:true}}});
+assertTrue(nativeAnswer.error.code==='denied'&&nativeAnswer.value===null,'Native sequence XML/error fallback stayed JSON text');
+nativeResult={document:{normal:true}};opted=false;
+implementation.run(checked,{props:{requestable:'ChildProject.Regular',input:{}}});
+assertTrue(nativeRequests[nativeRequests.length-1].__nativeCall===undefined,'Regular sequence unexpectedly opted into native execution');
+opted=true;jsonOutput=false;
+implementation.run(checked,{props:{requestable:'ChildProject.Xml',input:{}}});
+assertTrue(nativeRequests[nativeRequests.length-1].__nativeCall===undefined,'XML-only sequence unexpectedly opted into native execution');
+delete targetDbo.isNativeExecution;delete targetDbo.isJsonNativeOutput;
+implementation.run(checked,{props:{requestable:'ChildProject.Older',input:{}}});
+assertTrue(nativeRequests[nativeRequests.length-1].__nativeCall===undefined,'Older engine must retain its normal call path');
+print('native sequence invocation and legacy/error fallbacks OK');
+
+// Java strings returned by the native XML/error branch are host values, not JS strings.
+function HostText(value){this.value=value;}
+HostText.prototype.toString=function(){return this.value;};
+packages.java.lang.CharSequence=HostText;
+targetDbo.isNativeExecution=function(){return true;};targetDbo.isJsonNativeOutput=function(){return true;};
+nativeResult=new HostText('{"error":{"code":"918"}}');
+nativeAnswer=implementation.run(checked,{props:{requestable:'ChildProject.Native',input:{__nativeCall:true}}});
+assertTrue(nativeAnswer.error.code==='918','Java CharSequence native fallback was not decoded');
+nativeResult={document:{normal:true,attr:{version:'test'}}};
+nativeAnswer=implementation.run(checked,{props:{requestable:'ChildProject.Native',input:{}}});
+assertTrue(nativeRequests[nativeRequests.length-1].__nativeCall===undefined&&nativeAnswer.attr.version==='test','Unflagged native sequence changed its regular metadata contract');
+print('explicit native calls, Java text fallback and unchanged default metadata OK');
