@@ -33,7 +33,10 @@ browsers) over a cookie context of the call:
   previous calls of that context (and by its HTTP connectors); two contexts never share a cookie. The Redis store of
   the contexts keeps them across instances. Commons-httpclient 3 cookies are converted to httpclient 4 cookies and back
   at each use; a domain cookie is kept with a leading dot, which the Redis store preserves. A parallel chunk uses the
-  `HttpState` of its caller, resolved on the calling thread (`HttpState` methods are synchronized).
+  `HttpState` of its caller, resolved on the calling thread (`HttpState` methods are synchronized). The cookie store
+  over the `HttpState` is built with `new JavaAdapter(CookieStore, ...)`: in the shared runtime of the server
+  (`convertigo.javascript.stateless=true`), the scope of a call owns the Java packages of its project but not
+  `JavaAdapter`, and Rhino cannot implement an interface given to `new` there (`new CookieStore({...})` fails).
 - `cookies: "request"`, or a run without Convertigo context (standalone, a Flow called directly by another one): the
   cookies received are kept for the redirections of this call only.
 
@@ -57,5 +60,5 @@ Flow. A redirection without a valid `Location` is returned as is (the JDK client
   the other HTTP calls of the engine; the JVM proxy properties are not read, the engine proxy settings are.
 
 `tests/http-engine-client.js` covers a single send on errors and timeouts, cookie isolation and persistence, the
-redirections, the timeouts and the engine proxy settings; `http-basic-auth-form-body.js` covers authentication and
-bodies.
+redirections, the timeouts and the engine proxy settings; `http-engine-client-shared-scope.js` runs it in a scope
+shaped like the one of a call of the shared runtime; `http-basic-auth-form-body.js` covers authentication and bodies.

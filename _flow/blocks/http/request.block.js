@@ -320,9 +320,11 @@ const _meta = {
 		return legacy;
 	}
 
-	// Stateless over the HttpState, whose methods are synchronized: the parallel chunks of a call share it safely
+	// Stateless over the HttpState, whose methods are synchronized: the parallel chunks of a call share it safely.
+	// JavaAdapter, not new CookieStore({...}): in the shared runtime of the server, the scope of a call owns the Java
+	// packages of its project but not JavaAdapter, where Rhino looks for it to implement an interface given to new.
 	function httpStateCookies(state) {
-		return new CookieStore({
+		return new JavaAdapter(CookieStore, {
 			addCookie: function (cookie) {
 				var legacy = legacyCookie(cookie);
 				if (legacy) {
