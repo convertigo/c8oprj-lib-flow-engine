@@ -2415,16 +2415,23 @@
 		return catalogLoaderService().loadBlocks(catalogLoaderEnv(), allowHot === true);
 	}
 
+	// Without flows: the catalog of the project and the compiler. With flows ([{flowQName, flowName, flowSource}]): the
+	// catalog and the run plan of each Flow, resolved as its first run resolves it (same request fields, same shared
+	// key), so that a run finds it prepared; nothing runs. A Flow that cannot be prepared is told in its entry.
 	function preloadProjectRequest(request) {
 		var started = new Date().getTime();
 		var blocks = loadBlocks(false);
 		var compilerStarted = new Date().getTime();
-		compileFlowPlan({
-			flowQName: "lib_flow_engine.__compiler_preload__",
-			flowName: "__compiler_preload__",
-			flowSource: "function __compiler_preload__({ result }) {\n  return result\n}\n"
-		}, blocks);
-		return {
+		var flows = Object.prototype.toString.call(request.flows) === "[object Array]" ? request.flows : null;
+		if (!flows) {
+			compileFlowPlan({
+				flowQName: "lib_flow_engine.__compiler_preload__",
+				flowName: "__compiler_preload__",
+				flowSource: "function __compiler_preload__({ result }) {\n  return result\n}\n"
+			}, blocks);
+		}
+		var plans = flows ? flows.map(function (flow) { return preloadRunPlan(request, flow); }) : null;
+		var result = {
 			ok: true,
 			project: String(request.project || ""),
 			projectDir: String(projectDir() || ""),
@@ -2433,6 +2440,42 @@
 			compilerDurationMs: new Date().getTime() - compilerStarted,
 			blockArtifacts: cacheUtils().summary("blockArtifacts", runtimeState.caches.blockArtifacts)
 		};
+		if (plans) {
+			result.plans = plans;
+			result.planCount = plans.filter(function (plan) { return plan.ok; }).length;
+			result.failedPlanCount = plans.length - result.planCount;
+		}
+		return result;
+	}
+
+	function preloadRunPlan(request, flow) {
+		var started = JavaSystem.nanoTime();
+		// the fields of the run request of the Flow: the project, its directory and context of the preload, its source
+		var runRequest = {};
+		Object.keys(request).forEach(function (key) { if (key !== "flows") runRequest[key] = request[key]; });
+		runRequest.flowQName = String(flow && flow.flowQName || "");
+		runRequest.flowName = String(flow && flow.flowName || "");
+		runRequest.flowSource = String(flow && flow.flowSource || "");
+		runRequest.input = {};
+		runRequest.includeTrace = false;
+		var entry = { flowQName: runRequest.flowQName };
+		try {
+			if (runRequest.flowSource.trim() === "") {
+				raise("FLOW_PRELOAD_SOURCE_REQUIRED", "A Flow is preloaded from its source.");
+			}
+			var resolved = withActiveRequest(runRequest, function () {
+				return flowRuntimeService().resolveRunPlan(runRequest, null, flowRuntimeServiceEnv());
+			});
+			var preparation = resolved.plan && resolved.plan.preparation;
+			entry.ok = true;
+			entry.blockCount = Object.keys(resolved.plan && resolved.plan.blocks || {}).length;
+			if (preparation) entry.preparedNodes = Number(preparation.preparedNodes || 0);
+		} catch (e) {
+			entry.ok = false;
+			entry.error = failure("preload", e).error;
+		}
+		entry.durationMs = Number(JavaSystem.nanoTime() - started) / 1000000;
+		return entry;
 	}
 
 	function loadTypeDescriptorFile(types, file, origin) {

@@ -70,6 +70,27 @@ bridge does: once warm, a call (sequential or concurrent) asks its generation fo
 class, the six names bound by the engine apart; another generation asks once for its
 own kernel.
 
+## Plans prepared in advance (`preload` with `flows`)
+
+Since 0.1.119, `preload` accepts `flows`, a list of `{flowQName, flowName, flowSource}`:
+for each Flow it resolves the run plan with `resolveRunPlan`, from the fields of the
+preload request with the source of the Flow, as the first run of the Flow resolves
+it, hence under the same `plan:` key (project directory, qualified name, source) of
+`FlowRuntimeApi.prepare`. The answer lists each Flow in `plans` (`ok`, `blockCount`,
+`preparedNodes`, `durationMs`, or the `error` of a Flow that cannot be prepared, the
+others being prepared), with `planCount` and `failedPlanCount`. Without `flows`,
+`preload` prepares the catalog and the compiler as before.
+
+The bridge sends it to the runtime the runs of the project use: the shared runtime
+on a stateless server, the pool otherwise. The engine calls it in the background
+(`FlowRuntimeWarmup`, engine property `javascript.runtime_warmup`) once the projects
+of a starting server are loaded and when a project is loaded again, for each Flow of
+the project and of the projects using it. Nothing runs: no input, no context, no
+`run` of a block, no `ctx.lib` library; only what a first run prepares before running
+(the catalog, the FlowScript blocks materialized, the `prepareNode` of the stateless
+implementations, the modules they load). A run arriving meanwhile waits for the
+preparation of its key instead of preparing it again.
+
 ## Internal invocation contract (`direct-v1`)
 
 A called source can declare `_flow.invocation: "direct-v1"` after its blocks have
@@ -123,7 +144,7 @@ direct invocations and fallback reasons.
 
 ## Pool and remaining scope
 
-Server `run` and metadata-only `syncInputs` select the same revision API, including
+Server `run`, metadata-only `syncInputs` and `preload` with `flows` select the same revision API, including
 when the bridge supplies empty working-copy collections. The pool remains behind
 the old/default path for Studio, authoring, older providers, real drafts and disabled
 stateless execution. It has not been deleted for those consumers. Shared runtime
