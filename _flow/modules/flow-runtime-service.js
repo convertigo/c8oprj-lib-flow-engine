@@ -202,6 +202,40 @@
 			return descriptor ? descriptor.value : null;
 		}
 
+		// The Convertigo context of a run context, or null, without raising. A lane has none of its own (its thread has no
+		// Convertigo context): it reads the one its caller resolved on the calling thread.
+		function invocationContextOf(ctx) {
+			if (ctx.__flowLane === true) {
+				var template = ctx.__flowTemplate;
+				return template && template.invocationContext || null;
+			}
+			var state = frameStateForRequestScope(ctx.scopes.request);
+			if (!state) {
+				return null;
+			}
+			if (!Object.prototype.hasOwnProperty.call(state, "invocationContext")) {
+				state.invocationContext = currentConvertigoContext();
+			}
+			return state.invocationContext || null;
+		}
+
+		function invocationHttpState(invocation) {
+			// a Flow called directly by another one runs in a child invocation, without HttpState: no cookie is kept for it
+			if (invocation === null || invocation === undefined || !("httpState" in invocation)) {
+				return null;
+			}
+			var state = invocation.httpState;
+			if (state === null || state === undefined) {
+				state = new Packages.org.mozilla.javascript.Synchronizer(function () {
+					if (invocation.httpState === null || invocation.httpState === undefined) {
+						invocation.httpState = new Packages.org.apache.commons.httpclient.HttpState();
+					}
+					return invocation.httpState;
+				}, invocation)();
+			}
+			return state;
+		}
+
 		function resolveFrameProjectEngine(state) {
 			if (!Object.prototype.hasOwnProperty.call(state, "projectEngineValue")) {
 				var started = state.profile ? nanoTime() : 0;
@@ -521,6 +555,12 @@
 			}
 			return invocationContext;
 		};
+		// The HttpState of the Convertigo context of the call, where the legacy HTTP connectors keep its cookies: created
+		// when missing, null without such a context (standalone run, Flow called directly by another one). A parallel chunk
+		// gets the one of its caller (invocationContextOf): HttpState methods are synchronized.
+		runContextPrototype.convertigoHttpState = function () {
+			return invocationHttpState(invocationContextOf(this));
+		};
 		runContextPrototype.tryDirectRequestable = function (target, input) {
 			return env.tryDirectRequestable ? env.tryDirectRequestable(this, target, input) : null;
 		};
@@ -822,6 +862,8 @@
 				}),
 				// a lane inside a lane also keeps the objects its caller shares
 				guard: sharedGuard(shared, scopes.__flowSharedGuard || null),
+				// resolved here, on the calling thread: the HTTP calls of the lanes keep the cookies of the call
+				invocationContext: invocationContextOf(ctx),
 				traceEnabled: ctx.traceEnabled !== false,
 				traced: !!scopes.trace && typeof scopes.trace === "object",
 				profiled: !!ctx.profile,
