@@ -76,6 +76,8 @@ const _meta = {
 
 (function () {
 	return {
+		// no state: every value of a call goes to http.request
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.callBlock("http.request", {

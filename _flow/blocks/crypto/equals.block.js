@@ -34,8 +34,9 @@ const _meta = {
 }
 
 (function () {
-	// The classes of the JDK come from the engine that evaluates the module (flowEngineClass, kept for the runtime), else
-	// by their full names: through the Packages of a call, each name looked up the names of its packages as classes again.
+	// Stateless: constants and Java classes only, every value of a call lives in run. The classes of the JDK come from the
+	// engine that evaluates the module (flowEngineClass, kept for the runtime), else by their full names: through the
+	// Packages of a call, each name looked up the names of its packages as classes again.
 	function javaClass(name) {
 		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
 	}
@@ -48,6 +49,7 @@ const _meta = {
 	}
 
 	return {
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var value = text(ctx, props.value);

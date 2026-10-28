@@ -32,8 +32,9 @@ capture a request, session, result, runtime handle or a mutable per-call cache.
 Freezing an export object does **not** freeze the variables captured by functions.
 
 Only audited implementations opt in: the control blocks `set`, `if`, `return`,
-`try`, `forEach`, `while`, `throw`, `config.use` and `flow.wait`, and `requestable.call`.
-Other Rhino implementations
+`try`, `forEach`, `while`, `throw`, `config.use` and `flow.wait`, `requestable.call`,
+and since 0.1.118 `http.request` (with its shortcuts), `crypto.hash`, `crypto.hmac`,
+`crypto.random`, `crypto.equals` and `log`. Other Rhino implementations
 use a shared compiled factory and a fresh instance per execution context. The
 same rule applies to libraries loaded through `ctx.lib`: their exports remain
 request-owned. Declaring a third-party implementation stateless is a correctness

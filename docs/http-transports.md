@@ -59,6 +59,14 @@ Flow. A redirection without a valid `Location` is returned as is (the JDK client
 - TLS uses the default trust store of the JVM, without the client key store of the JVM (`javax.net.ssl.keyStore`), as
   the other HTTP calls of the engine; the JVM proxy properties are not read, the engine proxy settings are.
 
+## Shared runtime
+
+The implementation is stateless (0.1.118): its module holds constants, Java classes and thread-safe httpclient objects
+(the cookie interceptors, immutable, and the registry of cookie specifications, whose providers create their
+specification once, synchronized); the cookie context, the request, the response, the redirections and the timeouts of a
+call live in the functions called for it. A shared runtime evaluates it once instead of once per call frame, and its
+classes come from the class path of the engine (`flowEngineClass`), never from a copy in the libraries of a project.
+
 `tests/http-engine-client.js` covers a single send on errors and timeouts, cookie isolation and persistence, the
 redirections, the timeouts and the engine proxy settings; `http-engine-client-shared-scope.js` runs it in a scope
 shaped like the one of a call of the shared runtime; `http-basic-auth-form-body.js` covers authentication and bodies.

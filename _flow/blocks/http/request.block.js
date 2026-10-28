@@ -114,6 +114,11 @@ const _meta = {
 	// calls of the server: each call has its cookie context, on the HttpState of its Convertigo context as with the HTTP
 	// connectors, and follows the redirections itself to read and write them at each step.
 	//
+	// Stateless (see the export): the module holds constants, Java classes and thread-safe httpclient objects (the cookie
+	// interceptors and specifications are immutable or synchronized); every value of a call (its cookie context, request,
+	// response, redirections, timeouts) lives in the functions called for it. A shared runtime of the server evaluates
+	// the module once, instead of once per call frame.
+	//
 	// The classes of the JDK and of the engine (the client of the engine is httpclient 4 of the engine, never a copy of
 	// the libraries of a project): from the engine that evaluates the module (flowEngineClass, kept for the runtime),
 	// else by their full names. Through the Packages of a call, each name looked up the names of its packages as
@@ -155,15 +160,17 @@ const _meta = {
 
 	// as the JDK client used until 0.1.114: at most 5 responses, the fifth returned as is when it redirects again
 	var MAX_RESPONSES = 5;
-	var REDIRECTS = { 301: true, 302: true, 303: true, 307: true, 308: true };
+	var REDIRECTS = Object.freeze({ 301: true, 302: true, 303: true, 307: true, 308: true });
 	// headers a redirection to another origin drops, as the JDK client did
-	var ORIGIN_HEADERS = { "authorization": true, "cookie": true, "origin": true, "referer": true, "host": true };
+	var ORIGIN_HEADERS = Object.freeze({ "authorization": true, "cookie": true, "origin": true, "referer": true, "host": true });
 	// headers the client computes from the entity
-	var ENTITY_HEADERS = { "content-length": true, "transfer-encoding": true };
+	var ENTITY_HEADERS = Object.freeze({ "content-length": true, "transfer-encoding": true });
+	// empty, never written
 	var NO_BODY = JavaArray.newInstance(JavaByte.TYPE, 0);
+	// thread-safe: immutable (the interceptors, the registry) or synchronized (the cookie specifications it creates)
 	var requestCookies = new RequestAddCookies();
 	var responseCookies = new ResponseProcessCookies();
-	var cookieSpecs = null;
+	var cookieSpecs = CookieSpecRegistries.createDefault();
 
 	function putHeader(headers, name, value) {
 		var key = String(name || "").toLowerCase();
@@ -365,7 +372,7 @@ const _meta = {
 		var state = mode === "context" && typeof ctx.convertigoHttpState === "function" ? ctx.convertigoHttpState() : null;
 		var context = HttpClientContext.create();
 		context.setCookieStore(state ? httpStateCookies(state) : new BasicCookieStore());
-		context.setCookieSpecRegistry(cookieSpecs || (cookieSpecs = CookieSpecRegistries.createDefault()));
+		context.setCookieSpecRegistry(cookieSpecs);
 		// RFC 6265, as browsers: Max-Age is read, a deleted cookie is removed
 		context.setRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build());
 		return context;
@@ -502,6 +509,8 @@ const _meta = {
 	}
 
 	return {
+		// no state of its own (see above): one evaluation serves every frame of a shared runtime
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var responseType=props.responseType===undefined?"auto":String(ctx.template(props.responseType));

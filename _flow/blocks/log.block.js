@@ -46,9 +46,9 @@ const _meta = {
 }
 
 (function () {
-	// The class of the engine comes from the engine that evaluates the module (flowEngineClass, kept for the runtime),
-	// else by its full name: through the Packages of a call, it looked up com.twinsoft, com.twinsoft.convertigo and
-	// com.twinsoft.convertigo.engine as classes at each log.
+	// Stateless: functions only, every value of a call lives in run. The class of the engine comes from the engine that
+	// evaluates the module (flowEngineClass, kept for the runtime), else by its full name: through the Packages of a
+	// call, it looked up com.twinsoft, com.twinsoft.convertigo and com.twinsoft.convertigo.engine as classes at each log.
 	var Engine = typeof flowEngineClass === "function" ? flowEngineClass("com.twinsoft.convertigo.engine.Engine")
 		: Packages["com.twinsoft.convertigo.engine.Engine"];
 
@@ -88,6 +88,7 @@ const _meta = {
 	}
 
 	return {
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var message = String(ctx.template(props.message || ""));

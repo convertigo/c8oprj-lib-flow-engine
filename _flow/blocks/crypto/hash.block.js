@@ -54,15 +54,16 @@ const _meta = {
 }
 
 (function () {
-	// The classes of the JDK come from the engine that evaluates the module (flowEngineClass, kept for the runtime), else
-	// by their full names: through the Packages of a call, each name looked up the names of its packages as classes again.
+	// Stateless: constants and Java classes only, every value of a call lives in run. The classes of the JDK come from the
+	// engine that evaluates the module (flowEngineClass, kept for the runtime), else by their full names: through the
+	// Packages of a call, each name looked up the names of its packages as classes again.
 	function javaClass(name) {
 		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
 	}
 	var Base64 = javaClass("java.util.Base64");
 	var MessageDigest = javaClass("java.security.MessageDigest");
 	var JavaString = javaClass("java.lang.String");
-	var ALGORITHMS = { sha256: "SHA-256", sha1: "SHA-1", sha384: "SHA-384", sha512: "SHA-512", md5: "MD5" };
+	var ALGORITHMS = Object.freeze({ sha256: "SHA-256", sha1: "SHA-1", sha384: "SHA-384", sha512: "SHA-512", md5: "MD5" });
 
 	function encode(bytes, encoding) {
 		if (encoding === "base64") {
@@ -79,6 +80,7 @@ const _meta = {
 	}
 
 	return {
+		stateless: true,
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var rendered = props.text === undefined || props.text === null ? "" : ctx.template(props.text);
