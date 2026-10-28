@@ -621,27 +621,107 @@
 			"createRowsPlan", "resultWithRows", "openEmitSink"];
 		var LANE_HANDLE_METHODS = ["handleValue", "closeHandle", "rowsCursorNext", "closeRowsCursor"];
 
+		// What every run context of a lane does differently, set once: a lane context is created per lane and per loop
+		var laneContextPrototype = Object.create(runContextPrototype);
+		Object.defineProperty(laneContextPrototype, "__flowLane", { value: true, enumerable: false });
+		Object.defineProperty(laneContextPrototype, "canContinue", { enumerable: false, value: function () {
+			if (this.cancelled) return false;
+			var lanes = this.__flowLanes;
+			if (lanes) {
+				var index = this.__flowTaskIndex;
+				if (!lanes.canContinue(index === undefined ? -1 : index)) {
+					var reason = lanes.cancelled();
+					this.cancelled = reason === null || reason === undefined ? "cancelled" : String(reason);
+					return false;
+				}
+				return true;
+			}
+			var caller = this.__flowTemplate.caller;
+			if (!caller.canContinue()) {
+				this.cancelled = caller.cancelled || "cancelled";
+				return false;
+			}
+			return true;
+		} });
+		LANE_UNSUPPORTED.forEach(function (name) {
+			var refused = function () {
+				raise("FOR_EACH_CHUNK_PARALLEL_UNSUPPORTED", "This block cannot run in a parallel chunk (" + name + "): it needs the "
+					+ "Convertigo context, or writes the state of the call.", null,
+					"Run it before or after the chunk loop, or set parallel to 1.");
+			};
+			// the installer of the cold methods assigns them all: an inherited setter keeps the refusal
+			Object.defineProperty(laneContextPrototype, name, { enumerable: false, get: function () { return refused; }, set: function () {} });
+		});
+		// a learned output schema is written by the caller, in task order (a project file, and its schema updates)
+		var laneLearn = function (node, property, outPath, value) {
+			var records = this.__flowTaskRecords;
+			if (records) {
+				(records.learned || (records.learned = [])).push([node, property, outPath, value]);
+				return { learned: false, deferred: true };
+			}
+			return this.__flowTemplate.caller.learnOutputSchema(node, property, outPath, value);
+		};
+		Object.defineProperty(laneContextPrototype, "learnOutputSchema", { enumerable: false, get: function () { return laneLearn; }, set: function () {} });
+		LANE_HANDLE_METHODS.forEach(function (name) {
+			var shared = runContextPrototype[name];
+			Object.defineProperty(laneContextPrototype, name, { enumerable: false, value: function (handle) {
+				var handles = this.handles;
+				if (!handle || !handles || handles[handle.__flowHandleId] !== handle) {
+					raise("FOR_EACH_CHUNK_PARALLEL_HANDLE", "A parallel chunk can only use the handles it opened: the handles of the caller "
+						+ "(the source of the loop for instance) belong to its thread.", null);
+				}
+				return shared.apply(this, arguments);
+			} });
+		});
+
 		function runLanes(ctx, options) {
 			var template = laneTemplate(ctx, options);
 			var callerLane = createLaneContext(template, null);
 			var requested = Math.floor(Number(options.lanes) || 1);
-			var lanes = requested > 1 && ctx.__flowLane !== true && typeof env.openLanes === "function"
-				? env.openLanes(requested, laneBody(template, options.work)) : null;
 			var check = typeof options.check === "function" ? options.check : function () {};
+			var pending = [], pullFailed = false, pullError, exhausted = false;
+			var threaded = requested > 1 && ctx.__flowLane !== true && typeof env.openLanes === "function";
+			if (threaded) {
+				// the lanes are opened once a second task is there: a source of one chunk runs it here, without their cost
+				check();
+				var first = options.pull();
+				if (first === null || first === undefined) return { lanes: 0 };
+				pending.push(first);
+				try {
+					var second = options.pull();
+					if (second !== null && second !== undefined) pending.push(second);
+					else exhausted = true;
+				} catch (error) {
+					pullFailed = true;
+					pullError = error;
+				}
+			}
+			var lanes = null;
+			if (threaded && pending.length > 1) {
+				shareLazyValues(template);
+				lanes = env.openLanes(requested, laneBody(template, options.work));
+			}
 			if (!lanes) {
 				for (;;) {
 					check();
-					var task = options.pull();
-					if (task === null || task === undefined) return { lanes: 0 };
+					var task = pending.length ? pending.shift() : pullFailed || exhausted ? null : options.pull();
+					if (task === null || task === undefined) {
+						if (pullFailed) throw pullError;
+						return { lanes: 0 };
+					}
 					var done = runLaneTask(callerLane, task, options.work);
 					giveRecords(template, done);
 					options.settle(done, callerLane);
 				}
 			}
 			var window, submitted = 0, settled = 0, ready = {};
-			var pulling = true, pullFailed = false, pullError, stopIndex = -1, completed = false, settleFailed = -1, thrown;
+			var pulling = !pullFailed, stopIndex = -1, completed = false, settleFailed = -1, thrown;
 			try {
 				window = Number(lanes.window());
+				pending.forEach(function (task) { lanes.submit(task, task.index); });
+				submitted = pending.length;
+				pending = null;
+				if (!pulling) lanes.finish();
 				for (;;) {
 					check();
 					while (pulling && submitted - settled < window) {
@@ -716,24 +796,17 @@
 			}
 		}
 
-		// What the lanes share with their caller, taken on the calling thread: the lazy values of the caller are read
-		// here, so that no lane ever writes them into the objects of the caller.
+		// What the lanes share with their caller, taken on the calling thread. The lazy values of the caller (its
+		// configuration, engine, request directories) are read by shareLazyValues only when lanes are opened, so that no
+		// lane ever writes them into the objects of the caller; the calling thread reads them when it needs them.
 		function laneTemplate(ctx, options) {
 			var scopes = ctx.scopes;
-			var request = scopes.request;
-			var config = scopes.config;
-			if (request && typeof request === "object") {
-				void request.projectDir;
-				void request.engineDir;
-				void request.engineProjectDir;
-			}
-			var engine = ctx.engine;
 			var parent = options.parent === undefined ? scopes.local : options.parent;
 			var shared = [];
-			[request, scopes.input, config, scopes.result, scopes.current, scopes.props, scopes.local, parent].forEach(function (value) {
+			[scopes.request, scopes.input, scopes.result, scopes.current, scopes.props, scopes.local, parent].forEach(function (value) {
 				if (value && typeof value === "object" && shared.indexOf(value) < 0) shared.push(value);
 			});
-			return Object.freeze({
+			return {
 				caller: ctx,
 				request: ctx.request,
 				definition: ctx.definition,
@@ -742,18 +815,31 @@
 				executionChains: ctx.executionChains,
 				preparation: ctx.preparation,
 				maxGraphBlockDepth: ctx.maxGraphBlockDepth,
-				engine: engine,
 				graphBlockStack: Object.freeze((ctx.graphBlockStack || []).slice()),
 				scopes: Object.freeze({
-					request: request, input: scopes.input, config: config, result: scopes.result,
+					request: scopes.request, input: scopes.input, result: scopes.result,
 					current: scopes.current, props: scopes.props, parent: parent
 				}),
 				// a lane inside a lane also keeps the objects its caller shares
 				guard: sharedGuard(shared, scopes.__flowSharedGuard || null),
 				traceEnabled: ctx.traceEnabled !== false,
 				traced: !!scopes.trace && typeof scopes.trace === "object",
-				profiled: !!ctx.profile
-			});
+				profiled: !!ctx.profile,
+				config: undefined,
+				engine: undefined
+			};
+		}
+
+		function shareLazyValues(template) {
+			var caller = template.caller, request = template.scopes.request;
+			if (request && typeof request === "object") {
+				void request.projectDir;
+				void request.engineDir;
+				void request.engineProjectDir;
+			}
+			template.config = caller.scopes.config;
+			template.engine = caller.engine;
+			template.guard.share(template.config);
 		}
 
 		// The objects a lane shares with its caller and the other lanes, read-only there: the scope roots of the caller,
@@ -761,17 +847,27 @@
 		// of an array source). The roots are compared at once; an object below them is looked up in the identity set
 		// of the shared objects, built once per loop at the first write that needs it, under a lock for the lanes. The
 		// shared objects are not written during the loop (the caller only reads the source and settles), so the set
-		// stays exact. A Rhino block writing ctx.scopes or an object it read directly is not seen: its author keeps it
-		// to local, as the blocks of the core do.
+		// stays exact. The roots only change on the calling thread (its configuration, read late), never once lanes run.
+		// A Rhino block writing ctx.scopes or an object it read directly is not seen: its author keeps it to local, as
+		// the blocks of the core do.
 		function sharedGuard(roots, outer) {
+			roots = roots.slice();
 			var objects = null;
-			var lookup = function (value) {
+			var locked = function (sharing, value) {
+				if (sharing) {
+					roots.push(value);
+					if (objects !== null) reachable(objects, [value]);
+					return true;
+				}
 				if (objects === null) objects = reachable(new Set(), roots);
 				return objects.has(value);
 			};
 			// the lanes look up under a lock of their own (any object is a Java monitor)
-			if (typeof Synchronizer === "function") lookup = new Synchronizer(lookup, {});
+			if (typeof Synchronizer === "function") locked = new Synchronizer(locked, {});
 			return Object.freeze({
+				share: function (value) {
+					if (value !== null && typeof value === "object" && roots.indexOf(value) < 0) locked(true, value);
+				},
 				// whether a write may not go into container. Past the roots, the scopes the lane writes most are its own:
 				// the fresh local and chunk of a slot, the fresh result of a composite block
 				refuses: function (container, scopes) {
@@ -779,7 +875,7 @@
 					if (roots.indexOf(container) >= 0) return true;
 					if (outer && outer.refuses(container, scopes)) return true;
 					if (container === scopes.local || container === scopes.chunk || container === scopes.result) return false;
-					return lookup(container) === true;
+					return locked(false, container) === true;
 				}
 			});
 		}
@@ -810,7 +906,7 @@
 		// The run context of a lane: the plan and the read-only scopes of the caller; the scopes, handles, block
 		// instances, prepared runners and libraries it writes are its own. lanes is null for the calling thread.
 		function createLaneContext(template, lanes) {
-			var lane = Object.create(runContextPrototype);
+			var lane = Object.create(laneContextPrototype);
 			lane.request = template.request;
 			lane.definition = template.definition;
 			lane.blocks = template.blocks;
@@ -818,7 +914,6 @@
 			if (template.executionChains) lane.executionChains = template.executionChains;
 			lane.preparation = template.preparation;
 			if (template.maxGraphBlockDepth !== undefined) lane.maxGraphBlockDepth = template.maxGraphBlockDepth;
-			if (template.engine !== undefined) lane.engine = template.engine;
 			lane.returned = undefined;
 			lane.stopped = false;
 			lane.traceEnabled = template.traceEnabled;
@@ -827,60 +922,38 @@
 			var caller = template.caller;
 			// outside a task, only the calling thread runs (reduce): it records into the caller directly
 			var scopes = {
-				request: shared.request, input: shared.input, config: shared.config, local: {}, result: shared.result,
+				request: shared.request, input: shared.input, local: {}, result: shared.result,
 				trace: lanes ? null : caller.scopes.trace, current: shared.current, props: shared.props, parent: shared.parent
 			};
 			Object.defineProperty(scopes, "__flowSharedGuard", { value: template.guard, enumerable: false });
 			lane.scopes = scopes;
-			if (!lanes && template.profiled) lane.profile = caller.profile;
-			Object.defineProperty(lane, "__flowLane", { value: true, enumerable: false });
-			Object.defineProperty(lane, "canContinue", { enumerable: false, value: lanes ? function () {
-				if (this.cancelled) return false;
-				var index = this.__flowTaskIndex;
-				if (!lanes.canContinue(index === undefined ? -1 : index)) {
-					var reason = lanes.cancelled();
-					this.cancelled = reason === null || reason === undefined ? "cancelled" : String(reason);
-					return false;
-				}
-				return true;
-			} : function () {
-				if (this.cancelled) return false;
-				if (!caller.canContinue()) {
-					this.cancelled = caller.cancelled || "cancelled";
-					return false;
-				}
-				return true;
-			} });
-			LANE_UNSUPPORTED.forEach(function (name) {
-				var refused = function () {
-					raise("FOR_EACH_CHUNK_PARALLEL_UNSUPPORTED", "This block cannot run in a parallel chunk (" + name + "): it needs the "
-						+ "Convertigo context, or writes the state of the call.", null,
-						"Run it before or after the chunk loop, or set parallel to 1.");
-				};
-				// the installer of the cold methods assigns them all: the refusal stays
-				Object.defineProperty(lane, name, { enumerable: false, get: function () { return refused; }, set: function () {} });
-			});
-			// a learned output schema is written by the caller, in task order (a project file, and its schema updates)
-			var learn = function (node, property, outPath, value) {
-				var records = this.__flowTaskRecords;
-				if (records) {
-					(records.learned || (records.learned = [])).push([node, property, outPath, value]);
-					return { learned: false, deferred: true };
-				}
-				return caller.learnOutputSchema(node, property, outPath, value);
-			};
-			Object.defineProperty(lane, "learnOutputSchema", { enumerable: false, get: function () { return learn; }, set: function () {} });
-			LANE_HANDLE_METHODS.forEach(function (name) {
-				var shared = runContextPrototype[name];
-				Object.defineProperty(lane, name, { enumerable: false, value: function (handle) {
-					var handles = this.handles;
-					if (!handle || !handles || handles[handle.__flowHandleId] !== handle) {
-						raise("FOR_EACH_CHUNK_PARALLEL_HANDLE", "A parallel chunk can only use the handles it opened: the handles of the caller "
-							+ "(the source of the loop for instance) belong to its thread.", null);
-					}
-					return shared.apply(this, arguments);
+			if (lanes) {
+				scopes.config = template.config;
+				if (template.engine !== undefined) lane.engine = template.engine;
+			} else {
+				// the calling thread reads the configuration and the engine of its caller when a block needs them; a
+				// composite block with defaults sets its own configuration
+				Object.defineProperty(scopes, "config", { enumerable: true, configurable: true, get: function () {
+					var config = caller.scopes.config;
+					template.guard.share(config);
+					return config;
+				}, set: function (value) {
+					Object.defineProperty(this, "config", { value: value, writable: true, enumerable: true, configurable: true });
 				} });
-			});
+				Object.defineProperty(lane, "engine", { enumerable: true, configurable: true, get: function () {
+					return caller.engine;
+				}, set: function (value) {
+					Object.defineProperty(this, "engine", { value: value, writable: true, enumerable: true, configurable: true });
+				} });
+				if (template.profiled) lane.profile = caller.profile;
+				// the calling thread keeps the block instances, prepared runners and libraries of its caller: one thread,
+				// one of them running at a time, as in sequence (a lane has its own: they are not thread-safe)
+				lane.implementationInstances = caller.implementationInstances || (caller.implementationInstances = new Map());
+				lane.implementationRunners = caller.implementationRunners || (caller.implementationRunners = new Map());
+				lane.dynamicPreparedNodes = caller.dynamicPreparedNodes || (caller.dynamicPreparedNodes = new Map());
+				lane.libraries = caller.libraries || (caller.libraries = {});
+			}
+			Object.defineProperty(lane, "__flowLanes", { value: lanes, enumerable: false });
 			Object.defineProperty(lane, "__flowTemplate", { value: template, enumerable: false });
 			return lane;
 		}
