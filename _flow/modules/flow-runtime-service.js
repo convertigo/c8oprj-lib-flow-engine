@@ -609,6 +609,8 @@
 		// the calling thread. options.check() runs between them and throws to cancel. With failFast, a failed task stops
 		// the tasks after it, and its settle must throw. Without the shared runtime or a free thread, inside a lane, or for
 		// one lane, the tasks run one by one on the calling thread with the same contract.
+		// What a task records for its caller (trace, profile, learned output schemas) is given to the caller before its
+		// settle, in task order.
 		runContextPrototype.runLanes = function (options) {
 			return runLanes(this, options || {});
 		};
@@ -629,7 +631,9 @@
 					check();
 					var task = options.pull();
 					if (task === null || task === undefined) return { lanes: 0 };
-					options.settle(runLaneTask(callerLane, task, options.work), callerLane);
+					var done = runLaneTask(callerLane, task, options.work);
+					giveRecords(template, done);
+					options.settle(done, callerLane);
 				}
 			}
 			var window, submitted = 0, settled = 0, ready = {};
@@ -672,6 +676,7 @@
 						var settling = ready[settled];
 						delete ready[settled];
 						settled++;
+						giveRecords(template, settling);
 						options.settle(settling, callerLane);
 					}
 				}
@@ -717,7 +722,10 @@
 					current: scopes.current, props: scopes.props, parent: parent
 				}),
 				// a lane inside a lane also keeps the objects its caller shares
-				guard: sharedGuard(shared, scopes.__flowSharedGuard || null)
+				guard: sharedGuard(shared, scopes.__flowSharedGuard || null),
+				traceEnabled: ctx.traceEnabled !== false,
+				traced: !!scopes.trace && typeof scopes.trace === "object",
+				profiled: !!ctx.profile
 			});
 		}
 
@@ -786,17 +794,19 @@
 			if (template.engine !== undefined) lane.engine = template.engine;
 			lane.returned = undefined;
 			lane.stopped = false;
-			lane.traceEnabled = false;
+			lane.traceEnabled = template.traceEnabled;
 			lane.graphBlockStack = template.graphBlockStack.slice();
 			var shared = template.scopes;
+			var caller = template.caller;
+			// outside a task, only the calling thread runs (reduce): it records into the caller directly
 			var scopes = {
 				request: shared.request, input: shared.input, config: shared.config, local: {}, result: shared.result,
-				trace: null, current: shared.current, props: shared.props, parent: shared.parent
+				trace: lanes ? null : caller.scopes.trace, current: shared.current, props: shared.props, parent: shared.parent
 			};
 			Object.defineProperty(scopes, "__flowSharedGuard", { value: template.guard, enumerable: false });
 			lane.scopes = scopes;
+			if (!lanes && template.profiled) lane.profile = caller.profile;
 			Object.defineProperty(lane, "__flowLane", { value: true, enumerable: false });
-			var caller = template.caller;
 			Object.defineProperty(lane, "canContinue", { enumerable: false, value: lanes ? function () {
 				if (this.cancelled) return false;
 				var index = this.__flowTaskIndex;
@@ -823,6 +833,16 @@
 				// the installer of the cold methods assigns them all: the refusal stays
 				Object.defineProperty(lane, name, { enumerable: false, get: function () { return refused; }, set: function () {} });
 			});
+			// a learned output schema is written by the caller, in task order (a project file, and its schema updates)
+			var learn = function (node, property, outPath, value) {
+				var records = this.__flowTaskRecords;
+				if (records) {
+					(records.learned || (records.learned = [])).push([node, property, outPath, value]);
+					return { learned: false, deferred: true };
+				}
+				return caller.learnOutputSchema(node, property, outPath, value);
+			};
+			Object.defineProperty(lane, "learnOutputSchema", { enumerable: false, get: function () { return learn; }, set: function () {} });
 			LANE_HANDLE_METHODS.forEach(function (name) {
 				var shared = runContextPrototype[name];
 				Object.defineProperty(lane, name, { enumerable: false, value: function (handle) {
@@ -834,6 +854,7 @@
 					return shared.apply(this, arguments);
 				} });
 			});
+			Object.defineProperty(lane, "__flowTemplate", { value: template, enumerable: false });
 			return lane;
 		}
 
@@ -846,12 +867,19 @@
 			};
 		}
 
-		// One task in a lane: its handles are closed at its end, its error is given with its outcome.
+		// One task in a lane: its handles are closed at its end, its error is given with its outcome, and what it
+		// records for the caller (trace, profile, learned schemas) is kept in the outcome, given before its settle.
 		function runLaneTask(lane, task, work) {
 			var outcome = { index: task.index, task: task };
+			var template = lane.__flowTemplate;
+			var records = {};
+			var baseTrace = lane.scopes.trace, baseProfile = lane.profile;
 			lane.__flowTaskIndex = task.index;
+			lane.__flowTaskRecords = records;
 			lane.returned = undefined;
 			lane.stopped = false;
+			if (template.traced) lane.scopes.trace = records.trace = { nodes: [] };
+			if (template.profiled) lane.profile = records.profile = { blocks: [], hotPath: {} };
 			try {
 				outcome.value = work(lane, task);
 			} catch (error) {
@@ -867,8 +895,43 @@
 					}
 				}
 				lane.handles = {};
+				lane.scopes.trace = baseTrace;
+				lane.profile = baseProfile;
+				lane.__flowTaskRecords = null;
+				outcome.records = records;
 			}
 			return outcome;
+		}
+
+		// On the calling thread, before the settle of a task: the trace nodes and probes, the profile and the learned
+		// output schemas of the task, as they would come in sequence.
+		function giveRecords(template, outcome) {
+			var records = outcome.records;
+			outcome.records = null;
+			if (!records) return;
+			var caller = template.caller;
+			var trace = records.trace, target = caller.scopes.trace;
+			if (trace && target && typeof target === "object") {
+				Object.keys(trace).forEach(function (key) {
+					var entries = trace[key];
+					if (!Array.isArray(entries) || !entries.length) return;
+					var into = Array.isArray(target[key]) ? target[key] : (target[key] = []);
+					for (var i = 0; i < entries.length; i++) into.push(entries[i]);
+				});
+			}
+			var profile = records.profile;
+			if (profile && caller.profile) {
+				var blocks = caller.profile.blocks || (caller.profile.blocks = []);
+				for (var b = 0; b < profile.blocks.length; b++) blocks.push(profile.blocks[b]);
+				// the durations of the lanes add up: their sum can pass the time of the loop
+				var hotPath = caller.profile.hotPath || (caller.profile.hotPath = {});
+				Object.keys(profile.hotPath).forEach(function (name) {
+					hotPath[name] = Number(hotPath[name] || 0) + Number(profile.hotPath[name] || 0);
+				});
+			}
+			(records.learned || []).forEach(function (args) {
+				caller.learnOutputSchema(args[0], args[1], args[2], args[3]);
+			});
 		}
 
 		function validateNodeDestinations(block, node, props) {

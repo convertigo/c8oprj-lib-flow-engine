@@ -184,6 +184,20 @@ try {
   var nestedOwn = nestedAlias("local.b={k:0}\nlocal.b.k=2");
   assert(nestedOwn.ok && nestedOwn.result.n === 4, "A nested parallel chunk writes what it builds: " + JSON.stringify(nestedOwn.error || nestedOwn.result));
 
+  // the trace and the probes of the chunks come in the trace of the run, in chunk order, as in sequence
+  function traced(parallel) {
+    return api("run", {flowSource: source(head + 'function Tr({input,result}){\nlocal.n=forEachChunk({source:input.items,size:4,parallel:' + parallel + ',$$each:function({chunk}){\n'
+      + 'local.i=chunk.index\ndebug.probe({value:chunk.index,label:"chunk"})\nreturn chunk.rows.length\n},$$reduce:function({acc,value}){\nlocal.s=acc===null?value:acc+value\nreturn local.s\n}})\nresult.n=local.n\n}').code,
+      input: {items: items}, includeTrace: true});
+  }
+  var traceOne = traced(1), traceFour = traced(4);
+  function traceShape(response) {
+    return JSON.stringify({nodes: (response.trace && response.trace.nodes || []).map(function (node) { return [node.id, node.block, node.result]; }),
+      probes: response.trace && response.trace.probes});
+  }
+  assert(traceOne.ok && traceFour.ok && traceOne.trace.nodes.length > 12, "The traced Flows run: " + JSON.stringify([traceOne.error, traceFour.error]));
+  assert(traceShape(traceFour) === traceShape(traceOne), "The trace of a parallel loop is the sequential one: " + traceShape(traceFour) + " / " + traceShape(traceOne));
+
   // bounds
   var tooMany = run(head + 'function L({input,result}){\nforEachChunk({source:input.items,parallel:65,$$each:function({chunk}){\nlocal.x=1\n}})\n}', {items: items});
   assert(!tooMany.ok && code(tooMany.error) === "FOR_EACH_CHUNK_LIMIT_INVALID", "parallel goes up to 64: " + JSON.stringify(tooMany.error));
