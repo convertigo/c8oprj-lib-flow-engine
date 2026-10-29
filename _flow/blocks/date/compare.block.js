@@ -1,7 +1,7 @@
 const _meta = {
   "sourceVersion": 2,
   "version": 1,
-  "longDescription": "date.compare({left:due,right:today}) -> -1 / 0 / 1, invalid -> null. Two offset timestamps compare absolute instants, including the repeated DST hour. Civil or mixed values compare wall-clock fields in timeZone. For PCA an active valid due date is late when the comparison is <= 0.",
+  "longDescription": "date.compare({left:due,right:today}) -> -1 / 0 / 1, invalid -> null. Two offset timestamps compare absolute instants, including the repeated DST hour. Civil or mixed values compare wall-clock fields in timeZone.",
   "description": "Compare strict ISO values: -1 when left precedes right, 0 when equal, 1 when later; null for invalid values. Two offset timestamps compare instants, including a repeated DST hour. Civil/mixed values compare in timeZone.",
   "icon": "mdi:calendar-clock-outline",
   "private": false,

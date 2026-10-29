@@ -30,14 +30,14 @@ try {
 	same('NestedNow', '  result.value = date.now({at:"2026-01-01T00:00:00Z"}) + 1',
 		'  local.now = date.now({at:"2026-01-01T00:00:00Z"})\n  result.value = local.now + 1', {}, 'FLOWSCRIPT_BLOCK_CALL_LIFTED');
 	same('Positional', '  result.value = text.trim("été")', '  result.value = text.trim({ text: "été" })', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
-	var commented = same('PositionalComment', '  result.value = text.trim( /* keep argument comment */ " PCA " )', '  result.value = text.trim({ text: " PCA " })', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
+	var commented = same('PositionalComment', '  result.value = text.trim( /* keep argument comment */ " ABC " )', '  result.value = text.trim({ text: " ABC " })', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
 	assert(commented.code.indexOf('keep argument comment') >= 0, 'Named-argument correction preserves argument comments');
 	same('Triple', '  result.value = text.trim({text:text.trim({text:text.trim({text:" three "})})})',
 		'  local.a = text.trim({text:" three "})\n  local.b = text.trim({text:local.a})\n  result.value = text.trim({text:local.b})', {}, 'FLOWSCRIPT_BLOCK_CALL_LIFTED');
 	same('EmptyCall', '  result.value = list.first()', '  result.value = list.first({})', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
 	var pair = api('blockCodeSet', { name: 'fixture.pair', code: 'const _meta = { properties: { count: {type:"number",kind:"value"}, label:{type:"string",kind:"value"}}, outputs:{out:{type:"object"}} }\nfunction pair({input}) { return { count: input.count, label: input.label } }' });
 	assert(pair.ok && !(pair.fixes || []).length, 'Declared block must not be corrected: ' + JSON.stringify(pair));
-	same('TypedPositionals', '  result.value = fixture.pair(3, "PCA")', '  result.value = fixture.pair({count:3,label:"PCA"})', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
+	same('TypedPositionals', '  result.value = fixture.pair(3, "ABC")', '  result.value = fixture.pair({count:3,label:"ABC"})', {}, 'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED');
 	same('InputContract', '  result.value = list.first({ items: input.rows })', '  result.value = list.first({ items: input.rows })', { rows: [{ id: 1 }] }, 'FLOWSCRIPT_INPUT_DECLARED');
 	var inputSource = api('flowCodeGet', {name:'InputContract'}).code;
 	assert(inputSource.indexOf('"array"') !== -1 && inputSource.indexOf('"items"') !== -1, 'Infer array from the block contract, with explicit generic items');
@@ -65,7 +65,7 @@ try {
 		same('Run1Methods'+index,'  result.value = '+expression,'  result.value = '+expression,{q:'B'},'FLOWSCRIPT_INPUT_DECLARED');
 	});
 	same('Run1ObjectArray','  local.rows = list.map({items:[input.row],select:{label:current.label}})\n  result.rows = local.rows',
-		'  local.rows = list.map({items:[input.row],select:{label:current.label}})\n  result.rows = local.rows',{row:{label:'PCA'}},'FLOWSCRIPT_INPUT_DECLARED');
+		'  local.rows = list.map({items:[input.row],select:{label:current.label}})\n  result.rows = local.rows',{row:{label:'ABC'}},'FLOWSCRIPT_INPUT_DECLARED');
 	same('Run1DynamicSort','  result.rows = list.sort({items:input.rows,by:current.label,direction:input.sortDir == "desc" ? "desc" : "asc"})',
 		'  result.rows = list.sort({items:input.rows,by:current.label,direction:input.sortDir == "desc" ? "desc" : "asc"})',{rows:[{label:'A'},{label:'B'}],sortDir:'desc'},'FLOWSCRIPT_INPUT_DECLARED');
 	var projection = set('Projection', '  const rows = list.map({items: input.rows, select: { label: text.trim({text: current.name}) }})\n  result.rows = rows');
@@ -95,16 +95,16 @@ try {
 	refused('Unknown', '  result.value = missing.block({value:1})', 'UNKNOWN_BLOCK');
 	var localBlock = api('blockCodeSet', {name:'fixture.inferred',code:'const _meta = {properties:{},outputs:{out:{type:"string"}}}\nfunction inferred({input}) { return input.label }'});
 	assert(localBlock.ok && hasFix(localBlock, 'FLOW_BLOCK_INPUT_DECLARED') && localBlock.code.indexOf('"label"') >= 0, 'Block properties are added and exposed: ' + JSON.stringify(localBlock));
-	var inferredRun = set('CallInferred', '  result.value = fixture.inferred({label:"PCA"})');
-	assert(inferredRun.ok && api('flowCodeRun',{name:'CallInferred'}).result.value === 'PCA', 'Corrected block executes normally');
+	var inferredRun = set('CallInferred', '  result.value = fixture.inferred({label:"ABC"})');
+	assert(inferredRun.ok && api('flowCodeRun',{name:'CallInferred'}).result.value === 'ABC', 'Corrected block executes normally');
 	var blockPatch = api('blockCodePatch',{name:'fixture.inferred',revision:localBlock.revision,code:'const _meta = {properties:{label:{type:"string",kind:"value"}},outputs:{out:{type:"string"}}}\nfunction inferred({input}) { return text.trim(input.label) }'});
 	assert(blockPatch.ok && hasFix(blockPatch,'FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED') && hasFix(blockPatch,'FLOWSCRIPT_BLOCK_CALL_LIFTED'),'Block patches use the same explicit correction contract: '+JSON.stringify(blockPatch));
 	var outOfBand = api('blockCodeSet',{name:'fixture.externalContract',properties:{existing:{type:'integer',kind:'value',default:7}},code:'function externalContract({input}) { return {existing:input.existing,extra:input.extra} }'});
 	assert(outOfBand.ok && hasFix(outOfBand,'FLOW_BLOCK_INPUT_DECLARED') && outOfBand.code.indexOf('"integer"') >= 0 && outOfBand.code.indexOf('"default": 7') >= 0,'An added input must preserve a contract supplied by the caller: '+JSON.stringify(outOfBand));
 	var selfOld = api('blockCodeSet',{name:'fixture.self',code:'const _meta = {properties:{first:{type:"string",kind:"value"},second:{type:"number",kind:"value"}},outputs:{out:{type:"any"}}}\nfunction self({input}) { return input.first }'});
 	assert(selfOld.ok,'Self-call contract fixture failed');
-	var selfNew = api('blockCodeSet',{name:'fixture.self',dry:true,code:'const _meta = {properties:{first:{type:"number",kind:"value"},second:{type:"string",kind:"value"}},outputs:{out:{type:"any"}}}\nfunction self({input}) {\n  local.value = fixture.self(3,"PCA")\n  return local.value\n}'});
-	assert(selfNew.ok && selfNew.fixes.some(function(fix){return fix.code==='FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED' && fix.after.indexOf('"first": 3') >= 0 && fix.after.indexOf('"second": "PCA"') >= 0;}),'A self call must use the submitted contract, not the previous cached block: '+JSON.stringify(selfNew));
+	var selfNew = api('blockCodeSet',{name:'fixture.self',dry:true,code:'const _meta = {properties:{first:{type:"number",kind:"value"},second:{type:"string",kind:"value"}},outputs:{out:{type:"any"}}}\nfunction self({input}) {\n  local.value = fixture.self(3,"ABC")\n  return local.value\n}'});
+	assert(selfNew.ok && selfNew.fixes.some(function(fix){return fix.code==='FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED' && fix.after.indexOf('"first": 3') >= 0 && fix.after.indexOf('"second": "ABC"') >= 0;}),'A self call must use the submitted contract, not the previous cached block: '+JSON.stringify(selfNew));
 	var nested = api('flowCodeGet',{name:'Nested'});
 	var patch = api('flowCodePatch',{name:'Nested',revision:nested.revision,code:code('Nested','  result.value = text.trim({text:text.trim({text:" patch "})})')});
 	assert(patch.ok && hasFix(patch,'FLOWSCRIPT_BLOCK_CALL_LIFTED'), 'code-patch shares the same correction path: ' + JSON.stringify(patch));

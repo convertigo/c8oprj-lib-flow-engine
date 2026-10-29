@@ -67,7 +67,7 @@ or unsafe headings and inconsistent column counts are errors.
 to property keys or their unique `title`. Without a schema all cells remain
 strings, including `001` and `=1+1` (the parser never evaluates formulas).
 Optional `columns: ["label", "id"]` chooses fields and order; entries can
-also be `{field:"label", header:"Nom du poste"}`. Missing or ambiguous headings
+also be `{field:"label", header:"Nom de l'article"}`. Missing or ambiguous headings
 are refused. `header:false` requires ordered `columns`.
 
 For the data contract, pass `rowSchema: local.schema` from `data.rowSchema`
