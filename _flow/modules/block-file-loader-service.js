@@ -157,10 +157,10 @@
 			return installArtifact(blocks, name, cached, env);
 		}
 		var code = sourceForFile(file, env);
-		var compiled = env.compileProjectBlockCode(blocks, name, code, {
-			allowPrimitiveRhino: origin !== "project"
-		});
-		var block = env.graphBlockFromDefinition(compiled.descriptor, file, origin, provider);
+		var descriptor = typeof env.compiledBlockDescriptor === "function"
+			? env.compiledBlockDescriptor(blocks, name, code, origin, provider)
+			: env.compileProjectBlockCode(blocks, name, code, { allowPrimitiveRhino: origin !== "project" }).descriptor;
+		var block = env.graphBlockFromDefinition(descriptor, file, origin, provider);
 		ensureNotDuplicate(blocks, block.name, "Rename the project block or remove the duplicate.", env);
 		blocks[block.name] = block;
 		if (typeof env.writeBlockArtifact === "function") {

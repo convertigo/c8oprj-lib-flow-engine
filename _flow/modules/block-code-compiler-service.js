@@ -124,6 +124,10 @@
 					return graphBlockCatalog(provisional);
 				}
 			};
+			if (request && request.catalogRevision) {
+				// compiled from the source of its catalog entry: the entry above gives the same contract, the same catalog
+				Object.defineProperty(validationBlocks, "__flowCatalogFingerprint", { value: String(request.catalogRevision), enumerable: false });
+			}
 			var validation = flowScriptValidateRequest(validationBlocks, {
 				name: blockLocalName(name) || name,
 				code: functionCode,

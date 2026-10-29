@@ -257,7 +257,8 @@
 		var blocks = {};
 		var coreBlocksDir = new env.File(env.engineDir(), "blocks");
 		reserveBlockDir(blocks, coreBlocksDir, "core", env.flowProviderName(env.engineDir(), "lib_flow_engine"), env);
-		return env.writeRuntimeCache(env.coreBlockCache, coreKey, coreKey, blocks, "core Flow blocks");
+		// the catalog a core block materialized on its own (its display name, its runtime) is compiled against
+		return env.writeRuntimeCache(env.coreBlockCache, coreKey, coreKey, attachCatalogFingerprint(blocks, coreKey), "core Flow blocks");
 	}
 
 	function loadBlocksUncached(env, coreKey) {

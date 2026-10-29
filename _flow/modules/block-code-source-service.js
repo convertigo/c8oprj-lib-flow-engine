@@ -63,7 +63,9 @@
 		var rest = text.substring(0, start) + text.substring(start, declarationEnd).replace(/[^\r\n]/g, " ") + text.substring(declarationEnd);
 		return {
 			meta: env.parseFlowScriptMetadataValue(stripMetadataComments(text.substring(valueStart, end + 1), env), lineAt(text, valueStart)),
-			code: rest
+			code: rest,
+			// the declaration blanked in code
+			header: { start: start, end: declarationEnd }
 		};
 	}
 

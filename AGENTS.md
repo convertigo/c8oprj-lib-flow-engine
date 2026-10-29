@@ -681,6 +681,23 @@ catalog. Aggregate ceilings are documented in the test. Instrumentation lives
 only in the test's in-memory Engine: there is no runtime probe or timing limit.
 The full `tools/run-tests.sh` runner includes this test too.
 
+## Source Memo
+
+What is computed from the content of a source alone goes through `sourceMemo`
+in `Engine.js`: the `_meta` header of a block source (`block-meta`, by content),
+the descriptor compiled from a block file (`block-descriptor`, by project,
+block, origin, content and revision of the catalog it is compiled against) and
+the model of a FlowScript Flow (`flow-source`, by project, name, content and
+catalog revision). The value is kept as JSON text: by the engine for all its
+runtimes (`FlowEngineBridge.sharedSourceMemo`, bounded, kept across data
+invalidations, cleared with the shared metadata), else by the runtime. Every
+caller parses its own copy, on a hit as on a build, so a kept value must be
+plain JSON. Working copies bypass it, failures are never kept, and a catalog of
+no known revision (`__flowCatalogFingerprint`, absent on catalogs composed for a
+call) bypasses it. Add a kind only for a value fully determined by its key and
+the code of `Engine.js` and its modules; `cacheInfo` reports the calls, builds
+and bypasses of each kind (`tests/source-memo-rhino.js`).
+
 ## Validation
 
 Use the standalone smoke test before touching Java integration:

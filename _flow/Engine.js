@@ -60,6 +60,9 @@
 	// an engine keeping the compiled code of files on disk across restarts (FlowEngineBridge.compileScript)
 	var bytecodeCacheBridge = false;
 	try { bytecodeCacheBridge = typeof FlowEngineBridge.compileScript === "function"; } catch (olderEngine) { }
+	// an engine keeping what is computed from the content of sources for all its runtimes (FlowEngineBridge.sharedSourceMemo)
+	var sourceMemoBridge = false;
+	try { sourceMemoBridge = typeof FlowEngineBridge.sharedSourceMemo === "function"; } catch (olderEngine) { }
 
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
@@ -232,6 +235,9 @@
 		},
 		blockArtifactCompilerFingerprint: null,
 		flowPlanCompilerFingerprint: null,
+		sourceMemoFingerprint: null,
+		// by kind: calls, builds (misses) and bypasses (working copies, or a catalog of no known revision)
+		sourceMemoStats: {},
 		flowSnapshotStats: {
 			compiles: 0,
 			hydrations: 0,
@@ -267,7 +273,9 @@
 			frontendBindingContexts: createRuntimeBoundedMapCacheState(64),
 			frontendBindingCandidates: createRuntimeBoundedMapCacheState(512),
 			expressionTokens: createRuntimeBoundedMapCacheState(4096),
-			expressionPrograms: createRuntimeBoundedMapCacheState(4096)
+			expressionPrograms: createRuntimeBoundedMapCacheState(4096),
+			// the source memo of this runtime, for an engine that does not keep it for all its runtimes
+			sourceMemo: createRuntimeBoundedMapCacheState(2048)
 		}
 	};
 
@@ -1442,8 +1450,17 @@
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
 			clearVirtualDefinitions: clearVirtualDefinitions,
 			frontendDocumentServerCount: frontendDocumentServerCount,
-			clearFrontendProviderState: clearFrontendProviderState
+			clearFrontendProviderState: clearFrontendProviderState,
+			sourceMemoInfo: sourceMemoInfo
 		};
+	}
+
+	// The calls of the source memo by this runtime, by kind; its entries are those of the engine (bridge.sourceMemo)
+	// when it keeps them for all its runtimes
+	function sourceMemoInfo() {
+		var info = { name: "sourceMemo", shared: sourceMemoBridge, kinds: normalizeTree(runtimeState.sourceMemoStats) };
+		if (!sourceMemoBridge) info.local = cacheUtils().summary("sourceMemo", runtimeState.caches.sourceMemo);
+		return info;
 	}
 
 	function clearRuntimeCaches(localOnly) {
@@ -1461,6 +1478,7 @@
 		var result = runtimeCacheService().clear(runtimeCacheEnv());
 		runtimeState.blockArtifactCompilerFingerprint = null;
 		runtimeState.flowPlanCompilerFingerprint = null;
+		runtimeState.sourceMemoFingerprint = null;
 		return result;
 	}
 
@@ -2670,6 +2688,69 @@
 		return JSON.parse(String(text));
 	}
 
+	// The engine of the source memo, and the hash of the fingerprint of the code computing what it keeps: Engine.js and
+	// its modules. Once per runtime, as the other compiler fingerprints.
+	function sourceMemoFingerprint() {
+		if (runtimeState.sourceMemoFingerprint === null) {
+			runtimeState.sourceMemoFingerprint = {
+				engine: canonicalPath(engineDir()),
+				code: sha256Hex(fileFingerprint(new File(engineDir(), "Engine.js")) + "\n"
+					+ directoryFingerprint(new File(engineDir(), "modules")))
+			};
+		}
+		return runtimeState.sourceMemoFingerprint;
+	}
+
+	/**
+	 * What is computed from the content of a source (its parse, the descriptor of a block), kept as JSON text: for every
+	 * runtime of the server by an engine keeping it (FlowEngineBridge.sharedSourceMemo), else for this runtime. Each
+	 * caller parses its own copy, on a build as on a hit: no JavaScript object crosses runtimes, scopes or threads, and a
+	 * hit gives what a build gives. Working copies never enter it.
+	 *
+	 * @param kind what is kept
+	 * @param key what it is computed from: its content, and the revisions of the catalogs it is compiled against (an
+	 *        entry for each, a block being compiled against the catalog of its project and against the core one)
+	 * @param revision what else it depends on, the code computing it added: one entry by key, the last revision
+	 */
+	function sourceMemo(kind, key, revision, build) {
+		var stats = runtimeState.sourceMemoStats[kind] || (runtimeState.sourceMemoStats[kind] = { calls: 0, builds: 0, bypasses: 0 });
+		stats.calls++;
+		if (sourceDraftsFingerprint()) {
+			stats.bypasses++;
+			return build();
+		}
+		var fingerprint = sourceMemoFingerprint();
+		var memoKey = kind + "\n" + key;
+		var memoRevision = revision ? fingerprint.code + "\n" + sha256Hex(revision) : fingerprint.code;
+		function text() {
+			stats.builds++;
+			return JSON.stringify({ value: build() });
+		}
+		var kept;
+		if (sourceMemoBridge) {
+			kept = FlowEngineBridge.sharedSourceMemo(fingerprint.engine + "\n" + memoKey, memoRevision, text);
+		} else {
+			// thread-safe in a shared runtime (cache-utils)
+			kept = readRuntimeBoundedMapCache(runtimeState.caches.sourceMemo, memoKey, memoRevision);
+			if (kept === null || kept === undefined) {
+				kept = writeRuntimeBoundedMapCache(runtimeState.caches.sourceMemo, memoKey, memoRevision, text(), "source memo");
+			}
+		}
+		return JSON.parse(String(kept)).value;
+	}
+
+	// The revision of a catalog, null for a catalog of no known revision (composed for a call, with helpers of a Flow)
+	function catalogMemoRevision(blocks) {
+		var fingerprint = blocks && blocks.__flowCatalogFingerprint;
+		return fingerprint ? String(fingerprint) : null;
+	}
+
+	function sourceMemoBypass(kind) {
+		var stats = runtimeState.sourceMemoStats[kind] || (runtimeState.sourceMemoStats[kind] = { calls: 0, builds: 0, bypasses: 0 });
+		stats.calls++;
+		stats.bypasses++;
+	}
+
 	function graphBlockCatalog(definition) {
 		// Executable source is irrelevant to the descriptor and must not enter this cache.
 		var metadata = {};
@@ -2836,8 +2917,33 @@
 		return blockCodeSourceService().balancedObjectEnd(text, open);
 	}
 
+	/**
+	 * The _meta header of a block source and the source with that header blanked, by content: the header is kept, with
+	 * the declaration blanked as runs of spaces between its line breaks, the blanked source being the source elsewhere.
+	 */
 	function extractFlowScriptBlockMeta(code) {
-		return blockCodeSourceService().extractMeta(code, blockCodeSourceEnv());
+		var text = String(code || ""), built = null;
+		var extracted = sourceMemo("block-meta", sha256Hex(text), "", function () {
+			var found = blockCodeSourceService().extractMeta(text, blockCodeSourceEnv());
+			var rest = built = String(found.code);
+			if (rest === text) return { meta: found.meta };
+			var header = found.header;
+			if (header) {
+				var range = { meta: found.meta, start: header.start, end: header.end, blank: String(rest.substring(header.start, header.end))
+					.split(/(\r\n|\r|\n)/).map(function (part) { return /^[ ]*$/.test(part) ? part.length : part; }) };
+				if (blankedBlockMetaCode(text, range) === rest) return range;
+			}
+			return { meta: found.meta, code: rest };
+		});
+		if (built !== null) return { meta: extracted.meta, code: built };
+		if (extracted.code !== undefined) return { meta: extracted.meta, code: extracted.code };
+		return { meta: extracted.meta, code: extracted.start === undefined ? text : blankedBlockMetaCode(text, extracted) };
+	}
+
+	function blankedBlockMetaCode(text, range) {
+		return text.substring(0, range.start) + range.blank.map(function (part) {
+			return typeof part === "number" ? " ".repeat(part) : part;
+		}).join("") + text.substring(range.end);
 	}
 
 	function unwrapFlowScriptBlockEnvelope(code) {
@@ -2973,6 +3079,21 @@
 					"compiled Flow block artifacts");
 			},
 			createBlockMaterializationLock: function () { return new ReentrantLock(); },
+			// the descriptor compiled from the source of a block file, by content and catalog revision
+			compiledBlockDescriptor: function (blocks, name, code, origin, provider) {
+				var catalog = catalogMemoRevision(blocks);
+				var request = { allowPrimitiveRhino: origin !== "project", catalogRevision: catalog };
+				if (catalog === null) {
+					sourceMemoBypass("block-descriptor");
+					return compileProjectBlockCode(blocks, name, code, request).descriptor;
+				}
+				var text = String(code);
+				var generation = origin === "project" || origin === "reference" ? projectGeneration() : "";
+				return sourceMemo("block-descriptor", String(projectDir() || "") + "\n" + String(provider || origin || "unknown") + "."
+					+ String(name) + "\n" + String(origin || "") + "\n" + sha256Hex(text) + "\n" + sha256Hex(catalog), generation, function () {
+					return compileProjectBlockCode(blocks, name, text, request).descriptor;
+				});
+			},
 			normalizeTree: normalizeTree,
 			raise: raise,
 			blockIdFromDescriptorFile: blockIdFromDescriptorFile,
@@ -3275,8 +3396,17 @@
 		};
 	}
 
+	// The Flow model of a FlowScript source, by content and catalog revision: its parse, check and YAML source
 	function sourceFromFlowScript(blocks, name, code) {
-		return flowRepositoryService().sourceFromFlowScript(blocks, name, code, flowRepositoryEnv());
+		var catalog = catalogMemoRevision(blocks);
+		if (catalog === null) {
+			sourceMemoBypass("flow-source");
+			return flowRepositoryService().sourceFromFlowScript(blocks, name, code, flowRepositoryEnv());
+		}
+		var text = String(code === undefined || code === null ? "" : code);
+		return sourceMemo("flow-source", String(projectDir() || "") + "\n" + String(name) + "\n" + sha256Hex(text) + "\n" + sha256Hex(catalog), "", function () {
+			return flowRepositoryService().sourceFromFlowScript(blocks, name, text, flowRepositoryEnv());
+		});
 	}
 
 	function getProjectFlow(name) {

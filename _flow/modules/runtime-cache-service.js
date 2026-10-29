@@ -117,7 +117,8 @@
 				},
 				frontendProvider: frontendProviderInfo(env),
 				expressions: cacheSummary("expressions", caches.expressionTokens, env),
-				expressionPrograms: cacheSummary("expressionPrograms", caches.expressionPrograms, env)
+				expressionPrograms: cacheSummary("expressionPrograms", caches.expressionPrograms, env),
+				sourceMemo: env.sourceMemoInfo ? env.sourceMemoInfo() : { name: "sourceMemo" }
 			}
 		};
 	}
@@ -141,6 +142,10 @@
 		env.cacheUtils.clearBoundedMap(caches.frontendBindingCandidates);
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
 		env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
+		if (caches.sourceMemo) env.cacheUtils.clearBoundedMap(caches.sourceMemo);
+		Object.keys(env.runtimeState.sourceMemoStats || {}).forEach(function (kind) {
+			delete env.runtimeState.sourceMemoStats[kind];
+		});
 		Object.keys(env.flowSnapshotStats || {}).forEach(function (key) {
 			env.flowSnapshotStats[key] = 0;
 		});
