@@ -1547,6 +1547,7 @@
 		describeTree: true,
 		authoringTree: true,
 		authoringPalette: true,
+		authoringWarmupPlan: true,
 		propertyEditor: true,
 		contextMenu: true,
 		catalog: true
@@ -6391,6 +6392,129 @@
 		var treeRequest = flowTreeService().authoringPaletteTreeRequest(request, flowTreeServiceEnv());
 		return flowTreeService().authoringPaletteFromTreeRequest(request, blocks,
 			cachedAuthoringTreeBase(treeRequest, blocks), flowTreeServiceEnv());
+	}
+
+	// The warm-up plan of a project (Convertigo 8.5, FlowAuthoringWarmup): the requests the Studio sends first, which the
+	// engine prepares in the background once the Studio is quiet, the higher priority first (whatever their project),
+	// each only when its response is not on disk already. An item names its method, its options over the request the
+	// Studio sends for that method (of the project, or of the Flow it names) and may run after other items of the plan
+	// (after: their ids, skipped when one of them failed). The options are those the Studio sends (FlowVirtualProjector,
+	// FlowStudioSupport): other options would prepare a response the Studio never asks.
+	// stage "studio" (the Studio lists the projects): the tree of the project, its first expansion; for a project with a
+	// frontend builder, after the trees of every project, its plan of the stage "project", whose computation prepares the
+	// engine projection of its frontends (the frontbuilder companion started, the documents of its sources described),
+	// which the first palette of one of its nodes needs.
+	// stage "project" (the project is opened in the Studio): the palettes of its Flows, then of the layouts and pages of
+	// its frontends, the two requests the Studio sends for such a node (its engine projection, then its frontend palette).
+	// The plans are not kept on disk: computing the one of a project with frontends prepares its frontend runtime.
+	var AUTHORING_WARMUP_FORMAT = "flow.authoring.warmup.v1";
+	// the layouts and pages prepared at most, in the order of the tree: each palette is kept in memory and on disk
+	var AUTHORING_WARMUP_FRONTEND_TARGETS = 24;
+
+	function authoringWarmupPlanRequest(request) {
+		request = request || {};
+		var stage = String(request.stage || "studio");
+		var items = [];
+		var frontends = authoringWarmupHasFrontends(request);
+		if (stage === "studio") {
+			items.push({
+				id: "tree",
+				method: "describeTree",
+				priority: 100,
+				request: {
+					includeFlowCatalog: true,
+					flowCatalogOrigin: "project",
+					includeCatalogLibraries: false,
+					includeBindings: false,
+					prewarmFrontendDocumentServer: request.studioMode === true
+				}
+			});
+			if (frontends) {
+				items.push({
+					id: "frontend.runtime",
+					method: "authoringWarmupPlan",
+					priority: 10,
+					after: ["tree"],
+					// the request the engine sends at the opening of the project: the plan computed here serves it
+					request: { stage: "project", studioMode: request.studioMode === true }
+				});
+			}
+			return { ok: true, format: AUTHORING_WARMUP_FORMAT, stage: stage, items: items, cacheable: false };
+		}
+		if (stage !== "project") {
+			return { ok: true, format: AUTHORING_WARMUP_FORMAT, stage: stage, items: items, cacheable: false };
+		}
+		(listProjectFlows().flows || []).forEach(function (flow) {
+			items.push({
+				id: "palette:flow:" + flow.name,
+				method: "authoringPalette",
+				flow: String(flow.name),
+				priority: 80,
+				request: authoringWarmupPaletteOptions("virtual", "")
+			});
+		});
+		(frontends ? authoringWarmupFrontendTargets(request) : []).forEach(function (path) {
+			items.push({
+				id: "palette:engine:" + path,
+				method: "authoringPalette",
+				priority: 60,
+				request: authoringWarmupPaletteOptions("virtual", path)
+			});
+			items.push({
+				id: "palette:frontend:" + path,
+				method: "authoringPalette",
+				priority: 60,
+				request: authoringWarmupPaletteOptions("frontend", path)
+			});
+		});
+		return { ok: true, format: AUTHORING_WARMUP_FORMAT, stage: stage, items: items };
+	}
+
+	function authoringWarmupHasFrontends(request) {
+		var engine = projectEngineDefinitionForRequest(request);
+		return frontendCatalogService().frontbuilderSettings(engine.config || {}).length > 0;
+	}
+
+	// The options of the palette of a node as the Studio asks it (FlowStudioSupport.virtualAuthoringPaletteCategories,
+	// then frontendBlockCategories for a node of a frontend).
+	function authoringWarmupPaletteOptions(surface, focusPath) {
+		return {
+			surface: surface,
+			focusPath: focusPath,
+			position: "inside",
+			detail: "compact",
+			applyFallback: surface === "frontend"
+		};
+	}
+
+	// The paths of the layouts and pages of the frontends of the project in its engine projection, in its order. The
+	// projection is computed as the engine palette of one of them computes it, and kept for them.
+	function authoringWarmupFrontendTargets(request) {
+		var paletteRequest = Object.assign({}, request, authoringWarmupPaletteOptions("virtual", ""), { target: "engine" });
+		delete paletteRequest.stage;
+		delete paletteRequest.studioMode;
+		var blocks = loadBlocks();
+		var treeRequest = flowTreeService().authoringPaletteTreeRequest(paletteRequest, flowTreeServiceEnv());
+		var base = cachedAuthoringTreeBase(treeRequest, blocks);
+		var targets = [];
+		function visit(node, depth) {
+			if (!node || depth > 8 || targets.length >= AUTHORING_WARMUP_FRONTEND_TARGETS) {
+				return;
+			}
+			var type = String(node.type || "");
+			if (depth > 0 && (type === "page" || type === "layout") && String(node.path || "")) {
+				targets.push(String(node.path));
+			}
+			(node.children || []).forEach(function (child) {
+				visit(child, depth + 1);
+			});
+		}
+		(base && base.children || []).forEach(function (node) {
+			if (String(node && node.path || "") === "frontends") {
+				visit(node, 0);
+			}
+		});
+		return targets;
 	}
 
 	function authoringMutateRequest(request, blocks) {
@@ -12249,6 +12373,12 @@
 		authoringPalette: function (requestJson) {
 			return projectCall("authoringPalette", requestJson, function (request) {
 				return authoringPaletteRequest(request, loadBlocks());
+			});
+		},
+
+		authoringWarmupPlan: function (requestJson) {
+			return projectCall("authoringWarmupPlan", requestJson, function (request) {
+				return authoringWarmupPlanRequest(request);
 			});
 		},
 

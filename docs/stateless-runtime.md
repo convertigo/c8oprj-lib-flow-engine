@@ -91,6 +91,48 @@ the project and of the projects using it. Nothing runs: no input, no context, no
 implementations, the modules they load). A run arriving meanwhile waits for the
 preparation of its key instead of preparing it again.
 
+## Authoring warm-up plans (`authoringWarmupPlan`)
+
+What the web Studio asks first (trees, palettes) is prepared in the background by
+the engine (`FlowAuthoringWarmup`, engine property `javascript.authoring_warmup`), but
+the engine does not know what to prepare: it asks this provider a plan for a project
+and a stage, `studio` (the Studio lists the projects, once after a start) or
+`project` (the project is opened in the Studio, once per load). The request is the
+one of the authoring calls of the project (`target: "engine"`, `engineSource`,
+`projectDir`, working copies) with `stage` and `studioMode`. The answer:
+
+```json
+{ "ok": true, "format": "flow.authoring.warmup.v1", "stage": "studio",
+  "items": [
+    { "id": "tree", "method": "describeTree", "priority": 100, "request": { "includeBindings": false } },
+    { "id": "frontend.runtime", "method": "authoringWarmupPlan", "priority": 10,
+      "after": ["tree"], "request": { "stage": "project", "studioMode": false } },
+    { "id": "palette:flow:Hello", "method": "authoringPalette", "flow": "Hello", "priority": 80,
+      "request": { "surface": "virtual", "focusPath": "" } }
+  ] }
+```
+
+Each item is a request of this provider: its `method`, its `request` options merged
+over the request the Studio sends for that method (of the project, or of the Flow
+named by `flow`), its `priority` (higher first, whatever the project; the works of a
+project opened in the Studio come before the others), and `after`, the ids of the
+items of the same plan it runs after (never before them, skipped when one of them
+failed). The engine runs one item at a time, once the Studio is quiet; an item whose
+response is on disk (`describeTree`, `authoringPalette`...) is not computed, the
+others run each time. They are read-only: their calls never invalidate a cache.
+The options must be those the Studio sends (`FlowVirtualProjector`,
+`FlowStudioSupport`), or the Studio never asks the prepared response.
+
+This provider plans the tree at the stage `studio` and, for a project with a
+frontend builder, after the trees of every project, its plan of the stage `project`:
+computing it describes the engine projection of its frontends, which starts the
+frontbuilder companion and describes the documents of its sources, what the first
+palette of a frontend node needs. At the stage `project`: the palette of each Flow,
+then, for the first 24 layouts and pages of its frontends in the tree order, the two
+requests the Studio sends for such a node (its engine projection, then its frontend
+palette). Plans are not kept on disk. For an older provider, without this method,
+the engine prepares the tree of each project only.
+
 ## Internal invocation contract (`direct-v1`)
 
 A called source can declare `_flow.invocation: "direct-v1"` after its blocks have
