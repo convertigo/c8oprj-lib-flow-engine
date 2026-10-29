@@ -5862,20 +5862,29 @@
 		pruneDescribeTreeCacheFamily(cache, request);
 		var shareable = String(request.target || "") === "engine";
 		var tree = shareable ? readSharedEngineTree(key, fingerprint) : null;
-		if (!tree) {
-			tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
-			if (treeHasTransientError(tree)) {
-				// described again next time: the failure may come from the toolchain (packages being installed after a
-				// restart), which the fingerprint of the sources does not see
-				seedAuthoringTreeCandidate(request, tree);
-				var uncached = normalizeTree(tree);
-				// nor by the Convertigo bridge, which keeps the responses of describeTree (engine 8.5 and later)
-				uncached.cacheable = false;
-				return uncached;
+		// the same engine tree asked meanwhile by another scope (the Studio and a warm-up) is described once
+		var flight = !tree && shareable ? acquireSharedEngineTreeFlight(key, fingerprint) : null;
+		try {
+			if (!tree && flight && flight.waited) {
+				tree = readSharedEngineTree(key, fingerprint);
 			}
-			if (shareable) {
-				writeSharedEngineTree(key, fingerprint, tree);
+			if (!tree) {
+				tree = flowTreeService().describeTreeRequest(request, blocks, flowTreeServiceEnv());
+				if (treeHasTransientError(tree)) {
+					// described again next time: the failure may come from the toolchain (packages being installed after a
+					// restart), which the fingerprint of the sources does not see
+					seedAuthoringTreeCandidate(request, tree);
+					var uncached = normalizeTree(tree);
+					// nor by the Convertigo bridge, which keeps the responses of describeTree (engine 8.5 and later)
+					uncached.cacheable = false;
+					return uncached;
+				}
+				if (shareable) {
+					writeSharedEngineTree(key, fingerprint, tree);
+				}
 			}
+		} finally {
+			releaseSharedEngineTreeFlight(flight);
 		}
 		seedAuthoringTreeCandidate(request, tree);
 		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
@@ -5944,6 +5953,58 @@
 			return tree;
 		} catch (e) {
 			return null;
+		}
+	}
+
+	// One description of an engine tree at a time per key in the server: the scopes asking it meanwhile wait for it, then
+	// read it shared, instead of describing every document of its frontends again. Bounded wait: past it, or for a tree
+	// that is not shared (a transient error), the waiter describes it itself.
+	var SHARED_ENGINE_TREE_FLIGHTS_KEY = "flow.engine.treeFlights";
+	var SHARED_ENGINE_TREE_FLIGHT_WAIT_SECONDS = 120;
+	var TimeUnitMilliseconds = engineClass("java.util.concurrent.TimeUnit").MILLISECONDS;
+	var JavaInterruptedException = engineClass("java.lang.InterruptedException");
+	var JavaThread = engineClass("java.lang.Thread");
+
+	function acquireSharedEngineTreeFlight(key, fingerprint) {
+		try {
+			var flights = sharedServerJavaMap(SHARED_ENGINE_TREE_FLIGHTS_KEY, null);
+			if (!flights) {
+				return null;
+			}
+			var flightKey = sharedEngineTreeKey(key, fingerprint);
+			var lock = flights.get(flightKey);
+			if (lock == null) {
+				var created = new ReentrantLock();
+				lock = flights.putIfAbsent(flightKey, created);
+				if (lock == null) {
+					lock = created;
+				}
+			}
+			if (lock.tryLock()) {
+				return { flights: flights, key: flightKey, lock: lock, waited: false };
+			}
+			var startedAt = JavaSystem.nanoTime();
+			var acquired = lock.tryLock(SHARED_ENGINE_TREE_FLIGHT_WAIT_SECONDS * 1000, TimeUnitMilliseconds);
+			frontendPerformanceDuration("cache.sharedEngineTree.flightWait", JavaSystem.nanoTime() - startedAt);
+			return acquired ? { flights: flights, key: flightKey, lock: lock, waited: true } : null;
+		} catch (e) {
+			if (e && e.javaException instanceof JavaInterruptedException) {
+				JavaThread.currentThread().interrupt();
+			}
+			return null;
+		}
+	}
+
+	function releaseSharedEngineTreeFlight(flight) {
+		if (!flight) {
+			return;
+		}
+		try {
+			if (flight.lock.getHoldCount() === 1 && !flight.lock.hasQueuedThreads()) {
+				flight.flights.remove(flight.key, flight.lock);
+			}
+		} finally {
+			flight.lock.unlock();
 		}
 	}
 
@@ -6114,6 +6175,10 @@
 					authoringTreeCandidateCacheKey(baseRequest), fingerprint);
 				candidateOrigin = candidate ? "runtime" : "";
 			}
+			if (!candidate) {
+				candidate = sharedProjectionCandidate(baseRequest, fingerprint);
+				candidateOrigin = candidate ? "projection" : "";
+			}
 			var validCandidate = validAuthoringTreeCandidate(candidate, baseRequest);
 			frontendPerformanceMark(candidate
 				? "frontend.base.sharedCandidateFound"
@@ -6140,6 +6205,42 @@
 			frontendPerformanceMark("frontend.base.cacheStore");
 		}
 		return cached;
+	}
+
+	// The frontend base of a builder from the engine projection another scope of the pool described (the Studio tree, the
+	// engine palette of the same node, a warm-up plan), shared as JSON in the server map: the frontend palette of a page
+	// runs in the authoring scope, the engine palette the Studio asks just before in another one, and both would describe
+	// the documents of every source of the builder. The projection carries the builder subtree this scope would describe,
+	// for the same sources (same fingerprint): its candidates are seeded here as a describe of this scope would.
+	function sharedProjectionCandidate(baseRequest, fingerprint) {
+		if (String(baseRequest.surface || "frontend") !== "frontend" || !String(baseRequest.builder || "")
+				|| baseRequest.includeBindings !== false || baseRequest.includeFrontendCatalog !== false
+				|| String(baseRequest.projectDir || "") === "") {
+			return null;
+		}
+		try {
+			var projectionRequest = Object.assign({}, baseRequest, {
+				target: "engine",
+				surface: "virtual",
+				builder: "",
+				detail: "full",
+				includeFlowCatalog: true,
+				flowCatalogOrigin: "project",
+				includeCatalogLibraries: false
+			});
+			if (describeTreeFingerprint(projectionRequest) !== fingerprint) {
+				return null;
+			}
+			var tree = readSharedEngineTree(describeTreeCacheKey(projectionRequest), fingerprint);
+			if (!tree || tree.ok === false) {
+				return null;
+			}
+			seedAuthoringTreeCandidate(projectionRequest, tree);
+			return readRuntimeMapCache(runtimeState.caches.treeSnapshots,
+				authoringTreeCandidateCacheKey(baseRequest), fingerprint);
+		} catch (e) {
+			return null;
+		}
 	}
 
 	// Outside a frontend builder, the authoring base is the engine tree itself: derive

@@ -57,6 +57,10 @@ function flowTreeService() { return { describeTreeRequest: function () { describ
 function flowTreeServiceEnv() { return {}; }
 function seedAuthoringTreeCandidate() {}
 function normalizeTree(tree) { return tree; }
+// the single flight of the engine trees between the scopes: by default the description of this scope
+var flights = 0, releases = 0, waited = false;
+function acquireSharedEngineTreeFlight() { flights++; return { waited: waited }; }
+function releaseSharedEngineTreeFlight(flight) { if (flight) releases++; }
 var describeTreeRequest = eval(functionSource("describeTreeRequest"));
 
 var request = { target: "engine", projectDir: "/workspace/projects/sample" };
@@ -70,5 +74,15 @@ assertTrue(describeTreeRequest(request, {}) === valid && described === 4, "once 
 assertTrue(valid.cacheable === undefined, "a valid tree is kept by the bridge");
 assertTrue(describeTreeRequest(request, {}) === valid && described === 4, "cached again");
 assertTrue(sharedWrites === 1, "and shared");
+assertTrue(flights === 4 && releases === 4, "each description in a flight, released, even for a tree not kept");
+
+// another scope was describing it: once it is done, read shared, not described again
+runtime.key = null;
+var other = treeWith(node("model", "frontendModel", "frontendModel"));
+var reads = 0;
+readSharedEngineTree = function () { return ++reads === 2 ? other : null; };
+waited = true;
+assertTrue(describeTreeRequest(request, {}) === other && described === 4, "the tree the other scope described is used");
+assertTrue(reads === 2 && releases === 5 && sharedWrites === 1, "read after the wait, not written again");
 
 print("tree-transient-error-not-cached: invalid models are described again, valid trees cached");
