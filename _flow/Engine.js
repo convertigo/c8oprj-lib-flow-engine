@@ -264,6 +264,8 @@
 			propertyEditor: createRuntimeCacheState(),
 			treeSnapshots: createRuntimeBoundedMapCacheState(8),
 			frontendDocuments: createRuntimeBoundedMapCacheState(128),
+			frontendBindingContexts: createRuntimeBoundedMapCacheState(64),
+			frontendBindingCandidates: createRuntimeBoundedMapCacheState(512),
 			expressionTokens: createRuntimeBoundedMapCacheState(4096),
 			expressionPrograms: createRuntimeBoundedMapCacheState(4096)
 		}
@@ -6108,7 +6110,7 @@
 		frontendPerformanceMark("frontend.targeted.beforeTrustedSource");
 		var trustedSourceFile = frontendProjectedSourceFile(sourcePath);
 		frontendPerformanceMark("frontend.targeted.trustedSource");
-		var described = describeFrontendDocument(Object.assign({}, request, {
+		var documentRequest = Object.assign({}, request, {
 			sourceFile: sourcePath,
 			sourcePath: sourcePath,
 			__trustedSourceFile: trustedSourceFile,
@@ -6116,8 +6118,11 @@
 			bindingTargetPath: mutationPath,
 			bindingTargetSource: "",
 			includeBindings: true
-		}));
-		var projected = frontendBindingTreeNode(described && described.tree || {}, function (node) {
+		});
+		// Only the requested definition is enriched: the cached provider document is
+		// read, never copied, and its other nodes are not walked.
+		var entry = frontendDocumentEntry(documentRequest);
+		var projected = frontendBindingTreeNode(entry.document && entry.document.tree || {}, function (node) {
 			return String(node.sourceMutationPath || "") === mutationPath
 				&& !!(node.propertyDefinitions && node.propertyDefinitions[property]);
 		});
@@ -6126,6 +6131,8 @@
 		if (!definition) {
 			return tree;
 		}
+		definition = enrichedFrontendBindingDefinition(entry, definition, documentRequest);
+		frontendPerformanceMark("frontend.document.enrich");
 		// The focused node gets its own complete definitions: the shared entry plus
 		// the context-specific binding sources of the requested property.
 		info = resolveVirtualDefinitions(info);
@@ -6470,6 +6477,42 @@
 		return schemas;
 	}
 
+	function frontendBindingEnv() {
+		return {
+			performanceMark: frontendPerformanceMark,
+			normalizeTree: normalizeTree,
+			cloneTree: function (value) {
+				return JSON.parse(JSON.stringify(value));
+			},
+			schemaPaths: schemaPaths,
+			schemaArrayPaths: schemaArrayPaths,
+			schemaLeafEntries: schemaLeafEntries,
+			schemaSimpleType: schemaSimpleType,
+			schemaAtPath: schemaAtPath,
+			schemaIsLeaf: isLeafSchema,
+			schemaIsMetaKey: isSchemaMetaKey
+		};
+	}
+
+	// The binding detail a request asks for. "lazy" (a picker opening) enriches
+	// with their paths only the sources that bindingValue reads and those that
+	// bindingDetailSources lists; the others carry their root type and
+	// pathsDeferred, to be asked again with bindingDetailSources.
+	function frontendBindingDetailOptions(request) {
+		var service = frontendCatalogService();
+		if (String(request && request.bindingDetail || "") !== "lazy") {
+			return { detail: "full", detailedKeys: {} };
+		}
+		var detailedKeys = service.bindingValueSourceKeys(request.bindingValue);
+		var sources = request.bindingDetailSources;
+		(Object.prototype.toString.call(sources) === "[object Array]" ? sources : []).forEach(function (source) {
+			if (source && typeof source === "object") {
+				detailedKeys[service.bindingSourceKey(source)] = true;
+			}
+		});
+		return { detail: "lazy", detailedKeys: detailedKeys };
+	}
+
 	function enrichFrontendBindingSources(document, request, projectRoot) {
 		if (request && request.includeBindings === false) {
 			return document;
@@ -6477,28 +6520,67 @@
 		frontendPerformanceMark("frontend.enrich.beforeActionSchemas");
 		var actionSchemas = frontendBindingActionSchemas(document, request, projectRoot);
 		frontendPerformanceMark("frontend.enrich.actionSchemas");
+		var detail = frontendBindingDetailOptions(request);
 		var enriched = frontendCatalogService().enrichBindingSources(document,
-			actionSchemas, {
-				performanceMark: frontendPerformanceMark,
-				normalizeTree: normalizeTree,
-				cloneTree: function (value) {
-					return JSON.parse(JSON.stringify(value));
-				},
-				schemaPaths: schemaPaths,
-				schemaArrayPaths: schemaArrayPaths,
-				schemaLeafEntries: schemaLeafEntries,
-				schemaSimpleType: schemaSimpleType,
-				schemaAtPath: schemaAtPath
-			}, {
+			actionSchemas, frontendBindingEnv(), {
 				property: request && request.property || "",
 				sourceId: request && request.sourceId || "",
-				bindingTargetPath: request && request.bindingTargetPath || ""
+				bindingTargetPath: request && request.bindingTargetPath || "",
+				bindingDetail: detail.detail,
+				detailedKeys: detail.detailedKeys
 			});
 		frontendPerformanceMark("frontend.enrich.catalog");
 		return enriched;
 	}
 
+	// One binding definition of a cached provider document, enriched. The schemas
+	// its sources read are computed once per revision of the document (and of the
+	// action schemas), and each source is enriched once per revision and detail.
+	function enrichedFrontendBindingDefinition(entry, definition, request) {
+		frontendPerformanceMark("frontend.enrich.beforeActionSchemas");
+		var actionSchemas = frontendBindingActionSchemas(entry.document, request, entry.projectRoot);
+		frontendPerformanceMark("frontend.enrich.actionSchemas");
+		var service = frontendCatalogService();
+		var revision = entry.fingerprint + "\n" + sha256Hex(JSON.stringify(actionSchemas));
+		var contexts = runtimeState.caches.frontendBindingContexts;
+		var context = readRuntimeMapCache(contexts, entry.revisionKey, revision);
+		if (!context) {
+			context = writeRuntimeMapCache(contexts, entry.revisionKey, revision,
+				service.bindingSchemaContext(entry.document, actionSchemas, frontendPerformanceMark),
+				"Svelte binding source schemas");
+		}
+		frontendPerformanceMark("frontend.enrich.context");
+		var detail = frontendBindingDetailOptions(request);
+		var candidates = runtimeState.caches.frontendBindingCandidates;
+		var enriched = service.enrichBindingDefinition(definition, context, frontendBindingEnv(), {
+			sourceId: request && request.sourceId || "",
+			detail: detail.detail,
+			detailedKeys: detail.detailedKeys,
+			candidateCache: function (index, key, level, compute) {
+				var cacheKey = entry.key + "\n" + index + "\n" + key + "\n" + level;
+				var cached = readRuntimeMapCache(candidates, cacheKey, revision);
+				if (!cached) {
+					cached = writeRuntimeMapCache(candidates, cacheKey, revision, { fields: compute() },
+						"Svelte binding sources");
+				}
+				return cached.fields;
+			}
+		});
+		frontendPerformanceMark("frontend.enrich.candidates");
+		return enriched;
+	}
+
 	function describeFrontendDocument(request) {
+		request = request || {};
+		var entry = frontendDocumentEntry(request);
+		var enriched = enrichFrontendBindingSources(entry.document, request, entry.projectRoot);
+		frontendPerformanceMark("frontend.document.enrich");
+		return enriched;
+	}
+
+	// The provider document of a request as the caches hold it (never enriched,
+	// to be read only), with its cache key, its revision and its project root.
+	function frontendDocumentEntry(request) {
 		request = request || {};
 		frontendPerformanceMark("frontend.document.beforeSourceFile");
 		var sourcePath = String(request.sourceFile || request.sourcePath || "");
@@ -6529,22 +6611,33 @@
 		].join("\n");
 		var fingerprint = frontendDocumentFingerprint(source, drafts, sourceFile, resourceRoot, projectRoot, request);
 		frontendPerformanceMark("frontend.document.fingerprint");
+		var revisionKey = [
+			"provider-authoring-binding-schemas-v1",
+			String(sourceFile.getAbsolutePath()),
+			String(resourceRoot.getAbsolutePath()),
+			String(projectRoot.getAbsolutePath()),
+			projectName
+		].join("\n");
+		function documentEntry(document) {
+			return {
+				document: document,
+				key: key,
+				fingerprint: fingerprint,
+				revisionKey: revisionKey,
+				projectRoot: projectRoot
+			};
+		}
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		frontendPerformanceMark("frontend.document.memoryCache");
 		if (cached) {
 			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
-			var enrichedCached = enrichFrontendBindingSources(cached, request, projectRoot);
-			frontendPerformanceMark("frontend.document.enrich");
-			return enrichedCached;
+			return documentEntry(cached);
 		}
 		var persistent = persistentCacheEligible ? readPersistentFrontendDocument(key, fingerprint) : null;
 		frontendPerformanceMark("frontend.document.persistentCache");
 		if (persistent) {
 			prewarmFrontendDocumentServer(request, resourceRoot, sourceFile);
-			var cachedPersistent = writeRuntimeMapCache(cache, key, fingerprint, persistent, "Svelte front documents");
-			var enrichedPersistent = enrichFrontendBindingSources(cachedPersistent, request, projectRoot);
-			frontendPerformanceMark("frontend.document.enrich");
-			return enrichedPersistent;
+			return documentEntry(writeRuntimeMapCache(cache, key, fingerprint, persistent, "Svelte front documents"));
 		}
 		// Every source layout uses the provider's model and descriptor contract.
 		// Speed comes from the document caches and persistent provider, not a second AST projection.
@@ -6619,9 +6712,7 @@
 				writePersistentFrontendDocument(key, fingerprint, cachedResult);
 			}
 			frontendPerformanceMark("frontend.document.cacheStore");
-			var enrichedResult = enrichFrontendBindingSources(cachedResult, request, projectRoot);
-			frontendPerformanceMark("frontend.document.enrich");
-			return enrichedResult;
+			return documentEntry(cachedResult);
 		} finally {
 			try {
 				sourceTemp["delete"]();
@@ -6931,6 +7022,8 @@
 	function invalidateFrontendDocumentCaches() {
 		runtimeState.frontendDependencyFingerprints = {};
 		cacheUtils().clearBoundedMap(runtimeState.caches.frontendDocuments);
+		cacheUtils().clearBoundedMap(runtimeState.caches.frontendBindingContexts);
+		cacheUtils().clearBoundedMap(runtimeState.caches.frontendBindingCandidates);
 	}
 
 	function clearPersistentFrontendDocuments() {

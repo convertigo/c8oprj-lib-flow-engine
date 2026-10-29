@@ -53,6 +53,39 @@
     }
     return { ok: false, error: "Flow editor bridge is unavailable." };
   }
+  // A host bridge may answer later (flowEditor.requestAsync): an embedded editor
+  // asks its server without blocking. Other hosts answer at once.
+  function hostRequestAsync(name, payload, callback) {
+    var bridge = window.flowEditor;
+    if (!bridge || typeof bridge.requestAsync !== "function") {
+      callback(hostRequest(name, payload));
+      return;
+    }
+    var answered = false;
+    function answer(text) {
+      if (answered) return;
+      answered = true;
+      var response;
+      try {
+        response = typeof text === "string" ? JSON.parse(text || "{}") : text || {};
+      } catch (e) {
+        response = { ok: false, error: String(e) };
+      }
+      callback(response);
+    }
+    try {
+      bridge.requestAsync(
+        JSON.stringify({
+          type: "request",
+          name: name,
+          payload: enrichRequestPayload(name, payload),
+        }),
+        answer,
+      );
+    } catch (e) {
+      answer({ ok: false, error: String(e) });
+    }
+  }
   function enrichRequestPayload(name, payload) {
     var out = {};
     keys(payload).forEach(function (key) {
@@ -482,6 +515,7 @@
     if (editor && editor.setState) {
       window.flowHost = {
         request: hostRequest,
+        requestAsync: hostRequestAsync,
         setValue: updatePickerValue,
       };
       editor.flowHost = window.flowHost;
@@ -702,7 +736,7 @@
     var tag = editorTag(currentPropertyKind(), (state && state.propertyDefinition) || {});
     var editor = document.querySelector(tag + "[data-key]");
     if (editor && editor.setState) {
-      window.flowHost = { request: hostRequest, setValue: setDraft };
+      window.flowHost = { request: hostRequest, requestAsync: hostRequestAsync, setValue: setDraft };
       editor.flowHost = window.flowHost;
       editor.setState(typeEditorState(state));
       focusKey = editor.getAttribute("data-key");

@@ -99,6 +99,8 @@
 				propertyEditor: cacheSummary("propertyEditor", caches.propertyEditor, env),
 				treeSnapshots: cacheSummary("treeSnapshots", caches.treeSnapshots, env),
 				frontendDocuments: cacheSummary("frontendDocuments", caches.frontendDocuments, env),
+				frontendBindingContexts: cacheSummary("frontendBindingContexts", caches.frontendBindingContexts, env),
+				frontendBindingCandidates: cacheSummary("frontendBindingCandidates", caches.frontendBindingCandidates, env),
 				persistentFrontendDocuments: {
 					hits: Number(env.runtimeState.persistentFrontendDocuments.hits || 0),
 					misses: Number(env.runtimeState.persistentFrontendDocuments.misses || 0),
@@ -135,6 +137,8 @@
 		env.cacheUtils.clearValue(caches.propertyEditor);
 		env.cacheUtils.clearBoundedMap(caches.treeSnapshots);
 		env.cacheUtils.clearBoundedMap(caches.frontendDocuments);
+		env.cacheUtils.clearBoundedMap(caches.frontendBindingContexts);
+		env.cacheUtils.clearBoundedMap(caches.frontendBindingCandidates);
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
 		env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
 		Object.keys(env.flowSnapshotStats || {}).forEach(function (key) {

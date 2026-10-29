@@ -431,6 +431,8 @@
 				this._editingPartIndex = -1;
 				this._sourcesKey = "";
 				this._visibleSources = [];
+				this._detailsKey = "";
+				this._sourceDetails = {};
 			}
 
 			connectedCallback() {
@@ -446,6 +448,11 @@
 
 			setState(state) {
 				this._state = state || {};
+				var detailsKey = String(this._state.virtualPath || "") + "/" + String(this._state.property || "");
+				if (detailsKey !== this._detailsKey) {
+					this._detailsKey = detailsKey;
+					this._sourceDetails = {};
+				}
 				// An empty value stays empty until the author chooses a value: opening the editor
 				// never picks one, as the first available source, for the host to apply.
 				var value = this._state.value;
@@ -534,6 +541,48 @@
 				if (response.ok !== false && Array.isArray(response.bindingSources)) {
 					this._state.bindingSources = response.bindingSources;
 				}
+			}
+
+			// A host may list the paths of a source only when it is chosen (pathsDeferred):
+			// they are asked once, merged into the source, then rendered. Returns
+			// "loading" or "error" while the paths of the source are not known.
+			sourceDetail(candidate) {
+				if (!candidate || candidate.pathsDeferred !== true) return "";
+				var key = sourceKey(candidate.source || candidate);
+				var entry = this._sourceDetails[key];
+				var merge = function (detail) {
+					Object.keys(detail).forEach(function (name) { candidate[name] = detail[name]; });
+					delete candidate.pathsDeferred;
+					return "";
+				};
+				if (entry) return entry.detail ? merge(entry.detail) : entry.status;
+				var host = this.flowHost;
+				if (!host || (typeof host.requestAsync !== "function" && typeof host.request !== "function")) {
+					this._sourceDetails[key] = { status: "error" };
+					return "error";
+				}
+				entry = this._sourceDetails[key] = { status: "loading" };
+				var self = this, details = this._sourceDetails, rendering = true;
+				var receive = function (response) {
+					if (entry.status !== "loading") return;
+					var rows = response && response.ok !== false && Array.isArray(response.bindingSources) ? response.bindingSources : [];
+					var detail = rows.find(function (row) {
+						return row && row.pathsDeferred !== true && sourceKey(row.source || row) === key;
+					});
+					entry.status = detail ? "loaded" : "error";
+					entry.detail = detail ? copy(detail) : null;
+					// A synchronous host answers during this render, which shows the result.
+					if (!rendering && details === self._sourceDetails && self.shadowRoot) self.renderPreservingScroll();
+				};
+				var payload = { property: this._state.property || "", source: copy(candidate.source || sourceRef(candidate.category, candidate.id)) };
+				try {
+					if (typeof host.requestAsync === "function") host.requestAsync("bindingSourceDetail", payload, receive);
+					else receive(host.request("bindingSourceDetail", payload));
+				} catch (error) {
+					receive({ ok: false, error: String(error) });
+				}
+				rendering = false;
+				return entry.detail ? merge(entry.detail) : entry.status;
 			}
 
 			ensureSelection() {
@@ -675,6 +724,9 @@
 				if (event.target === selected && selected.value !== "") {
 					var candidate = this._visibleSources[Number(selected.value)];
 					if (candidate) {
+						// Choosing a source again retries the paths it could not load.
+						var detailKey = sourceKey(candidate.source || candidate);
+						if (this._sourceDetails[detailKey] && this._sourceDetails[detailKey].status === "error") delete this._sourceDetails[detailKey];
 						this._selection.source = candidate.source || sourceRef(candidate.category, candidate.id, this._selection.source);
 						this._selection.path = [];
 						this.applySelection();
@@ -868,6 +920,7 @@
 				}).join("") : missingSource ? "" : '<option value="">No source available</option>');
 				sourceSelect.disabled = available.length === 0;
 				var selectedSource = choosing ? null : available.find(function (entry) { return sourceKey(entry.source || entry) === sourceKey(self._selection.source); });
+				var detailStatus = this.sourceDetail(selectedSource);
 				// Paths here are relative to this source, not the host's global scopes.
 				var context = selectedSource && selectedSource.context || {};
 				if (selectedSource && Array.isArray(selectedSource.paths)) context = { scopes: { source: { paths: selectedSource.paths } } };
@@ -889,6 +942,8 @@
 				direct.textContent = selectedSource && !showPath ? directSourceText(selectedSource) : "";
 				if (this._state.bindingSourcesLoading) hint.textContent = "Loading available values...";
 				else if (this._state.bindingSourcesError) hint.textContent = "Available values could not be loaded.";
+				else if (detailStatus === "loading") hint.textContent = "Loading the properties of this value...";
+				else if (detailStatus === "error") hint.textContent = "The properties of this value could not be loaded: type the property path, or keep its root value.";
 				else if (selectedSource) hint.textContent = hasPaths
 					? "Choose a property from this source, type another path, or keep its root value."
 					: showPath ? "No schema is known for this value: type the property path, or keep its root value." : "";

@@ -1662,23 +1662,73 @@
 		});
 	}
 
-	function enrichBindingSources(document, actionSchemas, env, options) {
-		var performanceMark = typeof env.performanceMark === "function" ? env.performanceMark : function () {};
-		// Provider documents are JSON values. Let Engine clone them through the
-		// native JSON implementation so binding enrichment never mutates the
-		// cached base document without paying for a full Rhino/Java normalization
-		// walk on every picker reopening.
-		document = env.cloneTree ? env.cloneTree(document || {}) : env.normalizeTree(document || {});
-		performanceMark("frontend.enrich.clone");
-		actionSchemas = Object.assign({}, actionSchemas || {});
-		options = options || {};
-		var requestedProperty = String(options.property || "");
-		var requestedSourceId = String(options.sourceId || "");
-		var requestedTargetPath = String(options.bindingTargetPath || "");
-		function sourceId(candidate) {
-			var source = candidate && (candidate.source || candidate) || {};
-			return String(candidate && candidate.id || source.actionId || source.scopeId || "");
+	// A binding source as the binding editor identifies it (sourceId and sourceKey
+	// of the flow-binding-editor type editor): a picker value names its sources so.
+	function bindingSourceIdentity(source) {
+		source = source || {};
+		if (source.category === "local") {
+			return String(source.name || source.ownerId || source.scopeId || "");
 		}
+		if (source.category === "route" || source.category === "theme" || source.category === "props") {
+			return String(source.value || source.category);
+		}
+		return String(source.actionId || source.scopeId || source.instanceId || source.formId || source.ownerId
+			|| source.name || source.path || "");
+	}
+
+	function bindingSourceKey(source) {
+		source = source || {};
+		return [source.category || "", bindingSourceIdentity(source), source.value || "", source.operation || "",
+			source.category === "local" ? source.scopeId || "" : ""].join("|");
+	}
+
+	function bindingCandidateKey(candidate) {
+		return bindingSourceKey(candidate && (candidate.source || candidate));
+	}
+
+	// The keys of the sources a binding value reads: its source, or the sources of
+	// its composition, with the iteration indexes of their array positions.
+	function bindingValueSourceKeys(value) {
+		var keys = {};
+		if (typeof value === "string") {
+			var text = value.trim();
+			if (text.charAt(0) !== "{") {
+				return keys;
+			}
+			try {
+				value = JSON.parse(text);
+			} catch (e) {
+				return keys;
+			}
+		}
+		function add(binding) {
+			if (!binding || typeof binding !== "object" || !binding.source || typeof binding.source !== "object") {
+				return;
+			}
+			keys[bindingSourceKey(binding.source)] = true;
+			(Object.prototype.toString.call(binding.path) === "[object Array]" ? binding.path : []).forEach(function (segment) {
+				if (segment && segment.source && typeof segment.source === "object") {
+					keys[bindingSourceKey(segment.source)] = true;
+				}
+			});
+		}
+		if (value && value.mode === "source") {
+			add(value);
+		} else if (value && value.mode === "expression" && Object.prototype.toString.call(value.parts) === "[object Array]") {
+			value.parts.forEach(function (part) {
+				if (part && part.kind === "source") {
+					add(part);
+				}
+			});
+		}
+		return keys;
+	}
+
+	// The schemas the binding sources of a document read: those of its actions and of
+	// its iterations. They depend only on the document revision and the action schemas.
+	function bindingSchemaContext(document, actionSchemas, performanceMark) {
+		performanceMark = typeof performanceMark === "function" ? performanceMark : function () {};
+		actionSchemas = Object.assign({}, actionSchemas || {});
 		var iterations = {};
 		walkDocument(document, function (node) {
 			var props = node.props || {};
@@ -1708,6 +1758,153 @@
 		deriveStateActionSchemas(document, actionSchemas, iterationSchemas, iterationCollectionSchemas);
 		resolveIterationSchemas();
 		performanceMark("frontend.enrich.schemas");
+		return {
+			actionSchemas: actionSchemas,
+			iterationSchemas: iterationSchemas,
+			iterationCollectionSchemas: iterationCollectionSchemas
+		};
+	}
+
+	function bindingCandidateSchema(candidate, context) {
+		var source = candidate && (candidate.source || candidate) || {};
+		var id = String(candidate && candidate.id || "");
+		return candidate && candidate.schema || (source.category === "iteration"
+			? source.value === "index"
+				? { type: "integer" }
+				: source.value === "iterable"
+					? context.iterationCollectionSchemas[String(source.scopeId || id)]
+					: context.iterationSchemas[String(source.scopeId || id)]
+			// An event variable has the schema of the action whose Output (local.x) wrote it.
+			: source.category === "variable" ? context.actionSchemas["local." + String(source.name || "")]
+			: context.actionSchemas[String(source.actionId || id)]);
+	}
+
+	// The root type of a schema, which the picker shows with each source.
+	function schemaSummary(schema, env) {
+		var type = schema && typeof schema === "object" ? schema.type : undefined;
+		if (type === undefined || type === null) {
+			return {};
+		}
+		return { type: typeof type === "object" ? env.normalizeTree(type) : String(type) };
+	}
+
+	// Whether a schema lists paths below its root, as the schema paths walk them:
+	// the items of an array, the properties of an object. Without, its detail
+	// costs nothing and is never deferred.
+	function schemaHasNestedPaths(schema, env) {
+		if (!schema || typeof schema !== "object") {
+			return false;
+		}
+		if (typeof env.schemaIsLeaf !== "function" || typeof env.schemaIsMetaKey !== "function") {
+			return ["string", "number", "integer", "boolean", "null", "any"].indexOf(String(schema.type)) < 0;
+		}
+		if (Object.prototype.toString.call(schema) !== "[object Object]") {
+			schema = env.normalizeTree(schema);
+		}
+		if (schema.type === "array") {
+			return !!schema.items;
+		}
+		if (env.schemaIsLeaf(schema)) {
+			return false;
+		}
+		var source = schema.properties || schema;
+		var filterMeta = !schema.properties;
+		return Object.keys(source || {}).some(function (key) {
+			return !filterMeta || !env.schemaIsMetaKey(key);
+		});
+	}
+
+	// The fields an enriched binding source carries. "full" is the complete
+	// contract (schema, paths, array and leaf paths, one binding per path);
+	// "paths" is what a picker lists (the root type and the paths); "summary" is
+	// the root type alone, for a source whose paths are listed on demand.
+	function bindingSourceFields(candidate, schema, env, detail) {
+		if (detail === "summary") {
+			return { schema: schemaSummary(schema, env), pathsDeferred: true };
+		}
+		var info = schemaInfo(schema, env);
+		if (!info) {
+			return null;
+		}
+		var source = candidate && (candidate.source || candidate) || {};
+		var paths = info.paths;
+		if (source.category === "iteration" && source.value === "iterable" && !paths.some(function (entry) { return entry.path === "length"; })) {
+			paths = paths.concat({ path: "length", type: "integer" });
+		}
+		if (detail === "paths") {
+			return { schema: schemaSummary(info.schema, env), paths: paths };
+		}
+		return {
+			schema: info.schema,
+			paths: paths,
+			arrayPaths: info.arrayPaths,
+			leafPaths: info.leafPaths,
+			binding: {
+				mode: "source",
+				source: env.normalizeTree(source),
+				path: []
+			},
+			bindings: paths.map(function (entry) {
+				return bindingCandidate(source, entry.path, entry.type, candidate.mutation, env);
+			})
+		};
+	}
+
+	function bindingCandidateId(candidate) {
+		var source = candidate && (candidate.source || candidate) || {};
+		return String(candidate && candidate.id || source.actionId || source.scopeId || "");
+	}
+
+	// A copy of a property definition whose binding sources are enriched; the
+	// definition itself is not modified. options.detail "lazy" keeps the paths of
+	// the sources that options.detailedKeys does not name for a later request;
+	// options.candidateCache(index, key, detail, compute) may reuse their fields.
+	function enrichBindingDefinition(definition, context, env, options) {
+		options = options || {};
+		var candidates = definition && definition.bindingSources;
+		if (Object.prototype.toString.call(candidates) !== "[object Array]") {
+			return definition;
+		}
+		var lazy = options.detail === "lazy";
+		var detailedKeys = options.detailedKeys || {};
+		var requestedSourceId = String(options.sourceId || "");
+		var cache = typeof options.candidateCache === "function" ? options.candidateCache : null;
+		var out = Object.assign({}, definition);
+		out.bindingSources = candidates.map(function (candidate, index) {
+			if (requestedSourceId && bindingCandidateId(candidate) !== requestedSourceId) {
+				return candidate;
+			}
+			var schema = bindingCandidateSchema(candidate, context);
+			if (!schema) {
+				return candidate;
+			}
+			var key = bindingCandidateKey(candidate);
+			var detail = !lazy ? "full"
+				: detailedKeys[key] === true || !schemaHasNestedPaths(schema, env) ? "paths" : "summary";
+			var compute = function () { return bindingSourceFields(candidate, schema, env, detail); };
+			var fields = cache ? cache(index, key, detail, compute) : compute();
+			return fields ? Object.assign({}, candidate, fields) : candidate;
+		});
+		return out;
+	}
+
+	function enrichBindingSources(document, actionSchemas, env, options) {
+		var performanceMark = typeof env.performanceMark === "function" ? env.performanceMark : function () {};
+		// Provider documents are JSON values. Let Engine clone them through the
+		// native JSON implementation so binding enrichment never mutates the
+		// cached base document without paying for a full Rhino/Java normalization
+		// walk on every picker reopening.
+		document = env.cloneTree ? env.cloneTree(document || {}) : env.normalizeTree(document || {});
+		performanceMark("frontend.enrich.clone");
+		options = options || {};
+		var requestedProperty = String(options.property || "");
+		var requestedTargetPath = String(options.bindingTargetPath || "");
+		var context = bindingSchemaContext(document, actionSchemas, performanceMark);
+		var definitionOptions = {
+			sourceId: options.sourceId,
+			detail: options.bindingDetail,
+			detailedKeys: options.detailedKeys
+		};
 		walkDocument(document, function (node) {
 			if (requestedTargetPath && String(node.sourceMutationPath || node.frontendModelPath || "") !== requestedTargetPath) {
 				return;
@@ -1718,44 +1915,10 @@
 					return;
 				}
 				var definition = definitions[name];
-				var candidates = definition && definition.bindingSources;
-				if (Object.prototype.toString.call(candidates) !== "[object Array]") {
+				if (Object.prototype.toString.call(definition && definition.bindingSources) !== "[object Array]") {
 					return;
 				}
-				candidates.forEach(function (candidate) {
-					if (requestedSourceId && sourceId(candidate) !== requestedSourceId) {
-						return;
-					}
-					var source = candidate && (candidate.source || candidate) || {};
-					var schema = candidate && candidate.schema || (source.category === "iteration"
-						? source.value === "index"
-							? { type: "integer" }
-							: source.value === "iterable"
-								? iterationCollectionSchemas[String(source.scopeId || candidate.id || "")]
-								: iterationSchemas[String(source.scopeId || candidate.id || "")]
-						// An event variable has the schema of the action whose Output (local.x) wrote it.
-						: source.category === "variable" ? actionSchemas["local." + String(source.name || "")]
-						: actionSchemas[String(source.actionId || candidate.id || "")]);
-					var info = schemaInfo(schema, env);
-					if (!info) {
-						return;
-					}
-					candidate.schema = info.schema;
-					candidate.paths = info.paths;
-					if (source.category === "iteration" && source.value === "iterable" && !candidate.paths.some(function (entry) { return entry.path === "length"; })) {
-						candidate.paths = candidate.paths.concat({ path: "length", type: "integer" });
-					}
-					candidate.arrayPaths = info.arrayPaths;
-					candidate.leafPaths = info.leafPaths;
-					candidate.binding = {
-						mode: "source",
-						source: env.normalizeTree(source),
-						path: []
-					};
-					candidate.bindings = candidate.paths.map(function (entry) {
-						return bindingCandidate(source, entry.path, entry.type, candidate.mutation, env);
-					});
-				});
+				definition.bindingSources = enrichBindingDefinition(definition, context, env, definitionOptions).bindingSources;
 			});
 		});
 		performanceMark("frontend.enrich.candidates");
@@ -1772,6 +1935,10 @@
 			frontendCreateDescriptorsForConfig: frontendCreateDescriptorsForConfig,
 			fingerprintForConfig: fingerprintForConfig,
 			descriptorsFingerprintForSettings: descriptorsFingerprintForSettings,
+			bindingSourceKey: bindingSourceKey,
+			bindingValueSourceKeys: bindingValueSourceKeys,
+			bindingSchemaContext: bindingSchemaContext,
+			enrichBindingDefinition: enrichBindingDefinition,
 			enrichBindingSources: enrichBindingSources
 		};
 }())

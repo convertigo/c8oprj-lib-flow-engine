@@ -546,6 +546,18 @@ Keep `include` to root scopes only: `request`, `input`, `config`, `local`,
 metadata. The default position is before the target node, so values produced
 later are not suggested.
 
+A frontend binding property lists its sources through a targeted
+`authoringTree` (`focusPath` + `property`). By default each source carries the
+full contract: `schema`, `paths`, `arrayPaths`, `leafPaths` and one binding per
+path, as agents and the Eclipse Studio read it. `bindingDetail: "lazy"` is the
+picker contract: every source keeps its identity and the root type of its
+schema; the sources that `bindingValue` reads, those listed in
+`bindingDetailSources` and those without nested paths also carry their
+`paths`; the other ones carry `pathsDeferred: true` and are asked again with
+`bindingDetailSources` when the user chooses them. Both are enriched from the
+cached provider document: the schemas its sources read once per document
+revision, each source once per revision and detail.
+
 Schema learning is implicit and file-based. A named Flow writes
 `_flow/schemas/<flowName>/result.out.schema.json` for its final result when
 there is no declared output contract such as `_flow.outputs`, `flow.outputs` or

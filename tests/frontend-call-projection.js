@@ -13,7 +13,8 @@ const document = { ok: true, model: {
 }, descriptors: [{ id: 'provider.custom' }], tree: { children: [] } };
 const file = { getAbsolutePath: () => '/fixture/Component.flow.svelte', delete() {} };
 let memory, disk, calls = 0, keys = [], failure;
-const project = vm.runInNewContext('(' + source.slice(start, end) + ')', {
+// The producer and the cached entry it enriches are evaluated together.
+const project = vm.runInNewContext('(function () {' + source.slice(start, end) + '\nreturn describeFrontendDocument; }())', {
   frontendPerformanceMark() {}, frontendRequestSourceFile: () => file,
   frontendSvelteResourceRoot: () => file, fileForProjectPath: () => file,
   File: Object.assign(function () {}, { createTempFile: () => file }),
