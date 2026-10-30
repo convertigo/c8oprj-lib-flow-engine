@@ -7,11 +7,6 @@
 		displayName: function (node) {
 			var to = prop(node, "to");
 			return to ? "to " + flowSummary.text(to) : "email.mock";
-		},
-
-		analyze: function (ctx, node) {
-			var props = ctx.props(node);
-			ctx.addPath(ctx.outputPath(node));
 		}
 	};
 }())

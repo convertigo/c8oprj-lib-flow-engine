@@ -580,7 +580,7 @@ Normal response:
   "target": {
     "id": "notify",
     "block": "email.mock",
-    "property": "body",
+    "property": "text",
     "propertyDefinition": { "kind": "template", "type": "string" }
   },
   "scopes": {

@@ -175,6 +175,23 @@
 			};
 		}
 
+		// the addresses of a message checked as send checks them, without a server: its number of recipients
+		function check(request) {
+			if (request.from) {
+				addresses(request.from, "sender");
+			}
+			if (request.replyTo) {
+				addresses(request.replyTo, "reply-to");
+			}
+			var count = 0;
+			[["to", "recipient"], ["cc", "cc"], ["bcc", "bcc"]].forEach(function (field) {
+				if (request[field[0]]) {
+					count += addresses(request[field[0]], field[1]).length;
+				}
+			});
+			return count;
+		}
+
 		return {
 			send: function (request) {
 				try {
@@ -185,7 +202,8 @@
 					}
 					return classify(e);
 				}
-			}
+			},
+			check: check
 		};
 	}
 
@@ -250,6 +268,44 @@
 			text: plain,
 			html: html
 		});
+	};
+
+	// The message email.send would send, checked as email.send checks it (a recipient, a body, valid addresses), without
+	// a server: email.mock, which takes the same properties and gives the same result, plus mock: true and the message.
+	// The settings of the server (host, port, security, account) are not needed; a missing sender is not refused.
+	api.preview = function (options) {
+		options = options || {};
+		var to = text(options.to).trim();
+		if (to === "") {
+			fail("EMAIL_ADDRESS_INVALID", "The recipient is empty", 400);
+		}
+		var html = text(options.html);
+		var plain = text(options.text);
+		if (html === "" && plain === "") {
+			fail("EMAIL_CONFIGURATION_INVALID", "The email has no text and no HTML body", 400);
+		}
+		var from = text(options.from).trim();
+		var message = {
+			// a sender left as a symbol the platform does not resolve (a test without the engine) is no address to check
+			from: /^\$\{[^}]*\}$/.test(from) ? "" : from,
+			to: to,
+			cc: text(options.cc).trim(),
+			bcc: text(options.bcc).trim(),
+			replyTo: text(options.replyTo).trim(),
+			subject: text(options.subject),
+			text: plain,
+			html: html
+		};
+		var out = {
+			ok: true,
+			messageId: "<" + String(java.util.UUID.randomUUID()) + "@email.mock>",
+			recipients: platform().check(message),
+			mock: true
+		};
+		Object.keys(message).forEach(function (key) {
+			out[key] = message[key];
+		});
+		return out;
 	};
 
 	return api;
