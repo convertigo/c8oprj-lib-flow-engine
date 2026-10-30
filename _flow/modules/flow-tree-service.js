@@ -6011,6 +6011,12 @@
 		};
 		var targets = authoringPaletteTargets(focus, position, "inside");
 		var items = [];
+		// the candidates the query names that this node does not take (an action asked for on Events): said with where
+		// they go, instead of an empty list
+		var elsewhere = [];
+		function noteElsewhere(descriptor) {
+			if (query && elsewhere.length < 5 && descriptorMatchesQuery(descriptor, query)) elsewhere.push(descriptor);
+		}
 		(descriptors || []).forEach(function (descriptor) {
 			if (descriptorExcludedByFocusChildren(descriptor, focusInfo.node)) {
 				return;
@@ -6030,6 +6036,7 @@
 				}
 				if (!descriptorTargetMatch(descriptor, focus)) {
 					filters.targetKinds++;
+					noteElsewhere(descriptor);
 					return;
 				}
 				var legacyIssue = descriptorMutationTargetIssue(descriptor, focus, position, null);
@@ -6070,6 +6077,7 @@
 			if (!matchedTrait) {
 				filters.noMatchingTrait++;
 				filters.targetKinds++;
+				noteElsewhere(descriptor);
 				return;
 			}
 			if (!descriptorMatchesQuery(descriptor, query)) {
@@ -6090,7 +6098,7 @@
 		if (limit && items.length > limit) {
 			items = items.slice(0, limit);
 		}
-		return {
+		var result = {
 			ok: true,
 			target: "authoring.palette",
 			surface: String(request.surface || "frontend"),
@@ -6106,6 +6114,31 @@
 			filters: filters,
 			items: items
 		};
+		if (!eligibleCount && elsewhere.length) {
+			result.queryElsewhere = elsewhere.map(function (descriptor) {
+				return { id: String(descriptor.id || ""), tag: String(descriptor.tag || ""), label: String(descriptor.label || descriptor.name || ""),
+					targetKinds: frontendArray(descriptor.targetKinds) };
+			});
+			result.hint = paletteElsewhereHint(elsewhere[0], focusInfo.node, tree);
+		}
+		return result;
+	}
+
+	// Where a candidate the focused node does not take goes: an action inside an event handler (one of the handlers
+	// under the focus when it has some), else the kinds of node it accepts.
+	function paletteElsewhereHint(descriptor, node, tree) {
+		var name = String(descriptor.tag || descriptor.label || descriptor.id || "");
+		var kinds = frontendArray(descriptor.targetKinds);
+		if (kinds.indexOf("frontendEventBlock") >= 0) {
+			var handlers = (node && node.children || []).map(function (child) {
+				return authoringNodeSummary(child, tree);
+			}).filter(function (child) {
+				return child && child.kind === "frontendEventBlock";
+			}).map(function (child) { return child.path; }).slice(0, 3);
+			return name + " is an action: it goes inside an event handler (OnClick, OnMount...), not on " + String(node && node.path || "this node") +
+				". Call authoring-palette with the path of the handler" + (handlers.length ? " (" + handlers.join(", ") + ")" : ", after adding the handler under Events") + ".";
+		}
+		return name + " does not go on " + String(node && node.path || "this node") + "; it goes on a node of kind " + kinds.join(" or ") + ".";
 	}
 
 	function descriptorExcludedByFocusChildren(descriptor, focusNode) {
