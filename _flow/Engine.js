@@ -501,8 +501,124 @@
 		if (source.trim() === "") {
 			source = fallback;
 		}
-		var root = yamlMapper.readTree(source);
+		// The tree of Jackson keeps an alias as the text of its name (columns: *cols became "cols"):
+		// a document that may hold one is read with its aliases and merge keys resolved.
+		var root = /(?:^|[\s\[{,:])\*[^\s\[\]{},]/.test(source) ? readYamlTreeWithAliases(source) : yamlMapper.readTree(source);
 		return JSON.parse(String(jsonMapper.writeValueAsString(root)));
+	}
+
+	// A YAML source whose aliases (*name) are replaced by the values of their anchors (&name), read by Jackson
+	// as readTree reads any source, so that its scalars keep their typing; then the merge keys (<<: *base,
+	// <<: [*a, *b]) are applied: the entries of the mapping win, then the merged mappings in their order.
+	// The events of SnakeYAML carry the anchors of scalars, which the parser of Jackson does not report.
+	var YAML_ALIAS_EVENT_LIMIT = 100000;
+	function readYamlTreeWithAliases(source) {
+		var snake = "org.yaml.snakeyaml.";
+		var Event = engineClass(snake + "events.Event");
+		var ScalarEvent = engineClass(snake + "events.ScalarEvent");
+		var MappingStartEvent = engineClass(snake + "events.MappingStartEvent");
+		var SequenceStartEvent = engineClass(snake + "events.SequenceStartEvent");
+		var events = new (engineClass(snake + "Yaml"))().parse(new (engineClass("java.io.StringReader"))(String(source))).iterator();
+		var output = [], anchors = {}, open = [], aliased = false, merges = false;
+		function anchorless(event) {
+			if (event.is(Event.ID.Scalar)) {
+				return new ScalarEvent(null, event.getTag(), event.getImplicit(), event.getValue(), event.getStartMark(), event.getEndMark(), event.getScalarStyle());
+			}
+			if (event.is(Event.ID.MappingStart)) {
+				return new MappingStartEvent(null, event.getTag(), event.getImplicit(), event.getStartMark(), event.getEndMark(), event.getFlowStyle());
+			}
+			return new SequenceStartEvent(null, event.getTag(), event.getImplicit(), event.getStartMark(), event.getEndMark(), event.getFlowStyle());
+		}
+		function emit(event) {
+			if (output.length >= YAML_ALIAS_EVENT_LIMIT) {
+				raise("YAML_ALIAS_EXPANSION_LIMIT", "YAML aliases expand to more than " + YAML_ALIAS_EVENT_LIMIT + " values.", null,
+					"Write the repeated values once, or reference fewer aliases.");
+			}
+			output.push(event);
+			open.forEach(function (recording) { recording.events.push(event); });
+		}
+		while (events.hasNext()) {
+			var event = events.next();
+			if (event.is(Event.ID.Alias)) {
+				var name = String(event.getAnchor());
+				if (!Object.prototype.hasOwnProperty.call(anchors, name)) {
+					raise("YAML_ALIAS_UNKNOWN", "YAML alias *" + name + " has no anchor &" + name + " before it.", null,
+						"Define the anchor (&" + name + ") on a value before the aliases that repeat it.");
+				}
+				aliased = true;
+				anchors[name].forEach(emit);
+				continue;
+			}
+			if (event.is(Event.ID.DocumentStart)) anchors = {};
+			if (event.is(Event.ID.Scalar) && String(event.getValue()) === "<<" && event.getImplicit().canOmitTagInPlainScalar()) merges = true;
+			var anchor = (event.is(Event.ID.Scalar) || event.is(Event.ID.MappingStart) || event.is(Event.ID.SequenceStart)) ? event.getAnchor() : null;
+			if (anchor !== null && anchor !== undefined) {
+				var plain = anchorless(event);
+				if (event.is(Event.ID.Scalar)) {
+					anchors[String(anchor)] = [plain];
+				} else {
+					open.push({ name: String(anchor), events: [], depth: 0 });
+				}
+				emit(plain);
+				continue;
+			}
+			emit(event);
+			if (event.is(Event.ID.MappingStart) || event.is(Event.ID.SequenceStart)) {
+				open.forEach(function (recording) { recording.depth++; });
+			} else if (event.is(Event.ID.MappingEnd) || event.is(Event.ID.SequenceEnd)) {
+				for (var i = open.length - 1; i >= 0; i--) {
+					if (open[i].depth === 0) {
+						anchors[open[i].name] = open[i].events;
+						open.splice(i, 1);
+					} else {
+						open[i].depth--;
+					}
+				}
+			}
+		}
+		if (!aliased) {
+			return yamlMapper.readTree(source);
+		}
+		var writer = new (engineClass("java.io.StringWriter"))();
+		var options = new (engineClass(snake + "DumperOptions"))();
+		options.setSplitLines(false);
+		options.setWidth(1000000);
+		options.setAllowUnicode(true);
+		var emitter = new (engineClass(snake + "emitter.Emitter"))(writer, options);
+		output.forEach(function (event) { emitter.emit(event); });
+		var root = yamlMapper.readTree(String(writer.toString()));
+		return merges ? applyYamlMergeKeys(root) : root;
+	}
+
+	function applyYamlMergeKeys(node) {
+		if (node === null || !node.isContainerNode()) {
+			return node;
+		}
+		var children = node.elements();
+		while (children.hasNext()) applyYamlMergeKeys(children.next());
+		if (!node.isObject() || !node.has("<<")) {
+			return node;
+		}
+		var merged = node.remove("<<");
+		var mappings = [];
+		if (merged.isArray()) {
+			var items = merged.elements();
+			while (items.hasNext()) mappings.push(items.next());
+		} else {
+			mappings.push(merged);
+		}
+		mappings.forEach(function (mapping) {
+			if (!mapping.isObject()) {
+				raise("YAML_MERGE_INVALID", "A YAML merge key (<<) takes a mapping or a list of mappings.", null,
+					"Merge an anchored mapping: <<: *base.");
+			}
+			var fields = mapping.fieldNames();
+			while (fields.hasNext()) {
+				var field = fields.next();
+				if (!node.has(field)) node.set(field, mapping.get(field).deepCopy());
+			}
+		});
+		return node;
 	}
 
 	function parseSource(flowSource) {
