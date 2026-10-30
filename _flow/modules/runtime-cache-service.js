@@ -125,25 +125,37 @@
 		};
 	}
 
-	function clear(env) {
+	/**
+	 * options.refresh: the Java bridge refreshes a pooled runtime (or disposes it) once the data of a project changed
+	 * (FlowEngineBridge.dataGeneration), after any source write of any project. The caches keyed by the content and
+	 * the revisions of what they read stay: the engine modules and compiled scripts, the expressions, the block catalogs
+	 * and types (their keys hold the fingerprints of their folders, their working copies and the revisions of their
+	 * projects), the provider documents (their keys hold the page, the working copies and the fingerprints of their
+	 * dependencies, the stable part read again here) and the selected provider. Clearing them made each call after a
+	 * write start cold: about 4 s instead of 1 s for the check of a page. Everything else is computed again.
+	 */
+	function clear(env, options) {
 		var caches = env.runtimeState.caches;
-		env.cacheUtils.clearMap(caches.blocks);
-		env.cacheUtils.clearMap(caches.coreBlocks);
+		var refresh = !!(options && options.refresh === true);
+		if (!refresh) {
+			env.cacheUtils.clearMap(caches.blocks);
+			env.cacheUtils.clearMap(caches.coreBlocks);
+			env.cacheUtils.clearMap(caches.types);
+			env.cacheUtils.clearMap(caches.engineModules);
+			env.cacheUtils.clearBoundedMap(caches.frontendDocuments);
+			env.cacheUtils.clearBoundedMap(caches.expressionTokens);
+			env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
+		}
 		env.cacheUtils.clearMap(caches.blockArtifacts);
 		env.cacheUtils.clearMap(caches.blockCatalogHeads);
-		env.cacheUtils.clearMap(caches.types);
 		env.cacheUtils.clearBoundedMap(caches.flowPlans);
 		env.cacheUtils.clearBoundedMap(caches.runPlanHeads);
 		env.cacheUtils.clearMap(caches.configDefinitions);
 		env.cacheUtils.clearMap(caches.libraries);
-		env.cacheUtils.clearMap(caches.engineModules);
 		env.cacheUtils.clearValue(caches.propertyEditor);
 		env.cacheUtils.clearBoundedMap(caches.treeSnapshots);
-		env.cacheUtils.clearBoundedMap(caches.frontendDocuments);
 		env.cacheUtils.clearBoundedMap(caches.frontendBindingContexts);
 		env.cacheUtils.clearBoundedMap(caches.frontendBindingCandidates);
-		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
-		env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
 		if (caches.sourceMemo) env.cacheUtils.clearBoundedMap(caches.sourceMemo);
 		if (caches.flowCodeValidations) env.cacheUtils.clearBoundedMap(caches.flowCodeValidations);
 		Object.keys(env.runtimeState.sourceMemoStats || {}).forEach(function (kind) {
@@ -154,6 +166,10 @@
 		});
 		if (env.clearVirtualDefinitions) {
 			env.clearVirtualDefinitions();
+		}
+		if (refresh) {
+			env.runtimeState.frontendDependencyFingerprints = {};
+			return info(env);
 		}
 		// The frontbuilder companion is shared by every engine scope: clearing the
 		// caches of one scope (explicitly or when Java discards it) never stops it.

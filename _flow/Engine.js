@@ -1587,14 +1587,15 @@
 			FlowEngineBridge.invalidateDataCaches();
 			return { ok: true, invalidated: true };
 		}
-		// Pool refresh/disposal clears the runtime, not the shared generation's
-		// dependencies. Explicit Studio/MCP clears must also reject in-flight results.
+		// Pool refresh/disposal clears the runtime, not the shared generation's dependencies, and keeps the caches
+		// keyed by the content of what they read (runtime-cache-service.js). Explicit Studio/MCP clears must also
+		// reject in-flight results and clear them all.
 		if (localOnly !== true) {
 			if (typeof FlowEngineBridge.clearSharedMetadata === "function") FlowEngineBridge.clearSharedMetadata();
 			generatedSchemaEpoch().incrementAndGet();
 			sharedServerJavaMap("flow.engine.generatedSchemaDependencies.v1", localGeneratedDependencies).clear();
 		}
-		var result = runtimeCacheService().clear(runtimeCacheEnv());
+		var result = runtimeCacheService().clear(runtimeCacheEnv(), { refresh: localOnly === true });
 		runtimeState.blockArtifactCompilerFingerprint = null;
 		runtimeState.flowPlanCompilerFingerprint = null;
 		runtimeState.sourceMemoFingerprint = null;
