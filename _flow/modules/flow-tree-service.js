@@ -5884,6 +5884,16 @@
 		if (documentedProperties.length) {
 			out.documentation = { properties: documentedProperties };
 		}
+		// The events the block raises (click, selectionChange...), each with the handler that receives it in the Events of
+		// the block: an agent read them in the guide only.
+		if (descriptor.events && typeof descriptor.events === "object" && !Array.isArray(descriptor.events) && Object.keys(descriptor.events).length) {
+			out.events = {};
+			Object.keys(descriptor.events).forEach(function (name) {
+				var event = descriptor.events[name] && typeof descriptor.events[name] === "object" ? descriptor.events[name] : {};
+				out.events[name] = { handler: "On" + name.charAt(0).toUpperCase() + name.substring(1), label: String(event.label || name),
+					description: String(event.description || "") };
+			});
+		}
 		// Traits travel with every item: a block dropped on another node than the one of the
 		// palette goes to the slot of that node that accepts them.
 		out.traits = frontendArray(descriptor.traits);
@@ -6415,10 +6425,18 @@
 					label: String(descriptor.label || descriptor.name || descriptor.localName || ""),
 					category: String(descriptor.category || ""),
 					properties: descriptorPropertyContract(descriptor.properties),
-					slots: descriptor.slots || {}
+					slots: descriptor.slots || {},
+					// the handlers of the events the block raises (OnClick, OnSelectionChange...)
+					events: descriptorEventHandlers(descriptor)
 				};
 			})
 		};
+	}
+
+	function descriptorEventHandlers(descriptor) {
+		var events = descriptor && descriptor.events;
+		if (!events || typeof events !== "object" || Array.isArray(events)) return [];
+		return Object.keys(events).map(function (name) { return "On" + name.charAt(0).toUpperCase() + name.substring(1); });
 	}
 
 	function authoringTransferMutationFromTreeRequest(request, blocks, tree) {

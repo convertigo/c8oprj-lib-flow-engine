@@ -539,6 +539,8 @@
 			icon: raw.icon || "mdi:view-module-outline",
 			traits: uiTraits,
 			slots: raw.slots || {},
+			// the events the component raises (_meta.events: click, selectionChange...), handled by On<Event>
+			events: raw.events && typeof raw.events === "object" && !Array.isArray(raw.events) ? raw.events : {},
 			insert: insert,
 			defaults: raw.defaults || insert,
 			properties: properties,
