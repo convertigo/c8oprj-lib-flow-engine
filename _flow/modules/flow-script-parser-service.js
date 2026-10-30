@@ -2253,6 +2253,7 @@
 			return root.nodes;
 		}
 
+		// The closeChar of the openChar at open, the quotes of the strings and the comments skipped (// the item's date).
 		function balancedFlowScriptGroupEnd(text, open, openChar, closeChar) {
 			var quote = "";
 			var depth = 0;
@@ -2266,6 +2267,11 @@
 					if (ch === quote) {
 						quote = "";
 					}
+					continue;
+				}
+				if (ch === "/" && (text.charAt(i + 1) === "/" || text.charAt(i + 1) === "*")) {
+					var end = text.charAt(i + 1) === "/" ? text.slice(i).search(/[\r\n]/) : text.indexOf("*/", i + 2);
+					i = end < 0 ? text.length : text.charAt(i + 1) === "/" ? i + end - 1 : end + 1;
 					continue;
 				}
 				if (ch === "\"" || ch === "'" || ch === "`") {

@@ -1,4 +1,22 @@
 (function () {
+	// @return the offset of the end of the comment starting at i (// to the end of its line, /* to */), i when none starts
+	// there. A FlowScript has no regular expression literal: // or /* out of a string always starts a comment.
+	function commentEnd(text, i) {
+		if (text.charAt(i) !== "/") return i;
+		var next = text.charAt(i + 1);
+		if (next === "/") {
+			while (i < text.length && text.charAt(i) !== "\n" && text.charAt(i) !== "\r") i++;
+			return i;
+		}
+		if (next === "*") {
+			var end = text.indexOf("*/", i + 2);
+			return end < 0 ? text.length : end + 2;
+		}
+		return i;
+	}
+
+	// The } closing the { at open in a FlowScript, the quotes of its strings and its comments skipped: an apostrophe or a
+	// brace in a comment is text (// the item's date).
 	function balancedObjectEnd(text, open) {
 		var quote = "";
 		var brace = 0;
@@ -12,6 +30,11 @@
 				if (ch === quote) {
 					quote = "";
 				}
+				continue;
+			}
+			var skipped = commentEnd(text, i);
+			if (skipped !== i) {
+				i = skipped - 1;
 				continue;
 			}
 			if (ch === "\"" || ch === "'" || ch === "`") {
@@ -261,6 +284,7 @@
 
 	return {
 		balancedObjectEnd: balancedObjectEnd,
+		commentEnd: commentEnd,
 		extractMeta: extractMeta,
 		blockMetaSource: blockMetaSource,
 		unwrapFlowScriptBlockEnvelope: unwrapFlowScriptBlockEnvelope,
