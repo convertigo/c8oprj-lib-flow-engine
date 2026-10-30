@@ -4610,10 +4610,12 @@
 	}
 
 	// What the analysis of a Flow reads besides its code and its catalog (blocks, types, traits): the code of the engine,
-	// the configuration of the project and of its parents, its schemas and fragments (as generatedSchemaDependencies), the
-	// Flows saved in the project (the contract of a called Flow), the working copies of the request but the checked
-	// Flow, its tag context, the configuration of the project its HTTP request targets, the symbols, and the generations
-	// of the caches and of the data of the server (requestables, writes Convertigo is told about).
+	// the configuration of the project and of its parents, its schemas, the fragments it can use (those of the project
+	// and of the engine: flow-storage-service fragmentCandidates, never those of a referenced project, whose discovery
+	// would read the descriptor of the engine at each check), the Flows saved in the project (the contract of a called
+	// Flow), the working copies of the request but the checked Flow, its tag context, the configuration of the project
+	// its HTTP request targets, the symbols, and the generations of the caches and of the data of the server
+	// (requestables, writes Convertigo is told about).
 	function flowCodeValidationRevision(request, name) {
 		var own = "";
 		try {
@@ -4632,10 +4634,7 @@
 		} catch (e) {
 			root = String(e && e.code || e);
 		}
-		var fragments = [directoryFingerprint(new File(projectDir(), sourcePaths().path("fragments"))), directoryFingerprint(new File(engineDir(), "fragments"))];
-		referencedProjectRoots(sourcePaths().path("fragments")).forEach(function (reference) {
-			fragments.push(directoryFingerprint(new File(reference, sourcePaths().path("fragments"))));
-		});
+		var fragments = [directoryFingerprint(projectFragmentsDir()), directoryFingerprint(new File(engineDir(), "fragments"))];
 		return [
 			engineCodeFingerprint(),
 			sha256Hex(JSON.stringify([loadProjectEngineDefinition(), projectConfigService().parentConfigs(projectConfigEnv())])),
