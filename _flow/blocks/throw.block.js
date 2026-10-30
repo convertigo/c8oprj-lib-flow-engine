@@ -28,9 +28,9 @@ const _meta = {
     "details": {
       "label": "Details",
       "category": "Expert",
-      "kind": "literal",
+      "kind": "template",
       "type": "object",
-      "description": "Optional structured error details.",
+      "description": "Optional structured error details: each value is evaluated, a path or an expression giving its value (details: { orders: local.late, count: local.late.length }).",
     },
     "hint": {
       "label": "Hint",
@@ -56,7 +56,7 @@ const _meta = {
 				code: props.code || "FLOW_THROW",
 				message: ctx.template(props.message || "Flow error"),
 				status: props.status === undefined ? undefined : ctx.expr(props.status),
-				details: ctx.literal(props.details),
+				details: props.details === undefined ? undefined : ctx.template(props.details),
 				hint: ctx.template(props.hint)
 			}, node);
 		}

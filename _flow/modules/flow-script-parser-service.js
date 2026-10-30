@@ -1341,7 +1341,9 @@
 			var text = String(token || "").trim();
 			if (!isFlowScriptQuoted(text) && /^(input|local|config|current|result|session|item)(\.|\[|$)/.test(text)) {
 				env.raise("FLOWSCRIPT_TEXT_PROPERTY_PATH", "Property " + key + " of " + block + " takes a literal text, not the value of " + text + " (line " + lineNumber + ")",
-					null, "Write a quoted literal, or use a block whose property accepts a value.");
+					null, block === "throw" && key === "code"
+						? "An error code is a constant the callers test: write one throw per code (if (...) { throw({ code: \"ORDER_LATE\", ... }) }), and put what varies in message (a template) or details (evaluated values)."
+						: "Write a quoted literal, or use a block whose property accepts a value.");
 			}
 			return unquoteFlowScriptString(token);
 		}
