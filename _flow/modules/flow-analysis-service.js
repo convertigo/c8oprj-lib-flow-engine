@@ -230,6 +230,10 @@
 					return ctx.schemaForValue(value);
 				}
 				var expression = exactTemplateExpression(value) || String(value).trim();
+				var indexed = schemaForIndexedPath(ctx, expression);
+				if (indexed) {
+					return indexed.schema;
+				}
 				var lengthSchema = schemaForLengthExpression(ctx, expression);
 				if (lengthSchema) {
 					return lengthSchema;
@@ -246,6 +250,10 @@
 				}
 				var expression = exactTemplateExpression(value);
 				if (expression) {
+					var indexedSchema = schemaForIndexedPath(ctx, expression);
+					if (indexedSchema) {
+						return indexedSchema.schema;
+					}
 					var lengthSchema = schemaForLengthExpression(ctx, expression);
 					if (lengthSchema) {
 						return lengthSchema;
@@ -780,6 +788,81 @@
 
 		function schemaForAnalysisPath(ctx, path) {
 			return schemaForSchemasPath(ctx.schemas, path);
+		}
+
+		// The schema of a path read through indexes: local.page.rows[0], rows[rows.length - 1], rows.at(-1),
+		// byId[input.id], row["display name"]. The references of the expression stop at the first bracket, so the
+		// schema of the list itself used to be given for its element (local.first = local.page.rows[0] typed array).
+		// { schema } (null when unknown) for such a path, undefined for any other expression.
+		function schemaForIndexedPath(ctx, expression) {
+			var text = String(expression || "").trim();
+			var head = /^(?:request|input|config|local|result|trace|current|parent)(?:\.[A-Za-z_$][\w$]*)*/.exec(text);
+			if (!head || head[0].length === text.length || "[.".indexOf(text.charAt(head[0].length)) === -1) {
+				return undefined;
+			}
+			var schema = schemaForAnalysisPath(ctx, head[0]);
+			var indexed = false;
+			var i = head[0].length;
+			while (i < text.length) {
+				var rest = text.substring(i);
+				var at = /^\.at\(\s*-?\d+\s*\)/.exec(rest);
+				var member = /^\.([A-Za-z_$][\w$]*)/.exec(rest);
+				if (at) {
+					schema = elementSchema(schema);
+					indexed = true;
+					i += at[0].length;
+				} else if (member) {
+					schema = member[1] === "length" && schema && (schema.type === "array" || schema.type === "string")
+						? { type: "integer" } : schemaAtPath(schema, member[1]);
+					i += member[0].length;
+				} else if (rest.charAt(0) === "[") {
+					var end = closingBracket(text, i);
+					if (end < 0) {
+						return undefined;
+					}
+					var inner = text.substring(i + 1, end).trim();
+					var quoted = /^(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')$/.exec(inner);
+					schema = quoted && !(schema && schema.type === "array")
+						? schemaAtPath(schema, quoted[1] !== undefined ? quoted[1] : quoted[2]) : elementSchema(schema);
+					indexed = true;
+					i = end + 1;
+				} else {
+					return undefined;
+				}
+			}
+			return indexed ? { schema: schema || null } : undefined;
+		}
+
+		// The element of a list, or the value of a map (additionalProperties); null when unknown.
+		function elementSchema(schema) {
+			if (!schema) {
+				return null;
+			}
+			if (schema.type === "array") {
+				return schema.items || null;
+			}
+			if (schema.type === "string") {
+				return { type: "string" };
+			}
+			return schema.additionalProperties && typeof schema.additionalProperties === "object" ? schema.additionalProperties : null;
+		}
+
+		function closingBracket(text, open) {
+			var depth = 0, quote = "";
+			for (var i = open; i < text.length; i++) {
+				var ch = text.charAt(i);
+				if (quote) {
+					if (ch === "\\") i++;
+					else if (ch === quote) quote = "";
+				} else if (ch === "\"" || ch === "'" || ch === "`") {
+					quote = ch;
+				} else if (ch === "[") {
+					depth++;
+				} else if (ch === "]" && --depth === 0) {
+					return i;
+				}
+			}
+			return -1;
 		}
 
 		function schemaForLengthExpression(ctx, expression) {
