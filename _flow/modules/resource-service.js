@@ -450,29 +450,42 @@
 		return value !== undefined && value !== null && String(value).trim() !== "";
 	}
 
-	// A file of the Convertigo workspace, named by a path relative to it (or absolute inside it), symbolic links resolved.
+	// A file of the Convertigo workspace or of the folder of the projects (in the Studio, the folder holding its projects
+	// and the documents a user puts next to them; on a server, <workspace>/projects), named by a path relative to one of
+	// them (the workspace first) or absolute inside one, symbolic links resolved. Outside hidden folders, the private
+	// folders of the workspace and the _private folders of the projects.
 	function workspaceImportSource(fromFile, env) {
-		var root = env.workspaceDir();
-		if (!root || !root.isDirectory()) {
+		var Paths = java.nio.file.Paths, Files = java.nio.file.Files;
+		var roots = [];
+		[{ dir: env.workspaceDir(), name: "the Convertigo workspace", workspace: true },
+			{ dir: env.projectsDir ? env.projectsDir() : null, name: "the folder of the projects", workspace: false }].forEach(function (root) {
+			if (!root.dir || !root.dir.isDirectory()) return;
+			var path = root.dir.toPath().toRealPath();
+			if (!roots.some(function (known) { return known.path.equals(path); })) roots.push({ path: path, name: root.name, workspace: root.workspace });
+		});
+		if (!roots.length) {
 			env.raise("WORKSPACE_UNAVAILABLE", "The Convertigo workspace is unavailable: fromFile cannot be read.");
 		}
-		var Paths = java.nio.file.Paths, Files = java.nio.file.Files;
-		var rootPath = root.toPath().toRealPath();
+		var where = roots.map(function (root) { return root.name + " (" + String(root.path) + ")"; }).join(" or ");
 		var requested = Paths.get(String(fromFile).trim());
-		var candidate = (requested.isAbsolute() ? requested : rootPath.resolve(requested)).normalize();
-		if (!Files.isRegularFile(candidate)) {
-			env.raise("RESOURCE_IMPORT_SOURCE_MISSING", "fromFile is not a file of the Convertigo workspace: " + String(fromFile),
-				null, "Pass the path of the file relative to the workspace, for example notes/guide.md.");
+		var candidates = requested.isAbsolute() ? [requested.normalize()] : roots.map(function (root) { return root.path.resolve(requested).normalize(); });
+		var candidate = candidates.filter(function (each) { return Files.isRegularFile(each); })[0];
+		if (!candidate) {
+			env.raise("RESOURCE_IMPORT_SOURCE_MISSING", "fromFile is not a file of " + where + ": " + String(fromFile),
+				null, "Pass the path of the file relative to one of these folders, or its absolute path, for example notes/guide.md.");
 		}
 		var real = candidate.toRealPath();
-		if (!real.startsWith(rootPath) || real.equals(rootPath)) {
-			env.raise("RESOURCE_IMPORT_SOURCE_OUTSIDE_WORKSPACE", "fromFile must be a file of the Convertigo workspace: " + String(fromFile));
+		// the deepest root holding the file: the workspace of a server is above its projects
+		var root = roots.filter(function (each) { return real.startsWith(each.path) && !real.equals(each.path); })
+			.sort(function (left, right) { return right.path.getNameCount() - left.path.getNameCount(); })[0];
+		if (!root) {
+			env.raise("RESOURCE_IMPORT_SOURCE_OUTSIDE_WORKSPACE", "fromFile must be a file of " + where + ": " + String(fromFile));
 		}
-		var segments = String(rootPath.relativize(real)).replace(/\\/g, "/").split("/");
-		if (segments.some(function (segment) { return segment.charAt(0) === "."; })
-				|| (segments.length > 1 && IMPORT_PRIVATE_FOLDERS.indexOf(segments[0]) !== -1)) {
-			env.raise("RESOURCE_IMPORT_SOURCE_PRIVATE", "fromFile is in a private part of the workspace: " + segments.join("/"),
-				null, "Import a document of the workspace, outside hidden folders and " + IMPORT_PRIVATE_FOLDERS.join(", ") + ".");
+		var segments = String(root.path.relativize(real)).replace(/\\/g, "/").split("/");
+		if (segments.some(function (segment) { return segment.charAt(0) === "." || segment === "_private"; })
+				|| (root.workspace && segments.length > 1 && IMPORT_PRIVATE_FOLDERS.indexOf(segments[0]) !== -1)) {
+			env.raise("RESOURCE_IMPORT_SOURCE_PRIVATE", "fromFile is in a private part of " + root.name + ": " + segments.join("/"),
+				null, "Import a document outside hidden folders, the _private folders of the projects and " + IMPORT_PRIVATE_FOLDERS.join(", ") + " of the workspace.");
 		}
 		return { path: real, relativePath: segments.join("/") };
 	}

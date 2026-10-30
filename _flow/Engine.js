@@ -2084,6 +2084,16 @@
 		return typeof workspace === "string" || workspace instanceof JavaString ? new File(String(workspace)) : null;
 	}
 
+	// The folder of the projects (Engine.PROJECTS_PATH: the workspace of the Studio, <workspace>/projects on a server),
+	// __flowProjectsDir in standalone tests; null without one.
+	function projectsDir() {
+		if (typeof __flowProjectsDir !== "undefined" && String(__flowProjectsDir).trim() !== "") {
+			return new File(String(__flowProjectsDir));
+		}
+		var projects = EngineClass.PROJECTS_PATH;
+		return (typeof projects === "string" || projects instanceof JavaString) && String(projects).trim() !== "" ? new File(String(projects)) : null;
+	}
+
 	function resourceServiceEnv() {
 		return {
 			sources: sourceView(currentActiveRequest()),
@@ -2094,6 +2104,7 @@
 			raise: raise,
 			projectDir: projectDir,
 			workspaceDir: workspaceDir,
+			projectsDir: projectsDir,
 			canonicalPath: canonicalPath,
 			normalizeResourcePath: normalizeResourcePath,
 			isAllowedResourcePath: isAllowedResourcePath,
