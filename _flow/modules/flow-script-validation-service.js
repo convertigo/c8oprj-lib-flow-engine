@@ -321,15 +321,22 @@
 		};
 		var counts = {};
 		var firstLine = {};
+		var groups = {};
 		function count(nodes) {
 			walkDefinitionNodes(nodes, function (node) {
 				var name = env.blockName(node);
 				if (!watched[name]) {
 					return;
 				}
-				counts[name] = (counts[name] || 0) + 1;
-				if (firstLine[name] === undefined) {
-					firstLine[name] = node.__flowScriptLine || 0;
+				// Four different requestables can be four necessary service operations.
+				// Keep the existing conservative budget when the target is dynamic.
+				var target = name === "requestable.call" ? flowScriptPropertyValue(node, "requestable") : null;
+				target = typeof target === "string" && target && !/\$\{|\{\{/.test(target) ? target : null;
+				var key = name + (target ? "\u0000" + target : "");
+				groups[key] = { block: name, target: target };
+				counts[key] = (counts[key] || 0) + 1;
+				if (firstLine[key] === undefined) {
+					firstLine[key] = node.__flowScriptLine || 0;
 				}
 			});
 		}
@@ -337,16 +344,17 @@
 			count(helper.nodes || []);
 		});
 		count(definition.nodes || []);
-		return Object.keys(counts).filter(function (name) {
-			return counts[name] > 3;
-		}).map(function (name) {
+		return Object.keys(counts).filter(function (key) {
+			return counts[key] > 3;
+		}).map(function (key) {
+			var name = groups[key].block;
 			return {
 				severity: "warning",
 				code: "FLOWSCRIPT_REPEATED_EXTERNAL_CALLS",
-				line: firstLine[name] || 0,
+				line: firstLine[key] || 0,
 				block: name,
-				count: counts[name],
-				message: "FlowScript contains " + counts[name] + " " + name + " calls.",
+				count: counts[key],
+				message: "FlowScript contains " + counts[key] + " " + name + " calls" + (groups[key].target ? " to " + groups[key].target : "") + ".",
 				hint: "If these calls share the same shape, move repeated rows/endpoints to project config and iterate with list.map, calling one per-item FlowScript block from the map body."
 			};
 		});
