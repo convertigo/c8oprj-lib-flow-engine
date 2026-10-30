@@ -2451,7 +2451,7 @@
 			resourceName: resourceName,
 			canonicalPath: canonicalPath,
 			directoryFingerprint: directoryFingerprint,
-			sourceDraftsFingerprint: sourceDraftsFingerprint,
+			sourceDraftsFingerprint: catalogSourceDraftsFingerprint,
 			readRuntimeCache: readRuntimeMapCache,
 			writeRuntimeCache: writeRuntimeMapCache,
 			flowProviderName: flowProviderName,
@@ -5154,8 +5154,8 @@
 	// of a deep copy per node and per property. A reloaded block is a new object.
 	function blockCatalogContextKey() {
 		// Core placeholder objects can be reused by two projects in one realm.
-		// Their trait composition and in-memory authoring drafts belong to the caller.
-		return String(projectDir() || "") + "\n" + sourceDraftsFingerprint();
+		// Their trait composition and in-memory authoring drafts belong to the caller (those of the Flows excepted).
+		return String(projectDir() || "") + "\n" + catalogSourceDraftsFingerprint();
 	}
 
 	function readOnlyBlockCatalog(block) {
@@ -8386,6 +8386,43 @@
 	function sourceDraftsFingerprint() {
 		var request = currentActiveRequest();
 		return hasNoSourceWorkingCopies(request) ? "" : sourceView(request).fingerprint();
+	}
+
+	// The block catalog (blocks, types, traits and what they depend on) reads no executable Flow: the working copies of
+	// the Flows are left out of its key, or each edit of a Flow would load the whole catalog again, the core one
+	// included, for every call until the Flow is saved. A working copy of a block, a type or a trait still changes it.
+	function catalogSourceDraftsFingerprint() {
+		var request = currentActiveRequest();
+		return hasNoSourceWorkingCopies(request) ? "" : sourceView(withoutFlowSourceDrafts(request)).fingerprint();
+	}
+
+	function isFlowSourcePath(path) {
+		return ("/" + String(path || "").replace(/\\/g, "/")).indexOf("/" + sourcePaths().flows + "/") !== -1;
+	}
+
+	// The working copies a source view of the request holds, those of the executable Flows left out.
+	function withoutFlowSourceDrafts(request) {
+		return withoutSourceDrafts(request, isFlowSourcePath);
+	}
+
+	// The working copies (writes and removals) a source view of the request holds, those of the excluded paths left out.
+	function withoutSourceDrafts(request, excluded) {
+		var writes = request.sourceDrafts || request.frontendSourceDrafts || request.drafts || {};
+		var kept = {};
+		if (writes && typeof writes === "object" && !Array.isArray(writes)) {
+			Object.keys(writes).forEach(function (path) {
+				if (!excluded(path)) {
+					kept[path] = writes[path];
+				}
+			});
+		} else {
+			kept = writes;
+		}
+		var removals = request.sourceRemovals;
+		return {
+			sourceDrafts: kept,
+			sourceRemovals: Array.isArray(removals) ? removals.filter(function (path) { return !excluded(String(path)); }) : removals || []
+		};
 	}
 
 	function frontendDraftForFile(request, file) {
