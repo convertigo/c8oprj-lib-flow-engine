@@ -53,6 +53,48 @@
 		}
 	}
 
+	// A quoted string given to an expression property is text, as in JavaScript (day: "2025-12-14" is that text). A
+	// quoted text reading a scope (where: "current.active", condition: "input.count > 1") is the former spelling of an
+	// expression: it is reported with the expression to write, as an error unless the property takes a text.
+	var SCOPE_ROOTS = /^(?:input|config|local|result|request|current|parent|trace)(?:[.[]|$)/;
+
+	function quotedExpressionDiagnostic(diagnostics, node, blockName, property, expression, descriptor, env) {
+		if (!env.inputExpressionTokens) {
+			return;
+		}
+		var tokens, inner;
+		try {
+			tokens = env.inputExpressionTokens(String(expression).trim());
+			if (tokens.length !== 2 || tokens[0].type !== "string") {
+				return;
+			}
+			inner = env.inputExpressionTokens(tokens[0].value);
+		} catch (_notAnExpression) {
+			return;
+		}
+		var readsScope = inner.some(function (token) {
+			return token.type === "id" && SCOPE_ROOTS.test(String(token.value));
+		});
+		if (!readsScope) {
+			return;
+		}
+		var types = String(descriptor && descriptor.type || "").split("|").map(function (type) { return type.trim(); });
+		var text = types.indexOf("string") !== -1;
+		var unquoted = tokens[0].value.trim();
+		diagnostics.push({
+			severity: text ? "warning" : "error",
+			code: "FLOWSCRIPT_QUOTED_EXPRESSION",
+			line: node && node.__flowScriptLine || 0,
+			block: blockName,
+			property: property,
+			expression: unquoted,
+			message: blockName + "." + property + " receives the text " + JSON.stringify(tokens[0].value) +
+				": a quoted string is text, even on an expression property.",
+			hint: "To pass the value, write the expression without quotes: " + property + ": " + unquoted +
+				(text ? ". Keep the quotes only if the property must receive these characters." : ".")
+		});
+	}
+
 	function validateTemplateExpressions(diagnostics, node, blockName, property, value, env) {
 		templateExpressions(value, env).forEach(function (expression) {
 			validateExpressionText(diagnostics, node, blockName, property, expression, env);
@@ -88,6 +130,7 @@
 			if (descriptor.kind === "expression") {
 				if (typeof value === "string") {
 					validateExpressionText(diagnostics, node, blockName, key, value, env);
+					quotedExpressionDiagnostic(diagnostics, node, blockName, key, value, descriptor, env);
 				} else {
 					validateStructuredTemplates(diagnostics, node, blockName, key, value, env);
 				}

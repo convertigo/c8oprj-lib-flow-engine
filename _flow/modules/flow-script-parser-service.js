@@ -1000,6 +1000,20 @@
 			return flowScriptRewriteExpression(token, locals);
 		}
 	
+		// The value of an expression property. A quoted string is text there too, as in JavaScript: it is kept as the
+		// string literal it is (day: "2025-12-14" used to be read as the expression 2025-12-14, that is 1999). The
+		// check reports a quoted text that reads a scope (where: "current.active"), the former spelling of an expression.
+		function flowScriptExpressionPropertyFromToken(token, locals, lineNumber) {
+			if (isFlowScriptArrayLiteral(token) || isFlowScriptObjectLiteral(token)) {
+				return flowScriptValueFromToken(token, locals, lineNumber);
+			}
+			if (isFlowScriptQuoted(token)) {
+				unquoteFlowScriptString(token);
+				return String(token).trim();
+			}
+			return flowScriptExpressionFromToken(token, locals);
+		}
+
 		function flowScriptPathFromToken(token, locals) {
 			token = String(token || "").trim();
 			if (isFlowScriptQuoted(token)) {
@@ -1318,11 +1332,7 @@
 			Object.keys(tokens).forEach(function (key) {
 				var kind = flowScriptPropKind(blocks, block, key);
 				if (kind === "expression") {
-					if (isFlowScriptArrayLiteral(tokens[key]) || isFlowScriptObjectLiteral(tokens[key])) {
-						args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
-					} else {
-						args[key] = flowScriptExpressionFromToken(tokens[key], locals);
-					}
+					args[key] = flowScriptExpressionPropertyFromToken(tokens[key], locals, lineNumber);
 				} else if (kind === "path") {
 					args[key] = propertyPathFromToken(blocks, block, key, tokens[key], locals, lineNumber);
 				} else if (kind === "template" || kind === "value") {
@@ -1385,10 +1395,7 @@
 		function flowScriptPropertyValueFromToken(blocks, block, key, token, locals, lineNumber) {
 			var kind = flowScriptPropKind(blocks, block, key);
 			if (kind === "expression") {
-				if (isFlowScriptArrayLiteral(token) || isFlowScriptObjectLiteral(token)) {
-					return flowScriptValueFromToken(token, locals, lineNumber);
-				}
-				return flowScriptExpressionFromToken(token, locals);
+				return flowScriptExpressionPropertyFromToken(token, locals, lineNumber);
 			}
 			if (kind === "path") {
 				return propertyPathFromToken(blocks, block, key, token, locals, lineNumber);
