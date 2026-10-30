@@ -73,8 +73,10 @@ function budget(label, counts) {
 		totalDescriptors += counts.descriptors[file];
 	});
 	assertTrue(totalModules > 0 && totalModules <= limit.modules, label + ": module validation budget exceeded: " + totalModules);
-	// The first catalog load also validates the referenced graph implementation.
-	assertTrue(counts.analyses > 0 && counts.analyses <= limit.analyses, label + ": source analysis budget exceeded: " + counts.analyses);
+	// The first catalog load also validates the referenced graph implementation. A later check of the same
+	// revision reuses its validation and may analyse nothing.
+	assertTrue((label === "public-cold" ? counts.analyses > 0 : counts.analyses >= 0) && counts.analyses <= limit.analyses,
+		label + ": source analysis budget exceeded: " + counts.analyses);
 	assertTrue(totalDescriptors > 0 && totalDescriptors <= limit.descriptors, label + ": descriptor read budget exceeded: " + totalDescriptors);
 	print("BUDGET " + JSON.stringify({ operation: label, moduleValidations: totalModules, analyses: counts.analyses,
 		descriptorReads: totalDescriptors }));
