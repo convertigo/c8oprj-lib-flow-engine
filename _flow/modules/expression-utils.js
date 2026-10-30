@@ -372,6 +372,30 @@
 			i = sequence.end;
 			return sequence.value;
 		}
+		// A / where a value is expected starts a regular expression literal, which an expression does not run: it is
+		// refused with the block that tests a pattern, instead of an "Unsupported expression character" on its first
+		// character that named neither the construction nor what to write.
+		function regularExpressionLiteral(start) {
+			var end = start + 1, inClass = false;
+			while (end < text.length) {
+				var c = text.charAt(end);
+				if (c === "\\") {
+					end += 2;
+					continue;
+				}
+				if (c === "[") inClass = true;
+				else if (c === "]") inClass = false;
+				else if (c === "/" && !inClass) break;
+				end++;
+			}
+			var flags = /^[a-z]*/.exec(text.substring(end + 1))[0];
+			var literal = text.substring(start, Math.min(text.length, end + 1)) + flags;
+			var pattern = text.substring(start + 1, Math.min(text.length, end));
+			env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "A regular expression literal is not supported in a Flow expression: " + literal + ".", null,
+				"Test the text with the text.match block, the pattern written as a quoted text (backslashes doubled): local.check = text.match({ text: String(value), pattern: " +
+				JSON.stringify(pattern) + (flags.indexOf("i") !== -1 ? ", ignoreCase: true" : "") + " }), then read local.check.matched (local.check.groups for the captured groups). " +
+				"Simple tests need no pattern: value.startsWith(\"x\"), value.endsWith(\"x\"), value.includes(\"x\"), value.length; replace and replaceAll take a text.");
+		}
 		function isDigit(ch) {
 			return ch >= "0" && ch <= "9";
 		}
@@ -453,7 +477,7 @@
 			// .name after a call, an index, a parenthesis or a string: a member of that value (s.trim().toLowerCase())
 			var previous = tokens.length ? tokens[tokens.length - 1] : null;
 			if (ch === "." && isIdentStart(text.charAt(i + 1)) && previous &&
-					(previous.type === "string" || previous.type === "op" && (previous.value === ")" || previous.value === "]"))) {
+					(previous.type === "string" || previous.type === "member" || previous.type === "op" && (previous.value === ")" || previous.value === "]"))) {
 				var memberStart = ++i;
 				while (i < text.length && isIdentPart(text.charAt(i))) {
 					i++;
@@ -500,6 +524,9 @@
 				tokens.push({ type: "op", value: two });
 				i += 2;
 				continue;
+			}
+			if (ch === "/" && (!previous || previous.type === "op" && previous.value !== ")" && previous.value !== "]")) {
+				regularExpressionLiteral(i);
 			}
 			if ("()?:,+-*/!<>{}[]".indexOf(ch) !== -1) {
 				tokens.push({ type: "op", value: ch });
@@ -743,8 +770,49 @@
 				"Text: " + STRING_METHODS.join(", ") + ". Lists: " + ARRAY_METHODS.join(", ") + ". Numbers: " +
 				NUMBER_METHODS.join(", ") + ". Use a block for anything else.");
 		}
+		// value[key]: a computed index (local.rows[local.rows.length - 1], local.byId[input.id]) as in JavaScript,
+		// null-safe; an index of a text or a list is its position, never one of their functions.
+		function indexValue(receiver, key) {
+			if (receiver === null || receiver === undefined || key === null || key === undefined) {
+				return undefined;
+			}
+			if (JavaString !== null && (receiver instanceof JavaString || receiver instanceof JavaCharSequence)) {
+				receiver = String(receiver);
+			}
+			if (typeof key === "object" && env && typeof env.jsValue === "function") {
+				key = env.jsValue(key);
+			}
+			var name = String(key);
+			if (name === "__proto__" || name === "constructor" || name === "prototype") {
+				return undefined;
+			}
+			if (typeof receiver === "string" || Object.prototype.toString.call(receiver) === "[object Array]") {
+				if (name === "length") {
+					return receiver.length;
+				}
+				return /^(?:0|[1-9][0-9]*)$/.test(name) ? (typeof receiver === "string" ? receiver.charAt(Number(name)) || undefined : receiver[Number(name)]) : undefined;
+			}
+			if (typeof receiver !== "object") {
+				return undefined;
+			}
+			var value = receiver[name];
+			return typeof value === "function" ? undefined : value;
+		}
 		function parsePostfix(program) {
-			while (peek().type === "member") {
+			while (peek().type === "member" || peek("[")) {
+				if (peek("[")) {
+					consume("[");
+					var keyProgram = parseExpression();
+					consume("]");
+					var indexedLabel = program.flowLabel || "";
+					program = (function (receiverProgram, indexProgram) {
+						return function (runCtx) {
+							return indexValue(receiverProgram(runCtx), indexProgram(runCtx));
+						};
+					})(program, keyProgram);
+					program.flowLabel = indexedLabel ? indexedLabel + "[...]" : "";
+					continue;
+				}
 				var member = consume().value;
 				var receiverLabel = program.flowLabel || "";
 				if (peek("(")) {
@@ -859,9 +927,9 @@
 				if (env.isScopePath(name)) {
 					if (isSimpleScopePath(name, env)) {
 						var parts = String(name).split(".");
-						return labelled(function (runCtx) { return readSimpleScopeParts(runCtx, parts); }, name);
+						return parsePostfix(labelled(function (runCtx) { return readSimpleScopeParts(runCtx, parts); }, name));
 					}
-					return labelled(function (runCtx) { return runCtx.read(name); }, name);
+					return parsePostfix(labelled(function (runCtx) { return runCtx.read(name); }, name));
 				}
 				env.raise("INVALID_EXPRESSION", "Unknown expression identifier: " + name, null, unknownIdentifierHint(name));
 			}
@@ -924,7 +992,9 @@
 		}
 		var program = parseExpression();
 		if (peek().type !== "eof") {
-			env.raise("INVALID_EXPRESSION", "Unexpected token in expression: " + peek().value);
+			var extra = peek();
+			env.raise("INVALID_EXPRESSION", "Unexpected " + (extra.type === "string" ? JSON.stringify(extra.value) : String(extra.value)) +
+				" in expression: " + source, null, "Write one expression: a value, a path, a call or an operation (local.a + local.b, local.items[0], local.text.trim()).");
 		}
 		return program;
 	}

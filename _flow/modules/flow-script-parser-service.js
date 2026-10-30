@@ -671,7 +671,10 @@
 			});
 		}
 
-		function flowScriptStatements(code) {
+		// The statements of a source; firstLine is the line of the source its first line is (a function body is
+		// numbered from the line of its brace, so that a diagnostic names the line of the file).
+		function flowScriptStatements(code, firstLine) {
+			var base = typeof firstLine === "number" && firstLine > 0 ? firstLine : 1;
 			var out = [];
 			var pending = null;
 			var disabledNext = false;
@@ -692,7 +695,7 @@
 					return;
 				}
 				if (!pending && (line.match(/^(flow|function)\s+/) || line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/))) {
-					emit({ line: index + 1, text: line, disabled: disabledNext });
+					emit({ line: index + base, text: line, disabled: disabledNext });
 					disabledNext = false;
 					return;
 				}
@@ -702,7 +705,7 @@
 							pending.text.match(/^if\s*\(/) && !pending.text.match(/^if\s*\(\s*\{/)
 							&& (beforeClose.paren > 0 || beforeClose.bracket > 0)) {
 						env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + pending.line
-							+ ": missing " + flowScriptMissingGroupClosers(beforeClose) + " before line " + (index + 1),
+							+ ": missing " + flowScriptMissingGroupClosers(beforeClose) + " before line " + (index + base),
 							null, "Close the current statement before writing the next one.");
 					}
 					pending.text += "\n" + line;
@@ -713,7 +716,7 @@
 					}
 					return;
 				}
-				pending = { line: index + 1, text: line, disabled: disabledNext, balance: flowScriptBalanceScan(null, line) };
+				pending = { line: index + base, text: line, disabled: disabledNext, balance: flowScriptBalanceScan(null, line) };
 				disabledNext = false;
 				if (flowScriptStatementComplete(pending.text, pending.balance)) {
 					emit(pending);
@@ -728,6 +731,11 @@
 				}
 				emit(pending);
 			}
+			// The generated id of a native if keeps the line counted from the start of its function, as before
+			// diagnostics named the lines of the file: learned schemas and traces stay attached to it.
+			out.forEach(function (statement) {
+				statement.idLine = statement.line - base + 1;
+			});
 			return out;
 		}
 	
@@ -1253,7 +1261,9 @@
 		function flowScriptExpressionTemplate(token, locals, lineNumber) {
 			var expression = flowScriptRewriteExpression(token, locals);
 			var call = nestedBlockCall(expression);
-			if (call) {
+			// i.test( after the closing slash of /^T-[0-9]+$/i is the end of a regular expression literal, not a block
+			// call: the expression check reports the literal
+			if (call && expression.indexOf("/" + call + "(") === -1) {
 				env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "Unsupported FlowScript expression at line " + lineNumber + ": " + String(token).trim(),
 					null, "A block call cannot be nested in an expression: assign it to a local first, for example local.value = " + call + "({ ... }), then use local.value.");
 			}
@@ -2237,9 +2247,9 @@
 				null, "Use import { call } from \"requestable\", import * as requestable from \"requestable\", or import requestable.call.");
 		}
 	
-		function parseFlowScriptBodyNodes(blocks, imports, locals, body) {
+		function parseFlowScriptBodyNodes(blocks, imports, locals, body, firstLine) {
 			var root = { version: 1, nodes: [] };
-			parseFlowScriptStatementsInto(blocks, imports || {}, Object.assign({}, locals || {}), root, flowScriptStatements(body));
+			parseFlowScriptStatementsInto(blocks, imports || {}, Object.assign({}, locals || {}), root, flowScriptStatements(body, firstLine));
 			return root.nodes;
 		}
 
@@ -2320,6 +2330,7 @@
 					name: match[4],
 					args: code.substring(openParen + 1, closeParen),
 					body: code.substring(bodyStart + 1, bodyEnd),
+					bodyLine: lineNumberAt(code, bodyStart),
 					line: lineNumberAt(code, start),
 					code: code.substring(start, bodyEnd + 1)
 				});
@@ -2460,13 +2471,17 @@
 			return parseFlowScriptTopLevelObject(split.prelude, name);
 		}
 	
+		// The scopes an expression reads: a local of the same name would hide them (local.input = 3 made every
+		// later input.day read local.input.day, const result = 3 made result.x a local).
+		var RESERVED_LOCAL_NAMES = { input: true, config: true, local: true, result: true, request: true, current: true, parent: true, trace: true };
+
 		function trackFlowScriptLocalWrite(locals, path) {
 			path = String(path || "");
 			if (path.indexOf("local.") !== 0) {
 				return;
 			}
 			var name = path.substring("local.".length).split(/[.\[]/)[0];
-			if (name) {
+			if (name && RESERVED_LOCAL_NAMES[name] !== true) {
 				locals[name] = true;
 			}
 		}
@@ -2523,6 +2538,12 @@
 				}
 				var declaration = line.match(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([\s\S]+)$/);
 				if (declaration) {
+					if (RESERVED_LOCAL_NAMES[declaration[1]] === true) {
+						env.raise("FLOWSCRIPT_RESERVED_NAME", "A local cannot be named " + declaration[1] + " at line " + lineNumber + ": " +
+							declaration[1] + " is the " + declaration[1] + " scope, which every later " + declaration[1] + ".x would no longer read.",
+							null, "Name it after what it holds (const " + declaration[1] + "Value = ..., or local." + declaration[1] + "Value = ...), and keep " +
+							declaration[1] + ".x for the scope.");
+					}
 					var varName = env.safeIdentifier(declaration[1]);
 					var nodes = buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, declaration[2], lineNumber);
 					nodes.forEach(function (node) {
@@ -2538,7 +2559,8 @@
 					});
 					if (scopeAssignment[1].indexOf("local.") === 0) {
 						var assignedLocal = scopeAssignment[1].substring("local.".length).split(/[.\[]/)[0];
-						if (assignedLocal) {
+						// local.input stays local.input: input.x keeps reading the input scope
+						if (assignedLocal && RESERVED_LOCAL_NAMES[assignedLocal] !== true) {
 							locals[assignedLocal] = true;
 						}
 					}
@@ -2567,7 +2589,7 @@
 				var ifMatch = line.match(/^if\s*\((.*)\)\s*(\{)?\s*;?$/);
 				if (ifMatch && !isFlowScriptObjectLiteral(ifMatch[1])) {
 					var ifNode = {
-						id: "if" + lineNumber,
+						id: "if" + (statements[i].idLine || lineNumber),
 						block: "if",
 						condition: flowScriptExpressionFromToken(ifMatch[1], locals, lineNumber),
 						__flowScriptLine: lineNumber
@@ -2627,7 +2649,8 @@
 						nodes: [],
 						__flowScriptLine: fn.line,
 						__flowScriptCode: fn.code,
-						__flowScriptBody: fn.body
+						__flowScriptBody: fn.body,
+						__flowScriptBodyLine: fn.bodyLine
 					};
 				});
 				var imports = {};
@@ -2643,13 +2666,13 @@
 				}
 				helpers.forEach(function (helper) {
 					helper.nodes = parseFlowScriptBodyNodes(helperBlocks, Object.assign({}, imports),
-						helperParamLocals(helper.params), helper.__flowScriptBody);
+						helperParamLocals(helper.params), helper.__flowScriptBody, helper.__flowScriptBodyLine);
 				});
 				var rootFromFunctions = { version: 1, helpers: helpers, nodes: [] };
 				if (Object.keys(flowMeta).length > 0) {
 					rootFromFunctions.flow = flowMeta;
 				}
-				parseFlowScriptStatementsInto(helperBlocks, Object.assign({}, imports), {}, rootFromFunctions, flowScriptStatements(main.body));
+				parseFlowScriptStatementsInto(helperBlocks, Object.assign({}, imports), {}, rootFromFunctions, flowScriptStatements(main.body, main.bodyLine));
 				return env.canonicalFlowDefinition(rootFromFunctions);
 			}
 			var root = { version: 1, nodes: [] };

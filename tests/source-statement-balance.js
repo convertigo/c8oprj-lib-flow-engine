@@ -38,10 +38,10 @@ try {
 		return JSON.stringify(api("flowSourceValidate", { name: "Balance", code: flow(body) }));
 	}
 	var openCall = diagnostic('  result.a = 1\n  if ({ condition: (1 > 0, $$then: function () {\n    result.c = 3\n  } })');
-	assert(openCall.indexOf("Unbalanced FlowScript statement at line 3: missing )") !== -1,
+	assert(openCall.indexOf("Unbalanced FlowScript statement at line 4: missing )") !== -1,
 		"A call left open is reported: " + openCall);
 	var openArray = diagnostic('  result.a = [\n    "x\\"]",\n    \'y\\\'(\'\n');
-	assert(openArray.indexOf("Unbalanced FlowScript statement at line 2: missing ]") !== -1,
+	assert(openArray.indexOf("Unbalanced FlowScript statement at line 3: missing ]") !== -1,
 		"Escaped quotes and brackets inside strings do not close the statement: " + openArray);
 	print("source-statement-balance: strings, long statement and open statement OK");
 } finally {

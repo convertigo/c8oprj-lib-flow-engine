@@ -102,6 +102,24 @@
 			return normalizeTree(meta);
 		}
 
+		// Lines of the file before the function that functionCode starts with: the _meta header and the blank lines
+		// it leaves are trimmed from functionCode, and a body written without its function is wrapped in one.
+		function functionLineOffset(code, functionCode) {
+			var pattern = /(^|\n)[ \t]*(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:flow|function)\s+[A-Za-z_$]/;
+			var inFile = pattern.exec(String(code || "")), inFunction = pattern.exec(String(functionCode || ""));
+			if (inFile && inFunction) {
+				return lineAt(code, inFile.index + inFile[1].length) - lineAt(functionCode, inFunction.index + inFunction[1].length);
+			}
+			var body = /\S/.exec(String(code || "").replace(/^\s*(?:const|let|var)\s+_meta\s*=[\s\S]*?\n\}\s*;?/, function (header) {
+				return header.replace(/[^\n]/g, " ");
+			}));
+			return body ? lineAt(code, body.index) - 2 : 0;
+		}
+
+		function lineAt(text, offset) {
+			return String(text || "").substring(0, offset).split("\n").length;
+		}
+
 		function compileFlowScriptBlockCode(blocks, name, code, request) {
 			var originalMeta = request && request.correctSource === true
 				? Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extractFlowScriptBlockMeta(code).meta || {})) : {};
@@ -128,16 +146,35 @@
 				// compiled from the source of its catalog entry: the entry above gives the same contract, the same catalog
 				Object.defineProperty(validationBlocks, "__flowCatalogFingerprint", { value: String(request.catalogRevision), enumerable: false });
 			}
-			var validation = flowScriptValidateRequest(validationBlocks, {
-				name: blockLocalName(name) || name,
-				code: functionCode,
-				sourceVersion: meta.sourceVersion,
-				includeHeader: false,
-				blockMode: true,
-				authoringCorrections: request && request.correctSource === true
-			});
+			// The diagnostics and the refusals of the parser name the lines of the block file, not of its function alone.
+			var lineOffset = functionLineOffset(code, functionCode);
+			function fileLines(diagnostics) {
+				(Array.isArray(diagnostics) ? diagnostics : diagnostics && diagnostics.diagnostics || []).forEach(function (diagnostic) {
+					if (lineOffset && diagnostic && typeof diagnostic.line === "number" && diagnostic.line > 0) diagnostic.line += lineOffset;
+				});
+			}
+			var validation;
+			try {
+				validation = flowScriptValidateRequest(validationBlocks, {
+					name: blockLocalName(name) || name,
+					code: functionCode,
+					sourceVersion: meta.sourceVersion,
+					includeHeader: false,
+					blockMode: true,
+					authoringCorrections: request && request.correctSource === true
+				});
+			} catch (refused) {
+				if (lineOffset && refused && typeof refused.message === "string") {
+					refused.message = refused.message.replace(/\b(at line |\(line |before line )(\d+)/g, function (_, words, line) {
+						return words + (Number(line) + lineOffset);
+					});
+					if (refused.details) fileLines(refused.details);
+				}
+				throw refused;
+			}
+			fileLines(validation.diagnostics);
 			if (!validation.ok) {
-				var error = new Error("FlowScript block validation failed: " + name);
+				var error = new Error(env.validationFailureMessage("FlowScript block validation failed: " + name, validation.diagnostics));
 				error.code = "FLOWSCRIPT_BLOCK_VALIDATION_FAILED";
 				error.details = validation.diagnostics;
 				error.hint = "Fix the FlowScript block diagnostics and retry.";

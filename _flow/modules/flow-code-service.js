@@ -126,7 +126,7 @@
 			return !severity || diagnostic.severity === severity;
 		}).map(function (diagnostic) {
 			var out = {};
-			["severity", "phase", "code", "line", "message", "block", "property", "path", "actual", "expected", "candidates", "candidateDecision", "next", "create", "mock", "hint"].forEach(function (key) {
+			["severity", "phase", "code", "line", "message", "block", "property", "path", "expression", "actual", "expected", "candidates", "candidateDecision", "next", "create", "mock", "hint"].forEach(function (key) {
 				if (diagnostic[key] !== undefined && diagnostic[key] !== null && diagnostic[key] !== "") {
 					out[key] = diagnostic[key];
 				}
@@ -256,6 +256,12 @@
 			if (Array.isArray(details.diagnostics)) out.diagnostics = details.diagnostics;
 		}
 		return out;
+	}
+
+	// The first error and its line in the message (env.validationFailureMessage), for a client showing the message only.
+	function validationFailedMessage(diagnostics) {
+		return env.validationFailureMessage ? env.validationFailureMessage("FlowScript validation failed", diagnostics)
+			: "FlowScript validation failed.";
 	}
 
 	function flowCodeRevisionForSource(blocks, name, source, request) {
@@ -573,7 +579,7 @@
 			flowCodeAddDiagnosticReport(out, checked.validation.diagnostics || [], request);
 			out.next = "Working copy check passed. Run with flow-code-run without sending code, then save with flow-code-promote.";
 		} else {
-			out.error = checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+			out.error = checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(checked.validation.diagnostics),
 				"Patch the working copy and retry flow-code-check.", flowCodeDiagnosticReport(checked.validation.diagnostics, request));
 		}
 		return flowCodeCorrections(out, corrected);
@@ -627,7 +633,7 @@
 				qname: flowCodeQName(request, name),
 				name: name,
 				revision: current ? current.revision : null,
-				error: flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+				error: flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(validation.diagnostics),
 					"Fix the reported diagnostics and retry.", flowCodeDiagnosticReport(validation.diagnostics, request)),
 				warnings: warnings
 			};
@@ -994,7 +1000,7 @@
 				draft: current && current.draft === true,
 				revision: revision,
 				codeFile: current ? current.codeFile : "",
-				error: checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+				error: checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(checked.validation.diagnostics),
 					"Fix the reported diagnostics and retry.", flowCodeDiagnosticReport(checked.validation.diagnostics, request)),
 				warnings: checked.warnings
 			};
@@ -1138,7 +1144,7 @@
 				name: name,
 				draft: true,
 				revision: current.revision,
-				error: checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", "FlowScript validation failed.",
+				error: checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(checked.validation.diagnostics),
 					"Patch the working copy and retry flow-code-check.", flowCodeDiagnosticReport(checked.validation.diagnostics, request)),
 				warnings: checked.warnings
 			};

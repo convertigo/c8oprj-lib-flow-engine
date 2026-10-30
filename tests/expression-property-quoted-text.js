@@ -57,7 +57,7 @@ try {
 
 	// The core blocks follow the same rule: a quoted text of a scope was an expression, it is refused with the fix.
 	var where = diagnostics('  result.active = list.filter({ items: [{ active: true }, { active: false }], where: "current.active" })');
-	assert(!where.ok && where.list.length === 1 && where.list[0].severity === "error" && where.list[0].line === 2,
+	assert(!where.ok && where.list.length === 1 && where.list[0].severity === "error" && where.list[0].line === 3,
 		"A quoted condition is refused: " + JSON.stringify(where.out.diagnostics));
 	assert(where.list[0].hint.indexOf("where: current.active") !== -1, "The refusal gives the expression to write: " + JSON.stringify(where.list[0]));
 	var refused = api("run", { flowSource: flow('  result.active = list.filter({ items: [{ active: true }], where: "current.active" })'), includeTrace: false, input: {} });

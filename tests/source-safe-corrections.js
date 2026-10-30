@@ -49,8 +49,9 @@ try {
 	assert(metadata.ok && metadata.code.indexOf('keep license') >= 0 && metadata.code.indexOf('keep input comment') >= 0 && metadata.code.indexOf('config: {x:1}') >= 0, 'Additive metadata correction preserves comments and unrelated values: ' + JSON.stringify(metadata));
 	var rawText = set('RawText', '  result.value = "date.now() input.ghost ${input.literal}"');
 	assert(rawText.ok && !(rawText.fixes || []).length && !rawText.inputDefinitions, 'Strings must not be interpreted as calls or reads: ' + JSON.stringify(rawText));
+	// A computed index reads its key at run time: it must not invent an input literally named key.
 	var dynamic = set('DynamicInput','  const key = "selected"\n  result.value = input[key]');
-	assert(!dynamic.ok && !hasFix(dynamic,'FLOWSCRIPT_INPUT_DECLARED') && !dynamic.inputDefinitions && JSON.stringify(dynamic.error).indexOf('INVALID_EXPRESSION') >= 0,'Unsupported dynamic indexing keeps its diagnostic and must not invent an input literally named key: '+JSON.stringify(dynamic));
+	assert(dynamic.ok && !hasFix(dynamic,'FLOWSCRIPT_INPUT_DECLARED') && !dynamic.inputDefinitions,'Dynamic indexing must not invent an input literally named key: '+JSON.stringify(dynamic));
 	var literalKey = set('LiteralInput','  result.value = input["selected"]');
 	assert(literalKey.inputDefinitions && literalKey.inputDefinitions.selected.type === 'any','A quoted bracket key is a statically known input, independently of expression support');
 	var inputWrite = set('InputWrite','  input.produced = 1\n  result.value = 1');

@@ -3106,6 +3106,21 @@
 		return loadEngineModule("block-code-compiler-service.js");
 	}
 
+	// The message of a refused source names its first error and line, for a client that shows the message alone
+	// ("FlowScript validation failed." told nothing); every diagnostic stays in the details.
+	function validationFailureMessage(prefix, diagnostics) {
+		var errors = (diagnostics || []).filter(function (diagnostic) {
+			return diagnostic && diagnostic.severity === "error";
+		});
+		if (!errors.length) {
+			return prefix + ".";
+		}
+		var first = errors[0];
+		return prefix + (first.line ? " at line " + first.line : "") + ": " + (first.code ? first.code + ": " : "") +
+			String(first.message || "").replace(/\.$/, "") + (first.hint ? ". " + String(first.hint).replace(/\.$/, "") : "") +
+			(errors.length > 1 ? ". " + (errors.length - 1) + " more error" + (errors.length > 2 ? "s" : "") + " in the diagnostics." : ".");
+	}
+
 	function blockCodeCompilerEnv() {
 		return {
 			normalizeTree: normalizeTree,
@@ -3122,6 +3137,7 @@
 			flowScriptBlockCodeSource: flowScriptBlockCodeSource,
 			rhinoBlockCodeSource: rhinoBlockCodeSource,
 			sha256Hex: sha256Hex,
+			validationFailureMessage: validationFailureMessage,
 			validateBlockImplementationSource: validateBlockImplementationSource,
 			rhinoImplementationWarnings: rhinoImplementationWarnings,
 			enforceRhinoImplementationPolicy: enforceRhinoImplementationPolicy
@@ -4463,7 +4479,7 @@
 			: applyUnifiedPatchText(current.code, request.patch || request.unifiedDiff || request.diff || "").content;
 		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: newCode }));
 		if (!validation.ok) {
-			var error = new Error("FlowScript validation failed.");
+			var error = new Error(validationFailureMessage("FlowScript validation failed", validation.diagnostics));
 			error.code = "FLOWSCRIPT_VALIDATION_FAILED";
 			error.details = validation.diagnostics;
 			error.hint = "Fix the reported line diagnostics and retry with the same latest revision.";
@@ -4495,6 +4511,7 @@
 		return {
 			FileUtils: FileUtils,
 			raise: raise,
+			validationFailureMessage: validationFailureMessage,
 			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
 			currentProjectName: currentProjectName,
 			renderFlowScript: renderFlowScript,
