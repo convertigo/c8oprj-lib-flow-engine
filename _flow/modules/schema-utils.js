@@ -248,7 +248,10 @@
 		return out;
 	}
 
-	function summary(schema, env) {
+	// options: { limit (20 by default), balanced }. Balanced, the paths kept under the limit are taken in turn from each
+	// root branch (out.page, out.error...) in their order, then listed in the order of the schema, and pathsOmitted
+	// counts the others: a long first branch no longer hides the rows of a page or the fields of an error.
+	function summary(schema, env, options) {
 		// These walkers only read the schema. Normalize once at the boundary,
 		// retaining Java-value conversion without copying it for each result list.
 		schema = env.normalizeTree(schema);
@@ -256,8 +259,42 @@
 		collectPaths(schema, "", paths);
 		collectArrayPaths(schema, "", arrays);
 		collectLeafEntries(schema, "", leaves);
-		return { type: plainSimpleType(schema), paths: paths.list.slice(0, 20),
-			arrayPaths: arrays.list.slice(0, 20), leafPaths: leaves.slice(0, 20) };
+		var limit = options && options.limit > 0 ? options.limit : 20;
+		if (!options || options.balanced !== true) {
+			return { type: plainSimpleType(schema), paths: paths.list.slice(0, limit),
+				arrayPaths: arrays.list.slice(0, limit), leafPaths: leaves.slice(0, limit) };
+		}
+		var out = { type: plainSimpleType(schema), paths: balancedSelection(paths.list, limit, String),
+			arrayPaths: balancedSelection(arrays.list, limit, String),
+			leafPaths: balancedSelection(leaves, limit, function (entry) { return entry.path; }) };
+		if (paths.list.length > out.paths.length) {
+			out.pathsOmitted = paths.list.length - out.paths.length;
+		}
+		return out;
+	}
+
+	function balancedSelection(items, limit, pathOf) {
+		if (items.length <= limit) {
+			return items.slice(0);
+		}
+		var groups = [], byRoot = {};
+		items.forEach(function (item, index) {
+			var root = String(pathOf(item)).split(/[.\[]/)[0];
+			if (!byRoot[root]) {
+				byRoot[root] = [];
+				groups.push(byRoot[root]);
+			}
+			byRoot[root].push(index);
+		});
+		var kept = [];
+		for (var round = 0; kept.length < limit; round++) {
+			for (var g = 0; g < groups.length && kept.length < limit; g++) {
+				if (round < groups[g].length) {
+					kept.push(groups[g][round]);
+				}
+			}
+		}
+		return kept.sort(function (a, b) { return a - b; }).map(function (index) { return items[index]; });
 	}
 
 	function collectLeafEntries(schema, prefix, out) {

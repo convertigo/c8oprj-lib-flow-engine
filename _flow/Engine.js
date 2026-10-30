@@ -11883,6 +11883,7 @@
 			blockLocalName: blockLocalName,
 			resolveBlockIcon: resolveBlockIcon,
 			schemaSummary: schemaSummary,
+			schemaContractSummary: function (schema, options) { return schemaUtils().summary(schema, schemaUtilsEnv(), options); },
 			loadTypes: loadTypes,
 			listFlowLibraries: listFlowLibraries,
 			flowProviderName: flowProviderName,
@@ -11899,8 +11900,8 @@
 		return catalogService().typeDescriptor(type, catalogServiceEnv());
 	}
 
-	function compactBlockDescriptor(descriptor) {
-		return catalogService().compactBlockDescriptor(descriptor, catalogServiceEnv());
+	function compactBlockDescriptor(descriptor, options) {
+		return catalogService().compactBlockDescriptor(descriptor, catalogServiceEnv(), options);
 	}
 
 	function summaryBlockDescriptor(descriptor) {

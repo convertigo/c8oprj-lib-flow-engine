@@ -112,35 +112,57 @@
 		return out;
 	}
 
-	function compactOutputDescriptors(descriptor, env) {
+	// The paths of the outputs: all of them for the contract of one block (contract: true), else at most 20 per output,
+	// taken in turn from each of its branches, with the number of the others (pathsOmitted).
+	var CONTRACT_PATH_LIMIT = 500;
+	var LISTING_PATH_LIMIT = 20;
+
+	function compactOutputDescriptors(descriptor, env, options) {
 		var outputs = descriptor.outputs || descriptor.output || {};
 		var out = {};
 		if (!outputs || typeof outputs !== "object") {
 			return out;
 		}
+		var limit = options && options.contract === true ? CONTRACT_PATH_LIMIT : LISTING_PATH_LIMIT;
+		var summarize = typeof env.schemaContractSummary === "function"
+			? function (schema) { return env.schemaContractSummary(schema, { limit: limit, balanced: true }); }
+			: env.schemaSummary;
 		if (outputs.type || outputs.properties || outputs.items) {
-			out.out = env.schemaSummary(outputs);
+			out.out = summarize(outputs);
 			return out;
 		}
 		Object.keys(outputs).sort().forEach(function (name) {
 			var schema = outputs[name];
 			if (schema && typeof schema === "object") {
-				out[name] = env.schemaSummary(schema);
+				out[name] = summarize(schema);
 			}
 		});
 		return out;
 	}
 
-	function compactBlockDescriptor(descriptor, env) {
+	// options.contract: the contract of one block (flow-block-get), with its longDescription (errors, examples, guide)
+	// and every output path; a listing (the compact catalog) keeps neither and says where they are.
+	function compactBlockDescriptor(descriptor, env, options) {
+		var contract = !!options && options.contract === true;
 		var properties = {};
 		Object.keys(descriptor.props || {}).sort().forEach(function (name) {
 			properties[name] = compactPropertyDescriptor(descriptor.props[name]);
 		});
-		var outputs = compactOutputDescriptors(descriptor, env);
+		var outputs = compactOutputDescriptors(descriptor, env, options);
 		var out = {
 			blockId: descriptor.blockId,
 			description: descriptor.description || ""
 		};
+		var longDescription = typeof descriptor.longDescription === "string" ? descriptor.longDescription.trim() : "";
+		if (longDescription) {
+			if (contract) {
+				out.longDescription = longDescription;
+			} else {
+				out.more = "flow-block-get gives its longDescription (errors, examples, guide) and every output path.";
+			}
+		} else if (!contract && Object.keys(outputs).some(function (name) { return outputs[name] && outputs[name].pathsOmitted; })) {
+			out.more = "flow-block-get gives every output path.";
+		}
 		if (Object.keys(properties).length > 0) {
 			out.properties = properties;
 		}

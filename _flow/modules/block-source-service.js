@@ -57,7 +57,8 @@
 				compact.block = env.summaryBlockDescriptor(catalog);
 				compact.next = "Use detail='compact' for typed properties or detail='full' for descriptor/implementation sources.";
 			} else {
-				compact.block = env.compactBlockDescriptor(catalog);
+				// the contract of the block: its longDescription and every output path
+				compact.block = env.compactBlockDescriptor(catalog, { contract: true });
 				compact.next = "Sources omitted. Use detail='full' only when editing descriptorSource, implementationSource or hooksSource.";
 			}
 			return compact;
