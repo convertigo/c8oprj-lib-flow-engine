@@ -290,6 +290,16 @@
 		return inputs && typeof inputs === "object" ? inputs : {};
 	}
 
+	// A private Flow named test... (test_Orders, testOrders): the scenario of a test calls the same requestable several
+	// times, in order, with other inputs or under other users; the repetition of its calls is not a missing list.map.
+	function isPrivateTestFlow(definition, request) {
+		var meta = flowMetaFromDefinition(definition);
+		if (String(meta.accessibility || "").toLowerCase() !== "private") return false;
+		var name = String(request.name || request.flowName || request.flowQName || request.qname || "");
+		name = name.substring(name.lastIndexOf(".") + 1);
+		return /^(?:test|Test|TEST)(?:_|[A-Z0-9]|$)/.test(name);
+	}
+
 	function flowMetaFromDefinition(definition) {
 		return definition && (definition.flow || definition._flow) || {};
 	}
@@ -918,8 +928,14 @@
 		inputContractDiagnostics(activeBlocks, definition, request, env, inputVariables).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
+		var testFlow = request.blockMode !== true && isPrivateTestFlow(definition, request);
 		repetitionStyleDiagnostics(definition, env).forEach(function (diagnostic) {
-			if (request.authoringCorrections === true) diagnostic.severity = "error";
+			if (testFlow) {
+				diagnostic.hint = "A private test Flow runs one scenario step per call, in order: this stays a warning. " +
+					"To call as another user, sign in with session.authenticate before the call (a project block taking the user, the requestable and its input keeps each step on one line).";
+			} else if (request.authoringCorrections === true) {
+				diagnostic.severity = "error";
+			}
 			diagnostics.push(diagnostic);
 		});
 		localConfigStyleDiagnostics(definition).forEach(function (diagnostic) {
