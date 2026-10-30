@@ -20,20 +20,20 @@ var SOURCE = [
 	"bindings: {}",
 	"# Configuration of the application",
 	"config:",
-	"  pca:",
+	"  shop:",
 	"    demoLogin: true   # demo buttons on the login page",
 	"    modeEmail: \"SIMULATION\"",
-	"    delaiMois: 2",
+	"    retentionMonths: 2",
 	"",
 	"  sql:",
 	"    connections:",
-	"      pca:",
-	"        url: \"jdbc:hsqldb:file:.//_flow/resources/sql/pca/catalog\"",
+	"      shop:",
+	"        url: \"jdbc:hsqldb:file:.//_flow/resources/sql/shop/catalog\"",
 	"        user: 'SA'",
 	"",
 	"    queries:",
 	"      users:",
-	"        connection: pca",
+	"        connection: shop",
 	"        sql: >-",
 	"          SELECT U.ID AS \"id\", U.NOM AS \"nom\"",
 	"          FROM PCA_UTILISATEUR U",
@@ -76,7 +76,7 @@ expected.config.sql.writes.posteInsert.maxAffectedRows = 1;
 assert(JSON.stringify(parse(added.source)) === JSON.stringify(expected), "the text says the new definition");
 
 // A scalar changed in place: its line only (its comment goes with it), the other lines kept, quotes and block scalar too.
-var scalar = mutate(SOURCE, { op: "set", path: "config.pca.demoLogin", value: false });
+var scalar = mutate(SOURCE, { op: "set", path: "config.shop.demoLogin", value: false });
 diff = changed(SOURCE, scalar.source);
 assert(diff.line === 7 && diff.removed.length === 1 && diff.added.length === 1 && diff.added[0] === "    demoLogin: false",
 	"one line replaced: " + JSON.stringify(diff));
@@ -102,12 +102,12 @@ var expectedRetyped = parse(SOURCE);
 expectedRetyped.config.sql.queries.users.parameters = [{ name: "email", type: "string" }, { name: "nom", type: "string" }];
 assert(retyped.sourceEdit === "minimal" && JSON.stringify(parse(retyped.source)) === JSON.stringify(expectedRetyped) &&
 	changed(SOURCE, retyped.source).line === 26, "a list written again at its place: " + retyped.source);
-var rooted = mutate(SOURCE, { op: "set", path: "config.mail", value: { from: "pca@example.test" } });
-assert(rooted.sourceEdit === "minimal" && /  mail:\n    from: "pca@example.test"\n\n# end of the configuration\n$/.test(rooted.source),
+var rooted = mutate(SOURCE, { op: "set", path: "config.mail", value: { from: "shop@example.test" } });
+assert(rooted.sourceEdit === "minimal" && /  mail:\n    from: "shop@example.test"\n\n# end of the configuration\n$/.test(rooted.source),
 	"a new section at the end of config, before the comment that follows it: " + rooted.source);
 var emptied = mutate("version: 1\nconfig:\n  only:\n    a: 1\n", { op: "remove", path: "config.only.a" });
 assert(emptied.sourceEdit === "minimal" && JSON.stringify(parse(emptied.source).config.only) === "{}", "an emptied mapping stays a mapping: " + emptied.source);
-var same = mutate(SOURCE, { op: "set", path: "config.pca.delaiMois", value: 2 });
+var same = mutate(SOURCE, { op: "set", path: "config.shop.retentionMonths", value: 2 });
 assert(same.source === SOURCE && same.sourceEdit === "minimal", "an unchanged value changes nothing");
 
 // What the editor does not follow is written again, as before.
@@ -134,15 +134,15 @@ var configEnv = {
 	draftEngineSource: function (engineBean, before, after) { engineBean.setEngineSource(after); }
 };
 var context = { httpServletRequest: { getAttribute: function () { return null; }, getSession: function () { return null; }, getMethod: function () { return "POST"; }, getHeader: function () { return null; }, getParameter: function () { return null; } } };
-var configured = service.configMutate({ project: "App", path: "pca.delaiJours", value: 15, revision: configEnv.sha256Hex(SOURCE) }, context, configEnv);
+var configured = service.configMutate({ project: "App", path: "shop.retentionDays", value: 15, revision: configEnv.sha256Hex(SOURCE) }, context, configEnv);
 assert(configured.ok === true && configured.sourceEdit === "minimal" && configured.persisted === "draft" &&
-	changed(SOURCE, flowEngine.text).added.join() === "    delaiJours: 15", "config.mutate keeps the lines: " + JSON.stringify(configured));
+	changed(SOURCE, flowEngine.text).added.join() === "    retentionDays: 15", "config.mutate keeps the lines: " + JSON.stringify(configured));
 FileUtils.writeStringToFile(new java.io.File(project, "_flow/engine.yaml"), SOURCE, "UTF-8");
 var palette = JSON.parse(engine.authoringMutate(JSON.stringify({ surface: "virtual", includeTree: false,
-	mutation: { op: "replace", __engineMutationPath: "config.pca.urlApplication", value: "" } })));
+	mutation: { op: "replace", __engineMutationPath: "config.shop.publicUrl", value: "" } })));
 var written = String(FileUtils.readFileToString(new java.io.File(project, "_flow/engine.yaml"), "UTF-8"));
 assert(palette.ok === true && palette.sourceEdit === "minimal" && palette.written === true &&
-	JSON.stringify(changed(SOURCE, written).added) === "[\"    urlApplication: \\\"\\\"\"]",
+	JSON.stringify(changed(SOURCE, written).added) === "[\"    publicUrl: \\\"\\\"\"]",
 	"a palette item writes engine.yaml with its lines kept: " + JSON.stringify(palette).substring(0, 400) + "\n" + written);
 FileUtils.deleteQuietly(project);
 print("config-yaml-minimal-edit OK (" + checks + " checks)");

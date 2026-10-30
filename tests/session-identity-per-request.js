@@ -19,12 +19,12 @@ function write(relative, text) {
 	FileUtils.writeStringToFile(file, text, "UTF-8");
 }
 
-// The users table of the trial, behind the same filter as its rpcaAvecPostesActifs query: an empty email selects all.
-write("_flow/blocks/pca/users.block.js", [
+// The users table of the trial, behind the same filter as its usersWithActiveItems query: an empty email selects all.
+write("_flow/blocks/directory/users.block.js", [
 	"const _meta = { sourceVersion: 2, runtime: \"rhino\", properties: { email: { kind: \"template\", type: \"string\", default: \"\" } },",
 	"  outputs: { out: { type: \"object\", properties: { rows: { type: \"array\", items: { type: \"object\" } } } } } };",
 	"(function () {",
-	"  var users = [{ nom: \"Pca\", prenom: \"Admin\", email: \"admin.pca@example.test\" }, { nom: \"Martin\", prenom: \"Alice\", email: \"alice.martin@example.test\" },",
+	"  var users = [{ nom: \"Root\", prenom: \"Admin\", email: \"admin@example.test\" }, { nom: \"Martin\", prenom: \"Alice\", email: \"alice.martin@example.test\" },",
 	"    { nom: \"Durand\", prenom: \"Bernard\", email: \"bernard.durand@example.test\" }, { nom: \"Test\", prenom: \"Claire\", email: \"claire.test@example.test\" }];",
 	"  return { run: function (ctx, node) {",
 	"    var email = String(ctx.template(ctx.props(node).email || \"\"));",
@@ -90,7 +90,7 @@ assert(call(alice, RECALL).result.basket === "none" && call(anonymous, RECALL).r
 assert(call(alice, LOGOUT).result.user === null && !alice.attributes.containsKey("authenticatedUser"), "A signs out");
 assert(call(alice, WHO).result.user === null && call(anonymous, WHO).result.user === null, "nobody is seen after the logout");
 
-// The CurrentUser of the trial, its sql.query on rpcaAvecPostesActifs replaced by pca.users (same filter on email).
+// The CurrentUser of the trial, its sql.query on usersWithActiveItems replaced by directory.users (same filter on email).
 function currentUser(condition) {
 	return [
 		"const _flow = { sourceVersion: 2, outputs: { authenticated: { type: \"boolean\" }, user: { type: \"object\" } } }",
@@ -103,7 +103,7 @@ function currentUser(condition) {
 		"      result.authenticated = false",
 		"    },",
 		"    $$else: function () {",
-		"      local.rows = pca.users({email: local.email.toLowerCase()})",
+		"      local.rows = directory.users({email: local.email.toLowerCase()})",
 		"      result.authenticated = true",
 		"      result.user = local.rows.rows[0]",
 		"    },",
