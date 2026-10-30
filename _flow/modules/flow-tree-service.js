@@ -2031,6 +2031,32 @@
 		return diagnostic;
 	}
 
+	// A Private requestable is not callable by the users of the application: outside the Studio, which runs every
+	// requestable, the call answers "Unable to execute the requested requestable" (a CurrentUser Flow then never tells
+	// who signed in).
+	function flowSvelteCallPrivateDiagnostic(node, requestable, contract) {
+		var path = String(node && node.sourceMutationPath || "") + ".props.requestable";
+		var target = contract.target && contract.target.qname ? contract.target.qname : requestable;
+		var flow = !contract.target || contract.target.kind === "flow";
+		var authentication = contract.authenticatedContextRequired === true ? "." : flow
+			? ", and _flow.authenticatedContextRequired to true if it serves a signed-in user only."
+			: ", and its authenticatedContextRequired property to true if it serves a signed-in user only.";
+		return {
+			level: "error",
+			severity: "error",
+			code: "FRONTEND_CALLSEQUENCE_PRIVATE",
+			message: "CallSequence calls " + target + ", which is Private: the frontend cannot call it outside the Studio " +
+				"(\"Unable to execute the requested requestable\").",
+			path: path,
+			requestable: requestable,
+			accessibility: String(contract.accessibility),
+			authenticatedContextRequired: contract.authenticatedContextRequired === true,
+			next: "A Flow called by the frontend must be Hidden (with authenticatedContextRequired when it needs a logged-in user): " +
+				(flow ? "set _flow.accessibility to \"hidden\" in " + target : "set the accessibility property of " + target + " to Hidden") +
+				authentication
+		};
+	}
+
 	function flowSvelteCallContractDiagnostics(root, request) {
 		var diagnostics = [];
 		function visit(node) {
@@ -2041,6 +2067,9 @@
 				try {
 					contract = requestableInputContract(requestable, request || {});
 				} catch (_unavailableContract) {
+				}
+				if (contract && String(contract.accessibility || "").toLowerCase() === "private") {
+					diagnostics.push(flowSvelteCallPrivateDiagnostic(node, requestable, contract));
 				}
 				var schema = contract && contract.schema ? contract.schema : contract;
 				if (schema && schema.properties && typeof schema.properties === "object" &&

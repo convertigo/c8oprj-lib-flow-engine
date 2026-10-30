@@ -109,7 +109,60 @@ var unavailable = callContractDocument("query", null, unavailableTargets);
 assertTrue(unavailable.diagnostics.length === 0 && unavailableTargets.length === 1,
 	"CallSequence validation rejected a variable when the target schema was unavailable");
 
+// A Private target: the frontend cannot call it outside the Studio. Its contract carries its accessibility, also for a
+// requestable without variables, a classic sequence or a Flow of a referenced project.
+function fakeRequestable(className, project, accessibility, authenticated, variables) {
+	return {
+		getClass: function () { return { getName: function () { return className; } }; },
+		getProject: function () { return { getName: function () { return project; } }; },
+		getAccessibility: function () { return { toString: function () { return accessibility; } }; },
+		getAuthenticatedContextRequired: function () { return authenticated; },
+		getVariables: variables === undefined ? undefined : function () { return variables; }
+	};
+}
+var catalogue = {
+	"Marketplace.CurrentUser": fakeRequestable("com.twinsoft.convertigo.beans.flow.Flow", "Marketplace", "Private", false, []),
+	"Marketplace.Legacy": fakeRequestable("com.twinsoft.convertigo.beans.core.Sequence", "Marketplace", "Private", true),
+	"lib_Users.Me": fakeRequestable("com.twinsoft.convertigo.beans.flow.Flow", "lib_Users", "Hidden", true, [])
+};
+var lookup = {
+	currentProjectName: function (request) { return request.project; },
+	requestableByQName: function (qname) { return catalogue[qname] || null; }
+};
+var privateContract = requestableService.inputContract({ project: "Marketplace" }, ".CurrentUser", lookup);
+assertTrue(privateContract && privateContract.accessibility === "Private" && privateContract.authenticatedContextRequired === false &&
+	privateContract.schema && Object.keys(privateContract.schema.properties).length === 0,
+	"The contract of a Flow without variables carries its accessibility: " + JSON.stringify(privateContract));
+var legacyContract = requestableService.inputContract({ project: "Marketplace" }, ".Legacy", lookup);
+assertTrue(legacyContract && legacyContract.accessibility === "Private" && legacyContract.authenticatedContextRequired === true &&
+	legacyContract.schema === null && legacyContract.target.kind === "sequence",
+	"A classic sequence without a variable list still has a contract: " + JSON.stringify(legacyContract));
+var referencedContract = requestableService.inputContract({ project: "Marketplace" }, "lib_Users.Me", lookup);
+assertTrue(referencedContract && referencedContract.accessibility === "Hidden" && referencedContract.target.project === "lib_Users",
+	"A Flow of a referenced project: " + JSON.stringify(referencedContract));
+
+function callDocument(requestable, contract) {
+	return flowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
+		'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
+		'  <Structure><CallSequence $$id="me" requestable="' + requestable + '"></CallSequence></Structure>',
+		'</FlowComponent>'
+	].join("\n"), {
+		normalizeTree: function (value) { return value; },
+		requestableInputContract: function () { return contract; }
+	});
+}
+var privateCall = callDocument(".CurrentUser", privateContract).diagnostics.filter(function (item) { return item.code === "FRONTEND_CALLSEQUENCE_PRIVATE"; });
+assertTrue(privateCall.length === 1 && privateCall[0].severity === "error" && /\.props\.requestable$/.test(privateCall[0].path) &&
+	/Marketplace\.CurrentUser, which is Private/.test(privateCall[0].message) &&
+	privateCall[0].next.indexOf("A Flow called by the frontend must be Hidden (with authenticatedContextRequired when it needs a logged-in user)") === 0 &&
+	/_flow\.accessibility to "hidden"/.test(privateCall[0].next) && /_flow\.authenticatedContextRequired to true/.test(privateCall[0].next),
+	"CallSequence to a Private Flow is an error with the advice: " + JSON.stringify(privateCall));
+var legacyCall = callDocument(".Legacy", legacyContract).diagnostics.filter(function (item) { return item.code === "FRONTEND_CALLSEQUENCE_PRIVATE"; });
+assertTrue(legacyCall.length === 1 && /accessibility property of Marketplace\.Legacy to Hidden\.$/.test(legacyCall[0].next),
+	"a classic sequence is told to change its accessibility property: " + JSON.stringify(legacyCall));
+assertTrue(callDocument("lib_Users.Me", referencedContract).diagnostics.length === 0, "a Hidden target is callable");
+
 print(JSON.stringify({
 	ok: true,
-	cases: ["valid", "unknown", "unavailable-schema", "relative-target"]
+	cases: ["valid", "unknown", "unavailable-schema", "relative-target", "private-flow", "private-sequence", "hidden-referenced"]
 }));

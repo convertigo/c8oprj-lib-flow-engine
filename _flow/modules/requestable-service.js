@@ -357,14 +357,26 @@
 					return null;
 				}
 			}
-			if (typeof dbo.getVariables !== "function") {
-				return null;
-			}
-			var schema = inputSchemaForVariables(dbo.getVariables());
-			return schema ? {
+			// the contract of a target without variables keeps who may call it: a frontend calls a Public or Hidden
+			// requestable only (a Private one answers "Unable to execute the requested requestable" outside the Studio)
+			var schema = typeof dbo.getVariables === "function" ? inputSchemaForVariables(dbo.getVariables()) : null;
+			var contract = {
 				target: targetPublic(target, env.currentProjectName(request)),
 				schema: schema
-			} : null;
+			};
+			try {
+				if (typeof dbo.getAccessibility === "function" && dbo.getAccessibility() !== null && dbo.getAccessibility() !== undefined) {
+					contract.accessibility = String(dbo.getAccessibility());
+				}
+			} catch (_noAccessibility) {
+			}
+			try {
+				if (typeof dbo.getAuthenticatedContextRequired === "function") {
+					contract.authenticatedContextRequired = booleanValue(dbo.getAuthenticatedContextRequired());
+				}
+			} catch (_noAuthentication) {
+			}
+			return contract;
 		} catch (_unavailableContract) {
 			return null;
 		}
