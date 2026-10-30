@@ -2073,6 +2073,15 @@
 		});
 	}
 
+	// The Convertigo workspace (Engine.USER_WORKSPACE_PATH), __flowWorkspaceDir in standalone tests; null without one.
+	function workspaceDir() {
+		if (typeof __flowWorkspaceDir !== "undefined" && String(__flowWorkspaceDir).trim() !== "") {
+			return new File(String(__flowWorkspaceDir));
+		}
+		var workspace = EngineClass.USER_WORKSPACE_PATH;
+		return typeof workspace === "string" || workspace instanceof JavaString ? new File(String(workspace)) : null;
+	}
+
 	function resourceServiceEnv() {
 		return {
 			sources: sourceView(currentActiveRequest()),
@@ -2082,6 +2091,7 @@
 			FileUtils: FileUtils,
 			raise: raise,
 			projectDir: projectDir,
+			workspaceDir: workspaceDir,
 			canonicalPath: canonicalPath,
 			normalizeResourcePath: normalizeResourcePath,
 			isAllowedResourcePath: isAllowedResourcePath,

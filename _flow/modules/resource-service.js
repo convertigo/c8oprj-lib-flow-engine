@@ -440,15 +440,119 @@
 		};
 	}
 
+	// The resources a patch or an import may create; the others have their own creation APIs (blocks, fragments, frontends).
+	var CREATABLE_KINDS = ["javaSource", "jarsDescriptor", "projectDocument", "publicResource", "flowResource", "frontendBlock", "httpIgnore"];
+	var IMPORT_MAX_BYTES = 5000000;
+	// Folders of the Convertigo workspace that hold its configuration, keys, tokens and logs: never a source to import.
+	var IMPORT_PRIVATE_FOLDERS = ["configuration", "certificates", "jwt", "studio", "logs", "cache", "minime", "temp", "tmp"];
+
+	function filled(value) {
+		return value !== undefined && value !== null && String(value).trim() !== "";
+	}
+
+	// A file of the Convertigo workspace, named by a path relative to it (or absolute inside it), symbolic links resolved.
+	function workspaceImportSource(fromFile, env) {
+		var root = env.workspaceDir();
+		if (!root || !root.isDirectory()) {
+			env.raise("WORKSPACE_UNAVAILABLE", "The Convertigo workspace is unavailable: fromFile cannot be read.");
+		}
+		var Paths = java.nio.file.Paths, Files = java.nio.file.Files;
+		var rootPath = root.toPath().toRealPath();
+		var requested = Paths.get(String(fromFile).trim());
+		var candidate = (requested.isAbsolute() ? requested : rootPath.resolve(requested)).normalize();
+		if (!Files.isRegularFile(candidate)) {
+			env.raise("RESOURCE_IMPORT_SOURCE_MISSING", "fromFile is not a file of the Convertigo workspace: " + String(fromFile),
+				null, "Pass the path of the file relative to the workspace, for example notes/guide.md.");
+		}
+		var real = candidate.toRealPath();
+		if (!real.startsWith(rootPath) || real.equals(rootPath)) {
+			env.raise("RESOURCE_IMPORT_SOURCE_OUTSIDE_WORKSPACE", "fromFile must be a file of the Convertigo workspace: " + String(fromFile));
+		}
+		var segments = String(rootPath.relativize(real)).replace(/\\/g, "/").split("/");
+		if (segments.some(function (segment) { return segment.charAt(0) === "."; })
+				|| (segments.length > 1 && IMPORT_PRIVATE_FOLDERS.indexOf(segments[0]) !== -1)) {
+			env.raise("RESOURCE_IMPORT_SOURCE_PRIVATE", "fromFile is in a private part of the workspace: " + segments.join("/"),
+				null, "Import a document of the workspace, outside hidden folders and " + IMPORT_PRIVATE_FOLDERS.join(", ") + ".");
+		}
+		return { path: real, relativePath: segments.join("/") };
+	}
+
+	// A file of the workspace written into a project resource as it is, byte for byte, without the normalization of the
+	// lines of a patch or of content. An existing resource is replaced only with the hash read by resource.get.
+	function importFile(request, env) {
+		var entry = projectResourceFile(request.path, false, env);
+		var created = !isFile(entry.file, env);
+		var kind = env.resourceKind(entry.path);
+		if (entry.path === ".httpignore") {
+			env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore is changed by a patch only, not imported.");
+		}
+		if (created && CREATABLE_KINDS.indexOf(kind) === -1) {
+			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + entry.path);
+		}
+		var oldContent = created ? "" : sourceForFile(entry.file, env);
+		var oldHash = env.sha256Hex(oldContent);
+		if (!created && !filled(request.baseHash)) {
+			env.raise("RESOURCE_BASE_HASH_REQUIRED", "fromFile replaces the whole text of " + entry.path + ": pass baseHash, the hash flow-resource-get returned.",
+				null, "Read it with flow-resource-get, then import with baseHash set to its hash; or import to a new path.");
+		}
+		if (filled(request.baseHash) && String(request.baseHash) !== oldHash) {
+			env.raise("RESOURCE_BASE_HASH_MISMATCH", "Flow resource changed since it was read: " + entry.path,
+				null, "Read the resource again and import with the new hash.");
+		}
+		var source = workspaceImportSource(request.fromFile, env);
+		var Files = java.nio.file.Files;
+		var size = Number(Files.size(source.path));
+		if (size > IMPORT_MAX_BYTES) {
+			env.raise("RESOURCE_IMPORT_TOO_LARGE", "fromFile has " + size + " bytes, more than the " + IMPORT_MAX_BYTES + " a resource import takes.");
+		}
+		var bytes = Files.readAllBytes(source.path);
+		var content = String(new java.lang.String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+		var validation = request.validate === false
+			? { ok: true, skipped: true }
+			: validateResourceContent(entry.path, content, env);
+		var newHash = env.sha256Hex(content);
+		var same = !created && Files.isRegularFile(entry.file.toPath()) && java.util.Arrays.equals(Files.readAllBytes(entry.file.toPath()), bytes);
+		if (request.dryRun !== true && !same) {
+			var target = entry.file.toPath();
+			Files.createDirectories(target.getParent());
+			var staged = target.resolveSibling("." + target.getFileName() + ".flow-import-" + java.util.UUID.randomUUID() + ".tmp");
+			try {
+				Files.write(staged, bytes);
+				try {
+					Files.move(staged, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				} catch (atomicUnavailable) {
+					Files.move(staged, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+				}
+			} finally {
+				Files.deleteIfExists(staged);
+			}
+		}
+		return {
+			ok: true,
+			path: entry.path,
+			fromFile: source.relativePath,
+			bytes: bytes.length,
+			dryRun: request.dryRun === true,
+			created: created,
+			oldHash: oldHash,
+			newHash: newHash,
+			changed: !same,
+			validation: validation
+		};
+	}
+
 	function patch(request, env) {
 		request = request || {};
+		if (filled(request.fromFile)) {
+			return importFile(request, env);
+		}
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
 		var fromWorkingCopy = request.baseContent !== undefined && request.baseContent !== null;
 		// A Java source, the jar descriptor, a project document (docs/) or a public resource is created by a patch from
 		// an empty file (--- /dev/null); the other resources have their own creation APIs (blocks, fragments, frontends).
 		var entry = projectResourceFile(request.path, false, env);
 		var created = !fromWorkingCopy && !isFile(entry.file, env);
-		if (created && ["javaSource", "jarsDescriptor", "projectDocument", "publicResource", "flowResource", "frontendBlock", "httpIgnore"].indexOf(env.resourceKind(entry.path)) === -1) {
+		if (created && CREATABLE_KINDS.indexOf(env.resourceKind(entry.path)) === -1) {
 			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + entry.path);
 		}
 		var oldContent = fromWorkingCopy ? String(request.baseContent) : created ? "" : sourceForFile(entry.file, env);
