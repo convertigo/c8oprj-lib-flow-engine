@@ -36,7 +36,7 @@ var SOURCE = [
 	"        connection: shop",
 	"        sql: >-",
 	"          SELECT U.ID AS \"id\", U.NOM AS \"nom\"",
-	"          FROM PCA_UTILISATEUR U",
+	"          FROM SHOP_USER U",
 	"",
 	"          WHERE (:email = '' OR U.EMAIL = :email)",
 	"        parameters:",
@@ -44,7 +44,7 @@ var SOURCE = [
 	"    writes:",
 	"      posteInsert:",
 	"        operation: insert",
-	"        table: PCA_POSTE",
+	"        table: SHOP_ITEM",
 	"",
 	"# end of the configuration",
 	""
@@ -90,12 +90,12 @@ assert(removed.sourceEdit === "minimal" && diff.added.length === 0 && diff.remov
 	"the lines of the removed key: " + JSON.stringify(diff));
 
 // A merge of a new branch, a value replaced by another type, a new mapping at the root.
-var merged = mutate(SOURCE, { op: "merge", path: "config.sql.writes", value: { utilisateurInsert: { operation: "insert", table: "PCA_UTILISATEUR" } } });
+var merged = mutate(SOURCE, { op: "merge", path: "config.sql.writes", value: { userInsert: { operation: "insert", table: "SHOP_USER" } } });
 diff = changed(SOURCE, merged.source);
-assert(merged.sourceEdit === "minimal" && diff.removed.length === 0 && diff.added.length === 3 && diff.added[0] === "      utilisateurInsert:" &&
+assert(merged.sourceEdit === "minimal" && diff.removed.length === 0 && diff.added.length === 3 && diff.added[0] === "      userInsert:" &&
 	diff.line === 31, "the new write under writes, in the writes: " + JSON.stringify(diff));
 var expectedMerge = parse(SOURCE);
-expectedMerge.config.sql.writes.utilisateurInsert = { operation: "insert", table: "PCA_UTILISATEUR" };
+expectedMerge.config.sql.writes.userInsert = { operation: "insert", table: "SHOP_USER" };
 assert(JSON.stringify(parse(merged.source)) === JSON.stringify(expectedMerge), "merge as the definition says");
 var retyped = mutate(SOURCE, { op: "set", path: "config.sql.queries.users.parameters", value: [{ name: "email", type: "string" }, { name: "nom", type: "string" }] });
 var expectedRetyped = parse(SOURCE);
