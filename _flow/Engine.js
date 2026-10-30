@@ -1569,7 +1569,8 @@
 			clearVirtualDefinitions: clearVirtualDefinitions,
 			frontendDocumentServerCount: frontendDocumentServerCount,
 			clearFrontendProviderState: clearFrontendProviderState,
-			sourceMemoInfo: sourceMemoInfo
+			sourceMemoInfo: sourceMemoInfo,
+			frontendDescriptorsInfo: frontendDescriptorsInfo
 		};
 	}
 
@@ -5880,20 +5881,36 @@
 	// and the fingerprint of what they are read from stay the same; each caller gets a copy.
 	var FRONTEND_DESCRIPTORS_CACHE_SIZE = 16;
 	var frontendDescriptorsCache = new java.util.concurrent.ConcurrentHashMap();
+	var frontendDescriptorsStats = { hits: 0, misses: 0 };
+
+	function frontendDescriptorsInfo() {
+		return {
+			name: "frontendDescriptors",
+			size: Number(frontendDescriptorsCache.size()),
+			hits: frontendDescriptorsStats.hits,
+			misses: frontendDescriptorsStats.misses
+		};
+	}
 
 	function frontendCachedDescriptors(kind, name, settings, load) {
 		var key;
 		try {
 			var root = projectDir();
-			key = [kind, name, root ? canonicalPath(root) : "", JSON.stringify(settings || {}),
-				frontendCatalogService().descriptorsFingerprintForSettings(name, settings, frontendCatalogServiceEnv())].join("\n");
+			// The descriptors read no page: the drafts of the routes are left out of their key, as of the catalog key of
+			// the provider (frontendCatalogCacheKey), or each check of a page draft would read them all again.
+			key = withActiveRequest(withoutRouteDrafts(currentActiveRequest()), function () {
+				return [kind, name, root ? canonicalPath(root) : "", JSON.stringify(settings || {}),
+					frontendCatalogService().descriptorsFingerprintForSettings(name, settings, frontendCatalogServiceEnv())].join("\n");
+			});
 		} catch (e) {
 			return load();
 		}
 		var cached = frontendDescriptorsCache.get(key);
 		if (cached !== null) {
+			frontendDescriptorsStats.hits++;
 			return JSON.parse(String(cached));
 		}
+		frontendDescriptorsStats.misses++;
 		var result = load();
 		if (frontendDescriptorsCache.size() >= FRONTEND_DESCRIPTORS_CACHE_SIZE) {
 			frontendDescriptorsCache.clear();
@@ -8519,21 +8536,23 @@
 		return hasNoSourceWorkingCopies(request) ? "" : sourceView(request).fingerprint();
 	}
 
-	// The block catalog (blocks, types, traits and what they depend on) reads no executable Flow: the working copies of
-	// the Flows are left out of its key, or each edit of a Flow would load the whole catalog again, the core one
-	// included, for every call until the Flow is saved. A working copy of a block, a type or a trait still changes it.
+	// The block catalog (blocks, types, traits and what they depend on) reads no executable Flow and no source of a
+	// frontend builder: the working copies of the Flows, pages and components are left out of its key, or each edit of
+	// one would load the whole catalog again, the core one included, for every call until it is saved (a frontend
+	// code-set checks its source as a working copy). A working copy of a block, a type or a trait still changes it.
 	function catalogSourceDraftsFingerprint() {
 		var request = currentActiveRequest();
-		return hasNoSourceWorkingCopies(request) ? "" : sourceView(withoutFlowSourceDrafts(request)).fingerprint();
+		return hasNoSourceWorkingCopies(request) ? "" : sourceView(withoutSourceDrafts(request, function (path) {
+			return isFlowSourcePath(path) || isFrontendBuilderSourcePath(path);
+		})).fingerprint();
 	}
 
 	function isFlowSourcePath(path) {
 		return ("/" + String(path || "").replace(/\\/g, "/")).indexOf("/" + sourcePaths().flows + "/") !== -1;
 	}
 
-	// The working copies a source view of the request holds, those of the executable Flows left out.
-	function withoutFlowSourceDrafts(request) {
-		return withoutSourceDrafts(request, isFlowSourcePath);
+	function isFrontendBuilderSourcePath(path) {
+		return ("/" + String(path || "").replace(/\\/g, "/")).indexOf("/" + sourcePaths().path("frontbuilder") + "/") !== -1;
 	}
 
 	// The working copies (writes and removals) a source view of the request holds, those of the excluded paths left out.

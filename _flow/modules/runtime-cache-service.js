@@ -119,6 +119,7 @@
 				expressions: cacheSummary("expressions", caches.expressionTokens, env),
 				expressionPrograms: cacheSummary("expressionPrograms", caches.expressionPrograms, env),
 				flowCodeValidations: caches.flowCodeValidations ? cacheSummary("flowCodeValidations", caches.flowCodeValidations, env) : { name: "flowCodeValidations" },
+				frontendDescriptors: env.frontendDescriptorsInfo ? env.frontendDescriptorsInfo() : { name: "frontendDescriptors" },
 				sourceMemo: env.sourceMemoInfo ? env.sourceMemoInfo() : { name: "sourceMemo" }
 			}
 		};
