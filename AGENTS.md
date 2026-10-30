@@ -356,6 +356,17 @@ during the POC. Put project-level bindings and config defaults there. Keep
 Flow-local fallback defaults in `_flow.config`; use explicit request config or
 `config.use` when a call must override the project configuration.
 
+A configuration mutation (`config.mutate`, an engine palette item) edits
+`engine.yaml` minimally (`modules/yaml-source-edit.js`): the lines of what it
+changes are written again by Jackson at their indentation, a new key goes after
+the last key of its mapping, and every other line stays as it is (comments,
+blank lines, quotes, block scalars, flow collections), so the line numbers an
+agent read stay right outside the change. The edited text must parse to the new
+definition exactly; otherwise (tabs, CR, documents, anchors, keys the editor
+does not read) the whole definition is written again as before. Responses say
+which with `sourceEdit` (`minimal` or `rewritten`) and give the new hash
+(`newHash`, `revision`): patch the next change from them.
+
 `_flow.config` contains literal Flow-local **defaults**, not dynamic expressions.
 The effective root-key precedence is Flow defaults, then project `engine.yaml`
 config, then explicit request config. A winning root branch replaces the older

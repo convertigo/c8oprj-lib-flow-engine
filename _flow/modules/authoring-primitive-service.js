@@ -164,7 +164,9 @@
 		}
 		var full = base.concat(parts);
 		var before = copy(valueAt(definition, full));
-		var mutated = env.applyEngineMutation(source, { op: op, path: full.join("."), value: request.value });
+		var applied = env.applyEngineMutation(source, { op: op, path: full.join("."), value: request.value });
+		// the lines of engine.yaml the change does not touch are kept (sourceEdit "minimal"), else it is written again
+		var mutated = typeof applied === "string" ? applied : String(applied.source);
 		var after = copy(valueAt(env.parseYamlSource(mutated, "version: 1\n") || {}, full));
 		var result = {
 			ok: true,
@@ -180,6 +182,9 @@
 			persisted: "none",
 			dryRun: persist === "none"
 		};
+		if (applied && typeof applied === "object" && applied.sourceEdit) {
+			result.sourceEdit = applied.sourceEdit;
+		}
 		if (persist === "none" || !result.changed) {
 			return result;
 		}

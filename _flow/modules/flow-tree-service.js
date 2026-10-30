@@ -7529,7 +7529,8 @@
 		if (definition.version === undefined || definition.version === null) {
 			definition.version = 1;
 		}
-		var yamlSource = toYamlSource(definition);
+		var engineEdit = target === "engine" ? engineSourceFor(request.engineSource, definition) : null;
+		var yamlSource = engineEdit ? engineEdit.source : toYamlSource(definition);
 		var source = target === "flow" && renderFlowScript
 			? renderFlowScript(blocks, String(request.name || request.flowName || "Flow"), yamlSource, { includeHeader: false })
 			: yamlSource;
@@ -7552,6 +7553,7 @@
 			children: tree.children
 		};
 		if (native && native.normalizations.length) out.normalizations = native.normalizations;
+		if (engineEdit) out.sourceEdit = engineEdit.sourceEdit;
 		if (renamedNodes.length) out.renamedNodes = renamedNodes;
 		if (target === "flow") {
 			out.analysis = analyzeFlowSource(blocks, source);
@@ -7582,6 +7584,18 @@
 			selectionMutationPath: mutation.selectionMutationPath,
 			value: payload
 		};
+	}
+
+	// engine.yaml as a mutation leaves it: the lines of what changed, the others kept as they are (yaml-source-edit.js),
+	// or, for a text that cannot be edited so, the whole definition written again (sourceEdit "rewritten")
+	function engineSourceFor(oldSource, definition) {
+		var editor = typeof env.yamlSourceEdit === "function" ? env.yamlSourceEdit() : null;
+		var edited = editor && oldSource !== undefined && oldSource !== null
+			? editor.minimalEdit(String(oldSource), definition, { parseYamlSource: parseYamlSource, toYamlSource: toYamlSource, normalizeTree: normalizeTree })
+			: null;
+		return edited !== null && edited !== undefined
+			? { source: edited, sourceEdit: "minimal" }
+			: { source: toYamlSource(definition), sourceEdit: "rewritten" };
 	}
 
 	function applyEngineMutationRequest(request, blocks, mutations) {
@@ -7616,7 +7630,8 @@
 		if (!definition.engineQName) {
 			definition.engineQName = "lib_flow_engine.Engine";
 		}
-		var source = toYamlSource(definition);
+		var engineEdit = engineSourceFor(oldSource === fallback ? null : oldSource, definition);
+		var source = engineEdit.source;
 		if (request.dryRun !== true && request.write !== false && request.persist !== false) {
 			FileUtils.forceMkdir(file.getParentFile());
 			FileUtils.writeStringToFile(file, source, "UTF-8");
@@ -7640,6 +7655,7 @@
 			oldHash: env.sha256Hex ? env.sha256Hex(oldSource) : "",
 			newHash: env.sha256Hex ? env.sha256Hex(source) : "",
 			changed: oldSource !== source,
+			sourceEdit: engineEdit.sourceEdit,
 			written: request.dryRun === true || request.write === false || request.persist === false ? false : oldSource !== source,
 			selectionMutationPath: selectionMutationPath,
 			// Mutations accept JSON pointers; projected engine nodes use dotted paths.

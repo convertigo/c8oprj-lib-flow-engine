@@ -2156,7 +2156,8 @@
 			sha256Hex: sha256Hex,
 			parseYamlSource: parseYamlSource,
 			applyEngineMutation: function (source, mutation) {
-				return String(applyMutationRequest({ target: "engine", engineSource: source, mutations: [mutation], includeTree: false }, loadBlocks()).source);
+				var applied = applyMutationRequest({ target: "engine", engineSource: source, mutations: [mutation], includeTree: false }, loadBlocks());
+				return { source: String(applied.source), sourceEdit: applied.sourceEdit };
 			},
 			projectFlow: function (projectName, name) {
 				var app = convertigo.Engine.theApp;
@@ -5725,6 +5726,7 @@
 
 	function flowTreeServiceEnv() {
 		return {
+			yamlSourceEdit: function () { return loadEngineModule("yaml-source-edit.js"); },
 			nativeFlowMetadata: nativeFlowMetadata,
 			sources: sourceView(currentActiveRequest()),
 			sourceView: sourceView,
