@@ -510,6 +510,33 @@
 	var ARRAY_METHODS = ["includes", "indexOf", "lastIndexOf", "slice", "join", "concat", "at"];
 	var NUMBER_METHODS = ["toFixed", "toString", "toPrecision"];
 
+	function valueKind(value) {
+		if (Object.prototype.toString.call(value) === "[object Array]") {
+			return "a list";
+		}
+		if (typeof value === "number") {
+			return "a number";
+		}
+		if (typeof value === "boolean") {
+			return "a boolean";
+		}
+		if (typeof value === "string") {
+			return "a text";
+		}
+		return "an object";
+	}
+
+	function methodTypeHint(method, family, received) {
+		if (method === "split" && received === "a list") {
+			return "The value is already a list: use it as is, or join(\",\") it first if a text is needed. An input declared array receives a JSON array or a repeated parameter, never a text it would split.";
+		}
+		if (family === "list" && received === "a text") {
+			return "Declare the value as an array (an input of type array, a list block) or use a text method: " + STRING_METHODS.join(", ") + ".";
+		}
+		return "Text: " + STRING_METHODS.join(", ") + ". Lists: " + ARRAY_METHODS.join(", ") + ". Numbers: " + NUMBER_METHODS.join(", ") +
+			". Convert the value first (String(value), a list block) or use a block.";
+	}
+
 	// A method called on an absent value (null or undefined) gives a value instead of failing, as lower(value) does: the
 	// run reports it once per path and method (ctx.warn, the warnings of the run response), since a missing value
 	// silently turned into "" or false is how a check like `if (local.email == "")` lets a null through.
@@ -694,6 +721,15 @@
 			if (typeof receiver === "number" && NUMBER_METHODS.indexOf(method) !== -1) {
 				return Number.prototype[method].apply(receiver, values);
 			}
+			var family = STRING_METHODS.indexOf(method) !== -1 ? "text" : ARRAY_METHODS.indexOf(method) !== -1 ? "list"
+				: NUMBER_METHODS.indexOf(method) !== -1 ? "number" : "";
+			if (family) {
+				// a method of another type of value: the error names the type received
+				var received = valueKind(receiver);
+				env.raise("EXPRESSION_METHOD_TYPE_MISMATCH", method + " is a " + family + " method, " + (label ? "the value of " + label : "the value") +
+					" is " + received + (received === "a list" ? " (" + JSON.stringify(receiver).substring(0, 60) + ")" : "") + ".", null,
+					methodTypeHint(method, family, received));
+			}
 			env.raise("INVALID_EXPRESSION", "Unsupported method in an expression: " + method, null,
 				"Text: " + STRING_METHODS.join(", ") + ". Lists: " + ARRAY_METHODS.join(", ") + ". Numbers: " +
 				NUMBER_METHODS.join(", ") + ". Use a block for anything else.");
@@ -749,6 +785,10 @@
 					// trim(), toLowerCase() and toUpperCase() give "", the tests false: the value is reported, not refused
 					absentReceiver(runCtx, receiverPath, method, receiver,
 						method === "trim" || method === "toLowerCase" || method === "toUpperCase" ? "" : false);
+				} else if (/^\[object (?:Array|Object)\]$/.test(Object.prototype.toString.call(receiver))) {
+					// a list or an object is never read as its text: includes of a list is the one of the list, the
+					// text methods name the type received
+					return callMethod(receiver, method, values, runCtx, receiverPath);
 				}
 				if (method === "trim") {
 					return fns.trim(receiver);

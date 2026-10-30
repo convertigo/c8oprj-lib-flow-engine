@@ -754,6 +754,56 @@
 		return diagnostics;
 	}
 
+	// A text method called on a list, or a list method on a text, where the source tells the type: an error on an input
+	// declared array or string (the run converts it to that type, so the call always fails), a warning on a path whose
+	// schema the analysis gives (without analysis, the inputs only; with it, the other paths only).
+	function methodTypeDiagnostics(blocks, definition, analysis, env) {
+		var methods = env.expressionMethods;
+		if (!methods) return [];
+		var textOnly = methods.text.filter(function (name) { return methods.list.indexOf(name) === -1; });
+		var listOnly = methods.list.filter(function (name) { return methods.text.indexOf(name) === -1; });
+		var diagnostics = [];
+		var seen = {};
+		nodeExpressions(blocks, definition, env, function (text, node) {
+			var tokens;
+			try { tokens = env.inputExpressionTokens(String(text)) || []; } catch (_invalidExpressionAlreadyDiagnosed) { return; }
+			var line = node && node.__flowScriptLine || 0;
+			tokens.forEach(function (token, index) {
+				var next = tokens[index + 1];
+				if (token.type !== "id" || !next || next.type !== "op" || next.value !== "(") return;
+				var value = String(token.value);
+				var dot = value.lastIndexOf(".");
+				var receiver = dot > 0 ? value.substring(0, dot) : "";
+				var method = value.substring(dot + 1);
+				var family = textOnly.indexOf(method) !== -1 ? "text" : listOnly.indexOf(method) !== -1 ? "list" : "";
+				if (!family || !SCOPE_PATH.test(receiver)) return;
+				var input = /^input\.[A-Za-z_$][\w$]*$/.test(receiver);
+				if (input === !!analysis) return;
+				var types = pathTypes(receiver, definition, analysis, env).filter(function (type) { return type !== "null"; });
+				var actual = types.length === 1 ? types[0] : "";
+				var wrong = family === "text" ? actual === "array" : actual === "string";
+				if (!wrong || seen[receiver + "\n" + method + "\n" + line]) return;
+				seen[receiver + "\n" + method + "\n" + line] = true;
+				var declared = input ? "declared " + actual : "its schema says " + actual;
+				diagnostics.push({
+					severity: input ? "error" : "warning",
+					code: family === "text" ? "FLOWSCRIPT_TEXT_METHOD_ON_LIST" : "FLOWSCRIPT_LIST_METHOD_ON_TEXT",
+					line: line,
+					path: receiver,
+					method: method,
+					expected: family === "text" ? "string" : "array",
+					actual: actual,
+					message: method + " is a " + family + " method, but " + receiver + " is " + (family === "text" ? "a list" : "a text") + " (" + declared + ").",
+					next: family === "text"
+						? (method === "split" ? receiver + " is already a list: use it as is (list blocks, " + receiver + ".join(\",\") for a text)." :
+							"Use a list method (" + methods.list.join(", ") + ") or a list block, or join the list into a text first.")
+						: "Use a text method (" + textOnly.slice(0, 8).join(", ") + "...), or declare " + receiver + " as an array if it is a list."
+				});
+			});
+		});
+		return diagnostics;
+	}
+
 	function maxDiagnostics(request) {
 		request = request || {};
 		var value = request.maxDiagnostics !== undefined && request.maxDiagnostics !== null && request.maxDiagnostics !== ""
@@ -821,6 +871,9 @@
 		hardCodedServiceUrlDiagnostics(code).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
+		if (request.blockMode !== true) methodTypeDiagnostics(activeBlocks, definition, null, env).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
 		var clean = env.stripFlowScriptMetadata(definition);
 		var source = env.sourceFromDefinition(clean);
 		var ok = diagnostics.filter(function (diagnostic) {
@@ -831,7 +884,8 @@
 			analysisDiagnostics(activeBlocks, analysis, env).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
-			nullableValueDiagnostics(activeBlocks, definition, analysis, env).forEach(function (diagnostic) {
+			nullableValueDiagnostics(activeBlocks, definition, analysis, env).concat(
+				methodTypeDiagnostics(activeBlocks, definition, analysis, env)).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
 		}
@@ -856,6 +910,7 @@
 		validateDefinition: validateDefinition,
 		analysisDiagnostics: analysisDiagnostics,
 		nullableValueDiagnostics: nullableValueDiagnostics,
+		methodTypeDiagnostics: methodTypeDiagnostics,
 		diagnosticReport: diagnosticReport,
 		validateRequest: validateRequest
 	};

@@ -4237,6 +4237,7 @@
 	function flowScriptValidationEnv() {
 		return {
 			inputExpressionTokens: function (text) { return expressionUtils().tokenize(text, expressionUtilsEnv()); },
+			expressionMethods: expressionUtils().methods,
 			templateSyntax: templateSyntax(),
 			nativePropertyContract: nativePropertyContract,
 			typeConversion: loadEngineModule("type-conversion.js"),

@@ -122,7 +122,11 @@
 			: kindOf(value) === "string" && parseJson(value, "array") !== undefined ? parseJson(value, "array")
 			: [value];
 		var out = [];
-		var warning;
+		// a single value is a list of one item (an HTTP parameter sent once); a text that reads as a delimited list is
+		// one too, which the caller rarely means: said, never split
+		var warning = kindOf(value) === "string" && items.length === 1 && items[0] === value && /[,;]/.test(value)
+			? "Expected a list, received " + describe(value) + ": it is a list of one item. Send a JSON array or repeat the parameter; text.split cuts a text."
+			: undefined;
 		for (var i = 0; i < items.length; i++) {
 			var item = schema && schema.items ? convert(items[i], schema.items) : ok(items[i]);
 			if (!item.ok) {

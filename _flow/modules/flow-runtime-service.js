@@ -1812,7 +1812,7 @@
 			}));
 		}
 
-		function typedInputs(input, definition, contract, byReference) {
+		function typedInputs(input, definition, contract, byReference, frameState) {
 			var profiler = env.allocationTrace && env.allocationTrace();
 			var phase = profiler ? profiler.open("runtime", "input-contract", "") : null;
 			try {
@@ -1855,6 +1855,10 @@
 				if (!converted.ok) {
 					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + ": " + converted.message,
 						"Send a value of type " + declaredTypes.join(" or ") + ".");
+				}
+				if (converted.warning && frameState) {
+					(frameState.warnings || (frameState.warnings = [])).push({ severity: "warning", code: "FLOW_INPUT_CONVERTED", path: "input." + name,
+						message: "Input " + name + " (" + declaredTypes.join(" or ") + "): " + converted.warning, count: 1 });
 				}
 				input[name] = converted.value;
 			});
@@ -1912,7 +1916,8 @@
 			var scopesStarted = frameProfile ? nanoTime() : 0;
 			var scopes = {
 				request: requestScope,
-				input: typedInputs(frameScopeValue(request, "input"), definition, plan && plan.inputContract, request.__directInvocation === true),
+				input: typedInputs(frameScopeValue(request, "input"), definition, plan && plan.inputContract, request.__directInvocation === true,
+					frameState),
 				local: {},
 				result: {},
 				trace: request.includeTrace === false ? null : { nodes: [] },
