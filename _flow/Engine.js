@@ -3324,8 +3324,18 @@
 			loadFlowScriptBlockFile: loadFlowScriptBlockFile,
 			flowProviderName: flowProviderName,
 			getBlockSource: getBlockSource,
-			duplicateBlockCodeSource: duplicateBlockCodeSource
+			duplicateBlockCodeSource: duplicateBlockCodeSource,
+			blockWritten: projectBlockWritten
 		};
+	}
+
+	// The engine writes a project block file itself (block code-set, code-patch, create, edit, duplicate): Convertigo
+	// did not write it, so it is told, as for the sources the Studio and the MCP write. The other runtimes of the server
+	// then drop what they compiled with the previous block (the run plans of the Flows calling it), instead of running it
+	// until their next probe of the files, at most once a minute. This runtime clears its own catalog at once.
+	function projectBlockWritten(file) {
+		invalidateBlockCatalogCaches();
+		notifySourceMutation({ projectDir: String(projectDir() || ""), path: String(file.getAbsolutePath()) });
 	}
 
 	function canonicalBlockDefinition(name, request) {

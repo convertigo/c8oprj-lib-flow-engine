@@ -28,6 +28,8 @@
 		var loadFlowScriptBlockFile = env.loadFlowScriptBlockFile;
 		var flowProviderName = env.flowProviderName;
 		var getBlockSource = env.getBlockSource;
+		// tells the runtimes of the server that a project block file changed (Engine.js projectBlockWritten)
+		var blockWritten = env.blockWritten || function () {};
 		var duplicateBlockCodeSource = env.duplicateBlockCodeSource;
 
 		function canonicalBlockDefinition(name, request) {
@@ -166,6 +168,7 @@
 			}
 			codeFile.getParentFile().mkdirs();
 			FileUtils.writeStringToFile(codeFile, compiled.code, "UTF-8");
+			blockWritten(codeFile);
 			if (blocks[name]) {
 				delete blocks[name];
 			}
