@@ -118,6 +118,7 @@
 				frontendProvider: frontendProviderInfo(env),
 				expressions: cacheSummary("expressions", caches.expressionTokens, env),
 				expressionPrograms: cacheSummary("expressionPrograms", caches.expressionPrograms, env),
+				flowCodeValidations: caches.flowCodeValidations ? cacheSummary("flowCodeValidations", caches.flowCodeValidations, env) : { name: "flowCodeValidations" },
 				sourceMemo: env.sourceMemoInfo ? env.sourceMemoInfo() : { name: "sourceMemo" }
 			}
 		};
@@ -143,6 +144,7 @@
 		env.cacheUtils.clearBoundedMap(caches.expressionTokens);
 		env.cacheUtils.clearBoundedMap(caches.expressionPrograms);
 		if (caches.sourceMemo) env.cacheUtils.clearBoundedMap(caches.sourceMemo);
+		if (caches.flowCodeValidations) env.cacheUtils.clearBoundedMap(caches.flowCodeValidations);
 		Object.keys(env.runtimeState.sourceMemoStats || {}).forEach(function (kind) {
 			delete env.runtimeState.sourceMemoStats[kind];
 		});

@@ -1,4 +1,5 @@
-// Read-only code access must not run analysis hooks; an explicit check still must.
+// Read-only code access must not run analysis hooks; an explicit check still must, once for a revision: the next checks
+// of the same code and revisions reuse it (flow-code-validation-reuse).
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-single-analysis-").toFile();
@@ -41,20 +42,22 @@ try {
 	equal(full.revision, saved.revision, "Diagnostic read changed revision");
 	assert(full.diagnostics instanceof Array, "Diagnostic read lost diagnostics");
 	var officialCheck = call("flowCodeCheck", { name: "Counted", draft: false }, 1);
-	var namedCheck = call("flowCodeCheck", { name: "Counted", draft: true }, 1);
-	var inlineCheck = call("flowCodeCheck", { name: "Counted", code: code }, 1);
+	// Without a working copy the named check is the saved revision, and the inline code is the same: checked already.
+	var namedCheck = call("flowCodeCheck", { name: "Counted", draft: true }, 0);
+	var inlineCheck = call("flowCodeCheck", { name: "Counted", code: code }, 0);
 	["diagnostics", "inputDefinitions", "inputVariables", "testCases"].forEach(function (key) {
 		equal(namedCheck[key], inlineCheck[key], "Named and inline check differ for " + key);
 		equal(officialCheck[key], inlineCheck[key], "Official and inline check differ for " + key);
 	});
 	equal(namedCheck.revision, saved.revision, "Check changed saved revision");
-	call("flowCodeCheck", { name: "Counted", draft: true }, 1);
+	call("flowCodeCheck", { name: "Counted", draft: true }, 0);
 	var draftCode = code.replace('default: "friend"', 'default: "draft"');
 	var draft = call("flowCodeSet", { name: "Counted", code: draftCode, revision: saved.revision }, 1);
 	var draftRead = call("flowCodeGet", { name: "Counted", draft: true }, 0);
 	equal(draftRead.revision, draft.revision, "Draft revision changed during read");
 	assert(draftRead.code.indexOf('"draft"') !== -1, "Working copy was ignored");
-	var draftCheck = call("flowCodeCheck", { name: "Counted", draft: true }, 1);
+	// code-set checked this working copy.
+	var draftCheck = call("flowCodeCheck", { name: "Counted", draft: true }, 0);
 	equal(draftCheck.revision, draft.revision, "Check ignored the working copy");
 	var originalRead = call("flowCodeGet", { name: "Counted", draft: false }, 0);
 	equal(originalRead.code, code, "Draft leaked into official source");

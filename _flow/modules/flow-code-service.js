@@ -43,6 +43,8 @@
 		var listProjectFlows = env.listProjectFlows;
 		var runFlowRequest = env.runFlowRequest;
 		var analyzeFlowSource = env.analyzeFlowSource;
+		// A check of the same code against the same revisions answers again (Engine.js flowCodeValidationMemo).
+		var flowCodeValidationMemo = env.flowCodeValidationMemo || function (blocks, request, name, code, build) { return build(); };
 		var normalizeTree = env.normalizeTree || function (value) { return value; };
 
 	function flowCodeName(request) {
@@ -291,10 +293,12 @@
 
 	function flowCodeValidate(blocks, request, name, code) {
 		try {
-			var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, {
-				name: name,
-				code: code
-			}));
+			var validation = flowCodeValidationMemo(blocks, request, name, code, function () {
+				return flowScriptValidateRequest(blocks, Object.assign({}, request, {
+					name: name,
+					code: code
+				}));
+			});
 			return {
 				validation: validation,
 				warnings: flowCodeDiagnostics(validation.diagnostics, "warning"),

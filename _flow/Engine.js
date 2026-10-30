@@ -275,7 +275,9 @@
 			expressionTokens: createRuntimeBoundedMapCacheState(4096),
 			expressionPrograms: createRuntimeBoundedMapCacheState(4096),
 			// the source memo of this runtime, for an engine that does not keep it for all its runtimes
-			sourceMemo: createRuntimeBoundedMapCacheState(2048)
+			sourceMemo: createRuntimeBoundedMapCacheState(2048),
+			// the checks of FlowScript working copies, by revision (flowCodeValidationMemo)
+			flowCodeValidations: createRuntimeBoundedMapCacheState(64)
 		}
 	};
 
@@ -4547,8 +4549,117 @@
 			listProjectFlows: listProjectFlows,
 			runFlowRequest: runFlowRequest,
 			analyzeFlowSource: analyzeFlowSource,
+			flowCodeValidationMemo: flowCodeValidationMemo,
 			normalizeTree: normalizeTree
 		};
+	}
+
+	var REPEATED_CALLS_DIAGNOSTIC = "FLOWSCRIPT_REPEATED_EXTERNAL_CALLS";
+
+	// A FlowScript checked once is not checked again while nothing it is checked against changes: code-set, code-check,
+	// code-run and code-promote of one revision analyse it once, where each check was about half of the call. Kept for
+	// this runtime as JSON text, each caller parsing its own copy, by the hash of the code and the options of the check,
+	// for the revision of its catalog and of what its analysis reads besides its code (flowCodeValidationRevision).
+	// Corrections for authoring (code-set, code-promote) only raise FLOWSCRIPT_REPEATED_EXTERNAL_CALLS to an error: a
+	// check with them and one without answer each other when the complete report has none.
+	function flowCodeValidationMemo(blocks, request, name, code, build) {
+		request = request || {};
+		var catalog = catalogMemoRevision(blocks);
+		if (catalog === null || !projectDir()) {
+			return build();
+		}
+		var key = sha256Hex(JSON.stringify([String(projectDir()), String(name || ""), String(request.flowQName || request.qname || ""),
+			sha256Hex(String(code === undefined || code === null ? "" : code)), flowCodeValidationOptions(request)]));
+		var revision = sha256Hex(catalog + "\n" + flowCodeValidationRevision(request, name));
+		var corrections = request.authoringCorrections === true;
+		var cache = runtimeState.caches.flowCodeValidations;
+		var kept = readRuntimeBoundedMapCache(cache, key, revision);
+		if (kept !== null && kept !== undefined) {
+			var entry = JSON.parse(String(kept));
+			if (entry.corrections === corrections || entry.neutral === true) {
+				return entry.validation;
+			}
+		}
+		var validation = build();
+		var neutral = !!validation && validation.hasMore !== true && !(validation.diagnostics || []).some(function (diagnostic) {
+			return diagnostic && diagnostic.code === REPEATED_CALLS_DIAGNOSTIC;
+		});
+		var text;
+		try {
+			text = JSON.stringify({ corrections: corrections, neutral: neutral, validation: validation });
+		} catch (notJson) {
+			text = undefined;
+		}
+		if (text !== undefined) {
+			writeRuntimeBoundedMapCache(cache, key, revision, new JavaString(text), "FlowScript checks");
+		}
+		return validation;
+	}
+
+	// What the request tells a check besides the code (flow-script-validation-service validateRequest, the analysis).
+	function flowCodeValidationOptions(request) {
+		var options = {};
+		["blockMode", "sourceVersion", "target", "block", "maxDiagnostics", "diagnosticLimit", "diagnosticsLimit", "strictInputContract",
+			"skipInputContractWarnings", "sourceBlockName", "blockName", "maxGraphBlockAnalysisDepth", "allowRequestableSchema",
+			"config", "engineQName"].forEach(function (key) {
+			if (request[key] !== undefined) {
+				options[key] = request[key];
+			}
+		});
+		return options;
+	}
+
+	// What the analysis of a Flow reads besides its code and its catalog (blocks, types, traits): the code of the engine,
+	// the configuration of the project and of its parents, its schemas and fragments (as generatedSchemaDependencies), the
+	// Flows saved in the project (the contract of a called Flow), the working copies of the request but the checked
+	// Flow, its tag context, the configuration of the project its HTTP request targets, the symbols, and the generations
+	// of the caches and of the data of the server (requestables, writes Convertigo is told about).
+	function flowCodeValidationRevision(request, name) {
+		var own = "";
+		try {
+			own = String(flowCodeFileName(name) || "");
+		} catch (invalidName) {
+			own = "";
+		}
+		// the working copy of the checked Flow is its code
+		var drafts = withoutSourceDrafts(request, function (path) {
+			var normalized = "/" + String(path).replace(/\\/g, "/");
+			return !!own && isFlowSourcePath(path) && normalized.slice(-(own.length + 1)) === "/" + own;
+		});
+		var root;
+		try {
+			root = requestRootLayer(request);
+		} catch (e) {
+			root = String(e && e.code || e);
+		}
+		var fragments = [directoryFingerprint(new File(projectDir(), sourcePaths().path("fragments"))), directoryFingerprint(new File(engineDir(), "fragments"))];
+		referencedProjectRoots(sourcePaths().path("fragments")).forEach(function (reference) {
+			fragments.push(directoryFingerprint(new File(reference, sourcePaths().path("fragments"))));
+		});
+		return [
+			engineCodeFingerprint(),
+			sha256Hex(JSON.stringify([loadProjectEngineDefinition(), projectConfigService().parentConfigs(projectConfigEnv())])),
+			directoryFingerprint(projectSchemasDir()),
+			fragments.join("\n"),
+			flowCodeBridgeGenerations(),
+			sharedRuntime && typeof sharedRuntime.symbolsGeneration === "function" ? String(sharedRuntime.symbolsGeneration()) : "",
+			directoryFingerprint(projectFlowsDir()),
+			hasNoSourceWorkingCopies(drafts) ? "" : sourceView(drafts).fingerprint(),
+			sha256Hex(JSON.stringify(request.tagContext || null)),
+			sha256Hex(JSON.stringify(root === undefined ? null : root))
+		].join("\n");
+	}
+
+	// The generations of the Flow caches (a cache clear) and of the data of every project (a project loaded or reloaded, a
+	// write Convertigo is told about), "" for a bridge without them.
+	function flowCodeBridgeGenerations() {
+		try {
+			return (typeof FlowEngineBridge.cacheGeneration === "function" ? String(FlowEngineBridge.cacheGeneration()) : "") + ":" +
+				(typeof FlowEngineBridge.dataGeneration === "function" ? String(FlowEngineBridge.dataGeneration()) : "") + ":" +
+				String(generatedSchemaEpoch().get());
+		} catch (e) {
+			return "";
+		}
 	}
 
 	function flowCodeName(request) {
