@@ -22,6 +22,7 @@ try {
 	});
 	var parser = eval(read(new java.io.File(engineDir, "modules/flow-script-parser-service.js")));
 	var env = {
+		templateSyntax: eval(read(new java.io.File(engineDir, "modules/template-syntax.js"))),
 		normalizeTree: function (value) { return value; },
 		parseYamlSource: function () { throw new Error("Expression-bearing object"); },
 		raise: function (code, message) { var e = new Error(message); e.code = code; throw e; }

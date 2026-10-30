@@ -361,6 +361,17 @@
 			}
 			return "Flow expressions support scope paths, literals, function calls, arithmetic/comparison/logical operators, ternary and ??; use blocks for object/array construction.";
 		}
+		// The escape sequence of a string whose backslash is at index slash, read as JavaScript does (template-syntax.js):
+		// "\r\n" used to give "r" and a line feed, "\uFEFF" the text uFEFF.
+		function readEscape(slash) {
+			var sequence = env.templateSyntax.escapeSequence(text, slash);
+			if (sequence.error) {
+				env.raise("INVALID_EXPRESSION", "Invalid escape in a string of the expression: " + sequence.error, null,
+					"Use the escapes of JavaScript: \\n, \\r, \\t, \\\\, \\\", \\', \\uXXXX (\\uFEFF), \\u{...} or \\xHH.");
+			}
+			i = sequence.end;
+			return sequence.value;
+		}
 		function isDigit(ch) {
 			return ch >= "0" && ch <= "9";
 		}
@@ -395,9 +406,8 @@
 					if (ch === quote) {
 						break;
 					}
-					if (ch === "\\" && i < text.length) {
-						var escaped = text.charAt(i++);
-						part += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
+					if (ch === "\\") {
+						part += readEscape(i - 1);
 					} else {
 						part += ch;
 					}
@@ -431,9 +441,8 @@
 					if (ch === quote) {
 						break;
 					}
-					if (ch === "\\" && i < text.length) {
-						var escaped = text.charAt(i++);
-						value += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
+					if (ch === "\\") {
+						value += readEscape(i - 1);
 					} else {
 						value += ch;
 					}

@@ -1,9 +1,26 @@
 (function () {
+	// Characters a reader cannot see, written as escapes: JSON.stringify writes a BOM, a zero-width space, a line or
+	// paragraph separator, a bidirectional control or a C1 control as the character itself, so a "\uFEFF" read from
+	// the source used to come back invisible. A lone surrogate is escaped by JSON.stringify already.
+	var INVISIBLE_CHARACTERS = /[\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]/g;
+
+	function escapeInvisible(text) {
+		return String(text).replace(INVISIBLE_CHARACTERS, function (ch) {
+			return "\\u" + ("000" + ch.charCodeAt(0).toString(16).toUpperCase()).slice(-4);
+		});
+	}
+
+	// JSON.stringify for a FlowScript source: the same literal, its invisible characters escaped.
+	function sourceLiteral(value) {
+		var text = JSON.stringify(value);
+		return text === undefined ? text : escapeInvisible(text);
+	}
+
 	function flowScriptString(value, env) {
 		if (value === undefined) {
 			return "null";
 		}
-		return JSON.stringify(env.normalizeTree(value));
+		return sourceLiteral(env.normalizeTree(value));
 	}
 
 	// Canonical source layout only. Leaf rendering stays with the value-intent
@@ -15,7 +32,7 @@
 		var open = array ? "[" : "{", close = array ? "]" : "}";
 		if (!keys.length) return open + close;
 		return open + "\n" + keys.map(function (key) {
-			var prefix = array ? "" : (quotedKeys ? JSON.stringify(key) : flowScriptObjectKey(key)) + ": ";
+			var prefix = array ? "" : (quotedKeys ? sourceLiteral(key) : flowScriptObjectKey(key)) + ": ";
 			return indent + "  " + prefix + flowScriptCompound(value[key], indent + "  ", leaf, quotedKeys) + ",";
 		}).join("\n") + "\n" + indent + close;
 	}
@@ -23,14 +40,14 @@
 	function flowScriptInlineValue(value, env, indent) {
 		value = env.normalizeTree(value);
 		if (value && typeof value === "object") {
-			return flowScriptCompound(value, indent || "", JSON.stringify, true);
+			return flowScriptCompound(value, indent || "", sourceLiteral, true);
 		}
 		return flowScriptString(value, env);
 	}
 
 	function flowScriptObjectKey(key) {
 		key = String(key || "");
-		return key.match(/^[A-Za-z_$][\w$]*$/) ? key : JSON.stringify(key);
+		return key.match(/^[A-Za-z_$][\w$]*$/) ? key : sourceLiteral(key);
 	}
 
 	function renderFlowScriptTemplateValue(value, locals, env, indent) {
@@ -58,7 +75,7 @@
 			return renderFlowScriptTemplateLiteral(value, locals, env);
 		}
 		var text = syntax.literalText(value);
-		return JSON.stringify(text === null ? value : text);
+		return sourceLiteral(text === null ? value : text);
 	}
 
 	function flowScriptTopLevelMeta(name, value, lines, env) {
@@ -66,7 +83,7 @@
 		if (!value || typeof value !== "object" || Object.keys(value).length === 0) {
 			return;
 		}
-		lines.push("const _" + name + " = " + flowScriptCompound(value, "", JSON.stringify, true));
+		lines.push("const _" + name + " = " + flowScriptCompound(value, "", sourceLiteral, true));
 		lines.push("");
 	}
 
@@ -87,21 +104,25 @@
 		return Object.keys(replacements).length ? env.rewriteExpressionReferences(expr, replacements) : expr;
 	}
 
-	// Line endings are escaped: the statement parser trims physical lines.
+	// Line endings are escaped: the statement parser trims physical lines. Other controls and invisible characters
+	// are escaped too, as in a quoted string.
 	function flowScriptTemplateLiteralPart(text) {
-		return String(text || "")
+		return escapeInvisible(String(text || "")
 			.replace(/\\/g, "\\\\")
 			.replace(/`/g, "\\`")
 			.replace(/\$\{/g, "\\${")
 			.replace(/\n/g, "\\n")
 			.replace(/\r/g, "\\r")
-			.replace(/\t/g, "\\t");
+			.replace(/\t/g, "\\t")
+			.replace(/[\u0000-\u001F]/g, function (ch) {
+				return "\\u" + ("000" + ch.charCodeAt(0).toString(16).toUpperCase()).slice(-4);
+			}));
 	}
 
 	function renderFlowScriptTemplateLiteral(text, locals, env) {
 		var parts = env.templateSyntax.parts(text);
 		if (!parts) {
-			return JSON.stringify(String(text));
+			return sourceLiteral(String(text));
 		}
 		return "`" + parts.map(function (part) {
 			return part.expression !== undefined

@@ -813,19 +813,18 @@
 			if (!isFlowScriptQuoted(text)) {
 				return text;
 			}
-			if (text.charAt(0) === "\"") {
-				try {
-					return JSON.parse(text);
-				} catch (e) {
-					return text.substring(1, text.length - 1);
-				}
+			// The escapes of JavaScript, for both quotes: JSON.parse used to read the double-quoted ones and gave the
+			// raw text back for \' \x41 \0 \v, a few replacements read the single-quoted ones and dropped \r and \u.
+			var read = env.templateSyntax.unescape(text.substring(1, text.length - 1));
+			if (read.error) {
+				flowScriptInvalidEscape(text, read.error);
 			}
-			return text.substring(1, text.length - 1)
-				.replace(/\\'/g, "'")
-				.replace(/\\"/g, "\"")
-				.replace(/\\n/g, "\n")
-				.replace(/\\t/g, "\t")
-				.replace(/\\\\/g, "\\");
+			return read.value;
+		}
+
+		function flowScriptInvalidEscape(literal, message, lineNumber) {
+			env.raise("FLOWSCRIPT_INVALID_ESCAPE", "Invalid escape in " + literal + (lineNumber ? " at line " + lineNumber : "") + ": " + message,
+				null, "Use the escapes of JavaScript: \\n, \\r, \\t, \\\\, \\\", \\', \\uXXXX (\\uFEFF), \\u{...} or \\xHH.");
 		}
 	
 		function isFlowScriptObjectLiteral(text) {
@@ -1147,9 +1146,13 @@
 			var out = "";
 			for (var i = 0; i < body.length; i++) {
 				var ch = body.charAt(i);
-				if (ch === "\\" && i + 1 < body.length) {
-					var escaped = body.charAt(++i);
-					out += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped === "r" ? "\r" : escaped;
+				if (ch === "\\") {
+					var sequence = env.templateSyntax.escapeSequence(body, i);
+					if (sequence.error) {
+						flowScriptInvalidEscape(token, sequence.error, lineNumber);
+					}
+					out += sequence.value;
+					i = sequence.end - 1;
 					continue;
 				}
 				if (ch === "$" && body.charAt(i + 1) === "{") {
