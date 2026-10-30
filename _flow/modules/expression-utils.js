@@ -450,10 +450,66 @@
 			i++;
 			return part;
 		}
+		// The end of the ${ expression } of a template literal starting at from: its } at depth 0, the strings (and the
+		// template literals) inside it skipped; -1 when it is not closed.
+		function templateExpressionEnd(from) {
+			var depth = 1, quote = "";
+			for (var k = from; k < text.length; k++) {
+				var c = text.charAt(k);
+				if (quote) {
+					if (c === "\\") k++;
+					else if (c === quote) quote = "";
+					continue;
+				}
+				if (c === "\"" || c === "'" || c === "`") quote = c;
+				else if (c === "{") depth++;
+				else if (c === "}" && --depth === 0) return k;
+			}
+			return -1;
+		}
+		// `text ${expression} text`, the template literal of JavaScript, in an expression (a branch of a ternary, an
+		// operand): a text, as a value written as a template literal gives it. Its parts are its texts (escapes read) and
+		// its expressions, each with its tokens (the checks read the paths in them).
+		function readTemplateLiteral() {
+			var start = i, parts = [], literal = "";
+			i++;
+			while (i < text.length) {
+				var c = text.charAt(i);
+				if (c === "`") {
+					i++;
+					if (literal !== "") parts.push({ literal: literal });
+					return { type: "template", value: text.substring(start, i), parts: parts };
+				}
+				if (c === "\\") {
+					literal += readEscape(i);
+					continue;
+				}
+				if (c === "$" && text.charAt(i + 1) === "{") {
+					var end = templateExpressionEnd(i + 2);
+					var expression = end < 0 ? "" : text.substring(i + 2, end).trim();
+					if (!expression) {
+						env.raise("INVALID_EXPRESSION", (end < 0 ? "Unclosed" : "Empty") + " ${ } in a template literal of the expression: " + text.substring(start), null,
+							"Write ${ expression } with a value inside, or \\${ for the text ${.");
+					}
+					if (literal !== "") parts.push({ literal: literal });
+					literal = "";
+					parts.push({ expression: expression, tokens: tokenize(expression, env) });
+					i = end + 1;
+					continue;
+				}
+				literal += c;
+				i++;
+			}
+			env.raise("INVALID_EXPRESSION", "Unclosed template literal in the expression: " + text.substring(start), null, "Close the template literal with `.");
+		}
 		while (i < text.length) {
 			var ch = text.charAt(i);
 			if (/\s/.test(ch)) {
 				i++;
+				continue;
+			}
+			if (ch === "`") {
+				tokens.push(readTemplateLiteral());
 				continue;
 			}
 			if (ch === "\"" || ch === "'") {
@@ -477,7 +533,7 @@
 			// .name after a call, an index, a parenthesis or a string: a member of that value (s.trim().toLowerCase())
 			var previous = tokens.length ? tokens[tokens.length - 1] : null;
 			if (ch === "." && isIdentStart(text.charAt(i + 1)) && previous &&
-					(previous.type === "string" || previous.type === "member" || previous.type === "op" && (previous.value === ")" || previous.value === "]"))) {
+					(previous.type === "string" || previous.type === "template" || previous.type === "member" || previous.type === "op" && (previous.value === ")" || previous.value === "]"))) {
 				var memberStart = ++i;
 				while (i < text.length && isIdentPart(text.charAt(i))) {
 					i++;
@@ -537,6 +593,22 @@
 		}
 		tokens.push({ type: "eof", value: "" });
 		return tokens;
+	}
+
+	function flatTokens(tokens) {
+		var out = [];
+		(tokens || []).forEach(function (token) {
+			out.push(token);
+			if (token.type !== "template") return;
+			token.parts.forEach(function (part) {
+				if (!part.tokens) return;
+				flatTokens(part.tokens).forEach(function (inner) {
+					if (inner.type !== "eof") out.push(inner);
+				});
+				out.push({ type: "op", value: "," });
+			});
+		});
+		return out;
 	}
 
 	// The methods an expression may call on a value, as in JavaScript; nothing else is invoked.
@@ -889,11 +961,32 @@
 			program.flowLabel = label;
 			return program;
 		}
+		// A template literal is a text: the texts of its parts and what its expressions give, as a value written as a
+		// template literal renders them (null and undefined give "", an object or a list its JSON).
+		function templateProgram(token) {
+			var parts = token.parts;
+			var programs = parts.map(function (part) { return part.expression !== undefined ? compile(part.expression, env) : null; });
+			return labelled(function (runCtx) {
+				var out = "";
+				for (var k = 0; k < parts.length; k++) {
+					if (!programs[k]) { out += parts[k].literal; continue; }
+					var item = programs[k](runCtx);
+					if (item === undefined || item === null) continue;
+					out += env.isRuntimeHandle && env.isRuntimeHandle(item) ? JSON.stringify(env.runtimeHandleSummary(item))
+						: isStructuredValue(item) ? JSON.stringify(item) : String(item);
+				}
+				return out;
+			}, token.value);
+		}
 		function parsePrimary() {
 			var token = peek();
 			if (token.type === "number" || token.type === "string") {
 				consume();
 				return parsePostfix(constant(token.value));
+			}
+			if (token.type === "template") {
+				consume();
+				return parsePostfix(templateProgram(token));
 			}
 			if (token.type === "id") {
 				var name = consume().value;
@@ -1026,6 +1119,9 @@
 		// the methods an expression may call, by type of value (the checks of the sources read them)
 		methods: { text: STRING_METHODS.slice(0), list: ARRAY_METHODS.slice(0), number: NUMBER_METHODS.slice(0) },
 		tokenize: tokenize,
+		// the tokens of an expression, those of the expressions of its template literals after each of them (a "," between
+		// two): what the checks walk to find the paths and the calls of an expression
+		flatTokens: flatTokens,
 		// compiles without evaluating: unknown functions, methods and identifiers are reported at check time
 		parse: function (source, env) { return compileExpressionProgram(null, String(source || ""), env); },
 		evaluate: evaluate

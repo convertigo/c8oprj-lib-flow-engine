@@ -7,6 +7,7 @@
 		if (!names.length) return expression;
 		return expression.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*/g,
 			function (token, offset) {
+				if (token.charAt(0) === "`") return rewriteTemplateReferences(token, replacements);
 				if (!/^[A-Za-z_$]/.test(token)) return token;
 				if (offset && /[A-Za-z0-9_$]/.test(expression.charAt(offset - 1))) return token;
 				var before = expression.substring(0, offset).replace(/\s+$/, "");
@@ -24,6 +25,41 @@
 				}
 				return token;
 			});
+	}
+
+	// The ${ expressions } of a template literal of an expression read the locals as the expression does
+	// (n > 1 ? `${n} items` : "one"): their names are rewritten, the texts kept.
+	function rewriteTemplateReferences(literal, replacements) {
+		var out = "", i = 0;
+		while (i < literal.length) {
+			var ch = literal.charAt(i);
+			if (ch === "\\") {
+				out += literal.substr(i, 2);
+				i += 2;
+				continue;
+			}
+			if (ch === "$" && literal.charAt(i + 1) === "{") {
+				var depth = 1, quote = "", k = i + 2;
+				for (; k < literal.length; k++) {
+					var c = literal.charAt(k);
+					if (quote) {
+						if (c === "\\") k++;
+						else if (c === quote) quote = "";
+						continue;
+					}
+					if (c === "\"" || c === "'") quote = c;
+					else if (c === "{") depth++;
+					else if (c === "}" && --depth === 0) break;
+				}
+				if (k >= literal.length) return out + literal.substring(i);
+				out += "${" + rewriteExpressionReferences(literal.substring(i + 2, k), replacements) + "}";
+				i = k + 1;
+				continue;
+			}
+			out += ch;
+			i++;
+		}
+		return out;
 	}
 
 	// Authoring only. Never execute submitted code, guess a block name, or move
