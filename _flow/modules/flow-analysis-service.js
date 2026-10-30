@@ -110,7 +110,14 @@
 					return;
 				}
 				var checked = env.schemaContract.definition(schema);
-				if (!checked.valid) { reportType({status:"incompatible", issues:checked.errors}, "type"); return; }
+				if (!checked.valid) {
+					// the check refuses it (validateRequest), as the run would
+					ctx.errors.push({ severity: "error", code: "INVALID_SCHEMA", property: "type",
+						path: ctx.currentNodeInfo && ctx.currentNodeInfo.id || "", block: ctx.currentNodeInfo && ctx.currentNodeInfo.block || "",
+						line: ctx.currentNodeInfo && ctx.currentNodeInfo.line || 0,
+						message: "The type of the collection is not a type of the Flow schemas: " + checked.errors.map(function (error) { return error.path + " " + error.message; }).join("; ") });
+					return;
+				}
 				var known = env.schemaContract.compare(schema, schema);
 				if (known.status !== "compatible") { reportType(known, "type"); return; }
 				if (ctx.declaredSchemas[path]) {

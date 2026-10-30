@@ -8,7 +8,7 @@ const _meta = {
   tags: ["array", "list", "create", "typed"],
   properties: {
     path: {label: "Destination", description: "Scope path receiving the new typed array; an assignment (local.items = json.array({ itemType })) sets it.", kind: "path", mode: "write", declares: "out", default: "local.items", required: true},
-    itemType: {label: "Item type", description: "JSON Schema describing each item; values appended with json.push must satisfy it.", kind: "schema", type: "object", default: {type: "string"}, required: true}
+    itemType: {label: "Item type", description: "JSON Schema describing each item; values appended with json.push must satisfy it. One type per field (string, number, integer, boolean, array, object, unknown); a field that may be null adds nullable: true ({ type: \"string\", nullable: true }, the nullable column of a row), never [\"string\", \"null\"].", kind: "schema", type: "object", default: {type: "string"}, required: true}
   },
   outputs: {out: {type: "array", items: {"x-flow-schema-from": "itemType"}, hidden: true}},
   hooks: {file: "array.hooks.js"}

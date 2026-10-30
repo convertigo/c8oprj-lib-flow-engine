@@ -4,17 +4,32 @@
 	function own(value, key) { return Object.prototype.hasOwnProperty.call(value, key); }
 	function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 	function issue(code, path, message) { return { code: code, path: path, message: message }; }
+	var NULLABLE_SPELLING = "A value that may be null is one type with nullable: true ({ type: \"string\", nullable: true }); any value is type: \"unknown\".";
+	// What to write instead of a type the contract does not read: a JSON Schema list of types ["string", "null"] (a nullable
+	// column of a row), none at all ({}), or another name.
+	function unsupportedType(type, types) {
+		if (Array.isArray(type)) {
+			var others = type.filter(function (each) { return each !== "null"; });
+			if (others.length === 1 && others.length < type.length && types.indexOf(others[0]) >= 0) {
+				return "Unsupported type: " + JSON.stringify(type) + ". Write { type: " + JSON.stringify(others[0]) + ", nullable: true } for a value that may be null.";
+			}
+			return "Unsupported type: " + JSON.stringify(type) + ". Choose one type (" + types.join(", ") + "). " + NULLABLE_SPELLING;
+		}
+		if (type === undefined) return "Choose a type: type is one of " + types.join(", ") + ". " + NULLABLE_SPELLING;
+		return "Unsupported type: " + String(type) + ". Choose one of " + types.join(", ") + ".";
+	}
 	function definition(schema) {
 		var errors = [];
 		function visit(s, path, depth) {
 			if (depth > 32) { errors.push(issue("INVALID_SCHEMA", path, "Type nesting exceeds 32 levels.")); return; }
 			if (!object(s)) { errors.push(issue("INVALID_SCHEMA", path, "Choose a type.")); return; }
 			var types = ["unknown", "null", "string", "number", "integer", "boolean", "array", "object"];
-			if (types.indexOf(s.type) < 0) errors.push(issue("INVALID_SCHEMA", path, "Unsupported type: " + String(s.type)));
+			if (types.indexOf(s.type) < 0) errors.push(issue("INVALID_SCHEMA", path, unsupportedType(s.type, types)));
 			Object.keys(s).forEach(function (key) {
 				if (["type", "nullable", "enum", "items", "properties", "required", "additionalProperties",
 					"title", "label", "description", "default", "examples", "example", "hidden", "expert"].indexOf(key) < 0) {
-					errors.push(issue("UNSUPPORTED_SCHEMA_CONSTRAINT", path, "Unsupported constraint: " + key));
+					errors.push(issue("UNSUPPORTED_SCHEMA_CONSTRAINT", path, "Unsupported constraint: " + key +
+						(/^(?:anyOf|oneOf|allOf)$/.test(key) ? ". " + NULLABLE_SPELLING : "")));
 				}
 			});
 			if (s.nullable !== undefined && typeof s.nullable !== "boolean") errors.push(issue("INVALID_SCHEMA", path, "Nullable must be a boolean."));

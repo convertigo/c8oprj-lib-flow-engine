@@ -342,6 +342,20 @@
 		return diagnostics;
 	}
 
+	// The line of the source of each node of a definition, by its block and its id (the path the analysis names a node
+	// with: a json.array and the set of its destination may share an id), the first one kept.
+	function nodeLines(definition) {
+		var lines = {};
+		(function visit(value) {
+			if (Object.prototype.toString.call(value) === "[object Array]") { value.forEach(visit); return; }
+			if (!value || typeof value !== "object") return;
+			var key = typeof value.block === "string" && (value.uid || value.id) ? value.block + "\n" + String(value.uid || value.id) : "";
+			if (key && value.__flowScriptLine && !lines[key]) lines[key] = value.__flowScriptLine;
+			Object.keys(value).forEach(function (key) { if (key !== "props") visit(value[key]); });
+		})(definition && definition.nodes);
+		return lines;
+	}
+
 	function walkDefinitionNodes(nodes, visitor) {
 		(nodes || []).forEach(function (node) {
 			visitor(node);
@@ -927,6 +941,17 @@
 			analysisDiagnostics(activeBlocks, analysis, env).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
+			// a typed collection whose type the runtime refuses (json.array itemType: { type: ["string", "null"] }) is
+			// refused by the check, not at the first run
+			var invalidSchemas = (analysis.errors || []).filter(function (error) { return error && error.code === "INVALID_SCHEMA"; });
+			if (invalidSchemas.length) {
+				ok = false;
+				var lines = nodeLines(definition);
+				invalidSchemas.forEach(function (error) {
+					diagnostics.push({ severity: "error", code: error.code, line: error.line || lines[error.block + "\n" + error.path] || 0, block: error.block,
+						property: error.property, message: error.message });
+				});
+			}
 			nullableValueDiagnostics(activeBlocks, definition, analysis, env).concat(
 				methodTypeDiagnostics(activeBlocks, definition, analysis, env)).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
