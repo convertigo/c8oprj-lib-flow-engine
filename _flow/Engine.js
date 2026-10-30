@@ -9312,8 +9312,58 @@
 		].join("\n");
 	}
 
+	// The Studio runs the build in a browser of its own (openBuilt), not in the dev viewer Playwright drives, and its
+	// viewer is one page an agent must never navigate, open, close or resize: there, the plan checks the build over HTTP
+	// from the viewer (the page and the scripts and styles it loads) and leaves the proof of the behaviour to the dev
+	// viewer. Elsewhere, the plan opens the build in the browser of the agent.
+	function frontendStudioViewer() {
+		try {
+			return Packages.com.twinsoft.convertigo.engine.Engine.isStudioMode() === true;
+		} catch (standalone) {
+			return false;
+		}
+	}
+
+	function frontendBuildHttpProbe(url) {
+		return [
+			"async () => {",
+			"  const url = new URL(" + JSON.stringify(String(url || "")) + ", location.href).href;",
+			"  const out = { url, page: 0, assets: [], failed: [] };",
+			"  try {",
+			"    const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });",
+			"    out.page = response.status;",
+			"    const html = await response.text();",
+			"    const doc = new DOMParser().parseFromString(html, 'text/html');",
+			"    const refs = [...doc.querySelectorAll('script[src], link[rel=stylesheet][href], link[rel=modulepreload][href]')]",
+			"      .map((node) => new URL(node.getAttribute('src') || node.getAttribute('href'), url).href).slice(0, 40);",
+			"    for (const ref of refs) {",
+			"      try {",
+			"        const asset = await fetch(ref, { credentials: 'same-origin', cache: 'no-store' });",
+			"        out.assets.push({ url: ref, status: asset.status });",
+			"        if (!asset.ok) out.failed.push(ref);",
+			"      } catch (error) { out.failed.push(ref + ' ' + (error && error.message || error)); }",
+			"    }",
+			"  } catch (error) { out.error = String(error && error.message || error); }",
+			"  out.ok = out.page === 200 && out.assets.length > 0 && !out.failed.length && !out.error;",
+			"  return out;",
+			"}"
+		].join("\n");
+	}
+
 	function frontendAcceptancePlan(url) {
 		var probe = frontendAcceptanceProbe();
+		if (frontendStudioViewer()) {
+			return {
+				strategy: "studio-viewer-plan",
+				path: url ? String(new Packages.java.net.URI(url).getPath()) : "",
+				calls: [
+					{ tool: "browser_evaluate", arguments: { function: frontendBuildHttpProbe(url) } }
+				],
+				checks: ["the built page answers 200", "every script and style it loads answers 200"],
+				studioRule: "The Studio viewer is one page: never navigate, open, close or resize it. openBuilt shows the build to the user in a Studio browser that Playwright does not drive.",
+				next: "Execute the call unchanged on the current viewer page: ok must be true. Prove the behaviour on the dev viewer, whose sources are the ones built."
+			};
+		}
 		return {
 			strategy: "safe-playwright-plan",
 			path: url ? String(new Packages.java.net.URI(url).getPath()) : "",
