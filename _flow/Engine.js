@@ -2110,6 +2110,7 @@
 			sha256Hex: sha256Hex,
 			responseBudget: responseBudget,
 			applyUnifiedPatchText: applyUnifiedPatchText,
+			applyRequestPatch: applyRequestPatch,
 			projectBlockCodeFileForResource: projectBlockCodeFileForResource,
 			blockCodeDescriptorFileName: blockCodeDescriptorFileName,
 			blockIdFromResourcePath: blockIdFromResourcePath,
@@ -2179,6 +2180,11 @@
 
 	function applyUnifiedPatchText(content, patch) {
 		return loadEngineModule("patch-utils.js").applyUnifiedPatchText(content, patch, { raise: raise });
+	}
+
+	// The change of a patch request: exact text edits ([{ oldText, newText }]) or a unified patch (codepatch, patch).
+	function applyRequestPatch(content, request) {
+		return loadEngineModule("patch-utils.js").applyRequestPatch(content, request);
 	}
 
 	function validateResourceContent(path, content) {
@@ -4476,7 +4482,7 @@
 		}
 		var newCode = request.code !== undefined && request.code !== null
 			? String(request.code)
-			: applyUnifiedPatchText(current.code, request.patch || request.unifiedDiff || request.diff || "").content;
+			: applyRequestPatch(current.code, request).content;
 		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { code: newCode }));
 		if (!validation.ok) {
 			var error = new Error(validationFailureMessage("FlowScript validation failed", validation.diagnostics));
@@ -4533,6 +4539,7 @@
 			setProjectFlow: setProjectFlow,
 			syncProjectFlowInputs: syncProjectFlowInputs,
 			applyUnifiedPatchText: applyUnifiedPatchText,
+			applyRequestPatch: applyRequestPatch,
 			getBlockSource: getBlockSource,
 			setProjectBlockCode: setProjectBlockCode,
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
@@ -4858,7 +4865,7 @@
 				error: frontendBlockCodeError("BLOCK_CODE_REVISION_MISMATCH", "Frontend block changed since it was read.", "Call code-get again and regenerate the patch."), warnings: [] };
 		}
 		var code = request.code !== undefined && request.code !== null ? String(request.code)
-			: applyUnifiedPatchText(current.code, request.codepatch || request.patch || request.unifiedDiff || request.diff || "").content;
+			: applyRequestPatch(current.code, request).content;
 		return frontendBlockCodeSetRequest(blocks, Object.assign({}, request, { code: code, revision: current.revision }));
 	}
 

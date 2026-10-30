@@ -705,8 +705,8 @@
 				warnings: []
 			};
 		}
-		var patch = request.codepatch || request.patch || request.unifiedDiff || request.diff || "";
-		var applied = request.code !== undefined && request.code !== null ? null : applyUnifiedPatchText(current.code, patch);
+		var applied = request.code !== undefined && request.code !== null ? null : env.applyRequestPatch ? env.applyRequestPatch(current.code, request)
+			: applyUnifiedPatchText(current.code, request.codepatch || request.patch || request.unifiedDiff || request.diff || "");
 		var code = applied ? applied.content : String(request.code);
 		if (!flowCodeOfficialMode(request)) {
 			return withPatchReport(flowCodeDraftSetRequest(blocks, Object.assign({}, request, {
@@ -762,8 +762,8 @@
 				warnings: []
 			};
 		}
-		var patch = request.codepatch || request.patch || request.unifiedDiff || request.diff || "";
-		var applied = request.code !== undefined && request.code !== null ? null : applyUnifiedPatchText(current.code, patch);
+		var applied = request.code !== undefined && request.code !== null ? null : env.applyRequestPatch ? env.applyRequestPatch(current.code, request)
+			: applyUnifiedPatchText(current.code, request.codepatch || request.patch || request.unifiedDiff || request.diff || "");
 		var code = applied ? applied.content : String(request.code);
 		var write = setProjectBlockCode(blocks, name, Object.assign({}, request, {
 			name: name,

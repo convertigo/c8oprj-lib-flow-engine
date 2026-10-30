@@ -42,7 +42,30 @@ const _meta = {
       "label": "Code patch",
       "kind": "text",
       "type": "string",
-      "description": "Unified diff applied to the current FlowScript code.",
+      "description": "Unified diff applied to the current FlowScript code: @@ -old,count +new,count @@ hunks with the lines of the code read. For a targeted replacement, edits is simpler.",
+    },
+    "edits": {
+      "label": "Text edits",
+      "kind": "literal",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "oldText": {
+            "type": "string",
+            "description": "Exact text of the current code, found once (spaces and line breaks included).",
+          },
+          "newText": {
+            "type": "string",
+            "description": "Its replacement; empty to delete it.",
+          },
+        },
+        "required": [
+          "oldText",
+          "newText",
+        ],
+      },
+      "description": "Exact replacements applied in order instead of codepatch: [{ oldText, newText }]. Each oldText must be found exactly once in the code as the edits before it left it; otherwise nothing is written (EDIT_TEXT_NOT_FOUND, EDIT_TEXT_NOT_UNIQUE with the lines).",
     },
     "dry": {
       "label": "Dry run",

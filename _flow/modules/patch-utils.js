@@ -122,8 +122,8 @@
 		}
 		if (!hunks.length) {
 			fail("INVALID_PATCH", "Unified patch requires @@ -old,count +new,count @@ hunk headers.",
-				"Send a unified diff (--- a/ and +++ b/ headers are optional), without *** Begin Patch wrappers, or the whole new text " +
-				"instead (the code argument of code-patch).");
+				"Send a unified diff (--- a/ and +++ b/ headers are optional), without *** Begin Patch wrappers, exact replacements " +
+				"(edits: [{ oldText, newText }]), or the whole new text instead (the code argument of code-patch).");
 		}
 		hunks.forEach(function (hunk) {
 			if (!hunk.lines.some(function (line) { return !line.blank; })) {
@@ -416,11 +416,99 @@
 		};
 	}
 
+	function lineOfOffset(text, offset) {
+		return text.substring(0, offset).split("\n").length;
+	}
+
+	function occurrences(text, part) {
+		var found = [];
+		for (var at = text.indexOf(part); at !== -1; at = text.indexOf(part, at + 1)) {
+			found.push(at);
+		}
+		return found;
+	}
+
+	// Exact text replacements, the other format of code-patch: edits is [{ oldText, newText }], applied in order, each
+	// oldText found exactly once in the text as the edits before it left it (line endings read as LF). A text that is
+	// absent or found several times is refused with the lines concerned, never replaced at a guess; the answer has the
+	// same appliedHunks as a unified patch, one per edit.
+	function applyTextEdits(content, edits) {
+		if (Object.prototype.toString.call(edits) !== "[object Array]" || !edits.length) {
+			fail("INVALID_PATCH", "edits must be a non-empty array of { oldText, newText }.",
+				"Example: edits: [{ oldText: \"result.total = 0\", newText: \"result.total = local.sum\" }].");
+		}
+		var text = normalize(content);
+		var reports = [];
+		edits.forEach(function (edit, index) {
+			var number = index + 1;
+			edit = edit || {};
+			var oldText = edit.oldText !== undefined ? edit.oldText : edit.old_string !== undefined ? edit.old_string : edit.oldString;
+			var newText = edit.newText !== undefined ? edit.newText : edit.new_string !== undefined ? edit.new_string : edit.newString;
+			if (typeof oldText !== "string" || oldText === "" || typeof newText !== "string") {
+				fail("INVALID_PATCH", "Edit " + number + " needs oldText, a non-empty text of the source, and newText, its replacement (a text, empty to delete).",
+					"Send edits: [{ oldText, newText }], oldText copied exactly from the code read.", { edit: number });
+			}
+			oldText = normalize(oldText);
+			newText = normalize(newText);
+			var found = occurrences(text, oldText);
+			if (!found.length) {
+				var firstLine = oldText.split("\n")[0].trim();
+				var near = [];
+				if (firstLine) {
+					text.split("\n").forEach(function (line, lineIndex) {
+						if (near.length < 3 && line.indexOf(firstLine) !== -1) near.push({ line: lineIndex + 1, text: line });
+					});
+				}
+				fail("EDIT_TEXT_NOT_FOUND", "Edit " + number + ": oldText is not in the source" +
+					(near.length ? "; its first line is at line " + near.map(function (item) { return item.line; }).join(", ") + ", the following ones differ" : "") + ".",
+					"Copy oldText exactly from the code read (spaces and line breaks included), after the edits before it, or read the code again.",
+					{ edit: number, oldText: oldText, firstLineFoundAt: near });
+			}
+			if (found.length > 1) {
+				fail("EDIT_TEXT_NOT_UNIQUE", "Edit " + number + ": oldText is found " + found.length + " times, at lines " +
+					found.slice(0, 10).map(function (at) { return lineOfOffset(text, at); }).join(", ") + ".",
+					"Extend oldText with a neighbouring line until it is unique, or send a unified patch.",
+					{ edit: number, lines: found.map(function (at) { return lineOfOffset(text, at); }) });
+			}
+			var line = lineOfOffset(text, found[0]);
+			text = text.substring(0, found[0]) + newText + text.substring(found[0] + oldText.length);
+			reports.push({
+				edit: number,
+				match: "exact",
+				line: line,
+				removed: oldText.split("\n").length,
+				added: newText === "" ? 0 : newText.split("\n").length
+			});
+		});
+		return {
+			content: text,
+			hunks: reports.length,
+			appliedHunks: reports,
+			notes: []
+		};
+	}
+
+	// The change a patch request describes: edits (exact text replacements) or a unified patch, not both.
+	function applyRequestPatch(content, request) {
+		request = request || {};
+		var patch = request.codepatch || request.patch || request.unifiedDiff || request.diff || "";
+		if (request.edits !== undefined && request.edits !== null) {
+			if (String(patch).trim() !== "") {
+				fail("INVALID_PATCH", "Send either edits or a unified patch, not both.",
+					"edits: [{ oldText, newText }] replaces exact texts; codepatch is a unified diff with @@ -old,count +new,count @@ hunks.");
+			}
+			return applyTextEdits(content, request.edits);
+		}
+		return applyUnifiedPatch(content, patch);
+	}
+
 	return {
 		normalize: normalize,
 		split: split,
 		join: join,
 		applyUnifiedPatch: applyUnifiedPatch,
+		applyTextEdits: applyTextEdits,
+		applyRequestPatch: applyRequestPatch,
 		// the historical entry point of the engine (env is no longer needed: errors carry their details)
 		applyUnifiedPatchText: function (content, patch) {
 			return applyUnifiedPatch(content, patch);

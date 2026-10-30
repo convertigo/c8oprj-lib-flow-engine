@@ -566,7 +566,8 @@
 			env.raise("RESOURCE_BASE_HASH_MISMATCH", "Flow resource changed since it was read: " + entry.path,
 				null, "Read the resource again and patch from the new hash.");
 		}
-		var applied = env.applyUnifiedPatchText(oldContent, request.patch || request.unifiedDiff || request.diff || "");
+		var applied = env.applyRequestPatch ? env.applyRequestPatch(oldContent, request)
+			: env.applyUnifiedPatchText(oldContent, request.patch || request.unifiedDiff || request.diff || "");
 		if (entry.path === ".httpignore") {
 			var content = String(applied.content), patterns = function (text) { return String(text).split(/\r?\n/).map(function (line) { return line.trim(); }).filter(function (line) { return line && line.charAt(0) !== "#"; }); };
 			var before = patterns(oldContent), after = patterns(content);
