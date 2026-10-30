@@ -142,3 +142,11 @@ clear the Flow catalog/response cache. A live Convertigo context is required;
 standalone execution does not silently pretend to invalidate a cache.
 This is transient shared application state, not durable storage or a secret
 store. Keep user-specific data scoped by identity in the application design.
+
+## Application logout
+
+`session.authenticate({user:""})` clears the authenticated identity. Use it
+in the application's logout Flow, then clear the displayed user and password
+state and disable automatic credential replay. Test a protected read with the
+same cookie after logout: clearing the screen alone is not a server logout.
+This does not destroy all unrelated state stored in the HTTP session.

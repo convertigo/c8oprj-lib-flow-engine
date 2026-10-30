@@ -46,7 +46,7 @@ const _meta = {
 			return ctx.input(value);
 		}
 		if (typeof value === "string") {
-			return ctx.expr(value);
+			return /\$\{|\{\{/.test(value) ? ctx.template(value) : ctx.expr(value);
 		}
 		if (Object.prototype.toString.call(value) === "[object Array]") {
 			return value.map(function (item) {
