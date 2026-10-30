@@ -1040,7 +1040,8 @@
 		execution.draft = compiled.draft === true;
 		flowCodeAddInputReport(execution, compiled.validation);
 		if (compiled.warnings && compiled.warnings.length) {
-			execution.warnings = compiled.warnings;
+			// the warnings of the source, then those of the run
+			execution.warnings = compiled.warnings.concat(execution.warnings || []);
 		}
 		return execution;
 	}

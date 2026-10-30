@@ -150,3 +150,16 @@ in the application's logout Flow, then clear the displayed user and password
 state and disable automatic credential replay. Test a protected read with the
 same cookie after logout: clearing the screen alone is not a server logout.
 This does not destroy all unrelated state stored in the HTTP session.
+
+## Current user
+
+`session.authenticatedUser({})` gives `null` to an anonymous session, never
+`""`. Test the absence with `!local.user`, which is true for null, absent and
+`""`: `local.user == ""` is false for null, and `local.user.toLowerCase()` on
+null gives `""`, which a filter such as `(:email = '' OR EMAIL = :email)`
+reads as "every user". code-check warns on both
+(`FLOWSCRIPT_NULLABLE_COMPARED_TO_EMPTY_TEXT`,
+`FLOWSCRIPT_METHOD_ON_NULLABLE_VALUE`), and a run that calls a method on an
+absent value returns `EXPRESSION_METHOD_ON_ABSENT_VALUE` in its `warnings`.
+Look the user up by exact identity, with a query that never matches every row
+on an empty value.

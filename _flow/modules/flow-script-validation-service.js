@@ -603,6 +603,157 @@
 		return diagnostics;
 	}
 
+	// The expressions of the nodes of a definition, each with its node: the raw text of an expression property, the
+	// ${...} parts of the other values.
+	function nodeExpressions(blocks, definition, env, visit) {
+		function value(any, raw, node) {
+			if (typeof any === "string") {
+				if (raw) visit(any, node);
+				else templateExpressions(any, env).forEach(function (text) { visit(text, node); });
+			} else if (Array.isArray(any)) any.forEach(function (item) { value(item, false, node); });
+			else if (any && typeof any === "object") Object.keys(any).forEach(function (key) { value(any[key], false, node); });
+		}
+		function isNodeList(list) {
+			return Array.isArray(list) && list.length > 0 && list.every(function (item) {
+				return item && typeof item === "object" && typeof item.block === "string";
+			});
+		}
+		function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				var name = env.blockName(node), descriptor = blocks[name] && env.blockCatalog(blocks[name]) || {}, props = descriptor.props || {};
+				Object.keys(node.props || {}).forEach(function (key) {
+					if (isNodeList(node.props[key])) walk(node.props[key]);
+					else value(node.props[key], props[key] && props[key].kind === "expression", node);
+				});
+				Object.keys(node).forEach(function (key) {
+					if (key !== "props" && isNodeList(node[key])) walk(node[key]);
+				});
+			});
+		}
+		(definition.helpers || []).forEach(function (helper) { walk(helper.nodes); });
+		walk(definition.nodes);
+	}
+
+	// The types a value of a path can have, as far as the source tells: its declaration for an input, the schema the
+	// analysis gives otherwise. null is one of them for a nullable declaration or a schema whose type names it.
+	function pathTypes(path, definition, analysis, env) {
+		var types = [];
+		function add(type) {
+			String(type || "").split(/[|,]/).forEach(function (part) {
+				part = part.trim();
+				if (part && types.indexOf(part) === -1) types.push(part);
+			});
+		}
+		function fromSchema(schema) {
+			if (!schema || typeof schema !== "object") return;
+			if (Array.isArray(schema.type)) schema.type.forEach(add);
+			else if (schema.type !== undefined) add(schema.type);
+			else if (schema.properties) add("object");
+			(schema.anyOf || schema.oneOf || []).forEach(fromSchema);
+			if (schema.nullable === true) add("null");
+		}
+		var input = /^input\.([A-Za-z_$][\w$]*)$/.exec(path);
+		var declared = input ? inputDefinitionsFromDefinition(definition)[input[1]] : undefined;
+		if (declared && typeof declared === "object") {
+			fromSchema(declared);
+			return types;
+		}
+		if (analysis && analysis.schemas && env.schemaForSchemasPath) {
+			try { fromSchema(env.schemaForSchemasPath(analysis.schemas, path)); } catch (_unknownPath) {}
+		}
+		return types;
+	}
+
+	// The blocks writing each path of the definition (out, or the path of a set): what a diagnostic names as the origin
+	// of a type.
+	function pathProducers(definition, env) {
+		var producers = {};
+		function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				if (!node || typeof node !== "object") return;
+				var name = env.blockName(node);
+				var out = node.out || node.props && node.props.$$out;
+				if (typeof out === "string" && out && name !== "set") producers[out] = name;
+				Object.keys(node).forEach(function (key) {
+					if (Array.isArray(node[key])) walk(node[key]);
+				});
+			});
+		}
+		walk(definition.nodes);
+		return producers;
+	}
+
+	var SCOPE_PATH = /^(?:input|local|result|config|current|request)(?:\.[A-Za-z_$][\w$]*|\.\d+)+$/;
+
+	// A value that can be null used as if it could not: a method called on it gives "" or false instead of failing, and
+	// a comparison with "" is false for null. Both let an anonymous session through a check like
+	// `if (local.email == "") ... else query(local.email.toLowerCase())`, where null turned into "" matches every row.
+	function nullableValueDiagnostics(blocks, definition, analysis, env) {
+		var diagnostics = [];
+		var seen = {};
+		var producers = null;
+		function origin(path) {
+			producers = producers || pathProducers(definition, env);
+			return producers[path] ? " (" + producers[path] + " gives null)" : "";
+		}
+		function push(key, diagnostic) {
+			if (seen[key]) return;
+			seen[key] = true;
+			diagnostics.push(diagnostic);
+		}
+		function nullable(path) {
+			return pathTypes(path, definition, analysis, env).indexOf("null") !== -1;
+		}
+		nodeExpressions(blocks, definition, env, function (text, node) {
+			var tokens;
+			try { tokens = env.inputExpressionTokens(String(text)) || []; } catch (_invalidExpressionAlreadyDiagnosed) { return; }
+			var line = node && node.__flowScriptLine || 0;
+			tokens.forEach(function (token, index) {
+				if (token.type !== "id") return;
+				var value = String(token.value);
+				var next = tokens[index + 1];
+				if (next && next.type === "op" && next.value === "(") {
+					var dot = value.lastIndexOf(".");
+					var receiver = dot > 0 ? value.substring(0, dot) : "";
+					var method = value.substring(dot + 1);
+					if (!SCOPE_PATH.test(receiver) || !nullable(receiver)) return;
+					push("method\n" + receiver + "\n" + method + "\n" + line, {
+						severity: "warning",
+						code: "FLOWSCRIPT_METHOD_ON_NULLABLE_VALUE",
+						line: line,
+						path: receiver,
+						method: method,
+						message: receiver + " can be null" + origin(receiver) + ": " + method + "() on null gives " +
+							(/^(trim|toLowerCase|toUpperCase)$/.test(method) ? "\"\"" : /^(includes|startsWith|endsWith)$/.test(method) ? "false" : "undefined") +
+							" instead of failing, so a missing value goes on as an empty one.",
+						next: "Test it first (condition: !" + receiver + " is true for null, absent and \"\"), or give it a default: default(" + receiver + ", \"\")." + method + "()."
+					});
+					return;
+				}
+				if (!SCOPE_PATH.test(value)) return;
+				var before = tokens[index - 1], after = tokens[index + 1], operator = null, other = null;
+				if (after && after.type === "op" && /^[!=]==?$/.test(after.value)) {
+					operator = after.value;
+					other = tokens[index + 2];
+				} else if (before && before.type === "op" && /^[!=]==?$/.test(before.value)) {
+					operator = before.value;
+					other = tokens[index - 2];
+				}
+				if (!operator || !other || other.type !== "string" || other.value !== "" || !nullable(value)) return;
+				push("empty\n" + value + "\n" + line, {
+					severity: "warning",
+					code: "FLOWSCRIPT_NULLABLE_COMPARED_TO_EMPTY_TEXT",
+					line: line,
+					path: value,
+					message: value + " can be null" + origin(value) + ": " + value + " " + operator + " \"\" is " +
+						(operator.charAt(0) === "!" ? "true" : "false") + " for null, so null takes the branch of a value.",
+					next: "Write !" + value + " (true for null, absent and \"\") instead of comparing with \"\"."
+				});
+			});
+		});
+		return diagnostics;
+	}
+
 	function maxDiagnostics(request) {
 		request = request || {};
 		var value = request.maxDiagnostics !== undefined && request.maxDiagnostics !== null && request.maxDiagnostics !== ""
@@ -680,6 +831,9 @@
 			analysisDiagnostics(activeBlocks, analysis, env).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
+			nullableValueDiagnostics(activeBlocks, definition, analysis, env).forEach(function (diagnostic) {
+				diagnostics.push(diagnostic);
+			});
 		}
 		var report = diagnosticReport(diagnostics, request);
 		return {
@@ -701,6 +855,7 @@
 		inputVariablesFromDefinition: inputVariablesFromDefinition,
 		validateDefinition: validateDefinition,
 		analysisDiagnostics: analysisDiagnostics,
+		nullableValueDiagnostics: nullableValueDiagnostics,
 		diagnosticReport: diagnosticReport,
 		validateRequest: validateRequest
 	};

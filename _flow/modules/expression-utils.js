@@ -503,6 +503,35 @@
 		return tokens;
 	}
 
+	// The methods an expression may call on a value, as in JavaScript; nothing else is invoked.
+	var STRING_METHODS = ["trim", "toLowerCase", "toUpperCase", "includes", "startsWith", "endsWith", "indexOf",
+		"lastIndexOf", "slice", "substring", "split", "replace", "replaceAll", "padStart", "padEnd", "charAt", "concat",
+		"repeat", "trimStart", "trimEnd", "localeCompare", "normalize"];
+	var ARRAY_METHODS = ["includes", "indexOf", "lastIndexOf", "slice", "join", "concat", "at"];
+	var NUMBER_METHODS = ["toFixed", "toString", "toPrecision"];
+
+	// A method called on an absent value (null or undefined) gives a value instead of failing, as lower(value) does: the
+	// run reports it once per path and method (ctx.warn, the warnings of the run response), since a missing value
+	// silently turned into "" or false is how a check like `if (local.email == "")` lets a null through.
+	function absentReceiver(runCtx, label, method, receiver, result) {
+		if (!runCtx || typeof runCtx.warn !== "function") {
+			return;
+		}
+		var what = label ? label : "a value";
+		var gives = result === "" ? "\"\"" : result === false ? "false" : "undefined";
+		runCtx.warn({
+			code: "EXPRESSION_METHOD_ON_ABSENT_VALUE",
+			path: label || "",
+			method: method,
+			value: receiver === null ? "null" : "undefined",
+			message: method + "() is called on " + what + ", which is " + (receiver === null ? "null" : "absent (undefined)") +
+				": the expression gives " + gives + " instead of failing.",
+			hint: label
+				? "Test the value before using it (condition: !" + label + "), or give it a default: default(" + label + ", \"\")." + method + "()."
+				: "Test the value before calling " + method + "(), or give it a default with default(value, \"\")."
+		});
+	}
+
 	function compileExpressionProgram(ctx, source, env) {
 		var tokens = tokensFor(ctx || {}, source, env);
 		// Compiled closures may retain their activation. Keep request state out
@@ -638,14 +667,9 @@
 			}
 			return args;
 		}
-		// The methods an expression may call on a value, as in JavaScript; nothing else is invoked.
-		var STRING_METHODS = ["trim", "toLowerCase", "toUpperCase", "includes", "startsWith", "endsWith", "indexOf",
-			"lastIndexOf", "slice", "substring", "split", "replace", "replaceAll", "padStart", "padEnd", "charAt", "concat",
-			"repeat", "trimStart", "trimEnd", "localeCompare", "normalize"];
-		var ARRAY_METHODS = ["includes", "indexOf", "lastIndexOf", "slice", "join", "concat", "at"];
-		var NUMBER_METHODS = ["toFixed", "toString", "toPrecision"];
-		function callMethod(receiver, method, values) {
+		function callMethod(receiver, method, values, runCtx, label) {
 			if (receiver === null || receiver === undefined) {
+				absentReceiver(runCtx, label, method, receiver, undefined);
 				return undefined;
 			}
 			if (JavaString !== null && (receiver instanceof JavaString || receiver instanceof JavaCharSequence)) {
@@ -677,15 +701,17 @@
 		function parsePostfix(program) {
 			while (peek().type === "member") {
 				var member = consume().value;
+				var receiverLabel = program.flowLabel || "";
 				if (peek("(")) {
 					consume("(");
 					var memberArgs = parseArgs();
 					consume(")");
-					program = (function (receiverProgram, method, argPrograms) {
+					program = (function (receiverProgram, method, argPrograms, label) {
 						return function (runCtx) {
-							return callMethod(receiverProgram(runCtx), method, runArgs(argPrograms, runCtx));
+							return callMethod(receiverProgram(runCtx), method, runArgs(argPrograms, runCtx), runCtx, label);
 						};
-					})(program, member, memberArgs);
+					})(program, member, memberArgs, receiverLabel);
+					program.flowLabel = receiverLabel ? receiverLabel + "." + member + "()" : "";
 				} else {
 					program = (function (receiverProgram, name) {
 						return function (runCtx) {
@@ -693,6 +719,7 @@
 							return receiver === null || receiver === undefined ? undefined : receiver[name];
 						};
 					})(program, member);
+					program.flowLabel = receiverLabel ? receiverLabel + "." + member : "";
 				}
 			}
 			return program;
@@ -711,13 +738,18 @@
 				if (STRING_METHODS.indexOf(method) === -1 && ARRAY_METHODS.indexOf(method) === -1 && NUMBER_METHODS.indexOf(method) === -1) {
 					return null;
 				}
-				return function (runCtx) {
-					return callMethod(runCtx.read(receiverPath), method, runArgs(args, runCtx));
-				};
+				return labelled(function (runCtx) {
+					return callMethod(runCtx.read(receiverPath), method, runArgs(args, runCtx), runCtx, receiverPath);
+				}, name + "()");
 			}
-			return function (runCtx) {
+			return labelled(function (runCtx) {
 				var receiver = runCtx.read(receiverPath);
 				var values = runArgs(args, runCtx);
+				if (receiver === null || receiver === undefined) {
+					// trim(), toLowerCase() and toUpperCase() give "", the tests false: the value is reported, not refused
+					absentReceiver(runCtx, receiverPath, method, receiver,
+						method === "trim" || method === "toLowerCase" || method === "toUpperCase" ? "" : false);
+				}
 				if (method === "trim") {
 					return fns.trim(receiver);
 				}
@@ -734,7 +766,11 @@
 					return fns.startsWith(receiver, values[0]);
 				}
 				return fns.endsWith(receiver, values[0]);
-			};
+			}, name + "()");
+		}
+		function labelled(program, label) {
+			program.flowLabel = label;
+			return program;
 		}
 		function parsePrimary() {
 			var token = peek();
@@ -749,9 +785,9 @@
 					var args = parseArgs();
 					consume(")");
 					if (fns[name]) {
-						return parsePostfix(function (runCtx) {
+						return parsePostfix(labelled(function (runCtx) {
 							return fns[name].apply(null, runArgs(args, runCtx));
-						});
+						}, name + "()"));
 					}
 					var method = methodProgram(name, args);
 					if (method) {
@@ -774,9 +810,9 @@
 				if (env.isScopePath(name)) {
 					if (isSimpleScopePath(name, env)) {
 						var parts = String(name).split(".");
-						return function (runCtx) { return readSimpleScopeParts(runCtx, parts); };
+						return labelled(function (runCtx) { return readSimpleScopeParts(runCtx, parts); }, name);
 					}
-					return function (runCtx) { return runCtx.read(name); };
+					return labelled(function (runCtx) { return runCtx.read(name); }, name);
 				}
 				env.raise("INVALID_EXPRESSION", "Unknown expression identifier: " + name, null, unknownIdentifierHint(name));
 			}
@@ -868,6 +904,8 @@
 		compile: compile,
 		compileTemplate: compileTree,
 		expressionFunctions: expressionFunctions,
+		// the methods an expression may call, by type of value (the checks of the sources read them)
+		methods: { text: STRING_METHODS.slice(0), list: ARRAY_METHODS.slice(0), number: NUMBER_METHODS.slice(0) },
 		tokenize: tokenize,
 		// compiles without evaluating: unknown functions, methods and identifiers are reported at check time
 		parse: function (source, env) { return compileExpressionProgram(null, String(source || ""), env); },

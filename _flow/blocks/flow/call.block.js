@@ -84,6 +84,12 @@ const _meta = {
 				},
 				includeTrace: false
 			});
+			// the warnings of the called Flow are the warnings of the caller's run, with the name of that Flow
+			if (execution && execution.warnings && typeof ctx.warn === "function") {
+				execution.warnings.forEach(function (warning) {
+					ctx.warn(Object.assign({}, warning, { flow: warning.flow || name }));
+				});
+			}
 			return execution.result;
 		}
 	};

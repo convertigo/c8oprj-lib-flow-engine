@@ -551,6 +551,36 @@
 		runContextPrototype.cancel = function (reason) {
 			this.cancelled = String(reason || "cancelled");
 		};
+		// The warnings of a run (an expression calling a method on an absent value...), returned with its result: one per
+		// code, path and method, with the number of times it happened, at most 20.
+		runContextPrototype.warn = function (warning) {
+			var state = warning && this.scopes && this.scopes.request ? frameStateForRequestScope(this.scopes.request) : null;
+			if (!state) {
+				return;
+			}
+			var record = function () {
+				var list = state.warnings || (state.warnings = []);
+				var keys = state.warningKeys || (state.warningKeys = {});
+				var key = [warning.code, warning.path, warning.method, warning.flow].join("\n");
+				if (keys[key]) {
+					keys[key].count++;
+					return;
+				}
+				if (list.length >= 20) {
+					state.warningsOmitted = (state.warningsOmitted || 0) + 1;
+					return;
+				}
+				var entry = Object.assign({ severity: "warning" }, warning, { count: Number(warning.count || 1) });
+				keys[key] = entry;
+				list.push(entry);
+			};
+			// the lanes of a parallel loop share the frame state of their caller
+			if (this.__flowLane === true && typeof Synchronizer === "function") {
+				new Synchronizer(record, state)();
+			} else {
+				record();
+			}
+		};
 		runContextPrototype.convertigoContext = function () {
 			var state = frameStateForRequestScope(this.scopes.request);
 			if (!Object.prototype.hasOwnProperty.call(state, "invocationContext")) {
@@ -1719,6 +1749,13 @@
 				}
 				if (ctx.schemaUpdates && ctx.schemaUpdates.length > 0) {
 					out.schemaUpdates = snapshot(ctx.schemaUpdates);
+				}
+				var runState = frameStateForRequestScope(ctx.scopes.request);
+				if (runState && runState.warnings && runState.warnings.length > 0) {
+					out.warnings = snapshot(runState.warnings);
+					if (runState.warningsOmitted) {
+						out.warningsOmitted = runState.warningsOmitted;
+					}
 				}
 				if (request.includeFlow === true || request.includeLocal === true) {
 					out.local = snapshot(ctx.scopes.local);
