@@ -873,6 +873,18 @@
 					var shorthand = String(part || "").trim();
 					if (shorthand.match(/^[A-Za-z_$][\w$]*$/)) {
 						addToken(shorthand, shorthand);
+						return;
+					}
+					// The method shorthand of JavaScript, $$then() { ... }, is the function it abbreviates:
+					// $$then: function () { ... }. Any other entry was dropped without a word, its body never ran.
+					var method = shorthand.match(/^(async\s+)?([A-Za-z_$][\w$]*)\s*\(/);
+					if (method) {
+						addToken(method[2], (method[1] ? "async " : "") + "function " + shorthand.substring(method[0].length - 1));
+						return;
+					}
+					if (shorthand !== "") {
+						env.raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported entry in an object at line " + lineNumber + ": " + shorthand,
+							null, "Write each entry as key: value; a slot takes a function body, for example $$then: function () { ... }.");
 					}
 					return;
 				}
@@ -1422,16 +1434,28 @@
 		function flowScriptFunctionLiteralBody(token, lineNumber) {
 			token = String(token || "").trim();
 			var match = token.match(/^function(?:\s+[A-Za-z_$][\w$]*)?\s*\(/);
-			if (!match) {
+			// An arrow function with a block body is a slot function too: $$then: () => { ... }.
+			var arrow = match ? null : token.match(/^(?:\(|[A-Za-z_$][\w$]*\s*=>)/);
+			if (!match && !arrow) {
 				return null;
 			}
-			var openParen = token.indexOf("(", match[0].length - 1);
-			var closeParen = balancedFlowScriptGroupEnd(token, openParen, "(", ")");
-			if (closeParen < 0) {
-				env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript slot function at line " + lineNumber,
-					null, "Close the function argument list before the slot body.");
+			var bodyStart;
+			if (match || arrow[0] === "(") {
+				var openParen = match ? token.indexOf("(", match[0].length - 1) : 0;
+				var closeParen = balancedFlowScriptGroupEnd(token, openParen, "(", ")");
+				if (closeParen < 0) {
+					env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript slot function at line " + lineNumber,
+						null, "Close the function argument list before the slot body.");
+				}
+				bodyStart = closeParen + 1;
+				if (!match) {
+					var arrowMark = token.substring(bodyStart).match(/^\s*=>/);
+					if (!arrowMark) return null;
+					bodyStart += arrowMark[0].length;
+				}
+			} else {
+				bodyStart = arrow[0].length;
 			}
-			var bodyStart = closeParen + 1;
 			while (bodyStart < token.length && /\s/.test(token.charAt(bodyStart))) {
 				bodyStart++;
 			}
@@ -1483,9 +1507,26 @@
 			});
 		}
 
+		// A function body under a $$ name the block does not declare as a slot ($$each on forEach):
+		// name the slots it has instead of the bare unknown engine attribute.
+		function rejectFlowScriptUnknownSlots(block, slotNames, tokens, lineNumber) {
+			var codec = env.sourceAttributeNameCodec();
+			Object.keys(tokens || {}).forEach(function (key) {
+				var decoded = codec.decode(key);
+				if (decoded.namespace !== "engine" || slotNames.indexOf(decoded.name) !== -1 || !isFlowScriptFunctionLiteral(tokens[key])) {
+					return;
+				}
+				env.raise("FLOW_SOURCE_ENGINE_ATTRIBUTE_UNKNOWN", "Flow block " + block + " has no slot " + key + " at line " + lineNumber + ".", null,
+					slotNames.length
+						? block + " slots are written " + slotNames.map(function (slot) { return codec.encode("engine", slot) + ": function () { ... }"; }).join(", ") + "."
+						: block + " has no slot; run the following nodes after it.");
+			});
+		}
+
 		function extractFlowScriptInlineSlots(blocks, imports, locals, block, parsed, lineNumber) {
 			var slotNames = flowScriptBlockSlotNames(blocks, block);
 			rejectFlowScriptFunctionProperties(block, slotNames, parsed.tokens, lineNumber);
+			rejectFlowScriptUnknownSlots(block, slotNames, parsed.tokens, lineNumber);
 			if (!slotNames.length) {
 				return { parsed: parsed, slots: {} };
 			}
