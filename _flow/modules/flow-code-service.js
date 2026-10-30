@@ -700,22 +700,36 @@
 			};
 		}
 		var patch = request.codepatch || request.patch || request.unifiedDiff || request.diff || "";
-		var code = request.code !== undefined && request.code !== null
-			? String(request.code)
-			: applyUnifiedPatchText(current.code, patch).content;
+		var applied = request.code !== undefined && request.code !== null ? null : applyUnifiedPatchText(current.code, patch);
+		var code = applied ? applied.content : String(request.code);
 		if (!flowCodeOfficialMode(request)) {
-			return flowCodeDraftSetRequest(blocks, Object.assign({}, request, {
+			return withPatchReport(flowCodeDraftSetRequest(blocks, Object.assign({}, request, {
 				name: name,
 				qname: flowCodeQName(request, name),
 				revision: current.revision
-			}), name, code);
+			}), name, code), applied);
 		}
-		return flowCodeSetRequest(blocks, Object.assign({}, request, {
+		return withPatchReport(flowCodeSetRequest(blocks, Object.assign({}, request, {
 			name: name,
 			qname: flowCodeQName(request, name),
 			code: code,
 			revision: current.revision
-		}));
+		})), applied);
+	}
+
+	// Where each hunk of a patch applied, and a warning for each one placed away from its line numbers or read with
+	// some tolerance (trailing spaces, empty context lines without their space).
+	function withPatchReport(out, applied) {
+		if (!applied || !out || typeof out !== "object") {
+			return out;
+		}
+		out.appliedHunks = applied.appliedHunks;
+		if (applied.notes && applied.notes.length) {
+			out.warnings = (out.warnings || []).concat(applied.notes.map(function (note) {
+				return { severity: "warning", code: "PATCH_APPLIED_WITH_TOLERANCE", message: note };
+			}));
+		}
+		return out;
 	}
 
 	function blockCodePatchRequest(blocks, request) {
@@ -743,17 +757,16 @@
 			};
 		}
 		var patch = request.codepatch || request.patch || request.unifiedDiff || request.diff || "";
-		var code = request.code !== undefined && request.code !== null
-			? String(request.code)
-			: applyUnifiedPatchText(current.code, patch).content;
+		var applied = request.code !== undefined && request.code !== null ? null : applyUnifiedPatchText(current.code, patch);
+		var code = applied ? applied.content : String(request.code);
 		var write = setProjectBlockCode(blocks, name, Object.assign({}, request, {
 			name: name,
 			code: code,
 			revision: current.codeRevision
 		}));
-		return Object.assign({}, write, {
+		return withPatchReport(Object.assign({}, write, {
 			oldRevision: current.codeRevision
-		});
+		}), applied);
 	}
 
 	function blockCodeGetRequest(blocks, request) {

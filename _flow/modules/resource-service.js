@@ -486,12 +486,14 @@
 			path: entry.path,
 			dryRun: request.dryRun === true,
 			hunks: applied.hunks,
+			appliedHunks: applied.appliedHunks,
 			created: created,
 			oldHash: oldHash,
 			newHash: newHash,
 			changed: oldHash !== newHash,
 			validation: validation
-		}, request.includeContent === true ? { content: applied.content } : {});
+		}, applied.notes && applied.notes.length ? { warnings: applied.notes } : {},
+			request.includeContent === true ? { content: applied.content } : {});
 	}
 
 	function remove(request, env) {
