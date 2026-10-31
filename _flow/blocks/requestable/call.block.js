@@ -319,13 +319,33 @@ const _meta = {
 		return new FailedCall(error);
 	}
 
+	// The failure the engine answers for a Flow run (Engine.js failure("run", e)), alone in its result: { error } with
+	// the code, the operation run, the path, the message and the hint. A result built by a Flow carries other keys or
+	// an error without operation (onError return gives the error without it).
+	function isFlowFailure(value) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) {
+			return false;
+		}
+		var keys = Object.keys(value);
+		var error = value.error;
+		return keys.length === 1 && keys[0] === "error" && !!error && typeof error === "object" &&
+			String(error.operation) === "run" && error.code !== undefined && error.code !== null &&
+			error.message !== undefined && error.hint !== undefined;
+	}
+
 	function callOutcome(ctx, node, props, target, value) {
 		if (!(value instanceof FailedCall)) {
 			return value;
 		}
 		var error = value.error || {};
 		if (String(props.onError || "raise") === "return") {
-			return { error: error };
+			var returned = {};
+			Object.keys(error).forEach(function (key) {
+				if (key !== "operation") {
+					returned[key] = error[key];
+				}
+			});
+			return { error: returned };
 		}
 		var status = Number(error.status);
 		return ctx.throwFlow({
@@ -371,7 +391,10 @@ const _meta = {
 					typeof CharSequence === "function" && result instanceof CharSequence)) {
 				result = JSON.parse(String(result));
 			}
-			return rawResult && requester.context.nativeJsonResponse !== null ? result.result : unwrapDocument(result);
+			var value = rawResult && requester.context.nativeJsonResponse !== null ? result.result : unwrapDocument(result);
+			// A called Flow that fails answers through the regular requester with the engine failure as its result:
+			// it makes the call fail as through the child execution, so an access check is enforced on this path too
+			return target.flow && isFlowFailure(value) ? failedCall(value.error) : value;
 		}
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();
 		return unwrapDocument(JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true, true))));

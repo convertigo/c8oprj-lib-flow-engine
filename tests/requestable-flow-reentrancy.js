@@ -306,6 +306,28 @@ assertTrue(Array.isArray(objects) && objects[0] === null && objects[1] === true 
 	"Native object result changed JSON types.");
 bounded = implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {__nocache: true}}});
 assertTrue(objectCalls === 2 && bounded.attr.version === "test", "Object transfer lost regular requestable metadata.");
+// A called Flow that fails through the regular requester (Convertigo 8.5, no direct-v1 child execution) answers its
+// engine failure as its result: the call fails with that error unless onError is return; a result holding an error stays.
+var regularFailure = {result: {error: {code: "FORBIDDEN", operation: "run", path: "Check.throw", message: "Denied", hint: "", status: 403}}};
+var regularAnswer = regularFailure;
+NativeJsonRequester.prototype.processRequestAsObject = function () { return regularAnswer; };
+raised = null;
+try {
+	implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {}}});
+} catch (e) {
+	raised = e;
+}
+assertTrue(raised && raised.code === "FORBIDDEN" && raised.status === 403,
+	"a Flow failing through the regular requester did not make the call fail: " + JSON.stringify(raised));
+var regularReturned = implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {}, onError: "return"}});
+assertTrue(regularReturned.error.code === "FORBIDDEN" && regularReturned.error.operation === undefined,
+	"onError return did not give the error of the regular requester: " + JSON.stringify(regularReturned));
+regularAnswer = {result: regularReturned};
+assertTrue(implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {}}}).error.code === "FORBIDDEN",
+	"a Flow returning the error it got with onError return was taken for a failure");
+regularAnswer = {result: {error: {code: 1, message: "business data"}, rows: []}};
+assertTrue(implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {}}}).error.message === "business data",
+	"a result holding an error property through the regular requester was taken for a failure");
 print("requestable-flow-reentrancy OK");
 
 // Native JSON sequences keep the requester boundary while opting into caller-thread execution.
