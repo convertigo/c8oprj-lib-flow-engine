@@ -64,4 +64,13 @@ var nested = JSON.parse(engine.run(JSON.stringify({ flowSource: [
 ].join("\n"), input: {}, includeTrace: false })));
 assertTrue(nested.ok === false && nested.error.code === "FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "a nested block call is still refused: " + JSON.stringify(nested.error));
 
+// code-set reads them as the run does: its safe corrections refused Math.max(1, 2) as an unknown block
+var written = JSON.parse(engine.flowCodeSet(JSON.stringify({ name: "Written", code: [
+	"function Written({ input, result }) {",
+	"  result.value = Math.max(1, Math.ceil(input.total / input.size))",
+	"  result.length = list.length(input.items)",
+	"}"
+].join("\n") })));
+assertTrue(written.ok === true, "code-set refused an expression function: " + JSON.stringify(written).substring(0, 800));
+
 print("expression-rounding-remainder: " + checks + " checks");

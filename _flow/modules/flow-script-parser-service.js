@@ -234,6 +234,8 @@
 			if (kind(node) !== "FunctionCall") return;
 			var name = text(node.getTarget()).replace(/\s/g, "");
 			if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) || /^(input|local|current|result|request|config|trace)\./.test(name) || blockName(node)) return;
+			// Math.max(1, 2) and list.length(x) are expression functions, as the run reads them
+			if (/^(list\.length|Math\.(round|floor|ceil|abs|min|max))$/.test(name)) return;
 			unknownBlock(blocks, name, line(start(node)), env);
 		});
 		for (var pass = 0; pass < 128; pass++) {
