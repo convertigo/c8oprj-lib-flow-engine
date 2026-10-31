@@ -1327,6 +1327,11 @@
 		// blocks: a block call (date.now({})) inside one is refused here.
 		function flowScriptExpressionTemplate(token, locals, lineNumber) {
 			var expression = flowScriptRewriteExpression(token, locals);
+			// "${}" is not an expression: at run time it is the text "${}". Never lower an empty value silently.
+			if (!String(expression).trim()) {
+				env.raise("FLOWSCRIPT_EXPRESSION_EMPTY", "Empty FlowScript value at line " + lineNumber + ".",
+					null, "Write the value to use, such as local.value, a quoted text or null.");
+			}
 			var call = nestedBlockCall(expression);
 			// i.test( after the closing slash of /^T-[0-9]+$/i is the end of a regular expression literal, not a block
 			// call: the expression check reports the literal
@@ -2236,6 +2241,11 @@
 			expr = stripFlowScriptSemicolon(String(expr || "").replace(/^return\b/, ""));
 			if (expr === "result" && !nested) {
 				return [];
+			}
+			// A bare return is a return block without value: it leaves the Flow with the result written so far, as in
+			// JavaScript (lowered to a value, it answered the empty template "${}" as text).
+			if (expr === "") {
+				return [{ id: "return", block: "return", __flowScriptLine: lineNumber }];
 			}
 			var fields = isFlowScriptObjectLiteral(expr) ? naturalFlowScriptObjectFields(expr) : null;
 			// Only identifier keys lower to named result destinations (destination-contract);
