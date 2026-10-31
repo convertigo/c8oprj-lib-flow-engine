@@ -46,7 +46,7 @@ assert(palette.items.some(function(item){return item.id==='frontbuilder.svelte.l
 var builderPalette=call('authoringPalette',{focusPath:routes.path.replace(/\.routes$/,''),detail:'normal'});
 assert(!builderPalette.items.some(function(item){return item.id==='frontbuilder.svelte.page';}),'the builder uses its routes directory for occupied recipes');
 var collision=result('authoringMutate',{action:{id:'frontbuilder.svelte.page',targetPath:routes.path,name:'ignored'}});
-assert(!collision.ok && collision.error.code==='SOURCE_ALREADY_EXISTS' && /Route segment/.test(collision.error.hint),'forced creation names the occupied source and the route-segment fix');
+assert(!collision.ok && collision.error.code==='SOURCE_ALREADY_EXISTS' && /route segment/i.test(collision.error.hint),'forced creation names the occupied source and the route-segment fix');
 var segment=call('authoringMutate',{action:{id:'frontbuilder.svelte.routeSegment',surface:'frontend',builder:'svelte',targetPath:routes.path,name:'products'}});
 Object.keys(segment.sourceChanges).forEach(function(path){drafts[path]=segment.sourceChanges[path];});
 assert(/route_products$/.test(segment.path) && segment.parentPath===segment.path,'new segment reports the actual palette target: '+JSON.stringify(segment));

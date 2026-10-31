@@ -105,8 +105,10 @@ var invalid = JSON.parse(engine.authoringMutate(JSON.stringify(Object.assign(req
 	action: { id: "frontbuilder.svelte.routeSegment", targetPath: createdPage.path, position: "inside" } }))));
 assert(!invalid.ok && JSON.stringify(invalid).indexOf("INVALID_AUTHORING_ACTION") >= 0,
 	"Action admission follows current slots, not the incoming action id alone");
+var pageAction = call("authoringPalette", { focusPath: second.path }).items.filter(function (item) { return item.id === "frontbuilder.svelte.page"; })[0];
 var palette = call("authoringPalette", { focusPath: segment.path });
-var pageAction = palette.items.filter(function (item) { return item.id === "frontbuilder.svelte.page"; })[0];
+assert(!palette.items.some(function (item) { return item.id === "frontbuilder.svelte.page"; }), "An occupied route no longer offers an impossible Page action");
+// An action obtained for an empty route must still refuse a now-occupied destination.
 var collision = JSON.parse(engine.authoringMutate(JSON.stringify(Object.assign(request(), {
 	action: Object.assign({}, pageAction.authoringAction, { targetPath: segment.path, position: "inside" }) }))));
 assert(!collision.ok && JSON.stringify(collision).indexOf("SOURCE_ALREADY_EXISTS") >= 0, "Existing page is not overwritten");

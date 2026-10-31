@@ -6495,7 +6495,7 @@
 				return String(descriptor.id || "") === actionId && sourceRecipeOccupied(descriptor, resolved, paletteRequest);
 			})[0];
 			if (occupied) raise("SOURCE_ALREADY_EXISTS", "The selected route folder already has " + occupied.insert.__frontendCreateSource.fileName + ".", null,
-				"Create a Route segment with name first, then use the Page apply returned for that segment; Page does not create a named segment.");
+				"Create a route segment with its name first, then use the Page apply returned for that segment; Page does not create a named segment.");
 			raise("INVALID_AUTHORING_ACTION", "The virtual authoring action is not valid for the selected target.", null,
 				"Read the palette for this target and pass items[].apply.arguments unchanged.");
 		}
