@@ -87,5 +87,36 @@ assertTrue(run.ok === true && run.result && run.result.count && run.result.count
 assertTrue(run.profile && run.profile.runPlanHeadHit === true && run.profile.compilePlanMs === 0,
 	"the first run compiled the plan again: " + JSON.stringify(run.profile));
 
+// projectFlows: the explicit warm-up of a project prepares every Flow sidecar it has, private and hidden ones too, without
+// running any, under the names its runs use; the first run of each finds its plan prepared
+var flowsDir = projectRoot.resolve("_flow/flows");
+java.nio.file.Files.createDirectories(flowsDir);
+var privateSource = "const _flow = { \"sourceVersion\": 2, \"accessibility\": \"private\" }\n"
+	+ "function Hidden({ input, result }) {\n  result.count = probe.count({})\n  return result\n}\n";
+java.nio.file.Files.writeString(flowsDir.resolve("Counting.flow.js"), countingSource);
+java.nio.file.Files.writeString(flowsDir.resolve("Hidden.flow.js"), privateSource);
+java.nio.file.Files.writeString(flowsDir.resolve("notes.txt"), "not a Flow");
+var before = runs();
+var warmup = JSON.parse(engine.preload(JSON.stringify({ project: "WarmProject", projectDir: __flowProjectDir, projectFlows: true })));
+assertTrue(warmup.ok === true && warmup.plans && warmup.plans.length === 2 && warmup.planCount === 2 && warmup.failedPlanCount === 0,
+	"projectFlows did not prepare every Flow of the project: " + JSON.stringify(warmup));
+assertTrue(warmup.plans[0].flowQName === "WarmProject.Counting" && warmup.plans[1].flowQName === "WarmProject.Hidden",
+	"projectFlows named the Flows otherwise than their runs: " + JSON.stringify(warmup.plans));
+assertTrue(runs() === before, "the warm-up of a project ran a Flow");
+var hiddenRun = JSON.parse(engine.run(JSON.stringify({
+	flowQName: "WarmProject.Hidden",
+	flowName: "Hidden",
+	flowSource: privateSource,
+	projectDir: __flowProjectDir,
+	input: {},
+	includeTrace: false,
+	profile: "envelope"
+})));
+assertTrue(hiddenRun.ok === true && hiddenRun.result.count.runs === before + 1, "the warmed private Flow did not run: " + JSON.stringify(hiddenRun));
+assertTrue(hiddenRun.profile.runPlanHeadHit === true && hiddenRun.profile.compilePlanMs === 0,
+	"the first run of a warmed Flow compiled its plan again: " + JSON.stringify(hiddenRun.profile));
+var empty = JSON.parse(engine.preload(JSON.stringify({ project: "WarmProject", projectDir: String(projectRoot.resolve("none")), projectFlows: true })));
+assertTrue(empty.ok === true && empty.planCount === 0 && empty.plans.length === 0, "a project without Flows failed its warm-up: " + JSON.stringify(empty));
+
 Packages.org.apache.commons.io.FileUtils.deleteDirectory(projectRoot.toFile());
 print("preload-run-plans OK");

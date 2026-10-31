@@ -81,6 +81,14 @@ it, hence under the same `plan:` key (project directory, qualified name, source)
 others being prepared), with `planCount` and `failedPlanCount`. Without `flows`,
 `preload` prepares the catalog and the compiler as before.
 
+With `projectFlows: true` and no `flows`, `preload` lists them itself: every
+`_flow/flows/*.flow.js` sidecar of the project directory, whatever its accessibility
+(public, hidden, private), named `<project>.<Flow>` (`project` of the request, else the
+directory name), its source read as the project loads it, in name order. This is the
+explicit warm-up of a project for a caller that does not list its Flows; it shares the
+answer and the guarantees above (nothing runs). The plan key holds the source: a caller
+whose runs pass another text than the sidecar prepares keys its runs never ask.
+
 The bridge sends it to the runtime the runs of the project use: the shared runtime
 on a stateless server, the pool otherwise. The engine calls it in the background
 (`FlowRuntimeWarmup`, engine property `javascript.runtime_warmup`) once the projects

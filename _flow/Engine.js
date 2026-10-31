@@ -2597,7 +2597,8 @@
 		var started = new Date().getTime();
 		var blocks = loadBlocks(false);
 		var compilerStarted = new Date().getTime();
-		var flows = Object.prototype.toString.call(request.flows) === "[object Array]" ? request.flows : null;
+		var flows = Object.prototype.toString.call(request.flows) === "[object Array]" ? request.flows
+			: request.projectFlows === true ? projectFlowSources(request) : null;
 		if (!flows) {
 			compileFlowPlan({
 				flowQName: "lib_flow_engine.__compiler_preload__",
@@ -2623,11 +2624,28 @@
 		return result;
 	}
 
+	// projectFlows: every Flow sidecar of the project, whatever its accessibility (public, hidden, private), read as the
+	// project loads it, under the qualified name its runs use (<project>.<Flow>); only read, never run
+	function projectFlowSources(request) {
+		var dir = projectFlowsDir();
+		var files = dir && dir.isDirectory() ? dir.listFiles() : null;
+		var project = String(request.project || (projectDir() ? projectDir().getName() : ""));
+		var flows = [];
+		for (var i = 0; files && i < files.length; i++) {
+			var name = String(files[i].getName());
+			if (!files[i].isFile() || !/\.flow\.js$/.test(name)) continue;
+			var flowName = name.substring(0, name.length - ".flow.js".length);
+			flows.push({ flowQName: project + "." + flowName, flowName: flowName,
+				flowSource: String(FileUtils.readFileToString(files[i], "UTF-8")) });
+		}
+		return flows.sort(function (a, b) { return a.flowName < b.flowName ? -1 : a.flowName > b.flowName ? 1 : 0; });
+	}
+
 	function preloadRunPlan(request, flow) {
 		var started = JavaSystem.nanoTime();
 		// the fields of the run request of the Flow: the project, its directory and context of the preload, its source
 		var runRequest = {};
-		Object.keys(request).forEach(function (key) { if (key !== "flows") runRequest[key] = request[key]; });
+		Object.keys(request).forEach(function (key) { if (key !== "flows" && key !== "projectFlows") runRequest[key] = request[key]; });
 		runRequest.flowQName = String(flow && flow.flowQName || "");
 		runRequest.flowName = String(flow && flow.flowName || "");
 		runRequest.flowSource = String(flow && flow.flowSource || "");
