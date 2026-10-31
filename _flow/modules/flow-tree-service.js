@@ -5686,10 +5686,49 @@
 	function authoringProposedSubtreeFromTreeRequest(request, tree) {
 		return authoringMutationTree(tree).proposedSubtree(request || {});
 	}
+	function paletteKey(value) {
+		return String(value === undefined || value === null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, "");
+	}
+
+	// The names an agent writes in a query: tag, name, label, local name, and the last part of the id.
+	function descriptorIdentityKeys(descriptor) {
+		var id = String(descriptor && descriptor.id || "");
+		return [descriptor.tag, descriptor.name, descriptor.label, descriptor.localName, id.substring(id.lastIndexOf(".") + 1)]
+			.map(paletteKey).filter(function (key) { return key !== ""; });
+	}
+
+	/**
+	 * How closely a candidate answers a query, lower first: 0 its name is the query (Form for "Form"), 1 its name is a
+	 * word of it (Textarea for "textarea multi-line"), 2 its name starts with the query, 3 contains it, 4 a match in
+	 * its category or description only (Input says "a form field"). A limited palette answer keeps the first ones.
+	 */
+	function descriptorQueryRank(descriptor, query) {
+		var key = paletteKey(query);
+		if (!key) {
+			return 4;
+		}
+		var names = descriptorIdentityKeys(descriptor);
+		if (names.indexOf(key) !== -1) {
+			return 0;
+		}
+		var words = String(query || "").split(/\s+/).map(paletteKey).filter(function (word) { return word.length > 1; });
+		if (words.some(function (word) { return names.indexOf(word) !== -1; })) {
+			return 1;
+		}
+		if (names.some(function (name) { return name.indexOf(key) === 0; })) {
+			return 2;
+		}
+		return names.some(function (name) { return name.indexOf(key) !== -1; }) ? 3 : 4;
+	}
+
 	function descriptorMatchesQuery(descriptor, query) {
 		var rawQuery = String(query || "").trim();
 		query = rawQuery.toLowerCase();
 		if (!query) {
+			return true;
+		}
+		// a word of the query that is the name of the candidate ("textarea multi-line" names Textarea)
+		if (descriptorQueryRank(descriptor, rawQuery) <= 1) {
 			return true;
 		}
 		var text = [
@@ -6103,6 +6142,16 @@
 			}
 		});
 		var eligibleCount = items.length;
+		if (query && items.length > 1) {
+			// the closest names first, then the catalog order (a stable sort)
+			items = items.map(function (item, index) {
+				return { item: item, index: index, rank: descriptorQueryRank(item, query) };
+			}).sort(function (a, b) {
+				return a.rank - b.rank || a.index - b.index;
+			}).map(function (entry) {
+				return entry.item;
+			});
+		}
 		var requestedLimit = Math.floor(Number(request.limit || 0));
 		var limit = isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 0;
 		if (limit && items.length > limit) {
