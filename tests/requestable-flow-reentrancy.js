@@ -392,6 +392,12 @@ var denied = {code: "ACCESS_DENIED", operation: "run", path: "forbidden", messag
 	assertTrue(handled.value && handled.value.error.code === "ACCESS_DENIED" && handled.value.error.operation === undefined,
 		"onError return did not give the access refusal (" + answer[0] + "): " + JSON.stringify(handled));
 });
+// The value of a Flow call is the result of the called Flow as it is: a Flow that wraps its answer in result.payload is
+// read value.payload once, as in the body of its HTTP answer (only requestable-execute of the MCP adds its own payload)
+regularAnswer = {result: {payload: {rows: [1, 2], total: 2}}, failed: false};
+var wrapped = regularCall();
+assertTrue(wrapped.value && JSON.stringify(wrapped.value) === '{"payload":{"rows":[1,2],"total":2}}',
+	"the result of the called Flow was not given as it is: " + JSON.stringify(wrapped));
 // A document answer holding business data shaped as an error, without marker, stays a result
 regularAnswer = {document: {error: {code: 1, message: "business data"}, attr: {version: "test"}}};
 var businessDocument = regularCall({__nocache: true});

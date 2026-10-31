@@ -12,6 +12,7 @@ const _meta = {
     "sdk",
   ],
   "description": "Calls a Convertigo sequence, Flow or transaction through the regular requestable path.",
+  "longDescription": "The value of a Flow call is the result of the called Flow as it is, with no envelope: a Flow writing result.items and result.total gives { items, total }, read local.list.items. It is the body of its HTTP .json answer without the attr metadata. requestable-execute of the MCP shows that answer under its own payload key, beside attr: a Flow that wraps its answer in result.payload is read local.list.payload.items here and payload.payload.items there. A sequence or a transaction gives its document as JSON. When the called Flow throws, the call fails with its error (see onError).",
   "summary": "call {{requestable}}",
   "properties": {
     "requestable": {
@@ -39,6 +40,7 @@ const _meta = {
   "outputs": {
     "out": {
       "type": "object",
+      "description": "The result of the called Flow as it is (result.items gives { items }), or the document of a sequence or a transaction; { error } with onError return when it fails.",
     },
   },
   "runtime": "rhino",
