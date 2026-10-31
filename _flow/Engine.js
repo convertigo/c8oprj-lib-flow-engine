@@ -2102,6 +2102,35 @@
 		return (typeof projects === "string" || projects instanceof JavaString) && String(projects).trim() !== "" ? new File(String(projects)) : null;
 	}
 
+	// Definition-only SQL validation, against the proposed config before any write or network operation.
+	function validateProjectResourceConfig(document, path) {
+		var config = document.config || {};
+		if (!config.sql) return;
+		var blocks = loadBlocks();
+		if (!blocks["sql.configCheck"] || !blocks["sql.jdbcCommands"]) {
+			raise("PROJECT_CONFIG_VALIDATOR_MISSING", path + ": config.sql requires the SQL definition validator.",
+				{property: "config.sql", reference: "lib_flow_sql"}, "Add the lib_flow_sql project reference before validating config.sql.");
+		}
+		var ctx = {
+			props: function (node) { return node; }, expr: function (value) { return value; }, template: function (value) { return value; },
+			canContinue: function () { return true; },
+			read: function (key) {
+				if (key === "request.projectDir") return String(projectDir());
+				return String(key).split(".").reduce(function (value, part) { return value && value[part]; }, {config: config});
+			},
+			throwFlow: function (error) { raise(error.code, error.message, error.details, error.hint); },
+			callBlock: function (name, properties) {
+				if (name !== "sql.jdbcCommands" || !properties.request || properties.request.operation !== "checkConfig")
+					raise("PROJECT_CONFIG_VALIDATOR_UNSAFE", "Configuration validation may only check SQL definitions.");
+				return blocks[name].run(ctx, properties);
+			}
+		};
+		var report = blocks["sql.configCheck"].run(ctx, {live: false, onError: "return"});
+		if (!report.ok) raise("SQL_CONFIG_INVALID", path + ": " + report.errors.length + " SQL definition error(s): " +
+			report.errors.map(function (entry) { return entry.path + ": " + entry.message; }).join(" | "),
+			{path: path, errors: report.errors, warnings: report.warnings}, "Correct all listed config.sql properties, then patch engine.yaml again. Nothing written.");
+	}
+
 	function resourceServiceEnv() {
 		return {
 			sources: sourceView(currentActiveRequest()),
@@ -2143,7 +2172,8 @@
 			compileProjectBlockCode: compileProjectBlockCode,
 			loadBlocks: loadBlocks,
 			parseYamlSource: parseYamlSource,
-			validateTypeDescriptorSource: validateTypeDescriptorSource
+			validateTypeDescriptorSource: validateTypeDescriptorSource,
+			validateProjectConfig: validateProjectResourceConfig
 		};
 	}
 
@@ -9520,7 +9550,9 @@
 		if (!modelPath || !sourceView(request).isFile(modelPath)) {
 			return failure("frontbuilder", {
 				code: "FRONTBUILDER_MODEL_REQUIRED",
-				message: "No frontend model file is available for this action."
+				message: "No frontend model file is available: check engine.yaml property config.frontbuilder.svelte.modelPath.",
+				details: {property: "config.frontbuilder.svelte.modelPath", modelPath: modelPath || null},
+				hint: "Restore the bootstrap setting config.frontbuilder.svelte.modelPath: _flow/frontbuilder/svelte/model/<project>/src/routes/+page.flow.svelte and its model sources; do not bootstrap the existing project again."
 			});
 		}
 		var effective = frontendEffectiveModelPath(request, info, modelPath);
@@ -11421,7 +11453,7 @@
 		var generated = frontendRunAction(request, blocks, "generate");
 		if (generated.ok === false) {
 			entry.status = "failed";
-			entry.error = {
+			entry.error = generated.error || {
 				message: generated.message || "Unable to generate the initial Svelte application.",
 				details: generated.details || {}
 			};
@@ -11508,17 +11540,24 @@
 		}
 		runtimeState.frontendDevServers[key] = entry;
 		frontendWriteDevState(request, info, entry);
+		if (entry.status === "failed") return {ok: false, title: "Svelte dev mode", pending: false,
+			message: "Svelte dev preparation failed: " + String(entry.error && entry.error.message || "unknown setup error"),
+			error: entry.error, details: frontendDevDetails(entry)};
 		frontendStartDevActivationWatcher(request, blocks, info, entry);
+		var details = frontendDevDetails(entry);
+		if (details.status === "failed") return {ok: false, title: "Svelte dev mode", pending: false,
+			message: "Svelte dev activation failed: " + String(details.error && details.error.message || "inspect the setup log"),
+			error: details.error, details: details};
 		return {
 			ok: true,
 			title: "Svelte dev mode",
-			message: entry.status === "prepared"
+			message: details.status === "prepared"
 				? "Svelte app dependencies are ready; Vite and the Studio viewer are starting automatically."
 				: entry.setupKind === "app"
 					? "Svelte app dependencies are being prepared; Vite and the Studio viewer will open automatically."
 					: "Svelte builder dependencies are being prepared in the background.",
-			pending: entry.status !== "failed",
-			details: frontendDevDetails(entry)
+			pending: true,
+			details: details
 		};
 	}
 
@@ -11863,7 +11902,8 @@
 			return {
 				ok: false,
 				title: "Svelte dev mode",
-				message: "Svelte dev mode failed to start.",
+				message: "Svelte dev mode failed to start: " + String(entry.error && entry.error.message || "inspect details and vite-dev.log"),
+				error: entry.error || {code: "FRONTEND_DEV_START_FAILED", message: "Inspect the dev setup log."},
 				generated: false,
 				details: frontendDevDetails(entry)
 			};

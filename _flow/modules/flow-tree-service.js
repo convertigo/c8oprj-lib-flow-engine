@@ -5814,7 +5814,11 @@
 		return normalizeTree(insert || {});
 	}
 
-	function descriptorPropertyContract(properties) {
+	function descriptorPropertyContract(properties, descriptor) {
+		var traits = descriptor && descriptor.traits || [];
+		// If has both visual and action uses: the shared contract advertises their common value syntax.
+		var action = traits.indexOf("ui.action") >= 0 || traits.indexOf("ui.action.variable") >= 0 ||
+			String(descriptor && (descriptor.tag || descriptor.insert && descriptor.insert.tag) || "").toLowerCase() === "if";
 		var out = {};
 		Object.keys(properties || {}).sort().forEach(function (name) {
 			var definition = properties[name] || {};
@@ -5823,7 +5827,7 @@
 				kind: kind,
 				type: String(definition.type || kind || "unknown"),
 				intents: kind === "binding" || String(definition.type || "") === "binding"
-					? ["literal", "expression", "source"]
+					? action ? ["literal", "source"] : ["literal", "expression", "source"]
 					: ["literal"]
 			};
 			if (definition.default !== undefined) {
@@ -5899,7 +5903,7 @@
 			});
 		}
 		// the palette offers what a new object sets: a hidden property is neither offered nor documented
-		var properties = descriptorPropertyContract(descriptor.properties);
+		var properties = descriptorPropertyContract(descriptor.properties, descriptor);
 		Object.keys(properties).forEach(function (name) {
 			if (properties[name].hidden === true) {
 				delete properties[name];
@@ -6491,7 +6495,7 @@
 					tag: String(descriptor.tag || insert.tag || ""),
 					label: String(descriptor.label || descriptor.name || descriptor.localName || ""),
 					category: String(descriptor.category || ""),
-					properties: descriptorPropertyContract(descriptor.properties),
+					properties: descriptorPropertyContract(descriptor.properties, descriptor),
 					slots: descriptor.slots || {},
 					// the handlers of the events the block raises (OnClick, OnSelectionChange...)
 					events: descriptorEventHandlers(descriptor)

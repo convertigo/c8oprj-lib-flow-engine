@@ -441,7 +441,8 @@
 		} else if (kind === "fragment") {
 			parseYamlResource(path, content, "version: 1\nnodes: []\n", env);
 		} else if (kind === "projectConfig") {
-			parseYamlResource(path, content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n", env);
+			var projectConfig = parseYamlResource(path, content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n", env);
+			if (env.validateProjectConfig) env.validateProjectConfig(projectConfig || {}, path);
 		} else if (kind === "frontendBlock" || kind === "frontendModel" && (String(path).endsWith(".front.json") || String(path).endsWith("/.flow-route.json"))) {
 			JSON.parse(String(content || "{}"));
 		} else if (kind === "frontendModel" && String(path).endsWith(".flow.svelte")) {
@@ -623,6 +624,20 @@
 		var validation = request.validate === false
 			? { ok: true, skipped: true }
 			: validateResourceContent(entry.path, applied.content, env);
+		if (env.resourceKind(entry.path) === "projectConfig") {
+			var before = parseYamlResource(entry.path, oldContent, "{}", env) || {};
+			var after = parseYamlResource(entry.path, applied.content, "{}", env) || {};
+			var removed = [];
+			["config.frontbuilder", "config.frontbuilder.svelte", "config.frontbuilder.svelte.modelPath", "configVisibility"].forEach(function (key) {
+				function at(root) { return key.split(".").reduce(function (value, part) { return value && value[part]; }, root); }
+				if (at(before) !== undefined && at(after) === undefined) removed.push(key);
+			});
+			if (removed.length) {
+				validation.warnings = [{code: "PROJECT_CONFIG_KEYS_REMOVED", path: entry.path, properties: removed,
+					message: "The replacement removes bootstrap configuration: " + removed.join(", ") + ". Dev generation or configuration visibility may stop working.",
+					hint: "Keep these keys from the previous engine.yaml; prefer edits or a focused patch to a complete replacement."}];
+			}
+		}
 		var newHash = env.sha256Hex(applied.content);
 		if (request.dryRun !== true) {
 			env.FileUtils.writeStringToFile(entry.file, applied.content, "UTF-8");
@@ -639,6 +654,7 @@
 			changed: oldHash !== newHash,
 			validation: validation
 		}, applied.notes && applied.notes.length ? { warnings: applied.notes } : {},
+			validation.warnings ? { warnings: (applied.notes || []).concat(validation.warnings) } : {},
 			request.includeContent === true ? { content: applied.content } : {});
 	}
 

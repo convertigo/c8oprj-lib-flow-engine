@@ -53,6 +53,8 @@ function check(request, available, text, label) {
 		}
 		assert(!available && response.error.code === "FRONTBUILDER_MODEL_REQUIRED",
 			label + ": missing or removed model must reject " + action);
+		assert(response.error.message.indexOf("config.frontbuilder.svelte.modelPath") >= 0 && /src\/routes\/\+page.flow.svelte/.test(response.error.hint),
+			label + ": missing model must name its engine.yaml property and bootstrap path");
 	});
 }
 
