@@ -27,6 +27,14 @@ const _meta = {
       "type": "object",
       "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary.",
     },
+    "onError": {
+      "label": "On error",
+      "kind": "select",
+      "type": "string",
+      "enum": ["raise", "return"],
+      "default": "raise",
+      "description": "When the called Flow fails (a throw, a failed block): raise makes this call fail with the code, message, status and details of that error, as a failing block does, so the caller stops unless a try catches it (an access check called before a read or a write is enforced); return gives the value { error: { code, message, status, path } } instead, for a caller that handles the failure itself.",
+    },
   },
   "outputs": {
     "out": {
@@ -296,12 +304,38 @@ const _meta = {
 		if (execution && execution.ok === true) {
 			return execution.result;
 		}
-		return {
-			error: execution && execution.error ? execution.error : {
-				code: "FLOW_REQUESTABLE_FAILED",
-				message: "The called Flow did not return a result."
-			}
-		};
+		return failedCall(execution && execution.error ? execution.error : {
+			code: "FLOW_REQUESTABLE_FAILED",
+			message: "The called Flow did not return a result."
+		});
+	}
+
+	// The error of a called Flow, marked as such: a Flow may also return a result holding an error property
+	function FailedCall(error) {
+		this.error = error;
+	}
+
+	function failedCall(error) {
+		return new FailedCall(error);
+	}
+
+	function callOutcome(ctx, node, props, target, value) {
+		if (!(value instanceof FailedCall)) {
+			return value;
+		}
+		var error = value.error || {};
+		if (String(props.onError || "raise") === "return") {
+			return { error: error };
+		}
+		var status = Number(error.status);
+		return ctx.throwFlow({
+			code: String(error.code || "FLOW_REQUESTABLE_FAILED"),
+			message: String(error.message || "The called requestable failed."),
+			status: status >= 400 && status <= 599 ? status : undefined,
+			details: error.details,
+			hint: "Raised by " + qnameFor(target) + (error.path ? " at " + error.path : "")
+				+ ". Catch it with try, or set onError: \"return\" to get { error } instead."
+		}, node);
 	}
 
 	function runInternal(ctx, target, input) {
@@ -313,7 +347,7 @@ const _meta = {
 		}
 		if (nativeBoundaryAvailable && ctx.tryDirectRequestable && target.dbo) {
 			var direct = ctx.tryDirectRequestable(target.dbo, input);
-			if (direct && direct.handled === true) return direct.value;
+			if (direct && direct.handled === true) return direct.failed === true ? failedCall(direct.value && direct.value.error) : direct.value;
 		}
 		var request = requestFromTarget(target);
 		putInput(request, input, target);
@@ -364,7 +398,7 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var target = resolveTarget(ctx, ctx.template(props.requestable || ""));
-			return runInternal(ctx, target, ctx.template(props.input) || {});
+			return callOutcome(ctx, node, props, target, runInternal(ctx, target, ctx.template(props.input) || {}));
 		}
 	};
 }())

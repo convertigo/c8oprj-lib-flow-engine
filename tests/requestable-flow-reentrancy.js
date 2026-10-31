@@ -120,6 +120,14 @@ function runContext(engineQName, execution) {
 			var error = new Error(message);
 			error.code = code;
 			throw error;
+		},
+		throwFlow: function (options) {
+			var error = new Error(options.message);
+			error.code = options.code;
+			error.status = options.status;
+			error.details = options.details;
+			error.hint = options.hint;
+			throw error;
 		}
 	};
 }
@@ -163,11 +171,35 @@ var failedContext = runContext("lib_flow_engine.Engine", {
 	ok: false,
 	error: { code: "CHILD_FAILED", message: "Child failed" }
 });
+// The error of the called Flow makes the call fail, as a failing block: a caller relying on an access check stops.
+var raised = null;
+try {
+	implementation.run(failedContext, { props: { requestable: "ChildProject.Child", input: {} } });
+} catch (e) {
+	raised = e;
+}
+assertTrue(raised && raised.code === "CHILD_FAILED" && raised.message === "Child failed" && internalRequests === 0,
+	"same-engine Flow failure did not make the call fail with its error: " + raised);
+var deniedContext = runContext("lib_flow_engine.Engine", {
+	ok: false,
+	error: { code: "ACCESS_DENIED", message: "Not allowed", status: 403, path: "Child.check", details: { role: "reader" } }
+});
+raised = null;
+try {
+	implementation.run(deniedContext, { props: { requestable: "ChildProject.Child", input: {} } });
+} catch (e) {
+	raised = e;
+}
+assertTrue(raised && raised.status === 403 && raised.details.role === "reader" && raised.hint.indexOf("ChildProject.Child") !== -1
+	&& raised.hint.indexOf("Child.check") !== -1, "the status, details and origin of the error were not kept: " + JSON.stringify(raised));
 var failed = implementation.run(failedContext, {
-	props: { requestable: "ChildProject.Child", input: {} }
+	props: { requestable: "ChildProject.Child", input: {}, onError: "return" }
 });
 assertTrue(failed.error.code === "CHILD_FAILED" && internalRequests === 0,
-	"same-engine Flow failure did not remain a regular requestable error envelope");
+	"onError return did not give the regular requestable error envelope");
+var dataContext = runContext("lib_flow_engine.Engine", { ok: true, result: { error: { code: 1, message: "business data" } } });
+var data = implementation.run(dataContext, { props: { requestable: "ChildProject.Child", input: {} } });
+assertTrue(data.error.message === "business data", "a result holding an error property is not an error of the call");
 
 function assertCacheControlUsesRegularPath(input, controlName) {
 	var before = internalRequests;
@@ -312,3 +344,31 @@ nativeResult={document:{normal:true,attr:{version:'test'}}};
 nativeAnswer=implementation.run(checked,{props:{requestable:'ChildProject.Native',input:{}}});
 assertTrue(nativeRequests[nativeRequests.length-1].__nativeCall===undefined&&nativeAnswer.attr.version==='test','Unflagged native sequence changed its regular metadata contract');
 print('explicit native calls, Java text fallback and unchanged default metadata OK');
+
+// The child execution of the same runtime (Convertigo 8.5): the engine tells a failed call from a result holding an error.
+packages.com.twinsoft.convertigo.engine.requesters.NativeJsonRequester = function () {};
+targetDbo = targetFlow;
+targetEngineQName = "lib_flow_engine.Engine";
+var nativeImplementation = (function (Packages) {
+	return eval(runtimeSource);
+})(packages);
+function childContext(direct) {
+	var context = runContext("lib_flow_engine.Engine", { ok: true, result: {} });
+	context.tryDirectRequestable = function () { return direct; };
+	return context;
+}
+raised = null;
+try {
+	nativeImplementation.run(childContext({ handled: true, value: { error: { code: "CHILD_DENIED", message: "Denied", status: 401 } }, failed: true }),
+		{ props: { requestable: "ChildProject.Child", input: {} } });
+} catch (e) {
+	raised = e;
+}
+assertTrue(raised && raised.code === "CHILD_DENIED" && raised.status === 401, "a failed child execution did not make the call fail");
+var childData = nativeImplementation.run(childContext({ handled: true, value: { error: "kept" } }),
+	{ props: { requestable: "ChildProject.Child", input: {} } });
+assertTrue(childData.error === "kept", "a child result holding an error property was taken for a failure");
+var childReturned = nativeImplementation.run(childContext({ handled: true, value: { error: { code: "CHILD_DENIED" } }, failed: true }),
+	{ props: { requestable: "ChildProject.Child", input: {}, onError: "return" } });
+assertTrue(childReturned.error.code === "CHILD_DENIED", "onError return did not give the error of the child execution");
+print("requestable-flow-reentrancy: the error of a called Flow fails the call unless onError is return");

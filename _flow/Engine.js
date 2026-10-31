@@ -12504,7 +12504,8 @@
 				result = runWithActiveRequest(request, null, 0);
 				result.result = sharedRuntime.childResult(result.result, function (envelope) { return sanitizeSerializableRuntimeValue(envelope, "result"); });
 			} catch (error) { result = failure("run", error); }
-			return { handled: true, value: result.ok ? result.result : { error: result.error } };
+			// failed: the error of the called Flow, told apart from a result that holds an error property
+			return { handled: true, value: result.ok ? result.result : { error: result.error }, failed: !result.ok };
 		} finally { lease.close(); }
 	}
 
