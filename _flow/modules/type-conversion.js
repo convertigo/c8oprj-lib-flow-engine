@@ -6,7 +6,9 @@
  *   integer  "42", 42.0 -> 42; a decimal number is truncated toward zero, as a Java cast (-4.7 -> -4)
  *   number   "4.2", 42 -> number
  *   boolean  true / false / 1 / 0, case insensitive
- *   array    an array, its items converted; a JSON array text -> array; one value -> [value]
+ *   array    an array, its items converted; a JSON array text -> array; one value -> [value]; a list of one JSON array
+ *            text -> that array (a multivalued variable that received the list as one JSON text: an HTTP query, the
+ *            MCP requestable-execute, a page CallSequence), unless the items are lists themselves
  *   object   an object; a JSON object text -> object
  *   any, unknown or no type: no conversion
  *
@@ -117,7 +119,22 @@
 		return fail("Expected a text, received " + describe(value) + ".");
 	}
 
+	// ['["a","b"]'] -> ["a","b"]: the list a multivalued Convertigo variable makes of one parameter that carries the
+	// whole list as JSON text. Kept as it is when the items may be lists (a list of one inner list).
+	function transportedArray(value, schema) {
+		if (kindOf(value) !== "array" || value.length !== 1 || kindOf(value[0]) !== "string") {
+			return value;
+		}
+		var itemTypes = schema && schema.items ? types(schema.items) : [];
+		if (itemTypes.indexOf("array") !== -1) {
+			return value;
+		}
+		var parsed = parseJson(value[0], "array");
+		return parsed === undefined ? value : parsed;
+	}
+
 	function toArray(value, schema) {
+		value = transportedArray(value, schema);
 		var items = kindOf(value) === "array" ? value
 			: kindOf(value) === "string" && parseJson(value, "array") !== undefined ? parseJson(value, "array")
 			: [value];
@@ -231,6 +248,8 @@
 		var expected = types(schema), actual = kindOf(value);
 		if (!expected.length || expected.indexOf("any") !== -1 || expected.indexOf("unknown") !== -1) return ok(value);
 		if (actual === "array" && expected.indexOf("array") !== -1) {
+			var transported = transportedArray(value, schema);
+			if (transported !== value) return convert(transported, schema);
 			if (!schema.items) return ok(value);
 			var changed = null, warning;
 			for (var i = 0; i < value.length; i++) {
