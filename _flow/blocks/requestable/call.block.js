@@ -321,7 +321,8 @@ const _meta = {
 
 	// The failure the engine answers for a Flow run (Engine.js failure("run", e)), alone in its result: { error } with
 	// the code, the operation run, the path, the message and the hint. A result built by a Flow carries other keys or
-	// an error without operation (onError return gives the error without it).
+	// an error without operation (onError return gives the error without it). Only a guess, for a Convertigo engine
+	// that does not mark its answer (see regularFlowOutcome).
 	function isFlowFailure(value) {
 		if (!value || typeof value !== "object" || Array.isArray(value)) {
 			return false;
@@ -331,6 +332,25 @@ const _meta = {
 		return keys.length === 1 && keys[0] === "error" && !!error && typeof error === "object" &&
 			String(error.operation) === "run" && error.code !== undefined && error.code !== null &&
 			error.message !== undefined && error.hint !== undefined;
+	}
+
+	// The answer of a called Flow through the regular requester. A Convertigo engine that marks it says beside the
+	// result or the document (failed, NativeJsonRequester.FAILED) whether the requestable failed: a Flow whose run ended
+	// in error, or a refusal answered as an error document; its error is then the failure of the call, and a result
+	// holding an error property stays a result. Without that marker (an older engine), the shape of the result decides.
+	function regularFlowOutcome(answer, value) {
+		var failed = answer && typeof answer === "object" ? answer.failed : undefined;
+		if (typeof failed !== "boolean") {
+			return isFlowFailure(value) ? failedCall(value.error) : value;
+		}
+		if (!failed) {
+			return value;
+		}
+		var error = value && typeof value === "object" ? value.error : undefined;
+		return failedCall(error && typeof error === "object" ? error : {
+			code: "FLOW_REQUESTABLE_FAILED",
+			message: "The called Flow failed."
+		});
 	}
 
 	function callOutcome(ctx, node, props, target, value) {
@@ -392,9 +412,9 @@ const _meta = {
 				result = JSON.parse(String(result));
 			}
 			var value = rawResult && requester.context.nativeJsonResponse !== null ? result.result : unwrapDocument(result);
-			// A called Flow that fails answers through the regular requester with the engine failure as its result:
-			// it makes the call fail as through the child execution, so an access check is enforced on this path too
-			return target.flow && isFlowFailure(value) ? failedCall(value.error) : value;
+			// A called Flow that fails answers through the regular requester with its error as its result: it makes
+			// the call fail as through the child execution, so an access check is enforced on this path too
+			return target.flow ? regularFlowOutcome(result, value) : value;
 		}
 		var doc = new InternalRequester(request, ctx.convertigoContext().httpServletRequest).processRequest();
 		return unwrapDocument(JSON.parse(String(XMLUtils.XmlToJson(doc.getDocumentElement(), true, true))));

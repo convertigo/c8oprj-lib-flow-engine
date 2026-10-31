@@ -328,6 +328,51 @@ assertTrue(implementation.run(checked, {props: {requestable: "ChildProject.Child
 regularAnswer = {result: {error: {code: 1, message: "business data"}, rows: []}};
 assertTrue(implementation.run(checked, {props: {requestable: "ChildProject.Child", input: {}}}).error.message === "business data",
 	"a result holding an error property through the regular requester was taken for a failure");
+// A Convertigo engine that marks its answer says beside it whether the called Flow failed (failed): its error makes the
+// call fail whatever its shape, and a result shaped as an engine failure stays a result when it is not marked failed.
+function regularCall(input, onError) {
+	var props = {requestable: "ChildProject.Child", input: input || {}};
+	if (onError) {
+		props.onError = onError;
+	}
+	try {
+		return {value: implementation.run(checked, {props: props})};
+	} catch (e) {
+		return {raised: e};
+	}
+}
+regularAnswer = {result: {error: {code: "DENIED", message: "Denied", status: 403}}, failed: true};
+var marked = regularCall();
+assertTrue(marked.raised && marked.raised.code === "DENIED" && marked.raised.status === 403,
+	"a Flow failure marked by the engine did not make the call fail: " + JSON.stringify(marked));
+marked = regularCall({}, "return");
+assertTrue(marked.value && marked.value.error.code === "DENIED" && marked.value.error.status === 403,
+	"onError return did not give the marked failure: " + JSON.stringify(marked));
+regularAnswer = {result: regularFailure.result, failed: false};
+marked = regularCall();
+assertTrue(marked.value && marked.value.error.operation === "run" && marked.value.error.code === "FORBIDDEN",
+	"a result shaped as an engine failure, marked as a result, was taken for a failure: " + JSON.stringify(marked));
+// The document answer (cache controls keep the regular boundary) is marked as well
+regularAnswer = {document: {error: {code: "DENIED", message: "Denied", status: 403}, attr: {version: "test"}}, failed: true};
+marked = regularCall({__nocache: true});
+assertTrue(marked.raised && marked.raised.code === "DENIED", "a marked document failure did not make the call fail: " + JSON.stringify(marked));
+regularAnswer = {document: {error: {code: 1, message: "business data"}, attr: {version: "test"}}, failed: false};
+marked = regularCall({__nocache: true});
+assertTrue(marked.value && marked.value.error.message === "business data" && marked.value.attr.version === "test",
+	"a document holding an error property, marked as a result, was taken for a failure: " + JSON.stringify(marked));
+// A refusal before the run (authentication, accessibility) answers an error document, without native response
+NativeJsonRequester.prototype.processRequestAsObject = function () {
+	this.context.nativeJsonResponse = null;
+	return {document: {error: {message: "Authentication required"}, attr: {version: "test"}}, failed: true};
+};
+marked = regularCall();
+assertTrue(marked.raised && marked.raised.code === "FLOW_REQUESTABLE_FAILED" && marked.raised.message === "Authentication required",
+	"a refusal answered as an error document did not make the call fail: " + JSON.stringify(marked));
+// A marked failure without error object still fails
+NativeJsonRequester.prototype.processRequestAsObject = function () { return {result: null, failed: true}; };
+marked = regularCall();
+assertTrue(marked.raised && marked.raised.code === "FLOW_REQUESTABLE_FAILED", "a marked failure without error did not fail the call");
+NativeJsonRequester.prototype.processRequestAsObject = function () { return regularAnswer; };
 print("requestable-flow-reentrancy OK");
 
 // Native JSON sequences keep the requester boundary while opting into caller-thread execution.
