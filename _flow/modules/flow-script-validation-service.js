@@ -221,12 +221,25 @@
 						});
 					}
 					var props = catalog.props || {};
+					if (env.destinationContract) env.destinationContract.entries(catalog, node.props || node, node.out).forEach(function (entry) {
+						var checked = env.destinationContract.validate(entry.value);
+						if (!checked.valid) diagnostics.push({ severity: "error", code: checked.code, line: line,
+							block: name, property: entry.property, path: entry.value, message: checked.message,
+							hint: "Use a static named destination such as local.value. For grouping by a computed key, build an array of groups with {key, items} using list.filter/list.map, or use json.map/json.put with a declared map; do not assign local.map[current.key]." });
+					});
 					var acceptsAdditionalProperties = catalog.dynamicProperties === true || !!catalog.additionalProperties;
 					var slotMap = {};
 					env.flowScriptSlotNames(activeBlocks, node).forEach(function (slot) {
 						slotMap[slot] = true;
 					});
 					businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
+						var descriptor = props[key], value = flowScriptPropertyValue(node, key);
+						if (descriptor && Array.isArray(descriptor.enum) && descriptor.enum.every(function(choice){return choice === null || typeof choice !== "object";}) && descriptor.kind !== "expression" &&
+							!(typeof value === "string" && env.templateSyntax.hasExpression(value)) && descriptor.enum.indexOf(value) < 0) {
+							diagnostics.push({severity:"error",code:"BLOCK_PROPERTY_ENUM_INVALID",line:line,block:name,property:key,
+								message:name+"."+key+" received "+JSON.stringify(value)+"; allowed values: "+descriptor.enum.map(function(choice){return JSON.stringify(choice);}).join(", ")+".",
+								hint:"Set "+key+" to one of "+descriptor.enum.map(function(choice){return JSON.stringify(choice);}).join(", ")+" from the block contract."});
+						}
 						if (!props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
 							// $id, $nodes... with one dollar: an engine attribute that lost a dollar, usually in a

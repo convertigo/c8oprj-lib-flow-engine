@@ -1225,8 +1225,9 @@
 				draft: true,
 				revision: current.revision,
 				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
-					"FlowScript working copy changed since it was checked: " + name,
-					"Run flow-code-check again and promote with the latest working copy revision."),
+					"Supplied revision " + String(expectedRevision) + " is not the current working copy revision " + current.revision + " for " + name + ".",
+					"Copy the revision returned by code-get or code-check exactly, then promote that checked revision. A mismatch alone does not establish that the working copy changed.",
+					{property:"revision",receivedRevision:String(expectedRevision),currentRevision:current.revision,name:name}),
 				warnings: []
 			};
 		}

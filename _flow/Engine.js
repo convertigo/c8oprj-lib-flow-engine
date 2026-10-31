@@ -4496,6 +4496,7 @@
 
 	function flowScriptValidationEnv() {
 		return {
+			destinationContract: destinationContract(),
 			inputExpressionTokens: function (text) { return expressionUtils().flatTokens(expressionUtils().tokenize(text, expressionUtilsEnv())); },
 			expressionMethods: expressionUtils().methods,
 			templateSyntax: templateSyntax(),

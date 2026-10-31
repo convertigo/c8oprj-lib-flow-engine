@@ -384,6 +384,9 @@
 
 	function unknownIdentifierHint(name) {
 		name = String(name || "");
+		if (/^current\d+(?:[.[]|$)/.test(name)) {
+			return "current is the item of the innermost list.map/list.filter/list.sort or forEach; numbered aliases such as current0/current2 do not exist. Before entering the inner block, copy the outer value to a local (local.k = current.key), then read local.k inside it.";
+		}
 		if (name === "index") {
 			return "No implicit index variable is available in list.map/list.filter expressions yet. Use list.take for top-N slicing, or create an explicit flow when you need counters.";
 		}

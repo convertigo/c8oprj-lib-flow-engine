@@ -2031,9 +2031,7 @@
 		return diagnostic;
 	}
 
-	// A Private requestable is not callable by the users of the application: outside the Studio, which runs every
-	// requestable, the call answers "Unable to execute the requested requestable" (a CurrentUser Flow then never tells
-	// who signed in).
+	// Browser calls use HTTP: Private requestables are internal implementation details.
 	function flowSvelteCallPrivateDiagnostic(node, requestable, contract) {
 		var path = String(node && node.sourceMutationPath || "") + ".props.requestable";
 		var target = contract.target && contract.target.qname ? contract.target.qname : requestable;
@@ -2045,12 +2043,17 @@
 			level: "error",
 			severity: "error",
 			code: "FRONTEND_CALLSEQUENCE_PRIVATE",
-			message: "CallSequence calls " + target + ", which is Private: the frontend cannot call it outside the Studio " +
+			message: "CallSequence calls " + target + ", which is Private: the frontend calls over HTTP and cannot use this internal target " +
 				"(\"Unable to execute the requested requestable\").",
 			path: path,
+			property: "requestable",
+			sourcePath: node.sourcePath,
+			line: node.sourceLine,
+			column: node.sourceColumn,
 			requestable: requestable,
 			accessibility: String(contract.accessibility),
 			authenticatedContextRequired: contract.authenticatedContextRequired === true,
+			hint: "Use a Hidden or Public HTTP entry Flow with authentication and role checks inside that Flow; keep private helper Flows internal. Do not make a helper public without its authorization checks.",
 			next: "A Flow called by the frontend must be Hidden (with authenticatedContextRequired when it needs a logged-in user): " +
 				(flow ? "set _flow.accessibility to \"hidden\" in " + target : "set the accessibility property of " + target + " to Hidden") +
 				authentication
@@ -2060,7 +2063,7 @@
 	function flowSvelteCallContractDiagnostics(root, request) {
 		var diagnostics = [];
 		function visit(node) {
-			var kind = String(node && node.props && node.props.kind || "");
+			var kind = String(node && node.sourceKind || node && node.props && node.props.kind || "");
 			if (kind === "callSequence" && typeof node.props.requestable === "string" && node.props.requestable.trim()) {
 				var requestable = node.props.requestable.trim();
 				var contract = null;

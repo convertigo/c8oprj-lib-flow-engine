@@ -1687,7 +1687,14 @@
 						? flowScriptValueFromToken(token, locals, lineNumber) : flowScriptPathFromToken(token, locals);
 				}
 				var checked = env.destinationContract.validate(literal);
-				if (!checked.valid) env.raise(checked.code, key + " at line " + lineNumber + ": " + checked.message);
+				if (!checked.valid) {
+					var hint = "Use a static named destination such as local.value. For computed grouping, build an array of groups {key, items} or use json.map/json.put instead of local.map[current.key].";
+					try { env.raise(checked.code, key + " at line " + lineNumber + ": " + checked.message, null, hint); }
+					catch (error) {
+						error.details = [{severity:"error",phase:"parse",code:checked.code,line:lineNumber,block:block,property:key,message:error.message,hint:hint}];
+						throw error;
+					}
+				}
 				return literal;
 			}
 			return flowScriptPathFromToken(token, locals);

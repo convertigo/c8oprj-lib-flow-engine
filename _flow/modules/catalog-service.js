@@ -231,7 +231,12 @@
 		if (property && property.mode) {
 			parts.push(String(property.mode));
 		}
-		return parts.join(":") || "value";
+		var summary = parts.join(":") || "value";
+		if (property && Array.isArray(property.enum) && property.enum.length) {
+			summary += "[" + property.enum.slice(0, 8).map(function (choice) { return JSON.stringify(choice); }).join("|") +
+				(property.enum.length > 8 ? "|..." : "") + "]";
+		}
+		return summary;
 	}
 
 	function blockSignature(descriptor) {

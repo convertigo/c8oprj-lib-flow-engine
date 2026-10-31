@@ -20,6 +20,8 @@ function reset(){working={code:'checked',revision:'r1'};saved=null;validations=0
 function promote(request){return service.flowCodePromoteRequest({},Object.assign({name:'Sample'},request||{}),env);}
 reset();var stale=promote({revision:'r0'});
 assert(!stale.ok && stale.error.code==='FLOW_CODE_DRAFT_REVISION_MISMATCH' && !saved && validations===0,'Explicit stale revision must fail before validation');
+assert(stale.error.message.indexOf('r0')>=0 && stale.error.message.indexOf('r1')>=0 && !/changed since/.test(stale.error.message) &&
+ stale.error.details.receivedRevision==='r0' && stale.error.details.currentRevision==='r1','An unrecognized revision must name both revisions without inventing a concurrent change');
 reset();mutate=true;var raced=promote();
 assert(!raced.ok && raced.error.code==='FLOW_CODE_DRAFT_REVISION_MISMATCH' && raced.revision==='r2' && !saved,'Changed draft was promoted after validation');
 reset();var selected=promote();

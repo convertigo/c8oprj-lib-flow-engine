@@ -374,7 +374,7 @@ const _meta = {
 		return ctx.throwFlow({
 			code: String(error.code || "FLOW_REQUESTABLE_FAILED"),
 			message: String(error.message || "The called requestable failed."),
-			status: status >= 400 && status <= 599 ? status : undefined,
+			status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500,
 			details: error.details,
 			hint: "Raised by " + qnameFor(target) + (error.path ? " at " + error.path : "")
 				+ ". Catch it with try, or set onError: \"return\" to get { error } instead."

@@ -158,3 +158,7 @@ assertTrue(b.user && b.user.id==='session-B','B must get its own result');
 b.records[0].owner='changed-B';
 assertTrue(a.records[0].owner==='session-A','A must never expose B data or share nested caller results');
 print('requestable-session-result-handoff OK (two identities; detached requester result, no mutable Context reread)');
+Requester.prototype.processRequestAsObject=function(){return {result:{error:{operation:'run',code:'INVALID_DESTINATION',message:'Use a static named path.',hint:'Use local.value.'}}};};
+var failure=null;try{call('session-A');}catch(e){failure=e;}
+assertTrue(failure && failure.code==='INVALID_DESTINATION' && failure.status===500,'An uncaught child Flow failure without a status must propagate HTTP 500: '+JSON.stringify(failure));
+print('requestable-missing-error-status OK');
