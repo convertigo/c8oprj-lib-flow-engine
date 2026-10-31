@@ -205,6 +205,14 @@
 		return String(first) === String(second);
 	}
 
+	function numberArguments(values) {
+		var numbers = [];
+		for (var i = 0; i < values.length; i++) {
+			numbers.push(Number(values[i]));
+		}
+		return numbers;
+	}
+
 	function expressionFunctions(env) {
 		return {
 			lower: function (value) {
@@ -236,6 +244,41 @@
 			round: function (value, digits) {
 				var factor = Math.pow(10, Number(digits || 0));
 				return Math.round(Number(value) * factor) / factor;
+			},
+			// A count of pages, a whole part: floor(total / size), ceil(total / size); % gives the remainder
+			floor: function (value) {
+				return Math.floor(Number(value));
+			},
+			ceil: function (value) {
+				return Math.ceil(Number(value));
+			},
+			abs: function (value) {
+				return Math.abs(Number(value));
+			},
+			min: function () {
+				return Math.min.apply(null, numberArguments(arguments));
+			},
+			max: function () {
+				return Math.max.apply(null, numberArguments(arguments));
+			},
+			// the JavaScript spellings, as an author writes them first
+			"Math.round": function (value) {
+				return Math.round(Number(value));
+			},
+			"Math.floor": function (value) {
+				return Math.floor(Number(value));
+			},
+			"Math.ceil": function (value) {
+				return Math.ceil(Number(value));
+			},
+			"Math.abs": function (value) {
+				return Math.abs(Number(value));
+			},
+			"Math.min": function () {
+				return Math.min.apply(null, numberArguments(arguments));
+			},
+			"Math.max": function () {
+				return Math.max.apply(null, numberArguments(arguments));
 			},
 			// A single value counts as a list of one item, as a JWT aud claim: oneOf(clientId, claims.aud)
 			oneOf: function (value, list) {
@@ -359,7 +402,7 @@
 			if (ch === "{") {
 				return "Flow expressions do not support JavaScript object literals inside expressions. Object literals are valid as FlowScript values such as list.map({ select: { name: current.name } }); assign one first or use blocks for object construction.";
 			}
-			return "Flow expressions support scope paths, literals, function calls, arithmetic/comparison/logical operators, ternary and ??; use blocks for object/array construction.";
+			return "Flow expressions support scope paths, literals, function calls (round, floor, ceil, min, max, abs and their Math.* forms among them), arithmetic (+ - * / %), comparison and logical operators, ternary and ??; use blocks for object/array construction.";
 		}
 		// The escape sequence of a string whose backslash is at index slash, read as JavaScript does (template-syntax.js):
 		// "\r\n" used to give "r" and a line feed, "\uFEFF" the text uFEFF.
@@ -584,7 +627,7 @@
 			if (ch === "/" && (!previous || previous.type === "op" && previous.value !== ")" && previous.value !== "]")) {
 				regularExpressionLiteral(i);
 			}
-			if ("()?:,+-*/!<>{}[]".indexOf(ch) !== -1) {
+			if ("()?:,+-*/%!<>{}[]".indexOf(ch) !== -1) {
 				tokens.push({ type: "op", value: ch });
 				i++;
 				continue;
@@ -764,8 +807,10 @@
 			});
 		}
 		function parseMul() {
-			return binary(parseUnary, ["*", "/"], function (left, op, right) {
-				return op === "*" ? Number(left) * Number(right) : Number(left) / Number(right);
+			return binary(parseUnary, ["*", "/", "%"], function (left, op, right) {
+				return op === "*" ? Number(left) * Number(right)
+					: op === "%" ? Number(left) % Number(right)
+					: Number(left) / Number(right);
 			});
 		}
 		function parseUnary() {

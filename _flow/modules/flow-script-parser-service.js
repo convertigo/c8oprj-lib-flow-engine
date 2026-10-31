@@ -1326,7 +1326,8 @@
 				var name = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+(?=\s*\()/.exec(text.substring(i));
 				if (name && (i === 0 || !/[\w$.]/.test(text.charAt(i - 1)))) {
 					var root = name[0].split(".")[0];
-					if (!env.isScopePath(root)) {
+					// Math.floor(...) and the other expression functions are not blocks
+					if (!env.isScopePath(root) && FLOWSCRIPT_EXPRESSION_FUNCTIONS.indexOf(name[0]) === -1) {
 						return name[0];
 					}
 					i += name[0].length - 1;
@@ -1681,9 +1682,13 @@
 			if (dot > 0 && FLOWSCRIPT_VALUE_METHODS.indexOf(name.substring(dot + 1)) !== -1 && env.isScopePath(name.substring(0, dot))) {
 				return true;
 			}
-			return ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
-				"length", "list.length", "round", "default", "json", "oneOf", "overlaps", "String", "Number"].indexOf(name) !== -1;
+			return FLOWSCRIPT_EXPRESSION_FUNCTIONS.indexOf(name) !== -1;
 		}
+
+		// The functions of the expressions (expression-utils.js)
+		var FLOWSCRIPT_EXPRESSION_FUNCTIONS = ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
+			"length", "list.length", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
+			"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number"];
 
 		function parseNaturalFlowScriptCallMember(text) {
 			text = stripFlowScriptSemicolon(text);
