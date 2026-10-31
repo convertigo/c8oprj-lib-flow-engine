@@ -623,6 +623,20 @@
 		runContextPrototype.runNodes = function (nodes) {
 			return executeNodes(this, nodes);
 		};
+		// One item of forEach, while or file.forEachLine: the block next (a bare return of the body) stops the rest of
+		// the body like a return, and the loop goes on with the next item.
+		runContextPrototype.runLoopBody = function (nodes) {
+			this.loopDepth = (this.loopDepth || 0) + 1;
+			try {
+				return executeNodes(this, nodes);
+			} finally {
+				this.loopDepth--;
+				if (this.skipping) {
+					this.skipping = false;
+					this.stopped = false;
+				}
+			}
+		};
 		runContextPrototype.callBlock = function (name, props, options) {
 			return this.allocationTrace ? callAttributedBlock(this, name, props, options) : callBlock(this, name, props, options);
 		};
@@ -1397,12 +1411,16 @@
 			var previousCurrent = ctx.scopes.current;
 			var previousReturned = ctx.returned;
 			var previousStopped = ctx.stopped;
+			var previousSkipping = ctx.skipping;
+			var previousLoopDepth = ctx.loopDepth;
 			var previousTraceEnabled = ctx.traceEnabled;
 			ctx.scopes.props = nodeProperties;
 			ctx.scopes.input = ctx.scopes.props;
 			ctx.scopes.local = {};
 			ctx.returned = undefined;
 			ctx.stopped = false;
+			ctx.skipping = false;
+			ctx.loopDepth = 0;
 			if (options.trace === false) {
 				ctx.traceEnabled = false;
 			}
@@ -1441,6 +1459,8 @@
 				ctx.scopes.current = previousCurrent;
 				ctx.returned = previousReturned;
 				ctx.stopped = previousStopped;
+				ctx.skipping = previousSkipping;
+				ctx.loopDepth = previousLoopDepth;
 				ctx.traceEnabled = previousTraceEnabled;
 				profileAdd(ctx, "callBlockFrameRestoreMs", restoreStarted);
 				profileAdd(ctx, "callBlockTotalMs", totalStarted);

@@ -19,7 +19,7 @@ try {
   function context(props, body, condition) {
     return {count: 0, stopped: false, props: function () { return props; }, template: function (x) { return x; },
       expr: function () { return condition(this); }, canContinue: function () { return true; },
-      runNodes: function (nodes) { assert(nodes === node.nodes, "The caller's body is executed"); this.count++; if (body) body(this); },
+      runLoopBody: function (nodes) { assert(nodes === node.nodes, "The caller's body is executed"); this.count++; if (body) body(this); },
       throwFlow: function (error, location) { error.location = location.id; throw error; }};
   }
   var zero = context({maxIterations: 3}, null, function () { return false; });

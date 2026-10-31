@@ -59,7 +59,7 @@ const _meta = {
 						break;
 					}
 					ctx.scopes.current = items[i];
-					ctx.runNodes(node.nodes || []);
+					ctx.runLoopBody(node.nodes || []);
 				}
 			} finally {
 				ctx.scopes.current = previousCurrent;

@@ -49,7 +49,7 @@ const _meta = {
 						break;
 					}
 					ctx.scopes.current = String(line);
-					ctx.runNodes(node.nodes || []);
+					ctx.runLoopBody(node.nodes || []);
 					count++;
 				}
 			} finally {

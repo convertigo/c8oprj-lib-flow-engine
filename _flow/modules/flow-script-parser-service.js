@@ -2243,9 +2243,10 @@
 				return [];
 			}
 			// A bare return is a return block without value: it leaves the Flow with the result written so far, as in
-			// JavaScript (lowered to a value, it answered the empty template "${}" as text).
+			// JavaScript (lowered to a value, it answered the empty template "${}" as text). In the body of forEach or
+			// while, lowerLoopBareReturns makes it the next item, as return in a JavaScript forEach callback.
 			if (expr === "") {
-				return [{ id: "return", block: "return", __flowScriptLine: lineNumber }];
+				return [{ id: "return", block: "return", __flowScriptBareReturn: true, __flowScriptLine: lineNumber }];
 			}
 			var fields = isFlowScriptObjectLiteral(expr) ? naturalFlowScriptObjectFields(expr) : null;
 			// Only identifier keys lower to named result destinations (destination-contract);
@@ -2592,7 +2593,8 @@
 			if (!node.props) {
 				node.props = Object.create(null);
 				Object.keys(node).forEach(function (key) {
-					if (["id", "block", "out", "comment", "disabled", "__flowScriptLine", "props"].indexOf(key) !== -1 || slots.indexOf(key) !== -1) return;
+					// Parser bookkeeping (__flowScriptLine, __flowScriptBareReturn) stays on the node, out of the properties.
+					if (["id", "block", "out", "comment", "disabled", "props"].indexOf(key) !== -1 || key.indexOf("__flowScript") === 0 || slots.indexOf(key) !== -1) return;
 					node.props[key] = node[key];
 					delete node[key];
 				});
@@ -2711,6 +2713,31 @@
 			}
 		}
 	
+		// The body of forEach, while and file.forEachLine is a callback: a bare return in it ends the current item
+		// (block next), as return in a JavaScript forEach callback; the if branches are not callbacks. The slots of
+		// forEachChunk keep their return, the value of the chunk.
+		var ITEM_LOOP_BLOCKS = { forEach: true, "while": true, "file.forEachLine": true };
+		function isFlowScriptNodeList(list) {
+			return Array.isArray(list) && list.length > 0 && list.every(function (item) {
+				return item && typeof item === "object" && typeof item.block === "string";
+			});
+		}
+		function lowerLoopBareReturns(nodes, inLoop) {
+			(nodes || []).forEach(function (node, index) {
+				if (!node || typeof node !== "object") return;
+				if (node.__flowScriptBareReturn === true) {
+					nodes[index] = inLoop ? { id: "next", block: "next", __flowScriptLine: node.__flowScriptLine } : node;
+					delete node.__flowScriptBareReturn;
+					return;
+				}
+				var childInLoop = ITEM_LOOP_BLOCKS[node.block] === true ? true : node.block === "forEachChunk" ? false : inLoop;
+				Object.keys(node).forEach(function (key) {
+					if (key !== "props" && isFlowScriptNodeList(node[key])) lowerLoopBareReturns(node[key], childInLoop);
+				});
+			});
+			return nodes;
+		}
+
 		function parseFlowScript(blocks, code, options) {
 			code = env.normalizeFlowScriptFunctionSyntax(code);
 			var split = splitFlowScriptFunctions(code);
@@ -2763,10 +2790,13 @@
 					rootFromFunctions.flow = flowMeta;
 				}
 				parseFlowScriptStatementsInto(helperBlocks, Object.assign({}, imports), {}, rootFromFunctions, flowScriptStatements(main.body, main.bodyLine));
+				helpers.forEach(function (helper) { lowerLoopBareReturns(helper.nodes, false); });
+				lowerLoopBareReturns(rootFromFunctions.nodes, false);
 				return env.canonicalFlowDefinition(rootFromFunctions);
 			}
 			var root = { version: 1, nodes: [] };
 			parseFlowScriptStatementsInto(blocks, {}, {}, root, flowScriptStatements(code));
+			lowerLoopBareReturns(root.nodes, false);
 			return env.canonicalFlowDefinition(root);
 		}
 	

@@ -465,6 +465,55 @@
 		});
 	}
 
+	// The body of forEach, while and file.forEachLine is a callback: a bare return there is the block next (the next
+	// item), as return in a JavaScript forEach callback. A return with a value there leaves the whole Flow instead, at
+	// the first item that reaches it, which JavaScript would not do: code-set refuses it, an existing source gets a
+	// warning and keeps running as before. next outside a loop body has no item to end. forEachChunk is not
+	// concerned: there, return gives the value of the chunk.
+	var ITEM_LOOPS = { forEach: true, "while": true, "file.forEachLine": true };
+	function loopReturnDiagnostics(definition, request, env) {
+		var diagnostics = [];
+		var authoring = request && request.authoringCorrections === true;
+		// The lines of a $$nodes body count from that body: the diagnostic gives the line of the outermost loop.
+		function walk(nodes, loop) {
+			(nodes || []).forEach(function (node) {
+				if (!node || typeof node !== "object") return;
+				var name = env.blockName(node);
+				if (name === "return" && loop) {
+					diagnostics.push({
+						severity: authoring ? "error" : "warning",
+						code: "FLOWSCRIPT_RETURN_VALUE_IN_LOOP",
+						line: loop.line,
+						block: "return",
+						loop: loop.id,
+						message: "return with a value inside " + loop.block + (loop.id ? " " + loop.id : "") + " leaves the whole Flow at the first item that reaches it; " +
+							"in JavaScript, return in a forEach callback only ends that item.",
+						next: "To skip the item, write return without value (the loop goes on with the next item). To leave with a value, keep it in a local " +
+							"inside the loop, skip the other items with if, and return it after the loop."
+					});
+				}
+				if (name === "next" && !loop) {
+					diagnostics.push({
+						severity: "error",
+						code: "FLOW_NEXT_OUTSIDE_LOOP",
+						line: node.__flowScriptLine || 0,
+						block: "next",
+						message: "next ends the current item of a loop, but this one is outside the body of forEach, while or file.forEachLine.",
+						next: "Use return to leave the Flow, or move it into the body of the loop."
+					});
+				}
+				if (name === "forEachChunk") return;
+				var inner = loop || (ITEM_LOOPS[name] === true ? { block: name, id: String(node.id || ""), line: node.__flowScriptLine || 0 } : null);
+				["nodes", "then", "else", "fields"].forEach(function (slot) {
+					if (Object.prototype.toString.call(node[slot]) === "[object Array]") walk(node[slot], inner);
+				});
+			});
+		}
+		(definition.helpers || []).forEach(function (helper) { walk(helper.nodes, null); });
+		walk(definition.nodes, null);
+		return diagnostics;
+	}
+
 	function localConfigStyleDiagnostics(definition) {
 		var meta = flowMetaFromDefinition(definition);
 		var config = meta.config;
@@ -959,6 +1008,9 @@
 			diagnostics.push(diagnostic);
 		});
 		localConfigStyleDiagnostics(definition).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		loopReturnDiagnostics(definition, request, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		hardCodedServiceUrlDiagnostics(code).forEach(function (diagnostic) {

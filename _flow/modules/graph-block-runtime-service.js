@@ -331,6 +331,8 @@
 		var previousCurrent = ctx.scopes.current;
 		var previousReturned = ctx.returned;
 		var previousStopped = ctx.stopped;
+		var previousSkipping = ctx.skipping;
+		var previousLoopDepth = ctx.loopDepth;
 		var defaults = block.__graphDefinition.flow && block.__graphDefinition.flow.config;
 		var hasDefaults = defaults && Object.keys(defaults).length > 0;
 		// Default-free blocks keep the existing lazy/no-copy config fast path.
@@ -361,6 +363,8 @@
 		ctx.scopes.result = {};
 		ctx.returned = undefined;
 		ctx.stopped = false;
+		ctx.skipping = false;
+		ctx.loopDepth = 0;
 		if (hasDefaults) ctx.scopes.config = scopedConfig;
 		profileAdd(ctx, "graphBlockFrameEnterMs", frameStarted);
 		try {
@@ -385,6 +389,8 @@
 			ctx.scopes.current = previousCurrent;
 			ctx.returned = previousReturned;
 			ctx.stopped = previousStopped;
+			ctx.skipping = previousSkipping;
+			ctx.loopDepth = previousLoopDepth;
 			if (hasDefaults) ctx.scopes.config = previousConfig;
 			if (graphName) {
 				ctx.graphBlockStack.pop();

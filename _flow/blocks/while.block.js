@@ -76,7 +76,7 @@ const _meta = {
         ctx.throwFlow({code: "WHILE_ITERATION_LIMIT", message: "The while condition is still true after the maximum number of iterations.", status: 508,
           details: {iterations: iterations, maxIterations: limit}}, node);
       }
-      ctx.runNodes(node.nodes || []);
+      ctx.runLoopBody(node.nodes || []);
       iterations++;
     }
   }
