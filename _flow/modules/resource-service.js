@@ -428,6 +428,8 @@
 
 	function validateResourceContent(path, content, env) {
 		var kind = env.resourceKind(path);
+		var dataValidation = env.validateDataResource && env.validateDataResource(path, content);
+		if (dataValidation) return Object.assign({ok: true, kind: kind}, dataValidation);
 		var blockId = env.blockIdFromResourcePath(path);
 		if (kind === "blockHooks") {
 			var hooksContractFile = env.projectBlockCodeFileForResource(path);

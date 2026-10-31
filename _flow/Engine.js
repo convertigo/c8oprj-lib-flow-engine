@@ -2135,6 +2135,33 @@
 		return {sql: {checked: true, report: report}, warnings: report.warnings};
 	}
 
+	function validateProjectDataResource(path, text) {
+		if (!/^_flow\/resources\/sql\/.*\.json$/.test(path)) return;
+		var config = loadProjectEngineDefinition().config || {}, initializers = config.sql && config.sql.initializers || {};
+		var owners = Object.keys(initializers).filter(function(name) { return initializers[name].schemaFile === path; });
+		if (!owners.length && !/(?:^|\/)schema\.json$/.test(path)) return;
+		var blocks = loadBlocks();
+		if (!blocks["sql.jdbcCommands"]) return {warnings: [{code: "SQL_SCHEMA_VALIDATOR_MISSING", path: path,
+			message: "Reference lib_flow_sql to validate this portable SQL schema before initialization."}]};
+		var document;
+		try { document = JSON.parse(String(text)); }
+		catch (error) { raise("SQL_SCHEMA_JSON_INVALID", path + ": invalid JSON: " + error.message, null, "Correct the JSON syntax, then patch again. Nothing written."); }
+		var ctx = {props: function(node) {return node;}, expr: function(value) {return value;}, template: function(value) {return value;}, canContinue: function() {return true;}, read: function(key) {
+			return key === "request.projectDir" ? String(projectDir()) : undefined;
+		}, throwFlow: function(error) {throwFlowError(error);}};
+		try {
+			var connection = owners.length && config.sql.connections && config.sql.connections[initializers[owners[0]].connection];
+			return {sqlSchema: blocks["sql.jdbcCommands"].run(ctx, {request: {operation: "checkSchema", document: document, path: path, dialect: connection && connection.dialect || "hsqldb"}})};
+		} catch (error) {
+			var property = /Unknown schema property:\s*([A-Za-z_][\w]*)/.exec(String(error.message)), line = 0;
+			if (property) {var at = String(text).indexOf('"' + property[1] + '"'); if (at >= 0) line = String(text).slice(0, at).split("\n").length;}
+			throwFlowError({code: error.code || "SQL_SCHEMA_DEFINITION_INVALID", status: 400,
+				message: path + (line ? " at line " + line : "") + ": " + error.message,
+				details: {path: path, line: line, property: property ? property[1] : "schema", initializers: owners},
+				hint: "Correct the schema definition. Declare foreign keys in tables[].foreignKeys, with columns and references. Nothing written; no SQL connection was opened."});
+		}
+	}
+
 	function resourceServiceEnv() {
 		return {
 			sources: sourceView(currentActiveRequest()),
@@ -2177,7 +2204,8 @@
 			loadBlocks: loadBlocks,
 			parseYamlSource: parseYamlSource,
 			validateTypeDescriptorSource: validateTypeDescriptorSource,
-			validateProjectConfig: validateProjectResourceConfig
+			validateProjectConfig: validateProjectResourceConfig,
+			validateDataResource: validateProjectDataResource
 		};
 	}
 
