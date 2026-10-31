@@ -215,7 +215,10 @@ var modernTree = JSON.parse(engine.describeTree(JSON.stringify(modernTreeRequest
 var editor = findNode(modernTree, "editorNode");
 if (!editor) throw new Error("V2 provider identity missing: " + JSON.stringify(modernTree));
 var editorDefinition = JSON.parse(editor.definition), editorInfo = JSON.parse(editor.info);
-if (editorDefinition.props.id !== "businessId" || editorDefinition.props.disabled !== true
+// disabled is a bindable boolean (ui.control trait): a literal is projected as its literal binding
+var editorDisabled = editorDefinition.props.disabled;
+if (editorDefinition.props.id !== "businessId"
+		|| !(editorDisabled === true || (editorDisabled && editorDisabled.mode === "literal" && editorDisabled.value === true))
 		|| editorDefinition.props.$$id !== "businessDouble" || editorDefinition.disabled === true
 		|| editorInfo.propertyDefinitions.id.definitionPath !== "props.id"
 		|| editorInfo.propertyDefinitions.$$id.definitionPath !== "id"
