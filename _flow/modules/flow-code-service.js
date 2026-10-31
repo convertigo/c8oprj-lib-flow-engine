@@ -615,14 +615,17 @@
 			var sameError = sameCheck.error || (sameCheck.validation && sameCheck.validation.ok !== true
 				? flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(sameCheck.validation.diagnostics),
 					"Patch the working copy and retry code-check.", flowCodeDiagnosticReport(sameCheck.validation.diagnostics, request)) : null);
-			return flowCodeIntuitiveReport(flowCodeCorrections({
+			var unchanged = {
 				ok: sameCheck.error === null && sameCheck.validation && sameCheck.validation.ok === true,
 				qname: flowCodeQName(request, name), name: name, unchanged: true, written: false,
 				draft: current.draft === true, workingCopy: current.draft === true,
 				revision: current.revision, oldRevision: current.revision,
 				warnings: sameCheck.warnings, error: sameError || undefined,
 				next: current.draft === true ? "Source unchanged; the existing working copy still needs run/promote." : "Source unchanged; the saved Flow is active."
-			}, corrected), auto, null, normalized);
+			};
+			flowCodeAddInputReport(unchanged, sameCheck.validation);
+			if (unchanged.ok) flowCodeAddDiagnosticReport(unchanged, sameCheck.validation.diagnostics || [], request);
+			return flowCodeIntuitiveReport(flowCodeCorrections(unchanged, corrected), auto, null, normalized);
 		}
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
 		// No loaded Flow owns a new (or file only) Flow yet: the project's FlowEngine keeps its working copy, for

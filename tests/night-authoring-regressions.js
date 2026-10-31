@@ -19,6 +19,7 @@ var saved=api('flowCodeGet',{name:'Same'});
 var same=api('flowCodePatch',{name:'Same',revision:saved.revision,edits:[{oldText:'result.value',newText:'result.value'}]});
 assert(same.ok && same.unchanged===true && same.written===false && same.draft===false,'identity patch leaves saved Flow active: '+JSON.stringify(same));
 assert(!/promote/.test(same.next),'no new promote instruction');
+assert(Array.isArray(same.diagnostics) && same.diagnostics.length===0,'unchanged edits retain their validation diagnostics contract');
 var status=api('flowCodeStatus',{name:'Same'});assert(!status.dirty,'identity patch creates no dirty draft');
 var invalid=api('flowCodeSet',{name:'InvalidSame',code:'function InvalidSame({result}) {\n local.value = number.add({a:1,b:"invalid"})\n}'});
 var invalidSource=api('flowCodeGet',{name:'InvalidSame'});

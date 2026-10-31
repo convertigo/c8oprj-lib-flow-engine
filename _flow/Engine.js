@@ -2108,8 +2108,9 @@
 		if (!config.sql) return;
 		var blocks = loadBlocks();
 		if (!blocks["sql.configCheck"] || !blocks["sql.jdbcCommands"]) {
-			raise("PROJECT_CONFIG_VALIDATOR_MISSING", path + ": config.sql requires the SQL definition validator.",
-				{property: "config.sql", reference: "lib_flow_sql"}, "Add the lib_flow_sql project reference before validating config.sql.");
+			return {sql: {checked: false}, warnings: [{code: "PROJECT_CONFIG_VALIDATOR_MISSING", path: path, property: "config.sql",
+				message: "SQL definitions were not checked: lib_flow_sql is not referenced by this project.",
+				hint: "Add the lib_flow_sql reference and validate engine.yaml again before running SQL blocks."}]};
 		}
 		var ctx = {
 			props: function (node) { return node; }, expr: function (value) { return value; }, template: function (value) { return value; },
@@ -2118,7 +2119,7 @@
 				if (key === "request.projectDir") return String(projectDir());
 				return String(key).split(".").reduce(function (value, part) { return value && value[part]; }, {config: config});
 			},
-			throwFlow: function (error) { raise(error.code, error.message, error.details, error.hint); },
+			throwFlow: function (error) { throwFlowError(error); },
 			callBlock: function (name, properties) {
 				if (name !== "sql.jdbcCommands" || !properties.request || properties.request.operation !== "checkConfig")
 					raise("PROJECT_CONFIG_VALIDATOR_UNSAFE", "Configuration validation may only check SQL definitions.");
@@ -2126,9 +2127,12 @@
 			}
 		};
 		var report = blocks["sql.configCheck"].run(ctx, {live: false, onError: "return"});
-		if (!report.ok) raise("SQL_CONFIG_INVALID", path + ": " + report.errors.length + " SQL definition error(s): " +
-			report.errors.map(function (entry) { return entry.path + ": " + entry.message; }).join(" | "),
-			{path: path, errors: report.errors, warnings: report.warnings}, "Correct all listed config.sql properties, then patch engine.yaml again. Nothing written.");
+		if (!report.ok) throwFlowError({code: "SQL_CONFIG_INVALID", status: 400,
+			message: path + ": " + report.errors.length + " SQL definition error(s): " +
+				report.errors.map(function (entry) { return entry.path + ": " + entry.message; }).join(" | "),
+			details: {path: path, errors: report.errors, warnings: report.warnings},
+			hint: "Correct all listed config.sql properties, then patch engine.yaml again. Nothing written."});
+		return {sql: {checked: true, report: report}, warnings: report.warnings};
 	}
 
 	function resourceServiceEnv() {

@@ -442,7 +442,10 @@
 			parseYamlResource(path, content, "version: 1\nnodes: []\n", env);
 		} else if (kind === "projectConfig") {
 			var projectConfig = parseYamlResource(path, content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n", env);
-			if (env.validateProjectConfig) env.validateProjectConfig(projectConfig || {}, path);
+			if (env.validateProjectConfig) {
+				var configValidation = env.validateProjectConfig(projectConfig || {}, path);
+				if (configValidation) return Object.assign({ok: true, kind: kind}, configValidation);
+			}
 		} else if (kind === "frontendBlock" || kind === "frontendModel" && (String(path).endsWith(".front.json") || String(path).endsWith("/.flow-route.json"))) {
 			JSON.parse(String(content || "{}"));
 		} else if (kind === "frontendModel" && String(path).endsWith(".flow.svelte")) {
@@ -633,9 +636,9 @@
 				if (at(before) !== undefined && at(after) === undefined) removed.push(key);
 			});
 			if (removed.length) {
-				validation.warnings = [{code: "PROJECT_CONFIG_KEYS_REMOVED", path: entry.path, properties: removed,
+				validation.warnings = (validation.warnings || []).concat([{code: "PROJECT_CONFIG_KEYS_REMOVED", path: entry.path, properties: removed,
 					message: "The replacement removes bootstrap configuration: " + removed.join(", ") + ". Dev generation or configuration visibility may stop working.",
-					hint: "Keep these keys from the previous engine.yaml; prefer edits or a focused patch to a complete replacement."}];
+					hint: "Keep these keys from the previous engine.yaml; prefer edits or a focused patch to a complete replacement."}]);
 			}
 		}
 		var newHash = env.sha256Hex(applied.content);

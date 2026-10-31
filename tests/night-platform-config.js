@@ -59,6 +59,7 @@ var engineSource=read(new File(sourceRoot,'Engine.js'));
 var start=engineSource.indexOf('function validateProjectResourceConfig('),end=engineSource.indexOf('\n\tfunction resourceServiceEnv(',start);
 var validateConfig=eval('('+engineSource.substring(start,end).trim()+')');
 function projectDir(){return project;}
+function throwFlowError(options){var error=new Error(options.message);Object.keys(options).forEach(function(key){error[key]=options[key];});throw error;}
 function sqlBlock(name){var text=read(new File(sourceRoot,'../../lib_flow_sql/_flow/blocks/sql/'+name+'.block.js'));return eval(text.substring(text.indexOf('(function')));}
 function loadBlocks(){return {'sql.configCheck':sqlBlock('configCheck'),'sql.jdbcCommands':sqlBlock('jdbcCommands')};}
 env.validateProjectConfig=validateConfig;
@@ -69,3 +70,8 @@ assert(failure && failure.code==='SQL_CONFIG_INVALID' && failure.details.errors.
 assert(read(target)===before,'invalid project configuration must not be written');
 assert(failure.details.errors.some(function(e){return e.code==='SQL_QUERY_BOUNDS';}) && failure.details.errors.some(function(e){return e.code==='SQL_AUTH_REQUIRED';}),'all errors reported in one patch');
 print('night-platform-config OK');
+
+loadBlocks=function(){return {};};
+var unavailable=service.patch({path:'_flow/engine.yaml',content:JSON.stringify(broken)},env);
+assert(unavailable.validation.sql.checked===false && unavailable.warnings[0].code==='PROJECT_CONFIG_VALIDATOR_MISSING','Projects without the SQL library must explicitly report unchecked definitions rather than block config authoring');
+print('missing-sql-validator-warning OK');
