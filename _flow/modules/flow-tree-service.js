@@ -6385,6 +6385,23 @@
 		}).concat(propertyDescriptors);
 	}
 
+	// The name an author gives to the folder an action creates (a route segment login, a route group app): name of the
+	// action, else its property segment, name or label, in action.properties or in the arguments of the request.
+	function requestedSourceName(action, request) {
+		var sources = [action || {}, (action || {}).properties || {}, (request || {}).arguments || {}];
+		for (var i = 0; i < sources.length; i++) {
+			var source = sources[i];
+			var keys = i === 0 ? ["name"] : ["segment", "name", "label"];
+			for (var k = 0; k < keys.length; k++) {
+				var value = source[keys[k]];
+				if (value !== undefined && value !== null && String(value).trim() !== "") {
+					return String(value).trim();
+				}
+			}
+		}
+		return undefined;
+	}
+
 	function authoringActionMutationFromTreeRequest(request, blocks, tree) {
 		request = request || {};
 		var action = request.action || {};
@@ -6425,6 +6442,7 @@
 				cursor = cursor.parent ? findTreeNode(tree, cursor.parent.path) : null;
 			}
 			return env.planSourceCreation(recipe, { builder: builder, targetDirectory: targetDirectory,
+				name: requestedSourceName(action, request),
 				namespace: namespace, drafts: request.frontendSourceDrafts || {}, sourceRemovals: request.sourceRemovals || [],
 				usedIds: authoringDescriptors(paletteRequest, authoringEngineDefinition(request), blocks)
 					.map(function (descriptor) { return String(descriptor.id || ""); }) });

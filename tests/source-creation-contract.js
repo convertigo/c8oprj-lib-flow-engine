@@ -80,6 +80,27 @@ var parameter = create(group, "routeParam");
 create(parameter, "page");
 var second = create(routes, "routeSegment");
 assert(sourcePath(second).endsWith("/segment2"), "Collision with unsaved directory allocates next name");
+// A folder takes the name the author gives (action name, properties or arguments segment/name/label), as is.
+function createNamed(focus, id, extra, requestExtra) {
+	var palette = call("authoringPalette", { focusPath: focus.path, detail: "normal" });
+	var item = palette.items.filter(function (entry) { return entry.id === "frontbuilder.svelte." + id; })[0];
+	return JSON.parse(engine.authoringMutate(JSON.stringify(Object.assign(request(), requestExtra || {}, { action: Object.assign({}, item.authoringAction,
+		{ targetPath: focus.path, targetSlotId: item.targetSlot.id, position: "inside" }, extra || {}) }))));
+}
+function keep(result) {
+	assert(result.target === "sources", "A named creation plans its source: " + JSON.stringify(result));
+	Object.keys(result.sourceChanges).forEach(function (path) { drafts[path] = result.sourceChanges[path]; });
+	return result.selectionSourcePath;
+}
+assert(keep(createNamed(routes, "routeSegment", { name: "orders" })).endsWith("/routes/orders"), "action.name names the route segment");
+assert(keep(createNamed(routes, "routeSegment", null, { arguments: { label: "customers", segment: "clients" } })).endsWith("/routes/clients"),
+	"the segment argument names the route segment");
+assert(keep(createNamed(routes, "routeGroup", { properties: { name: "shop" } })).endsWith("/routes/(shop)"), "a route group takes its name in parentheses");
+var taken = createNamed(routes, "routeSegment", { name: "orders" });
+assert(!taken.ok && taken.error.code === "SOURCE_ALREADY_EXISTS" && /A folder named orders already exists/.test(taken.error.message),
+	"An existing name is refused, not numbered: " + JSON.stringify(taken));
+var badName = createNamed(routes, "routeSegment", { name: "orders/archive" });
+assert(!badName.ok && badName.error.code === "INVALID_SOURCE_NAME", "A name with a slash is refused: " + JSON.stringify(badName));
 var invalid = JSON.parse(engine.authoringMutate(JSON.stringify(Object.assign(request(), {
 	action: { id: "frontbuilder.svelte.routeSegment", targetPath: createdPage.path, position: "inside" } }))));
 assert(!invalid.ok && JSON.stringify(invalid).indexOf("INVALID_AUTHORING_ACTION") >= 0,
@@ -89,6 +110,7 @@ var pageAction = palette.items.filter(function (item) { return item.id === "fron
 var collision = JSON.parse(engine.authoringMutate(JSON.stringify(Object.assign(request(), {
 	action: Object.assign({}, pageAction.authoringAction, { targetPath: segment.path, position: "inside" }) }))));
 assert(!collision.ok && JSON.stringify(collision).indexOf("SOURCE_ALREADY_EXISTS") >= 0, "Existing page is not overwritten");
+assert(/Create a route segment with its name first/.test(collision.error.hint), "The refusal says how to add a page at another route: " + JSON.stringify(collision.error));
 var nativePage = new java.io.File(sourcePath(second), "+page.svelte");
 drafts[String(nativePage.getCanonicalPath())] = '<script module>export const _flow = { sourceVersion: 2 };</script>\n<FlowComponent $$id="native"><Structure /></FlowComponent>\n';
 var nativeCollision = JSON.parse(engine.authoringMutate(JSON.stringify(Object.assign(request(), {
