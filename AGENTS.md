@@ -756,3 +756,13 @@ Only the HTTP requester's own uncaught Flow failure changes its response status 
 Check requester-context ownership and the requested QName; nested calls, MCP tool failures, schedules and business
 objects with an error field do not own that HTTP status. Leave private requestable access to the Java requester.
 Tests: `tests/http-flow-failure-context.js`, `tests/http-flow-failure.cjs`, `tests/block-dependencies.cjs`.
+
+## Requestable result ownership in Studio
+
+Decode the detached response of requestable.call using that response alone. Never inspect
+requester.context.nativeJsonResponse after processRequestAsObject: another call may have reset the Context.
+`requestable-session-result-handoff.js` tests two caller identities at this handoff and nested result independence.
+This is not a certification of Studio session isolation. `requestable-studio-context-boundary.js` characterizes
+the actual ContextManager: Studio replaces distinct context names and session IDs with studio_<project>:S:<flow>.
+The core Java context naming and any data race before the requester detaches its response remain outside this
+library's scope. Do not claim the shared Studio context is secure solely because the library handoff test passes.

@@ -414,7 +414,10 @@ const _meta = {
 					typeof CharSequence === "function" && result instanceof CharSequence)) {
 				result = JSON.parse(String(result));
 			}
-			var rawAnswer = rawResult && requester.context.nativeJsonResponse !== null;
+			// The requester already detached this response. Studio can reuse its Context for another
+			// session before this JS frame resumes: never consult that mutable Context to decode A's result.
+			var rawAnswer = rawResult && result && typeof result === "object" &&
+				Object.prototype.hasOwnProperty.call(result, "result") && !Object.prototype.hasOwnProperty.call(result, "document");
 			var value = rawAnswer ? result.result : unwrapDocument(result);
 			// A called Flow that fails answers through the regular requester with its error as its result: it makes
 			// the call fail as through the child execution, so an access check is enforced on this path too
