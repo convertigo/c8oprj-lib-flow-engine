@@ -134,4 +134,13 @@ var refused = api("flowCodePatch", { name: "Hello", revision: patched.revision, 
 assert(refused.ok === false && refused.error && refused.error.code === "PATCH_CONTEXT_MISMATCH" && refused.error.details &&
 	refused.error.details.mismatch.expected === "  local.a = \"three\"" && refused.error.details.actual.length > 0,
 	"a mismatch is refused with the expected and actual lines: " + JSON.stringify(refused).substring(0, 800));
+// $$ (engine attributes: $$id, $$nodes) and the other replacement patterns of String.replace ($&, $1, $') are kept
+// as written by the edits and by a unified diff: no user text is used as a replacement pattern.
+var dollars = "json.array({ $$id: \"rows\", $$nodes: [] })\n";
+var dollarEdited = patches.applyTextEdits(dollars, [{ oldText: "$$id: \"rows\"", newText: "$$id: \"items\", note: \"$& $1 $' $$\"" }]);
+assert((dollarEdited.content || dollarEdited) === "json.array({ $$id: \"items\", note: \"$& $1 $' $$\", $$nodes: [] })\n",
+	"edits keep $$ and the replacement patterns as written: " + JSON.stringify(dollarEdited));
+var dollarPatched = apply(dollars, "@@ -1,1 +1,1 @@\n-json.array({ $$id: \"rows\", $$nodes: [] })\n+json.array({ $$id: \"items\", $$nodes: [\"$&\"] })\n");
+assert((dollarPatched.content || dollarPatched) === "json.array({ $$id: \"items\", $$nodes: [\"$&\"] })\n",
+	"a unified diff keeps $$ and the replacement patterns as written: " + JSON.stringify(dollarPatched));
 print("patch-utils-hunks OK (" + checks + " checks)");
