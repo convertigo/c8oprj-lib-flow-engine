@@ -56,7 +56,7 @@ env.applyRequestPatch=function(old,request){return {content:request.content,hunk
 var changed=service.patch({path:'_flow/engine.yaml',content:JSON.stringify({version:1,config:{}})},env);
 assert(changed.warnings && changed.warnings[0].code==='PROJECT_CONFIG_KEYS_REMOVED' && changed.warnings[0].properties.indexOf('config.frontbuilder.svelte.modelPath')>=0 && changed.warnings[0].properties.indexOf('configVisibility')>=0,'removed bootstrap keys must be visible: '+JSON.stringify(changed));
 var engineSource=read(new File(sourceRoot,'Engine.js'));
-var start=engineSource.indexOf('function validateProjectResourceConfig('),end=engineSource.indexOf('\n\tfunction resourceServiceEnv(',start);
+var start=engineSource.indexOf('function validateProjectResourceConfig('),end=engineSource.indexOf('\n\tfunction validateProjectDataResource(',start);
 var validateConfig=eval('('+engineSource.substring(start,end).trim()+')');
 function projectDir(){return project;}
 function throwFlowError(options){var error=new Error(options.message);Object.keys(options).forEach(function(key){error[key]=options[key];});throw error;}
