@@ -34,4 +34,12 @@ function refusal(line) {
 	assertTrue(hint.indexOf("Use " + entry[0].split("(")[0].split("= ")[1] + "({") === -1,
 		"the refusal still asks to call the JavaScript global with one object: " + hint);
 });
+// The check code-set runs (flowSourceValidate) names the equivalent too.
+function validate(line) {
+	return JSON.parse(engine.flowSourceValidate(JSON.stringify({ name: "T",
+		code: "const _flow = {sourceVersion:2}\nfunction T({ input, result }) {\n  " + line + "\n}" })));
+}
+var checked = JSON.stringify(validate("local.x = Object.assign({}, input)"));
+assertTrue(checked.indexOf("object.merge") !== -1 && checked.indexOf("is JavaScript, not a Flow block") !== -1,
+	"the code check of Object.assign did not name object.merge: " + checked.substring(0, 1500));
 print("javascript-global-equivalents: " + checks + " checks");
