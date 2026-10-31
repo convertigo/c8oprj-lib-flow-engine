@@ -58,6 +58,20 @@ const _meta = {
       "default": false,
       "description": "Export the full Convertigo project after writing. Keep false for fast MCP edits.",
     },
+    "autoCorrect": {
+      "label": "Auto-correct",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Apply the edits of the proposed patch whose confidence reaches autoCorrectThreshold (JavaScript globals, guessed block names and keys, positional arguments mapped onto block contracts) before the check; the answer lists them in autoCorrected and proposes the others in proposedPatch.",
+    },
+    "autoCorrectThreshold": {
+      "label": "Auto-correct threshold",
+      "kind": "literal",
+      "type": "number",
+      "default": 0.9,
+      "description": "Lowest confidence an edit needs to be applied by autoCorrect, between 0.8 and 1 (a lower value is raised to 0.8; an ambiguous mapping stays at 0.75 or below).",
+    },
     "refresh": {
       "label": "Refresh Studio",
       "kind": "literal",

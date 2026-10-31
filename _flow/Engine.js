@@ -4481,6 +4481,31 @@
 		return flowScriptValidationService().validateRequest(blocks, request, flowScriptValidationEnv());
 	}
 
+	function intuitiveCallResolver() {
+		return loadEngineModule("intuitive-call-resolver.js");
+	}
+
+	// The calls of a FlowScript written as JavaScript (globals, guessed block names, positional arguments) mapped onto
+	// the catalog as one global patch (intuitive-call-resolver.js). The threshold of autoCorrect is the request's
+	// autoCorrectThreshold, else the authoring setting intuitiveCall.autoCorrectConfidence, else 0.9.
+	function flowScriptIntuitiveResolve(blocks, code, request) {
+		request = request || {};
+		var settings = authoringSettings() || {};
+		var configured = settings.intuitiveCall && settings.intuitiveCall.autoCorrectConfidence;
+		var threshold = request.autoCorrectThreshold !== undefined && request.autoCorrectThreshold !== null && request.autoCorrectThreshold !== ""
+			? request.autoCorrectThreshold : configured;
+		return intuitiveCallResolver().resolve(blocks, code, { threshold: threshold }, {
+			blockCatalog: readOnlyBlockCatalog,
+			blockDescriptor: function (block) { return catalogService().blockDescriptor(block, catalogServiceEnv(), { includeIcons: false }); },
+			blockCandidateScore: function (descriptor, wanted) { return flowScriptIntentUtils().blockCandidateScore(descriptor, wanted, flowScriptIntentEnv()); },
+			propertyCandidates: flowScriptPropertyCandidates
+		});
+	}
+
+	function flowScriptIntuitiveApply(code, edits) {
+		return intuitiveCallResolver().applyEdits(code, edits);
+	}
+
 	// Code consumers that validate later must not analyze the saved source here.
 	function flowScriptReadRequest(blocks, request) {
 		request = request || {};
@@ -4573,6 +4598,8 @@
 			sha256Hex: sha256Hex,
 			flowScriptValidateRequest: flowScriptValidateRequest,
 			flowScriptCorrectSource: flowScriptCorrectSource,
+			flowScriptIntuitiveResolve: flowScriptIntuitiveResolve,
+			flowScriptIntuitiveApply: flowScriptIntuitiveApply,
 			inputVariablesFromDefinition: function (definition) { return flowScriptValidationService().inputVariablesFromDefinition(loadBlocks(), definition, flowScriptValidationEnv()); },
 			readProjectFlowWorkingCode: readProjectFlowWorkingCode,
 			writeProjectFlowWorkingCode: writeProjectFlowWorkingCode,

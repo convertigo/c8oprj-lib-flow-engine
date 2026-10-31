@@ -227,6 +227,7 @@
 
 	return {
 		stripMetadata: stripMetadata,
+		blockCandidateScore: blockCandidateScore,
 		blockCandidates: blockCandidates,
 		blockCandidateDecision: blockCandidateDecision,
 		propertyCandidates: propertyCandidates
