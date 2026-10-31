@@ -61,6 +61,9 @@ function normalizeTree(tree) { return tree; }
 var flights = 0, releases = 0, waited = false;
 function acquireSharedEngineTreeFlight() { flights++; return { waited: waited }; }
 function releaseSharedEngineTreeFlight(flight) { if (flight) releases++; }
+var DescribedTreeText = eval(functionSource("DescribedTreeText"));
+var describedTreeText = eval(functionSource("describedTreeText"));
+function sanitizeRuntimeValue(value) { return value; }
 var describeTreeRequest = eval(functionSource("describeTreeRequest"));
 
 var request = { target: "engine", projectDir: "/workspace/projects/sample" };

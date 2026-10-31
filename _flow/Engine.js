@@ -740,6 +740,12 @@
 	}
 
 	function response(value, rejectRuntimeHandlesAt, functionProfile, detach) {
+		if (value instanceof DescribedTreeText) {
+			if (!detach && !functionProfile && !initializeExecutionState().emitted) {
+				return value.text;
+			}
+			value = JSON.parse(value.text);
+		}
 		var sanitizeStarted = functionProfile ? JavaSystem.nanoTime() : 0;
 		var payload = value || {};
 		var emitted = initializeExecutionState().emitted;
@@ -6144,7 +6150,28 @@
 		return number;
 	}
 
-	function describeTreeRequest(request, blocks) {
+	// The response text of a described tree, kept with its snapshot. The Studio asks the whole tree again after each
+	// change of a project, on its UI thread, and the tree of a large frontend is megabytes: copying and serializing it
+	// costs more than describing it again from the caches. The text is the one response() would produce.
+	function DescribedTreeText(text) {
+		this.text = text;
+	}
+
+	function describedTreeText(tree) {
+		var text = tree.__flowResponseJson;
+		if (typeof text !== "string") {
+			text = JSON.stringify(sanitizeRuntimeValue(normalizeTree(tree)));
+			try {
+				// not enumerable: never part of a copy of the tree, gone with its snapshot
+				Object.defineProperty(tree, "__flowResponseJson", { value: text, enumerable: false, configurable: true });
+			} catch (ignored) {
+			}
+		}
+		return text;
+	}
+
+	// serialized: answer a DescribedTreeText, which response() sends as is (the describeTree method)
+	function describeTreeRequest(request, blocks, serialized) {
 		request = request || {};
 		if (String(request.target || "flow") === "engine" && String(request.projectDir || "")) {
 			request = Object.assign({}, request);
@@ -6160,13 +6187,14 @@
 		var fingerprint = describeTreeFingerprint(request);
 		var cached = readRuntimeMapCache(cache, key, fingerprint);
 		if (cached) {
-			return normalizeTree(cached);
+			return serialized ? new DescribedTreeText(describedTreeText(cached)) : normalizeTree(cached);
 		}
 		pruneDescribeTreeCacheFamily(cache, request);
 		var shareable = String(request.target || "") === "engine";
 		var tree = shareable ? readSharedEngineTree(key, fingerprint) : null;
 		// the same engine tree asked meanwhile by another scope (the Studio and a warm-up) is described once
 		var flight = !tree && shareable ? acquireSharedEngineTreeFlight(key, fingerprint) : null;
+		var described = false;
 		try {
 			if (!tree && flight && flight.waited) {
 				tree = readSharedEngineTree(key, fingerprint);
@@ -6182,15 +6210,18 @@
 					uncached.cacheable = false;
 					return uncached;
 				}
-				if (shareable) {
-					writeSharedEngineTree(key, fingerprint, tree);
-				}
+				described = true;
+			}
+			// seeded first: the text shared with the other scopes is then the response, serialized once
+			seedAuthoringTreeCandidate(request, tree);
+			if (described && shareable) {
+				writeSharedEngineTree(key, fingerprint, tree, function () { return describedTreeText(tree); });
 			}
 		} finally {
 			releaseSharedEngineTreeFlight(flight);
 		}
-		seedAuthoringTreeCandidate(request, tree);
-		return normalizeTree(writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots"));
+		var stored = writeRuntimeMapCache(cache, key, fingerprint, tree, "Flow virtual tree snapshots");
+		return serialized ? new DescribedTreeText(describedTreeText(stored)) : normalizeTree(stored);
 	}
 
 	// Whether a tree shows a frontend model that could not be described ("Invalid model")
@@ -6311,7 +6342,8 @@
 		}
 	}
 
-	function writeSharedEngineTree(key, fingerprint, tree) {
+	// text: a function answering the serialized tree, called only when a shared map keeps it
+	function writeSharedEngineTree(key, fingerprint, tree, text) {
 		try {
 			var trees = sharedServerJavaMap(SHARED_ENGINE_TREES_KEY, null);
 			if (!trees || !tree || tree.ok === false) {
@@ -6319,7 +6351,7 @@
 			}
 			var startedAt = JavaSystem.nanoTime();
 			var entry = new Packages.java.util.concurrent.ConcurrentHashMap();
-			entry.put("json", JSON.stringify(tree));
+			entry.put("json", typeof text === "function" ? text() : JSON.stringify(tree));
 			entry.put("usedAt", JavaSystem.nanoTime());
 			frontendPerformanceDuration("cache.sharedEngineTree.stringify", JavaSystem.nanoTime() - startedAt);
 			trees.put(sharedEngineTreeKey(key, fingerprint), entry);
@@ -12746,7 +12778,7 @@
 
 		describeTree: function (requestJson) {
 			return projectCall("describeTree", requestJson, function (request) {
-				return describeTreeRequest(request, loadBlocks());
+				return describeTreeRequest(request, loadBlocks(), true);
 			});
 		},
 
