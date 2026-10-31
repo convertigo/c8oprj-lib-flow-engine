@@ -141,6 +141,7 @@
 			longDescription: definition.longDescription || definition.documentation || ""
 		};
 		descriptor.targets = normalizeTargets(definition);
+		if (definition.requiresBlocks) descriptor.requiresBlocks = env.normalizeTree(definition.requiresBlocks);
 		// Traits bring shared properties, documented once; the block changes defaults only.
 		var composed = typeof env.composeTraits === "function" ? env.composeTraits({ properties: props, traits: definition.traits || [] }) : null;
 		if (composed) {

@@ -113,6 +113,11 @@ const _meta = {
 				throw new Error("authoring.action requires actionId or action.id.");
 			}
 			var response = ctx.contextActionSource(args);
+			if (response && response.details && response.details.status === "failed") {
+				var cause = response.details.error || {code: "FRONTEND_DEV_START_FAILED", message: "Inspect the dev setup log."};
+				response = Object.assign({}, response, {ok: false, pending: false, error: cause,
+					message: "Frontend action failed: " + String(cause.message || cause)});
+			}
 			ctx.write(ctx.outputPath(node) || "local.action", response);
 			return response;
 		}

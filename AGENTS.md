@@ -744,3 +744,15 @@ Use `AAAProject.WeatherAlertContract` to validate contract-first execution. The
 main Flow calls `weather.currentTemperature@1`; the default implementation is
 `WeatherTemperatureOpenMeteo`, which maps Open-Meteo input/output details behind
 the contract.
+
+## Native block dependencies and HTTP failures
+
+Native block metadata may declare `requiresBlocks: {"block.id": "libraryProject"}`. Code-set, code-check and analysis
+check this closure at the calling node and name missing references with BLOCK_DEPENDENCY_MISSING and the source line.
+Declare calls hidden in native implementations rather than trying to parse arbitrary Rhino code. Cache only
+inside the current analysis context. `sql.query -> sql.nativePlan -> data.scalarCheck` is an integration proof.
+
+Only the HTTP requester's own uncaught Flow failure changes its response status through Context.setResponseStatus.
+Check requester-context ownership and the requested QName; nested calls, MCP tool failures, schedules and business
+objects with an error field do not own that HTTP status. Leave private requestable access to the Java requester.
+Tests: `tests/http-flow-failure-context.js`, `tests/http-flow-failure.cjs`, `tests/block-dependencies.cjs`.

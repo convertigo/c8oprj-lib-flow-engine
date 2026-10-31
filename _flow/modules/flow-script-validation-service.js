@@ -144,6 +144,7 @@
 
 	function validateDefinition(blocks, definition, env, target) {
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
+		var dependencyContext = {blocks: activeBlocks};
 		var diagnostics = [];
 		target = String(target || "backend").trim().toLowerCase() || "backend";
 		function walk(nodes) {
@@ -198,6 +199,14 @@
 					});
 				} else {
 					var catalog = env.blockCatalog(block);
+					if (catalog.requiresBlocks && env.validateBlockDependencies) {
+						try { env.validateBlockDependencies(dependencyContext, name, node); }
+						catch (error) {
+							if (!/^BLOCK_DEPENDENCY_/.test(String(error.code || ""))) throw error;
+							diagnostics.push({severity: "error", phase: "analysis", code: error.code, line: line,
+								block: name, property: "requiresBlocks", message: error.message, hint: error.hint});
+						}
+					}
 					var targets = catalog.targets || ["backend"];
 					if (targets.indexOf(target) === -1) {
 						diagnostics.push({

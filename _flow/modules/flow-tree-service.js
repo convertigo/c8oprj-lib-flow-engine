@@ -6071,6 +6071,7 @@
 			if (query && elsewhere.length < 5 && descriptorMatchesQuery(descriptor, query)) elsewhere.push(descriptor);
 		}
 		(descriptors || []).forEach(function (descriptor) {
+			if (sourceRecipeOccupied(descriptor, focusInfo, request)) return;
 			if (descriptorExcludedByFocusChildren(descriptor, focusInfo.node)) {
 				return;
 			}
@@ -6214,6 +6215,64 @@
 		});
 	}
 
+	function authoringTargetInfo(tree, path) {
+		var exact = findTreeNode(tree, path);
+		if (exact || !path || !File || !projectDir) return exact;
+		function canonical(value) {
+			var file = new File(String(value));
+			if (!file.isAbsolute()) file = new File(projectDir(), String(value));
+			return String(file.getCanonicalPath());
+		}
+		var source = canonical(path), found = null;
+		function visit(node, parent) {
+			if (!node || found) return;
+			var nodeSource = nodeValue(node, "sourcePath");
+			if (nodeSource && canonical(nodeSource) === source) { found = {node: node, parent: parent}; return; }
+			(node.children || []).forEach(function (child) { visit(child, node); });
+		}
+		visit(tree, null);
+		return found;
+	}
+
+	function unknownAuthoringTarget(tree, path) {
+		var paths = [];
+		function visit(node) {
+			if (!node) return;
+			if (node.path && /frontends.*routes/.test(String(node.path))) paths.push(String(node.path));
+			(node.children || []).forEach(visit);
+		}
+		visit(tree);
+		function common(value) { var i=0; while(i<value.length && i<path.length && value.charAt(i)===path.charAt(i)) i++; return i; }
+		paths.sort(function(a,b) { return common(b)-common(a) || a.length-b.length || a.localeCompare(b); });
+		return {code: "INVALID_AUTHORING_ACTION_TARGET", message: "Unknown authoring target: " + path + ".",
+			details: {property: "action.targetPath", targetPath: path, validPaths: paths.slice(0,8)},
+			hint: "Use the path or sourcePath returned by authoring-tree, or items[].apply.arguments unchanged. Nearby valid paths: " + paths.slice(0,8).join(", ")};
+	}
+
+	function sourceCreationDirectory(node) {
+		if (node && node.kind === "frontendBuilder") {
+			var routes = (node.children || []).filter(function(child) { return child.kind === "frontendRoutes"; })[0];
+			return routes ? String(nodeValue(routes, "sourcePath") || "") : "";
+		}
+		return String(nodeValue(node, "sourcePath") || "");
+	}
+
+	function sourceRecipeOccupied(descriptor, focusInfo, request) {
+		if (!descriptorTargetMatch(descriptor, focusInfo.node)) return false;
+		var recipe = descriptor && descriptor.insert && descriptor.insert.__frontendCreateSource;
+		if (!recipe || recipe.directoryOnly || recipe.directory !== "${targetDirectory}" || !recipe.fileName || /\$\{/.test(recipe.fileName)) return false;
+		var directory = sourceCreationDirectory(focusInfo.node);
+		if (!directory || !env.planSourceCreation) return false;
+		try {
+			env.planSourceCreation(recipe, {builder: authoringBuilderName(request, authoringEngineDefinition(request)), targetDirectory: directory,
+				drafts: request.frontendSourceDrafts || {}, sourceRemovals: request.sourceRemovals || []});
+			return false;
+		} catch (error) {
+			if (String(error.code || "") === "SOURCE_ALREADY_EXISTS") return true;
+			throw error;
+		}
+	}
+
 	function authoringPaletteFromTreeRequest(request, blocks, tree) {
 		request = request || {};
 		var engine = authoringEngineDefinition(request);
@@ -6234,7 +6293,7 @@
 			var builderNode = findAuthoringBuilderNode(tree, authoringBuilderName(request, engine));
 			focusPath = request.target === "flow" ? "nodes" : builderNode ? builderNode.path : "frontends";
 		}
-		var focusInfo = findTreeNode(tree, focusPath);
+		var focusInfo = authoringTargetInfo(tree, focusPath);
 		if (!focusInfo) {
 			return {
 				ok: false,
@@ -6257,6 +6316,7 @@
 			};
 		}
 		descriptors = descriptors.concat(focusedVirtualDescriptors(engine, focusInfo.node, tree));
+		request = Object.assign({}, request, {focusPath: focusInfo.node.path});
 		var result = computeAuthoringPalette(request, tree, descriptors, focusInfo);
 		if (result.eligibleCount === 0 && focusInfo.parent) {
 			var cursor = focusInfo.parent;
@@ -6409,6 +6469,8 @@
 	function authoringActionMutationFromTreeRequest(request, blocks, tree) {
 		request = request || {};
 		var action = request.action || {};
+		var resolved = authoringTargetInfo(tree, String(action.targetPath || ""));
+		if (resolved) action = Object.assign({}, action, {targetPath: resolved.node.path});
 		var actionId = String(action.id || "");
 		var paletteRequest = Object.assign({}, request, {
 			surface: String(action.surface || request.surface || "virtual"),
@@ -6421,14 +6483,21 @@
 		delete paletteRequest.action;
 		var palette = authoringPaletteFromTreeRequest(paletteRequest, blocks, tree);
 		if (!palette || palette.ok !== true) {
-			raise("INVALID_AUTHORING_ACTION_TARGET", "The selected virtual target is not available anymore.");
+			var problem = unknownAuthoringTarget(tree, String(action.targetPath || ""));
+			throw Object.assign(new Error(problem.message), problem);
 		}
 		var candidates = (palette.items || []).filter(function (candidate) {
 			return String(candidate && candidate.id || "") === actionId
 				&& (!action.targetSlotId || action.targetSlotId === (candidate.targetSlot || {}).id);
 		});
 		if (!candidates.length) {
-			raise("INVALID_AUTHORING_ACTION", "The virtual authoring action is not valid for the selected target.");
+			var occupied = resolved && authoringDescriptors(paletteRequest, authoringEngineDefinition(request), blocks).concat(tree.descriptors || []).filter(function(descriptor) {
+				return String(descriptor.id || "") === actionId && sourceRecipeOccupied(descriptor, resolved, paletteRequest);
+			})[0];
+			if (occupied) raise("SOURCE_ALREADY_EXISTS", "The selected route folder already has " + occupied.insert.__frontendCreateSource.fileName + ".", null,
+				"Create a Route segment with name first, then use the Page apply returned for that segment; Page does not create a named segment.");
+			raise("INVALID_AUTHORING_ACTION", "The virtual authoring action is not valid for the selected target.", null,
+				"Read the palette for this target and pass items[].apply.arguments unchanged.");
 		}
 		if (candidates.length !== 1) raise("AMBIGUOUS_AUTHORING_ACTION_TARGET", "Select a destination slot in the tree.");
 		var selected = candidates[0];
@@ -6438,6 +6507,7 @@
 				|| catalogComponentsBuilder(paletteRequest, authoringEngineDefinition(request));
 			if (!builder || !/^[a-zA-Z0-9_-]+$/.test(builder)) raise("INVALID_SOURCE_CREATION_TARGET", "Select one source builder.");
 			var targetDirectory = String((selected.targetSlot || {}).sourcePath || "");
+			if (resolved && resolved.node.kind === "frontendBuilder") targetDirectory = sourceCreationDirectory(resolved.node);
 			var namespace = "";
 			var cursor = findTreeNode(tree, String(action.targetPath || ""));
 			while (cursor) {
@@ -6445,11 +6515,14 @@
 				if (!namespace) namespace = String(nodeValue(cursor.node, "namespace") || "");
 				cursor = cursor.parent ? findTreeNode(tree, cursor.parent.path) : null;
 			}
-			return env.planSourceCreation(recipe, { builder: builder, targetDirectory: targetDirectory,
+			var sourcePlan = env.planSourceCreation(recipe, { builder: builder, targetDirectory: targetDirectory,
 				name: requestedSourceName(action, request),
 				namespace: namespace, drafts: request.frontendSourceDrafts || {}, sourceRemovals: request.sourceRemovals || [],
 				usedIds: authoringDescriptors(paletteRequest, authoringEngineDefinition(request), blocks)
 					.map(function (descriptor) { return String(descriptor.id || ""); }) });
+			if (!recipe.directoryOnly && requestedSourceName(action, request)) sourcePlan.argumentWarning =
+				"Ignored action.name/action.properties: a Page or Layout uses its folder. Create a Route segment with name first, then execute the Page apply returned for that segment.";
+			return sourcePlan;
 		}
 		if (request.target === "flow") {
 			if (candidates.length !== 1) raise("AMBIGUOUS_AUTHORING_ACTION_TARGET", "Select a destination slot in the tree.");
@@ -6603,7 +6676,17 @@
 					authoringActionMutationFromTreeRequest(request, blocks, tree) }), blocks);
 			}
 			var actionResult = authoringActionMutationFromTreeRequest(request, blocks, tree);
-			if (actionResult.sourceChanges) return actionResult;
+			if (actionResult.sourceChanges) {
+				var selectionRequest = Object.assign({}, treeRequest, {frontendSourceDrafts: Object.assign({}, request.frontendSourceDrafts || {}, actionResult.sourceChanges)});
+				var selectionTree = authoringTreeBaseRequest(selectionRequest, blocks);
+				var created = authoringTargetInfo(selectionTree, actionResult.selectionSourcePath);
+				if (created) {
+					actionResult.path = created.node.path;
+					actionResult.selectionPath = created.node.path;
+					actionResult.parentPath = created.node.path;
+				}
+				return actionResult;
+			}
 			return applyEngineMutationRequest(request, blocks, [actionResult]);
 		}
 		if (request.transfer) {

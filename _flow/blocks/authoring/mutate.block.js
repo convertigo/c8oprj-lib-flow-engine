@@ -52,6 +52,14 @@ const _meta = {
       "type": "object",
       "description": "Optional definition object for non-source mutations.",
     },
+    "action": {
+      "label": "Palette action", "kind": "literal", "type": "object",
+      "description": "Pass items[].apply.arguments.action unchanged: id, targetPath, surface, builder, position, targetSlotId; name names a route segment/group."
+    },
+    "transfer": {
+      "label": "Clipboard transfer", "kind": "literal", "type": "object",
+      "description": "Clipboard transfer with its source, value and destination from the authoring contract."
+    },
     "mutation": {
       "label": "Mutation",
       "kind": "literal",

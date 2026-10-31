@@ -210,12 +210,13 @@ var entryStart = engineCode.indexOf("function authoringMutateRequest(request, bl
 var entryEnd = engineCode.indexOf("\n\tfunction describeTreeCacheKey", entryStart);
 assertTrue(entryStart >= 0 && entryEnd > entryStart, "The production dispatcher must be found");
 var sourceDispatchCalls = 0;
-var engineAuthoringMutate = new Function("flowTreeService", "flowTreeServiceEnv", "applySourceMutationRequest",
+var engineAuthoringMutate = new Function("flowTreeService", "flowTreeServiceEnv", "applySourceMutationRequest", "loadEngineModule", "raise",
 	"return (" + engineCode.substring(entryStart, entryEnd).trim() + ");")(
 	function () { return service; }, function () { return pasteEnv; }, function (request, blocks) {
 		sourceDispatchCalls++;
 		return service.applyMutationRequest(request, blocks, pasteEnv);
-	});
+	}, function (name) { return eval(String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "modules/" + name), "UTF-8"))); },
+	function (code, message) { throw Object.assign(new Error(message), {code: code}); });
 ["nodes[0]", "nodes", ""].forEach(function (destination) {
 	var result = engineAuthoringMutate({ target: "flow", flowName: "test", sourceFile: "/fixture/meteo.flow",
 		flowSource: JSON.stringify({ nodes: [{ type: "leaf", id: "original", value: "keep" }] }),

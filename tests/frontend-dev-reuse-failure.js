@@ -1,0 +1,12 @@
+var File=java.io.File,IO=Packages.org.apache.commons.io.FileUtils,source=String(IO.readFileToString(new File(arguments[0],'Engine.js'),'UTF-8'));
+var start=source.indexOf('function frontendStartDev(request, blocks)'),end=source.indexOf('\n\tfunction frontendDestroyJavaProcess(',start),run=eval('('+source.substring(start,end).trim()+')');
+function frontbuilderSettingsForRequest(){return {};};function frontendDevKey(){return 'test';};function frontendCancelProductionBuild(){};
+function frontendDevEntry(){return {status:'starting'};};
+function frontendDevDetails(){return {status:'failed',error:{code:'FRONTBUILDER_MODEL_REQUIRED',message:'Missing config.frontbuilder.svelte.modelPath'}};};
+var result=run({},{});
+if(result.ok!==false||result.pending!==false||result.error.code!=='FRONTBUILDER_MODEL_REQUIRED')throw Error('A failed reused worker snapshot must not report ok: '+JSON.stringify(result));
+var actionSource=String(IO.readFileToString(new File(arguments[0],'blocks/authoring/action.block.js'),'UTF-8'));
+var action=eval(actionSource.substring(actionSource.indexOf('(function'))),wrote;
+result=action.run({props:function(n){return n;},contextActionSource:function(){return {ok:true,pending:true,details:{status:'failed',error:{code:'TEST_FAILED',message:'Generation failed'}}};},write:function(p,v){wrote=v;},outputPath:function(){return 'local.out';}},{actionId:'dev.ensure'});
+if(result.ok!==false||result.pending!==false||result.error.code!=='TEST_FAILED'||wrote!==result)throw Error('Public action boundary must retain failed status and cause');
+print('frontend-dev-reuse-failure OK');

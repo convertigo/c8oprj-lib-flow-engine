@@ -997,6 +997,7 @@
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 			}
 			var props = ctx.props(node);
+			if (env.validateBlockDependencies) env.validateBlockDependencies(ctx, name, node);
 			var catalog = blockCatalog(block);
 			var info = {
 				id: nodePath(node),
@@ -1099,6 +1100,7 @@
 				raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name, node, "Use flow-catalog or blockList to list supported blocks.");
 			}
 			var props = ctx.props(node);
+			if (env.validateBlockDependencies) env.validateBlockDependencies(ctx, name, node);
 			var catalog = blockCatalog(block);
 			var info = {
 				id: nodePath(node),

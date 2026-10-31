@@ -4481,6 +4481,7 @@
 			schemaForSchemasPath: schemaForSchemasPath,
 			blockName: blockName,
 			blockCatalog: readOnlyBlockCatalog,
+			validateBlockDependencies: validateBlockDependencies,
 			flowScriptSlotNames: flowScriptSlotNames,
 			flowScriptArgKeys: flowScriptArgKeys,
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
@@ -5856,6 +5857,7 @@
 			inferSchema: inferSchema,
 			itemSchema: itemSchema,
 			blockCatalog: readOnlyBlockCatalog,
+			validateBlockDependencies: validateBlockDependencies,
 			blockName: blockName,
 			nodePath: nodePath,
 			raise: raise,
@@ -5894,6 +5896,11 @@
 
 	function schemaForSchemasPath(schemas, path) {
 		return flowAnalysisService().schemaForSchemasPath(schemas, path, flowAnalysisServiceEnv());
+	}
+
+	function validateBlockDependencies(ctx, name, node) {
+		if (!readOnlyBlockCatalog(ctx.blocks[name]).requiresBlocks) return;
+		loadEngineModule("block-dependencies.js").check(ctx, name, node, readOnlyBlockCatalog, raise);
 	}
 
 	function analyzeFlowSource(blocks, flowSource, request) {
@@ -6932,6 +6939,7 @@
 
 	function authoringMutateRequest(request, blocks) {
 		request = request || {};
+		loadEngineModule("authoring-command-contract.js").validate(request, raise);
 		if (request.mutation && request.mutation.target === "sources" && request.mutation.op === "renameResource") {
 			if (request.sourceWritable === false || request.readOnly === true || request.readOnlyReference === true) {
 				raise("READ_ONLY_SOURCE", "This source view does not allow resource mutations.");
@@ -11634,8 +11642,11 @@
 			existing = null;
 		}
 		if (existing) {
-			var starting = existing.status === "starting";
-			var prepared = existing.status === "prepared";
+			var details = frontendDevDetails(existing);
+			if (details.status === "failed") return {ok: false, title: "Svelte dev mode", pending: false,
+				message: "Svelte dev preparation failed: " + String(details.error && details.error.message || "inspect the setup log"), error: details.error, details: details};
+			var starting = details.status === "starting";
+			var prepared = details.status === "prepared";
 			if (prepared && frontendDevWaitRequested(request)) {
 				return frontendStartDevNow(request, blocks, info);
 			}
@@ -11650,7 +11661,7 @@
 				pending: starting || prepared,
 				openUrl: starting || prepared ? "" : existing.url,
 				browser: starting || prepared ? null : frontendStudioBrowser(request, existing.url, "Svelte dev mode", "frontbuilder.svelte.dev"),
-				details: frontendDevDetails(existing)
+				details: details
 			};
 		}
 		if (!frontendDevWaitRequested(request)) {
@@ -12677,9 +12688,12 @@
 			} : null;
 			var activeStarted = profileRequest ? JavaSystem.nanoTime() : 0;
 			var value = runWithActiveRequest(request, functionProfile, activeStarted);
+			if (value && value.ok === false && typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, value, context);
 			return response(value, "result", functionProfile, detach);
 		} catch (e) {
-			return response(failure("run", e), "", null, detach);
+			var failed = failure("run", e);
+			if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, failed, context);
+			return response(failed, "", null, detach);
 		} finally { executionState().allocationProfiler = previousAllocationProfiler; }
 	}
 
