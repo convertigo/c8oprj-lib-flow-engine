@@ -645,15 +645,19 @@
 			};
 		}
 		var revision = written && written.revision ? written.revision : memoryDrafts()[draftKey].revision;
+		// A loaded Flow drops its draft when the submitted source equals the saved source. Do not announce a
+		// working copy that the next request cannot read or promote, nor keep a misleading memory mirror.
+		var unchangedSaved = !!(written && written.draft === false);
+		if (unchangedSaved) delete memoryDrafts()[draftKey];
 		var checked = corrected.error ? { error: corrected.error, validation: null, warnings: [] } : flowCodeValidate(blocks, Object.assign({}, request, { authoringCorrections: true }), name, normalized);
 		var out = {
 			ok: checked.error === null && checked.validation && checked.validation.ok === true,
 			qname: flowCodeQName(request, name),
 			name: name,
-			draft: true,
-			written: true,
+			draft: !unchangedSaved,
+			written: !unchangedSaved,
 			format: "flowscript",
-			canonical: false,
+			canonical: unchangedSaved,
 			file: written && written.file ? written.file : "",
 			codeFile: written && written.codeFile ? written.codeFile : "",
 			revision: revision,
@@ -663,7 +667,8 @@
 		flowCodeAddInputReport(out, checked.validation);
 		if (out.ok) {
 			flowCodeAddDiagnosticReport(out, checked.validation.diagnostics || [], request);
-			out.next = "Working copy check passed. Run with flow-code-run without sending code, then save with flow-code-promote.";
+			out.next = unchangedSaved ? "Source already saved; no working copy to promote."
+				: "Working copy check passed. Run with flow-code-run without sending code, then save with flow-code-promote.";
 		} else {
 			out.error = checked.error || flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(checked.validation.diagnostics),
 				"Patch the working copy and retry flow-code-check.", flowCodeDiagnosticReport(checked.validation.diagnostics, request));
