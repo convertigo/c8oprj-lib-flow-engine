@@ -72,8 +72,9 @@
 			return ["md", "txt", "json", "yaml", "yml", "csv"].indexOf(ext) !== -1;
 		}
 		if (String(path).indexOf(paths.path("frontbuilder") + "/") === 0) {
+			// .flow-route.json marks a route folder (segment, group): deleting it with the sources of the folder removes the folder
 			return String(path).endsWith(".front.json") || String(path).endsWith(".flow.svelte")
-				|| String(path).endsWith(".flow.css") || String(path).endsWith(".uiblock.json");
+				|| String(path).endsWith(".flow.css") || String(path).endsWith(".uiblock.json") || String(path).endsWith("/.flow-route.json");
 		}
 		if (String(path).indexOf(paths.path("types/editors") + "/") === 0) {
 			return ["html", "css", "js"].indexOf(ext) !== -1;

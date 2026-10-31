@@ -442,7 +442,7 @@
 			parseYamlResource(path, content, "version: 1\nnodes: []\n", env);
 		} else if (kind === "projectConfig") {
 			parseYamlResource(path, content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n", env);
-		} else if (kind === "frontendBlock" || kind === "frontendModel" && String(path).endsWith(".front.json")) {
+		} else if (kind === "frontendBlock" || kind === "frontendModel" && (String(path).endsWith(".front.json") || String(path).endsWith("/.flow-route.json"))) {
 			JSON.parse(String(content || "{}"));
 		} else if (kind === "frontendModel" && String(path).endsWith(".flow.svelte")) {
 			if (String(content || "").indexOf("<script") === -1) {
@@ -642,6 +642,23 @@
 			request.includeContent === true ? { content: applied.content } : {});
 	}
 
+	// A route folder (segment, group) of a frontend model left empty by the deletion of its last source or of its marker
+	// .flow-route.json is removed, and so are the route folders it was the last entry of: an empty folder would stay a
+	// route of the tree that no tool can remove. The routes folder itself stays.
+	function removeEmptyRouteFolders(entry, env) {
+		if (String(entry.path).indexOf(env.sourcePaths.path("frontbuilder") + "/") !== 0) {
+			return;
+		}
+		var folder = entry.file.getParentFile();
+		while (folder && /\/src\/routes\/.+/.test(String(folder.getPath()).replace(/\\/g, "/")) && folder.isDirectory()) {
+			var children = folder.list();
+			if (!children || children.length !== 0 || !folder["delete"]()) {
+				return;
+			}
+			folder = folder.getParentFile();
+		}
+	}
+
 	function remove(request, env) {
 		request = request || {};
 		// A caller holding the working copy of a source (FlowEngine draft) patches that text.
@@ -664,6 +681,7 @@
 			if (!deleted && entry.file.isFile()) {
 				env.raise("RESOURCE_DELETE_FAILED", "Unable to delete Flow resource: " + entry.path);
 			}
+			removeEmptyRouteFolders(entry, env);
 		}
 		return {
 			ok: true,
