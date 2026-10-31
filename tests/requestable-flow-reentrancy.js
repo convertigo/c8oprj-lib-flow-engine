@@ -373,6 +373,31 @@ NativeJsonRequester.prototype.processRequestAsObject = function () { return {res
 marked = regularCall();
 assertTrue(marked.raised && marked.raised.code === "FLOW_REQUESTABLE_FAILED", "a marked failure without error did not fail the call");
 NativeJsonRequester.prototype.processRequestAsObject = function () { return regularAnswer; };
+// An access check called without onError (a listing Flow calls the Flow that reads the row and throws 403 for another
+// user's row): the caller stops, whatever the Java engine answers. The four answers of NativeJsonRequester for that
+// failed run: raw (same Flow engine) or document (cache controls, another Flow engine), with the failed marker of a
+// recent engine or without it (an engine before the marker, where only the shape of the engine failure tells).
+var denied = {code: "ACCESS_DENIED", operation: "run", path: "forbidden", message: "Access denied to this row.", hint: "", status: 403};
+[
+	["raw without marker", {result: {error: denied}}, {}],
+	["raw with marker", {result: {error: denied}, failed: true}, {}],
+	["document without marker", {document: {error: denied, attr: {version: "test"}}}, {__nocache: true}],
+	["document with marker", {document: {error: denied, attr: {version: "test"}}, failed: true}, {__nocache: true}]
+].forEach(function (answer) {
+	regularAnswer = answer[1];
+	var stopped = regularCall(answer[2]);
+	assertTrue(stopped.raised && stopped.raised.code === "ACCESS_DENIED" && stopped.raised.status === 403,
+		"an access refusal of the called Flow (" + answer[0] + ") did not stop the caller: " + JSON.stringify(stopped));
+	var handled = regularCall(answer[2], "return");
+	assertTrue(handled.value && handled.value.error.code === "ACCESS_DENIED" && handled.value.error.operation === undefined,
+		"onError return did not give the access refusal (" + answer[0] + "): " + JSON.stringify(handled));
+});
+// A document answer holding business data shaped as an error, without marker, stays a result
+regularAnswer = {document: {error: {code: 1, message: "business data"}, attr: {version: "test"}}};
+var businessDocument = regularCall({__nocache: true});
+assertTrue(businessDocument.value && businessDocument.value.error.message === "business data" && businessDocument.value.attr.version === "test",
+	"an unmarked document holding an error property was taken for a failure: " + JSON.stringify(businessDocument));
+NativeJsonRequester.prototype.processRequestAsObject = function () { return regularAnswer; };
 print("requestable-flow-reentrancy OK");
 
 // Native JSON sequences keep the requester boundary while opting into caller-thread execution.
