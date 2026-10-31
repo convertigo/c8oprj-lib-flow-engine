@@ -374,6 +374,11 @@
 		if (name === "count" || name === "Count" || name === "len" || name === "list.count") {
 			return "Use items.length or length(items) for array counts. There is no count/len/list.count Flow expression function.";
 		}
+		// A block (date.isValid, orders.check...) called inside a condition or a computed value: blocks are statements.
+		if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) && !/^(input|local|current|result|request|config|trace)\./.test(name)) {
+			return name + " is not an expression function. A block runs as a statement, not inside an expression (a condition, a select): call it on its own line " +
+				"and read its result, for example local.value = " + name + "({ ... }) before the if, then if (!local.value) { ... }.";
+		}
 		return "";
 	}
 

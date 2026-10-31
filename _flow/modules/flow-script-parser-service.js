@@ -611,7 +611,7 @@
 			if (text === "") {
 				return true;
 			}
-			if (text.match(/^(flow|function)\s+/) || text === "}" || text === "};" || text.match(/^}\s*else\s*\{\s*;?$/)) {
+			if (text.match(/^(flow|function)\s+/) || flowScriptBlockSeparator(text)) {
 				return true;
 			}
 			var balance = knownBalance || flowScriptBalance(text);
@@ -745,12 +745,43 @@
 			var out = [];
 			var pending = null;
 			var disabledNext = false;
+			// an if (cond) alone on its line, waiting for the statement that is its body
+			var bareIf = null;
 			function emit(statement) {
 				// the reading state stays here
 				statement = { line: statement.line, text: statement.text, disabled: statement.disabled };
 				splitFlowScriptStatementText(statement).forEach(function (part) {
-					out.push(part);
+					pushStatement(part);
 				});
+			}
+			function pushStatement(part) {
+				if (bareIf) {
+					var opener = bareIf;
+					bareIf = null;
+					if (flowScriptBlockBoundary(part.text) || inlineFlowScriptIfHead(part.text) === "bare") {
+						bareFlowScriptIfWithoutBody(opener);
+					}
+					out.push({ line: opener.line, text: opener.text.trim() + " {", disabled: opener.disabled });
+					pushStatement(part);
+					out.push({ line: part.line, text: "}", disabled: false });
+					return;
+				}
+				var head = inlineFlowScriptIfHead(part.text);
+				if (head === "bare") {
+					// if (cond); has an empty body in JavaScript: the next statement would not be conditional
+					if (/;\s*$/.test(part.text)) {
+						bareFlowScriptIfWithoutBody(part);
+					}
+					bareIf = part;
+					return;
+				}
+				if (head === "inline") {
+					inlineFlowScriptIfStatements(part).forEach(function (statement) {
+						out.push(statement);
+					});
+					return;
+				}
+				out.push(part);
 			}
 			String(code || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").forEach(function (raw, index) {
 				if (!pending && raw.trim() === "// @flow-disabled") {
@@ -761,14 +792,14 @@
 				if (line === "") {
 					return;
 				}
-				if (!pending && (line.match(/^(flow|function)\s+/) || line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/))) {
+				if (!pending && (line.match(/^(flow|function)\s+/) || flowScriptBlockSeparator(line))) {
 					emit({ line: index + base, text: line, disabled: disabledNext });
 					disabledNext = false;
 					return;
 				}
 				if (pending) {
 					var beforeClose = pending.balance;
-					if ((line === "}" || line === "};" || line.match(/^}\s*else\s*\{\s*;?$/)) &&
+					if (flowScriptBlockSeparator(line) &&
 							pending.text.match(/^if\s*\(/) && !pending.text.match(/^if\s*\(\s*\{/)
 							&& (beforeClose.paren > 0 || beforeClose.bracket > 0)) {
 						env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + pending.line
@@ -798,11 +829,153 @@
 				}
 				emit(pending);
 			}
+			if (bareIf) {
+				bareFlowScriptIfWithoutBody(bareIf);
+			}
+			out = expandFlowScriptElseIf(out);
 			// The generated id of a native if keeps the line counted from the start of its function, as before
-			// diagnostics named the lines of the file: learned schemas and traces stay attached to it.
+			// diagnostics named the lines of the file: learned schemas and traces stay attached to it. An if written in
+			// the body of an if on the same line gets the rank of that if on its line, so that both ids stay distinct.
+			var ifsOnLine = {};
 			out.forEach(function (statement) {
 				statement.idLine = statement.line - base + 1;
+				if (/^if\s*\(/.test(statement.text)) {
+					var rank = ifsOnLine[statement.idLine] = (ifsOnLine[statement.idLine] || 0) + 1;
+					if (rank > 1) {
+						statement.idLine = statement.idLine + "_" + rank;
+					}
+				}
 			});
+			return out;
+		}
+
+		// A line that closes a block and may open the next one: }, } else { and } else if (cond) {.
+		function flowScriptBlockSeparator(text) {
+			text = String(text || "").trim();
+			return text === "}" || text === "};" || /^}\s*else\s*\{\s*;?$/.test(text) || isFlowScriptElseIf(text);
+		}
+
+		function isFlowScriptElseIf(text) {
+			text = String(text || "").trim();
+			if (!/^}\s*else\s+if\s*\(/.test(text) || !/\{\s*;?$/.test(text)) {
+				return false;
+			}
+			var balance = flowScriptBalance(text);
+			return balance.paren === 0 && balance.bracket === 0 && balance.brace === 0;
+		}
+
+		// } else if (cond) { reads as } else { if (cond) {, as in JavaScript: the inner if is the whole else branch, so
+		// the } that closes the last branch of the chain closes each if of it.
+		function expandFlowScriptElseIf(statements) {
+			if (!statements.some(function (statement) { return isFlowScriptElseIf(statement.text); })) {
+				return statements;
+			}
+			var expanded = [];
+			var frames = [];
+			statements.forEach(function (statement) {
+				var text = statement.text;
+				if (isFlowScriptElseIf(text)) {
+					expanded.push({ line: statement.line, text: "} else {", disabled: false });
+					expanded.push({ line: statement.line, text: text.replace(/^}\s*else\s+/, "").replace(/\s*\{\s*;?$/, "") + " {", disabled: statement.disabled });
+					frames.push({ chained: true });
+					return;
+				}
+				expanded.push(statement);
+				if (text === "}" || text === "};") {
+					var frame = frames.pop();
+					while (frame && frame.chained) {
+						expanded.push({ line: statement.line, text: "}", disabled: false });
+						frame = frames.pop();
+					}
+				} else if (!/^}/.test(text) && /\{\s*;?$/.test(text) && flowScriptBalance(text).brace > 0) {
+					frames.push({ chained: false });
+				}
+			});
+			return expanded;
+		}
+
+		// "bare" for if (cond) alone, "inline" for an if followed by its body on the same statement (if (cond) { ... },
+		// if (cond) statement), "" otherwise (not an if, or the if (cond) { that opens a body written on the next lines).
+		function inlineFlowScriptIfHead(text) {
+			var head = String(text || "").match(/^if\s*\(/);
+			if (!head) {
+				return "";
+			}
+			var close = balancedFlowScriptGroupEnd(text, head[0].length - 1, "(", ")");
+			// if ({ condition, $$then: function () { ... } }) is the call of the block if, not an if statement
+			if (close < 0 || isFlowScriptObjectLiteral(text.substring(head[0].length, close))) {
+				return "";
+			}
+			var after = text.substring(close + 1).trim();
+			if (after === "" || after === ";") {
+				return "bare";
+			}
+			return /^\{\s*;?$/.test(after) ? "" : "inline";
+		}
+
+		function flowScriptBlockBoundary(text) {
+			text = String(text || "").trim();
+			return text === "}" || text === "};" || /^}\s*else\b/.test(text) ||
+				/\{\s*;?$/.test(text) && flowScriptBalance(text).brace > 0;
+		}
+
+		function bareFlowScriptIfWithoutBody(statement) {
+			env.raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "if without a body at line " + statement.line + ": " + statement.text,
+				null, "Write the body of the if in braces: if (" + "condition) { ... }, the opening brace on the line of the if.");
+		}
+
+		// An if written with its body on the same statement (if (cond) { ... }, if (cond) statement, with else { ... },
+		// else statement or else if ...) reads as the same if written on several lines: its line, the statements of its
+		// body, then } (or } else { followed by the else body and }). Anything written after the closing brace on that
+		// line follows the if. A bare return in such a body is then a return of the body, as on several lines (the next
+		// item in a loop body).
+		function inlineFlowScriptIfStatements(statement) {
+			var text = statement.text;
+			var out = [];
+			function lineAt(offset) {
+				return statement.line + text.substring(0, offset).split("\n").length - 1;
+			}
+			function skipSpaces(offset) {
+				while (offset < text.length && /\s/.test(text.charAt(offset))) {
+					offset++;
+				}
+				return offset;
+			}
+			// the body of a branch at offset: { statements } or one statement up to the end; the offset after it
+			function branch(offset) {
+				var start = skipSpaces(offset);
+				if (text.charAt(start) === "{") {
+					var end = balancedFlowScriptGroupEnd(text, start, "{", "}");
+					if (end < 0) {
+						env.raise("FLOWSCRIPT_UNBALANCED_SYNTAX", "Unbalanced FlowScript statement at line " + statement.line + ": missing }",
+							null, "Close the body of the if with }.");
+					}
+					flowScriptStatements(text.substring(start + 1, end), lineAt(start)).forEach(function (part) {
+						out.push(part);
+					});
+					return end + 1;
+				}
+				flowScriptStatements(text.substring(start), lineAt(start)).forEach(function (part) {
+					out.push(part);
+				});
+				return text.length;
+			}
+			var close = balancedFlowScriptGroupEnd(text, text.indexOf("("), "(", ")");
+			out.push({ line: statement.line, text: text.substring(0, close + 1) + " {", disabled: statement.disabled });
+			var offset = branch(close + 1);
+			var rest = text.substring(offset);
+			var elseMatch = rest.match(/^\s*else\b/);
+			if (elseMatch) {
+				out.push({ line: lineAt(offset + elseMatch[0].length), text: "} else {", disabled: false });
+				offset = branch(offset + elseMatch[0].length);
+				rest = text.substring(offset);
+			}
+			out.push({ line: lineAt(offset), text: "}", disabled: false });
+			if (rest.replace(/^[\s;]+/, "") !== "") {
+				flowScriptStatements(rest, lineAt(offset)).forEach(function (part) {
+					out.push(part);
+				});
+			}
 			return out;
 		}
 	
@@ -927,7 +1100,9 @@
 			// Argument corrections preserve comments. Parse them as trivia, not
 			// as part of a property name; never touch quoted business text.
 			text = String(text || "").replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g,
-				function (token) { return token.charAt(0) === "/" ? token.replace(/[^\r\n]/g, " ") : token; }).trim();
+				function (token) { return token.charAt(0) === "/" ? token.replace(/[^\r\n]/g, " ") : token; });
+			var leadingLines = (text.match(/^\s*/)[0].match(/\n/g) || []).length;
+			text = text.trim();
 			if (!isFlowScriptObjectLiteral(text)) {
 				env.raise("FLOWSCRIPT_INVALID_OBJECT", "Expected object literal at line " + lineNumber + ": " + text);
 			}
@@ -976,9 +1151,22 @@
 					: flowScriptLiteralTokenValue(tokens[key], lineNumber);
 				value[key] = literal === undefined ? tokens[key] : literal;
 			});
+			// The line of each function entry (a slot body), when lineNumber is the line the literal starts on: the
+			// statements of the body are numbered from the file, as those of the main function.
+			var tokenLines = Object.create(null);
+			if (!staticMetadata) {
+				Object.keys(tokens).forEach(function (key) {
+					var token = String(tokens[key]).trim();
+					var at = isFlowScriptFunctionLiteral(token) ? text.indexOf(token) : -1;
+					if (at >= 0) {
+						tokenLines[key] = lineNumber + leadingLines + (text.substring(0, at).match(/\n/g) || []).length;
+					}
+				});
+			}
 			return {
 				value: value,
-				tokens: tokens
+				tokens: tokens,
+				tokenLines: tokenLines
 			};
 		}
 
@@ -1644,7 +1832,13 @@
 					env.raise("FLOWSCRIPT_INVALID_SLOT", "Invalid inline slot \"" + key + "\" for Flow block " + block + " at line " + lineNumber + ".",
 						null, "Use " + key + ": function () { ... } inside the block argument object.");
 				}
-				slots[slotMap[key]] = parseFlowScriptBodyNodes(blocks, imports || {}, Object.assign({}, locals || {}), body);
+				// The body starts after the brace of the function; its lines are those of the file (a diagnostic in a loop
+				// body named the line counted from that body).
+				var token = String(parsedTokens[key]).trim();
+				var tokenLine = parsed.tokenLines ? parsed.tokenLines[key] : undefined;
+				var bodyLine = typeof tokenLine === "number"
+					? tokenLine + (token.substring(0, token.length - 1 - body.length).match(/\n/g) || []).length : undefined;
+				slots[slotMap[key]] = parseFlowScriptBodyNodes(blocks, imports || {}, Object.assign({}, locals || {}), body, bodyLine);
 				delete parsedValue[key];
 				delete parsedTokens[key];
 			});
