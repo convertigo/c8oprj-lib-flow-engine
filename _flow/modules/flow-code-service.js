@@ -612,12 +612,15 @@
 		var normalized = corrected.code;
 		if (current && normalized === normalizeFlowScriptCode(stripFlowScriptMirrorHeader(current.code))) {
 			var sameCheck = corrected.error ? {error: corrected.error, validation: null, warnings: []} : flowCodeValidate(blocks, Object.assign({}, request, {authoringCorrections:true}), name, normalized);
+			var sameError = sameCheck.error || (sameCheck.validation && sameCheck.validation.ok !== true
+				? flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(sameCheck.validation.diagnostics),
+					"Patch the working copy and retry code-check.", flowCodeDiagnosticReport(sameCheck.validation.diagnostics, request)) : null);
 			return flowCodeIntuitiveReport(flowCodeCorrections({
 				ok: sameCheck.error === null && sameCheck.validation && sameCheck.validation.ok === true,
 				qname: flowCodeQName(request, name), name: name, unchanged: true, written: false,
 				draft: current.draft === true, workingCopy: current.draft === true,
 				revision: current.revision, oldRevision: current.revision,
-				warnings: sameCheck.warnings, error: sameCheck.error || undefined,
+				warnings: sameCheck.warnings, error: sameError || undefined,
 				next: current.draft === true ? "Source unchanged; the existing working copy still needs run/promote." : "Source unchanged; the saved Flow is active."
 			}, corrected), auto, null, normalized);
 		}

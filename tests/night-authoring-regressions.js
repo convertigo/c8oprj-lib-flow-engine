@@ -20,4 +20,8 @@ var same=api('flowCodePatch',{name:'Same',revision:saved.revision,edits:[{oldTex
 assert(same.ok && same.unchanged===true && same.written===false && same.draft===false,'identity patch leaves saved Flow active: '+JSON.stringify(same));
 assert(!/promote/.test(same.next),'no new promote instruction');
 var status=api('flowCodeStatus',{name:'Same'});assert(!status.dirty,'identity patch creates no dirty draft');
+var invalid=api('flowCodeSet',{name:'InvalidSame',code:'function InvalidSame({result}) {\n local.value = number.add({a:1,b:"invalid"})\n}'});
+var invalidSource=api('flowCodeGet',{name:'InvalidSame'});
+var stillInvalid=api('flowCodeSet',{name:'InvalidSame',revision:invalidSource.revision,code:invalidSource.code});
+assert(stillInvalid.ok===false && stillInvalid.error,'an unchanged invalid draft retains its diagnostic: '+JSON.stringify(stillInvalid));
 print('night-authoring-regressions OK');
