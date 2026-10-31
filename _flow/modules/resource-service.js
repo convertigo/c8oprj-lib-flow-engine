@@ -353,7 +353,9 @@
 			returnedLength: returned.length
 		}, summary);
 		if (truncated) {
-			out.hint = "Content was truncated. Use a narrower search/code-rg, or pass maxBytes/allowLarge=true only when the full file is required.";
+			out.hint = "content is only the first " + returned.length + " of the " + content.length + " characters: do not send it back as the content of " +
+				"flow-resource-patch, which replaces the whole file and would drop the rest. Change the file with edits ([{ oldText, newText }]) or a patch " +
+				"of the lines read, which keep the rest; use a narrower search/code-rg, or pass allowLarge=true only when the whole text is required.";
 		}
 		return out;
 	}
@@ -398,6 +400,32 @@
 		});
 	}
 
+	// A YAML resource that does not parse is refused with its own code, the place and the problem the parser gives,
+	// instead of the exception of the parser (FLOW_MCP_TOOL_ERROR). A text that ends inside a structure is often the
+	// beginning of a large file read truncated: the hint says how to change such a file.
+	function parseYamlResource(path, content, fallback, env) {
+		try {
+			return env.parseYamlSource(content, fallback);
+		} catch (e) {
+			var cause = e && e.javaException ? e.javaException : e;
+			var text = String(cause && cause.getOriginalMessage ? cause.getOriginalMessage() : cause && cause.message || e);
+			var place = null;
+			var re = /line (\d+), column (\d+)/g;
+			for (var found = re.exec(text); found; found = re.exec(text)) {
+				place = { line: Number(found[1]), column: Number(found[2]) };
+			}
+			var problem = text.split("\n").map(function (line) { return line.trim(); }).filter(function (line) {
+				return line && !/^in 'reader'/.test(line) && !/^\^$/.test(line) && !/^at \[Source/.test(line) && !/^\.\.\./.test(line);
+			});
+			var problemText = problem.length > 1 ? problem[0] + ": " + problem[problem.length - 1] : problem[0] || "invalid YAML";
+			var endOfText = /<stream end>|end of the stream|unexpected end/i.test(text);
+			env.raise("RESOURCE_YAML_INVALID", "Invalid YAML in " + path + (place ? " at line " + place.line + ", column " + place.column : "") +
+				": " + problemText.replace(/^com\.fasterxml\S*:\s*/, "") + ". Nothing written.", null,
+				(endOfText ? "The text ends inside a structure. " : "") + "Fix the YAML and send it again. A text taken from flow-resource-get with truncated: true " +
+				"holds only the beginning of the file: change a large file with edits or patch, which keep the rest of it.");
+		}
+	}
+
 	function validateResourceContent(path, content, env) {
 		var kind = env.resourceKind(path);
 		var blockId = env.blockIdFromResourcePath(path);
@@ -411,9 +439,9 @@
 		} else if (kind === "graphBlockCode") {
 			env.compileProjectBlockCode(env.loadBlocks(), blockId, content);
 		} else if (kind === "fragment") {
-			env.parseYamlSource(content, "version: 1\nnodes: []\n");
+			parseYamlResource(path, content, "version: 1\nnodes: []\n", env);
 		} else if (kind === "projectConfig") {
-			env.parseYamlSource(content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n");
+			parseYamlResource(path, content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n", env);
 		} else if (kind === "frontendBlock" || kind === "frontendModel" && String(path).endsWith(".front.json")) {
 			JSON.parse(String(content || "{}"));
 		} else if (kind === "frontendModel" && String(path).endsWith(".flow.svelte")) {
