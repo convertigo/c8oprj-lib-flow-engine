@@ -220,6 +220,26 @@
 					businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
 						if (!props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
+							// $id, $nodes... with one dollar: an engine attribute that lost a dollar, usually in a
+							// String.replace whose replacement text held $$ (a pattern that writes $).
+							if (/^\$[A-Za-z]/.test(key)) {
+								diagnostics.push({
+									severity: "error",
+									code: "UNKNOWN_BLOCK_PROPERTY",
+									line: line,
+									block: name,
+									property: key,
+									engineAttribute: "$" + key,
+									message: "Unknown property " + key + " for Flow block " + name + ": engine attributes take two dollars, $" + key + ".",
+									expected: expectedProps(block, env),
+									candidates: propertyCandidates,
+									next: "Write $" + key + ". Every block accepts the engine attributes ($$id, $$comment, $$disabled...). " +
+										"When the code is built with String.replace or replaceAll, $$ in a replacement text writes a single $: " +
+										"pass the replacement as a function (() => text), use split(oldText).join(newText), or send code-patch edits.",
+									hint: "Use " + name + "({ $" + key + ": ..., " + expectedProps(block, env).map(function (prop) { return prop + ": ..."; }).join(", ") + " })."
+								});
+								return;
+							}
 							diagnostics.push({
 								severity: "error",
 								code: "UNKNOWN_BLOCK_PROPERTY",

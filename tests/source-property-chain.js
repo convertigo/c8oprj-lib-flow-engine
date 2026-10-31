@@ -58,6 +58,17 @@ try {
 	assert(writtenAgain.code === written.code, "Writer is not idempotent");
 	var invalid = check(source.replace(', id: input.id', ', unknownProperty: 1, id: input.id'));
 	assert(!invalid.ok && JSON.stringify(invalid.diagnostics).indexOf("UNKNOWN_BLOCK_PROPERTY") !== -1, "Nested property validation skipped");
+	// $id with one dollar on a core block (the trace of a String.replace whose replacement held $$id) names its cause.
+	var singleDollar = check(["const _flow = { sourceVersion: 2 }", "function PropertyChain({ input, result }) {",
+		'json.array({ $id: "rows", path: "result.rows" })', "return result", "}"].join("\n"));
+	var singleDollarDiagnostic = (singleDollar.diagnostics || []).filter(function (d) { return d.code === "UNKNOWN_BLOCK_PROPERTY" && d.property === "$id"; })[0];
+	assert(!singleDollar.ok && singleDollarDiagnostic && singleDollarDiagnostic.engineAttribute === "$$id" &&
+		/two dollars/.test(singleDollarDiagnostic.message) && /String\.replace/.test(singleDollarDiagnostic.next),
+		"A single-dollar engine attribute must name $$id and the String.replace cause: " + JSON.stringify(singleDollar.diagnostics));
+	var doubleDollar = check(["const _flow = { sourceVersion: 2 }", "function PropertyChain({ input, result }) {",
+		'json.array({ $$id: "rows", path: "result.rows" })', "return result", "}"].join("\n"));
+	assert(JSON.stringify(doubleDollar.diagnostics || []).indexOf("UNKNOWN_BLOCK_PROPERTY") === -1,
+		"$$id must be accepted on json.array: " + JSON.stringify(doubleDollar.diagnostics));
 	var invalidExpression = check(source.replace('source: input.id', 'source: input.id @'));
 	assert(!invalidExpression.ok, "Expression validation skipped inside props");
 	var disabled = api("applyMutation", { target: "flow", flowSource: source, mutation: { op: "setEnabled", nodeId: "readRow", enabled: false } });
