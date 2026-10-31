@@ -83,6 +83,34 @@
 		} catch (_notExpressionSyntax) { return false; }
 	}
 
+	// The JavaScript globals an author writes first, read as calls of unknown blocks: the refusal names the supported equivalent
+	var JAVASCRIPT_GLOBAL_EQUIVALENTS = {
+		"Object.assign": "the object.merge block (object.merge({ target, source }))",
+		"Object.keys": "the object.keys block (object.keys({ source }))",
+		"Object.values": "the object.values block (object.values({ source }))",
+		"Object.entries": "the object.keys block, then object.get for each key",
+		"JSON.stringify": "the json.stringify block",
+		"JSON.parse": "the json.parse block (json.safeParse to get an error instead of a failure)",
+		"parseInt": "an input typed integer, or the expression floor(Number(value))",
+		"parseFloat": "an input typed number, or the expression Number(value)",
+		"isNaN": "an input typed number, or the expression Number(value) === Number(value)",
+		"Array.isArray": "an input typed array, or the type.get block",
+		"Date.now": "the date.now block",
+		"Math.pow": "a product in the expression (value * value)",
+		"Math.random": "the crypto.random block",
+		"Math.sqrt": "a dedicated project block (the expressions give round, floor, ceil, abs, min, max and %)",
+		"Math.trunc": "the expression floor(value) for a positive value, ceil(value) for a negative one"
+	};
+
+	function javaScriptGlobalEquivalent(name) {
+		name = String(name || "");
+		if (!Object.prototype.hasOwnProperty.call(JAVASCRIPT_GLOBAL_EQUIVALENTS, name)) {
+			return "";
+		}
+		return name + " is JavaScript, not a Flow block; FlowScript expressions only give lower, upper, trim, contains, startsWith, endsWith, length, round, floor, ceil, abs, min, max (and their Math.* spellings), default, json, oneOf, overlaps, String, Number, the operators and %. Use "
+			+ JAVASCRIPT_GLOBAL_EQUIVALENTS[name] + " instead.";
+	}
+
 	function unknownBlock(blocks, name, lineNumber, env) {
 		var candidates = env.blockCandidates ? env.blockCandidates(blocks, name, 5) : [];
 		var decision = env.blockCandidateDecision ? env.blockCandidateDecision(candidates) : {recommendation:"mock",tool:"flow-block-mock",bestBlock:"",bestScore:0,preferExistingScore:140};
@@ -92,7 +120,7 @@
 		else if (candidates.length) { create.candidateTool = "flow-block-get"; create.candidateBlock = decision.bestBlock; }
 		var error = new Error("Unknown Flow block: " + name + " at line " + lineNumber + ".");
 		error.code = "UNKNOWN_BLOCK";
-		error.hint = "Inspect the suggested blocks; do not substitute one unless its contract matches the intended behavior.";
+		error.hint = javaScriptGlobalEquivalent(name) || "Inspect the suggested blocks; do not substitute one unless its contract matches the intended behavior.";
 		error.details = [{severity:"error", code:"UNKNOWN_BLOCK", line:lineNumber, block:name, message:error.message,
 			candidates:candidates, candidateDecision:decision, create:create,
 			mock:{tool:"flow-block-mock",name:name,when:"Use this when no suggested block matches the intended domain contract."},
@@ -452,10 +480,11 @@
 
 		function raiseFlowScriptBlockSignature(blocks, block, original, lineNumber) {
 			var signature = flowScriptBlockSignature(blocks, block);
+			var equivalent = javaScriptGlobalEquivalent(block);
 			env.raise("FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE",
 				"Invalid FlowScript block call signature at line " + lineNumber + ": " + original,
 				null,
-				"FlowScript is a Flow block DSL, not JavaScript function calling. Every Flow block accepts exactly one object parameter. Use " + signature + ". Signature keys use key for required values, key? for optional values, and key??default when a default exists.");
+				equivalent || "FlowScript is a Flow block DSL, not JavaScript function calling. Every Flow block accepts exactly one object parameter. Use " + signature + ". Signature keys use key for required values, key? for optional values, and key??default when a default exists.");
 		}
 
 		function normalizeObjectLiteralWhitespace(text) {
