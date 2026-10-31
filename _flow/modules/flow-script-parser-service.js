@@ -228,6 +228,34 @@
 		// call and its parent both need named arguments. The bound is explicit.
 		var ast = parse();
 		if (!ast) return { code: source, fixes: [] };
+		if (request.autoCorrect === true || String(request.autoCorrect || "").toLowerCase() === "true") {
+			var slotEdits = [];
+			visit(ast, function (call) {
+				if (kind(call) !== "FunctionCall") return;
+				var name = text(call.getTarget()).replace(/\s/g, "");
+				if (name === "i_") name = "if";
+				if (!blocks[name]) return;
+				var args = list(call.getArguments()), slots = (catalog(name).slots || []).map(function (slot) { return String(slot.name || slot); });
+				if (args.length !== 1 || kind(args[0]) !== "ObjectLiteral") return;
+				var elements = list(args[0].getElements());
+				elements.forEach(function (entry) {
+					var keyNode = entry.getKey ? entry.getKey() : entry.getLeft(), value = entry.getValue ? entry.getValue() : entry.getRight();
+					var key = kind(keyNode) === "Name" ? String(keyNode.getIdentifier()) : kind(keyNode) === "StringLiteral" ? String(keyNode.getValue()) : "";
+					var slot = key.replace(/^\$+/, ""), wanted = "$$" + slot;
+					if (kind(value) !== "FunctionNode" || !/^\$+/.test(key) || key === wanted || slots.indexOf(slot) < 0) return;
+					if (elements.some(function (other) {
+						var otherKey = other.getKey ? other.getKey() : other.getLeft();
+						return text(otherKey) === wanted || text(otherKey) === JSON.stringify(wanted);
+					})) return;
+					slotEdits.push({ start: start(keyNode), end: end(keyNode), before: text(keyNode), after: kind(keyNode) === "StringLiteral" ? JSON.stringify(wanted) : wanted });
+				});
+			});
+			slotEdits.sort(function (a, b) { return b.start - a.start; }).forEach(function (edit) {
+				fix("FLOWSCRIPT_SLOT_SIGIL_CORRECTED", edit.start, edit.before, edit.after);
+				source = source.substring(0, edit.start) + edit.after + source.substring(edit.end);
+			});
+			if (slotEdits.length) ast = parse();
+		}
 		// Diagnose an unknown vocabulary item before examining nested-call safety.
 		// Scope methods and ordinary expression functions are not block names.
 		visit(ast, function (node) {

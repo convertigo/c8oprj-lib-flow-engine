@@ -610,6 +610,17 @@
 		var auto = flowCodeAutoCorrect(blocks, request, submitted);
 		var corrected = flowCodeCorrect(blocks, request, auto ? auto.code : submitted);
 		var normalized = corrected.code;
+		if (current && normalized === normalizeFlowScriptCode(stripFlowScriptMirrorHeader(current.code))) {
+			var sameCheck = corrected.error ? {error: corrected.error, validation: null, warnings: []} : flowCodeValidate(blocks, Object.assign({}, request, {authoringCorrections:true}), name, normalized);
+			return flowCodeIntuitiveReport(flowCodeCorrections({
+				ok: sameCheck.error === null && sameCheck.validation && sameCheck.validation.ok === true,
+				qname: flowCodeQName(request, name), name: name, unchanged: true, written: false,
+				draft: current.draft === true, workingCopy: current.draft === true,
+				revision: current.revision, oldRevision: current.revision,
+				warnings: sameCheck.warnings, error: sameCheck.error || undefined,
+				next: current.draft === true ? "Source unchanged; the existing working copy still needs run/promote." : "Source unchanged; the saved Flow is active."
+			}, corrected), auto, null, normalized);
+		}
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
 		// No loaded Flow owns a new (or file only) Flow yet: the project's FlowEngine keeps its working copy, for
 		// every runtime and the Studio. The mirror only serves a standalone runtime, without a loaded project; and

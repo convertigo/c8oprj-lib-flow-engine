@@ -11808,6 +11808,36 @@
 		};
 	}
 
+	function frontendSmokeDevRoutes(request, info, entry) {
+		var root = frontendGeneratedRootFile(request, info), routes = ["/"];
+		var routesRoot = root ? new File(root, "src/routes") : null;
+		function scan(folder, path) {
+			if (!folder || !folder.isDirectory() || routes.length >= 50) return;
+			var files = folder.listFiles();
+			for (var i = 0; files && i < files.length && routes.length < 50; i++) {
+				var file = files[i], name = String(file.getName());
+				if (file.isDirectory()) scan(file, path + (/^\(.*\)$/.test(name) ? "" : name + "/"));
+				else if (name === "+page.svelte" && routes.indexOf(path) < 0) routes.push(path);
+			}
+		}
+		scan(routesRoot, "/");
+		var base = frontendDevHealthUrl(entry).replace(/\/?$/, "/");
+		var smoke = loadEngineModule("frontend-dev-smoke.js").check(routes, {
+			now: function () { return Number(JavaSystem.currentTimeMillis()); },
+			logTail: function () { return frontendLogTail(new File(String(entry.logFile || "")), 60); },
+			probe: function (route, timeout) {
+				var connection = new Packages.java.net.URL(base + route.replace(/^\//, "")).openConnection();
+				try {
+					connection.setConnectTimeout(timeout); connection.setReadTimeout(timeout);
+					connection.setUseCaches(false); connection.setInstanceFollowRedirects(false);
+					return Number(connection.getResponseCode());
+				} finally { connection.disconnect(); }
+			}
+		});
+		if (routes.length >= 50) { smoke.complete = false; smoke.discoveryLimited = true; }
+		return smoke;
+	}
+
 	function frontendSyncDev(request, blocks) {
 		var info = frontbuilderSettingsForRequest(request);
 		var entry = frontendDevEntry(request, info);
@@ -11900,13 +11930,21 @@
 				frontendNotifyStudioBrowser(request, browser);
 			}
 		}
+		if (generated.ok !== false) {
+			generated.smoke = frontendSmokeDevRoutes(request, info, entry);
+			if (!generated.smoke.ok) {
+				generated.ok = false;
+				generated.error = {code: "FRONTEND_DEV_ROUTE_FAILED", message: "A generated route failed its HTTP smoke check.",
+					details: generated.smoke, hint: "Fix the route named in smoke.routes using smoke.logTail, then call dev.sync again."};
+			}
+		}
 		generated.title = "Svelte dev mode";
 		generated.generated = generated.ok !== false;
 		generated.dev = frontendDevDetails(entry);
 		generated.dependenciesInstalled = dependenciesInstalled;
 		generated.dependenciesChanged = dependenciesChanged;
 		generated.message = generated.ok === false
-			? "Svelte dev source update failed."
+			? generated.smoke && !generated.smoke.ok ? "Svelte sources generated, but a route failed its HTTP smoke check. Read smoke.routes and smoke.logTail." : "Svelte dev source update failed."
 			: dependenciesChanged
 				? "Svelte dev source updated; dependencies installed and dev mode restarted."
 				: dependenciesInstalled
