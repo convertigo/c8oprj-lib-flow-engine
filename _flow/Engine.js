@@ -64,6 +64,50 @@
 	var sourceMemoBridge = false;
 	try { sourceMemoBridge = typeof FlowEngineBridge.sharedSourceMemo === "function"; } catch (olderEngine) { }
 
+	var JavascriptDebugger = engineClass("com.twinsoft.convertigo.engine.debug.JavascriptDebugger");
+	var providerDebuggerBridge = typeof JavascriptDebugger.providerDebugging === "function";
+	function providerDebugging() { return providerDebuggerBridge && JavascriptDebugger.providerDebugging(); }
+
+	function debugBlock(block) {
+		if (!block || !block.__graphRhino) return block;
+		var rhino = block.__graphRhino;
+		var file = rhino.file;
+		var path = canonicalPath(file);
+		var parent = file.getParentFile();
+		while (parent && !new File(parent, "c8oProject.yaml").isFile()) parent = parent.getParentFile();
+		var url = parent ? projectNameForRoot(parent) + "/" + path.substring(canonicalPath(parent).length + 1) : path;
+		var source = readSourceFile(file);
+		if (rhino.inline) source = String(extractFlowScriptBlockMeta(source).code);
+		var adapter = Object.create(block);
+		function state(ctx) {
+			var instances = ctx.debugImplementationInstances || (ctx.debugImplementationInstances = new Map());
+			var value = instances.get(block);
+			if (!value) {
+				var scope = compiledScriptScope(RhinoContext.getCurrentContext());
+				value = { scope: scope, implementation: JavascriptDebugger.compileProviderImplementation(source, url, scope), runners: new Map() };
+				instances.set(block, value);
+			}
+			return value;
+		}
+		function call(value, fn, self, args) { return JavascriptDebugger.callProviderFunction(fn, self, args, value.scope); }
+		Object.defineProperty(adapter, "run", { value: function (ctx, node) {
+			var value = state(ctx);
+			return call(value, value.implementation[rhino.entry], value.implementation, [ctx, node]);
+		} });
+		Object.defineProperty(adapter, "prepareNode", { value: function (node, helpers) {
+			return function (ctx) {
+				var value = state(ctx), implementation = value.implementation;
+				if (!value.runners.has(node)) {
+					value.runners.set(node, typeof implementation.prepareNode === "function"
+						? call(value, implementation.prepareNode, implementation, [node, helpers]) : null);
+				}
+				var runner = value.runners.get(node);
+				return runner ? call(value, runner, null, [ctx, node]) : call(value, implementation[rhino.entry], implementation, [ctx, node]);
+			};
+		} });
+		return adapter;
+	}
+
 	var yamlMapper = new ObjectMapper(new YAMLFactory());
 	var jsonMapper = new ObjectMapper();
 	var scopeNames = ["request", "input", "config", "local", "result", "trace", "current", "parent", "chunk", "acc", "value"];
@@ -432,10 +476,13 @@
 
 	// cx.compileString, through the disk cache of the engine for the code of a file (origin: its path)
 	function compileSource(cx, source, sourceName, origin) {
+		var suspension = providerDebuggerBridge ? JavascriptDebugger.suspendForFlow() : null;
+		try {
 		if (bytecodeCacheBridge && origin) {
 			return FlowEngineBridge.compileScript(cx, source, sourceName, String(origin));
 		}
 		return cx.compileString(source, sourceName, 1, null);
+		} finally { if (suspension) suspension.close(); }
 	}
 
 	function compileScript(source, sourceName, fingerprint, origin) {
@@ -483,6 +530,8 @@
 	}
 
 	function evalCompiledSource(source, sourceName, fingerprint) {
+		var suspension = providerDebuggerBridge ? JavascriptDebugger.suspendForFlow() : null;
+		try {
 		source = String(source || "");
 		var cx = RhinoContext.getCurrentContext();
 		if (cx && sharedModuleBridge &&
@@ -496,6 +545,7 @@
 			return eval(source);
 		}
 		return script.exec(cx, compiledScriptScope(cx));
+		} finally { if (suspension) suspension.close(); }
 	}
 
 	function parseYamlSource(source, fallback) {
@@ -1570,6 +1620,8 @@
 			resetModuleCaches: resetRuntimeModuleCaches,
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
+			providerDebugging: providerDebugging,
+			debugBlock: debugBlock,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
 			clearVirtualDefinitions: clearVirtualDefinitions,
@@ -5741,6 +5793,8 @@
 			flowSnapshotService: flowExecutionSnapshotService(),
 			sharedMetadataSnapshot: sharedMetadataSnapshot,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
+			providerDebugging: providerDebugging,
+			debugBlock: debugBlock,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
 			runtimeHandles: runtimeHandleApi(),

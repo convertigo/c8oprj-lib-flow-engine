@@ -1685,6 +1685,22 @@
 			} finally { if (phase) phase.close(); }
 		}
 
+		// The normal plan and its runners retain their identity. Only a selected invocation gets adapters.
+		function privateDebugPlan(plan) {
+			var blocks = {};
+			Object.getOwnPropertyNames(plan.blocks).forEach(function (name) {
+				var descriptor = Object.getOwnPropertyDescriptor(plan.blocks, name);
+				if (!descriptor.enumerable) { Object.defineProperty(blocks, name, descriptor); return; }
+				var resolved = false, value;
+				Object.defineProperty(blocks, name, { enumerable: true, get: function () {
+					if (!resolved) { value = env.debugBlock(runtimeBlock(plan.blocks, name)); resolved = true; }
+					return value;
+				} });
+			});
+			return Object.assign({}, plan, { blocks: blocks, preparedNodes: new Map(), executionChains: null,
+				preparation: { mode: "debug", preparedNodes: 0, preparedRunners: 0, preparedWriters: 0, materializedBlocks: 0 } });
+		}
+
 		function runFlowRequest(request, blocks) {
 			var measure = profileEnabled(request);
 			var deepProfile = request.profile === true;
@@ -1703,7 +1719,7 @@
 				blocks: deepProfile ? [] : undefined,
 				hotPath: deepProfile ? {} : undefined
 			} : null;
-			var plan = resolved.plan;
+			var plan = env.providerDebugging && env.providerDebugging() ? privateDebugPlan(resolved.plan) : resolved.plan;
 			var definition = plan.definition;
 			var activeBlocks = plan.blocks;
 			var contextStarted = measure ? nanoTime() : 0;
