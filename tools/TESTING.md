@@ -96,7 +96,8 @@ local HSQLDB suite. No external database is contacted by default.
 ## Logs, scope, and additional harnesses
 
 `FLOW_TEST_JOBS` defaults to 2 (1 for SQL/frontend), `FLOW_TEST_TIMEOUT_MS` to
-400000. Frontend suites on a slow host can use `FLOW_TEST_TIMEOUT_MS=900000`.
+400000 per standalone program, 900000 for the frontend suite, and 1800000 for
+the complete SQL shell invocation (15 programs). Override it for slower hosts.
 `FLOW_TEST_LOG_DIR` overrides `_private/test-results/<timestamp>`.
 `results.json` records each actual argv, cwd, exit code, timeout, duration and
 log path. Every failed child makes the runner fail. A nonexistent filter also

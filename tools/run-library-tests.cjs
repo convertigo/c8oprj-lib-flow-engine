@@ -135,7 +135,7 @@ if (suite === 'engine' || suite === 'mcp') {
   }
 } else fail('Unknown suite: ' + suite);
 if (!tasks.length) fail('No tests match the filter: ' + filter);
-const timeout = Number(env.FLOW_TEST_TIMEOUT_MS || 400000);
+const timeout = Number(env.FLOW_TEST_TIMEOUT_MS || (suite === 'sql' ? 1800000 : suite === 'frontbuilder' ? 900000 : 400000));
 const jobs = Number(env.FLOW_TEST_JOBS || (suite === 'frontbuilder' || suite === 'sql' ? 1 : 2));
 if (!Number.isInteger(jobs) || jobs < 1 || !Number.isFinite(timeout) || timeout <= 0) fail('FLOW_TEST_JOBS and FLOW_TEST_TIMEOUT_MS must be positive.');
 const results = [];
