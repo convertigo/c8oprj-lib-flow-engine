@@ -138,7 +138,23 @@ if (!tasks.length) fail('No tests match the filter: ' + filter);
 const timeout = Number(env.FLOW_TEST_TIMEOUT_MS || (suite === 'sql' ? 1800000 : suite === 'frontbuilder' ? 900000 : 400000));
 const jobs = Number(env.FLOW_TEST_JOBS || (suite === 'frontbuilder' || suite === 'sql' ? 1 : 2));
 if (!Number.isInteger(jobs) || jobs < 1 || !Number.isFinite(timeout) || timeout <= 0) fail('FLOW_TEST_JOBS and FLOW_TEST_TIMEOUT_MS must be positive.');
-const results = [];
+let results = [];
+if (env.FLOW_TEST_RESUME === '1') {
+  if (!env.FLOW_TEST_LOG_DIR) fail('Resume requires an explicit FLOW_TEST_LOG_DIR.');
+  const saved = path.join(logRoot, 'results.json');
+  if (!file(saved)) fail('No results.json to resume in ' + logRoot);
+  try { results = JSON.parse(fs.readFileSync(saved, 'utf8')); } catch { fail('Cannot read saved results.json.'); }
+  if (!Array.isArray(results) || new Set(results.map(r => r.name)).size !== results.length) fail('Invalid saved result list.');
+  for (const result of results) {
+    const current = tasks.find(t => t.name === result.name);
+    if (!current || current.cwd !== result.cwd || JSON.stringify(current.command) !== JSON.stringify(result.command) || !file(result.log)) {
+      fail('Resume command/filter or logs changed for ' + result.name + '; choose a new FLOW_TEST_LOG_DIR.');
+    }
+  }
+}
+const completed = new Set(results.map(r => r.name));
+const pending = tasks.filter(t => !completed.has(t.name));
+if (env.FLOW_TEST_RESUME === '1') console.log(`RESUME ${results.length} recorded, ${pending.length} pending (recorded failures remain visible).`);
 async function run(t) {
   const log = path.join(logRoot, t.name + '.log');
   const output = fs.openSync(log, 'w');
@@ -159,8 +175,8 @@ async function run(t) {
 }
 (async () => {
   let index = 0;
-  async function worker() { while (index < tasks.length) { const t = tasks[index++]; const ok = await run(t); if (suite === 'frontbuilder' && !ok) return; } }
-  await Promise.all(Array.from({length: Math.min(jobs, tasks.length)}, worker));
+  async function worker() { while (index < pending.length) { const t = pending[index++]; const ok = await run(t); if (suite === 'frontbuilder' && !ok) return; } }
+  await Promise.all(Array.from({length: Math.min(jobs, pending.length)}, worker));
   const passed = results.filter(r => r.ok).length;
   console.log(`${passed} passed, ${results.length - passed} failed; logs: ${logRoot}`);
   process.exitCode = results.length === tasks.length && passed === results.length ? 0 : 1;

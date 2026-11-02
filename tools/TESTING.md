@@ -104,6 +104,14 @@ local HSQLDB suite. No external database is contacted by default.
 400000 per standalone program, 900000 for the frontend suite, and 1800000 for
 the complete SQL shell invocation (15 programs). Override it for slower hosts.
 `FLOW_TEST_LOG_DIR` overrides `_private/test-results/<timestamp>`.
+An interrupted run can continue with `FLOW_TEST_RESUME=1` and the same explicit
+`FLOW_TEST_LOG_DIR`, arguments, filter and checkout paths. It skips recorded
+programs and checks that their commands and logs still match. Recorded failures
+remain failures in the final total; resume does not erase them. Choose another
+log directory for a clean run or an isolated recheck. Resume only when product,
+test and dependency contents are unchanged: the guard compares argv and log
+existence, not source/dependency fingerprints.
+
 `results.json` records each actual argv, cwd, exit code, timeout, duration and
 log path. Every failed child makes the runner fail. A nonexistent filter also
 fails. The runner does not download dependencies or mask missing prerequisites.
