@@ -2476,6 +2476,7 @@
 			projectDir: projectDir,
 			projectNameForRoot: projectNameForRoot,
 			projectLibDir: projectLibDir,
+			referenceRoots: function () { return referencedProjectRoots(sourcePaths().path("lib")); },
 			engineLibDir: engineLibDir,
 			canonicalPath: canonicalPath,
 			fileFingerprint: fileFingerprint,
