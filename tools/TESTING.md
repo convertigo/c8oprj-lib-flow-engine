@@ -16,7 +16,10 @@ No Docker, server, npm global install, or production database is needed.
 
 ## Prerequisites
 
-Use Node 24 (tested with 24.18.1), npm, and a JDK 17 or later (tested with 21).
+Use Node 24 (tested with 24.18.1), npm, and a JDK able to load your runtime JARs.
+The copied nighttime classpath runs with JDK 21; building and running Convertigo
+`1c8f10c83` requires **JDK 25** (its Gradle toolchain and release level are 25).
+SQL/CRUD helper sources themselves still target Java 17.
 Ensure they are on PATH before starting. Install the locked frontend dependencies
 and build the provider once:
 
@@ -42,6 +45,8 @@ engine classes. Build the matching Convertigo checkout (Mission 28 source base:
 `1c8f10c83c851cec2a0b319544a99b2020259b11`):
 
 ```sh
+export JAVA_HOME=/path/to/jdk-25
+export PATH="$JAVA_HOME/bin:$PATH"
 cd convertigo
 bash gradlew --no-daemon :engine:jar :engine:dependenciesJar
 ```
