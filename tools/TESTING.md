@@ -40,6 +40,10 @@ export FLOW_FRONTBUILDER_RESOURCE_ROOT=/path/to/lib_flow_frontbuilder_svelte/_fl
 
 ## Complete Convertigo classpath
 
+The harness also passes the complete resolved classpath to Node parity tests
+through their historical `CONVERTIGO_DEPENDENCIES_JAR` variable (these tests use
+its value as Java `-cp`).
+
 The dependencies JAR contains Rhino but does **not** contain Convertigo's own
 engine classes. Build the matching Convertigo checkout (Mission 28 source base:
 `1c8f10c83c851cec2a0b319544a99b2020259b11`):

@@ -71,6 +71,9 @@ if (suite !== 'frontbuilder') {
   if (!classpath && file(dependencies) && file(engineJar)) classpath = [engineJar, dependencies, path.join(libs, '*')].join(path.delimiter);
   if (!classpath) fail('Missing complete Convertigo classpath. Build sibling convertigo (:engine:jar :engine:dependenciesJar), or set CONVERTIGO_TEST_CLASSPATH to engine + dependencies/runtime JARs.');
   env.CONVERTIGO_TEST_CLASSPATH = classpath;
+  // These Node parity tests use the historical variable as an entire Java -cp,
+  // including engine JSON classes, not just the shaded dependencies JAR.
+  env.CONVERTIGO_DEPENDENCIES_JAR = classpath;
 }
 const logRoot = path.resolve(env.FLOW_TEST_LOG_DIR || path.join(root, '_private/test-results', new Date().toISOString().replaceAll(':', '-')));
 fs.mkdirSync(logRoot, {recursive: true});
