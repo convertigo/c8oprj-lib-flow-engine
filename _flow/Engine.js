@@ -1,7 +1,9 @@
 // @convertigo-runtime: stateless-v1
 (function () {
 	var globalScope = this;
-	var sharedRuntime = typeof __flowRuntimeApi === "undefined" ? null : __flowRuntimeApi;
+	// Bootstrap-owned flag: this realm is discarded after the selected request.
+	var privateDebug = typeof __providerPrivateDebug !== "undefined" && __providerPrivateDebug === true;
+	var sharedRuntime = privateDebug || typeof __flowRuntimeApi === "undefined" ? null : __flowRuntimeApi;
 	// runtime configurations of the revision, by project, Flow and named configurations, valid for a symbols generation
 	var runtimeConfigs = sharedRuntime && typeof sharedRuntime.symbolsGeneration === "function" ? sharedRuntime.newCache(512) : null;
 	var File = Packages.java.io.File;
@@ -68,14 +70,18 @@
 	var providerDebuggerBridge = typeof JavascriptDebugger.providerDebugging === "function";
 	function providerDebugging() { return providerDebuggerBridge && JavascriptDebugger.providerDebugging(); }
 
+	function debugSourceUrl(file) {
+		var path = canonicalPath(file), parent = file.getParentFile();
+		while (parent && !new File(parent, "c8oProject.yaml").isFile()) parent = parent.getParentFile();
+		return parent ? projectNameForRoot(parent) + "/" + path.substring(canonicalPath(parent).length + 1) : path;
+	}
+
+
 	function debugBlock(block) {
 		if (!block || !block.__graphRhino) return block;
 		var rhino = block.__graphRhino;
 		var file = rhino.file;
-		var path = canonicalPath(file);
-		var parent = file.getParentFile();
-		while (parent && !new File(parent, "c8oProject.yaml").isFile()) parent = parent.getParentFile();
-		var url = parent ? projectNameForRoot(parent) + "/" + path.substring(canonicalPath(parent).length + 1) : path;
+		var url = debugSourceUrl(file);
 		var source = readSourceFile(file);
 		if (rhino.inline) source = String(extractFlowScriptBlockMeta(source).code);
 		var adapter = Object.create(block);
@@ -478,7 +484,7 @@
 	function compileSource(cx, source, sourceName, origin) {
 		var suspension = providerDebuggerBridge ? JavascriptDebugger.suspendForFlow() : null;
 		try {
-		if (bytecodeCacheBridge && origin) {
+		if (!privateDebug && bytecodeCacheBridge && origin) {
 			return FlowEngineBridge.compileScript(cx, source, sourceName, String(origin));
 		}
 		return cx.compileString(source, sourceName, 1, null);
@@ -534,6 +540,10 @@
 		try {
 		source = String(source || "");
 		var cx = RhinoContext.getCurrentContext();
+		if (privateDebug) {
+			var scope = compiledScriptScope(cx);
+			return JavascriptDebugger.compileProviderImplementation(source, debugSourceUrl(new File(String(sourceName))), scope);
+		}
 		if (cx && sharedModuleBridge &&
 			String(sourceName || "").indexOf(canonicalPath(engineDir()) + "/modules/") === 0) {
 			var exports = FlowEngineBridge.evalSharedModule(cx, compiledScriptScope(cx), source, String(sourceName));
@@ -2968,7 +2978,7 @@
 	// The registry contains Java strings only. Every caller parses into its own realm;
 	// authoring working copies stay local and never enter the shared registry.
 	function sharedMetadataSnapshot(key, revision, build) {
-		if (typeof FlowEngineBridge.sharedMetadata !== "function" || sourceDraftsFingerprint()) return build();
+		if (privateDebug || typeof FlowEngineBridge.sharedMetadata !== "function" || sourceDraftsFingerprint()) return build();
 		var text = FlowEngineBridge.sharedMetadata(canonicalPath(engineDir()) + "\n" + key, sha256Hex(revision), function () {
 			return JSON.stringify(build());
 		});
@@ -3014,7 +3024,7 @@
 			return JSON.stringify({ value: build() });
 		}
 		var kept;
-		if (sourceMemoBridge) {
+		if (!privateDebug && sourceMemoBridge) {
 			kept = FlowEngineBridge.sharedSourceMemo(fingerprint.engine + "\n" + memoKey, memoRevision, text);
 		} else {
 			// thread-safe in a shared runtime (cache-utils)
