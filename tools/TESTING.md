@@ -69,6 +69,11 @@ run with ES6 (`-version 200`), headless AWT, initialized properties, and
 builds are allowed. The bootstrap exits explicitly after the test completes,
 including when Java executors would otherwise keep the process alive.
 
+`crypto-password-blocks.js` deliberately starts without initialized server
+properties: it asserts that `crypto.serverKey` is unavailable in a shell. Its
+JVM skips the property bootstrap; applying the frontend bootstrap to that test
+would expose the runtime's default test passphrase and invalidate its premise.
+
 ## SQL and CRUD
 
 The harness finds thin Maven JARs in `$GRADLE_USER_HOME/caches`, `~/.gradle/caches`

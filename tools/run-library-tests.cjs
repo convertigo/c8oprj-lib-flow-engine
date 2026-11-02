@@ -80,7 +80,7 @@ env.JAVA_TOOL_OPTIONS = (env.JAVA_TOOL_OPTIONS || '') + ' -Djava.awt.headless=tr
 const javaFlags = ['-Djava.awt.headless=true', '-Djava.io.tmpdir=' + tmp];
 const main = 'org.mozilla.javascript.tools.shell.Main';
 const bootstrap = path.join(logRoot, 'run-rhino.js');
-fs.writeFileSync(bootstrap, 'var file = arguments[0]; arguments = Array.prototype.slice.call(arguments, 1);\ntry { Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.initProperties(); Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.setProperty(Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName.SERVER_BUILD, "studio"); load(file); java.lang.System.exit(0); } catch (e) { print(String(e)); if(e.stack) print(e.stack); java.lang.System.exit(1); }\n');
+fs.writeFileSync(bootstrap, 'var file = arguments[0]; arguments = Array.prototype.slice.call(arguments, 1);\ntry { if (String(new java.io.File(file).getName()) !== "crypto-password-blocks.js") { Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.initProperties(); Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.setProperty(Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName.SERVER_BUILD, "studio"); } load(file); java.lang.System.exit(0); } catch (e) { print(String(e)); if(e.stack) print(e.stack); java.lang.System.exit(1); }\n');
 if (suite !== 'frontbuilder') {
   const probe = spawnSync('java', [...javaFlags, '-cp', classpath, main, '-version', '200', '-e',
     'java.lang.Class.forName("com.twinsoft.convertigo.engine.flow.FlowEngineBridge"); Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.initProperties(); java.lang.System.exit(0);'], {env, encoding: 'utf8', timeout: 30000});
