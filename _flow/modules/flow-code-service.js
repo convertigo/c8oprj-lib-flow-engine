@@ -618,7 +618,8 @@
 			var unchanged = {
 				ok: sameCheck.error === null && sameCheck.validation && sameCheck.validation.ok === true,
 				qname: flowCodeQName(request, name), name: name, unchanged: true, written: false,
-				draft: current.draft === true, workingCopy: current.draft === true,
+				// without a working copy, the submitted source is the saved one
+				draft: current.draft === true, workingCopy: current.draft === true, canonical: current.draft !== true,
 				revision: current.revision, oldRevision: current.revision,
 				warnings: sameCheck.warnings, error: sameError || undefined,
 				next: current.draft === true ? "Source unchanged; the existing working copy still needs run/promote." : "Source unchanged; the saved Flow is active."
