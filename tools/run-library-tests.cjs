@@ -47,6 +47,67 @@ function mavenJar(variable, group, artifact, version) {
   }
   fail(`Missing ${variable}. Set it to ${group}:${artifact}:${version || 'matching runtime version'} (thin JAR).`);
 }
+// The jars a library declares in libs/jars.yaml, resolved as the engine does (ProjectJars): each one checked against
+// its sha256 and taken from a cache laid out <cache>/<sha256>/<file> (FLOW_JARS_CACHE, for instance the libs/.jars of
+// a Studio workspace, then the runner cache), from the Gradle or Maven cache, or else downloaded from the declared
+// repositories (Maven Central by default) into the runner cache, unless FLOW_TEST_OFFLINE is set.
+function sha256(f) { return require('node:crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex'); }
+function declaredJars(project) {
+  const descriptor = path.join(project, 'libs/jars.yaml');
+  if (!file(descriptor)) return {};
+  const unquote = s => s.replace(/^(["'])(.*)\1$/, '$2');
+  const repositories = [], jars = [];
+  let section, current;
+  for (const raw of fs.readFileSync(descriptor, 'utf8').split('\n')) {
+    const line = raw.replace(/\s+#.*$/, '').trimEnd();
+    let m;
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    if ((m = /^(\w+):$/.exec(line))) section = m[1];
+    else if (section === 'repositories' && (m = /^\s+-\s+(\S+)$/.exec(line))) repositories.push(unquote(m[1]).replace(/\/+$/, ''));
+    else if (section === 'jars' && (m = /^\s+(-\s+)?(maven|url|sha256):\s+(\S+)$/.exec(line))) {
+      if (m[1]) jars.push(current = {});
+      else if (!current) fail(`${descriptor}: unsupported line: ${raw.trim()}`);
+      current[m[2]] = unquote(m[3]);
+    } else fail(`${descriptor}: unsupported line: ${raw.trim()}`);
+  }
+  const runnerCache = path.join(require('node:os').homedir(), '.cache/convertigo-flow-tests/jars');
+  const caches = [...(env.FLOW_JARS_CACHE || '').split(path.delimiter).filter(Boolean), runnerCache];
+  const resolved = {};
+  for (const jar of jars) {
+    if (!/^[0-9a-f]{64}$/.test(jar.sha256 || '')) fail(`${descriptor}: ${jar.maven || jar.url} needs its sha256.`);
+    let name, candidates = [], locations;
+    if (jar.maven) {
+      const [group, artifact, version, classifier] = jar.maven.split(':');
+      name = `${artifact}-${version}${classifier ? '-' + classifier : ''}.jar`;
+      const mavenPath = [...group.split('.'), artifact, version, name].join('/');
+      locations = (repositories.length ? repositories : ['https://repo.maven.apache.org/maven2']).map(r => r + '/' + mavenPath);
+      for (const gradle of [env.GRADLE_USER_HOME, path.join(require('node:os').homedir(), '.gradle')].filter(Boolean)) {
+        const base = path.join(gradle, 'caches/modules-2/files-2.1', group, artifact, version);
+        if (file(base)) candidates.push(...fs.readdirSync(base).map(hash => path.join(base, hash, name)));
+      }
+      candidates.push(path.join(require('node:os').homedir(), '.m2/repository', mavenPath));
+    } else {
+      name = path.basename(new URL(jar.url).pathname);
+      locations = [jar.url];
+    }
+    const key = jar.maven ? jar.maven.split(':')[1] : name.replace(/\.jar$/, '');
+    let found = [...caches.map(c => path.join(c, jar.sha256, name)), ...candidates].find(f => file(f) && sha256(f) === jar.sha256);
+    if (!found && env.FLOW_TEST_OFFLINE) fail(`${descriptor}: ${name} (sha256 ${jar.sha256}) is in no cache and FLOW_TEST_OFFLINE is set. Set FLOW_JARS_CACHE to a <sha256>/<file> cache.`);
+    for (const location of found ? [] : locations) {
+      if (location.includes('${')) continue;
+      const target = path.join(runnerCache, jar.sha256, name), staging = target + '.download';
+      fs.mkdirSync(path.dirname(target), {recursive: true});
+      const r = spawnSync(process.execPath, ['-e', 'fetch(process.argv[1]).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.arrayBuffer(); })'
+        + '.then(b => require("node:fs").writeFileSync(process.argv[2], Buffer.from(b))).catch(e => { console.error(e.message); process.exit(1); })', location, staging], {encoding: 'utf8'});
+      if (r.status === 0 && sha256(staging) === jar.sha256) { fs.renameSync(staging, target); found = target; break; }
+      fs.rmSync(staging, {force: true});
+      console.error(`${name}: not taken from ${location.replace(/\/\/[^/@]*@/, '//')} (${r.status === 0 ? 'sha256 mismatch' : (r.stderr || '').trim()})`);
+    }
+    if (!found) fail(`${descriptor}: unable to get ${name} (sha256 ${jar.sha256}).`);
+    resolved[key] = found;
+  }
+  return resolved;
+}
 const engineProject = env.FLOW_ENGINE_RESOURCE_ROOT ? path.dirname(path.resolve(env.FLOW_ENGINE_RESOURCE_ROOT)) : sibling('lib_flow_engine');
 const engine = env.FLOW_ENGINE_RESOURCE_ROOT || (engineProject && path.join(engineProject, '_flow'));
 if (!file(engine && path.join(engine, 'Engine.js'))) fail('Missing sibling lib_flow_engine; set FLOW_ENGINE_RESOURCE_ROOT=<engine>/_flow.');
@@ -123,6 +184,11 @@ if (suite === 'engine' || suite === 'mcp') {
   const version = path.basename(env.FLOW_RHINO_JAR).slice('rhino-'.length, -4);
   mavenJar('FLOW_RHINO_TOOLS_JAR', 'org.mozilla', 'rhino-tools', version);
   if (suite === 'sql') {
+    if (!env.FLOW_QUERYDSL_CORE_JAR || !env.FLOW_QUERYDSL_SQL_JAR) {
+      const declared = declaredJars(root);
+      env.FLOW_QUERYDSL_CORE_JAR ||= declared['querydsl-core'];
+      env.FLOW_QUERYDSL_SQL_JAR ||= declared['querydsl-sql'];
+    }
     mavenJar('FLOW_QUERYDSL_CORE_JAR', 'io.github.openfeign.querydsl', 'querydsl-core', '7.7');
     mavenJar('FLOW_QUERYDSL_SQL_JAR', 'io.github.openfeign.querydsl', 'querydsl-sql', '7.7');
     mavenJar('FLOW_HSQLDB_JAR', 'org.hsqldb', 'hsqldb', '2.7.4');

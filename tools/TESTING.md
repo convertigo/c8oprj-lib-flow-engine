@@ -92,9 +92,20 @@ export FLOW_QUERYDSL_SQL_JAR=/path/to/querydsl-sql-7.7.jar
 export FLOW_HSQLDB_JAR=/path/to/hsqldb-2.7.4.jar
 ```
 
-Rhino and rhino-tools must have the same version. Querydsl coordinates and
-checksums are committed in `lib_flow_sql/libs/jars.yaml`. They are
-`io.github.openfeign.querydsl:querydsl-core:7.7` and `querydsl-sql:7.7`.
+Rhino and rhino-tools must have the same version. Rhino, rhino-tools and HSQLDB
+come with Convertigo, so a host that built it has them in its Gradle cache.
+
+The Querydsl JARs are the ones `lib_flow_sql/libs/jars.yaml` declares
+(`io.github.openfeign.querydsl:querydsl-core:7.7` and `querydsl-sql:7.7`). Unless
+`FLOW_QUERYDSL_*_JAR` name them, the harness resolves them as the engine does:
+each JAR is checked against its declared sha256 and taken from a cache laid out
+`<cache>/<sha256>/<file>`, from the Gradle or Maven cache, or else downloaded from
+the declared repositories (Maven Central by default) into
+`~/.cache/convertigo-flow-tests/jars`. `FLOW_JARS_CACHE` adds caches of the same
+layout (separated like `PATH`), for instance the one of a Studio, which already
+downloaded them: `<workspace>/libs/.jars`, or `<local_work.directory>/jars`.
+With `FLOW_TEST_OFFLINE=1`, a JAR in no cache is an error instead of a download.
+
 SQL requires the sibling CRUD checkout, or `FLOW_CRUD_DATA_DIR=<project>`.
 Missing engine/CRUD checkouts cause an error; Flow tests are never silently
 omitted by the unified runner. SQL runs its official 15-program shell suite,
@@ -119,7 +130,8 @@ existence, not source/dependency fingerprints.
 
 `results.json` records each actual argv, cwd, exit code, timeout, duration and
 log path. Every failed child makes the runner fail. A nonexistent filter also
-fails. The runner does not download dependencies or mask missing prerequisites.
+fails. Apart from the JARs a library declares in `libs/jars.yaml`, checked against
+their sha256, the runner does not download dependencies or mask missing prerequisites.
 
 The Engine/MCP totals count standalone `tests/*.js` and `tests/*.cjs` programs;
 `tests/run-rhino.cjs` is a helper and is excluded. Explicit MCP argument-order
