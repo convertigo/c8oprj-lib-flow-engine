@@ -68,7 +68,8 @@ export CONVERTIGO_DEPENDENCIES_JAR=/path/to/dependencies-8.5.0-beta.jar
 Use one coherent engine/runtime distribution. The preflight loads
 `FlowEngineBridge` and initializes `EnginePropertiesManager`. A classpath that
 only provides Rhino fails before launching hundreds of tests. Rhino programs
-run with ES6 (`-version 200`), headless AWT, initialized properties, and
+run with ES6 (`-version 200`), headless AWT, an English locale (Rhino and JDK
+messages are compared in English), initialized properties, and
 `SERVER_BUILD=studio` **inside the isolated JVM only**, so frontend fixture
 builds are allowed. The bootstrap exits explicitly after the test completes,
 including when Java executors would otherwise keep the process alive.

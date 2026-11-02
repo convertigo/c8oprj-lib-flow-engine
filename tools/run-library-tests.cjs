@@ -79,8 +79,10 @@ const logRoot = path.resolve(env.FLOW_TEST_LOG_DIR || path.join(root, '_private/
 fs.mkdirSync(logRoot, {recursive: true});
 const tmp = path.join(logRoot, 'tmp'); fs.mkdirSync(tmp, {recursive: true});
 env.TMPDIR = tmp;
-env.JAVA_TOOL_OPTIONS = (env.JAVA_TOOL_OPTIONS || '') + ' -Djava.awt.headless=true -Djava.io.tmpdir=' + JSON.stringify(tmp);
-const javaFlags = ['-Djava.awt.headless=true', '-Djava.io.tmpdir=' + tmp];
+// Rhino and the JDK localize their error messages; tests compare the English ones on every host.
+const locale = ['-Duser.language=en', '-Duser.country=US'];
+env.JAVA_TOOL_OPTIONS = (env.JAVA_TOOL_OPTIONS || '') + ' -Djava.awt.headless=true ' + locale.join(' ') + ' -Djava.io.tmpdir=' + JSON.stringify(tmp);
+const javaFlags = ['-Djava.awt.headless=true', ...locale, '-Djava.io.tmpdir=' + tmp];
 const main = 'org.mozilla.javascript.tools.shell.Main';
 const bootstrap = path.join(logRoot, 'run-rhino.js');
 fs.writeFileSync(bootstrap, 'var file = arguments[0]; arguments = Array.prototype.slice.call(arguments, 1);\ntry { if (String(new java.io.File(file).getName()) !== "crypto-password-blocks.js") { Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.initProperties(); Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.setProperty(Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName.SERVER_BUILD, "studio"); } load(file); java.lang.System.exit(0); } catch (e) { print(String(e)); if(e.stack) print(e.stack); java.lang.System.exit(1); }\n');
