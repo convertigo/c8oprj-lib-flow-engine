@@ -78,6 +78,13 @@ try {
  var sessionExplicit=api('flowCodeSet',{name:'Session',code:'function Session(){\n a3: result.explicit = 0\n result.a = 1\n result.a = 2\n}' });
  assert(sessionExplicit.ok,'explicit names reserve old implicit names: '+JSON.stringify(sessionExplicit));
  var explicitRun=api('flowCodeRun',{name:'Session',includeTrace:true});assert(explicitRun.ok,'reserved explicit executes');
+ var branches='function BranchNames(){\n  if (input.a) {\n    return {ok:true}\n  }\n  if (input.b) {\n    return {ok:true}\n  }\n}';
+ var branchSet=api('flowCodeSet',{name:'BranchNames',code:branches});assert(branchSet.ok,'branch identity fixture');
+ var branchPatch=api('flowCodePatch',{name:'BranchNames',revision:branchSet.revision,edits:[{oldText:'  if (input.a)',newText:'  if (input.c) {\n    return {ok:true}\n  }\n  if (input.a)'}]});assert(branchPatch.ok,'insert branch');
+ var branchRun=api('flowCodeRun',{name:'BranchNames',input:{a:true},includeTrace:true});
+ assert(branchRun.ok && JSON.stringify(branchRun.trace).indexOf('"id":"ok"')>=0 && JSON.stringify(branchRun.trace).indexOf('"id":"return"')>=0,'unchanged branch retains identical return children: '+JSON.stringify(branchRun));
+ var newBranchRun=api('flowCodeRun',{name:'BranchNames',input:{c:true},includeTrace:true});
+ assert(newBranchRun.ok && JSON.stringify(newBranchRun.trace).indexOf('"id":"ok3"')>=0 && JSON.stringify(newBranchRun.trace).indexOf('"id":"return3"')>=0,'inserted branch receives new child counters');
  var renameRaw='function RenameProof(){\n  result.answer = 1\n}';
  assert(api('flowCodeSet',{name:'RenameProof',code:renameRaw}).ok,'rename session');
  var named=api('applyMutation',{target:'flow',name:'RenameProof',flowSource:renameRaw,mutation:{op:'replace',nodeId:'answer',property:'$$id',value:'chosen'}});
