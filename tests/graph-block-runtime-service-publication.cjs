@@ -1,0 +1,12 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+let creates=0;const source=fs.readFileSync(__dirname+'/../_flow/modules/graph-block-runtime-service.js','utf8');
+const a=source.indexOf('\tfunction serviceFor(env)'),b=source.indexOf('\n\treturn {',a);
+const serviceFor=vm.runInNewContext('('+source.slice(a,b).trim()+')',{create:env=>({serial:++creates,env})});
+const registry=new Map();let preparations=0;
+const env=Object.freeze({sharedRuntime:{prepare(key,builder){preparations++;if(!registry.has(key))registry.set(key,builder());return registry.get(key);}}});
+const first=serviceFor(env);assert.equal(first.env,env);
+for(let i=0;i<100;i++)assert.equal(serviceFor(env),first);
+assert.equal(creates,1);assert.equal(preparations,101);
+assert.equal(Object.hasOwn(env,'__flowGraphBlockRuntimeService'),false);
+const classic={};assert.equal(serviceFor(classic),serviceFor(classic));assert.equal(creates,2);
+console.log('Shared graph service is published once through prepare, without mutating the published environment; classic service remains local.');

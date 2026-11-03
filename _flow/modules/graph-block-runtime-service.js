@@ -566,6 +566,10 @@
 	}
 
 	function serviceFor(env) {
+		// The environment is published before its first descriptor is requested. Its
+		// service must use the same single-flight registry, rather than racing to
+		// define a non-writable property from two catalog builders.
+		if (env.sharedRuntime) return env.sharedRuntime.prepare("service:graphBlockRuntime", function () { return create(env); });
 		if (!env.__flowGraphBlockRuntimeService) {
 			Object.defineProperty(env, "__flowGraphBlockRuntimeService", {
 				value: create(env),
