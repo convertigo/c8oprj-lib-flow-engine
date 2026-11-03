@@ -323,7 +323,7 @@
 	// Break only at existing operator whitespace. Literals and comments are indivisible and never reflowed.
 	function layoutFlowScriptLines(lines) {
 		var output = [];
-		lines.forEach(function(line) {
+		lines.join("\n").split("\n").forEach(function(line) {
 			if (line.length <= 120 || /^\s*\/\//.test(line)) { output.push(line); return; }
 			var continuation = line.match(/^\s*/)[0] + "  ", quote = "", candidates = [];
 			for (var i=0;i<line.length;i++) {
