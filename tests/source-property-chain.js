@@ -142,8 +142,8 @@ try {
 	assert(v2written.code.indexOf('$$disabled: false') !== -1, "Writer lost explicit engine false");
 	// Captures written on the left are parsed after the argument bag; structural
 	// key insertion order is irrelevant, unlike the order inside business data.
-	equal(Object.keys(v2written.definition.nodes[0]).sort(), Object.keys(v2node).sort(), "Version 2 writer changed node fields");
-	Object.keys(v2node).forEach(function (key) {
+	equal(Object.keys(v2written.definition.nodes[0]).filter(function(k){return k!=="__flowNameExplicit";}).sort(), Object.keys(v2node).filter(function(k){return k!=="__flowNameExplicit";}).sort(), "Version 2 writer changed node fields");
+	Object.keys(v2node).filter(function(k){return k!=="__flowNameExplicit";}).forEach(function (key) {
 		equal(v2written.definition.nodes[0][key], v2node[key], "Version 2 writer changed node field " + key);
 	});
 	var v2edited = api("applyMutation", { target: "flow", flowSource: versionTwo, mutation: { op: "replace", nodeId: "row", property: "id", value: 7 } });

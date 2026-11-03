@@ -3067,7 +3067,7 @@
 				node.__flowImplicitId = name;
 				if (!node.__flowExplicitId) node.id = name;
 				used[node.id] = true;
-				if (node.__flowExplicitId) node.__flowScriptExplicitName = true;
+				if (node.__flowExplicitId) node.__flowNameExplicit = true;
 				delete node.__flowExplicitId;
 			});
 			return definition;

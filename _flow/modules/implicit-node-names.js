@@ -14,7 +14,7 @@
     var path = node.block === "set" ? (node.props || {}).path : node.out;
     return String(path || node.block || "node").split(".").pop().replace(/[^A-Za-z0-9_$]/g,"_");
   }
-  function implicit(node) { return !node.__flowScriptExplicitName && node.id === node.__flowImplicitId; }
+  function implicit(node) { return !node.__flowNameExplicit && node.id === node.__flowImplicitId; }
   function signature(node) { return JSON.stringify([node.block, node.out, node.props || {}]); }
   function reconcile(definition, previous) {
     var nodes = flatten(definition), used = Object.create(null), bySignature = Object.create(null);

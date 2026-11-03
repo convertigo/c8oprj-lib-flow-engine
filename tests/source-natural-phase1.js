@@ -13,7 +13,7 @@ try {
  function parse(text) { var v=api('flowSourceValidate',{name:'Natural',code:text}); assert(v.ok,'compile: '+JSON.stringify(v)); return v; }
  function format(v) { var out=api('flowSourceValidate',{name:'Natural',flowSource:v.source,includeHeader:false,includeImplicitReturn:false}); assert(out.ok,'format: '+JSON.stringify(out)); return out; }
  function run(text,input) { return api('run',{flowSource:text,input:input||{},includeTrace:true}); }
- function canonical(v) { function clean(x) { if (Array.isArray(x)) return x.map(clean); if(!x||typeof x!=='object')return x; var o={}; Object.keys(x).sort().forEach(function(k){if(k!=='__flowImplicitId'&&k.indexOf('__flowScript')!==0)o[k]=clean(x[k]);});return o; } return JSON.stringify(clean(v)); }
+ function canonical(v) { function clean(x) { if (Array.isArray(x)) return x.map(clean); if(!x||typeof x!=='object')return x; var o={}; Object.keys(x).sort().forEach(function(k){if(k!=='__flowImplicitId'&&k!=='__flowNameExplicit'&&k.indexOf('__flowScript')!==0)o[k]=clean(x[k]);});return o; } return JSON.stringify(clean(v)); }
  function round(body,input) {
   var text=code(body), before=parse(text), after=format(before), twice=format(parse(after.code));
   equal(twice.code,after.code,'format twice');
