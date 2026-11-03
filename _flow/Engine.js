@@ -5434,6 +5434,9 @@
 		var entry = block.__readOnlyCatalog;
 		if (!entry || entry.key !== key) {
 			entry = { key: key, value: block.catalog() };
+			// A nested run can visit another project in the same realm. Published blocks are frozen.
+			// Keep their original catalog immutable; the child gets its own resolved view.
+			if (Object.isFrozen(block)) return flowExecutionSnapshotService().freeze(entry.value);
 			Object.defineProperty(block, "__readOnlyCatalog", { value: entry, enumerable: false, configurable: true });
 		}
 		return entry.value;
