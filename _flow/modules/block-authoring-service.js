@@ -140,6 +140,7 @@
 					canonical: true,
 					revision: compiled.revision,
 					fixes: compiled.fixes || [],
+					proposedPatch: compiled.proposedPatch || undefined,
 					descriptor: publicBlockDescriptor(compiled.descriptor),
 					code: compiled.code,
 					implementationSource: compiled.source,
@@ -184,6 +185,7 @@
 				codeFile: String(codeFile.getAbsolutePath()),
 				revision: compiled.revision,
 				fixes: compiled.fixes || [],
+					proposedPatch: compiled.proposedPatch || undefined,
 				code: compiled.fixes && compiled.fixes.length ? compiled.code : undefined,
 				warnings: (compiled.warnings || (compiled.diagnostics || []).filter(function (diagnostic) {
 					return diagnostic.severity === "warning";

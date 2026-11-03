@@ -3364,6 +3364,7 @@
 			graphBlockCatalog: graphBlockCatalog,
 			flowScriptValidateRequest: flowScriptValidateRequest,
 			flowScriptCorrectSource: flowScriptCorrectSource,
+			flowCodeProposal: function(blocks,request,code,revision) { return flowCodeService().flowCodeProposal(blocks,request,code,revision,flowCodeServiceEnv()); },
 			flowScriptBlockCodeSource: flowScriptBlockCodeSource,
 			rhinoBlockCodeSource: rhinoBlockCodeSource,
 			sha256Hex: sha256Hex,
@@ -4849,7 +4850,7 @@
 			applyUnifiedPatchText: applyUnifiedPatchText,
 			applyRequestPatch: applyRequestPatch,
 			getBlockSource: getBlockSource,
-			setProjectBlockCode: setProjectBlockCode,
+			setProjectBlockCode: function(blocks,name,request) { return blockCodeSetRequest(blocks,Object.assign({},request,{name:name})); },
 			flowScriptBlockCandidates: flowScriptBlockCandidates,
 			flowScriptBlockCandidateDecision: flowScriptBlockCandidateDecision,
 			listProjectFlows: listProjectFlows,
@@ -5287,7 +5288,16 @@
 
 	function blockCodeSetRequest(blocks, request) {
 		if (blockCodeTarget(request) === "frontend") return frontendBlockCodeSetRequest(blocks, request);
-		return setProjectBlockCode(blocks, request.name || request.block, request);
+		try { return setProjectBlockCode(blocks, request.name || request.block, request); }
+		catch (error) {
+			var code=String(request.code || ""), name=String(request.name || request.block || ""), meta={};
+			try { meta=extractFlowScriptBlockMeta(code).meta || {}; } catch (_badMeta) {}
+			var proposal=flowCodeService().flowCodeProposal(blocks,Object.assign({},request,{blockMode:true,correctingBlock:name,
+				declaredProperties:meta.properties || meta.props || {},blockContract:{props:meta.properties || meta.props || {},outputs:meta.outputs || {}}}),code,null,flowCodeServiceEnv());
+			if(!proposal)throw error;
+			return {ok:false,name:name,code:code,proposedPatch:proposal,error:{code:String(error.code || "BLOCK_CODE_SET_FAILED"),
+				message:String(error.message || error),hint:String(error.hint || "Review the proposed edits, then resend code-set."),details:error.details},warnings:[]};
+		}
 	}
 
 	function blockCodeCheckRequest(blocks, request) {

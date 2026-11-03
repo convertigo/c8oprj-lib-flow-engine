@@ -182,6 +182,10 @@
 			}
 			var canonicalCode = flowScriptBlockCodeSource(name, functionCode, meta);
 			var descriptor = flowScriptBlockDescriptorFromMeta(name, meta, validation.definition, canonicalCode);
+			var warnings=flowScriptBlockAuthoringWarnings(name,functionCode,meta,validation.definition);
+			var proposal=env.flowCodeProposal && warnings.some(function(w){return w.code==='FLOW_BLOCK_INPUT_NOT_DECLARED';})
+				? env.flowCodeProposal(blocks,Object.assign({},request,{blockMode:true,correctingBlock:name,declaredProperties:meta.properties || meta.props || {},
+					blockContract:{props:meta.properties || meta.props || {},outputs:meta.outputs || {}}}),canonicalCode,sha256Hex(canonicalCode)) : null;
 			return {
 				name: String(name),
 				code: canonicalCode,
@@ -192,7 +196,8 @@
 				definition: validation.definition,
 				diagnostics: validation.diagnostics,
 				fixes: corrected.fixes,
-				warnings: flowScriptBlockAuthoringWarnings(name, functionCode, meta, validation.definition)
+				warnings: warnings,
+				proposedPatch: proposal
 			};
 		}
 

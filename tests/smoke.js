@@ -2046,11 +2046,15 @@ var missingBlockInputSet = JSON.parse(engine.blockCodeSet(JSON.stringify({
 	name: "smoke.missingBlockInput",
 	code: missingBlockInputSource
 })));
-assertTrue(missingBlockInputSet.ok === true &&
-	missingBlockInputSet.fixes.some(function (fix) {
-		return fix.code === "FLOW_BLOCK_INPUT_DECLARED";
-	}) && missingBlockInputSet.code.indexOf('"value"') !== -1,
-	"FlowScript block input property correction was not reported");
+assertTrue(missingBlockInputSet.ok === true && missingBlockInputSet.fixes.length === 0 &&
+	missingBlockInputSet.warnings.some(function(w){return w.code === "FLOW_BLOCK_INPUT_NOT_DECLARED";}) &&
+	missingBlockInputSet.proposedPatch && missingBlockInputSet.proposedPatch.edits.length > 0,
+	"FlowScript block must propose its missing property without applying it: " + JSON.stringify(missingBlockInputSet));
+var missingRead=JSON.parse(engine.blockCodeGet(JSON.stringify({name:"smoke.missingBlockInput"})));
+assertTrue(missingRead.code.indexOf('"value": {') < 0,"Missing block property was silently inserted");
+var missingApplied=JSON.parse(engine.blockCodePatch(JSON.stringify({name:"smoke.missingBlockInput",revision:missingBlockInputSet.revision,edits:missingBlockInputSet.proposedPatch.edits})));
+assertTrue(missingApplied.ok === true && missingApplied.fixes.length === 0,"Reviewed block property patch failed: " + JSON.stringify(missingApplied));
+
 var flowBackedBlockGet = JSON.parse(engine.blockGet(JSON.stringify({
 	name: "smoke.flowBacked",
 	detail: "full"

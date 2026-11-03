@@ -1251,6 +1251,7 @@
 	}
 
 		return {
+			flowCodeProposal: flowCodeProposal,
 			flowCodeName: flowCodeName,
 			flowCodeNameFromCode: flowCodeNameFromCode,
 			flowCodeNameOptional: flowCodeNameOptional,
@@ -1293,6 +1294,7 @@
 	}
 
 	return {
+		flowCodeProposal: function (blocks,request,code,revision,env) { return create(env).flowCodeProposal(blocks,request,code,revision); },
 		flowCodeName: function () {
 			var args = Array.prototype.slice.call(arguments);
 			var env = args.pop();
