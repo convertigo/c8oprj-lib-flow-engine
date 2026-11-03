@@ -78,6 +78,8 @@ const _meta = {
 }
 
 (function () {
+	function trueValue(value) { return value === true || value === "true"; }
+
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
@@ -91,7 +93,7 @@ const _meta = {
 				schema: value("schema"),
 				revision: value("revision"),
 				flowRevision: value("flowRevision"),
-				dryRun: value("dryRun") === true || value("dryRun") === "true",
+				dryRun: trueValue(value("dryRun")),
 				persist: value("persist")
 			});
 		}

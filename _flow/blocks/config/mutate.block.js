@@ -84,6 +84,8 @@ const _meta = {
 }
 
 (function () {
+	function trueValue(value) { return value === true || value === "true"; }
+
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
@@ -98,7 +100,7 @@ const _meta = {
 				op: value("op"),
 				value: value("value"),
 				revision: value("revision"),
-				dryRun: value("dryRun") === true || value("dryRun") === "true",
+				dryRun: trueValue(value("dryRun")),
 				persist: value("persist")
 			});
 		}
