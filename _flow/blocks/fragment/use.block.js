@@ -40,6 +40,14 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			return ctx.runNodes(node.nodes || []);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return {};
+			},
+			run: function (ctx, node, args) {
+				return ctx.runNodes(node.nodes || []);
+			}
 		}
 	};
 }())

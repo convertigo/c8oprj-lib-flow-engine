@@ -68,6 +68,36 @@ const _meta = {
 				ctx.raise("YAML_PARSE_ERROR", "YAML parse failed: " + errorMessage(error), node,
 					"Check YAML indentation, collections and quoted values.");
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var text = ctx.template(props.text);
+				var capturedArguments = { text: text };
+				Object.defineProperty(capturedArguments, "__state", { value: { text: text } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var text = capturedState.text;
+				if (typeof text !== "string") {
+					return text;
+				}
+				try {
+					var parsed = ctx.parseYaml(text);
+					if (ctx.outputPath(node) && ctx.learnOutputSchema) {
+						ctx.learnOutputSchema(node, "out", ctx.outputPath(node), parsed);
+					}
+					return parsed;
+				} catch (error) {
+					ctx.raise(
+						"YAML_PARSE_ERROR",
+						"YAML parse failed: " + errorMessage(error),
+						node,
+						"Check YAML indentation, collections and quoted values."
+					);
+				}
+			}
 		}
 	};
 }())

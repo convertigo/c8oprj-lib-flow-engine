@@ -148,6 +148,36 @@ const _meta = {
 				requiredClaims: value(ctx, props.requiredClaims),
 				clockSkewSeconds: value(ctx, props.clockSkewSeconds)
 			});
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var receiver = ctx.lib("jwt-verify"),
+					method = receiver.verify;
+				var capturedArguments = {
+					token: text(ctx, props.token),
+					discovery: text(ctx, props.discovery),
+					jwksUri: text(ctx, props.jwksUri),
+					jwks: value(ctx, props.jwks),
+					secret: text(ctx, props.secret),
+					issuer: value(ctx, props.issuer),
+					clientId: text(ctx, props.clientId),
+					audience: value(ctx, props.audience),
+					algorithms: value(ctx, props.algorithms),
+					accessToken: text(ctx, props.accessToken),
+					requiredClaims: value(ctx, props.requiredClaims),
+					clockSkewSeconds: value(ctx, props.clockSkewSeconds)
+				};
+				Object.defineProperties(capturedArguments, {
+					__receiver: { value: receiver },
+					__method: { value: method }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var out = args.__method.call(args.__receiver, args);
+				return out;
+			}
 		}
 	};
 }())

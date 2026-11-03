@@ -179,5 +179,20 @@ const _meta = {
     }
   };
 })();
- return {run: function(ctx,node) { var p=ctx.props(node); try { return calendar[p.operation](p.input,p.defaults); } catch(e) { if(e&&e.code)return ctx.throwFlow({code:e.code,message:e.message,status:400},node); throw e; } }};
+ return {run: function(ctx,node) { var p=ctx.props(node); try { return calendar[p.operation](p.input,p.defaults); } catch(e) { if(e&&e.code)return ctx.throwFlow({code:e.code,message:e.message,status:400},node); throw e; } },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { operation: p.operation, input: p.input, defaults: p.defaults };
+			},
+			run: function (ctx, node, args) {
+				try {
+					return calendar[args.operation](args.input, args.defaults);
+				} catch (e) {
+					if (e && e.code) return ctx.throwFlow({ code: e.code, message: e.message, status: 400 }, node);
+					throw e;
+				}
+			}
+		}
+	};
 })()

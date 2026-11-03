@@ -89,6 +89,49 @@ const _meta = {
 				}
 				throw e;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				try {
+					var receiver = ctx.lib("jwt-verify"),
+						method = receiver.sign;
+					var capturedArguments = {
+						claims: value(ctx, props.claims),
+						secret: text(ctx, props.secret),
+						expiresInSeconds: value(ctx, props.expiresInSeconds),
+						algorithm: props.algorithm,
+						header: value(ctx, props.header)
+					};
+					Object.defineProperties(capturedArguments, {
+						__receiver: { value: receiver },
+						__method: { value: method }
+					});
+					return capturedArguments;
+				} catch (e) {
+					if (e && e.message && !(e instanceof Error)) {
+						return ctx.throwFlow(
+							{ code: "JWT_SIGN_INVALID", message: "jwt.sign: " + e.message, status: 500 },
+							node
+						);
+					}
+					throw e;
+				}
+			},
+			run: function (ctx, node, args) {
+				try {
+					var out = args.__method.call(args.__receiver, args);
+					return out;
+				} catch (e) {
+					if (e && e.message && !(e instanceof Error)) {
+						return ctx.throwFlow(
+							{ code: "JWT_SIGN_INVALID", message: "jwt.sign: " + e.message, status: 500 },
+							node
+						);
+					}
+					throw e;
+				}
+			}
 		}
 	};
 }())

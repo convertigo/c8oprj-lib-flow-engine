@@ -143,6 +143,54 @@ const _meta = {
         }
       }
       return out
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var items = ctx.expr(props.items || props["in"]) || [];
+				var path = String(ctx.template(props.path || ""));
+				var skipMissing = bool(ctx, props.skipMissing, true);
+				var hasDefault = props.defaultValue !== undefined;
+				var defaultValue = hasDefault ? ctx.input({ value: props.defaultValue }) : null;
+				var capturedArguments = {
+					items: items,
+					path: path,
+					skipMissing: skipMissing,
+					hasDefault: hasDefault,
+					defaultValue: defaultValue
+				};
+				Object.defineProperty(capturedArguments, "__state", {
+					value: {
+						items: items,
+						path: path,
+						skipMissing: skipMissing,
+						hasDefault: hasDefault,
+						defaultValue: defaultValue
+					}
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var items = capturedState.items;
+				var path = capturedState.path;
+				var skipMissing = capturedState.skipMissing;
+				var hasDefault = capturedState.hasDefault;
+				var defaultValue = capturedState.defaultValue;
+				var out = [];
+				var count = arrayLength(items);
+				for (var i = 0; i < count; i++) {
+					var value = path ? ctx.readObjectPath(itemAt(items, i), path) : itemAt(items, i);
+					if (value === undefined || value === null) {
+						if (!skipMissing) {
+							out.push(hasDefault ? defaultValue : null);
+						}
+					} else {
+						out.push(value);
+					}
+				}
+				return out;
+			}
+		}
+	}
 }())

@@ -62,6 +62,23 @@ const _meta = {
 			var menu = ctx.contextMenuSource(args);
 			ctx.write(ctx.outputPath(node) || "local.menu", menu);
 			return menu;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var args = argsFrom(props);
+				args.targetObject = frontendTarget(args);
+				var capturedArguments = Object.assign({}, args);
+				Object.defineProperty(capturedArguments, "__state", { value: { args: args } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var args = capturedState.args;
+				var menu = ctx.contextMenuSource(args);
+				ctx.write(ctx.outputPath(node) || "local.menu", menu);
+				return menu;
+			}
 		}
 	};
 }())

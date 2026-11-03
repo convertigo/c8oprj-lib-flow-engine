@@ -124,6 +124,51 @@ const _meta = {
 				}
 				throw e;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				try {
+					var receiver = ctx.lib("ldap"),
+						method = receiver.bind;
+					var capturedArguments = {
+						url: text(ctx, props.url),
+						principal: text(ctx, props.principal),
+						password: text(ctx, props.password),
+						anonymous: value(ctx, props.anonymous) === true,
+						referral: props.referral,
+						connectTimeoutMs: value(ctx, props.connectTimeoutMs),
+						readTimeoutMs: value(ctx, props.readTimeoutMs)
+					};
+					Object.defineProperties(capturedArguments, {
+						__receiver: { value: receiver },
+						__method: { value: method }
+					});
+					return capturedArguments;
+				} catch (e) {
+					if (e && e.ldap) {
+						return ctx.throwFlow(
+							{ code: e.code, message: e.message, status: e.status, details: e.details },
+							node
+						);
+					}
+					throw e;
+				}
+			},
+			run: function (ctx, node, args) {
+				try {
+					var out = args.__method.call(args.__receiver, args);
+					return out;
+				} catch (e) {
+					if (e && e.ldap) {
+						return ctx.throwFlow(
+							{ code: e.code, message: e.message, status: e.status, details: e.details },
+							node
+						);
+					}
+					throw e;
+				}
+			}
 		}
 	};
 }())

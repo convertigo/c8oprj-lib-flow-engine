@@ -215,6 +215,45 @@ const _meta = {
         }
       }
       return out
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var items = ctx.expr(props.items || props["in"]) || [];
+				var query = text(ctx, props.query).trim();
+				var caseSensitive = bool(ctx, props.caseSensitive, false);
+				var max = integer(ctx, props.limit, 0);
+				var capturedArguments = { items: items, query: query, caseSensitive: caseSensitive, limit: max };
+				Object.defineProperty(capturedArguments, "__state", {
+					value: { items: items, query: query, caseSensitive: caseSensitive, max: max }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var items = capturedState.items;
+				var query = capturedState.query;
+				var caseSensitive = capturedState.caseSensitive;
+				var max = capturedState.max;
+				var expected = caseSensitive ? query : query.toLowerCase();
+				var out = [];
+		
+				var count = arrayLength(items);
+				for (var i = 0; i < count; i++) {
+					var item = itemAt(items, i);
+					var haystack = searchableText(item);
+					if (!caseSensitive) {
+						haystack = haystack.toLowerCase();
+					}
+					if (!expected || haystack.indexOf(expected) >= 0) {
+						out.push(item);
+						if (max > 0 && out.length >= max) {
+							break;
+						}
+					}
+				}
+				return out;
+			}
+		}
+	}
 }())

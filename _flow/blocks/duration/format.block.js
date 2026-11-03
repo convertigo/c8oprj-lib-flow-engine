@@ -91,6 +91,19 @@ const _meta = {
         showHours: ctx.input({ value: props.showHours }),
         fractionDigits: ctx.input({ value: props.fractionDigits })
       })
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return {
+					milliseconds: ctx.input({ value: p.milliseconds }),
+					showHours: ctx.input({ value: p.showHours }),
+					fractionDigits: ctx.input({ value: p.fractionDigits })
+				};
+			},
+			run: function (ctx, node, args) {
+				return formatDuration(args);
+			}
+		}
+	}
 }())

@@ -389,3 +389,4 @@ console.log(
 	checks +
 		" ordinary/captured parity checks passed, including lazy branches, conversion order, side effects and caller changes."
 );
+module.exports = { parity, context, load, normalized };

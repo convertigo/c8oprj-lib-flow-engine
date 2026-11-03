@@ -156,6 +156,25 @@ const _meta = {
 			} finally {
 				ctx.scopes.config = previous;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node),
+					previous = ctx.scopes.config,
+					overrides = configOverrides(ctx, props),
+					args = { overrides: overrides };
+				Object.defineProperty(args, "__previous", { value: previous });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var previous = args.__previous;
+				ctx.scopes.config = mergeDeep(previous || {}, args.overrides);
+				try {
+					return ctx.runNodes(node.then || []);
+				} finally {
+					ctx.scopes.config = previous;
+				}
+			}
 		}
 	};
 }())

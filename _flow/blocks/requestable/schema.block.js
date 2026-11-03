@@ -68,6 +68,14 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			return ctx.requestableSchema(argsFrom(ctx.props(node)));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return argsFrom(ctx.props(node));
+			},
+			run: function (ctx, node, args) {
+				return ctx.requestableSchema(args);
+			}
 		}
 	};
 }())

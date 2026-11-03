@@ -49,6 +49,19 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.lib("jwt-verify").decode(String(ctx.template(props.token || "") || ""));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					receiver = ctx.lib("jwt-verify"),
+					method = receiver.decode,
+					args = { token: String(ctx.template(p.token || "") || "") };
+				Object.defineProperties(args, { __receiver: { value: receiver }, __method: { value: method } });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return args.__method.call(args.__receiver, args.token);
+			}
 		}
 	};
 }())

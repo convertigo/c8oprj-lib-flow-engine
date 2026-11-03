@@ -59,6 +59,15 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return resolve(ctx.template(props.path || "~"), ctx.template(props.suffix || ""));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { path: ctx.template(p.path || "~"), suffix: ctx.template(p.suffix || "") };
+			},
+			run: function (ctx, node, args) {
+				return resolve(args.path, args.suffix);
+			}
 		}
 	};
 }())

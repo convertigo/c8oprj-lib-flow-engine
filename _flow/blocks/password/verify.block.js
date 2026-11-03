@@ -66,6 +66,27 @@ const _meta = {
 				hash: text(ctx, props.hash),
 				salt: text(ctx, props.salt)
 			});
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var receiver = ctx.lib("password"),
+					method = receiver.verify;
+				var capturedArguments = {
+					password: text(ctx, props.password),
+					hash: text(ctx, props.hash),
+					salt: text(ctx, props.salt)
+				};
+				Object.defineProperties(capturedArguments, {
+					__receiver: { value: receiver },
+					__method: { value: method }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var out = args.__method.call(args.__receiver, args);
+				return out;
+			}
 		}
 	};
 }())

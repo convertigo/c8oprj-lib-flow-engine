@@ -108,6 +108,14 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			return ctx.describeTreeSource(withNamedFlowSource(ctx, argsFrom(ctx.props(node))));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return withNamedFlowSource(ctx, argsFrom(ctx.props(node)));
+			},
+			run: function (ctx, node, args) {
+				return ctx.describeTreeSource(args);
+			}
 		}
 	};
 }())

@@ -190,6 +190,61 @@ const _meta = {
 				}
 				throw e;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				try {
+					var receiver = ctx.lib("ldap"),
+						method = receiver.authenticate;
+					var capturedArguments = {
+						url: text(ctx, props.url),
+						serviceDn: text(ctx, props.serviceDn),
+						servicePassword: text(ctx, props.servicePassword),
+						anonymous: value(ctx, props.anonymous) === true,
+						base: text(ctx, props.base),
+						login: text(ctx, props.login),
+						password: text(ctx, props.password),
+						loginAttribute: text(ctx, props.loginAttribute),
+						filter: text(ctx, props.filter),
+						scope: props.scope,
+						attributes: value(ctx, props.attributes),
+						referral: props.referral,
+						connectTimeoutMs: value(ctx, props.connectTimeoutMs),
+						readTimeoutMs: value(ctx, props.readTimeoutMs),
+						canContinue: function () {
+							return ctx.canContinue();
+						}
+					};
+					Object.defineProperties(capturedArguments, {
+						__receiver: { value: receiver },
+						__method: { value: method }
+					});
+					return capturedArguments;
+				} catch (e) {
+					if (e && e.ldap) {
+						return ctx.throwFlow(
+							{ code: e.code, message: e.message, status: e.status, details: e.details },
+							node
+						);
+					}
+					throw e;
+				}
+			},
+			run: function (ctx, node, args) {
+				try {
+					var out = args.__method.call(args.__receiver, args);
+					return out;
+				} catch (e) {
+					if (e && e.ldap) {
+						return ctx.throwFlow(
+							{ code: e.code, message: e.message, status: e.status, details: e.details },
+							node
+						);
+					}
+					throw e;
+				}
+			}
 		}
 	};
 }())

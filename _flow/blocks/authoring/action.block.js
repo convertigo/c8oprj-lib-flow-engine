@@ -120,6 +120,40 @@ const _meta = {
 			}
 			ctx.write(ctx.outputPath(node) || "local.action", response);
 			return response;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var args = argsFrom(props);
+				args.targetObject = frontendTarget(args);
+				args.action = args.action && typeof args.action === "object" ? args.action : {};
+				args.action.id = actionId(args.action.id || args.actionId);
+				if (!args.action.id) {
+					throw new Error("authoring.action requires actionId or action.id.");
+				}
+				var capturedArguments = Object.assign({}, args);
+				Object.defineProperty(capturedArguments, "__state", { value: { args: args } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var args = capturedState.args;
+				var response = ctx.contextActionSource(args);
+				if (response && response.details && response.details.status === "failed") {
+					var cause = response.details.error || {
+						code: "FRONTEND_DEV_START_FAILED",
+						message: "Inspect the dev setup log."
+					};
+					response = Object.assign({}, response, {
+						ok: false,
+						pending: false,
+						error: cause,
+						message: "Frontend action failed: " + String(cause.message || cause)
+					});
+				}
+				ctx.write(ctx.outputPath(node) || "local.action", response);
+				return response;
+			}
 		}
 	};
 }())

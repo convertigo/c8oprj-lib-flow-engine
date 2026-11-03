@@ -49,6 +49,22 @@ const _meta = {
 			var value = rendered === undefined || rendered === null ? "" : String(rendered);
 			var ldap = ctx.lib("ldap");
 			return props.mode === "dn" ? ldap.escapeDn(value) : ldap.escapeFilter(value);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var rendered = props.value === undefined || props.value === null ? "" : ctx.template(props.value);
+				var value = rendered === undefined || rendered === null ? "" : String(rendered);
+				var ldap = ctx.lib("ldap"),
+					args = { value: value, mode: props.mode };
+				Object.defineProperty(args, "__library", { value: ldap });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return args.mode === "dn"
+					? args.__library.escapeDn(args.value)
+					: args.__library.escapeFilter(args.value);
+			}
 		}
 	};
 }())

@@ -70,6 +70,46 @@ const _meta = {
 				}
 				throw e;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				try {
+					var receiver = ctx.lib("password"),
+						method = receiver.hash;
+					var capturedArguments = {
+						password: text(ctx, props.password),
+						iterations: value(ctx, props.iterations)
+					};
+					Object.defineProperties(capturedArguments, {
+						__receiver: { value: receiver },
+						__method: { value: method }
+					});
+					return capturedArguments;
+				} catch (e) {
+					if (e && e.code) {
+						return ctx.throwFlow(
+							{ code: e.code, message: "password.hash: " + e.message, status: 400 },
+							node
+						);
+					}
+					throw e;
+				}
+			},
+			run: function (ctx, node, args) {
+				try {
+					var out = args.__method.call(args.__receiver, args);
+					return out;
+				} catch (e) {
+					if (e && e.code) {
+						return ctx.throwFlow(
+							{ code: e.code, message: "password.hash: " + e.message, status: 400 },
+							node
+						);
+					}
+					throw e;
+				}
+			}
 		}
 	};
 }())

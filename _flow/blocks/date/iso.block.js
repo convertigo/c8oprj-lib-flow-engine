@@ -57,6 +57,15 @@ const _meta = {
     run: function (ctx, node) {
       var props = ctx.props(node);
       return iso(props.value === undefined ? undefined : ctx.input({ value: props.value }));
-    }
-  };
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { value: p.value === undefined ? undefined : ctx.input({ value: p.value }) };
+			},
+			run: function (ctx, node, args) {
+				return iso(args.value);
+			}
+		}
+	};
 }())

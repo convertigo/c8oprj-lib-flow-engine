@@ -125,6 +125,36 @@ const _meta = {
 				includeFlow: include(props.includeFlow),
 				includeTrace: include(props.includeTrace)
 			}), props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				var args = {
+					flowSource: p.flowSource || "",
+					config: p.config || {},
+					input: p.input || {},
+					project: p.project,
+					projectDir: p.projectDir,
+					definition: p.definition,
+					includeFlow: include(p.includeFlow),
+					includeTrace: include(p.includeTrace)
+				};
+				Object.defineProperty(args, "__props", { value: p });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return cleanup(
+					ctx.runFlowSource(args.flowSource, args.config, {
+						input: args.input,
+						project: args.project,
+						projectDir: args.projectDir,
+						definition: args.definition,
+						includeFlow: args.includeFlow,
+						includeTrace: args.includeTrace
+					}),
+					args.__props
+				);
+			}
 		}
 	};
 }())

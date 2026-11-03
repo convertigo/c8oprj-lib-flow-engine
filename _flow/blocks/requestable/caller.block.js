@@ -76,6 +76,46 @@ const _meta = {
 			}
 			out.direct = out.project !== "" && out.requestProject === out.project;
 			return out;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return {};
+			},
+			run: function (ctx, node, args) {
+				var out = { project: "", requestProject: "", direct: false, hasRequest: false };
+				var context = null;
+				try {
+					context = ctx.convertigoContext();
+				} catch (e) {}
+				if (context == null) {
+					return out;
+				}
+				try {
+					if (context.project != null) {
+						out.project = text(context.project.getName());
+					} else if (context.projectName != null) {
+						out.project = text(context.projectName);
+					}
+				} catch (e) {}
+				var request = null;
+				try {
+					request = context.httpServletRequest;
+				} catch (e) {}
+				if (request == null) {
+					return out;
+				}
+				out.hasRequest = true;
+				try {
+					var project = request.getParameter("__project");
+					if (project == null) {
+						var matched = /\/projects\/([^\/]+)\//.exec(text(request.getRequestURI()));
+						project = matched ? matched[1] : "";
+					}
+					out.requestProject = text(project);
+				} catch (e) {}
+				out.direct = out.project !== "" && out.requestProject === out.project;
+				return out;
+			}
 		}
 	};
 }())

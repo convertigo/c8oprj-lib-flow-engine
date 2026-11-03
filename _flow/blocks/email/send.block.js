@@ -177,6 +177,58 @@ const _meta = {
 				}
 				throw e;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				try {
+					var receiver = ctx.lib("email"),
+						method = receiver.send;
+					var capturedArguments = {
+						to: text(ctx, props.to),
+						subject: text(ctx, props.subject),
+						html: text(ctx, props.html),
+						text: text(ctx, props.text),
+						from: text(ctx, props.from),
+						host: text(ctx, props.host),
+						port: value(ctx, props.port),
+						security: value(ctx, props.security),
+						user: text(ctx, props.user),
+						password: text(ctx, props.password),
+						replyTo: text(ctx, props.replyTo),
+						cc: text(ctx, props.cc),
+						bcc: text(ctx, props.bcc),
+						timeoutMs: value(ctx, props.timeoutMs)
+					};
+					Object.defineProperties(capturedArguments, {
+						__receiver: { value: receiver },
+						__method: { value: method }
+					});
+					return capturedArguments;
+				} catch (e) {
+					if (e && e.email) {
+						return ctx.throwFlow(
+							{ code: e.code, message: e.message, status: e.status, details: e.details },
+							node
+						);
+					}
+					throw e;
+				}
+			},
+			run: function (ctx, node, args) {
+				try {
+					var out = args.__method.call(args.__receiver, args);
+					return out;
+				} catch (e) {
+					if (e && e.email) {
+						return ctx.throwFlow(
+							{ code: e.code, message: e.message, status: e.status, details: e.details },
+							node
+						);
+					}
+					throw e;
+				}
+			}
 		}
 	};
 }())

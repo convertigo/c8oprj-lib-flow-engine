@@ -127,6 +127,32 @@ const _meta = {
 				ctx.learnOutputSchema(node, "out", ctx.outputPath(node), parsed);
 			}
 			return parsed;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var text = ctx.template(props.text);
+				var capturedArguments = { text: text };
+				Object.defineProperty(capturedArguments, "__state", { value: { text: text } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var text = capturedState.text;
+				if (text === undefined || text === null || text === "") {
+					return {};
+				}
+				if (typeof text === "object") {
+					throw new Error(
+						'xml.parse expects raw XML text, not a resource object. Use asset.read({ path: "_flow/resources/..." }) in Flow code, or pass resource.get(...).content.'
+					);
+				}
+				var parsed = documentValue(parseXml(text));
+				if (ctx.outputPath(node) && ctx.learnOutputSchema) {
+					ctx.learnOutputSchema(node, "out", ctx.outputPath(node), parsed);
+				}
+				return parsed;
+			}
 		}
 	};
 }())

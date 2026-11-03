@@ -185,6 +185,46 @@ const _meta = {
         out.push(plain(source))
       }
       return out
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var source = ctx.expr(props.source || props.value || props["in"]);
+				var includeScalar = bool(ctx, props.includeScalar, true);
+				var path =
+					props.path === undefined || props.path === null || props.path === ""
+						? "items"
+						: String(props.path);
+				var capturedArguments = { source: source, includeScalar: includeScalar, path: path };
+				Object.defineProperty(capturedArguments, "__state", {
+					value: { source: source, includeScalar: includeScalar, path: path }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var source = capturedState.source;
+				var includeScalar = capturedState.includeScalar;
+				var path = capturedState.path;
+				var candidate = path ? readPath(source, path) : source;
+				var out = [];
+				if (candidate !== undefined && candidate !== null) {
+					if (isArrayLike(candidate)) {
+						pushArray(out, candidate);
+						return out;
+					}
+					if (includeScalar) {
+						out.push(plain(candidate));
+					}
+					return out;
+				}
+				if (isArrayLike(source)) {
+					pushArray(out, source);
+				} else if (includeScalar && source !== undefined && source !== null) {
+					out.push(plain(source));
+				}
+				return out;
+			}
+		}
+	}
 }())

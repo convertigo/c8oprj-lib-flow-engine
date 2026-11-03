@@ -95,6 +95,44 @@ const _meta = {
 				}
 				throw e;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				try {
+					var receiver = ctx.lib("freemarker"),
+						method = receiver.render;
+					var capturedArguments = {
+						projectDir: ctx.read("request.projectDir"),
+						file: text(ctx, props.file),
+						locale: text(ctx, props.locale),
+						template: props.template,
+						format: props.format,
+						values: value(ctx, props.values)
+					};
+					Object.defineProperties(capturedArguments, {
+						__receiver: { value: receiver },
+						__method: { value: method }
+					});
+					return capturedArguments;
+				} catch (e) {
+					if (e && e.freemarker) {
+						return ctx.throwFlow({ code: e.code, message: e.message, status: e.status }, node);
+					}
+					throw e;
+				}
+			},
+			run: function (ctx, node, args) {
+				try {
+					var out = args.__method.call(args.__receiver, args);
+					return out;
+				} catch (e) {
+					if (e && e.freemarker) {
+						return ctx.throwFlow({ code: e.code, message: e.message, status: e.status }, node);
+					}
+					throw e;
+				}
+			}
 		}
 	};
 }())

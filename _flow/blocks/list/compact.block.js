@@ -148,6 +148,31 @@ const _meta = {
         addValue(out, itemAt(items, i), flatten, skipEmptyString)
       }
       return out
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var items = ctx.expr(props.items || props["in"]) || [];
+				var flatten = bool(ctx, props.flatten, true);
+				var skipEmptyString = bool(ctx, props.skipEmptyString, true);
+				var capturedArguments = { items: items, flatten: flatten, skipEmptyString: skipEmptyString };
+				Object.defineProperty(capturedArguments, "__state", {
+					value: { items: items, flatten: flatten, skipEmptyString: skipEmptyString }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var items = capturedState.items;
+				var flatten = capturedState.flatten;
+				var skipEmptyString = capturedState.skipEmptyString;
+				var out = [];
+				var count = arrayLength(items);
+				for (var i = 0; i < count; i++) {
+					addValue(out, itemAt(items, i), flatten, skipEmptyString);
+				}
+				return out;
+			}
+		}
+	}
 }())

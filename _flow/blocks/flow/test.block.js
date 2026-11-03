@@ -141,6 +141,27 @@ const _meta = {
 				args.name = prop(node, "name");
 			}
 			return cleanup(ctx.flowTest(args), props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var args = argsFrom(props);
+				if (!args.name && args.flowName) {
+					args.name = args.flowName;
+				}
+				if (!args.name) {
+					args.name = prop(node, "name");
+				}
+				var capturedArguments = Object.assign({}, args);
+				Object.defineProperty(capturedArguments, "__state", { value: { args: args, props: props } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var args = capturedState.args;
+				var props = capturedState.props;
+				return cleanup(ctx.flowTest(args), props);
+			}
 		}
 	};
 }())

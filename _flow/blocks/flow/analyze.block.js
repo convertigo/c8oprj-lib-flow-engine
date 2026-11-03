@@ -42,6 +42,15 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.analyzeFlowSource(props.flowSource || "", argsFrom(props));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { flowSource: p.flowSource || "", options: argsFrom(p) };
+			},
+			run: function (ctx, node, args) {
+				return ctx.analyzeFlowSource(args.flowSource, args.options);
+			}
 		}
 	};
 }())
