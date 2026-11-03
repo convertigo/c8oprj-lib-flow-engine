@@ -12,7 +12,7 @@ function assert(value,msg){if(!value)throw Error(msg);}
  assert(!corrected.ok && corrected.proposedPatch && corrected.proposedPatch.edits.length,'bad slot offered as patch: '+JSON.stringify(corrected));
  assert(api('flowCodeGet',{name:'Slots'+index}).code===source,'autoCorrect preserves source');
  var applied=api('flowCodePatch',{name:'Slots'+index,revision:corrected.revision,edits:corrected.proposedPatch.edits});
- assert(applied.ok,'explicitly applied slot patch');
+ assert(applied.ok,'explicitly applied slot patch: '+JSON.stringify(applied));
 });
 var draft=api('flowCodeSet',{name:'Same',code:'function Same({result}) {\n result.value=1\n}'});
 assert(draft.ok,'initial draft');

@@ -256,6 +256,7 @@
 			});
 			if (slotEdits.length) ast = parse();
 		}
+		if (request.slotOnly === true) return {code:source,fixes:fixes};
 		// Diagnose an unknown vocabulary item before examining nested-call safety.
 		// Scope methods and ordinary expression functions are not block names.
 		visit(ast, function (node) {

@@ -311,6 +311,14 @@
 		}
 		try {
 			var resolution = flowScriptIntuitiveResolve(blocks, code, request);
+			// A declared slot's spelling takes precedence over fuzzy guesses at business property names.
+			if (env.flowScriptSuggestSource) {
+				try {
+					var slots = env.flowScriptSuggestSource(blocks,code,Object.assign({},request,{slotOnly:true}));
+					if (slots.code !== code) resolution.edits = [{line:1,oldText:code,newText:slots.code,confidence:1,
+						reason:"Use the slot declared by the block contract; review before applying.",corrections:slots.fixes}];
+				} catch (_noSlotSuggestion) {}
+			}
 			if (!resolution.edits.length && env.flowScriptSuggestSource) {
 				try {
 					var suggestion = env.flowScriptSuggestSource(blocks,code,request);
