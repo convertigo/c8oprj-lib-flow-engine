@@ -259,10 +259,10 @@
 				if(metadata.disabled)return {type:"unknown"};
 				var parent=ctx.currentNodeInfo, start=ctx.nodes.length;
 				var temporary="local.__flow_inline_"+start;
-				var snapshot={paths:ctx.paths.slice(),reads:ctx.reads.slice(),writes:ctx.writes.slice(),schemas:cloneMap(ctx.schemas),providers:cloneMap(ctx.providers),returns:ctx.returnSchemas.slice()};
+				var snapshot={paths:ctx.paths.slice(),reads:ctx.reads.slice(),writes:ctx.writes.slice(),schemas:cloneMap(ctx.schemas),providers:cloneMap(ctx.providers),declared:cloneMap(ctx.declaredSchemas),returns:ctx.returnSchemas.slice()};
 				var node=Object.assign({block:value.__flowBlock,props:value.properties || {},id:metadata.id || (parent?parent.id:'value')+'.select'+start},metadata,{out:temporary});
 				var schema;
-				delete ctx.schemas[temporary];
+				delete ctx.schemas[temporary];delete ctx.declaredSchemas[temporary];
 				try {
 					analyzeNode(ctx,node);
 					schema=ctx.schemaForPath(temporary);
@@ -274,7 +274,7 @@
 						info.outputs=info.outputs.filter(function(output){return output.path!==temporary;});
 					}
 				} finally {
-					restoreMap(ctx.schemas,snapshot.schemas);restoreMap(ctx.providers,snapshot.providers);
+					restoreMap(ctx.schemas,snapshot.schemas);restoreMap(ctx.providers,snapshot.providers);restoreMap(ctx.declaredSchemas,snapshot.declared);
 					restoreArray(ctx.paths,snapshot.paths);restoreArray(ctx.reads,snapshot.reads);restoreArray(ctx.writes,snapshot.writes);restoreArray(ctx.returnSchemas,snapshot.returns);
 				}
 				if(metadata.out && schema){ctx.addSchema(metadata.out,schema);ctx.addWrite(metadata.out);}

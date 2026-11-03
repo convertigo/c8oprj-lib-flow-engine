@@ -64,6 +64,9 @@ try {
  var inline = round('  local.names = list.map({ items: [" A "," B "], select: text.trim({ $$id: "clean", text: current }) })\n  result.names = local.names');
  assert(inline.code.indexOf('select: text.trim({ $$id: "clean"')>=0,'inline property retains $$id');
  equal(run(inline.code).result.names,['A','B'],'inline mapper execution');
+ var invalidInline=api('flowCodeSet',{name:'InlineBad',code:'function InlineBad(){\n  local.rows = list.map({items:["x"],select:text.trim({typo:current})})\n}'});
+ assert(!invalidInline.ok && JSON.stringify(invalidInline).indexOf('UNKNOWN_BLOCK_PROPERTY')>=0,'inline calls keep catalog property validation');
+ assert(JSON.stringify(invalidInline).indexOf('"line":2')>=0,'inline diagnostics use authored statement line');
  var sessionA='function Session(){\n result.a = 1\n result.a = 2\n}';
  var sessionSet=api('flowCodeSet',{name:'Session',code:sessionA});assert(sessionSet.ok,'session fixture');
  var sessionPatch=api('flowCodePatch',{name:'Session',revision:sessionSet.revision,edits:[{oldText:' result.a = 1',newText:' result.a = 0\n result.a = 1'}]});assert(sessionPatch.ok,'insert above');

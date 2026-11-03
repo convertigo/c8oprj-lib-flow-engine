@@ -229,7 +229,13 @@
 					});
 					var acceptsAdditionalProperties = catalog.dynamicProperties === true || !!catalog.additionalProperties;
 					var slotMap = {};
-					env.flowScriptSlotNames(activeBlocks, node).forEach(function (slot) {
+					function inline(value) {
+					if(!value || typeof value!=="object")return;
+					if(value.__flowBlock){walk([Object.assign({block:value.__flowBlock,props:value.properties || {},__flowScriptLine:line},value.metadata || {})]);return;}
+					Object.keys(value).forEach(function(key){inline(value[key]);});
+				}
+				if(name==='list.map')inline((node.props || {}).select);
+				env.flowScriptSlotNames(activeBlocks, node).forEach(function (slot) {
 						slotMap[slot] = true;
 					});
 					businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
