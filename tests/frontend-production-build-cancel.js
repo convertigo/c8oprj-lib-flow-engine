@@ -41,8 +41,9 @@ var children = [];
 var thread = new java.lang.Thread(function () {
 	frontendCancellableBuild.set(cancel);
 	try {
-		// a build that starts children, as npm starts vite
-		results.push(frontendRunProcess(["sh", "-c", "sleep 30 & sleep 30; wait"], new File("."), {}));
+		// A build that starts children, as npm starts vite. When child destruction releases wait before the parent
+		// receives TERM, the fixture must still finish nonzero; the assertions below prove early cancellation.
+		results.push(frontendRunProcess(["sh", "-c", "sleep 30 & sleep 30; wait; exit 143"], new File("."), {}));
 		results.push(frontendRunProcess(["sleep", "30"], new File("."), {}));
 	} finally {
 		frontendCancellableBuild.remove();

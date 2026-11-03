@@ -5292,6 +5292,7 @@
 		catch (error) {
 			var code=String(request.code || ""), name=String(request.name || request.block || ""), meta={};
 			try { meta=extractFlowScriptBlockMeta(code).meta || {}; } catch (_badMeta) {}
+			if (blockCodeRuntimeFromMeta(meta) !== "flow") throw error;
 			var proposal=flowCodeService().flowCodeProposal(blocks,Object.assign({},request,{blockMode:true,correctingBlock:name,
 				declaredProperties:meta.properties || meta.props || {},blockContract:{props:meta.properties || meta.props || {},outputs:meta.outputs || {}}}),code,null,flowCodeServiceEnv());
 			if(!proposal)throw error;
