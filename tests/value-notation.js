@@ -104,11 +104,11 @@ var rendered = JSON.parse(engine.applyMutation(JSON.stringify({
 	mutation: { op: "replace", path: "nodes[0].props.path", value: "local.a" }
 }))).source;
 [
-	"value: `Hello ${input.name}!`",
-	"value: \"cost ${x}\"",
-	"value: `Hi ${input.name}`",
-	"value: `line1\\nline2 ${input.name}`",
-	"value: input.name,",
+	"local.a = `Hello ${input.name}!`",
+	"local.b = \"cost ${x}\"",
+	"local.c = `Hi ${input.name}`",
+	"local.d = `line1\\nline2 ${input.name}`",
+	"local.e = input.name",
 	"n: input.name,",
 	"t: \"x ${y}\",",
 	"u: `C:\\\\${input.name}`,"
