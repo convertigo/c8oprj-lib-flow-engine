@@ -21,7 +21,8 @@ try {
   equal(run(after.code,input).result,run(text,input).result,'same execution');
   return after;
  }
- round('  result.epoch = date.now()');
+ var emptyCall=parse(code('  result.epoch = date.now()'));
+ assert(format(emptyCall).code.indexOf('date.now({})')>=0,'empty argument list is understood without a guess');
  var first=round('  result.answer = input.value + 1',{value:4});
  assert(first.code.indexOf('result.answer = input.value + 1')>=0 && first.code.indexOf('$$id')<0,'natural set');
  equal(first.definition.nodes[0].id,'answer','assignment name');
