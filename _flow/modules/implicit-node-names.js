@@ -26,18 +26,24 @@
     nodes.forEach(function (node) { if (!implicit(node)) used[node.id] = true; });
     var explicit = Object.create(null);
     nodes.forEach(function(node){if(!implicit(node)) explicit[node.id]=true;});
+    function reserveInline(value) {
+      if (!value || typeof value !== 'object') return;
+      if (value.__flowBlock && value.metadata && value.metadata.id) { explicit[value.metadata.id]=true;used[value.metadata.id]=true; }
+      Object.keys(value).forEach(function(key){reserveInline(value[key]);});
+    }
+    nodes.forEach(function(node){reserveInline(node.props);});
     var kept = new Set();
     nodes.forEach(function (node) {
       if (!implicit(node)) return;
       var candidates = bySignature[signature(node)] || [];
-      var entry = candidates.filter(function (candidate) { return !kept.has(candidate) && candidate.implicit && !explicit[candidate.id]; })[0];
+      var entry = candidates.filter(function (candidate) { return !kept.has(candidate) && (candidate.implicit || candidate.id === node.id) && !explicit[candidate.id]; })[0];
       if (entry) { node.id = entry.id; node.__flowImplicitId = entry.id; kept.add(entry); node.__flowScriptNameRetained = true; }
     });
     // A property edit changes the signature, but a remaining producer of the same destination keeps its name.
     nodes.forEach(function (node) {
       if (!implicit(node) || node.__flowScriptNameRetained) return;
       var key = JSON.stringify([node.block,node.out,(node.props || {}).path]);
-      var candidates = old.filter(function (entry) { return entry.implicit && !explicit[entry.id] && !kept.has(entry) && entry.key === key; });
+      var candidates = old.filter(function (entry) { return (entry.implicit || entry.id === node.id) && !explicit[entry.id] && !kept.has(entry) && entry.key === key; });
       if (candidates.length === 1) { var entry=candidates[0]; node.id=entry.id;node.__flowImplicitId=entry.id;kept.add(entry);node.__flowScriptNameRetained=true; }
     });
     nodes.forEach(function (node) {
