@@ -635,7 +635,7 @@
 		}
 	
 		function flowScriptStatementComplete(text, knownBalance) {
-			text = String(text || "").trim();
+			text = String(text || "").trim().replace(/^[A-Za-z_$][\w$]*\s*:\s*/, "");
 			if (text === "") {
 				return true;
 			}
@@ -654,7 +654,7 @@
 			if (balance.paren <= 0 && balance.brace <= 0 && balance.bracket <= 0) {
 				return !!(text.match(/;\s*$/) ||
 					text.match(/^import\s+/) ||
-					text.match(/^return(?:\s|;|$)/) ||
+					text.match(/^(return|throw)(?:\s|;|$)/) ||
 					text.match(/^(const|let|var)\s+/) ||
 					text.match(/^(local|result|parent)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*\s*=/) ||
 					text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(/));
@@ -775,12 +775,23 @@
 			var disabledNext = false;
 			// an if (cond) alone on its line, waiting for the statement that is its body
 			var bareIf = null;
+			var comments = [], commentLine = 0, blankBefore = false;
+			function flushComments() {
+				if (comments.length) { out.push({line:commentLine, text:"", commentNode:comments.join("\n"), blankBefore:blankBefore}); comments = []; blankBefore = false; }
+			}
 			function emit(statement) {
 				// the reading state stays here
 				statement = { line: statement.line, text: statement.text, disabled: statement.disabled };
+				var first = out.length;
+				if (comments.length && flowScriptBlockSeparator(statement.text)) flushComments();
 				splitFlowScriptStatementText(statement).forEach(function (part) {
 					pushStatement(part);
 				});
+				if (out[first]) {
+					if (comments.length) out[first].comment = comments.join("\n");
+					if (blankBefore) out[first].blankBefore = true;
+				}
+				comments = []; blankBefore = false;
 			}
 			function pushStatement(part) {
 				if (bareIf) {
@@ -794,7 +805,8 @@
 					out.push({ line: part.line, text: "}", disabled: false });
 					return;
 				}
-				var head = inlineFlowScriptIfHead(part.text);
+				var labelHead = part.text.match(/^([A-Za-z_$][\w$]*\s*:\s*)([\s\S]+)$/);
+				var head = inlineFlowScriptIfHead(labelHead ? labelHead[2] : part.text);
 				if (head === "bare") {
 					// if (cond); has an empty body in JavaScript: the next statement would not be conditional
 					if (/;\s*$/.test(part.text)) {
@@ -804,7 +816,9 @@
 					return;
 				}
 				if (head === "inline") {
-					inlineFlowScriptIfStatements(part).forEach(function (statement) {
+					var expandedPart = labelHead ? Object.assign({}, part, {text: labelHead[2]}) : part;
+					inlineFlowScriptIfStatements(expandedPart).forEach(function (statement, rank) {
+						if (rank === 0 && labelHead) statement.text = labelHead[1] + statement.text;
 						out.push(statement);
 					});
 					return;
@@ -816,8 +830,14 @@
 					disabledNext = true;
 					return;
 				}
+				if (!pending && /^\s*\/\//.test(raw)) {
+					if (!comments.length) commentLine = index + base;
+					comments.push(raw.replace(/^\s*\/\/ ?/, ""));
+					return;
+				}
 				var line = stripFlowScriptComment(raw).trim();
-				if (line === "") {
+				if (line === "" && !pending) {
+					if (index !== 0) { flushComments(); blankBefore = true; }
 					return;
 				}
 				if (!pending && (line.match(/^(flow|function)\s+/) || flowScriptBlockSeparator(line))) {
@@ -834,7 +854,7 @@
 							+ ": missing " + flowScriptMissingGroupClosers(beforeClose) + " before line " + (index + base),
 							null, "Close the current statement before writing the next one.");
 					}
-					pending.text += "\n" + line;
+					pending.text += "\n" + raw;
 					pending.balance = flowScriptBalanceScan(pending.balance, "\n" + line);
 					if (flowScriptStatementComplete(pending.text, pending.balance)) {
 						emit(pending);
@@ -860,6 +880,7 @@
 			if (bareIf) {
 				bareFlowScriptIfWithoutBody(bareIf);
 			}
+			flushComments();
 			out = expandFlowScriptElseIf(out);
 			// The generated id of a native if keeps the line counted from the start of its function, as before
 			// diagnostics named the lines of the file: learned schemas and traces stay attached to it. An if written in
@@ -1127,6 +1148,7 @@
 		function parseFlowScriptObjectLiteral(text, lineNumber, staticMetadata) {
 			// Argument corrections preserve comments. Parse them as trivia, not
 			// as part of a property name; never touch quoted business text.
+			var originalObjectText = String(text || "").trim();
 			text = String(text || "").replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g,
 				function (token) { return token.charAt(0) === "/" ? token.replace(/[^\r\n]/g, " ") : token; });
 			var leadingLines = (text.match(/^\s*/)[0].match(/\n/g) || []).length;
@@ -1191,6 +1213,12 @@
 					}
 				});
 			}
+			Object.keys(tokens).forEach(function (key) {
+				var token = String(tokens[key]).trim();
+				if (!isFlowScriptFunctionLiteral(token)) return;
+				var offset = text.indexOf(token);
+				if (offset >= 0) tokens[key] = originalObjectText.substring(offset, offset + token.length);
+			});
 			return {
 				value: value,
 				tokens: tokens,
@@ -1892,6 +1920,7 @@
 			Object.keys(extracted.slots || {}).forEach(function (slot) {
 				node[slot] = extracted.slots[slot];
 			});
+			if (node.id) node.__flowExplicitId = true;
 			return foldConfigUseOverrides(blocks, block, node);
 		}
 	
@@ -2492,7 +2521,7 @@
 				});
 				// Inside a branch or a loop, return also leaves the Flow, as in JavaScript;
 				// the final return of the Flow is its end anyway.
-				if (nested) {
+				if (true) {
 					assignments.push({ id: "return", block: "return", __flowScriptLine: lineNumber });
 				}
 				return assignments;
@@ -2746,6 +2775,7 @@
 
 		function parseFlowScriptImports(prelude, imports) {
 			flowScriptStatements(prelude).forEach(function (statement) {
+				if (statement.commentNode !== undefined) return;
 				var text = statement.text;
 				if (text.match(/^import\s+/)) {
 					parseFlowScriptImport(text, statement.line, imports);
@@ -2768,6 +2798,7 @@
 			// regular expression work on a large statement and held the request.
 			var re = new RegExp("^(?:const|let|var)\\s+_" + name + "\\s*=\\s*");
 			flowScriptStatements(prelude).forEach(function (statement) {
+				if (statement.commentNode !== undefined) return;
 				var text = String(statement.text);
 				var head = re.exec(text.slice(0, 1024));
 				var match = head && text.length > head[0].length ? [text, text.slice(head[0].length)] : null;
@@ -2823,7 +2854,7 @@
 				node.props = Object.create(null);
 				Object.keys(node).forEach(function (key) {
 					// Parser bookkeeping (__flowScriptLine, __flowScriptBareReturn) stays on the node, out of the properties.
-					if (["id", "block", "out", "comment", "disabled", "props"].indexOf(key) !== -1 || key.indexOf("__flowScript") === 0 || slots.indexOf(key) !== -1) return;
+					if (["id", "block", "out", "comment", "disabled", "props"].indexOf(key) !== -1 || key.indexOf("__flow") === 0 || slots.indexOf(key) !== -1) return;
 					node.props[key] = node[key];
 					delete node[key];
 				});
@@ -2839,13 +2870,31 @@
 				var lineNumber = statements[i].line;
 				var line = statements[i].text;
 				var disabled = statements[i].disabled === true;
+				var labelMatch = line.match(/^([A-Za-z_$][\w$]*)\s*:\s*([\s\S]+)$/);
+				var label = labelMatch ? labelMatch[1] : "";
+				if (labelMatch) line = labelMatch[2];
+				var firstNode = true;
 				var addStatementNode = function (node) {
 					canonicalizeParsedNode(blocks, node);
+					if (firstNode) {
+						if (label) {
+							if (node.__flowExplicitId && node.id !== label) env.raise("FLOWSCRIPT_LABEL_ID_CONFLICT", "Label and $$id disagree at line " + lineNumber);
+							node.id = label;
+							node.__flowExplicitId = true;
+						}
+						if (statements[i].comment !== undefined) node.comment = statements[i].comment;
+						if (statements[i].blankBefore) node.__flowBlankBefore = true;
+						firstNode = false;
+					}
 					if (disabled) {
 						node.disabled = true;
 					}
 					addFlowScriptNode(stack[stack.length - 1], node);
 				};
+				if (statements[i].commentNode !== undefined) {
+					addStatementNode({ block: "comment", props: {}, comment: statements[i].commentNode, __flowScriptLine: lineNumber });
+					continue;
+				}
 				if (line === "") {
 					continue;
 				}
@@ -2887,6 +2936,13 @@
 					}
 					continue;
 				}
+				if (/^throw\s+\{/.test(line)) {
+					var thrown = normalizeNaturalFlowScriptNode(blocks, imports, locals, "throw", parseFlowScriptObjectLiteral(stripFlowScriptSemicolon(line.replace(/^throw\s+/, "")), lineNumber), lineNumber);
+					thrown.block = "throw";
+					thrown.__flowScriptLine = lineNumber;
+					addStatementNode(thrown);
+					continue;
+				}
 				if (line.match(/^return(?:\s|;|$)/)) {
 					buildNaturalFlowScriptReturn(line, locals, lineNumber, stack.length > 1).forEach(function (node) {
 						addStatementNode(node);
@@ -2904,12 +2960,14 @@
 						env.raise("FLOWSCRIPT_INVALID_ELSE", "Unexpected else at line " + lineNumber);
 					}
 					var previous = stack.pop();
+					previous.root.else = [];
 					stack.push({ root: previous.root, slot: "else" });
 					continue;
 				}
 				var ifMatch = line.match(/^if\s*\((.*)\)\s*(\{)?\s*;?$/);
 				if (ifMatch && !isFlowScriptObjectLiteral(ifMatch[1])) {
 					var ifNode = {
+						then: [],
 						id: "if" + (statements[i].idLine || lineNumber),
 						block: "if",
 						condition: flowScriptExpressionFromToken(ifMatch[1], locals, lineNumber),
@@ -2967,6 +3025,34 @@
 			return nodes;
 		}
 
+		function assignNames(definition) {
+			var nodes = [], used = Object.create(null), counts = Object.create(null);
+			function visit(list) { (list || []).forEach(function (node) {
+				nodes.push(node);
+				Object.keys(node).forEach(function (key) { if (key !== "props" && Array.isArray(node[key])) visit(node[key]); });
+			}); }
+			visit(definition.nodes);
+			(definition.helpers || []).forEach(function (helper) { visit(helper.nodes); });
+			nodes.forEach(function (node) {
+				if (!node.__flowExplicitId) return;
+				if (used[node.id]) env.raise("FLOWSCRIPT_DUPLICATE_EXPLICIT_NAME", "Duplicate explicit name " + node.id + " at line " + node.__flowScriptLine);
+				used[node.id] = true;
+			});
+			nodes.forEach(function (node) {
+				var path = node.block === "set" ? node.props.path : node.out;
+				var base = path ? String(path).split(".").pop() : String(node.block).split(".").pop();
+				base = env.safeIdentifier(base || "node");
+				var rank = counts[base] || 0, name;
+				do { rank++; name = base + (rank > 1 ? rank : ""); } while (used[name] && !(node.__flowExplicitId && node.id === name));
+				counts[base] = rank;
+				node.__flowImplicitId = name;
+				if (!node.__flowExplicitId) node.id = name;
+				used[node.id] = true;
+				delete node.__flowExplicitId;
+			});
+			return definition;
+		}
+
 		function parseFlowScript(blocks, code, options) {
 			code = env.normalizeFlowScriptFunctionSyntax(code);
 			var split = splitFlowScriptFunctions(code);
@@ -3021,12 +3107,12 @@
 				parseFlowScriptStatementsInto(helperBlocks, Object.assign({}, imports), {}, rootFromFunctions, flowScriptStatements(main.body, main.bodyLine));
 				helpers.forEach(function (helper) { lowerLoopBareReturns(helper.nodes, false); });
 				lowerLoopBareReturns(rootFromFunctions.nodes, false);
-				return env.canonicalFlowDefinition(rootFromFunctions);
+				return env.canonicalFlowDefinition(assignNames(rootFromFunctions));
 			}
 			var root = { version: 1, nodes: [] };
 			parseFlowScriptStatementsInto(blocks, {}, {}, root, flowScriptStatements(code));
 			lowerLoopBareReturns(root.nodes, false);
-			return env.canonicalFlowDefinition(root);
+			return env.canonicalFlowDefinition(assignNames(root));
 		}
 	
 		return {

@@ -1303,8 +1303,27 @@
 			return null;
 		}
 
+		function removeComments(definition) {
+			function nodes(list) {
+				var changed = false;
+				var result = (list || []).filter(function (node) { if (blockName(node) === "comment") { changed = true; return false; } return true; }).map(function (node) {
+					var copy = node;
+					Object.keys(node).forEach(function (key) {
+						if (key === "props" || !Array.isArray(node[key])) return;
+						var children = nodes(node[key]);
+						if (children !== node[key]) { if (copy === node) copy = Object.assign({},node); copy[key] = children; changed = true; }
+					});
+					return copy;
+				});
+				return changed ? result : list;
+			}
+			var clean = nodes(definition.nodes);
+			return clean === definition.nodes ? definition : Object.assign({}, definition, {nodes:clean});
+		}
+
 		function prepareExecutionPlan(plan) {
 			if (plan && plan.definition && plan.blocks) {
+				plan.definition = removeComments(plan.definition);
 				// Immutable (frozen) definitions keep prepared runners beside the plan.
 				plan.preparedNodes = plan.machineImage === true ? [] : null;
 				plan.inputContract = compileInputContract(plan.definition);
@@ -1647,6 +1666,7 @@
 
 		function preparePublishedPlan(plan) {
 			if (Object.isFrozen(plan)) return plan;
+			plan.definition = removeComments(plan.definition);
 			plan.preparedNodes = new Map();
 			plan.executionChains = new Map();
 			plan.inputContract = compileInputContract(plan.definition);

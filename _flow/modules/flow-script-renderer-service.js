@@ -162,7 +162,7 @@
 			skip[slot] = true;
 		});
 		return Object.keys(node || {}).filter(function (key) {
-			return !skip[key] && node[key] !== undefined && typeof node[key] !== "function";
+			return key.indexOf("__flow") !== 0 && !skip[key] && node[key] !== undefined && typeof node[key] !== "function";
 		});
 	}
 
@@ -203,24 +203,48 @@
 	function renderFlowScriptNodes(blocks, nodes, depth, lines, locals, env) {
 		locals = locals || {};
 		var indent = new Array(depth + 1).join("  ");
-		(nodes || []).forEach(function (node) {
-			// A capture belongs on the left of the call, not in its business
-			// arguments. Keep explicit metadata for non-assignable values so
-			// rendering never drops data from an invalid/unfinished AST.
+		(nodes || []).forEach(function (original) {
+			var node = Object.assign({}, original), type = env.blockName(node);
+			if (node.__flowBlankBefore && lines.length && lines[lines.length - 1] !== "") lines.push("");
+			if (node.comment !== undefined) {
+				String(node.comment).split("\n").forEach(function (line) { lines.push(indent + "//" + (line ? " " + line : "")); });
+				delete node.comment;
+			}
+			if (type === "comment") return;
+			var explicit = node.id && node.id !== node.__flowImplicitId;
+			var labelable = !explicit || /^[A-Za-z_$][\w$]*$/.test(node.id);
+			var label = explicit && labelable ? node.id + ": " : "";
+			if (labelable) delete node.id;
+			var props = node.props || {}, keys = Object.keys(props);
+			var plain = node.disabled === undefined && node.out === undefined && labelable;
+			if (plain && type === "set" && keys.length === 2 && keys.indexOf("path") >= 0 && keys.indexOf("value") >= 0 && /^(local|result|parent)(\.[A-Za-z_$][\w$]*)+$/.test(props.path)) {
+				lines.push(indent + label + props.path + " = " + renderFlowScriptValue(blocks, node, "value", props.value, locals, env, indent));
+				return;
+			}
+			if (plain && type === "if" && keys.length === 1 && keys[0] === "condition" && Array.isArray(node.then)) {
+				lines.push(indent + label + "if (" + renderFlowScriptValue(blocks, node, "condition", props.condition, locals, env, indent) + ") {");
+				renderFlowScriptNodes(blocks, node.then, depth + 1, lines, Object.assign({}, locals), env);
+				if (Array.isArray(node.else)) {
+					lines.push(indent + "} else {");
+					renderFlowScriptNodes(blocks, node.else, depth + 1, lines, Object.assign({}, locals), env);
+				}
+				lines.push(indent + "}");
+				return;
+			}
+			if (plain && type === "return" && !keys.length) { lines.push(indent + label + "return"); return; }
 			var assignedOutput = typeof node.out === "string" && /^(local|result|parent)(\.[A-Za-z_$][\w$]*)+$/.test(node.out) ? node.out : "";
-			var callPrefix = assignedOutput ? assignedOutput + " = " : "";
+			var callPrefix = label + (assignedOutput ? assignedOutput + " = " : "");
 			var slotNames = flowScriptSlotNames(blocks, node, env);
-			var slots = slotNames.filter(function (slot) {
-				return Object.prototype.toString.call(node[slot]) === "[object Array]";
-			});
+			var slots = slotNames.filter(function (slot) { return Array.isArray(node[slot]); });
 			var args = Object.create(null);
 			flowScriptArgKeys(node, slotNames).forEach(function (key) { args[key] = node[key]; });
 			var parts = renderFlowScriptArguments(blocks, node, args, locals, env, indent + "  ", assignedOutput);
-			if (!parts.length && !slots.length) {
-				lines.push(indent + callPrefix + env.blockName(node) + "({})");
-				return;
-			}
-			lines.push(indent + callPrefix + env.blockName(node) + "({");
+			var naturalThrow = plain && type === "throw" && !slots.length;
+			var open = naturalThrow ? "throw {" : type + "({";
+			var close = naturalThrow ? "}" : "})";
+			var inline = indent + callPrefix + open + (parts.length ? " " + parts.join(", ") + " " : "") + close;
+			if (!slots.length && inline.indexOf("\n") < 0 && inline.length <= 120) { lines.push(inline); return; }
+			lines.push(indent + callPrefix + open);
 			parts.forEach(function (part) { lines.push(indent + "  " + part + ","); });
 			slots.forEach(function (slot) {
 				var params = env.childSlotParams ? env.childSlotParams(blocks, node, slot) : [];
@@ -229,7 +253,7 @@
 				renderFlowScriptNodes(blocks, node[slot], depth + 2, lines, Object.assign({}, locals), env);
 				lines.push(indent + "  },");
 			});
-			lines.push(indent + "})");
+			lines.push(indent + close);
 		});
 	}
 
@@ -256,7 +280,7 @@
 		var definition = env.parseSource(flowSource);
 		var renderBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var lines = [];
-		if (request.includeHeader !== false) {
+		if (request.includeHeader === true) {
 			// Informational comment only: nothing parses it, and sources written with
 			// an earlier wording keep parsing (comments are ignored).
 			lines.push("// c8o: Flow source (FlowScript, sourceVersion 2). Calls are Flow blocks; plain keys are business properties, $$ keys are engine attributes and slots.");
@@ -279,7 +303,7 @@
 		renderFlowScriptHelpers(renderBlocks, definition.helpers || [], lines, env);
 		lines.push("function " + env.safeIdentifier(name || "Flow") + "({ input, config, result }) {");
 		renderFlowScriptNodes(renderBlocks, definition.nodes || [], 1, lines, {}, env);
-		if (request.includeImplicitReturn !== false && !flowScriptHasTopLevelReturn(definition.nodes || [], env)) {
+		if (request.includeImplicitReturn === true && !flowScriptHasTopLevelReturn(definition.nodes || [], env)) {
 			lines.push("  return result");
 		}
 		lines.push("}");
@@ -288,8 +312,7 @@
 	}
 
 	function normalizeFlowScriptCode(code, env) {
-		code = env.normalizeFlowScriptFunctionSyntax(code).replace(/\s+$/g, "");
-		return code + "\n";
+		return String(code || "");
 	}
 
 	function stripFlowScriptMirrorHeader(code) {

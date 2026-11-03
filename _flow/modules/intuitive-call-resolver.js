@@ -6,8 +6,7 @@
 	//   edits: [{ oldText, newText, line, confidence, reason, block }]
 	// in source order, each oldText found exactly once in the source as the edits before it left it (the edits form of
 	// code-patch), and unresolved: [{ line, call, reason }] for the calls it has no mapping for. It writes nothing:
-	// code-set applies the edits whose confidence reaches the threshold when asked (autoCorrect: true) and returns the
-	// others as a proposal.
+	// code-set returns these edits as suggestions. Source is never changed automatically.
 	//
 	// confidence = name confidence x argument fit, both in 0..1:
 	// - name: 1 for an existing block; for a JavaScript global, the confidence of its equivalent (below the threshold
@@ -606,7 +605,7 @@
 				if (result.unresolved) { unresolved.push({ line: line(start(call)), call: text(call), reason: name + ": " + result.unresolved }); return; }
 			} else if (blocks[name]) {
 				// positional arguments of one assignment by their types: correctSource names them itself
-				if (!(args.length === 1 && kind(args[0]) === "ObjectLiteral") && namedByCorrections(name, args)) return;
+				// Every positional mapping is proposed, including a unique mapping.
 				var mapped = mapCall(name, call, args, name);
 				if (!mapped) return;
 				if (!mapped.text) { unresolved.push({ line: line(start(call)), call: text(call), reason: mapped.notes.join("; ") }); return; }

@@ -996,7 +996,7 @@
 			code = env.renderFlowScript(blocks, request.name || request.flowName || "Flow", source, request);
 		}
 		var definition = env.parseFlowScript(blocks, code, request.blockMode === true
-			? { sourceVersion: request.sourceVersion } : undefined);
+			? { sourceVersion: request.sourceVersion } : request.nameSession ? {nameSession:request.nameSession} : undefined);
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var native = null, nativeDiagnostics = [];
 		if (request.blockMode !== true && env.nativePropertyContract) {
@@ -1010,7 +1010,7 @@
 		var diagnostics = nativeDiagnostics.concat(validateDefinition(blocks, definition, env, request.target || "backend"));
 		if (native) native.normalizations.forEach(function (note) {
 			diagnostics.push({severity:"warning",code:note.code,line:note.line,path:note.property,property:note.property,
-				actual:note.before,expected:note.after,message:note.property+" is normalized from "+JSON.stringify(note.before)+" to "+JSON.stringify(note.after)+". code-set writes and reports this correction."});
+				actual:note.before,expected:note.after,message:note.property+" is normalized from "+JSON.stringify(note.before)+" to "+JSON.stringify(note.after)+". Accepted as equivalent; source text is unchanged."});
 		});
 		(nativeDiagnostics.length ? [] : accessibilityDiagnostics(definition)).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);

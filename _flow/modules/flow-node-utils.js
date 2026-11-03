@@ -12,6 +12,7 @@
 	Object.keys(engineProperties).forEach(function (key) { Object.freeze(engineProperties[key]); });
 	Object.freeze(engineProperties);
 	function enginePropertiesFor(node, outputs) {
+		if (node && node.block === "comment") return {};
 		var fields = {};
 		Object.keys(engineProperties).forEach(function (name) {
 			fields[name] = Object.assign({}, engineProperties[name]);

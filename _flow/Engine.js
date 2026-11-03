@@ -5,6 +5,8 @@
 	var privateDebug = typeof __providerPrivateDebug !== "undefined" && __providerPrivateDebug === true;
 	var sharedRuntime = privateDebug || typeof __flowRuntimeApi === "undefined" ? null : __flowRuntimeApi;
 	// runtime configurations of the revision, by project, Flow and named configurations, valid for a symbols generation
+	var implicitNames = sharedRuntime ? sharedRuntime.newCache(256) : null;
+	var localImplicitNames = Object.create(null);
 	var runtimeConfigs = sharedRuntime && typeof sharedRuntime.symbolsGeneration === "function" ? sharedRuntime.newCache(512) : null;
 	var File = Packages.java.io.File;
 	var Arrays = Packages.java.util.Arrays;
@@ -4573,7 +4575,17 @@
 	}
 
 	function parseFlowScript(blocks, code, options) {
-		return flowScriptParserService().parseFlowScript(blocks, code, flowScriptParserEnv(), options);
+		var definition = flowScriptParserService().parseFlowScript(blocks, code, flowScriptParserEnv(), options);
+		var name = options && options.nameSession;
+		if (name) {
+			var key = String(projectDir() || "") + "\n" + name;
+			var generation = projectGeneration();
+			var text = implicitNames ? implicitNames.read(key,generation) : localImplicitNames[key];
+			var state = loadEngineModule("implicit-node-names.js").reconcile(definition,text ? JSON.parse(String(text)) : null);
+			var serialized = JSON.stringify(state);
+			if (implicitNames) implicitNames.write(key,generation,serialized); else localImplicitNames[key] = serialized;
+		}
+		return definition;
 	}
 
 	function parseFlowScriptTopLevelObjectFromCode(code, name) {
@@ -4656,11 +4668,8 @@
 	}
 
 	function flowScriptCorrectSource(blocks, code, request) {
-		var native = request && request.blockMode === true ? {code:code,fixes:[]}
-			: nativeFlowMetadata(parseFlowScriptTopLevelObjectFromCode(code, "flow"), code, true);
-		var corrected = flowScriptParserService().correctSource(blocks, native.code, request, { blockCatalog: readOnlyBlockCatalog, blockCandidates: flowScriptBlockCandidates, blockCandidateDecision: flowScriptBlockCandidateDecision });
-		corrected.fixes = native.fixes.concat(corrected.fixes || []);
-		return corrected;
+		// Compatibility API: suggestions only. A writer never edits submitted text.
+		return { code: String(code || ""), fixes: [] };
 	}
 
 	function flowScriptValidateRequest(blocks, request) {
@@ -4775,6 +4784,7 @@
 
 	function flowCodeServiceEnv() {
 		return {
+			parseSource: parseSource,
 			FileUtils: FileUtils,
 			raise: raise,
 			validationFailureMessage: validationFailureMessage,
@@ -4784,6 +4794,9 @@
 			sha256Hex: sha256Hex,
 			flowScriptValidateRequest: flowScriptValidateRequest,
 			flowScriptCorrectSource: flowScriptCorrectSource,
+			flowScriptSuggestSource: function (blocks, code, request) {
+				return flowScriptParserService().correctSource(blocks,code,Object.assign({},request,{autoCorrect:true}),{blockCatalog:readOnlyBlockCatalog,blockCandidates:flowScriptBlockCandidates,blockCandidateDecision:flowScriptBlockCandidateDecision});
+			},
 			flowScriptIntuitiveResolve: flowScriptIntuitiveResolve,
 			flowScriptIntuitiveApply: flowScriptIntuitiveApply,
 			inputVariablesFromDefinition: function (definition) { return flowScriptValidationService().inputVariablesFromDefinition(loadBlocks(), definition, flowScriptValidationEnv()); },

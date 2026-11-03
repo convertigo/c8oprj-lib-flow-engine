@@ -45,6 +45,7 @@
 		var analyzeFlowSource = env.analyzeFlowSource;
 		// A check of the same code against the same revisions answers again (Engine.js flowCodeValidationMemo).
 		var flowCodeValidationMemo = env.flowCodeValidationMemo || function (blocks, request, name, code, build) { return build(); };
+		var parseSource = env.parseSource;
 		var normalizeTree = env.normalizeTree || function (value) { return value; };
 		var flowScriptIntuitiveResolve = env.flowScriptIntuitiveResolve || null;
 		var flowScriptIntuitiveApply = env.flowScriptIntuitiveApply || null;
@@ -300,18 +301,7 @@
 	// autoCorrect: the edits of the intuitive-call resolver whose confidence reaches the threshold, applied before the
 	// safe corrections and the check; null when not asked
 	function flowCodeAutoCorrect(blocks, request, code) {
-		if (!flowScriptIntuitiveResolve || !flowCodeAutoCorrectRequested(request)) {
-			return null;
-		}
-		try {
-			var resolution = flowScriptIntuitiveResolve(blocks, code, request);
-			var applied = flowScriptIntuitiveApply(code, resolution.edits.filter(function (edit) {
-				return edit.confidence >= resolution.threshold;
-			}));
-			return { code: applied.code, threshold: resolution.threshold, edits: applied.applied };
-		} catch (e) {
-			return null;
-		}
+		return null;
 	}
 
 	// The edits left for the code the agent patches next (the working copy written, or the code checked), ready to
@@ -322,11 +312,18 @@
 		}
 		try {
 			var resolution = flowScriptIntuitiveResolve(blocks, code, request);
-			if (!resolution.edits.length && !resolution.unresolved.length) {
-				return null;
+			if (!resolution.edits.length && env.flowScriptSuggestSource) {
+				try {
+					var suggestion = env.flowScriptSuggestSource(blocks,code,request);
+					if (suggestion.code !== code) resolution.edits.push({line:1,oldText:code,newText:suggestion.code,confidence:1,
+						reason:"Suggested explicit form; review the changes before applying.",corrections:suggestion.fixes});
+				} catch (_noSafeSuggestion) {}
 			}
+			if (!resolution.edits.length && !resolution.unresolved.length) return null;
 			var confident = resolution.edits.filter(function (edit) { return edit.confidence >= resolution.threshold; }).length;
-			var out = { revision: revision || null, threshold: resolution.threshold, edits: resolution.edits };
+			var out = { revision: revision || null, threshold: resolution.threshold, edits: resolution.edits.map(function (edit) {
+				return Object.assign({}, edit, {before:edit.oldText, after:edit.newText});
+			}) };
 			if (resolution.unresolved.length) {
 				out.unresolved = resolution.unresolved;
 			}
@@ -334,7 +331,7 @@
 				? "No mapping for the unresolved calls: write them with blocks or expressions (flow-block-get, authoring-palette)."
 				: revision
 					? "Review the edits, then pass them unchanged as code-patch edits with this revision" +
-						(confident ? ", or send code-set again with autoCorrect: true to apply the " + confident + " at or above " + resolution.threshold : "") +
+						
 						"; drop an edit whose reason does not match the intent."
 					: "Apply the edits to code, then send code-set again.";
 			return out;
@@ -355,6 +352,7 @@
 	}
 
 	function flowCodeValidate(blocks, request, name, code) {
+		request = Object.assign({},request,{nameSession:name});
 		try {
 			var validation = flowCodeValidationMemo(blocks, request, name, code, function () {
 				return flowScriptValidateRequest(blocks, Object.assign({}, request, {
@@ -466,7 +464,7 @@
 	function flowCodeGetRequest(blocks, request) {
 		request = request || {};
 		var name = flowCodeName(request);
-		if (!flowCodeOfficialMode(request)) {
+		if (true) {
 			var draft = flowCodeDraftRead(name, request);
 			if (draft) {
 				draft.qname = flowCodeQName(request, name);
@@ -606,11 +604,11 @@
 				warnings: []
 			};
 		}
-		var submitted = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code));
+		var submitted = String(code);
 		var auto = flowCodeAutoCorrect(blocks, request, submitted);
 		var corrected = flowCodeCorrect(blocks, request, auto ? auto.code : submitted);
 		var normalized = corrected.code;
-		if (current && normalized === normalizeFlowScriptCode(stripFlowScriptMirrorHeader(current.code))) {
+		if (current && normalized === current.code) {
 			var sameCheck = corrected.error ? {error: corrected.error, validation: null, warnings: []} : flowCodeValidate(blocks, Object.assign({}, request, {authoringCorrections:true}), name, normalized);
 			var sameError = sameCheck.error || (sameCheck.validation && sameCheck.validation.ok !== true
 				? flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(sameCheck.validation.diagnostics),
@@ -1189,8 +1187,8 @@
 		var current = request.code !== undefined && request.code !== null
 			? {
 				name: name,
-				code: normalizeFlowScriptCode(stripFlowScriptMirrorHeader(String(request.code))),
-				revision: sha256Hex(normalizeFlowScriptCode(stripFlowScriptMirrorHeader(String(request.code)))),
+				code: String(request.code),
+				revision: sha256Hex(String(request.code)),
 				codeFile: ""
 			}
 			: flowCodeDraftRead(name, request);
@@ -1258,9 +1256,31 @@
 				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH", "Working copy changed during validation.", "Read/check the current revision before promoting."), warnings: []
 			};
 		}
-		if (selectedRevision) corrected.fixes.push({ code: "FLOW_CODE_CHECKED_REVISION_SELECTED", line: 0, before: "", after: String(current.revision) });
+		var formatted = renderFlowScript(blocks, name, checked.validation.source, {includeHeader:false, includeImplicitReturn:false});
+		var after = {validation:flowScriptValidateRequest(blocks,Object.assign({},request,{name:name,code:formatted}))};
+		function comparable(source) {
+			function clean(value) {
+				if (Array.isArray(value)) return value.map(clean);
+				if (!value || typeof value !== "object") return value;
+				var out = {};
+				Object.keys(value).sort().forEach(function (key) {
+					if (key !== "__flowImplicitId" && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
+				});
+				return out;
+			}
+			return JSON.stringify(clean(parseSource(source)));
+		}
+		if (after.error || !after.validation || !after.validation.ok || comparable(checked.validation.source) !== comparable(after.validation.source)) {
+			return {ok:false,name:name,revision:current.revision,error:flowCodeError("FLOWSCRIPT_FORMAT_CHANGED_PROGRAM",
+				"Formatting changed the Flow tree; nothing was saved.","Keep the draft and report the formatter defect."),warnings:[]};
+		}
+		var beforeLines = current.code.split("\n"), afterLines = formatted.split("\n");
+		var prefix = 0, suffix = 0;
+		while (prefix < beforeLines.length && prefix < afterLines.length && beforeLines[prefix] === afterLines[prefix]) prefix++;
+		while (suffix < beforeLines.length-prefix && suffix < afterLines.length-prefix && beforeLines[beforeLines.length-1-suffix] === afterLines[afterLines.length-1-suffix]) suffix++;
+		var changedLines = Math.max(beforeLines.length-prefix-suffix, afterLines.length-prefix-suffix);
 		var saved = setProjectFlow(blocks, name, checked.validation.source, Object.assign({}, request, {
-			code: corrected.code,
+			code: formatted,
 			draft: false,
 			official: true,
 			promote: true,
@@ -1280,6 +1300,8 @@
 			name: name,
 			draft: false,
 			promoted: true,
+			linted: formatted !== current.code,
+			changedLines: changedLines,
 			format: "flowscript",
 			canonical: true,
 			revision: saved && saved.codeRevision ? saved.codeRevision : flowCodeRevisionForSource(blocks, name, checked.validation.source, request),
