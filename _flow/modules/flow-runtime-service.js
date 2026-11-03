@@ -1226,7 +1226,7 @@
 					return undefined;
 				}
 				ensureCanContinue(ctx, node);
-				var result = blockDebugSignal && blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, runner)
+				var result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, runner)
 					: runner ? runner(ctx, node) : block.run(ctx, node);
 				ensureCanContinue(ctx, node);
 				if (writer && result !== undefined) {
