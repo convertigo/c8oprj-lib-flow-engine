@@ -57,7 +57,7 @@ try {
 	assert(api("flowCodePromote",{name:"Basket",revision:reset.revision}).ok,"save initial official fixture");
 	var official = api("flowCodePatch", { name: "Basket", draft: false, revision: api("flowCodeGet", { name: "Basket" }).revision,
 		edits: [{ oldText: "local.price = 10", newText: "local.price = 11" }] });
-	assert(official.ok && official.workingCopy && String(files.readFileToString(new java.io.File(project, "_flow/flows/Basket.flow.js"), "UTF-8")).indexOf("local.price = 10") !== -1,
+	assert(official.ok && official.draft === true && String(files.readFileToString(new java.io.File(project, "_flow/flows/Basket.flow.js"), "UTF-8")).indexOf("local.price = 10") !== -1,
 		"draft:false cannot bypass source ownership: " + JSON.stringify(official));
 	assert(api("flowCodePromote",{name:"Basket",revision:official.revision}).ok,"explicit promote saves patched draft");
 	assert(String(files.readFileToString(new java.io.File(project,"_flow/flows/Basket.flow.js"),"UTF-8")).indexOf("local.price = 11")>=0,"promoted patch saved");
