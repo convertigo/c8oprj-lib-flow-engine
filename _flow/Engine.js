@@ -5,7 +5,6 @@
 	var privateDebug = typeof __providerPrivateDebug !== "undefined" && __providerPrivateDebug === true;
 	var sharedRuntime = privateDebug || typeof __flowRuntimeApi === "undefined" ? null : __flowRuntimeApi;
 	// runtime configurations of the revision, by project, Flow and named configurations, valid for a symbols generation
-	var implicitNames = sharedRuntime ? sharedRuntime.newCache(256) : null;
 	var localImplicitNames = Object.create(null);
 	var runtimeConfigs = sharedRuntime && typeof sharedRuntime.symbolsGeneration === "function" ? sharedRuntime.newCache(512) : null;
 	var File = Packages.java.io.File;
@@ -4176,7 +4175,7 @@
 		if (!flow) {
 			return null;
 		}
-		code = normalizeFlowScriptCode(stripFlowScriptMirrorHeader(String(code || "")));
+		code = String(code || "");
 		flow.setFlowSource(code);
 		if (args && (args.official === true || args.promote === true || args.save === true)) {
 			flow.saveFlowSourceFile();
@@ -4581,13 +4580,35 @@
 	}
 
 	function implicitNameState(name, definition, remember, onlyExisting) {
-		var key = String(projectDir() || "") + "\n" + name, generation = projectGeneration();
-		var text = implicitNames ? implicitNames.read(key,generation) : localImplicitNames[key];
+		var key = String(projectDir() || "") + "\n" + name;
+		var target = loadedFlowSourceDraftTarget(name, {}), names = null;
+		if (target) {
+			// A Save invalidates runtime caches. Session names belong to the loaded project instead.
+			// Only Java maps/strings cross realms; a weak owner distinguishes a real project Reload.
+			var registry = sharedServerJavaMap("flow.engine.implicitNames.v1", null);
+			var projectKey = String(projectDir() || "");
+			var entry = registry.get(projectKey), ownerId = String(JavaSystem.identityHashCode(target.flowEngine));
+			if (!entry || String(entry.get("ownerId")) !== ownerId || entry.get("owner").get() === null) {
+				entry = new Packages.org.mozilla.javascript.Synchronizer(function () {
+					var kept = registry.get(projectKey);
+					if (!kept || String(kept.get("ownerId")) !== ownerId || kept.get("owner").get() === null) {
+						kept = new ConcurrentHashMap();
+						kept.put("ownerId", ownerId);
+						kept.put("owner", new Packages.java.lang.ref.WeakReference(target.flowEngine));
+						kept.put("names", new ConcurrentHashMap());
+						registry.put(projectKey, kept);
+					}
+					return kept;
+				}, registry)();
+			}
+			names = entry.get("names");
+		}
+		var text = names ? names.get(String(name)) : localImplicitNames[key];
 		if (!text && onlyExisting) return;
 		var service = loadEngineModule("implicit-node-names.js");
 		var state = service[remember ? "remember" : "reconcile"](definition,text ? JSON.parse(String(text)) : null);
 		var serialized = JSON.stringify(state);
-		if (implicitNames) implicitNames.write(key,generation,serialized); else localImplicitNames[key] = serialized;
+		if (names) names.put(String(name),serialized); else localImplicitNames[key] = serialized;
 	}
 
 	function parseFlowScript(blocks, code, options) {

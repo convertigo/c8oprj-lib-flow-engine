@@ -62,6 +62,8 @@ try {
  var sessionPromote=api('flowCodePromote',{name:'Session',revision:sessionPatch.revision});assert(sessionPromote.ok,'session promote '+JSON.stringify(sessionPromote));
  var sessionCode=api('flowCodeGet',{name:'Session'}).code;
  assert(sessionCode.indexOf('a3:')<0,'implicit session name must not become a permanent label');
+ var afterPromote=api('flowCodeRun',{name:'Session',includeTrace:true});
+ assert(JSON.stringify(afterPromote.trace).indexOf('a3')>=0,'session survives promote');
  var sessionExplicit=api('flowCodeSet',{name:'Session',code:'function Session(){\n a3: result.explicit = 0\n result.a = 1\n result.a = 2\n}' });
  assert(sessionExplicit.ok,'explicit names reserve old implicit names: '+JSON.stringify(sessionExplicit));
  var explicitRun=api('flowCodeRun',{name:'Session',includeTrace:true});assert(explicitRun.ok,'reserved explicit executes');

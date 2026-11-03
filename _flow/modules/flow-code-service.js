@@ -1020,7 +1020,7 @@
 			name = current.name || name;
 		}
 		var checked = flowCodeValidate(blocks, request, name, code);
-		var revision = current ? current.revision : sha256Hex(normalizeFlowScriptCode(stripFlowScriptMirrorHeader(code)));
+		var revision = current ? current.revision : sha256Hex(code);
 		if (checked.error || !checked.validation || !checked.validation.ok) {
 			// the edits of a working copy read here apply to it with its revision
 			return flowCodeIntuitiveReport({
