@@ -69,6 +69,17 @@
 	var JavascriptDebugger = engineClass("com.twinsoft.convertigo.engine.debug.JavascriptDebugger");
 	var providerDebuggerBridge = typeof JavascriptDebugger.providerDebugging === "function";
 	function providerDebugging() { return providerDebuggerBridge && JavascriptDebugger.providerDebugging(); }
+	// One live field read per ordinary block. The object is resolved once, never through request Packages.
+	var blockDebugSignal = typeof JavascriptDebugger.participantSelected === "function" ? JavascriptDebugger.signal : { active: false };
+	function beforeDebugBlock(ctx, node) {
+		if (!JavascriptDebugger.participantSelected()) return null;
+		var participant = ctx.blockDebugParticipant;
+		if (participant === undefined) {
+			participant = debugPlan({ definition: ctx.definition, blocks: ctx.blocks }, ctx.request);
+			ctx.blockDebugParticipant = participant || null;
+		}
+		return participant ? participant.before(ctx, node) : null;
+	}
 
 	function debugSourceUrl(file) {
 		var path = canonicalPath(file), parent = file.getParentFile();
@@ -1651,6 +1662,8 @@
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			providerDebugging: providerDebugging,
+			blockDebugSignal: blockDebugSignal,
+			beforeDebugBlock: beforeDebugBlock,
 			debugPlan: debugPlan,
 			debugBlock: debugBlock,
 			clearCompiledScriptCache: clearCompiledScriptCache,
@@ -5825,6 +5838,8 @@
 			sharedMetadataSnapshot: sharedMetadataSnapshot,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			providerDebugging: providerDebugging,
+			blockDebugSignal: blockDebugSignal,
+			beforeDebugBlock: beforeDebugBlock,
 			debugPlan: debugPlan,
 			debugBlock: debugBlock,
 			sourceForWriteRequest: sourceForWriteRequest,

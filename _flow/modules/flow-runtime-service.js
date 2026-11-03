@@ -11,6 +11,8 @@
 
 	function create(env) {
 		env = env || {};
+		var blockDebugSignal = env.blockDebugSignal || { active: false };
+		var beforeDebugBlock = env.beforeDebugBlock;
 		var blockName = env.blockName;
 		var nodeProps = env.nodeProps;
 		var nodeOut = env.nodeOutputPath;
@@ -1183,6 +1185,16 @@
 			}
 		}
 
+		// Called only after the live indicator is true, outside resolution/preparation and shared builders.
+		function invokeDebugBlock(ctx, node, block, runner) {
+			var activation = beforeDebugBlock(ctx, node);
+			try {
+				var result = runner ? runner(ctx, node) : block.run(ctx, node);
+				if (activation) activation.after(result);
+				return result;
+			} finally { if (activation) activation.leave(); }
+		}
+
 		function prepareNodeExecutor(node, block, name, out, writer, runner) {
 			if (!block) {
 				return null;
@@ -1192,7 +1204,8 @@
 					return undefined;
 				}
 				ensureCanContinue(ctx, node);
-				var result = runner ? runner(ctx, node) : block.run(ctx, node);
+				var result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, runner)
+					: runner ? runner(ctx, node) : block.run(ctx, node);
 				ensureCanContinue(ctx, node);
 				if (writer && result !== undefined) {
 					writer(ctx, result);
@@ -1342,10 +1355,10 @@
 				try {
 					if (preparedHit && prepared.run) {
 						profileCount(ctx, "preparedRunnerHits");
-						result = prepared.run(ctx, node);
+						result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, prepared.run) : prepared.run(ctx, node);
 					} else {
 						profileCount(ctx, "preparedRunnerMisses");
-						result = block.run(ctx, node);
+						result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, null) : block.run(ctx, node);
 					}
 				} finally {
 					recordProfile(ctx, "node", name, runStarted, runAllocated);
@@ -1432,7 +1445,7 @@
 				var result;
 				ensureCanContinue(ctx, node);
 				try {
-					result = block.run(ctx, node);
+					result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, null) : block.run(ctx, node);
 				} finally {
 					profileAdd(ctx, "callBlockRunMs", runStarted);
 				}
@@ -1685,16 +1698,15 @@
 			} finally { if (phase) phase.close(); }
 		}
 
-		// The normal plan and its runners retain their identity. Only a selected invocation gets adapters.
+		// Rhino source breakpoints alone select private implementation adapters. Pure block debugging uses the normal plan.
 		function privateDebugPlan(plan, request) {
-			var participant = env.debugPlan ? env.debugPlan(plan, request) : null;
 			var blocks = {};
 			Object.getOwnPropertyNames(plan.blocks).forEach(function (name) {
 				var descriptor = Object.getOwnPropertyDescriptor(plan.blocks, name);
 				if (!descriptor.enumerable) { Object.defineProperty(blocks, name, descriptor); return; }
 				var resolved = false, value;
 				Object.defineProperty(blocks, name, { enumerable: true, get: function () {
-					if (!resolved) { value = env.debugBlock(runtimeBlock(plan.blocks, name)); if (participant) value = participant.wrap(value); resolved = true; }
+					if (!resolved) { value = env.debugBlock(runtimeBlock(plan.blocks, name)); resolved = true; }
 					return value;
 				} });
 			});

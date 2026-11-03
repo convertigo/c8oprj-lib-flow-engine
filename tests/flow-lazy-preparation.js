@@ -11,7 +11,16 @@ class FakeFile {
 }
 
 let runnerBuilds = 0;
+let signalReads = 0, signalActive = false, boundaryCalls = 0;
+const boundaries = [];
+const blockDebugSignal = { get active() { signalReads++; return signalActive; } };
 const env = {
+	blockDebugSignal,
+	beforeDebugBlock(ctx, node) {
+		boundaryCalls++;
+		boundaries.push(['before', node.id]);
+		return { after(value) { boundaries.push(['after', node.id, value]); }, leave() { boundaries.push(['leave', node.id]); } };
+	},
 	destinationContract: vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../_flow/modules/destination-contract.js"), "utf8"), {}),
 	nodeOutputPath: (node) => node.out || node.props && node.props.out,
 	File: FakeFile,
@@ -126,3 +135,21 @@ assert.strictEqual(debugCalls, 0);
 assert.strictEqual(plan.preparedNodes[0].execute, runnerBefore);
 assert.strictEqual(runnerBuilds, 66);
 console.log("ordinary requests: zero debugger constructions/callbacks, same prepared runner over 100 runs");
+
+// The cached ordinary runners observe the live indicator, including a request already executing.
+assert.strictEqual(boundaryCalls, 0);
+signalReads = 0;
+ctx.stopped = false;
+ctx.scopes.input.takeThen = true;
+runtime.executeNodes(ctx, definition.nodes, env);
+assert.strictEqual(signalReads, 2, "one indicator read per executed ordinary block");
+assert.strictEqual(boundaryCalls, 0);
+signalActive = true;
+ctx.stopped = false;
+runtime.executeNodes(ctx, definition.nodes, env);
+assert.strictEqual(boundaryCalls, 2);
+assert.deepStrictEqual(boundaries.map(item => item[0]), ['before','before','after','leave','after','leave']);
+assert.strictEqual(plan.preparedNodes[0].execute, runnerBefore);
+assert.strictEqual(runnerBuilds, 66);
+signalActive = false;
+console.log("live indicator: same ordinary prepared runners, one read per block detached, nested before/after while attached");

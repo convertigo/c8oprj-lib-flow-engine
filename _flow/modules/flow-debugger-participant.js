@@ -1,4 +1,4 @@
-// This module is loaded only when a selected invocation creates its private plan.
+// Loaded on the first selected block boundary; identities and frames belong to that invocation.
 (function () {
  function preview(value) {
   if (value === undefined) return 'undefined';
@@ -25,18 +25,20 @@
    parts.forEach(function(key){var d=value && Object.getOwnPropertyDescriptor(value,key);value=d && d.value;});
    return JSON.stringify({result:display(value)});
   });
-  function run(ctx,node,call) {
-   var target=table.get(node); if(!target || !participant) return call();
+  function before(ctx,node) {
+   var target=table.get(node); if(!target || !participant) return null;
    var id=String(++serial), frame={ctx:ctx,node:node,output:undefined};frames.set(id,frame);
-   participant.enter(id,JSON.stringify(Object.assign({},target,{source:source,label:String(node.id || node.block)})));
    try {
+    participant.enter(id,JSON.stringify(Object.assign({},target,{source:source,label:String(node.id || node.block)})));
     participant.at(id,'before');
-    frame.output=call();
-    participant.at(id,'after');
-    return frame.output;
-   } finally {participant.leave(id);frames.delete(id);}
+   } catch(error) { participant.leave(id); frames.delete(id); throw error; }
+   return {after:function(value){frame.output=value;participant.at(id,'after');},leave:function(){participant.leave(id);frames.delete(id);}};
   }
-  return {wrap:function(block) {
+  function run(ctx,node,call) {
+   var activation=before(ctx,node);if(!activation)return call();
+   try {var value=call();activation.after(value);return value;} finally {activation.leave();}
+  }
+  return {before:before,wrap:function(block) {
    if(!block)return block;
    var adapter=Object.create(block);
    Object.defineProperty(adapter,'run',{value:function(ctx,node){return run(ctx,node,function(){return block.run(ctx,node);});}});
