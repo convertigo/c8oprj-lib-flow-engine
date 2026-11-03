@@ -10990,7 +10990,7 @@
 		var PrintWriter = Packages.java.io.PrintWriter;
 		logFile.getParentFile().mkdirs();
 		var projectLog = frontendCurrentLog.get();
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				if (projectLog) {
 					frontendCurrentLog.set(projectLog);
@@ -11057,7 +11057,7 @@
 		entry.idleThreadStarted = true;
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				try {
 					while (entry.cancelled !== true && !frontendDevTerminal(entry)) {
@@ -11127,7 +11127,7 @@
 		}
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				var exitCode = null;
 				try {
@@ -11468,7 +11468,7 @@
 		}
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				try {
 					if (entry.status === "starting") {
@@ -11834,7 +11834,7 @@
 		cancel.put("processes", new Packages.java.util.concurrent.CopyOnWriteArrayList());
 		frontendProductionBuildCancels().put(String(key), cancel);
 		var productionLog = frontendLog(key);
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				var startedAt = JavaSystem.nanoTime();
 				frontendCurrentLog.set(productionLog);
