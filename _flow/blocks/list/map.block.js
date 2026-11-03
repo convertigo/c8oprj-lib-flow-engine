@@ -66,7 +66,9 @@ const _meta = {
 			Object.keys(value.properties || {}).forEach(function (key) {
 				properties[key] = ctx.input({ value: value.properties[key] });
 			});
-			return ctx.callBlock(value.__flowBlock, properties, { trace: false });
+			var metadata = value.metadata || {};
+			if (metadata.disabled) return undefined;
+			return ctx.callBlock(value.__flowBlock, properties, { trace: false, id:metadata.id, out:metadata.out });
 		}
 		if (Object.prototype.toString.call(value) === "[object Array]") {
 			return value.map(function (item) { return projectValue(ctx, item); });

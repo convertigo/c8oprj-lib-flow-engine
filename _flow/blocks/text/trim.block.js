@@ -1,4 +1,5 @@
 const _meta = {
+  longDescription: "```flowscript\nlocal.name = text.trim({ text: input.name })\n```",
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:format-text",

@@ -63,7 +63,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Apply the edits of the proposed patch whose confidence reaches autoCorrectThreshold (JavaScript globals, guessed block names and keys, positional arguments mapped onto block contracts) before the check; the answer lists them in autoCorrected and proposes the others in proposedPatch.",
+      "description": "Compatibility flag. Suggestions are always returned for review, never applied automatically.",
     },
     "autoCorrectThreshold": {
       "label": "Auto-correct threshold",

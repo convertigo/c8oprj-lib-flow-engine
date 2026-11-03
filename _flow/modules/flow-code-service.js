@@ -298,8 +298,7 @@
 		return !!request && (request.autoCorrect === true || String(request.autoCorrect || "").toLowerCase() === "true");
 	}
 
-	// autoCorrect: the edits of the intuitive-call resolver whose confidence reaches the threshold, applied before the
-	// safe corrections and the check; null when not asked
+	// Compatibility option: guessing always produces a proposal, never a text mutation.
 	function flowCodeAutoCorrect(blocks, request, code) {
 		return null;
 	}
@@ -464,7 +463,7 @@
 	function flowCodeGetRequest(blocks, request) {
 		request = request || {};
 		var name = flowCodeName(request);
-		if (true) {
+		if (!flowCodeOfficialMode(request)) {
 			var draft = flowCodeDraftRead(name, request);
 			if (draft) {
 				draft.qname = flowCodeQName(request, name);
@@ -624,7 +623,7 @@
 			};
 			flowCodeAddInputReport(unchanged, sameCheck.validation);
 			if (unchanged.ok) flowCodeAddDiagnosticReport(unchanged, sameCheck.validation.diagnostics || [], request);
-			return flowCodeIntuitiveReport(flowCodeCorrections(unchanged, corrected), auto, null, normalized);
+			return flowCodeIntuitiveReport(flowCodeCorrections(unchanged, corrected), auto, !unchanged.ok ? flowCodeProposal(blocks,request,normalized,current.revision) : null, normalized);
 		}
 		var written = writeProjectFlowWorkingCode ? writeProjectFlowWorkingCode(name, normalized, request) : null;
 		// No loaded Flow owns a new (or file only) Flow yet: the project's FlowEngine keeps its working copy, for
@@ -673,7 +672,7 @@
 				"Patch the working copy and retry flow-code-check.", flowCodeDiagnosticReport(checked.validation.diagnostics, request));
 		}
 		return flowCodeIntuitiveReport(flowCodeCorrections(out, corrected), auto,
-			!out.ok || auto ? flowCodeProposal(blocks, request, normalized, revision) : null, normalized);
+			!out.ok || auto || checked.warnings.some(function(warning){return warning.code === "FLOWSCRIPT_INPUT_NOT_DECLARED";}) ? flowCodeProposal(blocks, request, normalized, revision) : null, normalized);
 	}
 
 	function flowCodeSetRequest(blocks, request) {
@@ -1257,14 +1256,14 @@
 			};
 		}
 		var formatted = renderFlowScript(blocks, name, checked.validation.source, {includeHeader:false, includeImplicitReturn:false});
-		var after = {validation:flowScriptValidateRequest(blocks,Object.assign({},request,{name:name,code:formatted}))};
+		var after = {validation:flowScriptValidateRequest(blocks,Object.assign({},request,{name:name,code:formatted,skipAnalysis:true}))};
 		function comparable(source) {
 			function clean(value) {
 				if (Array.isArray(value)) return value.map(clean);
 				if (!value || typeof value !== "object") return value;
 				var out = {};
 				Object.keys(value).sort().forEach(function (key) {
-					if (key !== "__flowImplicitId" && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
+					if (key !== "__flowImplicitId" && !(key === "id" && value.id === value.__flowImplicitId) && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
 				});
 				return out;
 			}
@@ -1274,11 +1273,7 @@
 			return {ok:false,name:name,revision:current.revision,error:flowCodeError("FLOWSCRIPT_FORMAT_CHANGED_PROGRAM",
 				"Formatting changed the Flow tree; nothing was saved.","Keep the draft and report the formatter defect."),warnings:[]};
 		}
-		var beforeLines = current.code.split("\n"), afterLines = formatted.split("\n");
-		var prefix = 0, suffix = 0;
-		while (prefix < beforeLines.length && prefix < afterLines.length && beforeLines[prefix] === afterLines[prefix]) prefix++;
-		while (suffix < beforeLines.length-prefix && suffix < afterLines.length-prefix && beforeLines[beforeLines.length-1-suffix] === afterLines[afterLines.length-1-suffix]) suffix++;
-		var changedLines = Math.max(beforeLines.length-prefix-suffix, afterLines.length-prefix-suffix);
+		var changedLines = env.sourceChangedLines(current.code,formatted);
 		var saved = setProjectFlow(blocks, name, checked.validation.source, Object.assign({}, request, {
 			code: formatted,
 			draft: false,

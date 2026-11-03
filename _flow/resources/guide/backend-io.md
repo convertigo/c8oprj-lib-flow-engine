@@ -6,13 +6,24 @@ blocks are listed by `flow-catalog`; browser actions call the resulting Flow.
 ## Preserve the native request contract
 
 ```javascript
-const _flow = {
-  accessibility: "private",
-  authenticatedContextRequired: true,
-  inputs: {
-    apikey: { type: "string", visibility: -1 },
-    files: { type: "array", items: { type: "string" }, isFileUpload: true },
-  },
+function TeachingExample({ input, config, result }) {
+  local._flow = {
+    accessibility: "private",
+    authenticatedContextRequired: true,
+    inputs: {
+      apikey: {
+        type: "string",
+        visibility: -1,
+      },
+      files: {
+        type: "array",
+        items: {
+          type: "string",
+        },
+        isFileUpload: true,
+      },
+    },
+  }
 }
 ```
 
@@ -42,12 +53,27 @@ local.csv = csv.parse({
   rowSchema: {
     type: "object",
     additionalProperties: false,
-    required: ["id"],
+    required: [
+      "id",
+    ],
     properties: {
-      id: { type: "integer", title: "Identifiant" },
-      label: { type: "string", title: "Libellé" },
-      active: { type: "boolean", title: "Actif" },
-      due: { type: "string", format: "date", title: "Échéance" },
+      id: {
+        type: "integer",
+        title: "Identifiant",
+      },
+      label: {
+        type: "string",
+        title: "Libellé",
+      },
+      active: {
+        type: "boolean",
+        title: "Actif",
+      },
+      due: {
+        type: "string",
+        format: "date",
+        title: "Échéance",
+      },
     },
   },
   maxRows: 10000,
@@ -108,7 +134,12 @@ local.poll = flow.poll({
   timeoutMs: 30000,
   maxAttempts: 30,
   $$nodes: function () {
-    local.job = http.request({ method: "GET", url: config.jobs.statusUrl, connectTimeoutMs: 5000, readTimeoutMs: 5000 })
+    local.job = http.request({
+      method: "GET",
+      url: config.jobs.statusUrl,
+      connectTimeoutMs: 5000,
+      readTimeoutMs: 5000,
+    })
   },
 })
 result.job = local.job.body

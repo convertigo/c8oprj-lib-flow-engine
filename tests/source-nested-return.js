@@ -30,7 +30,7 @@ try {
 	assert(branches.ok && JSON.stringify(branches.result) === '{"login":"ok"}', "if/else returns: " + JSON.stringify(branches));
 
 	var plain = api("flowSourceValidate", { name: "Returns", code: flow('  return { notoken: "true" }') });
-	assert(plain.ok && plain.definition.nodes.length === 1 && plain.definition.nodes[0].block === "set",
+	assert(plain.ok && plain.definition.nodes.length === 2 && plain.definition.nodes[0].block === "set" && plain.definition.nodes[1].block === "return",
 		"The final return stays a result destination: " + JSON.stringify(plain.definition.nodes));
 	var nested = api("flowSourceValidate", { name: "Returns", code: flow(early) });
 	var thenNodes = nested.definition.nodes[0].then || nested.definition.nodes[0].nodes || [];

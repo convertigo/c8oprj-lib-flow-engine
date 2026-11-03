@@ -15,7 +15,9 @@ local.rows = list.filter({ items: input.rows, where: current.active === true })
 result.rows = rows.formatCells({
   rows: local.rows,
   columns: input.columns,
-  keepColumns: ["id"],
+  keepColumns: [
+    "id",
+  ],
   escapeHtml: true,
 })
 ```
@@ -69,16 +71,31 @@ Format the aggregates afterwards if cells are wanted.
 ```javascript
 local.totals = rows.group({
   rows: input.rows,
-  groupColumns: ["status"],
+  groupColumns: [
+    "status",
+  ],
   aggregations: [
-    {type:"count", key:"count"},
-    {type:"sum", column:"amount", key:"total"},
+    {
+      type: "count",
+      key: "count",
+    },
+    {
+      type: "sum",
+      column: "amount",
+      key: "total",
+    },
   ],
 })
 result.rows = rows.select({
   rows: local.totals,
-  columns: ["status", "count", "total"],
-  rename: {status:"label"},
+  columns: [
+    "status",
+    "count",
+    "total",
+  ],
+  rename: {
+    status: "label",
+  },
 })
 ```
 

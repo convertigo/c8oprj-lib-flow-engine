@@ -5046,7 +5046,8 @@
 			return env.filterVisibleDescriptors(catalogEntries, request).map(function (catalog) {
 				if ((catalog.targets || ["backend"]).indexOf("backend") === -1) return null;
 				var name = catalog.blockId;
-				var value = { id: name.replace(/[^a-zA-Z0-9_]/g, "_"), block: name };
+				var localName = name.split(".").pop();
+				var value = { id: localName, __flowImplicitId: localName, block: name };
 				Object.keys(catalog.props || {}).forEach(function (key) {
 					if (catalog.props[key].default !== undefined) value[key] = normalizeTree(catalog.props[key].default);
 				});
@@ -7724,6 +7725,17 @@
 		var idsBefore = renamesOnly ? definitionNodeIds(definition) : null;
 		var configNamesBefore = target === "engine" ? configurationNameSet(definition) : null;
 		mutations.forEach(function (mutation) {
+			var value = mutation.value;
+			if (target === "flow" && value && value.block && value.__flowImplicitId === value.id && /^(append|insert)$/.test(mutation.op)) {
+				var ids=definitionNodeIds(definition), used={}, base=String(value.block).split(".").pop(), highest=0;
+				var path=(value.props || value).path;
+				if (value.block === "set" && path) base=String(path).split(".").pop();
+				Object.keys(ids).forEach(function(pointer){var id=ids[pointer];used[id]=true;if(id.indexOf(base)===0 && /^\d*$/.test(id.substring(base.length)))highest=Math.max(highest,Number(id.substring(base.length)||1));});
+				var candidate;
+				do { highest++;candidate=base+(highest>1?highest:""); } while(used[candidate]);
+				value=normalizeTree(value);value.id=candidate;value.__flowImplicitId=candidate;
+				mutation=Object.assign({},mutation,{value:value});
+			}
 			applyOneMutation(definition, mutation, blocks);
 		});
 		var native = target === "flow" && env.nativeFlowMetadata ? env.nativeFlowMetadata(definition.flow || {}) : null;
@@ -7743,12 +7755,14 @@
 			definition.version = 1;
 		}
 		var engineEdit = target === "engine" ? engineSourceFor(request.engineSource, definition) : null;
+		if (target === "flow" && env.rememberImplicitNames) env.rememberImplicitNames(String(request.name || request.flowName || "Flow"),definition);
 		var yamlSource = engineEdit ? engineEdit.source : toYamlSource(definition);
 		var source = target === "flow" && renderFlowScript
 			? renderFlowScript(blocks, String(request.name || request.flowName || "Flow"), yamlSource, { includeHeader: false })
 			: yamlSource;
 		var tree = request.includeTree === false ? { children: [] } : describeTreeRequest({
 			target: target,
+			definition: target === "flow" ? definition : undefined,
 			projectionPaths: request.projectionPaths,
 			flowSource: source,
 			engineSource: source,

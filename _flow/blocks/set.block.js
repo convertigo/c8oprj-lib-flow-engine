@@ -11,7 +11,7 @@ const _meta = {
   ],
   "description": "Writes a value to a scope path.",
   "summary": "{{path}} = {{value}}",
-  "longDescription": "Use path to choose the destination and value for the content. A value made of one expression keeps the type of its result.",
+  "longDescription": "Use path to choose the destination and value for the content. A value made of one expression keeps the type of its result.\n\n```flowscript\nresult.answer = input.value + 1\n```",
   "properties": {
     "path": {
       "label": "Destination",

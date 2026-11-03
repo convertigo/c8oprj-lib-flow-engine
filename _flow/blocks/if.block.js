@@ -1,4 +1,5 @@
 const _meta = {
+  longDescription: "```flowscript\nif (input.value > 0) {\n  result.positive = true\n}\n```",
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:source-branch",

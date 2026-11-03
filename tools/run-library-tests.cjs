@@ -138,7 +138,7 @@ if (suite !== 'frontbuilder') {
 }
 const logRoot = path.resolve(env.FLOW_TEST_LOG_DIR || path.join(root, '_private/test-results', new Date().toISOString().replaceAll(':', '-')));
 fs.mkdirSync(logRoot, {recursive: true});
-const tmp = path.join(logRoot, 'tmp'); fs.mkdirSync(tmp, {recursive: true});
+const tmp = path.resolve(env.FLOW_TEST_TMPDIR || path.join(logRoot, 'tmp')); fs.mkdirSync(tmp, {recursive: true});
 env.TMPDIR = tmp;
 // Rhino and the JDK localize their error messages; tests compare the English ones on every host.
 const locale = ['-Duser.language=en', '-Duser.country=US'];

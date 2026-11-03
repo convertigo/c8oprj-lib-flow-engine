@@ -1046,7 +1046,7 @@
 		var ok = diagnostics.filter(function (diagnostic) {
 			return diagnostic.severity === "error";
 		}).length === 0;
-		var analysis = ok ? env.analyzeFlowSource(activeBlocks, source, request) : null;
+		var analysis = ok && request.skipAnalysis !== true ? env.analyzeFlowSource(activeBlocks, source, request) : null;
 		if (analysis) {
 			analysisDiagnostics(activeBlocks, analysis, env).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);

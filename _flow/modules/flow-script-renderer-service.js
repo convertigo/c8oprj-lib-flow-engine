@@ -53,9 +53,17 @@
 	function renderFlowScriptTemplateValue(value, locals, env, indent) {
 		value = env.normalizeTree(value);
 		if (value && typeof value === "object") {
-			return flowScriptCompound(value, indent || "", function (item) {
-				return renderFlowScriptTemplateValue(item, locals, env);
-			}, false);
+			indent = indent || "";
+			if (value.__flowBlock) {
+				var node = Object.assign({block:value.__flowBlock,props:value.properties || {}},value.metadata || {});
+				var parts = renderFlowScriptArguments(env.renderBlocks || {},node,{},locals,env,indent + "  ",false);
+				return value.__flowBlock + "({ " + parts.join(", ") + " })";
+			}
+			var array = Array.isArray(value), keys = Object.keys(value);
+			if (!keys.length) return array ? "[]" : "{}";
+			return (array ? "[" : "{") + "\n" + keys.map(function (key) {
+				return indent + "  " + (array ? "" : flowScriptObjectKey(key) + ": ") + renderFlowScriptTemplateValue(value[key],locals,env,indent + "  ") + ",";
+			}).join("\n") + "\n" + indent + (array ? "]" : "}");
 		}
 		if (typeof value === "string") {
 			return renderFlowScriptTemplateString(value, locals, env);
@@ -231,7 +239,7 @@
 				lines.push(indent + "}");
 				return;
 			}
-			if (plain && type === "return" && !keys.length) { lines.push(indent + label + "return"); return; }
+			if (plain && type === "return" && (!keys.length || keys.length===1 && keys[0]==="value")) { lines.push(indent + label + "return" + (keys.length ? " " + renderFlowScriptValue(blocks,node,"value",props.value,locals,env,indent) : "")); return; }
 			var assignedOutput = typeof node.out === "string" && /^(local|result|parent)(\.[A-Za-z_$][\w$]*)+$/.test(node.out) ? node.out : "";
 			var callPrefix = label + (assignedOutput ? assignedOutput + " = " : "");
 			var slotNames = flowScriptSlotNames(blocks, node, env);
@@ -277,6 +285,7 @@
 
 	function renderFlowScript(blocks, name, flowSource, request, env) {
 		request = request || {};
+		env = Object.assign({},env,{renderBlocks:blocks});
 		var definition = env.parseSource(flowSource);
 		var renderBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var lines = [];

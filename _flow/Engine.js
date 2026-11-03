@@ -3784,14 +3784,20 @@
 	// The Flow model of a FlowScript source, by content and catalog revision: its parse, check and YAML source
 	function sourceFromFlowScript(blocks, name, code) {
 		var catalog = catalogMemoRevision(blocks);
+		var text = String(code === undefined || code === null ? "" : code);
+		var compiled;
 		if (catalog === null) {
 			sourceMemoBypass("flow-source");
-			return flowRepositoryService().sourceFromFlowScript(blocks, name, code, flowRepositoryEnv());
+			compiled = flowRepositoryService().sourceFromFlowScript(blocks, name, text, flowRepositoryEnv());
+		} else {
+			compiled = sourceMemo("flow-source", String(projectDir() || "") + "\n" + String(name) + "\n" + sha256Hex(text) + "\n" + sha256Hex(catalog), "", function () {
+				return flowRepositoryService().sourceFromFlowScript(blocks, name, text, flowRepositoryEnv());
+			});
 		}
-		var text = String(code === undefined || code === null ? "" : code);
-		return sourceMemo("flow-source", String(projectDir() || "") + "\n" + String(name) + "\n" + sha256Hex(text) + "\n" + sha256Hex(catalog), "", function () {
-			return flowRepositoryService().sourceFromFlowScript(blocks, name, text, flowRepositoryEnv());
-		});
+		// Content caches stay independent of an editor session. Apply session names to a fresh model afterwards.
+		implicitNameState(name,compiled.definition,false,true);
+		compiled.source = sourceFromDefinition(compiled.definition);
+		return compiled;
 	}
 
 	function getProjectFlow(name) {
@@ -4574,17 +4580,19 @@
 		return flowScriptParserService().parseFlowScriptStatementsInto(blocks, imports, locals, root, statements, flowScriptParserEnv());
 	}
 
+	function implicitNameState(name, definition, remember, onlyExisting) {
+		var key = String(projectDir() || "") + "\n" + name, generation = projectGeneration();
+		var text = implicitNames ? implicitNames.read(key,generation) : localImplicitNames[key];
+		if (!text && onlyExisting) return;
+		var service = loadEngineModule("implicit-node-names.js");
+		var state = service[remember ? "remember" : "reconcile"](definition,text ? JSON.parse(String(text)) : null);
+		var serialized = JSON.stringify(state);
+		if (implicitNames) implicitNames.write(key,generation,serialized); else localImplicitNames[key] = serialized;
+	}
+
 	function parseFlowScript(blocks, code, options) {
 		var definition = flowScriptParserService().parseFlowScript(blocks, code, flowScriptParserEnv(), options);
-		var name = options && options.nameSession;
-		if (name) {
-			var key = String(projectDir() || "") + "\n" + name;
-			var generation = projectGeneration();
-			var text = implicitNames ? implicitNames.read(key,generation) : localImplicitNames[key];
-			var state = loadEngineModule("implicit-node-names.js").reconcile(definition,text ? JSON.parse(String(text)) : null);
-			var serialized = JSON.stringify(state);
-			if (implicitNames) implicitNames.write(key,generation,serialized); else localImplicitNames[key] = serialized;
-		}
+		if (options && options.nameSession) implicitNameState(options.nameSession,definition,false,options.onlyExisting);
 		return definition;
 	}
 
@@ -4784,7 +4792,11 @@
 
 	function flowCodeServiceEnv() {
 		return {
+			sourceChangedLines: function (before,after) { return loadEngineModule("source-line-diff.js").changedLines(before,after); },
 			parseSource: parseSource,
+			parseFlowScript: parseFlowScript,
+			sourceFromDefinition: sourceFromDefinition,
+			stripFlowScriptMetadata: stripFlowScriptMetadata,
 			FileUtils: FileUtils,
 			raise: raise,
 			validationFailureMessage: validationFailureMessage,
@@ -6337,6 +6349,7 @@
 			nodePath: nodePath,
 			sourceFromDefinition: sourceFromDefinition,
 			renderFlowScript: renderFlowScript,
+			rememberImplicitNames: function(name,definition) { implicitNameState(name,definition,true,false); },
 			parseYamlSource: parseYamlSource,
 			canonicalFlowDefinition: canonicalFlowDefinition,
 			parseSource: parseSource,

@@ -54,7 +54,7 @@ try {
     return rendered;
   }
   var capture = roundtrip('number.add({$$id:"sum",$$comment:"keep",$$disabled:false,$$out:"local.sum",left:2,right:3})\nresult.sum = local.sum', {sum:5});
-  assert(capture.code.indexOf('local.sum = number.add({\n    $$id: "sum",\n    $$comment: "keep",\n    $$disabled: false,\n    left: 2,\n    right: 3,\n  })') !== -1, "Expected multiline assignment: " + capture.code);
+  assert(capture.code.indexOf('  // keep\n  local.sum = number.add({ $$disabled: false, left: 2, right: 3 })') !== -1, "Expected natural capture: " + capture.code);
   assert(capture.code.indexOf('$$out:') === -1, "Capture leaked into call parameters");
   roundtrip('number.add({$$id:"nested",$$out:"result.nested.sum",left:2,right:3})', {nested:{sum:5}});
   roundtrip('number.add({$$id:"off",$$disabled:true,$$out:"result.sum",left:2,right:3})', {});
@@ -71,7 +71,7 @@ try {
   var edited = api("applyMutation", {target:"flow",flowSource:capture.code,mutation:{op:"replace",path:"/nodes/0/props/left",value:4}});
   assert(edited.ok, "Mutation failed: " + JSON.stringify(edited));
   var editedCode = write(check(edited.source).source).code;
-  equal(editedCode, capture.code.replace('    left: 2,', '    left: 4,'), "Single-property mutation should change one line");
+  equal(editedCode, capture.code.replace('left: 2,', 'left: 4,'), "Single-property mutation should change one line");
   equal(run(editedCode), {sum:7}, "Edited assignment result");
   print("source-assignment-format OK (" + checks + " checks)");
 } finally { files.deleteDirectory(project); }

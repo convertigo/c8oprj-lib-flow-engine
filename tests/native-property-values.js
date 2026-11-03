@@ -43,10 +43,10 @@ try{
  assert((check.diagnostics||[]).filter(function(d){return d.code==='NATIVE_PROPERTY_NORMALIZED'&&d.line>1;}).length===7,'Passive check signals all seven canonicalizations');
  var set=api('flowCodeSet',{name:'Probe',code:code(raw),maxDiagnostics:25});
  if(!set.ok)throw new Error('Normalization failed: '+JSON.stringify(set));
- assert(set.ok&&set.fixes&&set.fixes.length===7,'code-set returns seven fixes: '+JSON.stringify(set));
- assert(set.code&&set.code.indexOf('"required": false')>=0&&set.code.indexOf('"visibility": -1')>=0,'Source contains canonical values');
+ assert(set.ok&&!set.fixes&&(set.warnings||[]).length===7,'seven accepted equivalents, no source fix: '+JSON.stringify(set));
+ assert(api('flowCodeGet',{name:'Probe'}).code===code(raw),'Source remains exactly submitted');
  assert(set.inputDefinitions&&set.inputDefinitions.x.required===false&&set.inputDefinitions.x.type==='integer','Normalized definitions returned to Java and MCP');
- assert(set.fixes&&set.fixes.every(function(f){return f.line>1&&f.property&&f.before!==f.after;}),'Every correction identifies its property and original line');
+ assert(set.warnings.every(function(f){return f.line>1&&f.property&&f.actual!==f.expected;}),'Every equivalent identifies its property and original line');
  __nativeProbeFlow=new Packages.com.twinsoft.convertigo.beans.flow.Flow();__nativeProbeFlow.setName('Probe');
  function sync(meta){return api('syncInputs',{name:'Probe',project:'Probe',flowSource:code(meta)});}
  var synced=sync(raw),x=__nativeProbeFlow.getVariable('x'),upload=__nativeProbeFlow.getVariable('files');

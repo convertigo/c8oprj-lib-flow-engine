@@ -160,7 +160,8 @@ try {
 	var routedGraph = 'const _flow = { sourceVersion: 2 }\nfunction PropertyChain() {\nproof.routed({ $$out: "result.row", out: "result.business" })\n}';
 	equal(run(routedGraph).result, { row: { businessOut: "result.business" } }, "Prepared graph output hijacked engine routing");
 	var v2disabled = api("applyMutation", { target: "flow", flowSource: versionTwo, mutation: { op: "setEnabled", nodeId: "row", enabled: false } });
-	assert(run(v2disabled.source).result.row === undefined, "Version 2 structural disable");
+	var v2disabledRun=run(v2disabled.source);
+	assert(v2disabledRun.ok && v2disabledRun.result.row === undefined, "Version 2 structural disable: " + JSON.stringify(v2disabled) + " RUN " + JSON.stringify(v2disabledRun));
 	['$$typo: true', '$$disabled: "false"', '$$id: 5'].forEach(function (attribute) {
 		var invalid = check(versionTwo.replace('$$id: "row"', attribute));
 		assert(!invalid.ok, "Invalid version 2 metadata accepted: " + attribute);

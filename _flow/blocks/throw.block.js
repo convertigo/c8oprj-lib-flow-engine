@@ -1,4 +1,5 @@
 const _meta = {
+  longDescription: "```flowscript\nthrow { code: \"INVALID\", message: \"Invalid input\", status: 400 }\n```",
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:alert-circle-outline",

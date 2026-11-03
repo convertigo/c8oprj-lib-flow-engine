@@ -31,7 +31,7 @@ var renamed = call("applyMutation", Object.assign({}, request, { mutation: Objec
 assert(JSON.stringify(renamed.renamedNodes) === '[{"from":"before","to":"after"}]', "Rename reported: " + JSON.stringify(renamed.renamedNodes));
 assert(new java.io.File(schemaDir, "after.out.schema.json").isFile() && !new java.io.File(schemaDir, "before.out.schema.json").exists(),
 	"The learned schema follows the renamed node");
-assert(renamed.source.indexOf('$$id: "after"') >= 0, "Canonical v2 identity written");
+assert(renamed.source.indexOf('after: log(') >= 0, "Canonical v2 identity written");
 assert(renamed.selectionMutationPath === "nodes[0]", "Renamed node remains selected");
 assert(JSON.parse(find(renamed, "nodes[0]").info).renameValue === "after", "Fresh rename capability");
 var commented = call("applyMutation", Object.assign({}, request, { flowSource: renamed.source,

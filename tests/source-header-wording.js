@@ -19,7 +19,7 @@ try {
 	var parsed = api("flowSourceValidate", { name: "Header", code: body });
 	assert(parsed.ok, "Fixture: " + JSON.stringify(parsed));
 
-	var rendered = api("flowSourceValidate", { name: "Header", flowSource: parsed.source });
+	var rendered = api("flowSourceValidate", { name: "Header", flowSource: parsed.source, includeHeader: true });
 	var header = rendered.code.split("\n").filter(function (line) { return line.indexOf("// c8o:") === 0; });
 	assert(header.length === 2 && header[0].indexOf("FlowScript, sourceVersion 2") !== -1, "New header expected: " + rendered.code);
 	assert(!/spike|Flow YAML|compiles/i.test(header.join("\n")), "Stale header wording: " + header.join("\n"));

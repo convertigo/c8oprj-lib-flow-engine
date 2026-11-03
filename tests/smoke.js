@@ -1132,7 +1132,7 @@ var earlyReturnValidation = JSON.parse(engine.flowSourceValidate(JSON.stringify(
 assertTrue(earlyReturnValidation.ok === true &&
 	earlyReturnValidation.definition.nodes[0].block === "if" &&
 	earlyReturnValidation.definition.nodes[0].then[1].block === "return" &&
-	earlyReturnValidation.definition.nodes.length === 2,
+	earlyReturnValidation.definition.nodes.length === 3 && earlyReturnValidation.definition.nodes[2].block === "return",
 	"nested return result did not compile to the core early-return block");
 var earlyReturnRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: earlyReturnFlowScriptSource,

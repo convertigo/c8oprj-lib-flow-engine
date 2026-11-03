@@ -2,7 +2,7 @@
 // block name it guesses (smtp.send, crypto.md5, text.trimm) or positional arguments. code-set refused each one with a
 // diagnostic and the agent spent turns on flow-block-get and the palette. code-set, code-patch and code-check now answer
 // one global patch for the whole source (proposedPatch.edits: [{ oldText, newText, line, confidence, reason, block }],
-// ready for code-patch), and autoCorrect: true applies the edits at or above the threshold and reports them.
+// ready for explicit code-patch review. autoCorrect is retained as an advisory compatibility flag.
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var __flowEngineDir = engineDir;
 var project = java.nio.file.Files.createTempDirectory("lib-flow-engine-intuitive-calls").toFile();
@@ -75,21 +75,14 @@ try {
 	assert(api('flowCodeCheck', { name: 'Intuitive' }).ok === true, 'and code-check');
 	api('flowCodeDiscard', { name: 'Intuitive' });
 
-	// 3. autoCorrect: only the edits at or above the threshold, reported; the others proposed on the written working copy
+	// 3. Compatibility flag is advisory: every guess remains a reviewable proposal.
 	var auto = api('flowCodeSet', { name: 'Intuitive', code: intuitive, autoCorrect: true });
-	var applied = auto.autoCorrected && auto.autoCorrected.edits || [];
-	assert(applied.length === 9 && applied.every(function (entry) { return entry.confidence >= 0.9; }) && auto.autoCorrected.threshold === 0.9,
-		'autoCorrect applies the 9 confident edits only: ' + JSON.stringify(auto.autoCorrected, null, 1));
-	assert(typeof auto.code === 'string' && auto.code.indexOf('crypto.hash({ text: local.payload, algorithm: "md5" })') !== -1 &&
-		auto.code.indexOf('email.send(') !== -1 && auto.code.indexOf('parseInt(input.page)') !== -1 && auto.code.indexOf('text.replace(local.label, "-", " ")') !== -1 &&
-		auto.code.indexOf('Math.max(input.a, input.b)') !== -1, 'the complete written source keeps the proposals as written: ' + auto.code);
-	var left = auto.proposedPatch;
-	assert(auto.ok === false && left && left.revision === auto.revision && left.edits.length === 2 &&
-		edit(left, 'parseInt') && edit(left, 'text.replace'), 'the 2 edits left are proposed on the written working copy: ' + JSON.stringify(left));
-	var done = api('flowCodePatch', { name: 'Intuitive', revision: left.revision, edits: left.edits });
-	assert(done.ok === true && !done.proposedPatch, 'the proposal passes as code-patch edits: ' + JSON.stringify(done).substring(0, 1500));
-	var checked = api('flowCodeCheck', { name: 'Intuitive' });
-	assert(checked.ok === true, 'the corrected Flow passes code-check: ' + JSON.stringify(checked).substring(0, 800));
+	assert(!auto.ok && !auto.autoCorrected && auto.proposedPatch.edits.length === 11,'autoCorrect proposes every edit');
+	assert(api('flowCodeGet',{name:'Intuitive'}).code === intuitive,'source is exactly authored');
+	var left=auto.proposedPatch;
+	var done=api('flowCodePatch',{name:'Intuitive',revision:left.revision,edits:left.edits});
+	assert(done.ok,'explicit review applies the complete patch');
+	assert(api('flowCodeCheck',{name:'Intuitive'}).ok,'reviewed source checks');
 
 	// 4. Confident corrections do what the JavaScript did: same run as the handwritten Flow (log needs the Convertigo
 	// logger, so it is checked above only)
@@ -122,10 +115,10 @@ try {
 	var input = { a: 3, b: 7, defaults: { size: 10, sort: 'name' }, options: { size: 25 }, label: '  Quarterly report  ',
 		rows: [{ name: 'beta' }, { name: 'alpha' }, { name: 'gamma' }] };
 	var equivalent = api('flowCodeSet', { name: 'Equivalent', code: confident, autoCorrect: true });
-	assert(equivalent.ok === true && equivalent.autoCorrected.edits.length === 8 && !(equivalent.proposedPatch && equivalent.proposedPatch.edits.length),
-		'a Flow with confident calls only is written and checked at once: ' + JSON.stringify(equivalent).substring(0, 1500));
-	assert(equivalent.autoCorrected.edits.some(function (entry) { return entry.oldText.indexOf('order: "desc"') !== -1 && entry.newText.indexOf('direction: "desc"') !== -1; }),
-		'a guessed key of an existing block is renamed: ' + JSON.stringify(equivalent.autoCorrected.edits));
+	assert(!equivalent.ok && !equivalent.autoCorrected && equivalent.proposedPatch.edits.length===8,'confident guesses still require review');
+	assert(equivalent.proposedPatch.edits.some(function(entry){return entry.oldText.indexOf('order: "desc"')>=0 && entry.newText.indexOf('direction: "desc"')>=0;}),'guessed key is proposed');
+	equivalent=api('flowCodePatch',{name:'Equivalent',revision:equivalent.revision,edits:equivalent.proposedPatch.edits});
+	assert(equivalent.ok,'reviewed equivalent passes');
 	var ran = api('flowCodeRun', { name: 'Equivalent', input: input });
 	var expected = api('flowCodeRun', { name: 'Handwritten', code: handwritten, input: input });
 	assert(ran.ok && expected.ok && JSON.stringify(ran.result) === JSON.stringify(expected.result), 'same result as the handwritten Flow: ' + JSON.stringify({ ran: ran, expected: expected }).substring(0, 1500));
@@ -139,8 +132,8 @@ try {
 
 	// 6. Never below the threshold, never an ambiguous choice: a threshold under 0.8 is raised to 0.8
 	var low = api('flowCodeSet', { name: 'Intuitive', code: intuitive, autoCorrect: true, autoCorrectThreshold: 0.5 });
-	assert(low.autoCorrected.threshold === 0.8 && low.autoCorrected.edits.length === 9 && low.code.indexOf('parseInt(input.page)') !== -1,
-		'parseInt (0.7) and the ambiguous text.replace (0.75) stay proposals: ' + JSON.stringify(low.autoCorrected));
+	assert(!low.autoCorrected && low.proposedPatch.threshold===0.8 && low.proposedPatch.edits.length===11,'threshold never enables writes');
+	assert(api('flowCodeGet',{name:'Intuitive'}).code===intuitive,'low threshold preserves source');
 	var otherDomain = api('flowCodeSet', { name: 'OtherDomain', code: 'function OtherDomain({ input, result }) {\n  local.sent = invoice.send({ to: input.email, subject: "Invoice" })\n}', autoCorrect: true });
 	var guessed = edit(otherDomain.proposedPatch, 'invoice.send');
 	assert(!otherDomain.autoCorrected && guessed && guessed.block === 'email.send' && guessed.confidence <= 0.75 && guessed.reason.indexOf('another namespace') !== -1,
@@ -167,7 +160,9 @@ try {
 		twiceEdits[2].oldText === 'JSON.stringify(Object.keys(input.a))' &&
 		twiceEdits[2].newText === 'json.stringify({ value: object.keys({ source: input.a }) })', 'widened to unique lines, nested calls in one edit: ' + JSON.stringify(twiceEdits, null, 1));
 	var twicePatched = api('flowCodePatch', { name: 'Twice', revision: twice.revision, edits: twiceEdits });
-	assert(twicePatched.ok === true, 'applied in order by code-patch: ' + JSON.stringify(twicePatched).substring(0, 1000));
+	assert(!twicePatched.ok && twicePatched.proposedPatch,'nested call lifting is a separate reviewed proposal');
+	var lifted=api('flowCodePatch',{name:'Twice',revision:twicePatched.revision,edits:twicePatched.proposedPatch.edits});
+	assert(lifted.ok,'explicit lifting preserves evaluation order');
 
 	// 8. code-check of a working copy proposes the same patch, with its revision; no mapping is reported as unresolved
 	api('flowCodeSet', { name: 'Checked', code: 'function Checked({ input, result }) {\n  result.keys = Object.keys(input.a)\n  result.root = Math.sqrt(input.n)\n}' });
@@ -180,12 +175,10 @@ try {
 	var base = api('flowCodeSet', { name: 'Patched', code: 'function Patched({ input, result }) {\n  result.keys = input.a\n}' });
 	var autoPatched = api('flowCodePatch', { name: 'Patched', revision: base.revision, autoCorrect: true,
 		edits: [{ oldText: 'result.keys = input.a', newText: 'result.keys = Object.keys(input.a)\n  result.sorted = list.sort(input.rows, current.name)' }] });
-	assert(autoPatched.ok === true && autoPatched.autoCorrected.edits.length === 2 && autoPatched.code.indexOf('object.keys({ source: input.a })') !== -1,
-		'code-patch with autoCorrect: ' + JSON.stringify(autoPatched).substring(0, 1000));
+	assert(!autoPatched.ok && !autoPatched.autoCorrected && autoPatched.proposedPatch.edits.length===2,'patch flags never apply guesses');
 	files.writeStringToFile(new java.io.File(project, '_flow/engine.yaml'), 'version: 1\nauthoring:\n  intuitiveCall:\n    autoCorrectConfidence: 0.95\n', 'UTF-8');
 	var strict = api('flowCodeSet', { name: 'Strict', code: 'function Strict({ input, result }) {\n  result.keys = Object.keys(input.a)\n  result.sorted = list.sort(input.rows, current.name)\n}', autoCorrect: true });
-	assert(strict.autoCorrected.threshold === 0.95 && strict.autoCorrected.edits.length === 1 && edit(strict.proposedPatch, 'list.sort(input.rows, current.name)').confidence === 0.9,
-		'the project threshold keeps the 0.9 edit a proposal: ' + JSON.stringify(strict).substring(0, 1200));
+	assert(!strict.autoCorrected && strict.proposedPatch.threshold===0.95 && strict.proposedPatch.edits.length===2,'project threshold only annotates proposals');
 
 	print('intuitive-calls OK (' + checks + ' checks)');
 } finally {

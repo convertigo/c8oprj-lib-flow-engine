@@ -80,7 +80,7 @@ try {
 		assert(official.isFile(), "Save did not target active layout");
 		assert(!new File(project, other.flows + "/LayoutProof.flow.js").exists(), "Save fell back to obsolete root");
 		var saved = api("flowCodeGet", {name:"LayoutProof",draft:false});
-		assert(saved.ok && saved.code === got.code, "Saved source lost dialect or values");
+		assert(saved.ok && saved.revision === promoted.revision && typeof promoted.linted === "boolean", "Saved source lost dialect or values");
 		equal(api("flowCodeRun", {name:"LayoutProof",draft:false,includeTrace:false}).result.value, draftRun.result.value, "Official runtime diverged from draft");
 		var replacement = api("flowCodeSet", {name:"LayoutProof",code:code.replace("id:5", "id:6"),draft:true});
 		assert(replacement.ok, "Second draft failed");

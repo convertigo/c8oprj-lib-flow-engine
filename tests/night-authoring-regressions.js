@@ -9,8 +9,10 @@ function assert(value,msg){if(!value)throw Error(msg);}
  var source='function Slots'+index+'({input,result}) {\n forEach({items:[1,2],'+sigil+':function(){result.n=1}})\n}';
  var refused=api('flowCodeSet',{name:'Slots'+index,code:source});assert(!refused.ok,'without autoCorrect a bad slot stays refused');
  var corrected=api('flowCodeSet',{name:'Slots'+index,code:source,autoCorrect:true});
- assert(corrected.ok && corrected.fixes.some(function(f){return f.code==='FLOWSCRIPT_SLOT_SIGIL_CORRECTED';}),'known function slot repaired and reported: '+JSON.stringify(corrected));
- assert(corrected.code.indexOf('$$nodes')>=0,'canonical double sigil');
+ assert(!corrected.ok && corrected.proposedPatch && corrected.proposedPatch.edits.length,'bad slot offered as patch: '+JSON.stringify(corrected));
+ assert(api('flowCodeGet',{name:'Slots'+index}).code===source,'autoCorrect preserves source');
+ var applied=api('flowCodePatch',{name:'Slots'+index,revision:corrected.revision,edits:corrected.proposedPatch.edits});
+ assert(applied.ok,'explicitly applied slot patch');
 });
 var draft=api('flowCodeSet',{name:'Same',code:'function Same({result}) {\n result.value=1\n}'});
 assert(draft.ok,'initial draft');

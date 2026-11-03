@@ -514,7 +514,7 @@
 			env.raise("FLOWSCRIPT_INVALID_BLOCK_CALL_SIGNATURE",
 				"Invalid FlowScript block call signature at line " + lineNumber + ": " + original,
 				null,
-				equivalent || "FlowScript is a Flow block DSL, not JavaScript function calling. Every Flow block accepts exactly one object parameter. Use " + signature + ". Signature keys use key for required values, key? for optional values, and key??default when a default exists.");
+				equivalent || "Catalog blocks take one object of named properties. Review the suggested patch or write " + signature + ". Signature keys use key for required values, key? for optional values, and key??default when a default exists.");
 		}
 
 		function normalizeObjectLiteralWhitespace(text) {
@@ -552,7 +552,7 @@
 				error.code = "FLOWSCRIPT_INVALID_ARGUMENTS";
 				error.details = {
 					line: lineNumber,
-					expected: "Use an object literal such as { id: \"step\", path: \"result.value\", value: local.value }."
+					expected: "Use an object literal such as { path: \"result.value\", value: local.value }."
 				};
 				throw error;
 			}
@@ -1631,7 +1631,7 @@
 	
 		// Engine attributes ($$id, $$disabled, $$comment, $$out) stay on the node;
 		// every other attribute is a business value stored in node.props.
-		function normalizeNaturalFlowScriptProps(blocks, block, parsed, locals, lineNumber) {
+		function normalizeNaturalFlowScriptProps(blocks, block, parsed, locals, lineNumber, imports) {
 			// Resolve namespace vocabulary before parsing its property expressions.
 			// Passive checks use this path too and must not run source corrections.
 			if (!blocks[block] && /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(block) && !/^(input|local|current|result|request|config|trace)\./.test(block) && Object.keys(parsed.tokens || {}).some(function (key) { return containsNestedBlockCall(blocks, parsed.tokens[key]); })) unknownBlock(blocks, block, lineNumber, env);
@@ -1652,15 +1652,37 @@
 				}
 				node[attr.name] = value;
 			});
-			node.props = normalizeNaturalFlowScriptPropertyBag(blocks, block, propertyTokens, locals, lineNumber);
+			node.props = normalizeNaturalFlowScriptPropertyBag(blocks, block, propertyTokens, locals, lineNumber, imports);
 			return node;
 		}
 
-		function normalizeNaturalFlowScriptPropertyBag(blocks, block, tokens, locals, lineNumber) {
+		function inlineProjection(blocks, imports, token, locals, lineNumber) {
+			var call = parseNaturalFlowScriptCall(token);
+			if (call && blocks[resolveFlowScriptName(call.name,imports || {})]) {
+				var name = resolveFlowScriptName(call.name,imports || {}), args = call.args.trim() === "" ? ["{}"] : splitFlowScriptTopLevel(call.args,",");
+				if (args.length !== 1 || !isFlowScriptObjectLiteral(args[0])) raiseFlowScriptBlockSignature(blocks,name,token,lineNumber);
+				var node = normalizeNaturalFlowScriptNode(blocks,imports,locals,name,parseFlowScriptObjectLiteral(args[0],lineNumber),lineNumber);
+				if (Object.keys(node).some(function (key) { return ["props","id","comment","disabled","out","__flowExplicitId"].indexOf(key) < 0; })) env.raise("FLOW_SOURCE_INLINE_METADATA_UNSUPPORTED","A projection block cannot carry child slots at line " + lineNumber);
+				var result = {__flowBlock:name,properties:node.props}, metadata = {};
+				["id","comment","disabled","out"].forEach(function (key) { if (node[key] !== undefined) metadata[key] = node[key]; });
+				if (Object.keys(metadata).length) result.metadata = metadata;
+				return result;
+			}
+			if (isFlowScriptObjectLiteral(token)) {
+				var out = {};
+				naturalFlowScriptObjectFields(token).forEach(function (field) { Object.defineProperty(out,field.key,{value:inlineProjection(blocks,imports,field.token,locals,lineNumber),enumerable:true,writable:true,configurable:true}); });
+				return out;
+			}
+			return flowScriptValueFromToken(token,locals,lineNumber);
+		}
+
+		function normalizeNaturalFlowScriptPropertyBag(blocks, block, tokens, locals, lineNumber, imports) {
 			var args = {};
 			Object.keys(tokens).forEach(function (key) {
 				var kind = flowScriptPropKind(blocks, block, key);
-				if (kind === "expression") {
+				if (block === "list.map" && key === "select" && containsNestedBlockCall(blocks,tokens[key])) {
+					args[key] = inlineProjection(blocks,imports,tokens[key],locals,lineNumber);
+				} else if (kind === "expression") {
 					args[key] = flowScriptExpressionPropertyFromToken(tokens[key], locals, lineNumber);
 				} else if (kind === "path") {
 					args[key] = propertyPathFromToken(blocks, block, key, tokens[key], locals, lineNumber);
@@ -1916,7 +1938,7 @@
 
 		function normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parsed, lineNumber) {
 			var extracted = extractFlowScriptInlineSlots(blocks, imports, locals, block, parsed, lineNumber);
-			var node = normalizeNaturalFlowScriptProps(blocks, block, extracted.parsed, locals, lineNumber);
+			var node = normalizeNaturalFlowScriptProps(blocks, block, extracted.parsed, locals, lineNumber, imports);
 			Object.keys(extracted.slots || {}).forEach(function (slot) {
 				node[slot] = extracted.slots[slot];
 			});
@@ -2355,21 +2377,12 @@
 					null, "Assign a Flow block call with one object parameter, for example const feed = requestable.call({ requestable: \".Connector.Transaction\" });");
 			}
 			var block = resolveFlowScriptName(call.name, imports);
-			var args = splitFlowScriptTopLevel(call.args, ",");
+			var args = call.args.trim() === "" ? ["{}"] : splitFlowScriptTopLevel(call.args, ",");
 			var hasCanonicalArgs = args.length === 1 && isFlowScriptObjectLiteral(args[0]);
 			if (!hasCanonicalArgs) {
 				raiseFlowScriptBlockSignature(blocks, block, call.name + "(" + args.join(", ") + ")", lineNumber);
 			}
-			if (block === "list.map") {
-				var mapNodes = buildNaturalListMapNodes(blocks, imports, varName, args, locals, lineNumber);
-				if (mapNodes) {
-					// only the keys matter here: the values (nested block calls of the projection) are lowered above
-					if (naturalFlowScriptObjectFields(args[0]).some(function (field) { return field.key !== "items" && field.key !== "select"; })) {
-						env.raise("FLOW_SOURCE_LOWERING_METADATA_UNSUPPORTED", "Expanded list.map cannot discard additional attributes; use an explicit forEach for this form.");
-					}
-					return mapNodes;
-				}
-			}
+
 			var node = normalizeNaturalFlowScriptNode(blocks, imports, locals, block, parseFlowScriptObjectLiteral(args[0], lineNumber), lineNumber);
 			node.block = block;
 			if (!node.id) {
@@ -2474,7 +2487,7 @@
 						__flowScriptLine: lineNumber
 					}];
 				}
-				var args = splitFlowScriptTopLevel(call.args, ",");
+				var args = call.args.trim() === "" ? ["{}"] : splitFlowScriptTopLevel(call.args, ",");
 				var hasCanonicalArgs = args.length === 1 && isFlowScriptObjectLiteral(args[0]);
 				if (!hasCanonicalArgs) {
 					raiseFlowScriptBlockSignature(blocks, block, call.name + "(" + args.join(", ") + ")", lineNumber);
@@ -2497,9 +2510,7 @@
 	
 		function buildNaturalFlowScriptReturn(expr, locals, lineNumber, nested) {
 			expr = stripFlowScriptSemicolon(String(expr || "").replace(/^return\b/, ""));
-			if (expr === "result" && !nested) {
-				return [];
-			}
+			
 			// A bare return is a return block without value: it leaves the Flow with the result written so far, as in
 			// JavaScript (lowered to a value, it answered the empty template "${}" as text). In the body of forEach or
 			// while, lowerLoopBareReturns makes it the next item, as return in a JavaScript forEach callback.
@@ -2519,11 +2530,8 @@
 						__flowScriptLine: lineNumber
 					};
 				});
-				// Inside a branch or a loop, return also leaves the Flow, as in JavaScript;
-				// the final return of the Flow is its end anyway.
-				if (true) {
-					assignments.push({ id: "return", block: "return", __flowScriptLine: lineNumber });
-				}
+				// Return always leaves the Flow, including when followed by another root statement.
+				assignments.push({ id: "return", block: "return", value: "${result}", __flowScriptLine: lineNumber });
 				return assignments;
 			}
 			return [{
@@ -3013,7 +3021,7 @@
 			(nodes || []).forEach(function (node, index) {
 				if (!node || typeof node !== "object") return;
 				if (node.__flowScriptBareReturn === true) {
-					nodes[index] = inLoop ? { id: "next", block: "next", __flowScriptLine: node.__flowScriptLine } : node;
+					nodes[index] = inLoop ? Object.assign({},node,{block:"next",props:{}}) : node;
 					delete node.__flowScriptBareReturn;
 					return;
 				}
@@ -3033,6 +3041,16 @@
 			}); }
 			visit(definition.nodes);
 			(definition.helpers || []).forEach(function (helper) { visit(helper.nodes); });
+			function reserveInline(value,line) {
+				if (!value || typeof value !== "object") return;
+				if (value.__flowBlock && value.metadata && value.metadata.id) {
+					var id=value.metadata.id;
+					if (used[id]) env.raise("FLOWSCRIPT_DUPLICATE_EXPLICIT_NAME","Duplicate explicit name " + id + " at line " + line);
+					used[id]=true;
+				}
+				Object.keys(value).forEach(function (key) { reserveInline(value[key],line); });
+			}
+			nodes.forEach(function (node) { reserveInline(node.props,node.__flowScriptLine); });
 			nodes.forEach(function (node) {
 				if (!node.__flowExplicitId) return;
 				if (used[node.id]) env.raise("FLOWSCRIPT_DUPLICATE_EXPLICIT_NAME", "Duplicate explicit name " + node.id + " at line " + node.__flowScriptLine);
@@ -3048,6 +3066,7 @@
 				node.__flowImplicitId = name;
 				if (!node.__flowExplicitId) node.id = name;
 				used[node.id] = true;
+				if (node.__flowExplicitId) node.__flowScriptExplicitName = true;
 				delete node.__flowExplicitId;
 			});
 			return definition;

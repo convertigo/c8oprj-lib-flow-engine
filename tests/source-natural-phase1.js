@@ -21,6 +21,7 @@ try {
   equal(run(after.code,input).result,run(text,input).result,'same execution');
   return after;
  }
+ round('  result.epoch = date.now()');
  var first=round('  result.answer = input.value + 1',{value:4});
  assert(first.code.indexOf('result.answer = input.value + 1')>=0 && first.code.indexOf('$$id')<0,'natural set');
  equal(first.definition.nodes[0].id,'answer','assignment name');
@@ -49,6 +50,21 @@ try {
  assert(JSON.stringify(trace).indexOf('"block":"comment"')<0,'comments absent from runtime');
  round('  if({ condition:true, $$then:function(){\n    // Inside slot\n    result.a = 1\n\n    // End of slot\n  } })');
  ['set({ $$disabled: true, path: "result.a", value: 1 })','set({ path: "result.a", value: 1, extra: 2 })'].slice(0,1).forEach(function(body){assert(round('  '+body).code.indexOf('set({')>=0,'fallback call');});
+ var inline = round('  local.names = list.map({ items: [" A "," B "], select: text.trim({ $$id: "clean", text: current }) })\n  result.names = local.names');
+ assert(inline.code.indexOf('select: text.trim({ $$id: "clean"')>=0,'inline property retains $$id');
+ equal(run(inline.code).result.names,['A','B'],'inline mapper execution');
+ var sessionA='function Session(){\n result.a = 1\n result.a = 2\n}';
+ var sessionSet=api('flowCodeSet',{name:'Session',code:sessionA});assert(sessionSet.ok,'session fixture');
+ var sessionPatch=api('flowCodePatch',{name:'Session',revision:sessionSet.revision,edits:[{oldText:' result.a = 1',newText:' result.a = 0\n result.a = 1'}]});assert(sessionPatch.ok,'insert above');
+ var sessionRun=api('flowCodeRun',{name:'Session',includeTrace:true});
+ var sessionTrace=JSON.stringify(sessionRun.trace || []);
+ assert(sessionTrace.indexOf('a3')>=0,'insert gets next counter: '+JSON.stringify(sessionRun));
+ var sessionPromote=api('flowCodePromote',{name:'Session',revision:sessionPatch.revision});assert(sessionPromote.ok,'session promote '+JSON.stringify(sessionPromote));
+ var sessionCode=api('flowCodeGet',{name:'Session'}).code;
+ assert(sessionCode.indexOf('a3:')<0,'implicit session name must not become a permanent label');
+ var sessionExplicit=api('flowCodeSet',{name:'Session',code:'function Session(){\n a3: result.explicit = 0\n result.a = 1\n result.a = 2\n}' });
+ assert(sessionExplicit.ok,'explicit names reserve old implicit names: '+JSON.stringify(sessionExplicit));
+ var explicitRun=api('flowCodeRun',{name:'Session',includeTrace:true});assert(explicitRun.ok,'reserved explicit executes');
  var raw='function Ownership(){\r\n  result.x=1   \r\n}';
  var saved=api('flowCodeSet',{name:'Ownership',code:raw}); assert(saved.ok,'set raw');
  equal(api('flowCodeGet',{name:'Ownership'}).code,raw,'draft is byte exact');

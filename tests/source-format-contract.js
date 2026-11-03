@@ -10,7 +10,7 @@ function assert(value, message) { checks++; if (!value) throw new Error(message)
 function equal(actual, expected, message) { assert(JSON.stringify(actual) === JSON.stringify(expected), message + ": " + JSON.stringify(actual)); }
 function stable(value) {
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
-  if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(function (key) {
+  if (value && typeof value === 'object') return '{' + Object.keys(value).filter(function(key){return key.indexOf("__flow")!==0;}).sort().map(function (key) {
     return JSON.stringify(key) + ':' + stable(value[key]);
   }).join(',') + '}';
   return JSON.stringify(value);
@@ -49,13 +49,13 @@ try {
   var before = validate(code);
   var written = write(before.source);
   var expectedCall = [
-    '  set({', '    $$id: "capture",', '    $$comment: "Keep",', '    $$disabled: false,',
+    '  // Keep', '  capture: set({', '    $$disabled: false,',
     '    path: "result.row",', '    value: {', '      z: 0,', '      a: false,',
     '      empty: "",', '      nil: null,', '      rows: [', '        {', '          id: 5,',
     '        },', '      ],', '      label: `Hi ${input.name}\\n  preserved`,', '    },', '  })'
   ].join("\n");
   assert(written.code.indexOf(expectedCall) !== -1, "Call layout changed:\n" + written.code);
-  equal(written.definition, before.definition, "AST changed");
+  equal(stable(written.definition), stable(before.definition), "AST changed");
   equal(run(written.code), run(code), "Runtime changed");
   equal(write(written.source).code, written.code, "Whole writer not idempotent");
   assert(written.code.slice(-1) === "\n" && written.code.indexOf("\r") === -1, "Expected LF and final newline");
@@ -68,7 +68,7 @@ try {
   equal(changedCode, written.code.replace("      z: 0,", "      z: 1,"), "One-property edit should change only one line");
   var slots = 'const _flow={sourceVersion:2};\nfunction FormatProof(){\nif({$$id:"choice",condition:true,$$then:function(){set({$$id:"yes",path:"result.ok",value:true})},$$else:function(){set({$$id:"no",path:"result.ok",value:false})}})\n}';
   var slotWritten = write(validate(slots).source);
-  assert(slotWritten.code.indexOf('    $$then: function () {\n      set({\n') !== -1, "Slot indentation");
+  assert(slotWritten.code.indexOf('choice: if (true) {\n    yes: result.ok = true') !== -1, "Slot indentation");
   equal(run(slotWritten.code), { ok: true }, "Trailing slot commas changed execution");
   equal(write(slotWritten.source).code, slotWritten.code, "Slots not stable");
   // Splitting a property at ':' must not trim/rejoin later ternary colons.

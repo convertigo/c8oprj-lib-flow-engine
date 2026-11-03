@@ -60,6 +60,7 @@ var start=engineSource.indexOf('function validateProjectResourceConfig('),end=en
 var validateConfig=eval('('+engineSource.substring(start,end).trim()+')');
 function projectDir(){return project;}
 function throwFlowError(options){var error=new Error(options.message);Object.keys(options).forEach(function(key){error[key]=options[key];});throw error;}
+function flowEngineClass(name){return Packages[name];}
 function sqlBlock(name){var text=read(new File(sourceRoot,'../../lib_flow_sql/_flow/blocks/sql/'+name+'.block.js'));return eval(text.substring(text.indexOf('(function')));}
 function loadBlocks(){return {'sql.configCheck':sqlBlock('configCheck'),'sql.jdbcCommands':sqlBlock('jdbcCommands')};}
 env.validateProjectConfig=validateConfig;
