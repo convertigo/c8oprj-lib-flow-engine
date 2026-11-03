@@ -44,6 +44,20 @@ const _meta = {
 			var value = sessionString(ctx.input(props));
 			ctx.convertigoContext().httpSession.setAttribute(String(ctx.template(props.key || "")), value);
 			return value;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					value = sessionString(ctx.input(p));
+				var context = ctx.convertigoContext();
+				var args = { key: String(ctx.template(p.key || "")), value: value };
+				Object.defineProperty(args, "context", { value: context });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				args.context.httpSession.setAttribute(args.key, args.value);
+				return args.value;
+			}
 		}
 	};
 }())

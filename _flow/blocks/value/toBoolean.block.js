@@ -48,5 +48,14 @@ const _meta = {
     if (typeof value === "string") return /^(?:true|1|yes|on)$/i.test(value.trim())
     return false
   }
-  return { run: function (ctx, node) { return convert(ctx.input({ value: ctx.props(node).value })) } }
+  return { run: function (ctx, node) { return convert(ctx.input({ value: ctx.props(node).value })) },
+		debug: {
+			resolve: function (ctx, node) {
+				return { value: ctx.input({ value: ctx.props(node).value }) };
+			},
+			run: function (ctx, node, args) {
+				return convert(args.value);
+			}
+		}
+	}
 }())

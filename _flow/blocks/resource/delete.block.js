@@ -44,6 +44,14 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			return ctx.resourceDelete(argsFrom(ctx.props(node)));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return argsFrom(ctx.props(node));
+			},
+			run: function (ctx, node, args) {
+				return ctx.resourceDelete(args);
+			}
 		}
 	};
 }())

@@ -76,4 +76,30 @@ const _meta = {
  Object.keys(p).forEach(function(k){ input[k]=ctx.template(p[k]); });
  if((input.format===undefined||input.format==='timestamp')&&!input.at)return Date.now();
  return ctx.callBlock('date.calendar',{operation:"now",input:input,defaults:{timeZone:ctx.read('config.date.timeZone'),locale:ctx.read('config.date.locale')}},{trace:false});
-} }; })()
+},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					input = {};
+				Object.keys(p).forEach(function (k) {
+					input[k] = ctx.template(p[k]);
+				});
+				var args = { input: input };
+				if (!((input.format === undefined || input.format === "timestamp") && !input.at))
+					args.defaults = {
+						timeZone: ctx.read("config.date.timeZone"),
+						locale: ctx.read("config.date.locale")
+					};
+				return args;
+			},
+			run: function (ctx, node, args) {
+				if ((args.input.format === undefined || args.input.format === "timestamp") && !args.input.at)
+					return Date.now();
+				return ctx.callBlock(
+					"date.calendar",
+					{ operation: "now", input: args.input, defaults: args.defaults },
+					{ trace: false }
+				);
+			}
+		}
+	}; })()

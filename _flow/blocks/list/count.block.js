@@ -42,4 +42,13 @@ const _meta = {
     "axiom",
   ],
 }
-(function () { return { run: function (ctx, node) { var items = ctx.expr(ctx.props(node).items) || []; return Number(items.length || 0) } } }())
+(function () { return { run: function (ctx, node) { var items = ctx.expr(ctx.props(node).items) || []; return Number(items.length || 0) },
+		debug: {
+			resolve: function (ctx, node) {
+				return { items: ctx.expr(ctx.props(node).items) || [] };
+			},
+			run: function (ctx, node, args) {
+				return Number(args.items.length || 0);
+			}
+		}
+	} }())

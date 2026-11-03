@@ -70,6 +70,14 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return objectValues(sourceValue(ctx, props.source));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return { source: sourceValue(ctx, ctx.props(node).source) };
+			},
+			run: function (ctx, node, args) {
+				return objectValues(args.source);
+			}
 		}
 	};
 }())

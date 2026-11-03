@@ -64,6 +64,18 @@ const _meta = {
       return ctx.input({ value: props.condition })
         ? Number(ctx.input({ value: props.whenTrue }))
         : Number(ctx.input({ value: props.whenFalse }))
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					args = { condition: !!ctx.input({ value: p.condition }) };
+				if (args.condition) args.whenTrue = Number(ctx.input({ value: p.whenTrue }));
+				else args.whenFalse = Number(ctx.input({ value: p.whenFalse }));
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return args.condition ? args.whenTrue : args.whenFalse;
+			}
+		}
+	}
 }())

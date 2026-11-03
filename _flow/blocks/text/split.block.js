@@ -100,6 +100,27 @@ const _meta = {
         }
       }
       return list;
-    }
-  };
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return {
+					text: text(ctx, p.text, ""),
+					separator: text(ctx, p.separator, ","),
+					trim: flag(ctx, p.trim),
+					removeEmpty: flag(ctx, p.removeEmpty)
+				};
+			},
+			run: function (ctx, node, args) {
+				if (args.text === "") return [];
+				var items = args.separator === "" ? [args.text] : args.text.split(args.separator),
+					list = [];
+				for (var i = 0; i < items.length; i++) {
+					var item = args.trim ? items[i].trim() : items[i];
+					if (!args.removeEmpty || item !== "") list.push(item);
+				}
+				return list;
+			}
+		}
+	};
 }())

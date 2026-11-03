@@ -88,6 +88,15 @@ const _meta = {
 				key: key,
 				value: readDirect(source, key)
 			};
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return { source: sourceValue(ctx, ctx.props(node).source) };
+			},
+			run: function (ctx, node, args) {
+				var key = firstKey(args.source);
+				return { key: key, value: readDirect(args.source, key) };
+			}
 		}
 	};
 }())

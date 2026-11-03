@@ -17,5 +17,18 @@ const _meta = {
   return {run: function (ctx, node) {
     var props = ctx.props(node);
     return ctx.collections.declare(props.path, {type: "object", additionalProperties: props.valueType}, {});
-  }};
+  },
+		debug: {
+			resolve: function (ctx, node) {
+				return ctx.props(node);
+			},
+			run: function (ctx, node, args) {
+				return ctx.collections.declare(
+					args.path,
+					{ type: "object", additionalProperties: args.valueType },
+					{}
+				);
+			}
+		}
+	};
 }())

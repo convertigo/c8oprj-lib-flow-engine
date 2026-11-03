@@ -58,6 +58,17 @@ const _meta = {
 			var props = ctx.props(node);
 			var value = node.nodes && node.nodes.length ? ctx.runNodes(node.nodes) : ctx.input(props);
 			return ctx.collections.append(props.path, value);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var args = { path: ctx.props(node).path };
+				if (!(node.nodes && node.nodes.length)) args.value = ctx.input(ctx.props(node));
+				return args;
+			},
+			run: function (ctx, node, args) {
+				if (node.nodes && node.nodes.length) args.value = ctx.runNodes(node.nodes);
+				return ctx.collections.append(args.path, args.value);
+			}
 		}
 	};
 }())

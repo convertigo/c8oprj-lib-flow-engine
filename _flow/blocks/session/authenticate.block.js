@@ -42,6 +42,20 @@ const _meta = {
 			}
 			context.removeAuthenticatedUser();
 			return null;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return { user: String(ctx.template(ctx.props(node).user || "")).trim() };
+			},
+			run: function (ctx, node, args) {
+				var context = ctx.convertigoContext();
+				if (args.user) {
+					context.setAuthenticatedUser(args.user);
+					return String(context.getAuthenticatedUser() || args.user);
+				}
+				context.removeAuthenticatedUser();
+				return null;
+			}
 		}
 	};
 }())

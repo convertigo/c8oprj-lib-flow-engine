@@ -33,6 +33,14 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.template(props.template || "");
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return { template: ctx.template(ctx.props(node).template || "") };
+			},
+			run: function (ctx, node, args) {
+				return args.template;
+			}
 		}
 	};
 }())

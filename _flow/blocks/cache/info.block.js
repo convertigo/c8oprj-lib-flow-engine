@@ -49,6 +49,17 @@ const _meta = {
 			var info = ctx.cacheInfo();
 			ctx.write(ctx.outputPath(node) || "local.cache", info);
 			return info;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return {};
+			},
+			run: function (ctx, node) {
+				var props = ctx.props(node);
+				var info = ctx.cacheInfo();
+				ctx.write(ctx.outputPath(node) || "local.cache", info);
+				return info;
+			}
 		}
 	};
 }())

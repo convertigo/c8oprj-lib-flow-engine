@@ -46,6 +46,14 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.blockDuplicate(props.fromName, props.toName, bool(props.overwrite), props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return ctx.props(node);
+			},
+			run: function (ctx, node, args) {
+				return ctx.blockDuplicate(args.fromName, args.toName, bool(args.overwrite), args);
+			}
 		}
 	};
 }())

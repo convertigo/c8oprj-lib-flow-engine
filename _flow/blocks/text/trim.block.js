@@ -48,6 +48,14 @@ const _meta = {
       var props = ctx.props(node)
       var value = ctx.input({ value: props.text })
       return value === undefined || value === null ? "" : String(value).trim()
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				return { text: ctx.input({ value: ctx.props(node).text }) };
+			},
+			run: function (ctx, node, args) {
+				return args.text === undefined || args.text === null ? "" : String(args.text).trim();
+			}
+		}
+	}
 }())

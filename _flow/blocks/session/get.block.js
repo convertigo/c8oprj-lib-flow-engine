@@ -45,6 +45,25 @@ const _meta = {
 				return props["default"] === undefined ? null : ctx.input({ value: props["default"] });
 			}
 			return String(value);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					session = ctx.convertigoContext().httpSession,
+					args = { key: String(ctx.template(p.key || "")) };
+				Object.defineProperty(args, "session", { value: session });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var value = args.session.getAttribute(args.key);
+				if (value === null || value === undefined) {
+					var p = ctx.props(node);
+					if (p["default"] === undefined) return null;
+					args["default"] = ctx.input({ value: p["default"] });
+					return args["default"];
+				}
+				return String(value);
+			}
 		}
 	};
 }())

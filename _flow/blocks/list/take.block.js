@@ -86,6 +86,28 @@ const _meta = {
 				out.push(items[i]);
 			}
 			return out;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					items = ctx.expr(p.items || p["in"]) || [];
+				var offset = Math.max(0, numberOr(p.offset === undefined ? 0 : ctx.expr(p.offset), 0));
+				var hasCount = p.count !== undefined && p.count !== null && String(p.count).trim() !== "";
+				return {
+					items: items,
+					offset: offset,
+					count: hasCount
+						? Math.max(0, numberOr(ctx.expr(p.count), 0))
+						: Number.MAX_SAFE_INTEGER || 9007199254740991
+				};
+			},
+			run: function (ctx, node, args) {
+				if (args.items.slice) return args.items.slice(args.offset, args.offset + args.count);
+				var out = [];
+				for (var i = args.offset; i < args.items.length && out.length < args.count; i++)
+					out.push(args.items[i]);
+				return out;
+			}
 		}
 	};
 }())

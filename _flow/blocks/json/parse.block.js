@@ -51,6 +51,14 @@ const _meta = {
 				return text;
 			}
 			return JSON.parse(text);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return { text: ctx.template(ctx.props(node).text) };
+			},
+			run: function (ctx, node, args) {
+				return typeof args.text !== "string" ? args.text : JSON.parse(args.text);
+			}
 		}
 	};
 }())

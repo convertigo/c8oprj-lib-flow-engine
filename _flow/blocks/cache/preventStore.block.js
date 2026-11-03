@@ -24,6 +24,15 @@ const _meta = {
 		run: function (ctx) {
 			ctx.convertigoContext().isCacheEnabled = false;
 			return false;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return {};
+			},
+			run: function (ctx) {
+				ctx.convertigoContext().isCacheEnabled = false;
+				return false;
+			}
 		}
 	};
 }())

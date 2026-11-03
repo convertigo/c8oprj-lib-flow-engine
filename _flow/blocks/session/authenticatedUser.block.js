@@ -28,6 +28,15 @@ const _meta = {
 		run: function (ctx) {
 			var user = ctx.convertigoContext().getAuthenticatedUser();
 			return user === null || user === undefined || String(user) === "" ? null : String(user);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return {};
+			},
+			run: function (ctx) {
+				var user = ctx.convertigoContext().getAuthenticatedUser();
+				return user === null || user === undefined || String(user) === "" ? null : String(user);
+			}
 		}
 	};
 }())

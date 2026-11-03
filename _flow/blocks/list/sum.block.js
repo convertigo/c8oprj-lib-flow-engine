@@ -56,6 +56,19 @@ const _meta = {
         }
       }
       return total;
-    }
-  };
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				return { items: ctx.expr(ctx.props(node).items) || [] };
+			},
+			run: function (ctx, node, args) {
+				var total = 0;
+				for (var i = 0; i < args.items.length; i++) {
+					var value = Number(args.items[i]);
+					if (!isNaN(value)) total += value;
+				}
+				return total;
+			}
+		}
+	};
 }())

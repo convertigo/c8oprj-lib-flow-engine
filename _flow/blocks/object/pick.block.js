@@ -81,6 +81,23 @@ const _meta = {
 				}
 			});
 			return out;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return {
+					source: typeof p.source === "string" ? ctx.expr(p.source) : ctx.template(p.source),
+					keys: keys(p.keys)
+				};
+			},
+			run: function (ctx, node, args) {
+				var out = {};
+				args.keys.forEach(function (path) {
+					var value = ctx.readObjectPath(args.source, path);
+					if (value !== undefined) out[outputKey(path)] = value;
+				});
+				return out;
+			}
 		}
 	};
 }())

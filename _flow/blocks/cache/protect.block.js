@@ -35,6 +35,19 @@ const _meta = {
 				ctx.convertigoContext().isCacheEnabled = false;
 				throw error;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return {};
+			},
+			run: function (ctx, node) {
+				try {
+					return ctx.runNodes(node.nodes || []);
+				} catch (error) {
+					ctx.convertigoContext().isCacheEnabled = false;
+					throw error;
+				}
+			}
 		}
 	};
 }())

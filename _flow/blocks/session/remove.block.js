@@ -32,6 +32,19 @@ const _meta = {
 			var existed = session.getAttribute(key) !== null;
 			session.removeAttribute(key);
 			return existed;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var session = ctx.convertigoContext().httpSession,
+					args = { key: String(ctx.template(ctx.props(node).key || "")) };
+				Object.defineProperty(args, "session", { value: session });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var existed = args.session.getAttribute(args.key) !== null;
+				args.session.removeAttribute(args.key);
+				return existed;
+			}
 		}
 	};
 }())

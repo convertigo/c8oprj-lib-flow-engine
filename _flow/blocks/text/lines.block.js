@@ -109,6 +109,29 @@ const _meta = {
         lines.push(line)
       }
       return lines
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return {
+					text: text(ctx, p.text || p.value || p.source),
+					trim: bool(ctx, p.trim, true),
+					skipEmpty: bool(ctx, p.skipEmpty, true)
+				};
+			},
+			run: function (ctx, node, args) {
+				var raw = String(args.text || "")
+						.replace(/\r\n/g, "\n")
+						.replace(/\r/g, "\n")
+						.split("\n"),
+					lines = [];
+				for (var i = 0; i < raw.length; i++) {
+					var line = args.trim ? raw[i].trim() : raw[i];
+					if (args.skipEmpty && line.length === 0) continue;
+					lines.push(line);
+				}
+				return lines;
+			}
+		}
+	}
 }())

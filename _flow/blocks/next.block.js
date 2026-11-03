@@ -20,6 +20,27 @@ const _meta = {
 			}
 			ctx.skipping = true;
 			ctx.stopped = true;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return {};
+			},
+			run: function (ctx, node) {
+				// forEach, while and file.forEachLine count the bodies they run and clear the skip after each item.
+				if (!(ctx.loopDepth > 0)) {
+					ctx.throwFlow(
+						{
+							code: "FLOW_NEXT_OUTSIDE_LOOP",
+							message:
+								"next (a bare return in a loop body) runs only in the body of forEach, while or file.forEachLine.",
+							status: 500
+						},
+						node
+					);
+				}
+				ctx.skipping = true;
+				ctx.stopped = true;
+			}
 		}
 	};
 }())

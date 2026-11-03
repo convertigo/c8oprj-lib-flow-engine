@@ -58,6 +58,15 @@ const _meta = {
 			var props = ctx.props(node);
 			var source = ctx.expr(props.source);
 			return ctx.readObjectPath(source, props.path);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { source: ctx.expr(p.source), path: p.path };
+			},
+			run: function (ctx, node, args) {
+				return ctx.readObjectPath(args.source, args.path);
+			}
 		}
 	};
 }())

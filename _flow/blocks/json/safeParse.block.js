@@ -102,6 +102,24 @@ const _meta = {
         var suffix = bool(ctx, props.truncated, false) ? " because input was truncated" : ""
         return { ok: false, value: {}, error: prefix + suffix + ": " + String(error) }
       }
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return {
+					text: String(ctx.template(p.text || "")),
+					errorPrefix: String(ctx.template(p.errorPrefix || "JSON parse failed"))
+				};
+			},
+			run: function (ctx, node, args) {
+				try {
+					return { ok: true, value: plain(JSON.parse(args.text)), error: "" };
+				} catch (error) {
+					args.truncated = bool(ctx, ctx.props(node).truncated, false);
+					var suffix = args.truncated ? " because input was truncated" : "";
+					return { ok: false, value: {}, error: args.errorPrefix + suffix + ": " + String(error) };
+				}
+			}
+		}
+	}
 }())

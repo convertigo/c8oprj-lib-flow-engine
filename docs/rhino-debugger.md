@@ -23,9 +23,13 @@ return helpers.debug ? helpers.debug(runner,
   function(ctx, node, args) { return write(ctx, args.value); }) : runner;
 ```
 
-The original runner remains the ordinary path. A native implementation without a prepared runner can export `debug: {resolve,run}` beside `run`. These are shared **functions**, never shared argument values. Typed FlowScript graph blocks already use their existing property resolver and consume its captured result.
+The original runner remains the ordinary path. A native implementation without a prepared runner can export `debug: {resolve,run}` beside `run`. The contracts contain **functions**, never captured argument values; each resolution result belongs to its activation. Typed FlowScript graph blocks already use their existing property resolver and consume its captured result.
 
-Current explicit core contracts cover `set`, `if`, `return`, `json.put`, `json.stringify`, `try`, `object.get`, `text.match`, `while`, `forEach`, `flow.call` and `throw`. While consumes its first captured condition once, then evaluates the condition at each subsequent iteration. Its clock begins at execution, while the enclosing request's timeout also applies during pauses. Other native implementations remain debuggable at boundaries, but their arguments are explicitly labeled **Arguments (source)** until they provide this contract. Do not advertise those source expressions as resolved values.
+Current explicit core contracts cover 103 of the 176 built-in Rhino implementations, as well as typed FlowScript graph blocks. The reviewed set includes the prepared control blocks, arithmetic/comparisons, text and value conversion, basic list/JSON/object operations, date wrappers, rows, session operations and literal authoring commands. Ordinary `run` functions are unchanged. The remaining native blocks still display **Arguments (source)** until their own contracts are qualified; do not advertise those source expressions as resolved values.
+
+Capture preserves evaluation order and laziness. For example, `number.choose` resolves only the chosen arm; `list.first`/`list.last` resolve their fallback only for an empty list; `session.get` reads its default only after a missing attribute; `json.safeParse` resolves the truncation flag only after a parse error. A child-produced value is captured when that child actually returns, rather than executing the child before the parent's breakpoint. While consumes its first captured condition once, then evaluates the condition at each subsequent iteration. Its clock begins at execution, while the enclosing request's timeout also applies during pauses.
+
+The ordinary runner has no new resolver call. Contract metadata is part of implementation preparation/instantiation, not the hot runner body; this does not by itself prove zero cold-start or allocation cost for instance factories. Keep that qualification separate from the detached boundary indicator benchmark.
 
 ## Level 2: Rhino sources, Studio only
 

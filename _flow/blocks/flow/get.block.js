@@ -36,6 +36,14 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.flowGet(props.name || props.flowName || prop(node, "name"), props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return ctx.props(node);
+			},
+			run: function (ctx, node, args) {
+				return ctx.flowGet(args.name || args.flowName || prop(node, "name"), args);
+			}
 		}
 	};
 }())

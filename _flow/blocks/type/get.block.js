@@ -30,6 +30,14 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.typeGet(props.name, props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return ctx.props(node);
+			},
+			run: function (ctx, node, args) {
+				return ctx.typeGet(args.name, args);
+			}
 		}
 	};
 }())

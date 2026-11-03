@@ -37,6 +37,15 @@ const _meta = {
 				allowLarge: props.allowLarge !== false
 			});
 			return resource.content || "";
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { path: String(ctx.template(p.path || "") || ""), allowLarge: p.allowLarge !== false };
+			},
+			run: function (ctx, node, args) {
+				return ctx.resourceGet(args).content || "";
+			}
 		}
 	};
 }())

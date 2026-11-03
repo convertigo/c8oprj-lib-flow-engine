@@ -108,5 +108,23 @@ const _meta = {
     var props=ctx.props(node), input={};
     Object.keys(props).forEach(function(k) { input[k]=k === "rows" ? ctx.expr(props[k]) : ctx.template(props[k]); });
     return ctx.lib("rows").select(input, {canContinue:function(){ return ctx.canContinue(); }});
-  }};
+  },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					args = {};
+				Object.keys(p).forEach(function (k) {
+					args[k] = k === "rows" ? ctx.expr(p[k]) : ctx.template(p[k]);
+				});
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return ctx.lib("rows").select(args, {
+					canContinue: function () {
+						return ctx.canContinue();
+					}
+				});
+			}
+		}
+	};
 }())

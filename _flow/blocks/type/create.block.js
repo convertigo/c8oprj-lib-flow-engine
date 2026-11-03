@@ -49,6 +49,19 @@ const _meta = {
 				descriptorSource: props.descriptorSource || "",
 				projectDir: props.projectDir
 			}, bool(props.overwrite), props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return ctx.props(node);
+			},
+			run: function (ctx, node, args) {
+				return ctx.typeCreate(
+					args.name,
+					{ descriptorSource: args.descriptorSource || "", projectDir: args.projectDir },
+					bool(args.overwrite),
+					args
+				);
+			}
 		}
 	};
 }())

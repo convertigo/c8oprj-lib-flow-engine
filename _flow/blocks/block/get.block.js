@@ -44,6 +44,14 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.blockGet(props.name, props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return ctx.props(node);
+			},
+			run: function (ctx, node, args) {
+				return ctx.blockGet(args.name, args);
+			}
 		}
 	};
 }())

@@ -52,6 +52,14 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			return ctx.blockCreate(props.name, props, bool(props.overwrite), props);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return ctx.props(node);
+			},
+			run: function (ctx, node, args) {
+				return ctx.blockCreate(args.name, args, bool(args.overwrite), args);
+			}
 		}
 	};
 }())

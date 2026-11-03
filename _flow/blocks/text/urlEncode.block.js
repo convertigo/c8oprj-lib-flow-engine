@@ -33,6 +33,16 @@ const _meta = {
 			var rendered = props.text === undefined || props.text === null ? "" : ctx.template(props.text);
 			var text = rendered === undefined || rendered === null ? "" : String(rendered);
 			return encodeURIComponent(text);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					rendered = p.text === undefined || p.text === null ? "" : ctx.template(p.text);
+				return { text: rendered === undefined || rendered === null ? "" : String(rendered) };
+			},
+			run: function (ctx, node, args) {
+				return encodeURIComponent(args.text);
+			}
 		}
 	};
 }())

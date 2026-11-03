@@ -131,6 +131,21 @@ const _meta = {
         booleanValue(ctx, props.all, true),
         booleanValue(ctx, props.caseSensitive, true)
       );
-    }
-  };
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return {
+					text: stringValue(ctx, p.text),
+					search: stringValue(ctx, p.search),
+					replacement: stringValue(ctx, p.replacement),
+					all: booleanValue(ctx, p.all, true),
+					caseSensitive: booleanValue(ctx, p.caseSensitive, true)
+				};
+			},
+			run: function (ctx, node, args) {
+				return replaceLiteral(args.text, args.search, args.replacement, args.all, args.caseSensitive);
+			}
+		}
+	};
 }())

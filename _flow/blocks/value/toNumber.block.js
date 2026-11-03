@@ -55,5 +55,18 @@ const _meta = {
     var number = Number(ctx.input({ value: props.value }))
     var fallback = Number(ctx.input({ value: props.fallback }))
     return isFinite(number) ? number : (isFinite(fallback) ? fallback : 0)
-  } }
+  },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return {
+					value: Number(ctx.input({ value: p.value })),
+					fallback: Number(ctx.input({ value: p.fallback }))
+				};
+			},
+			run: function (ctx, node, args) {
+				return isFinite(args.value) ? args.value : isFinite(args.fallback) ? args.fallback : 0;
+			}
+		}
+	}
 }())

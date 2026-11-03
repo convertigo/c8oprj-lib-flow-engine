@@ -48,4 +48,25 @@ const _meta = {
  var p=ctx.props(node),input={};
  Object.keys(p).forEach(function(k){ input[k]=ctx.template(p[k]); });
  return ctx.callBlock('date.calendar',{operation:"parse",input:input,defaults:{timeZone:ctx.read('config.date.timeZone'),locale:ctx.read('config.date.locale')}},{trace:false});
-} }; })()
+},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					input = {};
+				Object.keys(p).forEach(function (k) {
+					input[k] = ctx.template(p[k]);
+				});
+				return {
+					input: input,
+					defaults: { timeZone: ctx.read("config.date.timeZone"), locale: ctx.read("config.date.locale") }
+				};
+			},
+			run: function (ctx, node, args) {
+				return ctx.callBlock(
+					"date.calendar",
+					{ operation: "parse", input: args.input, defaults: args.defaults },
+					{ trace: false }
+				);
+			}
+		}
+	}; })()

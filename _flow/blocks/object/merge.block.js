@@ -73,6 +73,22 @@ const _meta = {
 			copy(out, objectValue(ctx, props.target));
 			copy(out, objectValue(ctx, props.source));
 			return out;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					target = objectValue(ctx, p.target),
+					out = {};
+				copy(out, target);
+				var args = { target: target, source: objectValue(ctx, p.source) };
+				Object.defineProperty(args, "targetCopy", { value: out });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var out = args.targetCopy;
+				copy(out, args.source);
+				return out;
+			}
 		}
 	};
 }())

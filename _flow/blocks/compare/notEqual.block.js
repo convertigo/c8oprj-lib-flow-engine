@@ -46,4 +46,14 @@ const _meta = {
     "axiom",
   ],
 }
-(function () { return { run: function (ctx, node) { var p = ctx.props(node); return ctx.input({ value: p.left }) !== ctx.input({ value: p.right }) } } }())
+(function () { return { run: function (ctx, node) { var p = ctx.props(node); return ctx.input({ value: p.left }) !== ctx.input({ value: p.right }) },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { left: ctx.input({ value: p.left }), right: ctx.input({ value: p.right }) };
+			},
+			run: function (ctx, node, args) {
+				return args.left !== args.right;
+			}
+		}
+	} }())

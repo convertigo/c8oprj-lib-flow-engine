@@ -55,6 +55,15 @@ const _meta = {
     run: function (ctx, node) {
       var props = ctx.props(node)
       return Number(ctx.input({ value: props.left })) + Number(ctx.input({ value: props.right }))
-    }
-  }
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node);
+				return { left: Number(ctx.input({ value: p.left })), right: Number(ctx.input({ value: p.right })) };
+			},
+			run: function (ctx, node, args) {
+				return args.left + args.right;
+			}
+		}
+	}
 }())
