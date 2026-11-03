@@ -81,7 +81,7 @@
 			participant = debugPlan({ definition: ctx.definition, blocks: ctx.blocks }, ctx.request);
 			ctx.blockDebugParticipant = participant || null;
 		}
-		return participant ? participant.before(ctx, node) : null;
+		return participant ? participant.enter(ctx, node) : null;
 	}
 
 	function debugSourceUrl(file) {
@@ -120,6 +120,8 @@
 		var source = readSourceFile(file);
 		if (rhino.inline) source = String(extractFlowScriptBlockMeta(source).code);
 		var adapter = Object.create(block);
+		// Source-level debugging must keep the private Rhino call boundary, never a shared contract.
+		Object.defineProperty(adapter, "debugContract", { value: null });
 		function state(ctx) {
 			var instances = ctx.debugImplementationInstances || (ctx.debugImplementationInstances = new Map());
 			var value = instances.get(block);

@@ -48,17 +48,19 @@ const _meta = {
 }
 
 (function () {
-	return {
-		stateless: true,
-		run: function (ctx, node) {
-			var props = ctx.props(node);
-			return ctx.throwFlow({
+	function argumentsFor(ctx,node) {
+		var props=ctx.props(node);
+		return {
 				code: props.code || "FLOW_THROW",
 				message: ctx.template(props.message || "Flow error"),
 				status: props.status === undefined ? undefined : ctx.expr(props.status),
 				details: props.details === undefined ? undefined : ctx.template(props.details),
 				hint: ctx.template(props.hint)
-			}, node);
-		}
+			};
+	}
+	return {
+		stateless:true,
+		debug: {resolve:argumentsFor,run:function(ctx,node,args){return ctx.throwFlow(args,node);}},
+		run:function(ctx,node){return ctx.throwFlow(argumentsFor(ctx,node),node);}
 	};
 }())

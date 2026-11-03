@@ -26,9 +26,10 @@ const _meta = {
 		stateless: true,
 		prepareNode: function (node, helpers) {
 			var resolve = helpers.props.value !== undefined ? helpers.compileValue(helpers.props.value) : null;
-			return function (ctx) {
-				return ctx.returnValue(resolve ? resolve(ctx) : ctx.read("result"));
-			};
+			var runner = function (ctx) { return ctx.returnValue(resolve ? resolve(ctx) : ctx.read("result")); };
+			return helpers.debug ? helpers.debug(runner,
+				function (ctx) { return { value: resolve ? resolve(ctx) : ctx.read("result") }; },
+				function (ctx, _node, args) { return ctx.returnValue(args.value); }) : runner;
 		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);

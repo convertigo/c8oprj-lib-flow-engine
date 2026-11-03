@@ -1147,6 +1147,11 @@
 			}
 			var runner = block.prepareNode(node, {
 				props: props,
+				// Metadata only, built before publication; the ordinary runner remains exactly the same function.
+				debug: blockDebugSignal ? function (runner, resolveArguments, runResolved) {
+					Object.defineProperty(runner, "debug", { value: { resolve: resolveArguments, run: runResolved } });
+					return runner;
+				} : null,
 				compileExpression: compileExpression,
 				compileWrite: compileWriteScopePath,
 				compileValue: function (value) {
@@ -1188,11 +1193,18 @@
 		// Called only after the live indicator is true, outside resolution/preparation and shared builders.
 		function invokeDebugBlock(ctx, node, block, runner) {
 			var activation = beforeDebugBlock(ctx, node);
+			if (!activation) return runner ? runner(ctx, node) : block.run(ctx, node);
 			try {
-				var result = runner ? runner(ctx, node) : block.run(ctx, node);
-				if (activation) activation.after(result);
+				var contract = runner && runner.debug || block && (typeof block.debugContract === "function" ? block.debugContract(ctx, node) : block.debug);
+				var args = contract ? contract.resolve(ctx, node) : null;
+				if (activation.before) activation.before(args);
+				var result = contract ? contract.run(ctx, node, args) : runner ? runner(ctx, node) : block.run(ctx, node);
+				activation.after(result);
 				return result;
-			} finally { if (activation) activation.leave(); }
+			} catch (error) {
+				if (activation.failed) activation.failed(error);
+				throw error;
+			} finally { activation.leave(); }
 		}
 
 		function prepareNodeExecutor(node, block, name, out, writer, runner) {

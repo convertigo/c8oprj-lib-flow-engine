@@ -52,10 +52,13 @@ const _meta = {
 		stateless: true,
 		prepareNode: function (node, helpers) {
 			var condition = helpers.compileExpression(helpers.props.condition);
-			return function (ctx, runNode) {
+			var runner = function (ctx, runNode) {
 				var ok = !!condition(ctx);
 				return ctx.runNodes(ok ? (runNode.then || []) : (runNode["else"] || []));
 			};
+			return helpers.debug ? helpers.debug(runner,
+				function (ctx) { return { condition: !!condition(ctx) }; },
+				function (ctx, runNode, args) { return ctx.runNodes(args.condition ? (runNode.then || []) : (runNode["else"] || [])); }) : runner;
 		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);

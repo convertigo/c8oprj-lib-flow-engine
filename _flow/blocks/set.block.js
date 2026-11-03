@@ -45,9 +45,10 @@ const _meta = {
 		prepareNode: function (node, helpers) {
 			var write = helpers.compileWrite(helpers.props.path);
 			var resolve = helpers.props.value !== undefined ? helpers.compileValue(helpers.props.value) : null;
-			return function (ctx) {
-				return write(ctx, resolve ? resolve(ctx) : undefined);
-			};
+			var runner = function (ctx) { return write(ctx, resolve ? resolve(ctx) : undefined); };
+			return helpers.debug ? helpers.debug(runner,
+				function (ctx) { return { path: helpers.props.path, value: resolve ? resolve(ctx) : undefined }; },
+				function (ctx, _node, args) { return write(ctx, args.value); }) : runner;
 		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);

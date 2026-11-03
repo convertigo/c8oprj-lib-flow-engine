@@ -17,7 +17,10 @@ const _meta = {
 (function () {
   return {prepareNode: function (node, helpers) {
     var path = helpers.props.path, key = helpers.compileValue(helpers.props.key), value = helpers.compileValue(helpers.props.value);
-    return function (ctx) { return ctx.collections.put(path, key(ctx), value(ctx)); };
+    var runner = function (ctx) { return ctx.collections.put(path, key(ctx), value(ctx)); };
+    return helpers.debug ? helpers.debug(runner,
+      function (ctx) { return { path:path, key:key(ctx), value:value(ctx) }; },
+      function (ctx,_node,args) { return ctx.collections.put(path,args.key,args.value); }) : runner;
   }, run: function (ctx, node) {
     var props = ctx.props(node);
     return ctx.collections.put(props.path, ctx.template(props.key), ctx.input(props));

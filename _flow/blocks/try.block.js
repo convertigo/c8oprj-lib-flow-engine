@@ -73,9 +73,10 @@ const _meta = {
 		stateless: true,
 		prepareNode: function (node, helpers) {
 			var errorPath = helpers.props.error || "local.error";
-			return function (ctx, runNode) {
-				return runTry(ctx, runNode, errorPath);
-			};
+			var runner = function (ctx, runNode) { return runTry(ctx, runNode, errorPath); };
+			return helpers.debug ? helpers.debug(runner,
+				function () { return { error:errorPath }; },
+				function (ctx,runNode,args) { return runTry(ctx,runNode,args.error); }) : runner;
 		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);

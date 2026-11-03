@@ -47,11 +47,7 @@ const _meta = {
 		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
 	}
 
-	return {
-		stateless: true,
-		run: function (ctx, node) {
-			var props = ctx.props(node);
-			var items = ctx.expr(props.items || props["in"]) || [];
+	function runItems(ctx, node, items) {
 			var previousCurrent = ctx.scopes.current;
 			try {
 				for (var i = 0; i < items.length; i++) {
@@ -65,6 +61,17 @@ const _meta = {
 				ctx.scopes.current = previousCurrent;
 			}
 			return items;
+	}
+	function argumentsFor(ctx, node) {
+		var props = ctx.props(node);
+		return { items: ctx.expr(props.items || props["in"]) || [] };
+	}
+	return {
+		stateless: true,
+		debug: { resolve: argumentsFor, run: function(ctx,node,args) { return runItems(ctx,node,args.items); } },
+		run: function(ctx,node) {
+			var props = ctx.props(node);
+			return runItems(ctx,node,ctx.expr(props.items || props["in"]) || []);
 		}
 	};
 }())

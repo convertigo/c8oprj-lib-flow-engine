@@ -307,7 +307,7 @@
 		};
 	}
 
-	function runGraphBlock(ctx, node, block, prepared) {
+	function runGraphBlock(ctx, node, block, prepared, capturedProps) {
 		var profiled = !!ctx.profile;
 		var totalStarted = profiled ? nanoTime() : 0;
 		profileCount(ctx, "graphBlockCalls");
@@ -348,7 +348,9 @@
 		var resolvedProps;
 		var bindings = ctx.allocationTrace ? ctx.allocationTrace.open("runtime", "input-bindings", graphName) : null;
 		try {
-		if (prepared) {
+		if (capturedProps !== undefined) {
+			resolvedProps = capturedProps;
+		} else if (prepared) {
 			profileCount(ctx, "graphBlockPreparedRunnerHits");
 			resolvedProps = prepared.resolveProps(ctx);
 		} else {
@@ -457,6 +459,15 @@
 			}
 			analyzeGraphBlockDescriptor(ctx, node, this.__graphRuntimeCatalog);
 		},
+		debugContract: function (ctx, node) {
+			if (this.__graphRhino) return implementationFor(ctx, this).debug || null;
+			if (!this.__graphDefinition) return null;
+			var block = this, catalog = block.__graphRuntimeCatalog || blockCatalog(block);
+			return {
+				resolve: function (ctx) { return resolveGraphBlockProps(ctx, node, catalog); },
+				run: function (ctx, runNode, args) { return runGraphBlock(ctx, runNode, block, null, args); }
+			};
+		},
 		run: function (ctx, node) {
 			var rhino = this.__graphRhino;
 			if (rhino) {
@@ -487,9 +498,9 @@
 			}
 			var block = this;
 			var prepared = prepareGraphBlock(node, block, helpers && helpers.props);
-			return function (ctx) {
-				return runGraphBlock(ctx, node, block, prepared);
-			};
+			var runner = function (ctx) { return runGraphBlock(ctx, node, block, prepared); };
+			return helpers && helpers.debug ? helpers.debug(runner, prepared.resolveProps,
+				function (ctx, runNode, args) { return runGraphBlock(ctx, runNode, block, prepared, args); }) : runner;
 		}
 	};
 

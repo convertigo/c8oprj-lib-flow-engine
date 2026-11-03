@@ -51,18 +51,29 @@ const _meta = {
 (function () {
   // the clock, from the engine (flowEngineClass, kept for the runtime), not looked up through the Packages of each call
   var System = typeof flowEngineClass === "function" ? flowEngineClass("java.lang.System") : Packages["java.lang.System"];
-  function execute(ctx, node, condition) {
+  function bounded(ctx,node,props,key,fallback,maximum) {
+    var raw=props[key]===undefined ? fallback : ctx.template(props[key]);
+    var value=Number(raw);
+    if ((typeof raw!=="number" && typeof raw!=="string") || !isFinite(value) || Math.floor(value)!==value || value<1 || value>maximum)
+      ctx.throwFlow({code:"WHILE_LIMIT_INVALID",message:"while "+key+" must be an integer from 1 to "+maximum+".",status:400},node);
+    return value;
+  }
+  function capture(ctx,node,condition) {
+    var props=ctx.props(node);
+    var args={maxIterations:bounded(ctx,node,props,"maxIterations",1000,1000000),timeoutMs:bounded(ctx,node,props,"timeoutMs",60000,600000)};
+    args.condition=!!condition(ctx);args.iteration=0;return args;
+  }
+  function executeCaptured(ctx,node,args,condition) {
+    var first=true;
+    return execute(ctx,node,function(ctx){
+      if(first){first=false;return args.condition;}
+      args.iteration++;args.condition=!!condition(ctx);return args.condition;
+    },args);
+  }
+  function execute(ctx, node, condition, captured) {
     var props = ctx.props(node);
-    function bounded(key, fallback, maximum) {
-      var raw = props[key] === undefined ? fallback : ctx.template(props[key]);
-      var value = Number(raw);
-      if ((typeof raw !== "number" && typeof raw !== "string") || !isFinite(value) || Math.floor(value) !== value || value < 1 || value > maximum) {
-        ctx.throwFlow({code: "WHILE_LIMIT_INVALID", message: "while " + key + " must be an integer from 1 to " + maximum + ".", status: 400}, node);
-      }
-      return value;
-    }
-    var limit = bounded("maxIterations", 1000, 1000000);
-    var timeout = bounded("timeoutMs", 60000, 600000);
+    var limit = captured ? captured.maxIterations : bounded(ctx, node, props, "maxIterations", 1000, 1000000);
+    var timeout = captured ? captured.timeoutMs : bounded(ctx, node, props, "timeoutMs", 60000, 600000);
     var started = System.nanoTime(), iterations = 0;
     for (;;) {
       if (!ctx.canContinue()) ctx.throwFlow({code: "FLOW_EXECUTION_CANCELLED", message: "Loop execution cancelled.", status: 499}, node);
@@ -84,7 +95,10 @@ const _meta = {
     stateless: true,
     prepareNode: function (node, helpers) {
       var condition = helpers.compileExpression(helpers.props.condition);
-      return function (ctx, runNode) { return execute(ctx, runNode, condition); };
+      var runner=function (ctx, runNode) { return execute(ctx, runNode, condition); };
+      return helpers.debug ? helpers.debug(runner,
+        function(ctx){return capture(ctx,node,condition);},
+        function(ctx,runNode,args){return executeCaptured(ctx,runNode,args,condition);}) : runner;
     },
     run: function (ctx, node) {
       var props = ctx.props(node);

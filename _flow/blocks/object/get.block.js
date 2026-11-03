@@ -136,13 +136,22 @@ const _meta = {
 				}
 			}
 			var fallback;
-			return function (ctx) {
+			var runner = function (ctx) {
 				var object = source(ctx), name = key(ctx), value = readDirect(object, name);
 				if (value === undefined && name.indexOf(".") !== -1) value = ctx.readObjectPath(object, name);
 				if (value !== undefined || props.defaultValue === undefined) return value;
 				if (!fallback) fallback = helpers.compileValue(props.defaultValue);
 				return fallback(ctx);
 			};
+			return helpers.debug ? helpers.debug(runner,
+				function(ctx){return {source:source(ctx),key:key(ctx)};},
+				function(ctx,_node,args){
+					var value=readDirect(args.source,args.key);
+					if(value===undefined && args.key.indexOf(".")!==-1)value=ctx.readObjectPath(args.source,args.key);
+					if(value!==undefined || props.defaultValue===undefined)return value;
+					if(!fallback)fallback=helpers.compileValue(props.defaultValue);
+					args.defaultValue=fallback(ctx);return args.defaultValue;
+				}) : runner;
 		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);

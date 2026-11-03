@@ -91,7 +91,7 @@ const _meta = {
       var staticPattern = typeof props.pattern === "string" && !/\$\{|\{\{/.test(props.pattern);
       var staticCase = typeof props.ignoreCase !== "string" || !/\$\{|\{\{/.test(props.ignoreCase);
       var regexp = staticPattern && staticCase ? new RegExp(props.pattern, props.ignoreCase === true || String(props.ignoreCase) === "true" ? "i" : "") : null;
-      return function (ctx) {
+      var runner = function (ctx) {
         var value = resolveText(ctx), pattern = regexp;
         if (!pattern) {
           var spelling = resolvePattern(ctx), ignoreCase = resolveCase(ctx);
@@ -99,6 +99,12 @@ const _meta = {
         }
         return matched(pattern.exec(value == null ? "" : String(value)));
       };
+      return helpers.debug ? helpers.debug(runner,
+        function(ctx){return {text:resolveText(ctx),pattern:regexp ? props.pattern : resolvePattern(ctx),ignoreCase:regexp ? regexp.ignoreCase : resolveCase(ctx)};},
+        function(_ctx,_node,args){
+          var pattern=regexp || new RegExp(args.pattern==null ? "" : String(args.pattern),args.ignoreCase===true || String(args.ignoreCase)==="true" ? "i" : "");
+          return matched(pattern.exec(args.text==null ? "" : String(args.text)));
+        }) : runner;
     },
     run: function (ctx, node) {
       var props = ctx.props(node);

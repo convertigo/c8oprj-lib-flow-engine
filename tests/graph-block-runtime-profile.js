@@ -8,6 +8,7 @@ const graphRuntime = vm.runInNewContext(source, {});
 let clock = 0;
 let catalogCalls = 0;
 let templateCompiles = 0;
+let resolvedReads = 0;
 
 const definition = {
 	name: "profiled",
@@ -51,7 +52,7 @@ const env = {
 	compileTemplateTree(value) {
 		templateCompiles += 1;
 		const match = typeof value === "string" && value.match(/^\{\{\s*local\.([A-Za-z_$][\w$]*)\s*\}\}$/);
-		return match ? (ctx) => ctx.scopes.local[match[1]] : () => value;
+		return match ? (ctx) => { resolvedReads++; return ctx.scopes.local[match[1]]; } : () => value;
 	},
 	nanoTime: () => ++clock * 1000000,
 };
@@ -130,3 +131,13 @@ assert.strictEqual(ctx.scopes.result, originalResult);
 assert.strictEqual(ctx.graphBlockStack.length, 0);
 
 console.log("graph block runtime profile tests passed");
+
+// Debug consumption receives the captured values even if caller state changes while paused.
+const preparedWithArgs=block.prepareNode(node,{props:node.props,debug(runner,resolve,run){Object.defineProperty(runner,'debug',{value:{resolve,run}});return runner;}});
+const beforeReads=resolvedReads;
+const captured=preparedWithArgs.debug.resolve(ctx,node);
+const capturedValue=captured.value;
+ctx.scopes.local.value=999;
+assert.equal(preparedWithArgs.debug.run(ctx,node,captured).value,capturedValue);
+assert.equal(resolvedReads,beforeReads+1,'graph arguments must resolve exactly once');
+console.log('graph debug arguments: captured once and consumed without a second resolution');

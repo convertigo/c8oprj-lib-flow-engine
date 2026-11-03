@@ -54,7 +54,10 @@ const _meta = {
 	return {
 		prepareNode: function (node, helpers) {
 			var resolve = helpers.compileValue(helpers.props.value), pretty = helpers.props.pretty === true ? 2 : 0;
-			return function (ctx) { return JSON.stringify(resolve(ctx), null, pretty); };
+			var runner = function (ctx) { return JSON.stringify(resolve(ctx), null, pretty); };
+			return helpers.debug ? helpers.debug(runner,
+				function (ctx) { return { value: resolve(ctx), pretty: pretty > 0 }; },
+				function (_ctx, _node, args) { return JSON.stringify(args.value, null, pretty); }) : runner;
 		},
 		run: function (ctx, node) {
 			var props = ctx.props(node);
