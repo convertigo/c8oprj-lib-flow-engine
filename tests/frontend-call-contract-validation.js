@@ -172,3 +172,8 @@ print(JSON.stringify({
 	ok: true,
 	cases: ["valid", "unknown", "unavailable-schema", "relative-target", "private-flow", "private-sequence", "hidden-referenced"]
 }));
+
+var sdkFlag = callContractDocument("__disableAutologin", {schema:{type:"object",properties:{},additionalProperties:false}}, []);
+assertTrue(sdkFlag.diagnostics.length === 0, "SDK logout flag is transport metadata, not a declared Flow input");
+var forbiddenReserved = callContractDocument("__unknownReserved", {schema:{type:"object",properties:{},additionalProperties:false}}, []);
+assertTrue(forbiddenReserved.diagnostics.length === 1 && forbiddenReserved.diagnostics[0].code === "FRONTEND_CALLSEQUENCE_VARIABLE_UNKNOWN", "Do not accept arbitrary reserved transport inputs");
