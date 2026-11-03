@@ -3662,7 +3662,7 @@
 		var source = sourceInfoForPath(sourceInfo, mutationPath);
 		if (source) {
 			Object.keys(source).forEach(function (key) {
-				info[key] = source[key];
+				if (key !== "debugSource") info[key] = source[key];
 			});
 		}
 		return info;
@@ -3699,6 +3699,8 @@
 				}
 				});
 				var nodeInformation = mergeSourceInfo(bindNodePropertyPaths(nodeInfo(nodeAnalysis, catalog), node, catalog), sourceInfo, sourceNodePath);
+				if (sourceInfo && sourceInfo.debugSource && env.debugSourceTarget) nodeInformation.debugTarget = env.debugSourceTarget(sourceInfo.debugSource, sourceNodePath || nodePath, node);
+				delete nodeInformation.debugSource;
 				if (node.id && nodeInformation.sourceWritable !== false) {
 					nodeInformation.renameValue = String(node.id);
 					nodeInformation.renameMutation = { op: "replace", path: (sourceNodePath || nodePath) + ".id",
@@ -4770,6 +4772,7 @@
 			// Instances are edited in this Flow, not in the library defining their block.
 			// Block provenance remains available separately as blockSource/blockProvider.
 			addNodes(children, definition.nodes || [], "nodes", activeBlocks, analysisById, {
+				debugSource: env.debugSourceInfo ? env.debugSourceInfo(request, activeBlocks) : null,
 				sourcePath: String(request.sourceFile || request.sourcePath || ""),
 				sourceWritable: writable, writable: writable,
 				readOnly: !writable, readOnlyReference: request.readOnlyReference === true

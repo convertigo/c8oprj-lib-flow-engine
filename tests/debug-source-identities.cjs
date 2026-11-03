@@ -17,3 +17,16 @@ test('the source table survives JSON execution snapshots without annotating shar
  assert.equal(ids.create(d,'P/file','r').get(d.nodes[0]).url,ids.create(copy,'P/file','r').get(copy.nodes[0]).url);
  assert.notEqual(ids.create(d,'P/file','r').get(d.nodes[0]).url,ids.create(d,'Other/file','r').get(d.nodes[0]).url);
 });
+
+test('source lines captured before normalization map back to runtime nodes by pointer',()=>{
+ const source={nodes:[{block:'probe',__flowScriptLine:3}]},runtime={nodes:[{block:'probe'}]};
+ const lines=Object.fromEntries(ids.create(source,'P/file','r').entries.map(e=>[e.pointer,e.line]));
+ assert.equal(ids.create(runtime,'P/file','r',lines).get(runtime.nodes[0]).line,3);
+ assert.equal(ids.target('P/file','r','nodes[0]',runtime.nodes[0],lines).line,3);
+});
+
+test('expanded implementations without a caller source location are left uninstrumented',()=>{
+ const child={block:'inner'},node={block:'wrapper',nodes:[child]};
+ const table=ids.create({nodes:[node]},'P/file','r',{'/nodes/0':3});
+ assert.equal(table.get(node).line,3);assert.equal(table.get(child),undefined);
+});

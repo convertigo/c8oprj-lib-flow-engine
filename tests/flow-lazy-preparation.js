@@ -50,7 +50,7 @@ const branch = (name) => ({
 	prepareNode() {
 		runnerBuilds += 1;
 		return (ctx, node) => {
-			ctx.scopes.local.executed.push(node.id);
+			(ctx.scopes.local.executed || (ctx.scopes.local.executed = [])).push(node.id);
 			return node.id;
 		};
 	},
@@ -112,3 +112,17 @@ assert.strictEqual(runnerBuilds, 66, "the alternate branch should prepare only w
 assert.strictEqual(plan.preparedNodes.filter(Boolean).length, 66);
 
 console.log("flow lazy preparation tests passed");
+
+// A normal request must neither construct instrumentation nor replace a warmed runner.
+let debugCalls = 0;
+env.providerDebugging = () => false;
+env.debugPlan = env.debugBlock = () => { debugCalls++; throw new Error("ordinary instrumentation"); };
+const runnerBefore = plan.preparedNodes[0].execute;
+for (let run = 0; run < 100; run++) runtime.runFlowRequest({
+ input: { takeThen: true }, includeTrace: false, learnSchema: false,
+ __resolvedPlan: { plan, headHit: true }
+}, null, env);
+assert.strictEqual(debugCalls, 0);
+assert.strictEqual(plan.preparedNodes[0].execute, runnerBefore);
+assert.strictEqual(runnerBuilds, 66);
+console.log("ordinary requests: zero debugger constructions/callbacks, same prepared runner over 100 runs");

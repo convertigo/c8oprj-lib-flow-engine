@@ -77,6 +77,26 @@
 	}
 
 
+	function debugSourceInfo(request, blocks) {
+		var name = String(request.flowName || request.name || String(request.flowQName || '').split('.').pop());
+		// Unnamed drafts have no persistent file target in this prototype.
+		if (!name || !projectDir()) return null;
+		var file = projectFlowCodeFile(name);
+		var source = isFlowScriptSource(request.flowSource) ? String(request.flowSource) : file.isFile() ? readSourceFile(file) : '';
+		if (!source) return null;
+		var uri=debugSourceUrl(file), revision=sha256Hex(source);
+		var ids=loadEngineModule('debug-source-identities.js');
+		// Capture source lines before sourceFromFlowScript strips parser bookkeeping.
+		var original=ids.create(parseFlowScript(blocks || loadBlocks(),source),uri,revision), lines={};
+		original.entries.forEach(function(entry){lines[entry.pointer]=entry.line;});
+		return {uri:uri,revision:revision,source:source,lines:lines};
+	}
+	function debugPlan(plan, request) {
+		var info=debugSourceInfo(request,plan.blocks);
+		if (!info) return null;
+		var table=loadEngineModule('debug-source-identities.js').create(plan.definition,info.uri,info.revision,info.lines);
+		return loadEngineModule('flow-debugger-participant.js').create(function(kind,inspect){return JavascriptDebugger.participant(kind,inspect);},table,info.source,function(value){return String(JavascriptDebugger.preview(value));});
+	}
 	function debugBlock(block) {
 		if (!block || !block.__graphRhino) return block;
 		var rhino = block.__graphRhino;
@@ -1631,6 +1651,7 @@
 			compiledScriptCacheInfo: compiledScriptCacheInfo,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			providerDebugging: providerDebugging,
+			debugPlan: debugPlan,
 			debugBlock: debugBlock,
 			clearCompiledScriptCache: clearCompiledScriptCache,
 			clearPersistentFrontendDocuments: clearPersistentFrontendDocuments,
@@ -5804,6 +5825,7 @@
 			sharedMetadataSnapshot: sharedMetadataSnapshot,
 			flowSnapshotStats: runtimeState.flowSnapshotStats,
 			providerDebugging: providerDebugging,
+			debugPlan: debugPlan,
 			debugBlock: debugBlock,
 			sourceForWriteRequest: sourceForWriteRequest,
 			loadProjectEngineDefinition: loadProjectEngineDefinition,
@@ -6210,6 +6232,8 @@
 
 	function flowTreeServiceEnv() {
 		return {
+			debugSourceInfo: debugSourceInfo,
+			debugSourceTarget: function(info,path,node){return loadEngineModule("debug-source-identities.js").target(info.uri,info.revision,path,node,info.lines);},
 			yamlSourceEdit: function () { return loadEngineModule("yaml-source-edit.js"); },
 			nativeFlowMetadata: nativeFlowMetadata,
 			sources: sourceView(currentActiveRequest()),
