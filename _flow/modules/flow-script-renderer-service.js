@@ -317,7 +317,30 @@
 		}
 		lines.push("}");
 		lines.push("");
-		return lines.join("\n");
+		return layoutFlowScriptLines(lines).join("\n");
+	}
+
+	// Break only at existing operator whitespace. Literals and comments are indivisible and never reflowed.
+	function layoutFlowScriptLines(lines) {
+		var output = [];
+		lines.forEach(function(line) {
+			if (line.length <= 120 || /^\s*\/\//.test(line)) { output.push(line); return; }
+			var continuation = line.match(/^\s*/)[0] + "  ", quote = "", candidates = [];
+			for (var i=0;i<line.length;i++) {
+				var ch=line.charAt(i);
+				if (quote) { if (ch === "\\") i++; else if (ch === quote) quote=""; continue; }
+				if (ch === '"' || ch === "'" || ch === "`") { quote=ch;continue; }
+				if (ch === " " && line.charAt(i+1) !== " " && /\s(?:&&|\|\||===?|!==?|<=?|>=?|[+*\/%?:=-])$/.test(line.substring(0,i))) candidates.push(i);
+			}
+			var offset=0,prefix="";
+			while (prefix.length+line.length-offset>120) {
+				var eligible=candidates.filter(function(pos){return pos>offset && prefix.length+pos-offset<=120;});
+				if (!eligible.length) break;
+				var cut=eligible[eligible.length-1];output.push(prefix+line.substring(offset,cut));offset=cut+1;prefix=continuation;
+			}
+			output.push(prefix+line.substring(offset));
+		});
+		return output;
 	}
 
 	function normalizeFlowScriptCode(code, env) {

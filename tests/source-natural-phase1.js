@@ -23,6 +23,16 @@ try {
  }
  var emptyCall=parse(code('  result.epoch = date.now()'));
  assert(format(emptyCall).code.indexOf('date.now({})')>=0,'empty argument list is understood without a guess');
+ var longSum=new Array(25).join('input.value + ')+'input.value';
+ var wide=round('  result.total = '+longSum,{value:2});
+ assert(wide.code.split('\n').every(function(line){return line.length<=120;}),'assignment width 120');
+ var condition=new Array(15).join('input.value == 2 && ')+'input.value == 2';
+ var wideIf=round('  if ('+condition+') {\n    result.ok = true\n  }',{value:2});
+ assert(wideIf.code.split('\n').every(function(line){return line.length<=120;}),'if width 120');
+ var wideCall=round('  local.rows = list.filter({items:[2],where:'+condition+'})\n  result.rows = local.rows',{value:2});
+ assert(wideCall.code.split('\n').every(function(line){return line.length<=120;}),'catalog expression width 120');
+ var commentText=new Array(150).join('x');
+ assert(round('  // '+commentText+'\n  result.ok = true').code.indexOf('// '+commentText)>=0,'comments never reflow');
  var first=round('  result.answer = input.value + 1',{value:4});
  assert(first.code.indexOf('result.answer = input.value + 1')>=0 && first.code.indexOf('$$id')<0,'natural set');
  equal(first.definition.nodes[0].id,'answer','assignment name');

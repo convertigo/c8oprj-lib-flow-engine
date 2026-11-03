@@ -642,13 +642,14 @@
 			if (text.match(/^(flow|function)\s+/) || flowScriptBlockSeparator(text)) {
 				return true;
 			}
+			if (/\s(?:&&|\|\||===?|!==?|<=?|>=?|[+*\/%?:=-])$/.test(text)) return false;
 			var balance = knownBalance || flowScriptBalance(text);
 			if (balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
 					text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(.*\)\s*\{\s*;?$/)) {
 				return true;
 			}
 			if (balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
-					text.match(/^if\s*\(.*\)\s*\{\s*;?$/)) {
+					text.match(/^if\s*\([\s\S]*\)\s*\{\s*;?$/)) {
 				return true;
 			}
 			if (balance.paren <= 0 && balance.brace <= 0 && balance.bracket <= 0) {
@@ -1300,6 +1301,9 @@
 	
 		function flowScriptRewriteExpression(expr, locals) {
 			expr = String(expr || "").trim();
+			// Physical continuation lines are whitespace, except inside a literal.
+			expr = expr.replace(/"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'|`(?:[^`\\]|\\[\s\S])*`|[ \t]*\r?\n[ \t]*/g,
+				function(token) { return token.indexOf("\n") >= 0 && /^[ \t\r\n]+$/.test(token) ? " " : token; });
 			var exact = env.templateSyntax.exactExpression(expr);
 			if (exact !== null) {
 				expr = exact;
@@ -2973,7 +2977,7 @@
 					stack.push({ root: previous.root, slot: "else" });
 					continue;
 				}
-				var ifMatch = line.match(/^if\s*\((.*)\)\s*(\{)?\s*;?$/);
+				var ifMatch = line.match(/^if\s*\(([\s\S]*)\)\s*(\{)?\s*;?$/);
 				if (ifMatch && !isFlowScriptObjectLiteral(ifMatch[1])) {
 					var ifNode = {
 						then: [],
