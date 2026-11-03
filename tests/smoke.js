@@ -2267,7 +2267,7 @@ assertTrue(JSON.parse(engine.blockCodeSet(JSON.stringify({
 var declaredResponseContext = JSON.parse(engine.context(JSON.stringify({
 	flowSource: declaredResponseBlockSource,
 	sourceBlockName: "smoke.declaredResponse",
-	node: "returnValue",
+	node: "return",
 	include: ["local"],
 	detail: "normal"
 })));
