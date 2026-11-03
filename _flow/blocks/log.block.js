@@ -100,6 +100,32 @@ const _meta = {
 				level: String(props.level || "info").toLowerCase(),
 				message: message
 			};
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var message = String(ctx.template(props.message || ""));
+				if (props.data !== undefined) {
+					message += " " + JSON.stringify(ctx.input({ value: props.data }));
+				}
+				var capturedArguments = {
+					message: message,
+					logger: String(props.logger || "context").toLowerCase(),
+					level: props.level
+				};
+				Object.defineProperty(capturedArguments, "__state", { value: { props: props, message: message } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var props = capturedState.props;
+				var message = capturedState.message;
+				write(logger(String(props.logger || "context").toLowerCase()), props.level, message);
+				return {
+					level: String(props.level || "info").toLowerCase(),
+					message: message
+				};
+			}
 		}
 	};
 }())

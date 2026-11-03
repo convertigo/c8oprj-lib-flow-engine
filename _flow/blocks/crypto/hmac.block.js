@@ -105,6 +105,46 @@ const _meta = {
 			var mac = Mac.getInstance(algorithm);
 			mac.init(new SecretKeySpec(new JavaString(secret).getBytes("UTF-8"), algorithm));
 			return encode(mac.doFinal(new JavaString(text(ctx, props.text)).getBytes("UTF-8")), String(props.encoding || "hex"));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var algorithm = ALGORITHMS[String(props.algorithm || "sha256")];
+				if (!algorithm) {
+					return ctx.throwFlow(
+						{
+							code: "CRYPTO_ALGORITHM_INVALID",
+							message: "crypto.hmac: unknown algorithm " + props.algorithm,
+							status: 400
+						},
+						node
+					);
+				}
+				var secret = text(ctx, props.secret);
+				if (secret === "") {
+					return ctx.throwFlow(
+						{ code: "CRYPTO_SECRET_REQUIRED", message: "crypto.hmac: the secret is empty", status: 500 },
+						node
+					);
+				}
+				var mac = Mac.getInstance(algorithm);
+				mac.init(new SecretKeySpec(new JavaString(secret).getBytes("UTF-8"), algorithm));
+				var message = text(ctx, props.text);
+				var args = {
+					algorithm: algorithm,
+					secret: secret,
+					text: message,
+					encoding: String(props.encoding || "hex")
+				};
+				Object.defineProperties(args, { __mac: { value: mac }, __props: { value: props } });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return encode(
+					args.__mac.doFinal(new JavaString(args.text).getBytes("UTF-8")),
+					String(args.__props.encoding || "hex")
+				);
+			}
 		}
 	};
 }())

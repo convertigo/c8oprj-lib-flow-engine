@@ -77,6 +77,38 @@ const _meta = {
 			}
 			var bytes = Files.readAllBytes(file.toPath());
 			return String(new java.lang.String(bytes, Charset.forName(String(props.charset || "UTF-8"))));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var file = resolveFile(ctx, props.path);
+				var maxBytes = Number(
+					props.maxBytes === undefined || props.maxBytes === null || props.maxBytes === ""
+						? 16777216
+						: props.maxBytes
+				);
+				var size = Number(file.length());
+				if (!isFinite(maxBytes) || maxBytes < 0 || Math.floor(maxBytes) !== maxBytes) {
+					ctx.raise("INVALID_FILE_LIMIT", "file.readText maxBytes must be a non-negative integer.");
+				}
+				if (size > maxBytes) {
+					ctx.raise("FILE_TOO_LARGE", "File exceeds file.readText maxBytes: " + size + " > " + maxBytes);
+				}
+				var capturedArguments = {
+					path: String(file.getAbsolutePath()),
+					charset: String(props.charset || "UTF-8"),
+					maxBytes: maxBytes
+				};
+				Object.defineProperty(capturedArguments, "__state", { value: { props: props, file: file } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var props = capturedState.props;
+				var file = capturedState.file;
+				var bytes = Files.readAllBytes(file.toPath());
+				return String(new java.lang.String(bytes, Charset.forName(String(props.charset || "UTF-8"))));
+			}
 		}
 	};
 }())

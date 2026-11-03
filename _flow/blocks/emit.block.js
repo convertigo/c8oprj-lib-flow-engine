@@ -30,6 +30,29 @@ const _meta = {
       var props = ctx.props(node);
       sinks[sinks.length - 1].append(ctx.expr(props.rows));
       return undefined;
-    }
-  };
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var sinks = ctx.emitSinks;
+				if (!sinks || !sinks.length) {
+					ctx.throwFlow(
+						{
+							code: "EMIT_OUTSIDE_FOR_EACH_CHUNK",
+							message: "emit runs inside the Each slot of a forEachChunk that declares into.",
+							status: 500
+						},
+						node
+					);
+				}
+				var props = ctx.props(node);
+				var args = { rows: ctx.expr(props.rows) };
+				Object.defineProperty(args, "__sink", { value: sinks[sinks.length - 1] });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				args.__sink.append(args.rows);
+				return undefined;
+			}
+		}
+	};
 }())

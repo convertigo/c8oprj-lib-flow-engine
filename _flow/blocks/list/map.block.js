@@ -94,6 +94,43 @@ const _meta = {
 			}
 			ctx.scopes.current = previous;
 			return mapped;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var items = ctx.expr(props.items || props["in"]) || [];
+				var select = props.select === undefined ? "current" : props.select;
+				var project = hasFlowBlock(select)
+					? function () {
+							return projectValue(ctx, select);
+						}
+					: ctx.compileExpr
+						? ctx.compileExpr(select)
+						: function () {
+								return ctx.expr(select);
+							};
+				var previous = ctx.scopes.current;
+				var mapped = [];
+				var args = { items: items, select: { expression: select, deferred: "per item" } };
+				Object.defineProperty(args, "__state", {
+					value: { items: items, select: select, project: project, previous: previous, mapped: mapped }
+				});
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var state = args.__state;
+				var items = state.items;
+				var select = state.select;
+				var project = state.project;
+				var previous = state.previous;
+				var mapped = state.mapped;
+				for (var i = 0; i < items.length; i++) {
+					ctx.scopes.current = items[i];
+					mapped.push((args.select = project()));
+				}
+				ctx.scopes.current = previous;
+				return mapped;
+			}
 		}
 	};
 }())

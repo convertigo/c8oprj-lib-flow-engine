@@ -58,6 +58,28 @@ const _meta = {
 				return false;
 			}
 			return MessageDigest.isEqual(new JavaString(value).getBytes("UTF-8"), new JavaString(expected).getBytes("UTF-8"));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var value = text(ctx, props.value);
+				var expected = text(ctx, props.expected);
+				var capturedArguments = { value: value, expected: expected };
+				Object.defineProperty(capturedArguments, "__state", { value: { value: value, expected: expected } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var value = capturedState.value;
+				var expected = capturedState.expected;
+				if (value === "" || expected === "") {
+					return false;
+				}
+				return MessageDigest.isEqual(
+					new JavaString(value).getBytes("UTF-8"),
+					new JavaString(expected).getBytes("UTF-8")
+				);
+			}
 		}
 	};
 }())

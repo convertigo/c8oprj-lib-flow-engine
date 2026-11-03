@@ -449,6 +449,25 @@ const _meta = {
 			var props = ctx.props(node);
 			var target = resolveTarget(ctx, ctx.template(props.requestable || ""));
 			return callOutcome(ctx, node, props, target, runInternal(ctx, target, ctx.template(props.input) || {}));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node),
+					name = ctx.template(props.requestable || ""),
+					target = resolveTarget(ctx, name),
+					args = { requestable: name, input: ctx.template(props.input) || {} };
+				Object.defineProperties(args, { __target: { value: target }, __props: { value: props } });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return callOutcome(
+					ctx,
+					node,
+					args.__props,
+					args.__target,
+					runInternal(ctx, args.__target, args.input)
+				);
+			}
 		}
 	};
 }())

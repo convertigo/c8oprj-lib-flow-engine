@@ -537,6 +537,101 @@ const _meta = {
 				ctx.learnOutputSchema(node, "out", ctx.outputPath(node), response);
 			}
 			return response;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var responseType =
+					props.responseType === undefined ? "auto" : String(ctx.template(props.responseType));
+				if (responseType !== "auto" && responseType !== "text")
+					ctx.throwFlow(
+						{ code: "HTTP_RESPONSE_TYPE_INVALID", message: "responseType takes auto or text.", status: 400 },
+						node
+					);
+				var cookies = props.cookies === undefined ? "context" : String(ctx.template(props.cookies));
+				if (cookies !== "context" && cookies !== "request") {
+					ctx.throwFlow(
+						{ code: "HTTP_COOKIES_INVALID", message: "cookies takes context or request.", status: 400 },
+						node
+					);
+				}
+				var headers = Object.assign({}, ctx.template(props.headers) || {});
+				var username =
+					props.username === undefined || props.username === null
+						? ""
+						: String(ctx.template(props.username) || "");
+				if (username && !hasHeader(headers, "authorization")) {
+					var password =
+						props.password === undefined || props.password === null
+							? ""
+							: String(ctx.template(props.password) || "");
+					headers.Authorization = basicAuthorization(username, password);
+				}
+				var method = String(props.method || "GET").toUpperCase();
+				var url = appendQuery(ctx.template(props.url), ctx.template(props.query));
+				var connectTimeoutMs = timeout(ctx, node, props.connectTimeoutMs, "connectTimeoutMs");
+				var readTimeoutMs = timeout(ctx, node, props.readTimeoutMs, "readTimeoutMs");
+				var body = formBody(
+					props.bodyResolved === true
+						? props.body
+						: props.body === undefined
+							? undefined
+							: ctx.expr(props.body),
+					headers
+				);
+				var capturedArguments = {
+					responseType: responseType,
+					cookies: cookies,
+					headers: headers,
+					username: username,
+					method: method,
+					url: url,
+					connectTimeoutMs: connectTimeoutMs,
+					readTimeoutMs: readTimeoutMs,
+					body: body
+				};
+				Object.defineProperty(capturedArguments, "__state", {
+					value: {
+						responseType: responseType,
+						cookies: cookies,
+						headers: headers,
+						method: method,
+						url: url,
+						connectTimeoutMs: connectTimeoutMs,
+						readTimeoutMs: readTimeoutMs,
+						body: body
+					}
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var responseType = capturedState.responseType;
+				var cookies = capturedState.cookies;
+				var headers = capturedState.headers;
+				var method = capturedState.method;
+				var url = capturedState.url;
+				var connectTimeoutMs = capturedState.connectTimeoutMs;
+				var readTimeoutMs = capturedState.readTimeoutMs;
+				var body = capturedState.body;
+				var response = isFileUrl(url)
+					? runFileHttp(method, url, ctx.allocationTrace, responseType)
+					: send(
+							ctx,
+							node,
+							method,
+							URI.create(url),
+							headers,
+							body,
+							cookies,
+							requestConfig(connectTimeoutMs, readTimeoutMs),
+							responseType
+						);
+				if (ctx.outputPath(node) && response.status < 400 && ctx.learnOutputSchema) {
+					ctx.learnOutputSchema(node, "out", ctx.outputPath(node), response);
+				}
+				return response;
+			}
 		}
 	};
 }())

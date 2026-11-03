@@ -99,6 +99,28 @@ const _meta = {
 				out: ctx.outputPath(node),
 				id: node.id || "request"
 			});
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node),
+					args = {
+						method: "DELETE",
+						url: ctx.template(props.url),
+						query: ctx.template(props.query),
+						headers: ctx.template(props.headers),
+						username: props.username === undefined ? undefined : ctx.template(props.username),
+						password: props.password === undefined ? undefined : ctx.template(props.password),
+						body: props.body === undefined ? undefined : ctx.expr(props.body),
+						bodyResolved: props.body !== undefined
+					};
+				Object.defineProperty(args, "__options", {
+					value: { out: ctx.outputPath(node), id: node.id || "request" }
+				});
+				return args;
+			},
+			run: function (ctx, node, args) {
+				return ctx.callBlock("http.request", args, args.__options);
+			}
 		}
 	};
 }())

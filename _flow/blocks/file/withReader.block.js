@@ -92,6 +92,40 @@ const _meta = {
 				ctx.closeHandle(handle);
 			}
 			return ctx.handleSummary(handle);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var file = resolveFile(ctx, props.path);
+				var capturedArguments = {
+					path: String(file.getAbsolutePath()),
+					charset: String(props.charset || "UTF-8"),
+					as: props.as || "local.reader"
+				};
+				Object.defineProperty(capturedArguments, "__state", { value: { props: props, file: file } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var props = capturedState.props;
+				var file = capturedState.file;
+				var reader = new BufferedReader(
+					new InputStreamReader(new FileInputStream(file), String(props.charset || "UTF-8"))
+				);
+				var handle = ctx.createHandle("file.reader", reader, {
+					label: String(file.getAbsolutePath()),
+					close: function (value) {
+						value.close();
+					}
+				});
+				ctx.write(props.as || "local.reader", handle);
+				try {
+					ctx.runNodes(node.nodes || []);
+				} finally {
+					ctx.closeHandle(handle);
+				}
+				return ctx.handleSummary(handle);
+			}
 		}
 	};
 }())

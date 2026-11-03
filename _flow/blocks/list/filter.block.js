@@ -159,6 +159,40 @@ const _meta = {
 			} finally {
 				ctx.scopes.current = previous;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var items = ctx.expr(props.items || props["in"]) || [];
+				var previous = ctx.scopes.current;
+				var filtered = [];
+				var predicate = predicateFor(ctx, props.where);
+				var args = { items: items, where: { expression: props.where, deferred: "per item" } };
+				Object.defineProperty(args, "__state", {
+					value: { props: props, items: items, previous: previous, filtered: filtered, predicate: predicate }
+				});
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var state = args.__state;
+				var props = state.props;
+				var items = state.items;
+				var previous = state.previous;
+				var filtered = state.filtered;
+				var predicate = state.predicate;
+				try {
+					for (var i = 0; i < items.length; i++) {
+						var item = items[i];
+						ctx.scopes.current = item;
+						if ((args.where = predicate ? predicate(item) : ctx.expr(props.where))) {
+							filtered.push(items[i]);
+						}
+					}
+					return filtered;
+				} finally {
+					ctx.scopes.current = previous;
+				}
+			}
 		}
 	};
 }())

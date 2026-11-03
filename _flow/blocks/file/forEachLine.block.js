@@ -56,6 +56,36 @@ const _meta = {
 				ctx.scopes.current = previous;
 			}
 			return { count: count };
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var readerHandle = ctx.expr(props.reader || "local.reader"),
+					reader = ctx.handleValue(readerHandle, "file.reader");
+				var args = { reader: readerHandle, line: props.line, eof: props.eof };
+				Object.defineProperties(args, { __reader: { value: reader }, __props: { value: props } });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var reader = args.__reader,
+					props = args.__props;
+				var previous = ctx.scopes.current;
+				var count = 0;
+				try {
+					var line;
+					while ((line = reader.readLine()) !== null) {
+						if (ctx.stopped) {
+							break;
+						}
+						ctx.scopes.current = String(line);
+						ctx.runLoopBody(node.nodes || []);
+						count++;
+					}
+				} finally {
+					ctx.scopes.current = previous;
+				}
+				return { count: count };
+			}
 		}
 	};
 }())

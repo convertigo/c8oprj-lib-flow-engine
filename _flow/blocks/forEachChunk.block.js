@@ -296,6 +296,134 @@ const _meta = {
       }
       if (sink) sink.close();
       return hasReduce ? acc : {chunks: index, rows: rows, errors: errors};
-    }
-  };
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var size = bounded(ctx, node, props, "size", 200, 1, 10000);
+				var maxChunks = bounded(ctx, node, props, "maxChunks", 100000, 1, 1000000);
+				var parallel = bounded(ctx, node, props, "parallel", 1, 1, 64);
+				var onError = props.onError === undefined ? "stop" : String(ctx.template(props.onError));
+				if (onError !== "stop" && onError !== "continue") {
+					ctx.throwFlow(
+						{
+							code: "FOR_EACH_CHUNK_ON_ERROR_INVALID",
+							message: "forEachChunk onError takes stop or continue.",
+							status: 400
+						},
+						node
+					);
+				}
+				var into = props.into === undefined ? "" : String(ctx.template(props.into) || "");
+				var ordered = props.ordered === undefined ? false : ctx.template(props.ordered);
+				if (ordered !== true && ordered !== false) {
+					ctx.throwFlow(
+						{
+							code: "FOR_EACH_CHUNK_ORDERED_INVALID",
+							message: "forEachChunk ordered takes true or false.",
+							status: 400
+						},
+						node
+					);
+				}
+				var source = ctx.expr(props.source);
+				var capturedArguments = {
+					size: size,
+					maxChunks: maxChunks,
+					parallel: parallel,
+					onError: onError,
+					into: into,
+					ordered: ordered,
+					source: source
+				};
+				Object.defineProperty(capturedArguments, "__state", {
+					value: {
+						size: size,
+						maxChunks: maxChunks,
+						parallel: parallel,
+						onError: onError,
+						into: into,
+						source: source
+					}
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var size = capturedState.size;
+				var maxChunks = capturedState.maxChunks;
+				var parallel = capturedState.parallel;
+				var onError = capturedState.onError;
+				var into = capturedState.into;
+				var source = capturedState.source;
+				if (parallel > 1)
+					return runParallel(ctx, node, {
+						source: source,
+						size: size,
+						maxChunks: maxChunks,
+						onError: onError,
+						into: into,
+						parallel: parallel
+					});
+				var outer = ctx.scopes.local;
+				var sink = into ? ctx.openEmitSink(into, node) : null;
+				var sinks = ctx.emitSinks || (ctx.emitSinks = []);
+				if (sink) sinks.push(sink);
+				var chunks = reader(ctx, node, source, size);
+				var hasReduce = !!(node.reduce && node.reduce.length);
+				var lookahead = needsLast(node.each);
+				var index = 0,
+					rows = 0,
+					errors = [],
+					acc = null;
+				try {
+					var next = chunks.next();
+					while (next !== null) {
+						if (!ctx.canContinue())
+							ctx.throwFlow(
+								{ code: "FLOW_EXECUTION_CANCELLED", message: "Chunk processing cancelled.", status: 499 },
+								node
+							);
+						if (index >= maxChunks) {
+							ctx.throwFlow(
+								{
+									code: "FOR_EACH_CHUNK_LIMIT",
+									message: "forEachChunk reached its maximum number of chunks.",
+									status: 508,
+									details: { maxChunks: maxChunks }
+								},
+								node
+							);
+						}
+						var current = next;
+						var chunk = { rows: current, index: index };
+						if (lookahead) {
+							next = chunks.next();
+							chunk.last = next === null;
+						}
+						var value;
+						try {
+							value = runSlot(ctx, node.each, { parent: outer, chunk: chunk });
+						} catch (error) {
+							if (onError !== "continue") throw error;
+							if (errors.length < 100) errors.push(Object.assign({ index: index }, errorOf(error)));
+							value = undefined;
+						}
+						rows += current.length;
+						index++;
+						current = chunk = null;
+						if (hasReduce && value !== undefined) {
+							acc = runSlot(ctx, node.reduce, { parent: outer, acc: acc, value: value });
+						}
+						if (!lookahead) next = chunks.next();
+					}
+				} finally {
+					chunks.close();
+					if (sink) sinks.pop();
+				}
+				if (sink) sink.close();
+				return hasReduce ? acc : { chunks: index, rows: rows, errors: errors };
+			}
+		}
+	};
 }())

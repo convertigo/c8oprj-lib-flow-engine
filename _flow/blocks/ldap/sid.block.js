@@ -85,6 +85,46 @@ const _meta = {
 				sid.parts[sid.parts.length - 1] = Number(relative);
 			}
 			return "S-" + sid.revision + "-" + sid.authority + (sid.parts.length ? "-" + sid.parts.join("-") : "");
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var source = text(ctx, props.sid).trim();
+				var sid = decode(source);
+				if (sid === null) {
+					return ctx.throwFlow(
+						{
+							code: "LDAP_SID_INVALID",
+							message: "ldap.sid: the value is not a binary security identifier",
+							status: 400
+						},
+						node
+					);
+				}
+				var relative = text(ctx, props.relativeId).trim();
+				if (relative !== "") {
+					if (!/^\d+$/.test(relative) || sid.parts.length === 0) {
+						return ctx.throwFlow(
+							{
+								code: "LDAP_SID_INVALID",
+								message: "ldap.sid: the relative id must be a number",
+								status: 400
+							},
+							node
+						);
+					}
+					sid.parts[sid.parts.length - 1] = Number(relative);
+				}
+				var args = { sid: source, relativeId: relative };
+				Object.defineProperty(args, "__sid", { value: sid });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var sid = args.__sid;
+				return (
+					"S-" + sid.revision + "-" + sid.authority + (sid.parts.length ? "-" + sid.parts.join("-") : "")
+				);
+			}
 		}
 	};
 }())

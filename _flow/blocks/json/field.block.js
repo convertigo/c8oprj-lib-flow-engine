@@ -59,6 +59,31 @@ const _meta = {
 			var key = props.key === undefined || props.key === null || props.key === "" ? "field" : ctx.template(props.key);
 			target[String(key === undefined || key === null || key === "" ? "field" : key)] = value;
 			return value;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var target = ctx.scopes.local.__jsonTarget;
+				if (!isObject(target)) {
+					ctx.raise("JSON_TARGET_REQUIRED", "json.field must run inside json.object.");
+				}
+				var args = { key: { expression: props.key, deferred: "after child value" } };
+				if (!(node.nodes && node.nodes.length)) args.value = ctx.input(props, null);
+				Object.defineProperties(args, { __target: { value: target }, __props: { value: props } });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var props = args.__props,
+					target = args.__target;
+				if (node.nodes && node.nodes.length) args.value = ctx.runNodes(node.nodes);
+				var key =
+					props.key === undefined || props.key === null || props.key === ""
+						? "field"
+						: ctx.template(props.key);
+				args.key = key === undefined || key === null || key === "" ? "field" : String(key);
+				target[args.key] = args.value;
+				return args.value;
+			}
 		}
 	};
 }())

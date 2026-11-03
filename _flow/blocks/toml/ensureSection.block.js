@@ -196,6 +196,46 @@ const _meta = {
 				changed: patched.status !== "unchanged",
 				dryRun: dryRun
 			};
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var file = resolvePath(ctx.template(props.path || ""));
+				var section = String(ctx.template(props.section || "") || "");
+				var values = ctx.template(props.values || {});
+				if (!section) {
+					ctx.raise("TOML_SECTION_REQUIRED", "toml.ensureSection needs a section name.");
+				}
+				var patched = patchSection(readText(file), section, values);
+				var dryRun = bool(ctx.expr(props.dryRun));
+				var capturedArguments = {
+					path: String(file.getAbsolutePath()),
+					section: section,
+					values: values,
+					dryRun: dryRun
+				};
+				Object.defineProperty(capturedArguments, "__state", {
+					value: { file: file, section: section, patched: patched, dryRun: dryRun }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var file = capturedState.file;
+				var section = capturedState.section;
+				var patched = capturedState.patched;
+				var dryRun = capturedState.dryRun;
+				if (patched.status !== "unchanged" && !dryRun) {
+					writeText(file, patched.text);
+				}
+				return {
+					path: String(file.getAbsolutePath()),
+					section: section,
+					status: patched.status,
+					changed: patched.status !== "unchanged",
+					dryRun: dryRun
+				};
+			}
 		}
 	};
 }())

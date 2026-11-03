@@ -91,6 +91,41 @@ const _meta = {
 			}
 			var digest = MessageDigest.getInstance(algorithm).digest(new JavaString(text).getBytes("UTF-8"));
 			return encode(digest, String(props.encoding || "hex"));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var rendered = props.text === undefined || props.text === null ? "" : ctx.template(props.text);
+				var text = rendered === undefined || rendered === null ? "" : String(rendered);
+				var algorithm = ALGORITHMS[String(props.algorithm || "sha256")];
+				if (!algorithm) {
+					return ctx.throwFlow(
+						{
+							code: "CRYPTO_ALGORITHM_INVALID",
+							message: "crypto.hash: unknown algorithm " + props.algorithm,
+							status: 400
+						},
+						node
+					);
+				}
+				var capturedArguments = {
+					text: text,
+					algorithm: algorithm,
+					encoding: String(props.encoding || "hex")
+				};
+				Object.defineProperty(capturedArguments, "__state", {
+					value: { text: text, algorithm: algorithm, props: props }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var text = capturedState.text;
+				var algorithm = capturedState.algorithm;
+				var props = capturedState.props;
+				var digest = MessageDigest.getInstance(algorithm).digest(new JavaString(text).getBytes("UTF-8"));
+				return encode(digest, String(props.encoding || "hex"));
+			}
 		}
 	};
 }())

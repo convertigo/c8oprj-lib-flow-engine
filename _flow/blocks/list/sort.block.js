@@ -107,6 +107,64 @@ const _meta = {
 			} finally {
 				ctx.scopes.current = previous;
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var source = ctx.expr(props.items || props["in"]) || [];
+				var items = source.slice ? source.slice(0) : [];
+				if (!source.slice) {
+					for (var i = 0; i < source.length; i++) {
+						items.push(source[i]);
+					}
+				}
+				var previous = ctx.scopes.current;
+				var direction =
+					String(ctx.template(props.direction || props.order || "asc") || "asc").toLowerCase() === "desc"
+						? -1
+						: 1;
+				var by = props.by === undefined ? "current" : props.by;
+				var args = { items: items, by: { expression: by, deferred: "per item" } };
+				Object.defineProperty(args, "__state", {
+					value: { items: items, previous: previous, direction: direction, by: by }
+				});
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var state = args.__state;
+				var items = state.items;
+				var previous = state.previous;
+				var direction = state.direction;
+				var by = state.by;
+				try {
+					var decorated = [];
+					for (var index = 0; index < items.length; index++) {
+						ctx.scopes.current = items[index];
+						decorated.push({
+							item: items[index],
+							key: comparable((args.by = ctx.expr(by)))
+						});
+					}
+					decorated.sort(function (a, b) {
+						var left = a.key;
+						var right = b.key;
+						if (left < right) {
+							return -1 * direction;
+						}
+						if (left > right) {
+							return direction;
+						}
+						return 0;
+					});
+					var out = [];
+					for (var j = 0; j < decorated.length; j++) {
+						out.push(decorated[j].item);
+					}
+					return out;
+				} finally {
+					ctx.scopes.current = previous;
+				}
+			}
 		}
 	};
 }())

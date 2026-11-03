@@ -114,6 +114,51 @@ const _meta = {
 				changed: changed,
 				dryRun: dryRun
 			};
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var file = resolvePath(ctx.template(props.path || ""));
+				var previous = readText(file);
+				var content = textValue(
+					ctx,
+					props.content !== undefined ? ctx.template(props.content) : ctx.input(props, "")
+				);
+				var existed = file.isFile();
+				var changed = previous !== content;
+				var dryRun = bool(ctx.expr(props.dryRun));
+				var capturedArguments = { path: String(file.getAbsolutePath()), content: content, dryRun: dryRun };
+				Object.defineProperty(capturedArguments, "__state", {
+					value: {
+						file: file,
+						previous: previous,
+						content: content,
+						existed: existed,
+						changed: changed,
+						dryRun: dryRun
+					}
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var file = capturedState.file;
+				var previous = capturedState.previous;
+				var content = capturedState.content;
+				var existed = capturedState.existed;
+				var changed = capturedState.changed;
+				var dryRun = capturedState.dryRun;
+				if (changed && !dryRun) {
+					writeText(file, content);
+				}
+				return {
+					path: String(file.getAbsolutePath()),
+					status: changed ? (existed ? "updated" : "created") : "unchanged",
+					existed: existed,
+					changed: changed,
+					dryRun: dryRun
+				};
+			}
 		}
 	};
 }())

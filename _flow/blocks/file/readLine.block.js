@@ -55,6 +55,33 @@ const _meta = {
 				ctx.write(props.eof, result.eof);
 			}
 			return result;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var readerHandle = ctx.expr(props.reader || "local.reader"),
+					reader = ctx.handleValue(readerHandle, "file.reader");
+				var args = { reader: readerHandle, line: props.line, eof: props.eof };
+				Object.defineProperties(args, { __reader: { value: reader }, __props: { value: props } });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				var reader = args.__reader,
+					props = args.__props;
+				var raw = reader.readLine();
+				var eof = raw === null;
+				var result = {
+					line: eof ? null : String(raw),
+					eof: eof
+				};
+				if (props.line) {
+					ctx.write(props.line, result.line);
+				}
+				if (props.eof) {
+					ctx.write(props.eof, result.eof);
+				}
+				return result;
+			}
 		}
 	};
 }())

@@ -289,6 +289,57 @@ const _meta = {
 					warnings: []
 				};
 			}
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				return Object.assign({}, ctx.props(node));
+			},
+			run: function (ctx, node, args) {
+				var props = args;
+				var code = prop(props, "code");
+				var name = String(prop(props, "name") || blockEnvelopeName(code) || "");
+				if (!name) {
+					return { ok: false, error: error("MISSING_BLOCK_NAME", "block.code.set requires name.") };
+				}
+				if (!nonEmpty(code)) {
+					return {
+						ok: false,
+						name: name,
+						error: error("MISSING_BLOCK_CODE", "block.code.set requires FlowScript code.")
+					};
+				}
+				code = unwrapBlockEnvelope(code);
+				var request = descriptorFrom(name, props);
+				request.code = String(code);
+				request.projectDir = props.projectDir;
+				request.target = props.target || "backend";
+				request.revision = props.revision;
+				request.finalize = bool(props.finalize);
+				request.dry = bool(props.dry) || bool(props.dryRun);
+				request.overwrite = bool(props.overwrite);
+				if (props.hooksSource !== undefined && props.hooksSource !== null) {
+					request.hooksSource = String(props.hooksSource);
+				}
+				try {
+					var result = ctx.blockCodeSet(name, request);
+					if (result.dry === true) {
+						result.warnings = (result.warnings || []).concat([dryBlockWarning(name)]);
+					}
+					return result;
+				} catch (e) {
+					return {
+						ok: false,
+						name: name,
+						error: error(
+							e.code || "BLOCK_CODE_SET_FAILED",
+							e.message || String(e),
+							e.hint || "Fix diagnostics and retry block.code.set.",
+							e.details
+						),
+						warnings: []
+					};
+				}
+			}
 		}
 	};
 }())

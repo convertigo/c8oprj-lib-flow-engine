@@ -117,6 +117,61 @@ const _meta = {
 				mcpPath: mcpPath,
 				warnings: warnings
 			};
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var warnings = [];
+				var convertigoUrl = configuredConvertigoUrl(warnings);
+				var mcpPath = normalizePath(ctx.template(props.mcpPath || "/api/flow-mcp"));
+				try {
+					var receiver = ctx.lib("public-url"),
+						method = receiver.publicUrl,
+						args = {
+							mcpPath: mcpPath,
+							publicUrl: publicUrlSettings(ctx, trim(ctx.template(props.publicUrl || "")))
+						};
+					Object.defineProperties(args, {
+						__receiver: { value: receiver },
+						__method: { value: method },
+						__warnings: { value: warnings },
+						__convertigoUrl: { value: convertigoUrl }
+					});
+					return args;
+				} catch (e) {
+					if (e && e.code === "PUBLIC_URL_INVALID") {
+						return ctx.throwFlow({ code: e.code, message: e.message, status: e.status }, node);
+					}
+					throw e;
+				}
+			},
+			run: function (ctx, node, args) {
+				var warnings = args.__warnings,
+					convertigoUrl = args.__convertigoUrl,
+					mcpPath = args.mcpPath,
+					publicUrl;
+				try {
+					publicUrl = args.__method.call(args.__receiver, args.publicUrl);
+				} catch (e) {
+					if (e && e.code === "PUBLIC_URL_INVALID") {
+						return ctx.throwFlow({ code: e.code, message: e.message, status: e.status }, node);
+					}
+					throw e;
+				}
+				if (publicUrl === null) {
+					warnings.push("No trusted public URL: set the configured public URL or CONVERTIGO_PUBLIC_URL.");
+				}
+				return {
+					publicUrl: publicUrl === null ? "" : publicUrl.url,
+					publicUrlSource: publicUrl === null ? "" : publicUrl.source,
+					convertigoUrl: convertigoUrl,
+					apiUrl: convertigoUrl + "/api",
+					adminUrl: convertigoUrl + "/admin",
+					flowMcpUrl: convertigoUrl + mcpPath,
+					mcpPath: mcpPath,
+					warnings: warnings
+				};
+			}
 		}
 	};
 }())

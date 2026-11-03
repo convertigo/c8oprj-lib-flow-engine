@@ -59,6 +59,52 @@ const _meta = {
 				hex += ("0" + ((bytes[i] + 256) % 256).toString(16)).slice(-2);
 			}
 			return hex;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var rendered =
+					props.purpose === undefined || props.purpose === null ? "" : ctx.template(props.purpose);
+				var purpose = (rendered === undefined || rendered === null ? "" : String(rendered)).trim();
+				if (purpose === "") {
+					return ctx.throwFlow(
+						{
+							code: "CRYPTO_PURPOSE_REQUIRED",
+							message: "crypto.serverKey: the purpose is empty",
+							status: 400
+						},
+						node
+					);
+				}
+				var capturedArguments = { purpose: purpose };
+				Object.defineProperty(capturedArguments, "__state", { value: { purpose: purpose } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var purpose = capturedState.purpose;
+				var secret = passphrase();
+				if (secret === "") {
+					return ctx.throwFlow(
+						{
+							code: "CRYPTO_SERVER_KEY_UNAVAILABLE",
+							message: "crypto.serverKey: the passphrase of the server is not available",
+							status: 500
+						},
+						node
+					);
+				}
+				var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+				mac.init(
+					new javax.crypto.spec.SecretKeySpec(new java.lang.String(secret).getBytes("UTF-8"), "HmacSHA256")
+				);
+				var bytes = mac.doFinal(new java.lang.String("convertigo-flow:" + purpose).getBytes("UTF-8"));
+				var hex = "";
+				for (var i = 0; i < bytes.length; i++) {
+					hex += ("0" + ((bytes[i] + 256) % 256).toString(16)).slice(-2);
+				}
+				return hex;
+			}
 		}
 	};
 }())

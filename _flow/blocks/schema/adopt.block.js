@@ -96,6 +96,27 @@ const _meta = {
 				dryRun: trueValue(value("dryRun")),
 				persist: value("persist")
 			});
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				// literal values, ${expressions} rendered
+				function value(property) {
+					return props[property] === undefined ? undefined : ctx.template(ctx.literal(props[property]));
+				}
+				return {
+					qname: value("qname"),
+					node: value("node"),
+					schema: value("schema"),
+					revision: value("revision"),
+					flowRevision: value("flowRevision"),
+					dryRun: trueValue(value("dryRun")),
+					persist: value("persist")
+				};
+			},
+			run: function (ctx, node, args) {
+				return ctx.schemaAdopt(args);
+			}
 		}
 	};
 }())

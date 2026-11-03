@@ -103,6 +103,28 @@ const _meta = {
 				dryRun: trueValue(value("dryRun")),
 				persist: value("persist")
 			});
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				// literal values, ${expressions} rendered
+				function value(property) {
+					return props[property] === undefined ? undefined : ctx.template(ctx.literal(props[property]));
+				}
+				return {
+					project: value("project"),
+					configuration: value("configuration"),
+					path: value("path"),
+					op: value("op"),
+					value: value("value"),
+					revision: value("revision"),
+					dryRun: trueValue(value("dryRun")),
+					persist: value("persist")
+				};
+			},
+			run: function (ctx, node, args) {
+				return ctx.configMutate(args);
+			}
 		}
 	};
 }())

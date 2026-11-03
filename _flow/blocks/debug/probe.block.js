@@ -54,6 +54,29 @@ const _meta = {
         ctx.write(ctx.outputPath(node), value);
       }
       return value;
-    }
-  };
+    },
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var value = ctx.input({ value: props.value });
+				return { value: value, label: { expression: props.label, deferred: "after trace initialization" } };
+			},
+			run: function (ctx, node, args) {
+				var value = args.value,
+					props = ctx.props(node);
+				var probes = ctx.read("trace.probes");
+				if (!probes || typeof probes.push !== "function") {
+					probes = ctx.write("trace.probes", []);
+				}
+				probes.push({
+					label: (args.label = String(ctx.template(props.label || ""))),
+					value: value
+				});
+				if (ctx.outputPath(node)) {
+					ctx.write(ctx.outputPath(node), value);
+				}
+				return value;
+			}
+		}
+	};
 }())

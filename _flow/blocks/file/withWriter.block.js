@@ -107,6 +107,48 @@ const _meta = {
 				ctx.closeHandle(handle);
 			}
 			return ctx.handleSummary(handle);
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var file = resolveFile(ctx, props.path);
+				var capturedArguments = {
+					path: String(file.getAbsolutePath()),
+					charset: String(props.charset || "UTF-8"),
+					as: props.as || "local.writer",
+					append: boolValue(props.append, false)
+				};
+				Object.defineProperty(capturedArguments, "__state", { value: { props: props, file: file } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var props = capturedState.props;
+				var file = capturedState.file;
+				var parent = file.getParentFile();
+				if (parent) {
+					parent.mkdirs();
+				}
+				var writer = new BufferedWriter(
+					new OutputStreamWriter(
+						new FileOutputStream(file, boolValue(props.append, false)),
+						String(props.charset || "UTF-8")
+					)
+				);
+				var handle = ctx.createHandle("file.writer", writer, {
+					label: String(file.getAbsolutePath()),
+					close: function (value) {
+						value.close();
+					}
+				});
+				ctx.write(props.as || "local.writer", handle);
+				try {
+					ctx.runNodes(node.nodes || []);
+				} finally {
+					ctx.closeHandle(handle);
+				}
+				return ctx.handleSummary(handle);
+			}
 		}
 	};
 }())

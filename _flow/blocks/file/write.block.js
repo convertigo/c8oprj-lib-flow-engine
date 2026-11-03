@@ -81,6 +81,27 @@ const _meta = {
 				writer.flush();
 			}
 			return { written: true };
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var writerHandle = ctx.expr(props.writer || "local.writer"),
+					writer = ctx.handleValue(writerHandle, "file.writer");
+				var args = {
+					writer: writerHandle,
+					value: textValue(ctx, ctx.input(props, "")),
+					newline: boolValue(props.newline, false),
+					flush: boolValue(props.flush, false)
+				};
+				Object.defineProperty(args, "__writer", { value: writer });
+				return args;
+			},
+			run: function (ctx, node, args) {
+				args.__writer.write(args.value);
+				if (args.newline) args.__writer.newLine();
+				if (args.flush) args.__writer.flush();
+				return { written: true };
+			}
 		}
 	};
 }())

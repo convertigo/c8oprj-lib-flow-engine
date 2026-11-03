@@ -154,6 +154,37 @@ const _meta = {
 				includeTrace: false
 			});
 			return execution.result;
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var contract = findContract(ctx.definition, String(props.contract || ""));
+				var implementation = resolveImplementation(ctx, props, contract);
+				var flow = ctx.flowGet(implementation);
+				var childInput = inputValue(ctx, props.input || {});
+				var capturedArguments = {
+					contract: props.contract,
+					implementation: implementation,
+					input: childInput
+				};
+				Object.defineProperty(capturedArguments, "__state", {
+					value: { flow: flow, childInput: childInput }
+				});
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var flow = capturedState.flow;
+				var childInput = capturedState.childInput;
+				var execution = ctx.runFlowSource(flow.source, ctx.scopes.config, {
+					input: childInput,
+					context: {
+						input: childInput
+					},
+					includeTrace: false
+				});
+				return execution.result;
+			}
 		}
 	};
 }())

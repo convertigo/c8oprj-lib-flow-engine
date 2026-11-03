@@ -76,6 +76,36 @@ const _meta = {
 			var bytes = JavaArray.newInstance(JavaByte.TYPE, Math.floor(count));
 			new SecureRandom().nextBytes(bytes);
 			return encode(bytes, String(props.encoding || "base64url"));
+		},
+		debug: {
+			resolve: function (ctx, node) {
+				var props = ctx.props(node);
+				var count =
+					props.bytes === undefined || props.bytes === null || props.bytes === ""
+						? 32
+						: Number(ctx.input({ value: props.bytes }));
+				if (!isFinite(count) || count < 8 || count > 1024) {
+					return ctx.throwFlow(
+						{
+							code: "CRYPTO_RANDOM_SIZE_INVALID",
+							message: "crypto.random: bytes must be between 8 and 1024",
+							status: 400
+						},
+						node
+					);
+				}
+				var capturedArguments = { bytes: count, encoding: String(props.encoding || "base64url") };
+				Object.defineProperty(capturedArguments, "__state", { value: { count: count, props: props } });
+				return capturedArguments;
+			},
+			run: function (ctx, node, args) {
+				var capturedState = args.__state;
+				var count = capturedState.count;
+				var props = capturedState.props;
+				var bytes = JavaArray.newInstance(JavaByte.TYPE, Math.floor(count));
+				new SecureRandom().nextBytes(bytes);
+				return encode(bytes, String(props.encoding || "base64url"));
+			}
 		}
 	};
 }())

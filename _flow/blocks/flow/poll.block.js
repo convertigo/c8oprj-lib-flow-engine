@@ -89,4 +89,72 @@ const _meta = {
   if(attempt===limit)timedOut(attempt);
   ctx.callBlock('flow.wait',{delayMs:Math.min(interval,Math.max(0,Math.ceil(timeout-elapsed())))},{trace:false});
  }
-}};}())
+},
+		debug: {
+			resolve: function (ctx, node) {
+				var p = ctx.props(node),
+					System = Packages.java.lang.System;
+				function bounded(key, min, max) {
+					var v = Number(ctx.template(p[key]));
+					if (!isFinite(v) || Math.floor(v) !== v || v < min || v > max)
+						ctx.raise(
+							"POLL_LIMIT_INVALID",
+							"flow.poll " + key + " must be an integer from " + min + " to " + max + "."
+						);
+					return v;
+				}
+				var interval = bounded("intervalMs", 10, 10000),
+					timeout = bounded("timeoutMs", 1, 600000),
+					limit = bounded("maxAttempts", 1, 10000);
+				return {
+					intervalMs: interval,
+					timeoutMs: timeout,
+					maxAttempts: limit,
+					until: { expression: p.until, deferred: "after attempt" }
+				};
+			},
+			run: function (ctx, node, args) {
+				var p = ctx.props(node),
+					System = Packages.java.lang.System,
+					interval = args.intervalMs,
+					timeout = args.timeoutMs,
+					limit = args.maxAttempts,
+					start = System.nanoTime();
+				function elapsed() {
+					return (System.nanoTime() - start) / 1000000;
+				}
+				function timedOut(attempt) {
+					ctx.throwFlow(
+						{
+							code: "POLL_TIMEOUT",
+							message: "Polling did not complete within its timeout or attempt limit.",
+							status: 504,
+							details: {
+								attempts: attempt,
+								elapsedMs: Math.floor(elapsed()),
+								timeoutMs: timeout,
+								maxAttempts: limit
+							}
+						},
+						node
+					);
+				}
+				for (var attempt = 1; attempt <= limit; attempt++) {
+					if (!ctx.canContinue()) ctx.raise("FLOW_EXECUTION_CANCELLED", "Polling cancelled.");
+					if (elapsed() >= timeout) timedOut(attempt - 1);
+					ctx.runNodes(node.nodes || []);
+					if (ctx.stopped) return { attempts: attempt, elapsedMs: Math.floor(elapsed()), completed: false };
+					if (!ctx.canContinue()) ctx.raise("FLOW_EXECUTION_CANCELLED", "Polling cancelled.");
+					if (elapsed() >= timeout) timedOut(attempt);
+					if ((args.until = ctx.expr(p.until)))
+						return { attempts: attempt, elapsedMs: Math.floor(elapsed()), completed: true };
+					if (attempt === limit) timedOut(attempt);
+					ctx.callBlock(
+						"flow.wait",
+						{ delayMs: Math.min(interval, Math.max(0, Math.ceil(timeout - elapsed()))) },
+						{ trace: false }
+					);
+				}
+			}
+		}
+	};}())
