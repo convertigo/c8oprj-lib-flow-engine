@@ -2855,6 +2855,7 @@
 
 		function canonicalizeParsedNode(blocks, node) {
 			var slots = flowScriptBlockSlotNames(blocks, node.block);
+			if (node.block === "set" && node.props && node.out === node.props.path) delete node.out;
 			// Natural assignments, returns and expanded projections synthesize
 			// nodes too. Lower them into the same AST as explicit $$ calls, here
 			// in the parser, never via a runtime legacy-shape fallback.

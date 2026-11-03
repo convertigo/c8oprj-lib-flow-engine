@@ -676,7 +676,7 @@
 	}
 
 	function flowCodeSetRequest(blocks, request) {
-		request = request || {};
+		request = Object.assign({}, request || {}, {official:false,draft:true,mode:"draft",stage:"draft"});
 		var name = flowCodeName(request);
 		var code = request.code !== undefined && request.code !== null ? String(request.code) : "";
 		if (code.trim() === "") {
@@ -688,79 +688,11 @@
 				warnings: []
 			};
 		}
-		if (!flowCodeOfficialMode(request)) {
-			return flowCodeDraftSetRequest(blocks, request, name, code);
-		}
-		var current = null;
-		try {
-			current = flowCodeGetRequest(blocks, Object.assign({}, request, { name: name }));
-		} catch (e) {
-			if (String(e.code || "") !== "UNKNOWN_FLOW") {
-				throw e;
-			}
-		}
-		var expectedRevision = request.revision || request.baseRevision || request.baseHash;
-		if (expectedRevision && current && String(expectedRevision) !== current.revision) {
-			return {
-				ok: false,
-				qname: flowCodeQName(request, name),
-				name: name,
-				revision: current.revision,
-				error: flowCodeError("FLOW_CODE_REVISION_MISMATCH",
-					"FlowScript changed since it was read: " + name,
-					"Call flow-code-get again and regenerate the patch from the new revision."),
-				warnings: []
-			};
-		}
-		var auto = flowCodeAutoCorrect(blocks, request, code);
-		var corrected = flowCodeCorrect(blocks, request, auto ? auto.code : code);
-		if (corrected.error) {
-			// nothing is written: the edits apply to the code checked, sent again with code-set
-			var refusedProposal = flowCodeProposal(blocks, request, corrected.code, null);
-			return flowCodeIntuitiveReport(Object.assign({ ok: false, name: name, error: corrected.error, warnings: [] },
-				refusedProposal ? { code: corrected.code } : {}), auto, refusedProposal, corrected.code);
-		}
-		code = corrected.code;
-		var validation = flowScriptValidateRequest(blocks, Object.assign({}, request, { name: name, code: code, authoringCorrections: true }));
-		var warnings = flowCodeDiagnostics(validation.diagnostics, "warning");
-		if (!validation.ok) {
-			var proposal = flowCodeProposal(blocks, request, code, null);
-			return flowCodeIntuitiveReport(Object.assign({
-				ok: false,
-				qname: flowCodeQName(request, name),
-				name: name,
-				revision: current ? current.revision : null,
-				error: flowCodeError("FLOWSCRIPT_VALIDATION_FAILED", validationFailedMessage(validation.diagnostics),
-					"Fix the reported diagnostics and retry.", flowCodeDiagnosticReport(validation.diagnostics, request)),
-				warnings: warnings
-			}, proposal ? { code: code } : {}), auto, proposal, code);
-		}
-		var saved = null;
-		if (!flowCodeDryRun(request)) {
-			saved = setProjectFlow(blocks, name, validation.source, request);
-		}
-		var revision = saved && saved.codeRevision
-			? saved.codeRevision
-			: flowCodeRevisionForSource(blocks, name, validation.source, request);
-		var inputSync = flowCodeSyncInputs(name, validation, request);
-		return flowCodeIntuitiveReport(flowCodeCorrections(flowCodeAddInputReport({
-			ok: true,
-			qname: flowCodeQName(request, name),
-			name: name,
-			dry: flowCodeDryRun(request),
-			format: "flowscript",
-			canonical: true,
-			file: saved ? saved.file : (current ? current.file : ""),
-			codeFile: saved ? saved.codeFile : (current ? current.codeFile : ""),
-			revision: revision,
-			oldRevision: current ? current.revision : null,
-			inputSync: inputSync,
-			warnings: warnings
-		}, validation), corrected), auto, auto ? flowCodeProposal(blocks, request, code, revision) : null, code);
+		return flowCodeDraftSetRequest(blocks, request, name, code);
 	}
 
 	function flowCodePatchRequest(blocks, request) {
-		request = request || {};
+		request = Object.assign({}, request || {}, {official:false,draft:true,mode:"draft",stage:"draft"});
 		var name = flowCodeName(request);
 		var current = null;
 		try {

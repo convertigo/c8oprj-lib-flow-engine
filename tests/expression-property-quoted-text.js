@@ -82,6 +82,8 @@ try {
 	assert(written.ok && written.code.indexOf('day: "2025-12-14"') !== -1, "The writer keeps the quoted text:\n" + written.code);
 	var again = api("run", { flowSource: written.code, includeTrace: false, input: {} });
 	assert(again.ok && again.result.slot.day === "2025-12-14", "The written source gives the text: " + JSON.stringify(again));
+	var promotion = api("flowCodePromote", {name: saved.name, revision: saved.revision});
+	assert(promotion.ok, "Explicit promote: " + JSON.stringify(promotion));
 	var check = api("flowCodeCheck", { name: "Bookings", draft: false });
 	assert(check.ok, "code-check: " + JSON.stringify(check));
 

@@ -49,6 +49,8 @@ try {
 	// Saved as written, the method form keeps running from the project.
 	var saved = api("flowCodeSet", { name: "Orders", code: flow(methods), draft: false });
 	assert(saved.ok, "code-set refused the method form: " + JSON.stringify(saved));
+	var promotion = api("flowCodePromote", {name: saved.name, revision: saved.revision});
+	assert(promotion.ok, "Explicit promote: " + JSON.stringify(promotion));
 	var check = api("flowCodeCheck", { name: "Orders", draft: false });
 	assert(check.ok && !(check.diagnostics || []).some(function (d) { return d.severity === "error" || d.level === "error"; }),
 		"code-check of the method form: " + JSON.stringify(check));

@@ -49,7 +49,7 @@ const _meta = {
       "kind": "literal",
       "type": "boolean",
       "default": false,
-      "description": "Low-level compatibility flag. The working copy is the default unless official mode is requested.",
+      "description": "Compatibility flag. Writes always keep a working copy; use code-promote to save.",
     },
     "saveProject": {
       "label": "Save project",

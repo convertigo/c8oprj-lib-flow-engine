@@ -53,10 +53,14 @@ try {
 	assert(!invalid.ok && JSON.stringify(invalid).indexOf("FLOWSCRIPT_EXPRESSION_UNSUPPORTED") !== -1, "The patched source is checked: " + JSON.stringify(invalid).substring(0, 300));
 
 	// the saved Flow, a project block and a project resource take edits too
-	var official = api("flowCodePatch", { name: "Basket", draft: false, revision: api("flowCodeGet", { name: "Basket", draft: false }).revision,
+	var reset = api("flowCodeSet",{name:"Basket",code:code});
+	assert(api("flowCodePromote",{name:"Basket",revision:reset.revision}).ok,"save initial official fixture");
+	var official = api("flowCodePatch", { name: "Basket", draft: false, revision: api("flowCodeGet", { name: "Basket" }).revision,
 		edits: [{ oldText: "local.price = 10", newText: "local.price = 11" }] });
-	assert(official.ok && String(files.readFileToString(new java.io.File(project, "_flow/flows/Basket.flow.js"), "UTF-8")).indexOf("local.price = 11") !== -1,
-		"code-patch draft:false with edits saves the Flow: " + JSON.stringify(official).substring(0, 300));
+	assert(official.ok && official.workingCopy && String(files.readFileToString(new java.io.File(project, "_flow/flows/Basket.flow.js"), "UTF-8")).indexOf("local.price = 10") !== -1,
+		"draft:false cannot bypass source ownership: " + JSON.stringify(official));
+	assert(api("flowCodePromote",{name:"Basket",revision:official.revision}).ok,"explicit promote saves patched draft");
+	assert(String(files.readFileToString(new java.io.File(project,"_flow/flows/Basket.flow.js"),"UTF-8")).indexOf("local.price = 11")>=0,"promoted patch saved");
 	var block = 'const _meta = {\n  "sourceVersion": 2,\n  "properties": { "amount": { "kind": "value", "type": "number" } },\n  "outputs": { "out": { "type": "number" } }\n}\n\n' +
 		'function basket_tax({ input, config }) {\n  return input.amount * 0.2\n}\n';
 	var setBlock = api("blockCodeSet", { name: "basket.tax", code: block });
