@@ -2080,7 +2080,9 @@
 					var validNames = Object.keys(schema.properties).sort();
 					flowSvelteCallVariables(node).forEach(function (variable) {
 						var name = String(variable && variable.props && variable.props.name || "");
-						if (name && !Object.prototype.hasOwnProperty.call(schema.properties, name)) {
+						// SDK transport flag, consumed by the client before requestable inputs.
+						// Do not allow arbitrary reserved __ parameters here.
+						if (name && name !== "__disableAutologin" && !Object.prototype.hasOwnProperty.call(schema.properties, name)) {
 							diagnostics.push(flowSvelteUnknownCallVariableDiagnostic(variable, requestable, validNames));
 						}
 					});

@@ -2572,6 +2572,7 @@
 			projectDir: projectDir,
 			projectNameForRoot: projectNameForRoot,
 			projectLibDir: projectLibDir,
+			referenceRoots: function () { return referencedProjectRoots(sourcePaths().path("lib")); },
 			engineLibDir: engineLibDir,
 			canonicalPath: canonicalPath,
 			fileFingerprint: fileFingerprint,
@@ -2764,11 +2765,30 @@
 				flowSource: "function __compiler_preload__({ result }) {\n  return result\n}\n"
 			}, blocks);
 		}
+		// Explicit module initialization only; no Flow/block execution, input or session.
+		var libraryNames = (loadProjectEngineDefinition().preload || {}).libraries || [];
+		if (!Array.isArray(libraryNames) || libraryNames.length > 64) raise("FLOW_PRELOAD_LIBRARIES_INVALID", "preload.libraries is a bounded array of module names.");
+		var libraries = libraryNames.map(function (name) {
+			var begin = JavaSystem.nanoTime();
+			try { loadFlowLibrary(String(name)); return { name: String(name), ok: true, durationMs: Number(JavaSystem.nanoTime()-begin)/1000000 }; }
+			catch (e) { return { name: String(name), ok: false, error: failure("preload",e).error }; }
+		});
+		var blockNames = (loadProjectEngineDefinition().preload || {}).blocks || [];
+		if (!Array.isArray(blockNames) || blockNames.length > 128) raise("FLOW_PRELOAD_BLOCKS_INVALID", "preload.blocks is a bounded array of block names.");
+		var blockPlans = blockNames.map(function (name) {
+			name = String(name);
+			if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(name) || !Object.prototype.hasOwnProperty.call(blocks,name)) return {block:name,ok:false,error:{code:"UNKNOWN_BLOCK",message:"Unknown preload block."}};
+			var prepared = preloadRunPlan(request, { flowQName: String(request.project || "") + ".__block_preload__." + name,
+				flowName: "__block_preload__", flowSource: "function __block_preload__({input,result}){\n" + name + "({})\n}" });
+			prepared.block = name; return prepared;
+		});
 		var plans = flows ? flows.map(function (flow) { return preloadRunPlan(request, flow); }) : null;
 		var result = {
 			ok: true,
 			project: String(request.project || ""),
 			projectDir: String(projectDir() || ""),
+			libraries: libraries,
+			blockPlans: blockPlans,
 			blockCount: Object.keys(blocks).length,
 			durationMs: new Date().getTime() - started,
 			compilerDurationMs: new Date().getTime() - compilerStarted,
@@ -5510,6 +5530,9 @@
 		var entry = block.__readOnlyCatalog;
 		if (!entry || entry.key !== key) {
 			entry = { key: key, value: block.catalog() };
+			// A nested run can visit another project in the same realm. Published blocks are frozen.
+			// Keep their original catalog immutable; the child gets its own resolved view.
+			if (Object.isFrozen(block)) return flowExecutionSnapshotService().freeze(entry.value);
 			Object.defineProperty(block, "__readOnlyCatalog", { value: entry, enumerable: false, configurable: true });
 		}
 		return entry.value;
@@ -11070,7 +11093,7 @@
 		var PrintWriter = Packages.java.io.PrintWriter;
 		logFile.getParentFile().mkdirs();
 		var projectLog = frontendCurrentLog.get();
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				if (projectLog) {
 					frontendCurrentLog.set(projectLog);
@@ -11137,7 +11160,7 @@
 		entry.idleThreadStarted = true;
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				try {
 					while (entry.cancelled !== true && !frontendDevTerminal(entry)) {
@@ -11207,7 +11230,7 @@
 		}
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				var exitCode = null;
 				try {
@@ -11548,7 +11571,7 @@
 		}
 		var Runnable = Packages.java.lang.Runnable;
 		var Thread = Packages.java.lang.Thread;
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				try {
 					if (entry.status === "starting") {
@@ -11914,7 +11937,7 @@
 		cancel.put("processes", new Packages.java.util.concurrent.CopyOnWriteArrayList());
 		frontendProductionBuildCancels().put(String(key), cancel);
 		var productionLog = frontendLog(key);
-		var thread = new Thread(new Runnable({
+		var thread = new Thread(new JavaAdapter(Runnable, {
 			run: function () {
 				var startedAt = JavaSystem.nanoTime();
 				frontendCurrentLog.set(productionLog);

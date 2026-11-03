@@ -359,7 +359,12 @@
 			}
 			// the contract of a target without variables keeps who may call it: a frontend calls a Public or Hidden
 			// requestable only (a Private one answers "Unable to execute the requested requestable" outside the Studio)
-			var schema = typeof dbo.getVariables === "function" ? inputSchemaForVariables(dbo.getVariables()) : null;
+			// Fast authoring saves can leave the DBO's derived variable-list cache stale.
+			// Synchronize Flow metadata, then read the actual children when that API is available.
+			var variables = typeof dbo.getVariablesList === "function" ? dbo.getVariablesList() :
+				typeof dbo.getVariables === "function" ? dbo.getVariables() : null;
+			if (typeof dbo.getAllVariables === "function") variables = dbo.getAllVariables();
+			var schema = inputSchemaForVariables(variables);
 			var contract = {
 				target: targetPublic(target, env.currentProjectName(request)),
 				schema: schema

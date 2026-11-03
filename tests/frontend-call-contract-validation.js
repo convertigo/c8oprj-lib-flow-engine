@@ -129,6 +129,12 @@ var lookup = {
 	currentProjectName: function (request) { return request.project; },
 	requestableByQName: function (qname) { return catalogue[qname] || null; }
 };
+catalogue["Marketplace.FreshInputs"] = fakeRequestable("com.twinsoft.convertigo.beans.flow.Flow", "Marketplace", "Public", false, []);
+var synchronizedInputs = false;
+catalogue["Marketplace.FreshInputs"].getVariablesList = function () { synchronizedInputs = true; return []; };
+catalogue["Marketplace.FreshInputs"].getAllVariables = function () { if (!synchronizedInputs) throw Error("Metadata not synchronized");return [{getName:function(){return "user";},getSchemaType:function(){return "string";}}]; };
+var freshContract = requestableService.inputContract({project:"Marketplace"}, ".FreshInputs", lookup);
+assertTrue(freshContract.schema.properties.user.type === "string", "Freshly authored inputs must survive a stale derived DBO variable cache");
 var privateContract = requestableService.inputContract({ project: "Marketplace" }, ".CurrentUser", lookup);
 assertTrue(privateContract && privateContract.accessibility === "Private" && privateContract.authenticatedContextRequired === false &&
 	privateContract.schema && Object.keys(privateContract.schema.properties).length === 0,
@@ -166,3 +172,8 @@ print(JSON.stringify({
 	ok: true,
 	cases: ["valid", "unknown", "unavailable-schema", "relative-target", "private-flow", "private-sequence", "hidden-referenced"]
 }));
+
+var sdkFlag = callContractDocument("__disableAutologin", {schema:{type:"object",properties:{},additionalProperties:false}}, []);
+assertTrue(sdkFlag.diagnostics.length === 0, "SDK logout flag is transport metadata, not a declared Flow input");
+var forbiddenReserved = callContractDocument("__unknownReserved", {schema:{type:"object",properties:{},additionalProperties:false}}, []);
+assertTrue(forbiddenReserved.diagnostics.length === 1 && forbiddenReserved.diagnostics[0].code === "FRONTEND_CALLSEQUENCE_VARIABLE_UNKNOWN", "Do not accept arbitrary reserved transport inputs");

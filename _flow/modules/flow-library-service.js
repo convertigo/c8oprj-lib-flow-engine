@@ -25,6 +25,18 @@
 		if (!name) {
 			env.raise("MISSING_LIBRARY_NAME", "Flow library name is required.");
 		}
+		// Qualified modules are resolved only in projects actually referenced by the caller.
+		// They cannot be shadowed by a consumer's local module of the same name.
+		var refs = typeof env.referenceRoots === "function" ? env.referenceRoots() : [];
+		for (var i = 0; i < refs.length; i++) {
+			var provider = String(env.projectNameForRoot(refs[i]) || "");
+			if (provider && name.indexOf(provider + ".") === 0) {
+				var part = name.substring(provider.length + 1);
+				if (!/^[A-Za-z0-9_-]+$/.test(part)) break;
+				var refFile = new env.File(refs[i], env.sourcePaths.path("lib/" + part + ".js"));
+				if (refFile.isFile()) return refFile;
+			}
+		}
 		var localDir = env.projectLibDir();
 		if (localDir) {
 			var localFile = new env.File(localDir, name + ".js");
@@ -73,6 +85,17 @@
 			collectLibraries(libraries, localDir, "project",
 				providerName(new env.File(env.projectDir(), env.sourcePaths.root), "project", env), env);
 		}
+		var refs = typeof env.referenceRoots === "function" ? env.referenceRoots() : [];
+		refs.forEach(function (root) {
+			var provider = String(env.projectNameForRoot(root) || "");
+			if (!provider) return;
+			var found = {};
+			collectLibraries(found, new env.File(root, env.sourcePaths.path("lib")), "reference", provider, env);
+			Object.keys(found).forEach(function (name) {
+				var qualified = provider + "." + name;
+				libraries[qualified] = Object.assign({}, found[name], { name: qualified });
+			});
+		});
 		return Object.keys(libraries).sort().map(function (name) {
 			return libraries[name];
 		});

@@ -201,7 +201,7 @@ if (suite === 'engine' || suite === 'mcp') {
     task('query-missing-parameter.cjs', [process.execPath, path.join(root, 'tests/query-missing-parameter.cjs')]);
   } else {
     task('schema-sample-java', ['bash', path.join(root, 'tools/run-java-tests.sh')]);
-    for (const name of ['capability-reasons.js', 'csv-provider.js', 'csv-timestamp.js', 'output-contracts.js']) task(name, rhino(name, [engine, root]));
+    for (const name of ['capability-reasons.js', 'csv-provider.js', 'csv-timestamp.js', 'output-contracts.js', 'batch-validation.js']) task(name, rhino(name, [engine, root]));
     task('scalar-parameter-diagnostic.js', rhino('scalar-parameter-diagnostic.js', [root]));
   }
 } else fail('Unknown suite: ' + suite);
