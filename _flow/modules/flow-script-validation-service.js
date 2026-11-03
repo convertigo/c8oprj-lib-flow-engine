@@ -717,7 +717,7 @@
 				if (!input.path) {
 					return;
 				}
-				var schema = env.schemaForSchemasPath(analysis.schemas || {}, input.path);
+				var schema = input.schema || env.schemaForSchemasPath(analysis.schemas || {}, input.path);
 				if (!schema) {
 					return;
 				}
@@ -1048,6 +1048,10 @@
 		}).length === 0;
 		var analysis = ok && request.skipAnalysis !== true ? env.analyzeFlowSource(activeBlocks, source, request) : null;
 		if (analysis) {
+			var sourceLines=nodeLines(definition);
+			(analysis.nodes || []).forEach(function(node){
+				if(!node.line)node.line=sourceLines[node.block+'\n'+node.id] || (node.inlineParent && sourceLines[node.inlineParent.block+'\n'+node.inlineParent.id]) || 0;
+			});
 			analysisDiagnostics(activeBlocks, analysis, env).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});

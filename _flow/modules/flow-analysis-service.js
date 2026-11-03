@@ -251,8 +251,44 @@
 				}
 				return null;
 			};
+			function hasInlineBlock(value) {
+				return value && typeof value === "object" && (value.__flowBlock || Object.keys(value).some(function(key){return hasInlineBlock(value[key]);}));
+			}
+			function inlineBlockSchema(value) {
+				var metadata=value.metadata || {};
+				if(metadata.disabled)return {type:"unknown"};
+				var parent=ctx.currentNodeInfo, start=ctx.nodes.length;
+				var temporary="local.__flow_inline_"+start;
+				var snapshot={paths:ctx.paths.slice(),reads:ctx.reads.slice(),writes:ctx.writes.slice(),schemas:cloneMap(ctx.schemas),providers:cloneMap(ctx.providers),returns:ctx.returnSchemas.slice()};
+				var node=Object.assign({block:value.__flowBlock,props:value.properties || {},id:metadata.id || (parent?parent.id:'value')+'.select'+start},metadata,{out:temporary});
+				var schema;
+				delete ctx.schemas[temporary];
+				try {
+					analyzeNode(ctx,node);
+					schema=ctx.schemaForPath(temporary);
+					var info=ctx.nodes[start];
+					if(info){
+						info.inlineParent=parent?{id:parent.id,block:parent.block}:null;
+						(info.inputs || []).forEach(function(input){input.schema=ctx.schemaForPath(input.path);});
+						info.writes=info.writes.filter(function(path){return path!==temporary;});
+						info.outputs=info.outputs.filter(function(output){return output.path!==temporary;});
+					}
+				} finally {
+					restoreMap(ctx.schemas,snapshot.schemas);restoreMap(ctx.providers,snapshot.providers);
+					restoreArray(ctx.paths,snapshot.paths);restoreArray(ctx.reads,snapshot.reads);restoreArray(ctx.writes,snapshot.writes);restoreArray(ctx.returnSchemas,snapshot.returns);
+				}
+				if(metadata.out && schema){ctx.addSchema(metadata.out,schema);ctx.addWrite(metadata.out);}
+				return schema || {type:"unknown"};
+			}
 			ctx.schemaForValue = function (value) {
 				if (value && typeof value === "object") {
+					if(value.__flowBlock)return inlineBlockSchema(value);
+					if(hasInlineBlock(value)){
+						if(Array.isArray(value)){
+							var item=null;value.forEach(function(entry){item=mergeSchema(item,ctx.schemaForValue(entry) || inferSchema(entry));});return {type:'array',items:item || {type:'unknown'}};
+						}
+						var properties={};Object.keys(value).forEach(function(key){properties[key]=ctx.schemaForValue(value[key]) || inferSchema(value[key]);});return {type:'object',properties:properties};
+					}
 					return inferSchema(value);
 				}
 				var expression = exactTemplateExpression(value);
