@@ -3046,6 +3046,9 @@
 			}); }
 			visit(definition.nodes);
 			(definition.helpers || []).forEach(function (helper) { visit(helper.nodes); });
+			nodes = nodes.map(function(node,index){return {node:node,index:index};}).sort(function(a,b){
+				return (Number(a.node.__flowScriptLine) || 0) - (Number(b.node.__flowScriptLine) || 0) || a.index-b.index;
+			}).map(function(entry){return entry.node;});
 			function reserveInline(value,line) {
 				if (!value || typeof value !== "object") return;
 				if (value.__flowBlock && value.metadata && value.metadata.id) {
