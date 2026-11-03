@@ -1,0 +1,11 @@
+var File=java.io.File,Files=java.nio.file.Files,FU=Packages.org.apache.commons.io.FileUtils;
+var workspace=Files.createTempDirectory('flow-preload-libraries-').toFile(),project=new File(workspace,'PreloadTest');new File(project,'_flow/lib').mkdirs();
+FU.writeStringToFile(new File(project,'c8oProject.yaml'),'convertigo: 8.5.0.m006\n↓PreloadTest [core.Project]:\n','UTF-8');
+FU.writeStringToFile(new File(project,'_flow/engine.yaml'),'version: 1\npreload:\n  libraries: [warm, missing]\n  blocks: [probe.never, absent]\n','UTF-8');
+FU.writeStringToFile(new File(project,'_flow/lib/warm.js'),'(function(){return {stateless:true,ready:true};}())','UTF-8');
+new File(project,'_flow/blocks/probe').mkdirs();
+FU.writeStringToFile(new File(project,'_flow/blocks/probe/never.block.js'),'const _meta={runtime:"rhino",properties:{},outputs:{out:{type:"object"}}};\n(function(){return {run:function(){throw Error("preload executed a business block");}};}())','UTF-8');
+var __flowEngineDir=String(new File(arguments[0]).getCanonicalPath()),__flowProjectDir=String(project),engine=eval(String(FU.readFileToString(new File(__flowEngineDir,'Engine.js'),'UTF-8')));
+var answer=JSON.parse(String(engine.preload(JSON.stringify({project:'PreloadTest',projectFlows:true}))));
+if(!answer.ok || answer.libraries.length!==2 || answer.libraries[0].ok!==true || answer.libraries[1].error.code!=='UNKNOWN_LIBRARY' || answer.planCount!==0 || answer.blockPlans.length!==2 || !answer.blockPlans[0].ok || answer.blockPlans[1].error.code!=='UNKNOWN_BLOCK')throw Error(JSON.stringify(answer));
+print(JSON.stringify({passed:true,assertions:7,preload:answer.libraries}));FU.deleteQuietly(workspace);java.lang.System.exit(0);

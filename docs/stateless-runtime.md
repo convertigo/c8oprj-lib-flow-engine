@@ -200,3 +200,19 @@ the old/default path for Studio, authoring, older providers, real drafts and dis
 stateless execution. It has not been deleted for those consumers. Shared runtime
 selection remains experimental and disabled by default; authoring/frontend
 services are not qualified for concurrent use through a shared execution context.
+
+## Explicit JavaScript module warm-up
+
+A project can opt in to module initialization during the existing `preload` call:
+
+```yaml
+preload:
+  libraries:
+  - provider.pure-module
+  blocks:
+  - provider.composite
+```
+
+This top-level `_flow/engine.yaml` list has at most 64 modules and is empty by default. The preload response reports each module's outcome and duration under `libraries`. It uses the same qualified reference resolver and generation-scoped `loadFlowLibrary` cache as `ctx.lib`. No Flow, block or business operation runs. Module initialization must contain declarations, constants and thread-safe caches only, without input or session dependencies; `stateless: true` retains its normal explicit contract. A failed module is reported in its entry and does not prevent the other plans from preparing. This warms code/classes, not JDBC connections or session-specific data.
+
+`preload.blocks` is an explicit list of at most 128 block IDs, for calls selected dynamically by native blocks and therefore absent from a Flow's static graph. Preload compiles a private, in-memory plan calling each block with empty properties; it never runs that plan. Required inputs are not invented and no requestable is installed. The normal compiled block/catalog caches are shared with later calls. `blockPlans` reports each outcome, including unknown IDs, independently of `plans`. The list is empty by default. `tests/preload-libraries.js` uses a block that throws if run and verifies that its preparation succeeds without executing it.
