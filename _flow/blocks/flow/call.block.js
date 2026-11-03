@@ -42,9 +42,6 @@ const _meta = {
 	}
 
 	function inputValue(ctx, value) {
-		if (isObject(value) && value.value !== undefined) {
-			return ctx.input(value);
-		}
 		if (typeof value === "string") {
 			return /\$\{|\{\{/.test(value) ? ctx.template(value) : ctx.expr(value);
 		}

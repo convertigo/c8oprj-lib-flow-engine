@@ -20,4 +20,7 @@ implementation.run(context,{props:{flow:"Child",input:{name:"input.name"}}});
 check(seen.name==="Alice","Existing expression input remains compatible");
 implementation.run(context,{props:{flow:"Child",input:{name:"{{input.name}}"}}});
 check(seen.name==="Alice","Migration notation remains readable");
+implementation.run(context,{props:{flow:"Child",input:{value:"${input.count}",nested:{value:"${input.name}"}}}});
+check(seen && seen.value===0,"A business input named value must remain an object field");
+check(seen.nested.value==="Alice","Nested business value fields are not unwrapped as input helpers");
 print("flow-call-value-inputs OK ("+checks+" checks)");
