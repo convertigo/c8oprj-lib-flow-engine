@@ -17,7 +17,7 @@
     return String(path || node.block || 'node').split('.').pop().replace(/[^A-Za-z0-9_$]/g,'_');
   }
   function implicit(node) {return !node.__flowNameExplicit && node.id===node.__flowImplicitId;}
-  function signature(node) {return JSON.stringify([node.block,node.out,node.props || {}]);}
+  function signature(node) {return JSON.stringify([node.block,node.out,node.props || {},node.comment,node.disabled]);}
   function key(node) {return JSON.stringify([node.block,node.out,(node.props || {}).path]);}
   function remember(definition, previous) {
     var state={counts:previous&&previous.counts || {},nodes:[]};
