@@ -676,7 +676,7 @@
 	}
 
 	function flowCodeSetRequest(blocks, request) {
-		request = Object.assign({}, request || {}, {official:false,draft:true,mode:"draft",stage:"draft"});
+		request = Object.assign({}, request || {}, {official:false,draft:true,save:false,promote:false,saveProject:false,mode:"draft",stage:"draft"});
 		var name = flowCodeName(request);
 		var code = request.code !== undefined && request.code !== null ? String(request.code) : "";
 		if (code.trim() === "") {
@@ -692,7 +692,7 @@
 	}
 
 	function flowCodePatchRequest(blocks, request) {
-		request = Object.assign({}, request || {}, {official:false,draft:true,mode:"draft",stage:"draft"});
+		request = Object.assign({}, request || {}, {official:false,draft:true,save:false,promote:false,saveProject:false,mode:"draft",stage:"draft"});
 		var name = flowCodeName(request);
 		var current = null;
 		try {
