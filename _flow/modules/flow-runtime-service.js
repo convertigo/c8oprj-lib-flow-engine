@@ -11,7 +11,7 @@
 
 	function create(env) {
 		env = env || {};
-		var blockDebugSignal = env.blockDebugSignal || { active: false };
+		var blockDebugSignal = env.blockDebugSignal || null;
 		var beforeDebugBlock = env.beforeDebugBlock;
 		var blockName = env.blockName;
 		var nodeProps = env.nodeProps;
@@ -1199,12 +1199,22 @@
 			if (!block) {
 				return null;
 			}
+			// No participant transport on this engine: retain the ordinary runner, without a signal read.
+			if (!blockDebugSignal) return function (ctx) {
+				if (ctx.stopped || node.disabled) return undefined;
+				ensureCanContinue(ctx, node);
+				var result = runner ? runner(ctx, node) : block.run(ctx, node);
+				ensureCanContinue(ctx, node);
+				if (writer && result !== undefined) writer(ctx, result);
+				if (ctx.traceEnabled !== false) ctx.trace(node, name, result);
+				return result;
+			};
 			return function (ctx) {
 				if (ctx.stopped || node.disabled) {
 					return undefined;
 				}
 				ensureCanContinue(ctx, node);
-				var result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, runner)
+				var result = blockDebugSignal && blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, runner)
 					: runner ? runner(ctx, node) : block.run(ctx, node);
 				ensureCanContinue(ctx, node);
 				if (writer && result !== undefined) {
@@ -1355,10 +1365,10 @@
 				try {
 					if (preparedHit && prepared.run) {
 						profileCount(ctx, "preparedRunnerHits");
-						result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, prepared.run) : prepared.run(ctx, node);
+						result = blockDebugSignal && blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, prepared.run) : prepared.run(ctx, node);
 					} else {
 						profileCount(ctx, "preparedRunnerMisses");
-						result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, null) : block.run(ctx, node);
+						result = blockDebugSignal && blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, null) : block.run(ctx, node);
 					}
 				} finally {
 					recordProfile(ctx, "node", name, runStarted, runAllocated);
@@ -1445,7 +1455,7 @@
 				var result;
 				ensureCanContinue(ctx, node);
 				try {
-					result = blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, null) : block.run(ctx, node);
+					result = blockDebugSignal && blockDebugSignal.active ? invokeDebugBlock(ctx, node, block, null) : block.run(ctx, node);
 				} finally {
 					profileAdd(ctx, "callBlockRunMs", runStarted);
 				}

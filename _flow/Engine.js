@@ -67,10 +67,13 @@
 	try { sourceMemoBridge = typeof FlowEngineBridge.sharedSourceMemo === "function"; } catch (olderEngine) { }
 
 	var JavascriptDebugger = engineClass("com.twinsoft.convertigo.engine.debug.JavascriptDebugger");
-	var providerDebuggerBridge = typeof JavascriptDebugger.providerDebugging === "function";
+	// NativeJavaClass throws on an absent member, even under typeof. Probe once at bootstrap.
+	var providerDebuggerBridge = false, blockDebugSignal = null;
+	try { providerDebuggerBridge = typeof JavascriptDebugger.providerDebugging === "function"; } catch (olderDebugger) { }
+	try {
+		if (typeof JavascriptDebugger.participantSelected === "function") blockDebugSignal = JavascriptDebugger.signal;
+	} catch (olderParticipantTransport) { }
 	function providerDebugging() { return providerDebuggerBridge && JavascriptDebugger.providerDebugging(); }
-	// One live field read per ordinary block. The object is resolved once, never through request Packages.
-	var blockDebugSignal = typeof JavascriptDebugger.participantSelected === "function" ? JavascriptDebugger.signal : { active: false };
 	function beforeDebugBlock(ctx, node) {
 		if (!JavascriptDebugger.participantSelected()) return null;
 		var participant = ctx.blockDebugParticipant;
@@ -89,6 +92,7 @@
 
 
 	function debugSourceInfo(request, blocks) {
+		if (!blockDebugSignal) return null;
 		var name = String(request.flowName || request.name || String(request.flowQName || '').split('.').pop());
 		// Unnamed drafts have no persistent file target in this prototype.
 		if (!name || !projectDir()) return null;
