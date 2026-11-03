@@ -330,6 +330,7 @@
 				var ch=line.charAt(i);
 				if (quote) { if (ch === "\\") i++; else if (ch === quote) quote=""; continue; }
 				if (ch === '"' || ch === "'" || ch === "`") { quote=ch;continue; }
+				if (ch === "/" && line.charAt(i+1) === "/") break;
 				if (ch === " " && line.charAt(i+1) !== " " && /\s(?:&&|\|\||===?|!==?|<=?|>=?|[+*\/%?:=-])$/.test(line.substring(0,i))) candidates.push(i);
 			}
 			var offset=0,prefix="";

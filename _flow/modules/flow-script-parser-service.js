@@ -1302,8 +1302,8 @@
 	
 		function flowScriptRewriteExpression(expr, locals) {
 			expr = String(expr || "").trim();
-			// Physical continuation lines are whitespace, except inside a literal.
-			expr = expr.replace(/"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'|`(?:[^`\\]|\\[\s\S])*`|[ \t]*\r?\n[ \t]*/g,
+			// Physical continuation lines are whitespace; literals and comment boundaries stay intact.
+			expr = expr.replace(/"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'|`(?:[^`\\]|\\[\s\S])*`|\/\/[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/|[ \t]*\r?\n[ \t]*/g,
 				function(token) { return token.indexOf("\n") >= 0 && /^[ \t\r\n]+$/.test(token) ? " " : token; });
 			var exact = env.templateSyntax.exactExpression(expr);
 			if (exact !== null) {

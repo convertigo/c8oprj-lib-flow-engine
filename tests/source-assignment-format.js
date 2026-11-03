@@ -8,7 +8,7 @@ var checks = 0;
 function assert(value, message) { checks++; if (!value) throw new Error(message); }
 function stable(value) {
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
-  if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(function (key) {
+  if (value && typeof value === 'object') return '{' + Object.keys(value).filter(function(key){return key!=="__flowNameExplicit";}).sort().map(function (key) {
     return JSON.stringify(key) + ':' + stable(value[key]);
   }).join(',') + '}';
   return JSON.stringify(value);

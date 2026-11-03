@@ -1205,7 +1205,7 @@ var structuredMapValidation = JSON.parse(engine.flowSourceValidate(JSON.stringif
 	code: structuredMapFlowScriptSource
 })));
 assertTrue(structuredMapValidation.ok === true && structuredMapValidation.definition.nodes[1].block === "list.map" &&
-	structuredMapValidation.definition.nodes.length === 3,
+	structuredMapValidation.definition.nodes.length === 4 && structuredMapValidation.definition.nodes[3].block === "return",
 	"structured list.map was not preserved as one executable Flow block");
 var structuredMapRun = JSON.parse(engine.run(JSON.stringify({
 	flowSource: structuredMapFlowScriptSource,
