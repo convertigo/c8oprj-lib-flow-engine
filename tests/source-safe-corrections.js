@@ -32,7 +32,9 @@ try {
  assert(api('flowCodeRun',{name:'Branch',input:{enabled:false}}).result.value==='off','lifting stays in branch');
  ['result.value = input.ok && text.trim({text:"a"})','result.value = input.ok ? text.trim({text:"a"}) : "b"','result.value = input.before + text.trim({text:"a"})'].forEach(function(body,index){
   var name='Unsafe'+index,original=code(name,body),out=api('flowCodeSet',{name:name,code:original,autoCorrect:true});
-  assert(!out.ok&&!out.autoCorrected,'unsafe expression is refused');assert(api('flowCodeGet',{name:name}).code===original,'unsafe expression remains unchanged');
+  assert(out.ok&&!out.autoCorrected,'assignment expression compiles without source repair');assert(api('flowCodeGet',{name:name}).code===original,'lowered expression source remains unchanged');
+  var executed=api('run',{flowSource:original,input:{ok:false,before:'kept-'},includeTrace:false});
+  assert(executed.ok && executed.result.value===[false,'b','kept-a'][index],'ordered lazy expression: '+JSON.stringify(executed));
  });
  var inputs=code('Inputs','result.value = input.rows');
  var inputSet=api('flowCodeSet',{name:'Inputs',code:inputs});

@@ -215,6 +215,7 @@
 
 	function expressionFunctions(env) {
 		return {
+			"Array.isArray": function (value) { return Object.prototype.toString.call(value) === "[object Array]"; },
 			lower: function (value) {
 				return String(value === undefined || value === null ? "" : value).toLowerCase();
 			},
@@ -822,6 +823,11 @@
 			});
 		}
 		function parseUnary() {
+			if (peek().type === "id" && peek().value === "typeof") {
+				consume();
+				var typedValue = parseUnary();
+				return function (runCtx) { return typeof literalValue(typedValue(runCtx), env); };
+			}
 			if (peek("!")) {
 				consume("!");
 				var notValue = parseUnary();

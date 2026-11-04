@@ -311,6 +311,13 @@
 		}
 		try {
 			var resolution = flowScriptIntuitiveResolve(blocks, code, request);
+			var repair = env.writeProposals && env.writeProposals.missingObjectBrace(code);
+			if (repair) {
+				var checked = flowCodeValidate(blocks, request, flowCodeName(request), repair.code);
+				if (!checked.error && checked.validation && checked.validation.ok) {
+					resolution.edits = [Object.assign(env.writeProposals.edit(code, repair.code, repair.reason), {confidence:1})];
+				}
+			}
 			// A declared slot's spelling takes precedence over fuzzy guesses at business property names.
 			if (env.flowScriptSuggestSource) {
 				try {
@@ -354,6 +361,11 @@
 		}
 		if (proposal) {
 			out.proposedPatch = proposal;
+		}
+		if (out.error && env.writeProposals) {
+			var literal = env.writeProposals.literalCode(code, out.error);
+			if (literal) out.proposedPatch = {revision:out.revision || null, requiresChoice:true, edits:[literal],
+				next:"Replace CHOOSE_ERROR_CODE with the intended public code, then apply the edit. No error code is guessed."};
 		}
 		return out;
 	}
@@ -724,8 +736,8 @@
 				draft: true,
 				revision: current.revision,
 				error: flowCodeError("FLOW_CODE_REVISION_REQUIRED",
-					"Promoting a FlowScript working copy requires the revision that was checked: " + name,
-					"Promote with the revision returned by code-set, code-patch or code-check."),
+					"Patching a FlowScript working copy requires its last read revision: " + name,
+					"Pass the revision returned by code-get, code-set or code-patch; an identified MCP conversation can reuse its last observed revision."),
 				warnings: []
 			};
 		}

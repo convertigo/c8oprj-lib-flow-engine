@@ -56,13 +56,13 @@ var precedence = run([
 ], { a: 7 });
 assertTrue(precedence.value === 7 && precedence.text === "page 3", "precedence of %: " + JSON.stringify(precedence));
 
-// a block call stays refused inside an expression, a Math function is not one
+// A block in an arithmetic assignment is lowered to a call followed by the expression.
 var nested = JSON.parse(engine.run(JSON.stringify({ flowSource: [
 	"function Nested({ input, result }) {",
 	"  result.value = date.now({}) + 1",
 	"}"
 ].join("\n"), input: {}, includeTrace: false })));
-assertTrue(nested.ok === false && nested.error.code === "FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "a nested block call is still refused: " + JSON.stringify(nested.error));
+assertTrue(nested.ok === true && typeof nested.result.value === "number", "a nested block call runs: " + JSON.stringify(nested));
 
 // code-set reads them as the run does: its safe corrections refused Math.max(1, 2) as an unknown block
 var written = JSON.parse(engine.flowCodeSet(JSON.stringify({ name: "Written", code: [

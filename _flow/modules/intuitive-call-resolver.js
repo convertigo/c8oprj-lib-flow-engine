@@ -30,7 +30,7 @@
 		length: "number", "list.length": "number", round: "number", floor: "number", ceil: "number", abs: "number",
 		min: "number", max: "number", "Math.round": "number", "Math.floor": "number", "Math.ceil": "number",
 		"Math.abs": "number", "Math.min": "number", "Math.max": "number", "default": "any", json: "string",
-		oneOf: "boolean", overlaps: "boolean", String: "string", Number: "number"
+		oneOf: "boolean", overlaps: "boolean", String: "string", Number: "number", "Array.isArray": "boolean"
 	};
 
 	// The keys an author writes for a property of another name, the most likely first
@@ -284,7 +284,6 @@
 					reason: "Math.trunc is floor for a positive value and ceil for a negative one." };
 			},
 			"Math.random": function () { return { unresolved: "No random number in the expressions: crypto.random gives a random text (bytes, encoding)." }; },
-			"Array.isArray": function () { return { unresolved: "Declare the input typed array, or read its type with the type.get block." }; },
 			"console.log": console(""),
 			"console.info": console("info"),
 			"console.warn": console("warn"),

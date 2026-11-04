@@ -4831,6 +4831,7 @@
 			renderFlowScript: renderFlowScript,
 			sha256Hex: sha256Hex,
 			flowScriptValidateRequest: flowScriptValidateRequest,
+			writeProposals: loadEngineModule("flow-write-proposals.js"),
 			flowScriptCorrectSource: flowScriptCorrectSource,
 			flowScriptSuggestSource: function (blocks, code, request) {
 				return flowScriptParserService().correctSource(blocks,code,Object.assign({},request,{autoCorrect:true}),{blockCatalog:readOnlyBlockCatalog,blockCandidates:flowScriptBlockCandidates,blockCandidateDecision:flowScriptBlockCandidateDecision});

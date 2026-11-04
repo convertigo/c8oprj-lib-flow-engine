@@ -1,6 +1,6 @@
 // FlowScript values written as JavaScript either work as JavaScript or are refused at compile
 // time, never kept as plain text: concatenations that start and end with a string, object and
-// array literals in an expression, block calls nested in an expression (refused), scope paths
+// array literals in an expression, block calls nested in an assignment (lowered), scope paths
 // given to a text property (refused), and json.field keys known at run time.
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
@@ -42,10 +42,11 @@ assertTrue(plain.text === "a \" + b", "a string holding an escaped quote stays o
 var single = result("  local.text = 'it' + \"'s\"\n  return { text: local.text }");
 assertTrue(single.text === "it's", "single and double quoted strings concatenate: " + JSON.stringify(single));
 
-// a block call nested in an expression is refused with the way out
-var nested = refused('  local.expires = date.now({}) + 60000\n  return { expires: local.expires }', "FLOWSCRIPT_EXPRESSION_UNSUPPORTED");
-assertTrue(/date\.now/.test(nested.hint) && /assign it to a local first/.test(nested.hint), "hint names the call: " + JSON.stringify(nested));
-refused('  local.big = input.n > 3 ? text.trim({ text: input.s }) : ""\n  return { big: local.big }', "FLOWSCRIPT_EXPRESSION_UNSUPPORTED");
+// Assignment expressions preserve the call and the lazy branch; return object calls still require a local.
+var nested = result('  local.expires = date.now({}) + 60000\n  return { expires: local.expires }');
+assertTrue(typeof nested.expires === "number", "nested call evaluated: " + JSON.stringify(nested));
+var conditional = result('  local.big = input.n > 3 ? text.trim({ text: input.s }) : ""\n  return { big: local.big }', {n:4,s:" hi "});
+assertTrue(conditional.big === "hi", "conditional block evaluated: " + JSON.stringify(conditional));
 refused('  return { payload: json.stringify({ value: { at: date.now({}) + 1 } }) }', "FLOWSCRIPT_EXPRESSION_UNSUPPORTED");
 // object and array literals are values inside an expression
 var literals = result('  local.attributes = default(input.attributes, {})\n  local.pair = [input.a, { b: input.b, "c d": [1, 2,], }]\n  local.fallback = input.missing ?? { kind: "none" }\n  return { attributes: local.attributes, pair: local.pair, fallback: local.fallback }', { a: 1, b: "x" });

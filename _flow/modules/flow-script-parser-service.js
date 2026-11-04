@@ -94,7 +94,6 @@
 		"parseInt": "an input typed integer, or the expression floor(Number(value))",
 		"parseFloat": "an input typed number, or the expression Number(value)",
 		"isNaN": "an input typed number, or the expression Number(value) === Number(value)",
-		"Array.isArray": "an input typed array, or the type.get block",
 		"Date.now": "the date.now block",
 		"Math.pow": "a product in the expression (value * value)",
 		"Math.random": "the crypto.random block",
@@ -156,10 +155,10 @@
 			throw error;
 		}
 		function parse() {
-			// `if({...})` is a Flow block call, not a JS if statement. Mask only
+			// Keyword calls (`if`, `try`, `while`, `throw`) are Flow blocks. Mask only
 			// that token, outside comments/strings, without changing offsets.
-			var masked = source.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|\bif\s*(?=\(\s*\{)/g,
-				function (token) { return /^if\b/.test(token) ? "i_" + token.substring(2) : token; });
+			var masked = source.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|\b(?:if|try|while|throw)\s*(?=\(\s*\{)/g,
+				function (token) { return token.replace(/^(if|try|while|throw)/, function (keyword) { return keyword.charAt(0) + new Array(keyword.length).join("_"); }); });
 			try {
 				var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
 				options.setLanguageVersion(200);
@@ -242,7 +241,9 @@
 					var keyNode = entry.getKey ? entry.getKey() : entry.getLeft(), value = entry.getValue ? entry.getValue() : entry.getRight();
 					var key = kind(keyNode) === "Name" ? String(keyNode.getIdentifier()) : kind(keyNode) === "StringLiteral" ? String(keyNode.getValue()) : "";
 					var slot = key.replace(/^\$+/, ""), wanted = "$$" + slot;
-					if (kind(value) !== "FunctionNode" || !/^\$+/.test(key) || key === wanted || slots.indexOf(slot) < 0) return;
+					var isSlot = kind(value) === "FunctionNode" && slots.indexOf(slot) >= 0;
+					var isAttribute = ["id", "out", "disabled", "comment"].indexOf(slot) >= 0 && !(catalog(name).props || {})[key];
+					if ((!isSlot && !isAttribute) || !/^\$+/.test(key) || key === wanted) return;
 					if (elements.some(function (other) {
 						var otherKey = other.getKey ? other.getKey() : other.getLeft();
 						return text(otherKey) === wanted || text(otherKey) === JSON.stringify(wanted);
@@ -264,7 +265,7 @@
 			var name = text(node.getTarget()).replace(/\s/g, "");
 			if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) || /^(input|local|current|result|request|config|trace)\./.test(name) || blockName(node)) return;
 			// Math.max(1, 2) and list.length(x) are expression functions, as the run reads them
-			if (/^(list\.length|Math\.(round|floor|ceil|abs|min|max))$/.test(name)) return;
+			if (/^(Array\.isArray|list\.length|Math\.(round|floor|ceil|abs|min|max))$/.test(name)) return;
 			unknownBlock(blocks, name, line(start(node)), env);
 		});
 		for (var pass = 0; pass < 128; pass++) {
@@ -2009,7 +2010,7 @@
 		// The functions of the expressions (expression-utils.js)
 		var FLOWSCRIPT_EXPRESSION_FUNCTIONS = ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
 			"length", "list.length", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
-			"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number"];
+			"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number", "Array.isArray"];
 
 		function parseNaturalFlowScriptCallMember(text) {
 			text = stripFlowScriptSemicolon(text);
@@ -2421,8 +2422,68 @@
 			node.out = path;
 		}
 	
+		// A block in arithmetic or a short-circuit assignment lowers to ordinary Flow nodes.
+		// Evaluate each operand once, left to right; lazy branches stay lazy, including inside an iterator.
+		var expressionSource = "", expressionSequence = 0;
+		function lowerBlockExpression(blocks, imports, locals, destination, rhs, lineNumber) {
+			if (!containsNestedBlockCall(blocks, rhs) || parseNaturalFlowScriptCall(rhs)) return null;
+			var root;
+			try {
+				var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+				options.setLanguageVersion(200);
+				root = new Packages.org.mozilla.javascript.Parser(options).parse("(" + rhs + ");", "flow-expression", 1)
+					.getFirstChild().getExpression().getExpression();
+			} catch (_notAnExpression) { return null; }
+			function kind(node) { return String(node.getClass().getSimpleName()); }
+			function text(node) { return rhs.substring(Number(node.getAbsolutePosition()) - 1, Number(node.getAbsolutePosition()) - 1 + Number(node.getLength())); }
+			function temp() {
+				var name;
+				do { name = "flowExpression" + (++expressionSequence); } while (expressionSource.indexOf(name) >= 0 || locals[name]);
+				return "local." + name;
+			}
+			function set(path, value) { return {block:"set", path:path, value:flowScriptValueFromToken(value, locals, lineNumber), __flowScriptLine:lineNumber}; }
+			function supported(node) {
+				if (!containsNestedBlockCall(blocks, text(node))) return true;
+				var k = kind(node);
+				if (k === "ParenthesizedExpression") return supported(node.getExpression());
+				if (k === "FunctionCall") return !!blocks[resolveFlowScriptName(String(node.getTarget().toSource()).replace(/\s/g,""), imports)];
+				if (k === "InfixExpression") return supported(node.getLeft()) && supported(node.getRight());
+				if (k === "ConditionalExpression") return supported(node.getTestExpression()) && supported(node.getTrueExpression()) && supported(node.getFalseExpression());
+				return false;
+			}
+			if (!supported(root)) return null;
+			function lower(node, path) {
+				var k = kind(node), token = text(node);
+				if (!containsNestedBlockCall(blocks, token)) return [set(path, token)];
+				if (k === "ParenthesizedExpression") return lower(node.getExpression(), path);
+				if (k === "FunctionCall") return buildNaturalScopeAssignment(blocks, imports, locals, path, token, lineNumber);
+				var left = temp(), nodes;
+				if (k === "ConditionalExpression") {
+					nodes = lower(node.getTestExpression(), left);
+					nodes.push({block:"if", condition:left, then:lower(node.getTrueExpression(), path),
+						else:lower(node.getFalseExpression(), path), __flowScriptLine:lineNumber});
+					return nodes;
+				}
+				var op = String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(node.getOperator()));
+				nodes = lower(node.getLeft(), left);
+				if (op === "&&" || op === "||" || op === "??") {
+					nodes.push({block:"if", condition:op === "&&" ? left : op === "||" ? "!" + left : left + " == null",
+						then:lower(node.getRight(), left), __flowScriptLine:lineNumber});
+					nodes.push(set(path, left));
+				} else {
+					var right = temp();
+					nodes = nodes.concat(lower(node.getRight(), right));
+					nodes.push(set(path, left + " " + op + " " + right));
+				}
+				return nodes;
+			}
+			return lower(root, destination);
+		}
+
 		function buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, rhs, lineNumber) {
 			rhs = stripFlowScriptSemicolon(rhs);
+			var lowered = lowerBlockExpression(blocks, imports, locals, "local." + env.safeIdentifier(varName), rhs, lineNumber);
+			if (lowered) return lowered;
 			var callMember = parseNaturalFlowScriptCallMember(rhs);
 			if (callMember) {
 				var sourceName = env.safeIdentifier(varName + "Source");
@@ -2480,6 +2541,8 @@
 	
 		function buildNaturalScopeAssignment(blocks, imports, locals, scopePath, rhs, lineNumber) {
 			rhs = stripFlowScriptSemicolon(rhs);
+			var lowered = lowerBlockExpression(blocks, imports, locals, scopePath, rhs, lineNumber);
+			if (lowered) return lowered;
 			var call = parseNaturalFlowScriptCall(rhs);
 			if (call) {
 				var block = resolveFlowScriptName(call.name, imports);
@@ -3083,6 +3146,7 @@
 		}
 
 		function parseFlowScript(blocks, code, options) {
+			expressionSource = String(code); expressionSequence = 0;
 			code = env.normalizeFlowScriptFunctionSyntax(code);
 			var split = splitFlowScriptFunctions(code);
 			var flowMeta = parseFlowScriptTopLevelObject(split.prelude, "flow");
