@@ -2,6 +2,7 @@
 // Shared offline harness. Libraries already depend on the sibling Flow Engine.
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const {spawn, spawnSync} = require('node:child_process');
 const [suite, rootArg, filter = ''] = process.argv.slice(2);
 const root = path.resolve(rootArg || '.');
@@ -139,7 +140,11 @@ if (suite !== 'frontbuilder') {
 const logRoot = path.resolve(env.FLOW_TEST_LOG_DIR || path.join(root, '_private/test-results', new Date().toISOString().replaceAll(':', '-')));
 fs.mkdirSync(logRoot, {recursive: true});
 const tmp = path.resolve(env.FLOW_TEST_TMPDIR || path.join(logRoot, 'tmp')); fs.mkdirSync(tmp, {recursive: true});
-env.TMPDIR = tmp;
+// tsx opens Unix sockets below TMPDIR; a checkout-relative path can exceed
+// macOS's socket path limit. Keep JVM fixtures in the isolated log directory.
+const nodeTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-'));
+env.TMPDIR = nodeTmp;
+process.on('exit', () => fs.rmSync(nodeTmp, {recursive: true, force: true}));
 // Rhino and the JDK localize their error messages; tests compare the English ones on every host.
 const locale = ['-Duser.language=en', '-Duser.country=US'];
 env.JAVA_TOOL_OPTIONS = (env.JAVA_TOOL_OPTIONS || '') + ' -Djava.awt.headless=true ' + locale.join(' ') + ' -Djava.io.tmpdir=' + JSON.stringify(tmp);

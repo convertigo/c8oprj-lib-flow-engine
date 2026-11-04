@@ -133,6 +133,11 @@ log path. Every failed child makes the runner fail. A nonexistent filter also
 fails. Apart from the JARs a library declares in `libs/jars.yaml`, checked against
 their sha256, the runner does not download dependencies or mask missing prerequisites.
 
+JVM fixtures use `FLOW_TEST_TMPDIR` or `<log directory>/tmp`. Child processes
+receive a separate short `TMPDIR` under the host temporary directory, removed
+when the runner exits, so tsx sockets fit macOS's Unix socket path limit even
+when the checkout is deeply nested.
+
 The Engine/MCP totals count standalone `tests/*.js` and `tests/*.cjs` programs;
 `tests/run-rhino.cjs` is a helper and is excluded. Explicit MCP argument-order
 exceptions live in `lib_flow_mcp/tools/test-arguments.json`, including
