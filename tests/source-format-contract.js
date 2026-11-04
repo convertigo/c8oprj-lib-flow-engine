@@ -21,7 +21,9 @@ try {
   var env = { normalizeTree: function (value) { return JSON.parse(JSON.stringify(value)); } };
   fixtures.forEach(function (fixture) {
     var text = renderer.flowScriptInlineValue(fixture.value, env);
-    equal(text, fixture.expected.join("\n"), fixture.name + " golden");
+    // Flow Svelte still consumes the multiline `expected` layout from this
+    // shared value corpus; natural FlowScript uses the compact layout.
+    equal(text, fixture.expectedFlowScript.join("\n"), fixture.name + " golden");
     var parsed = eval("(" + text + ")");
     equal(parsed, fixture.value, fixture.name + " Rhino literal");
     equal(renderer.flowScriptInlineValue(parsed, env), text, fixture.name + " stable");

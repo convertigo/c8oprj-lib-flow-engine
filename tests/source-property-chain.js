@@ -138,7 +138,8 @@ try {
 	assert(v2node.props.$id === 1 && v2node.props.$$id === 2 && v2node.props.$$$id === 3, "Version 2 dollar escape");
 	assert(run(versionTwo).result.row.id === 5, "Version 2 runtime");
 	var v2written = api("flowSourceValidate", { name: "PropertyChain", flowSource: v2.source, includeMeta: false });
-	assert(v2written.code.indexOf('"sourceVersion": 2') !== -1, "Writer omitted required dialect marker");
+	assert(/\bsourceVersion\b"?\s*:\s*2\b/.test(v2written.code), "Writer omitted required dialect marker");
+	assert(check(v2written.code).definition.flow.sourceVersion === 2, "Written dialect marker did not read back");
 	assert(v2written.code.indexOf('$$disabled: false') !== -1, "Writer lost explicit engine false");
 	// Captures written on the left are parsed after the argument bag; structural
 	// key insertion order is irrelevant, unlike the order inside business data.

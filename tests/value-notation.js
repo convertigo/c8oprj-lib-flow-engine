@@ -111,7 +111,7 @@ var rendered = JSON.parse(engine.applyMutation(JSON.stringify({
 	"local.e = input.name",
 	"n: input.name,",
 	"t: \"x ${y}\",",
-	"u: `C:\\\\${input.name}`,"
+	"u: `C:\\\\${input.name}`"
 ].forEach(function (expected) {
 	assertTrue(rendered.indexOf(expected) !== -1, "rendered " + expected + " in:\n" + rendered);
 });

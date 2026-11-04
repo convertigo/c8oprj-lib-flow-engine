@@ -16,6 +16,22 @@
       "array": []
     },
     "expected": [
+      "{",
+      "  \"z\": 0,",
+      "  \"a\": false,",
+      "  \"empty\": \"\",",
+      "  \"nil\": null,",
+      "  \"rows\": [",
+      "    {",
+      "      \"id\": 5,",
+      "      \"disabled\": false,",
+      "    },",
+      "  ],",
+      "  \"object\": {},",
+      "  \"array\": [],",
+      "}"
+    ],
+    "expectedFlowScript": [
       "{ \"z\": 0, \"a\": false, \"empty\": \"\", \"nil\": null, \"rows\": [{ \"id\": 5, \"disabled\": false }], \"object\": {}, \"array\": [] }"
     ]
   },
@@ -39,6 +55,23 @@
     "expected": [
       "{",
       "  \"mode\": \"source\",",
+      "  \"source\": {",
+      "    \"category\": \"fullsync\",",
+      "    \"actionId\": \"read\",",
+      "    \"scopeId\": \"orders\",",
+      "    \"operation\": \"get\",",
+      "  },",
+      "  \"path\": [",
+      "    {",
+      "      \"kind\": \"property\",",
+      "      \"name\": \"id\",",
+      "    },",
+      "  ],",
+      "}"
+    ],
+    "expectedFlowScript": [
+      "{",
+      "  \"mode\": \"source\",",
       "  \"source\": { \"category\": \"fullsync\", \"actionId\": \"read\", \"scopeId\": \"orders\", \"operation\": \"get\" },",
       "  \"path\": [{ \"kind\": \"property\", \"name\": \"id\" }],",
       "}"
@@ -51,6 +84,12 @@
       []
     ],
     "expected": [
+      "[",
+      "  {},",
+      "  [],",
+      "]"
+    ],
+    "expectedFlowScript": [
       "[{}, []]"
     ]
   },
@@ -61,6 +100,12 @@
       "$$id": "\"quoted\" \\ slash ` ${raw} é"
     },
     "expected": [
+      "{",
+      "  \"$id\": \"first\\n  second\",",
+      "  \"$$id\": \"\\\"quoted\\\" \\\\ slash ` ${raw} é\",",
+      "}"
+    ],
+    "expectedFlowScript": [
       "{ \"$id\": \"first\\n  second\", \"$$id\": \"\\\"quoted\\\" \\\\ slash ` ${raw} é\" }"
     ]
   }
