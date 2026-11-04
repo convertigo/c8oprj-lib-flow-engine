@@ -86,6 +86,10 @@
 	}
 
 	function debugSourceUrl(file) {
+		var root = projectDir();
+		var relative = root ? resourceRelativePath(root.getCanonicalFile(), file.getCanonicalFile()) : "";
+		if (relative) return projectNameForRoot(root) + "/" + relative;
+		// External library sources retain their owning project's identity.
 		var path = canonicalPath(file), parent = file.getParentFile();
 		while (parent && !new File(parent, "c8oProject.yaml").isFile()) parent = parent.getParentFile();
 		return parent ? projectNameForRoot(parent) + "/" + path.substring(canonicalPath(parent).length + 1) : path;
