@@ -1203,7 +1203,7 @@
 				if (!value || typeof value !== "object") return value;
 				var out = {};
 				Object.keys(value).sort().forEach(function (key) {
-					if (key !== "__flowImplicitId" && key !== "__flowNameExplicit" && !(key === "id" && value.id === value.__flowImplicitId) && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
+					if (key !== "__flowReturnCount" && key !== "__flowImplicitId" && key !== "__flowNameExplicit" && !(key === "id" && value.id === value.__flowImplicitId) && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
 				});
 				return out;
 			}

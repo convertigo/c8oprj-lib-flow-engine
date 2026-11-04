@@ -12,14 +12,7 @@ primitives contain no HTTP calls or application orchestration.
 
 ```javascript
 local.rows = list.filter({ items: input.rows, where: current.active === true })
-result.rows = rows.formatCells({
-  rows: local.rows,
-  columns: input.columns,
-  keepColumns: [
-    "id",
-  ],
-  escapeHtml: true,
-})
+result.rows = rows.formatCells({ rows: local.rows, columns: input.columns, keepColumns: ["id"], escapeHtml: true })
 ```
 
 `columns` is an ordered array of descriptors, for example:
@@ -71,32 +64,10 @@ Format the aggregates afterwards if cells are wanted.
 ```javascript
 local.totals = rows.group({
   rows: input.rows,
-  groupColumns: [
-    "status",
-  ],
-  aggregations: [
-    {
-      type: "count",
-      key: "count",
-    },
-    {
-      type: "sum",
-      column: "amount",
-      key: "total",
-    },
-  ],
+  groupColumns: ["status"],
+  aggregations: [{ type: "count", key: "count" }, { type: "sum", column: "amount", key: "total" }],
 })
-result.rows = rows.select({
-  rows: local.totals,
-  columns: [
-    "status",
-    "count",
-    "total",
-  ],
-  rename: {
-    status: "label",
-  },
-})
+result.rows = rows.select({ rows: local.totals, columns: ["status", "count", "total"], rename: { status: "label" } })
 ```
 
 Selection strings are literal keys, including dots; a string beginning with `$`

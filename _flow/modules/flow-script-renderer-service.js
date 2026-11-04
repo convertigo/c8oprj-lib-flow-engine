@@ -25,22 +25,25 @@
 
 	// Canonical source layout only. Leaf rendering stays with the value-intent
 	// writer: indentation must never be inserted into a multiline template value.
-	function flowScriptCompound(value, indent, leaf, quotedKeys) {
-		var array = Object.prototype.toString.call(value) === "[object Array]";
-		if (!value || typeof value !== "object") return leaf(value);
-		var keys = Object.keys(value);
-		var open = array ? "[" : "{", close = array ? "]" : "}";
+	function flowScriptCompound(value, indent, leaf, quotedKeys, column) {
+		var array = Array.isArray(value);
+		if (!value || typeof value !== "object" || value.__flowBlock) return leaf(value);
+		var keys = Object.keys(value), open = array ? "[" : "{", close = array ? "]" : "}";
 		if (!keys.length) return open + close;
-		return open + "\n" + keys.map(function (key) {
-			var prefix = array ? "" : (quotedKeys ? sourceLiteral(key) : flowScriptObjectKey(key)) + ": ";
-			return indent + "  " + prefix + flowScriptCompound(value[key], indent + "  ", leaf, quotedKeys) + ",";
+		function keyPrefix(key) { return array ? "" : (quotedKeys ? sourceLiteral(key) : flowScriptObjectKey(key)) + ": "; }
+		var parts = keys.map(function(key) { return keyPrefix(key) + flowScriptCompound(value[key],indent,leaf,quotedKeys,-Infinity); });
+		var compact = open + (array ? "" : " ") + parts.join(", ") + (array ? "" : " ") + close;
+		if (compact.indexOf("\n") < 0 && (column === undefined ? indent.length : column) + compact.length <= 120) return compact;
+		return open + "\n" + keys.map(function(key) {
+			var prefix = indent + "  " + keyPrefix(key);
+			return prefix + flowScriptCompound(value[key],indent + "  ",leaf,quotedKeys,prefix.length) + ",";
 		}).join("\n") + "\n" + indent + close;
 	}
 
-	function flowScriptInlineValue(value, env, indent) {
+	function flowScriptInlineValue(value, env, indent, column) {
 		value = env.normalizeTree(value);
 		if (value && typeof value === "object") {
-			return flowScriptCompound(value, indent || "", sourceLiteral, true);
+			return flowScriptCompound(value, indent || "", sourceLiteral, true, column);
 		}
 		return flowScriptString(value, env);
 	}
@@ -50,25 +53,16 @@
 		return key.match(/^[A-Za-z_$][\w$]*$/) ? key : sourceLiteral(key);
 	}
 
-	function renderFlowScriptTemplateValue(value, locals, env, indent) {
+	function renderFlowScriptTemplateValue(value, locals, env, indent, column) {
 		value = env.normalizeTree(value);
-		if (value && typeof value === "object") {
-			indent = indent || "";
-			if (value.__flowBlock) {
-				var node = Object.assign({block:value.__flowBlock,props:value.properties || {}},value.metadata || {});
-				var parts = renderFlowScriptArguments(env.renderBlocks || {},node,{},locals,env,indent + "  ",false);
-				return value.__flowBlock + "({ " + parts.join(", ") + " })";
+		return flowScriptCompound(value,indent || "",function(v) {
+			if (v && v.__flowBlock) {
+				var node = Object.assign({block:v.__flowBlock,props:v.properties || {}},v.metadata || {});
+				var parts = renderFlowScriptArguments(env.renderBlocks || {},node,{},locals,env,indent || "",false);
+				return v.__flowBlock + "({ " + parts.join(", ") + " })";
 			}
-			var array = Array.isArray(value), keys = Object.keys(value);
-			if (!keys.length) return array ? "[]" : "{}";
-			return (array ? "[" : "{") + "\n" + keys.map(function (key) {
-				return indent + "  " + (array ? "" : flowScriptObjectKey(key) + ": ") + renderFlowScriptTemplateValue(value[key],locals,env,indent + "  ") + ",";
-			}).join("\n") + "\n" + indent + (array ? "]" : "}");
-		}
-		if (typeof value === "string") {
-			return renderFlowScriptTemplateString(value, locals, env);
-		}
-		return flowScriptInlineValue(value, env);
+			return typeof v === "string" ? renderFlowScriptTemplateString(v,locals,env) : flowScriptInlineValue(v,env);
+		},false,column);
 	}
 
 	// A value in the notation of template-syntax.js written as FlowScript: a literal as a quoted string, one
@@ -91,7 +85,7 @@
 		if (!value || typeof value !== "object" || Object.keys(value).length === 0) {
 			return;
 		}
-		lines.push("const _" + name + " = " + flowScriptCompound(value, "", sourceLiteral, true));
+		lines.push("const _" + name + " = " + flowScriptCompound(value, "", sourceLiteral, false, ("const _" + name + " = ").length));
 		lines.push("");
 	}
 
@@ -139,11 +133,11 @@
 		}).join("") + "`";
 	}
 
-	function renderFlowScriptValue(blocks, node, key, value, locals, env, indent) {
+	function renderFlowScriptValue(blocks, node, key, value, locals, env, indent, column) {
 		var kind = env.flowScriptPropKind(blocks, env.blockName(node), key);
 		if (kind === "expression") {
 			return value && typeof value === "object"
-				? renderFlowScriptTemplateValue(value, locals, env, indent)
+				? renderFlowScriptTemplateValue(value, locals, env, indent, column)
 				: renderFlowScriptExpression(value, locals, env, indent);
 		}
 		if (kind === "template" || kind === "value" || kind === "binding" || kind === "configOverrides") {
@@ -151,14 +145,14 @@
 				return renderFlowScriptTemplateString(value, locals, env);
 			}
 			if (value && typeof value === "object") {
-				return renderFlowScriptTemplateValue(value, locals, env, indent);
+				return renderFlowScriptTemplateValue(value, locals, env, indent, column);
 			}
 		}
 		// A fixed value holding an expression (a former template) is written as one so that it reads back unchanged.
 		if (kind !== "text" && kind !== "secret" && kind !== "schema" && typeof value === "string" && env.templateSyntax.hasExpression(value)) {
 			return kind === "path" ? renderFlowScriptTemplateLiteral(value, locals, env) : renderFlowScriptTemplateString(value, locals, env);
 		}
-		return flowScriptInlineValue(value, env, indent);
+		return flowScriptInlineValue(value, env, indent, column);
 	}
 
 	function flowScriptArgKeys(node, slotNames) {
@@ -187,7 +181,7 @@
 		});
 		Object.keys(node.props || {}).forEach(function (key) { values[key] = node.props[key]; });
 		Object.keys(values).forEach(function (key) {
-			result.push(flowScriptObjectKey(codec.encode("property", key)) + ": " + renderFlowScriptValue(blocks, node, key, values[key], locals, env, indent));
+			result.push(flowScriptObjectKey(codec.encode("property", key)) + ": " + renderFlowScriptValue(blocks, node, key, values[key], locals, env, indent,indent.length + flowScriptObjectKey(codec.encode("property",key)).length + 2));
 		});
 		return result;
 	}
@@ -210,8 +204,9 @@
 
 	function renderFlowScriptNodes(blocks, nodes, depth, lines, locals, env) {
 		locals = locals || {};
-		var indent = new Array(depth + 1).join("  ");
-		(nodes || []).forEach(function (original) {
+		var indent = new Array(depth + 1).join("  "), skip = 0;
+		(nodes || []).forEach(function (original, index) {
+			if (skip) { skip--; return; }
 			var node = Object.assign({}, original), type = env.blockName(node);
 			if (node.__flowBlankBefore && lines.length && lines[lines.length - 1] !== "") lines.push("");
 			if (node.comment !== undefined) {
@@ -225,8 +220,17 @@
 			if (labelable) delete node.id;
 			var props = node.props || {}, keys = Object.keys(props);
 			var plain = node.disabled === undefined && node.out === undefined && labelable;
+			var count = node.__flowReturnCount, group = count ? nodes.slice(index,index + count) : [];
+			if (group.slice(0,-1).some(function(n,i,all) { return all.slice(0,i).some(function(p) { return p.props && n.props && p.props.path === n.props.path; }); })) count = 0;
+			if (plain && count && group.length === count && group[count-1].block === "return" && group[count-1].disabled === undefined && group[count-1].out === undefined && group[count-1].id === group[count-1].__flowImplicitId && Object.keys(group[count-1].props || {}).length === 1 && (group[count-1].props || {}).value === "${result}" && group.slice(0,-1).every(function(n,i) {
+				return n.block === "set" && Object.keys(n.props || {}).length === 2 && /^result\.[A-Za-z_$][\w$]*$/.test(n.props.path) && n.disabled === undefined && n.out === undefined && (!i || n.comment === undefined && !n.__flowBlankBefore) && (!i || n.id === n.__flowImplicitId);
+			})) {
+				var fields = Object.create(null); group.slice(0,-1).forEach(function(n) { Object.defineProperty(fields,n.props.path.substring(7),{value:n.props.value,enumerable:true,configurable:true}); });
+				lines.push(indent + label + "return " + renderFlowScriptTemplateValue(fields,locals,env,indent,(indent + label + "return ").length));
+				skip = count - 1; return;
+			}
 			if (plain && type === "set" && keys.length === 2 && keys.indexOf("path") >= 0 && keys.indexOf("value") >= 0 && /^(local|result|parent)(\.[A-Za-z_$][\w$]*)+$/.test(props.path)) {
-				lines.push(indent + label + props.path + " = " + renderFlowScriptValue(blocks, node, "value", props.value, locals, env, indent));
+				lines.push(indent + label + props.path + " = " + renderFlowScriptValue(blocks, node, "value", props.value, locals, env, indent,(indent + label + props.path + " = ").length));
 				return;
 			}
 			if (plain && type === "if" && keys.length === 1 && keys[0] === "condition" && Array.isArray(node.then)) {
@@ -239,7 +243,7 @@
 				lines.push(indent + "}");
 				return;
 			}
-			if (plain && type === "return" && (!keys.length || keys.length===1 && keys[0]==="value")) { lines.push(indent + label + "return" + (keys.length ? " " + renderFlowScriptValue(blocks,node,"value",props.value,locals,env,indent) : "")); return; }
+			if (plain && type === "return" && (!keys.length || keys.length===1 && keys[0]==="value")) { lines.push(indent + label + "return" + (keys.length ? " " + renderFlowScriptValue(blocks,node,"value",props.value,locals,env,indent,(indent + label + "return ").length) : "")); return; }
 			var assignedOutput = typeof node.out === "string" && /^(local|result|parent)(\.[A-Za-z_$][\w$]*)+$/.test(node.out) ? node.out : "";
 			var callPrefix = label + (assignedOutput ? assignedOutput + " = " : "");
 			var slotNames = flowScriptSlotNames(blocks, node, env);

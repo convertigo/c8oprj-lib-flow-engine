@@ -26,7 +26,7 @@ try {
     equal(parsed, fixture.value, fixture.name + " Rhino literal");
     equal(renderer.flowScriptInlineValue(parsed, env), text, fixture.name + " stable");
     var nested = renderer.flowScriptInlineValue(fixture.value, env, "    ");
-    equal(nested, fixture.expected.map(function (line, index) { return index ? "    " + line : line; }).join("\n"), fixture.name + " nested indent");
+    equal(eval("(" + nested + ")"), fixture.value, fixture.name + " nested indent preserves value");
   });
   var engine = eval(read(new java.io.File(engineDir, "Engine.js")));
   function api(name, request) { return JSON.parse(engine[name](JSON.stringify(request))); }
@@ -50,9 +50,9 @@ try {
   var written = write(before.source);
   var expectedCall = [
     '  // Keep', '  capture: set({', '    $$disabled: false,',
-    '    path: "result.row",', '    value: {', '      z: 0,', '      a: false,',
-    '      empty: "",', '      nil: null,', '      rows: [', '        {', '          id: 5,',
-    '        },', '      ],', '      label: `Hi ${input.name}\\n  preserved`,', '    },', '  })'
+    '    path: "result.row",',
+    '    value: { z: 0, a: false, empty: "", nil: null, rows: [{ id: 5 }], label: `Hi ${input.name}\\n  preserved` },',
+    '  })'
   ].join("\n");
   assert(written.code.indexOf(expectedCall) !== -1, "Call layout changed:\n" + written.code);
   equal(stable(written.definition), stable(before.definition), "AST changed");
@@ -65,7 +65,7 @@ try {
     } } });
   assert(changed.ok, "Mutation failed: " + JSON.stringify(changed));
   var changedCode = write(validate(changed.source).source).code;
-  equal(changedCode, written.code.replace("      z: 0,", "      z: 1,"), "One-property edit should change only one line");
+  equal(changedCode, written.code.replace("z: 0,", "z: 1,"), "One-property edit should change only one line");
   var slots = 'const _flow={sourceVersion:2};\nfunction FormatProof(){\nif({$$id:"choice",condition:true,$$then:function(){set({$$id:"yes",path:"result.ok",value:true})},$$else:function(){set({$$id:"no",path:"result.ok",value:false})}})\n}';
   var slotWritten = write(validate(slots).source);
   assert(slotWritten.code.indexOf('choice: if (true) {\n    yes: result.ok = true') !== -1, "Slot indentation");

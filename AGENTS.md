@@ -778,3 +778,5 @@ use a JavaScript label for an explicit name, and $$id only for explicitly named 
 Attached comments are // lines; separated or trailing comments are comment nodes, removed before execution. Preserve one
 blank line before a node with model metadata, hidden from properties. Backend print width is 120. Natural loops are phase 2.
 These backend rules take precedence over older backend examples above; frontend naming and component syntax are unchanged.
+
+Mission 34 compact follow-up: object literals, return objects, metadata and calls stay on one line when the complete line fits 120 columns. Only wider values split by property. Preserve return-object layout metadata through tree edits; promotion still compares executable trees.

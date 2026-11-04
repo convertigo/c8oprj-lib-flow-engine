@@ -2537,6 +2537,7 @@
 				});
 				// Return always leaves the Flow, including when followed by another root statement.
 				assignments.push({ id: "return", block: "return", value: "${result}", __flowScriptLine: lineNumber });
+				assignments[0].__flowReturnCount = assignments.length;
 				return assignments;
 			}
 			return [{

@@ -11,17 +11,8 @@ function TeachingExample({ input, config, result }) {
     accessibility: "private",
     authenticatedContextRequired: true,
     inputs: {
-      apikey: {
-        type: "string",
-        visibility: -1,
-      },
-      files: {
-        type: "array",
-        items: {
-          type: "string",
-        },
-        isFileUpload: true,
-      },
+      apikey: { type: "string", visibility: -1 },
+      files: { type: "array", items: { type: "string" }, isFileUpload: true },
     },
   }
 }
@@ -53,27 +44,12 @@ local.csv = csv.parse({
   rowSchema: {
     type: "object",
     additionalProperties: false,
-    required: [
-      "id",
-    ],
+    required: ["id"],
     properties: {
-      id: {
-        type: "integer",
-        title: "Identifiant",
-      },
-      label: {
-        type: "string",
-        title: "Libellé",
-      },
-      active: {
-        type: "boolean",
-        title: "Actif",
-      },
-      due: {
-        type: "string",
-        format: "date",
-        title: "Échéance",
-      },
+      id: { type: "integer", title: "Identifiant" },
+      label: { type: "string", title: "Libellé" },
+      active: { type: "boolean", title: "Actif" },
+      due: { type: "string", format: "date", title: "Échéance" },
     },
   },
   maxRows: 10000,
