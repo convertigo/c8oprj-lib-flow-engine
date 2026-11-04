@@ -333,6 +333,22 @@
 						reason:"Suggested explicit form; review the changes before applying.",corrections:suggestion.fixes});
 				} catch (_noSafeSuggestion) {}
 			}
+			if (env.flowScriptSuggestSource) {
+				try {
+					// Compose with an existing whole-source repair (for example input metadata),
+					// without replacing the independent per-call proposals of the resolver.
+					var whole = resolution.edits.length === 1 && resolution.edits[0].oldText === code
+						&& resolution.edits[0].confidence >= resolution.threshold ? resolution.edits[0] : null;
+					var contractSource = whole ? whole.newText : code;
+					var exact = env.flowScriptSuggestSource(blocks,contractSource,Object.assign({},request,{contractOnly:true}));
+					if (exact.code !== contractSource && whole) {
+						whole.newText = exact.code;
+						whole.corrections = (whole.corrections || []).concat(exact.fixes);
+						whole.reason += " Also use the existing predicate or pure JSON expression contract in the same scope.";
+					} else if (exact.code !== code && !resolution.edits.some(function (edit) { return edit.confidence >= resolution.threshold; })) resolution.edits = [{line:1,oldText:code,newText:exact.code,confidence:1,
+						reason:"Use the existing predicate or pure JSON expression contract; source order and scope are preserved. Review before applying.",corrections:exact.fixes}];
+				} catch (_noContractSuggestion) {}
+			}
 			if (!resolution.edits.length && !resolution.unresolved.length) return null;
 			var confident = resolution.edits.filter(function (edit) { return edit.confidence >= resolution.threshold; }).length;
 			var out = { revision: revision || null, threshold: resolution.threshold, edits: resolution.edits.map(function (edit) {

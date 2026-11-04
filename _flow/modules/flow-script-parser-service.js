@@ -258,6 +258,36 @@
 			if (slotEdits.length) ast = parse();
 		}
 		if (request.slotOnly === true) return {code:source,fixes:fixes};
+		// Small, explicit contract repairs. This path is used for proposals only;
+		// the compiler still rejects the original spelling and keeps the draft intact.
+		if (request.contractOnly === true) {
+			var contractEdits = [];
+			visit(ast, function (call) {
+				if (kind(call) !== "FunctionCall") return;
+				var name = text(call.getTarget()).replace(/\s/g, ""), args = list(call.getArguments());
+				if (name === "JSON.stringify" && args.length === 1) {
+					contractEdits.push({start:start(call.getTarget()), end:end(call.getTarget()), before:text(call.getTarget()), after:"json",
+						code:"FLOWSCRIPT_JSON_EXPRESSION", reason:"Use the existing pure json(value) expression; it stays in the same lazy branch or item context."});
+				}
+				if (name !== "list.filter" || !blocks[name] || args.length !== 1 || kind(args[0]) !== "ObjectLiteral") return;
+				var props = catalog(name).props || {};
+				if (!props.where || props.condition) return;
+				var fields = list(args[0].getElements());
+				function key(field) { var k = field.getKey(); return kind(k) === "Name" ? String(k.getIdentifier()) : kind(k) === "StringLiteral" ? String(k.getValue()) : ""; }
+				if (fields.some(function (field) { return key(field) === "where"; })) return;
+				fields.forEach(function (field) {
+					if (key(field) !== "condition") return;
+					var k = field.getKey();
+					contractEdits.push({start:start(k),end:end(k),before:text(k),after:kind(k)==="StringLiteral"?'"where"':"where",
+						code:"FLOWSCRIPT_FILTER_PREDICATE",reason:"list.filter declares its per-item predicate as where, not condition."});
+				});
+			});
+			contractEdits.sort(function(a,b){return b.start-a.start;}).forEach(function(edit){
+				fix(edit.code,edit.start,edit.before,edit.after);
+				source=source.substring(0,edit.start)+edit.after+source.substring(edit.end);
+			});
+			return {code:source,fixes:fixes};
+		}
 		// Diagnose an unknown vocabulary item before examining nested-call safety.
 		// Scope methods and ordinary expression functions are not block names.
 		visit(ast, function (node) {
@@ -1587,7 +1617,9 @@
 			// call: the expression check reports the literal
 			if (call && expression.indexOf("/" + call + "(") === -1) {
 				env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "Unsupported FlowScript expression at line " + lineNumber + ": " + String(token).trim(),
-					null, "A block call cannot be nested in an expression: assign it to a local first, for example local.value = " + call + "({ ... }), then use local.value.");
+					null, call === "JSON.stringify"
+						? "Use the pure json(value) expression to serialize JSON data inside a condition or projection; it takes one value and no replacer. Review the proposed patch."
+						: "This context cannot contain a block call. Assign the block to a local in the same branch or iterator, then read that result. In list.map.select or list.filter.where, keep current inside a per-item block or an explicit forEach; never hoist it outside the iteration.");
 			}
 			return "${" + expression.trim() + "}";
 		}

@@ -145,8 +145,10 @@ try {
 
 	var conditional = api('flowCodeSet', { name: 'Conditional', code: 'function Conditional({ input, result }) {\n  result.text = input.ok ? JSON.stringify(input.a) : ""\n}', autoCorrect: true });
 	var lazy = edit(conditional.proposedPatch, 'JSON.stringify');
-	assert(!conditional.autoCorrected && lazy && lazy.confidence === 0.75 && lazy.reason.indexOf('inside a condition') !== -1,
-		'a block inside a condition is proposed with what to do: ' + JSON.stringify(conditional.proposedPatch));
+	assert(!conditional.autoCorrected && lazy && lazy.confidence === 1 && lazy.newText.indexOf('input.ok ? json(input.a) : ""') !== -1,
+		'the existing pure JSON expression is proposed in place, preserving the condition: ' + JSON.stringify(conditional.proposedPatch));
+	var conditionalPatched = api('flowCodePatch', { name: 'Conditional', revision: conditional.revision, edits: conditional.proposedPatch.edits });
+	assert(conditionalPatched.ok, 'explicit conditional JSON patch compiles');
 
 	// 7. The same call twice, and a call inside another: each oldText is found once as the edits before it left it
 	var twice = api('flowCodeSet', { name: 'Twice', code: [

@@ -354,6 +354,9 @@
 
 	function unknownFunctionHint(name) {
 		name = String(name || "");
+		if (name === "listIncludes") {
+			return "No listIncludes function is declared. For list membership use the existing scope expression local.items.includes(current.id), with your actual list and item paths; do not create a guessed block.";
+		}
 		if (name.match(/\.(trim|toLowerCase|toUpperCase|includes|startsWith|endsWith)$/)) {
 			return "This method is only available on Flow scope paths, for example local.text.trim(). For other cases use trim(value), lower(value), upper(value), contains(value, part), startsWith(value, prefix) or endsWith(value, suffix).";
 		}
