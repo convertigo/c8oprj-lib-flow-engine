@@ -38,6 +38,11 @@ try {
 	block("proof.relayQuoted", 'const _meta = { sourceVersion: 2, runtime: "rhino", properties: { value: { kind: "expression", type: "unknown" } } };\n' +
 		'(function(){return {run:function(ctx,node){var v=ctx.expr(ctx.props(node).value),q="${"+JSON.stringify(v)+"}";' +
 		'return {rhino:ctx.callBlock("proof.echoRhino",{text:q,expr:JSON.stringify(v)},{trace:false}),source:ctx.callBlock("proof.echoSource",{text:q,expr:JSON.stringify(v)},{trace:false})};}};}())');
+	// relays a password typed by a user to password.verify
+	block("proof.relayVerify", 'const _meta = { sourceVersion: 2, runtime: "rhino", properties: { password: { kind: "expression", type: "string" },' +
+		' hash: { kind: "expression", type: "string" }, salt: { kind: "expression", type: "string" } } };\n' +
+		'(function(){return {run:function(ctx,node){var p=ctx.props(node);' +
+		'return ctx.callBlock("password.verify",{password:ctx.expr(p.password),hash:ctx.expr(p.hash),salt:ctx.expr(p.salt)},{trace:false});}};}())');
 	// declared defaults are the source of the block author: a relayed call that leaves them out still gets them evaluated
 	block("proof.defaults", 'const _meta = { sourceVersion: 2, runtime: "rhino", properties: {' +
 		' greeting: { kind: "template", type: "string", "default": "${config.demo.marker}" }, count: { kind: "expression", type: "integer", "default": 3 } } };\n' +
@@ -125,7 +130,16 @@ try {
 		same(JSON.parse(received[0].body).t, text, "http body " + JSON.stringify(text));
 	});
 
-	// 4. The source keeps its expressions and templates
+	// 4. A password relayed to password.verify is the text typed, never a value it names
+	var typed = "${config.demo.marker}";
+	var typedHash = run('  result.h = password.hash({ password: input.p })', { p: typed }).h;
+	var markerHash = run('  result.h = password.hash({ password: input.p })', { p: marker }).h;
+	function verify(hashed) {
+		return run('  result.v = proof.relayVerify({ password: input.p, hash: input.h, salt: input.s })', { p: typed, h: hashed.hash, salt: hashed.salt, s: hashed.salt }).v.ok;
+	}
+	same([verify(typedHash), verify(markerHash)], [true, false], "A relayed password stays the text typed");
+
+	// 5. The source keeps its expressions and templates
 	var authored = run('  local.who = "Ann"\n' +
 		'  result.direct = proof.echoSource({ text: `Hi ${input.name}`, expr: `T ${local.who}`, json: input.n, obj: { a: input.name, b: "lit", c: [local.who] } })\n' +
 		'  result.rhino = proof.echoRhino({ text: `M ${config.demo.marker}`, expr: input.name, json: input.n + 1, obj: { a: input.name } })\n' +
