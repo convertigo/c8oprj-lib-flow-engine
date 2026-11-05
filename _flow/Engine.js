@@ -2210,7 +2210,7 @@
 	}
 
 	// Definition-only SQL validation, against the proposed config before any write or network operation.
-	function validateProjectResourceConfig(document, path) {
+	function validateProjectResourceConfig(document, path, content) {
 		var config = document.config || {};
 		if (!config.sql) return;
 		var blocks = loadBlocks();
@@ -2234,10 +2234,32 @@
 			}
 		};
 		var report = blocks["sql.configCheck"].run(ctx, {live: false, onError: "return"});
+		var details = {path:path,errors:report.errors,warnings:report.warnings};
+		if (!report.ok && typeof content === "string") {
+			var proposed = null, replacements = [];
+			report.errors.forEach(function (entry) {
+				var replacement = entry.details && entry.details.replacement;
+				if (!replacement || !/^config\.sql\.initializers\.[A-Za-z_][A-Za-z0-9_]*\.(schemaFile|dataFile)$/.test(replacement.path)) return;
+				var parts = replacement.path.split("."), property = parts.pop();
+				if (parts.some(function (part) { return ["__proto__","prototype","constructor"].indexOf(part) >= 0; })) return;
+				if (!proposed) proposed = normalizeTree(document);
+				var owner = proposed;
+				parts.forEach(function (part) { owner = owner && owner[part]; });
+				if (!owner || owner[property] !== replacement.previous) return;
+				owner[property] = replacement.value; replacements.push(replacement);
+			});
+			if (replacements.length) {
+				var edited = loadEngineModule("yaml-source-edit.js").minimalEdit(content, proposed,
+					{parseYamlSource:parseYamlSource,toYamlSource:toYamlSource,normalizeTree:normalizeTree});
+				if (edited && edited !== content) details.proposedPatch = {path:path,appliesTo:"submittedContent",requiresChoice:false,
+					edits:[{oldText:content,newText:edited}],replacements:replacements,
+					next:"Apply these exact edits to the submitted content, then resend flow-resource-patch with the same baseHash. Nothing was written; other listed errors still require correction."};
+			}
+		}
 		if (!report.ok) throwFlowError({code: "SQL_CONFIG_INVALID", status: 400,
 			message: path + ": " + report.errors.length + " SQL definition error(s): " +
 				report.errors.map(function (entry) { return entry.path + ": " + entry.message; }).join(" | "),
-			details: {path: path, errors: report.errors, warnings: report.warnings},
+			details: details,
 			hint: "Correct all listed config.sql properties, then patch engine.yaml again. Nothing written."});
 		return {sql: {checked: true, report: report}, warnings: report.warnings};
 	}
@@ -3601,6 +3623,7 @@
 
 	function blockSourceEnv() {
 		return {
+			blockCandidates: flowScriptBlockCandidates,
 			sources: sourceView(currentActiveRequest()),
 			File: File,
 			FileUtils: FileUtils,

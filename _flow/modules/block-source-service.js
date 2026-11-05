@@ -27,7 +27,13 @@
 		args = args || {};
 		var block = materialized || blocks[String(name || "")];
 		if (!block) {
-			env.raise("UNKNOWN_BLOCK", "Unknown Flow block: " + name);
+			var candidates = env.blockCandidates ? env.blockCandidates(blocks, String(name || ""), 5) : [];
+			var error = new Error("Unknown Flow block: " + name);
+			error.code = "UNKNOWN_BLOCK";
+			error.details = {block:String(name || ""),candidates:candidates};
+			error.hint = candidates.length ? "Inspect the closest available contracts: " + candidates.map(function (c) { return c.block; }).join(", ") +
+				". Choose by behavior and properties; no name is substituted automatically." : "Use flow-catalog to find a visible block or add its library reference.";
+			throw error;
 		}
 		if (String(block.__flowFormat || "") !== "flowscript-block") {
 			env.raise("INVALID_BLOCK_STORAGE", "Flow block is not backed by canonical .block.js source: " + name);

@@ -11,5 +11,5 @@ assert.equal(out.implementationSource,code);
 assert.equal(vm.runInNewContext(out.implementationSource).run().value,1);
 assert.equal(catalog.row,placeholder);assert.equal(placeholder.__rhinoCode,undefined);
 const mutable={row:resolved};assert.equal(service.getSource(mutable,'row',{detail:'full'},env).implementationSource,code);
-assert.throws(()=>service.getSource(catalog,'missing',{detail:'full'},env),/UNKNOWN_BLOCK/);
+assert.throws(()=>service.getSource(catalog,'missing',{detail:'full'},env),e=>e.code==='UNKNOWN_BLOCK' && e.details.block==='missing');
 console.log('PASS resolved source export with immutable and mutable catalogs');

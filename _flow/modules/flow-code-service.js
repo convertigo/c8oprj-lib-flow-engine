@@ -318,6 +318,13 @@
 					resolution.edits = [Object.assign(env.writeProposals.edit(code, repair.code, repair.reason), {confidence:1})];
 				}
 			}
+			if (env.flowScriptSuggestSource) {
+				var header = env.flowScriptSuggestSource(blocks,code,Object.assign({},request,{contractOnly:true}));
+				if (header.fixes.some(function (fix) { return fix.code === "FLOWSCRIPT_METADATA_DECLARATION_REQUIRED"; })) {
+					resolution.edits = [{line:1,oldText:code,newText:header.code,confidence:1,
+						reason:"Declare the supplied _flow object as metadata; do not create an _flow block.",corrections:header.fixes}];
+				}
+			}
 			// A declared slot's spelling takes precedence over fuzzy guesses at business property names.
 			if (env.flowScriptSuggestSource) {
 				try {

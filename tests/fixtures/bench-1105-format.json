@@ -1,0 +1,42 @@
+[
+  {
+    "name": "gcd",
+    "code": "_flow({\n  name: \"gcd\",\n  accessibility: \"public\",\n  inputs: { a: \"number\", b: \"number\" }\n})\n\nlocal.a = Number(input.a)\nlocal.b = Number(input.b)\n"
+  },
+  {
+    "name": "gcd",
+    "code": "const _flow = {\n  accessibility: \"public\",\n  inputs: {\n    a: { type: \"string\", description: \"entier positif ou nul\" },\n    b: { type: \"string\", description: \"entier positif ou nul\" }\n  }\n}\n\nlocal.a = Number(input.a)\nlocal.b = Number(input.b)\n\nif (!(local.a >= 0) || local.a % 1 !== 0 || !(local.b >= 0) || local.b % 1 !== 0 || (local.a === 0 && local.b === 0)) {\n  throw({ code: \"BAD_INPUT\", message: \"a and b must be non-negative integers, not both zero\", status: 400 })\n}\n\nwhile ({ condition: local.b !== 0, maxIterations: 100000, $$nodes() {\n  local.t = local.a % local.b\n  local.a = local.b\n  local.b = local.t\n} })\n\nresult.gcd = local.a\n"
+  },
+  {
+    "name": "gcd",
+    "code": "const _flow = {\n  accessibility: \"public\",\n  inputs: {\n    a: { type: \"string\", description: \"entier positif ou nul\" },\n    b: { type: \"string\", description: \"entier positif ou nul\" }\n  }\n}\n\nlocal.a = Number(input.a)\nlocal.b = Number(input.b)\n\nif (!(local.a >= 0) || local.a % 1 !== 0 || !(local.b >= 0) || local.b % 1 !== 0 || (local.a === 0 && local.b === 0)) {\n  throw({ code: \"BAD_INPUT\", message: \"a and b must be non-negative integers, not both zero\", status: 400 })\n}\n\nwhile({\n  condition: local.b !== 0,\n  maxIterations: 100000,\n  $$nodes() {\n    local.t = local.a % local.b\n    local.a = local.b\n    local.b = local.t\n  }\n})\n\nresult.gcd = local.a\n"
+  },
+  {
+    "name": "gcd",
+    "code": "const _flow = {\n  accessibility: \"public\",\n  inputs: {\n    a: { type: \"string\", description: \"entier\" },\n    b: { type: \"string\", description: \"entier\" }\n  }\n}\n\nresult.gcd = 6\n"
+  },
+  {
+    "name": "gcd",
+    "code": "const _flow = { inputs: { a: { type: \"string\" }, b: { type: \"string\" } } }\nresult.gcd = 6\n"
+  },
+  {
+    "name": "gcd",
+    "code": "const _flow = { inputs: { a: { type: \"string\" }, b: { type: \"string\" } } }\nresult.gcd = 6\n"
+  },
+  {
+    "name": "gcd",
+    "code": "result.gcd = 6"
+  },
+  {
+    "name": "gcd",
+    "code": "return { gcd: 6 }"
+  },
+  {
+    "name": "gcd",
+    "code": "const _flow = { inputs: { a: { type: \"string\" }, b: { type: \"string\" } } }\nreturn { gcd: 6 }"
+  },
+  {
+    "name": "gcd",
+    "code": "const _flow = { accessibility:\"public\", inputs:{a:{type:\"string\"},b:{type:\"string\"}} }\nfunction gcd({input,result}) {\n local.a = Number(input.a)\n local.b = Number(input.b)\n if (!(local.a >= 0) || local.a % 1 !== 0 || !(local.b >= 0) || local.b % 1 !== 0 || (local.a === 0 && local.b === 0)) {\n  throw({code:\"BAD_INPUT\",message:\"a and b must be non-negative integers, not both zero\",status:400})\n }\n while({condition:local.b !== 0,maxIterations:100000,$$nodes() {\n  local.t = local.a % local.b\n  local.a = local.b\n  local.b = local.t\n } })\n result.gcd = local.a\n}"
+  }
+]

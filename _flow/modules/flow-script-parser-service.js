@@ -265,6 +265,23 @@
 			visit(ast, function (call) {
 				if (kind(call) !== "FunctionCall") return;
 				var name = text(call.getTarget()).replace(/\s/g, ""), args = list(call.getArguments());
+				if (name === "_flow" && args.length === 1 && kind(args[0]) === "ObjectLiteral"
+						&& kind(call.getParent()) === "ExpressionStatement" && kind(call.getParent().getParent()) === "AstRoot"
+						&& !/\b(?:const|let|var)\s+_flow\s*=/.test(source)) {
+					var headerText = text(args[0]), inputEdits = [];
+					list(args[0].getElements()).forEach(function (field) {
+						var key = field.getKey(), value = field.getValue();
+						if ((kind(key) === "Name" ? String(key.getIdentifier()) : kind(key) === "StringLiteral" ? String(key.getValue()) : "") !== "inputs" || kind(value) !== "ObjectLiteral") return;
+						list(value.getElements()).forEach(function (input) {
+							var type = input.getValue();
+							if (kind(type) === "StringLiteral" && /^(string|number|integer|boolean|array|object|any)$/.test(String(type.getValue())))
+								inputEdits.push({start:start(type)-start(args[0]),end:end(type)-start(args[0]),after:"{ type: " + text(type) + " }"});
+						});
+					});
+					inputEdits.sort(function(a,b){return b.start-a.start;}).forEach(function(edit){headerText=headerText.substring(0,edit.start)+edit.after+headerText.substring(edit.end);});
+					contractEdits.push({start:start(call),end:end(call),before:text(call),after:"const _flow = " + headerText,
+						code:"FLOWSCRIPT_METADATA_DECLARATION_REQUIRED",reason:"_flow is literal metadata, declared with const _flow = {...}; it is not a block call."});
+				}
 				if (name === "JSON.stringify" && args.length === 1) {
 					contractEdits.push({start:start(call.getTarget()), end:end(call.getTarget()), before:text(call.getTarget()), after:"json",
 						code:"FLOWSCRIPT_JSON_EXPRESSION", reason:"Use the existing pure json(value) expression; it stays in the same lazy branch or item context."});
@@ -3234,8 +3251,17 @@
 				lowerLoopBareReturns(rootFromFunctions.nodes, false);
 				return env.canonicalFlowDefinition(assignNames(rootFromFunctions));
 			}
-			var root = { version: 1, nodes: [] };
-			parseFlowScriptStatementsInto(blocks, {}, {}, root, flowScriptStatements(code));
+			// A statement-only Flow has the same root contract as a named function.
+			// Its already parsed _flow header is metadata, never a local assignment.
+			var root = { version: 1, helpers: [], nodes: [] };
+			if (Object.keys(flowMeta).length > 0) root.flow = flowMeta;
+			var statements = flowScriptStatements(code).filter(function (statement) {
+				if (/^_flow\s*\(/.test(statement.text || "")) env.raise("FLOWSCRIPT_METADATA_DECLARATION_REQUIRED",
+					"_flow is metadata, not a Flow block (line " + statement.line + ").",
+					null, "Replace _flow({...}) with const _flow = {...}; review the exact code-patch proposal.");
+				return !/^(?:const|let|var)\s+_flow\s*=/.test(statement.text || "");
+			});
+			parseFlowScriptStatementsInto(blocks, {}, {}, root, statements);
 			lowerLoopBareReturns(root.nodes, false);
 			return env.canonicalFlowDefinition(assignNames(root));
 		}

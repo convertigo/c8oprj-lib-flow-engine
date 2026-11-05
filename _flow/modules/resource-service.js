@@ -445,7 +445,7 @@
 		} else if (kind === "projectConfig") {
 			var projectConfig = parseYamlResource(path, content, "version: 1\nengineQName: lib_flow_engine.Engine\nbindings: {}\nconfig: {}\n", env);
 			if (env.validateProjectConfig) {
-				var configValidation = env.validateProjectConfig(projectConfig || {}, path);
+				var configValidation = env.validateProjectConfig(projectConfig || {}, path, content);
 				if (configValidation) return Object.assign({ok: true, kind: kind}, configValidation);
 			}
 		} else if (kind === "frontendBlock" || kind === "frontendModel" && (String(path).endsWith(".front.json") || String(path).endsWith("/.flow-route.json"))) {
