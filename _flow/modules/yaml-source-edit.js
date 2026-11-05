@@ -196,7 +196,41 @@
 		}
 	}
 
+	// A diagnostic must never quote surrounding configuration. Offer only unique
+	// scalar substrings, and prove by reparsing that exactly the named values changed.
+	// Ambiguous, escaped or aliased spellings fall back to the path-only diagnostic.
+	function scalarValueEdits(source, replacements, env) {
+		var text = String(source), edits = [], target;
+		try {
+			target = env.normalizeTree(env.parseYamlSource(text, "{}"));
+			replacements.forEach(function (replacement) {
+				var parts = replacement.path.split("."), property = parts.pop(), owner = target;
+				if (parts.concat(property).some(function (part) { return ["__proto__", "prototype", "constructor"].indexOf(part) >= 0; })) unsupported();
+				parts.forEach(function (part) {
+					if (!owner || !Object.prototype.hasOwnProperty.call(owner, part)) unsupported();
+					owner = owner[part];
+				});
+				if (!owner || !Object.prototype.hasOwnProperty.call(owner, property) || owner[property] !== replacement.previous) unsupported();
+				var before = replacement.previous, after = replacement.value, at = text.indexOf(before);
+				if (typeof before !== "string" || !before || typeof after !== "string" || at < 0 || at !== text.lastIndexOf(before)) unsupported();
+				owner[property] = after;
+				edits.push({start:at,end:at + before.length,oldText:before,newText:after});
+			});
+			var changed = text, boundary = text.length;
+			edits.sort(function (a, b) { return b.start - a.start; }).forEach(function (edit) {
+				if (edit.end > boundary || text.substring(edit.start, edit.end) !== edit.oldText) unsupported();
+				changed = changed.substring(0, edit.start) + edit.newText + changed.substring(edit.end);
+				boundary = edit.start;
+			});
+			if (!same(env.normalizeTree(env.parseYamlSource(changed, "{}")), target)) return [];
+			return edits.map(function (edit) {
+				return {line:text.substring(0,edit.start).split("\n").length,oldText:edit.oldText,newText:edit.newText};
+			});
+		} catch (_notExact) { return []; }
+	}
+
 	return {
-		minimalEdit: minimalEdit
+		minimalEdit: minimalEdit,
+		scalarValueEdits: scalarValueEdits
 	};
 }())

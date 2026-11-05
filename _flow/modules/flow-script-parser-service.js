@@ -227,6 +227,51 @@
 		// call and its parent both need named arguments. The bound is explicit.
 		var ast = parse();
 		if (!ast) return { code: source, fixes: [] };
+		// Metadata repair is isolated from expression/slot repairs. Never run an
+		// inner correction against offsets that belong to an enclosing replacement.
+		var metadataCalls = [], hasMetadataDeclaration = false;
+		visit(ast, function (node) {
+			if (kind(node) === "VariableInitializer" && kind(node.getTarget()) === "Name"
+					&& String(node.getTarget().getIdentifier()) === "_flow") hasMetadataDeclaration = true;
+			if (kind(node) === "FunctionCall" && text(node.getTarget()).replace(/\s/g, "") === "_flow") metadataCalls.push(node);
+		});
+		function literalMetadata(node) {
+			var type = kind(node);
+			if (type === "StringLiteral") return true;
+			if (type === "NumberLiteral") return isFinite(Number(node.getNumber()));
+			if (type === "KeywordLiteral") return /^(true|false|null)$/.test(text(node));
+			if (type === "UnaryExpression") return /^[+-]\s*\d/.test(text(node)) && kind(node.getOperand()) === "NumberLiteral" && literalMetadata(node.getOperand());
+			if (type === "ArrayLiteral") return list(node.getElements()).every(literalMetadata);
+			if (type !== "ObjectLiteral") return false;
+			return list(node.getElements()).every(function (field) {
+				return ["Name", "StringLiteral"].indexOf(kind(field.getKey())) >= 0 && literalMetadata(field.getValue());
+			});
+		}
+		if (metadataCalls.length) {
+			var call = metadataCalls[0], args = list(call.getArguments());
+			if (metadataCalls.length !== 1 || hasMetadataDeclaration || args.length !== 1 || kind(args[0]) !== "ObjectLiteral"
+					|| kind(call.getParent()) !== "ExpressionStatement" || kind(call.getParent().getParent()) !== "AstRoot"
+					|| !literalMetadata(args[0])) return {code:source,fixes:[],unsafeMetadata:true};
+			var headerText = text(args[0]), inputEdits = [];
+			list(args[0].getElements()).forEach(function (field) {
+				var key = field.getKey(), value = field.getValue();
+				if ((kind(key) === "Name" ? String(key.getIdentifier()) : String(key.getValue())) !== "inputs" || kind(value) !== "ObjectLiteral") return;
+				list(value.getElements()).forEach(function (input) {
+					var type = input.getValue();
+					if (kind(type) === "StringLiteral" && /^(string|number|integer|boolean|array|object|any)$/.test(String(type.getValue())))
+						inputEdits.push({start:start(type)-start(args[0]),end:end(type)-start(args[0]),after:"{ type: " + text(type) + " }"});
+				});
+			});
+			inputEdits.sort(function(a,b){return b.start-a.start;}).forEach(function(edit){headerText=headerText.substring(0,edit.start)+edit.after+headerText.substring(edit.end);});
+			var from = start(call), to = end(call), before = text(call), after = "const _flow = " + headerText;
+			var corrected = source.substring(0,from) + after + source.substring(to);
+			if (source.indexOf(before) !== from || source.lastIndexOf(before) !== from
+					|| corrected.substring(0,from) !== source.substring(0,from)
+					|| corrected.substring(from+after.length) !== source.substring(to)) return {code:source,fixes:[],unsafeMetadata:true};
+			fix("FLOWSCRIPT_METADATA_DECLARATION_REQUIRED",from,before,after);
+			return {code:corrected,fixes:fixes,metadataEdits:[{line:line(from),oldText:before,newText:after,confidence:1,
+				reason:"Declare literal _flow metadata; then revalidate any independent call or slot diagnostics."}]};
+		}
 		if (request.autoCorrect === true || String(request.autoCorrect || "").toLowerCase() === "true") {
 			var slotEdits = [];
 			visit(ast, function (call) {
@@ -265,23 +310,7 @@
 			visit(ast, function (call) {
 				if (kind(call) !== "FunctionCall") return;
 				var name = text(call.getTarget()).replace(/\s/g, ""), args = list(call.getArguments());
-				if (name === "_flow" && args.length === 1 && kind(args[0]) === "ObjectLiteral"
-						&& kind(call.getParent()) === "ExpressionStatement" && kind(call.getParent().getParent()) === "AstRoot"
-						&& !/\b(?:const|let|var)\s+_flow\s*=/.test(source)) {
-					var headerText = text(args[0]), inputEdits = [];
-					list(args[0].getElements()).forEach(function (field) {
-						var key = field.getKey(), value = field.getValue();
-						if ((kind(key) === "Name" ? String(key.getIdentifier()) : kind(key) === "StringLiteral" ? String(key.getValue()) : "") !== "inputs" || kind(value) !== "ObjectLiteral") return;
-						list(value.getElements()).forEach(function (input) {
-							var type = input.getValue();
-							if (kind(type) === "StringLiteral" && /^(string|number|integer|boolean|array|object|any)$/.test(String(type.getValue())))
-								inputEdits.push({start:start(type)-start(args[0]),end:end(type)-start(args[0]),after:"{ type: " + text(type) + " }"});
-						});
-					});
-					inputEdits.sort(function(a,b){return b.start-a.start;}).forEach(function(edit){headerText=headerText.substring(0,edit.start)+edit.after+headerText.substring(edit.end);});
-					contractEdits.push({start:start(call),end:end(call),before:text(call),after:"const _flow = " + headerText,
-						code:"FLOWSCRIPT_METADATA_DECLARATION_REQUIRED",reason:"_flow is literal metadata, declared with const _flow = {...}; it is not a block call."});
-				}
+
 				if (name === "JSON.stringify" && args.length === 1) {
 					contractEdits.push({start:start(call.getTarget()), end:end(call.getTarget()), before:text(call.getTarget()), after:"json",
 						code:"FLOWSCRIPT_JSON_EXPRESSION", reason:"Use the existing pure json(value) expression; it stays in the same lazy branch or item context."});
@@ -299,7 +328,13 @@
 						code:"FLOWSCRIPT_FILTER_PREDICATE",reason:"list.filter declares its per-item predicate as where, not condition."});
 				});
 			});
-			contractEdits.sort(function(a,b){return b.start-a.start;}).forEach(function(edit){
+			contractEdits.sort(function(a,b){return b.start-a.start;});
+			var boundary = source.length;
+			if (contractEdits.some(function (edit) {
+				var invalid = edit.end > boundary || source.substring(edit.start,edit.end) !== edit.before;
+				boundary = edit.start; return invalid;
+			})) return {code:original,fixes:[]};
+			contractEdits.forEach(function(edit){
 				fix(edit.code,edit.start,edit.before,edit.after);
 				source=source.substring(0,edit.start)+edit.after+source.substring(edit.end);
 			});

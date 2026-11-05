@@ -2236,26 +2236,22 @@
 		var report = blocks["sql.configCheck"].run(ctx, {live: false, onError: "return"});
 		var details = {path:path,errors:report.errors,warnings:report.warnings};
 		if (!report.ok && typeof content === "string") {
-			var proposed = null, replacements = [];
-			report.errors.forEach(function (entry) {
-				var replacement = entry.details && entry.details.replacement;
-				if (!replacement || !/^config\.sql\.initializers\.[A-Za-z_][A-Za-z0-9_]*\.(schemaFile|dataFile)$/.test(replacement.path)) return;
-				var parts = replacement.path.split("."), property = parts.pop();
-				if (parts.some(function (part) { return ["__proto__","prototype","constructor"].indexOf(part) >= 0; })) return;
-				if (!proposed) proposed = normalizeTree(document);
-				var owner = proposed;
-				parts.forEach(function (part) { owner = owner && owner[part]; });
-				if (!owner || owner[property] !== replacement.previous) return;
-				owner[property] = replacement.value; replacements.push(replacement);
+			var replacements = report.errors.map(function (entry) {
+				return entry.details && entry.details.replacement;
+			}).filter(function (replacement) {
+				return replacement && /^config\.sql\.initializers\.[A-Za-z_][A-Za-z0-9_]*\.(schemaFile|dataFile)$/.test(replacement.path)
+					&& typeof replacement.previous === "string" && /^\.\/+_flow\/resources\/sql\/[A-Za-z0-9_./-]+\.json$/.test(replacement.previous)
+					&& replacement.value === replacement.previous.replace(/^\.\/+/, "");
 			});
 			if (replacements.length) {
-				var edited = loadEngineModule("yaml-source-edit.js").minimalEdit(content, proposed,
-					{parseYamlSource:parseYamlSource,toYamlSource:toYamlSource,normalizeTree:normalizeTree});
-				if (edited && edited !== content) details.proposedPatch = {path:path,appliesTo:"submittedContent",requiresChoice:false,
-					edits:[{oldText:content,newText:edited}],replacements:replacements,
-					next:"Apply these exact edits to the submitted content, then resend flow-resource-patch with the same baseHash. Nothing was written; other listed errors still require correction."};
+				var edits = loadEngineModule("yaml-source-edit.js").scalarValueEdits(content, replacements,
+					{parseYamlSource:parseYamlSource,normalizeTree:normalizeTree});
+				if (edits.length) details.proposedPatch = {path:path,appliesTo:"submittedContent",requiresChoice:false,
+					edits:edits,replacements:replacements,
+					next:"Apply these exact scalar edits to the submitted content, then resend flow-resource-patch with the same baseHash. Nothing was written; other listed errors still require correction."};
 			}
 		}
+
 		if (!report.ok) throwFlowError({code: "SQL_CONFIG_INVALID", status: 400,
 			message: path + ": " + report.errors.length + " SQL definition error(s): " +
 				report.errors.map(function (entry) { return entry.path + ": " + entry.message; }).join(" | "),
