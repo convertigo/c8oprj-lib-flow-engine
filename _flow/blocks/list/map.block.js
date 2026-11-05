@@ -91,15 +91,31 @@ const _meta = {
 		return out;
 	}
 
+	// The select of a call: called with values without one, the items themselves. The default select, current, is the
+	// source of the block, read for each item: it is not evaluated once for the whole call.
+	function selectFor(node, relayed, props) {
+		if (relayed && (node.props || {}).select === undefined) {
+			return undefined;
+		}
+		return props.select === undefined ? "current" : props.select;
+	}
+
+	function projection(ctx, node, relayed, select) {
+		if (select === undefined) {
+			return function () { return ctx.scopes.current; };
+		}
+		return projectsBlocks(ctx, node, relayed, select)
+			? function () { return projectValue(ctx, select); }
+			: ctx.compileExpr ? ctx.compileExpr(select) : function () { return ctx.expr(select); };
+	}
+
 	return {
 		run: function (ctx, node) {
 			var relayed = ctx.relayedValues === true;
 			var props = ctx.props(node);
 			var items = ctx.expr(props.items || props["in"]) || [];
-			var select = props.select === undefined ? "current" : props.select;
-			var project = projectsBlocks(ctx, node, relayed, select)
-				? function () { return projectValue(ctx, select); }
-				: ctx.compileExpr ? ctx.compileExpr(select) : function () { return ctx.expr(select); };
+			var select = selectFor(node, relayed, props);
+			var project = projection(ctx, node, relayed, select);
 			var previous = ctx.scopes.current;
 			var mapped = [];
 			for (var i = 0; i < items.length; i++) {
@@ -114,16 +130,8 @@ const _meta = {
 				var relayed = ctx.relayedValues === true;
 				var props = ctx.props(node);
 				var items = ctx.expr(props.items || props["in"]) || [];
-				var select = props.select === undefined ? "current" : props.select;
-				var project = projectsBlocks(ctx, node, relayed, select)
-					? function () {
-							return projectValue(ctx, select);
-						}
-					: ctx.compileExpr
-						? ctx.compileExpr(select)
-						: function () {
-								return ctx.expr(select);
-							};
+				var select = selectFor(node, relayed, props);
+				var project = projection(ctx, node, relayed, select);
 				var previous = ctx.scopes.current;
 				var mapped = [];
 				var args = { items: items, select: { expression: select, deferred: "per item" } };

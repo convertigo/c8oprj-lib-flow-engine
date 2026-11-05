@@ -66,6 +66,19 @@ const _meta = {
 		return value === undefined || value === null ? "" : value;
 	}
 
+	// The key of a call: called with values without by, the item itself. The default by, current, is the source of the
+	// block, read for each item: it is not evaluated once for the whole call.
+	function byFor(ctx, node, props) {
+		if (ctx.relayedValues === true && (node.props || {}).by === undefined) {
+			return undefined;
+		}
+		return props.by === undefined ? "current" : props.by;
+	}
+
+	function keyOf(ctx, by) {
+		return by === undefined ? ctx.scopes.current : ctx.expr(by);
+	}
+
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
@@ -78,14 +91,14 @@ const _meta = {
 			}
 			var previous = ctx.scopes.current;
 			var direction = String(ctx.template(props.direction || props.order || "asc") || "asc").toLowerCase() === "desc" ? -1 : 1;
-			var by = props.by === undefined ? "current" : props.by;
+			var by = byFor(ctx, node, props);
 			try {
 				var decorated = [];
 				for (var index = 0; index < items.length; index++) {
 					ctx.scopes.current = items[index];
 					decorated.push({
 						item: items[index],
-						key: comparable(ctx.expr(by))
+						key: comparable(keyOf(ctx, by))
 					});
 				}
 				decorated.sort(function (a, b) {
@@ -123,7 +136,7 @@ const _meta = {
 					String(ctx.template(props.direction || props.order || "asc") || "asc").toLowerCase() === "desc"
 						? -1
 						: 1;
-				var by = props.by === undefined ? "current" : props.by;
+				var by = byFor(ctx, node, props);
 				var args = { items: items, by: { expression: by, deferred: "per item" } };
 				Object.defineProperty(args, "__state", {
 					value: { items: items, previous: previous, direction: direction, by: by }
@@ -142,7 +155,7 @@ const _meta = {
 						ctx.scopes.current = items[index];
 						decorated.push({
 							item: items[index],
-							key: comparable((args.by = ctx.expr(by)))
+							key: comparable((args.by = keyOf(ctx, by)))
 						});
 					}
 					decorated.sort(function (a, b) {
