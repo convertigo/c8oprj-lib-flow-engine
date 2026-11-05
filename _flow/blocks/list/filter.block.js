@@ -124,15 +124,16 @@ const _meta = {
 		return left <= right;
 	}
 
-	// A list.filter called with values (ctx.callBlock) reads its where as data, never as source: a value gives the same
-	// answer for every item, a text is refused (it would be read as a comparison of scope paths). relayed is read on entry.
-	function relayedPredicate(ctx, node, where) {
-		var value = ctx.expr(where);
-		if (typeof value === "string") {
+	// The where of list.filter is source, written in the definition of a Flow. A list.filter called with values
+	// (ctx.callBlock) refuses a where given by its caller, whatever its form, before reading anything: neither the
+	// comparison read by predicateFor nor the expression is used. Without where, it keeps every item. relayed is read on
+	// entry.
+	function relayedPredicate(ctx, node) {
+		if ((node.props || {}).where !== undefined) {
 			ctx.throwFlow({ code: "LIST_FILTER_WHERE_NOT_SOURCE", status: 400,
 				message: "The where of list.filter is written in the definition of a Flow; this list.filter was called with values." }, node);
 		}
-		return function () { return !!value; };
+		return function () { return true; };
 	}
 
 	function predicateFor(ctx, where) {
@@ -158,7 +159,7 @@ const _meta = {
 			var items = ctx.expr(props.items || props["in"]) || [];
 			var previous = ctx.scopes.current;
 			var filtered = [];
-			var predicate = relayed ? relayedPredicate(ctx, node, props.where) : predicateFor(ctx, props.where);
+			var predicate = relayed ? relayedPredicate(ctx, node) : predicateFor(ctx, props.where);
 			try {
 				for (var i = 0; i < items.length; i++) {
 					var item = items[i];
@@ -179,7 +180,7 @@ const _meta = {
 				var items = ctx.expr(props.items || props["in"]) || [];
 				var previous = ctx.scopes.current;
 				var filtered = [];
-				var predicate = relayed ? relayedPredicate(ctx, node, props.where) : predicateFor(ctx, props.where);
+				var predicate = relayed ? relayedPredicate(ctx, node) : predicateFor(ctx, props.where);
 				var args = { items: items, where: { expression: props.where, deferred: "per item" } };
 				Object.defineProperty(args, "__state", {
 					value: { props: props, items: items, previous: previous, filtered: filtered, predicate: predicate }

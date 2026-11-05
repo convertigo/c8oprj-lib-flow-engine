@@ -1,8 +1,8 @@
 // list.map, list.sort and list.filter called with values (ctx.callBlock). Without select, list.map gives the items
 // themselves; without by, list.sort sorts the items themselves: their default, current, is read for each item, never
-// evaluated once for the call. The where of a relayed list.filter is data: a value gives the same answer for every
-// item, a text is refused (LIST_FILTER_WHERE_NOT_SOURCE) instead of being read as a comparison of scope paths. Called
-// from a definition, the three blocks keep their behaviour.
+// evaluated once for the call. The where of list.filter is source: a relayed list.filter refuses a where given by its
+// caller (LIST_FILTER_WHERE_NOT_SOURCE), whatever its form, before reading any scope, and keeps every item without one.
+// Called from a definition, the three blocks keep their behaviour.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-relayed-list-defaults-").toFile();
@@ -22,6 +22,12 @@ try {
 		'Object.keys(extra).forEach(function(k){args[k]=extra[k];});return ctx.callBlock(String(ctx.template(p.target)),args,{trace:false});}};}())' });
 	assert(set.ok, "blockCodeSet: " + JSON.stringify(set));
 
+	set = api("blockCodeSet", { name: "proof.readProbe", code: 'const _meta = { sourceVersion: 2, runtime: "rhino", properties: { where: { kind: "expression", type: "unknown" } } };\n' +
+		'(function(){return {run:function(ctx,node){var p=ctx.props(node),reads=0,code="";' +
+		'Object.defineProperty(ctx.scopes.request,"probe",{configurable:true,get:function(){reads++;return "z";}});' +
+		'try{ctx.callBlock("list.filter",{items:[{v:1}],where:ctx.expr(p.where)},{trace:false});}catch(e){code=String(e.code||e.flowCode||(e.error&&e.error.code)||e.message);}' +
+		'finally{delete ctx.scopes.request.probe;}return {reads:reads,code:code};}};}())' });
+	assert(set.ok, "blockCodeSet: " + JSON.stringify(set));
 	var marker = "CFG-7731-MARKER";
 	function attempt(body, input) {
 		var out = api("run", { flowSource: 'const _flow = { sourceVersion: 2, config: { demo: { marker: "' + marker + '" } } }\n' +
@@ -47,15 +53,18 @@ try {
 	same(relay("list.sort", [3, 1, 2]), [1, 2, 3], "A relayed list.sort without by sorts the items");
 	same(relay("list.sort", ["b", "${config.demo.marker}", "a"]), ["${config.demo.marker}", "a", "b"], "A relayed list.sort sorts texts as they are");
 	same(relay("list.sort", [1, 3, 2], { direction: "desc" }), [3, 2, 1], "A relayed list.sort keeps its direction");
-	// list.filter: a relayed where is data
+	// list.filter: a where given by the caller of a relayed call is refused, in both readings of the block
 	var rows = [{ v: 1 }, { v: 2 }];
 	same(relay("list.filter", rows), rows, "A relayed list.filter without where keeps every item");
-	same(relay("list.filter", rows, { where: true }), rows, "A relayed where true keeps every item");
-	same(relay("list.filter", rows, { where: false }), [], "A relayed where false keeps no item");
-	["config.demo.marker == '" + marker + "'", "current.v > 1", "true"].forEach(function (where) {
+	["config.demo.marker > 'm'", "config.demo.marker == '" + marker + "'", "current.v > 1", "current.v", JSON.stringify("config.demo.marker > 'm'"),
+		"true", true, false, { op: ">" }].forEach(function (where) {
 		var out = attempt('  result.v = proof.listRelay({ target: "list.filter", items: input.items, extra: input.extra })', { items: rows, extra: { where: where } });
-		assert(where === "true" ? out.ok && JSON.stringify(out.result.v) === JSON.stringify(rows) : !out.ok && out.error.code === "LIST_FILTER_WHERE_NOT_SOURCE",
-			"A relayed text where is refused, a JSON text is its value " + JSON.stringify(where) + ": " + JSON.stringify(out));
+		assert(!out.ok && out.error.code === "LIST_FILTER_WHERE_NOT_SOURCE", "A relayed where is refused " + JSON.stringify(where) + ": " + JSON.stringify(out));
+	});
+	// the refusal comes before any scope is read: a getter on the request scope counts the reads
+	["request.probe > 'm'", "request.probe"].forEach(function (where) {
+		same(run('  result.v = proof.readProbe({ where: input.where })', { where: where }).v, { reads: 0, code: "LIST_FILTER_WHERE_NOT_SOURCE" },
+			"No scope is read before the refusal " + JSON.stringify(where));
 	});
 
 	// called from a definition, the three blocks keep their behaviour
@@ -65,6 +74,8 @@ try {
 		{ n: [3, 1, 2], rows: rows });
 	same([authored.map, authored.sort, authored.filter, authored.all, authored.config], [[3, 1, 2], [1, 2, 3], [{ v: 2 }], rows, rows],
 		"list.map, list.sort and list.filter of a definition");
+	same(run('  result.v = list.filter({ items: input.rows, where: current.a == "b" })', { rows: [{ a: "b" }, { a: "c" }] }).v, [{ a: "b" }],
+		"A comparison written in the definition still filters");
 
 	print("relayed-list-defaults OK (" + checks + " checks)");
 } finally {
