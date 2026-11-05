@@ -1,7 +1,9 @@
 // The same contract as relayed-values-lanes.js on real threads: lanes opened on Java threads by a block running on
 // values relayed by ctx.callBlock evaluate nothing, and the slots of a forEachChunk with parallel lanes, inside a
-// composite block called with values, are still source. Without a Convertigo server, a minimal shared runtime stands in
-// for FlowRuntimeApi: prepare, newCache and compileSymbols, and openLanes running the lanes on Java threads.
+// composite block called with values, are still source. In this shared runtime the prepared runner of a stateless block
+// (prepareNode) serves the nodes of a definition and never a relayed call. Without a Convertigo server, a minimal shared
+// runtime stands in for FlowRuntimeApi: prepare, newCache and compileSymbols, and openLanes running the lanes on Java
+// threads.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var project = java.nio.file.Files.createTempDirectory("flow-relayed-lane-threads-").toFile();
@@ -110,6 +112,12 @@ try {
 		'  },$$reduce:function({acc,value}){\n    if({condition:acc===null,$$then:function(){return value}})\n' +
 		'    local.j = `${acc}|${value}`\n    return local.j\n  }})\n  return local.out\n}\n');
 
+	block("proof.prepared", 'const _meta = { sourceVersion: 2, runtime: "rhino", properties: { value: { kind: "template", type: "string" } } };\n' +
+		'(function(){return {stateless:true,' +
+		'prepareNode:function(node,helpers){var S=java.lang.System;S.setProperty("flow.test.prepared",String(S.getProperty("flow.test.prepared")||"")+"|"+JSON.stringify(helpers.props));' +
+		'var value=helpers.compileValue(helpers.props.value);return function(ctx){return {prepared:true,value:value(ctx)};};},' +
+		'run:function(ctx,node){var p=ctx.props(node);return {prepared:false,value:ctx.template(p.value)};}};}())');
+	java.lang.System.clearProperty("flow.test.prepared");
 	var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 	function api(name, request) { return JSON.parse(engine[name](JSON.stringify(request))); }
 	var marker = "CFG-7731-MARKER";
@@ -136,6 +144,13 @@ try {
 	same(run('  result.v = proof.relayChunks({ items: input.items, label: input.label })', { items: [1, 2], label: label }).v,
 		"0:" + label + "|1:" + label, "The slots of a relayed composite block are source");
 	assert(laneThreads.size() >= 1, "The chunks ran on threads: " + laneThreads.keySet());
+
+	// the prepared runner serves the definition, a relayed call runs the block itself on its values
+	var prepared = run('  result.source = proof.prepared({ value: `S ${input.name}` })\n' +
+		'  result.relayed = proof.relayTo({ target: "proof.prepared", value: input.t })', { name: "Bob", t: label });
+	same(prepared, { source: { prepared: true, value: "S Bob" }, relayed: { prepared: false, value: label } }, "Prepared runners serve the definition only");
+	var seen = String(java.lang.System.getProperty("flow.test.prepared") || "");
+	assert(seen.indexOf("S ${input.name}") >= 0 && seen.indexOf("config.demo.marker") < 0, "prepareNode never sees a relayed value: " + seen);
 
 	print("relayed-values-lane-threads OK (" + checks + " checks)");
 } finally {

@@ -251,6 +251,10 @@
 	}
 
 	function compileGraphBlockProps(node, catalog, preparedProps) {
+		// compiles the properties of a node of a definition: the values of a relayed call are never compiled
+		if (node && node.__flowRelayedProps) {
+			raise("RELAYED_CALL_COMPILED", "The values of a call relayed by ctx.callBlock are never compiled: " + blockName(node) + ".");
+		}
 		var raw = preparedProps || ctxPropsForCompile(node);
 		var descriptors = catalog.props || {};
 		var fields = [];

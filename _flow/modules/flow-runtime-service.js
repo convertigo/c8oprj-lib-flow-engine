@@ -1222,6 +1222,10 @@
 		}
 
 		function prepareNodeRunner(block, node, props) {
+			// a prepared runner compiles the properties of a node of a definition: a relayed call never gets one
+			if (node && node.__flowRelayedProps) {
+				raise("RELAYED_CALL_PREPARED", "A call relayed by ctx.callBlock is never prepared: " + blockName(node) + ".");
+			}
 			var trustedRuntime = String(block && block.__flowOrigin || "") === "core" ||
 				String(block && block.__blockImplementationRuntime || "") === "flow" ||
 				env.sharedRuntime && block && block.__graphRhino && block.__graphRhino.script.stateless === true;
