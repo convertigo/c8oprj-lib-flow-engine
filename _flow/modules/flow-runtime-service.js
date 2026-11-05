@@ -534,7 +534,15 @@
 		runContextPrototype.write = function (path, value) {
 			return writeScopePath(this.scopes, path, value);
 		};
-		// While a block runs on relayed values (relayedValues, set by callBlock), what it evaluates is data.
+		// While a block runs on relayed values (relayedValues, set by callBlock), what it evaluates is data. A run starts
+		// on the source of its definition: the default mode, false, is read from the prototype, which a shared runtime
+		// freezes; setting the mode gives the context its own slot.
+		Object.defineProperty(runContextPrototype, "relayedValues", {
+			get: function () { return false; },
+			set: function (value) {
+				Object.defineProperty(this, "relayedValues", { value: value === true, writable: true, enumerable: false, configurable: true });
+			}
+		});
 		runContextPrototype.value = function (value) {
 			return this.relayedValues ? relayedValue(value, false) : evaluateExpression(this, value);
 		};
@@ -990,6 +998,8 @@
 				// resolved here, on the calling thread: the HTTP calls of the lanes keep the cookies of the call
 				invocationContext: invocationContextOf(ctx),
 				traceEnabled: ctx.traceEnabled !== false,
+				// a block running on relayed values that opens lanes: what its lanes evaluate stays data
+				relayedValues: ctx.relayedValues === true,
 				traced: !!scopes.trace && typeof scopes.trace === "object",
 				profiled: !!ctx.profile,
 				config: undefined,
@@ -1084,6 +1094,7 @@
 			lane.returned = undefined;
 			lane.stopped = false;
 			lane.traceEnabled = template.traceEnabled;
+			lane.relayedValues = template.relayedValues;
 			lane.graphBlockStack = template.graphBlockStack.slice();
 			var shared = template.scopes;
 			var caller = template.caller;
@@ -1145,6 +1156,7 @@
 			lane.__flowTaskRecords = records;
 			lane.returned = undefined;
 			lane.stopped = false;
+			lane.relayedValues = template.relayedValues;
 			if (template.traced) lane.scopes.trace = records.trace = { nodes: [] };
 			if (template.profiled) lane.profile = records.profile = { blocks: [], hotPath: {} };
 			try {
