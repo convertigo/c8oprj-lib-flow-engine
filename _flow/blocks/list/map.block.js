@@ -57,6 +57,19 @@ const _meta = {
 		});
 	}
 
+	// Projection blocks are written in the definition of a Flow. A list.map called with values (ctx.callBlock) reads its
+	// select as data: a select shaped like a projection block is refused there, never run. relayed is read on entry.
+	function projectsBlocks(ctx, node, relayed, select) {
+		if (!hasFlowBlock(select)) {
+			return false;
+		}
+		if (relayed) {
+			ctx.throwFlow({ code: "LIST_MAP_SELECT_NOT_SOURCE", status: 400,
+				message: "A projection block of list.map is written in the definition of a Flow; this list.map was called with values." }, node);
+		}
+		return true;
+	}
+
 	function projectValue(ctx, value) {
 		if (!value || typeof value !== "object") {
 			return ctx.input({ value: value });
@@ -80,10 +93,11 @@ const _meta = {
 
 	return {
 		run: function (ctx, node) {
+			var relayed = ctx.relayedValues === true;
 			var props = ctx.props(node);
 			var items = ctx.expr(props.items || props["in"]) || [];
 			var select = props.select === undefined ? "current" : props.select;
-			var project = hasFlowBlock(select)
+			var project = projectsBlocks(ctx, node, relayed, select)
 				? function () { return projectValue(ctx, select); }
 				: ctx.compileExpr ? ctx.compileExpr(select) : function () { return ctx.expr(select); };
 			var previous = ctx.scopes.current;
@@ -97,10 +111,11 @@ const _meta = {
 		},
 		debug: {
 			resolve: function (ctx, node) {
+				var relayed = ctx.relayedValues === true;
 				var props = ctx.props(node);
 				var items = ctx.expr(props.items || props["in"]) || [];
 				var select = props.select === undefined ? "current" : props.select;
-				var project = hasFlowBlock(select)
+				var project = projectsBlocks(ctx, node, relayed, select)
 					? function () {
 							return projectValue(ctx, select);
 						}

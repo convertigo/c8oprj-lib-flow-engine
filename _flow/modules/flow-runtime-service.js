@@ -1543,8 +1543,13 @@
 			var previousRelayed = ctx.relayedValues;
 			// The properties of a call are values, given by the code of a block: the called block reads them as data and
 			// never evaluates them. { source: true } relays a node of the definition of the caller instead (list.map
-			// projections): its properties are source, evaluated by the called block in the frame of the caller.
+			// projections): its properties are source, evaluated by the called block in the frame of the caller. Only a
+			// block running on source relays source: a block running on relayed values relays values.
 			var source = options.source === true;
+			if (source && ctx.relayedValues === true) {
+				raise("CALL_BLOCK_SOURCE_REFUSED", "A block running on values relayed by ctx.callBlock cannot relay source to " + name + ".",
+					null, "Relay values: call ctx.callBlock without { source: true }.");
+			}
 			ctx.relayedValues = false;
 			if (!source) {
 				ctx.scopes.props = nodeProperties;
