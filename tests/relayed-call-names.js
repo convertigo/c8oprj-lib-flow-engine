@@ -2,6 +2,8 @@
 // site that changes, fails until it is reviewed here: a name that data could choose would let data pick a block to run
 // (list.filter, list.map or any block that reads its properties itself). Every engine call is scanned, and the
 // libraries found next to the engine checkout (the test layout of the Flow libraries) too; a missing one is reported.
+// FLOW_RELAYED_CALL_NAMES_STRICT=1 (before a release, on the aligned layout of the libraries) fails when a library is
+// missing, so that every reviewed site is actually checked.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var files = Packages.org.apache.commons.io.FileUtils;
 var engineRoot = engineDir.getParentFile(), siblings = engineRoot.getParentFile();
@@ -87,4 +89,9 @@ Object.keys(reviewed).forEach(function (key) {
 	var library = key.split(":")[0];
 	assert(scanned.indexOf(library) < 0 || found[key] === reviewed[key], "The reviewed call " + key + " changed: " + (found[key] || 0) + " call(s)");
 });
-print("relayed-call-names OK (" + Object.keys(found).length + " sites in " + scanned.join(", ") + (missing.length ? "; not found here: " + missing.join(", ") : "") + ")");
+var strict = String(java.lang.System.getenv("FLOW_RELAYED_CALL_NAMES_STRICT") || "") === "1";
+assert(!strict || !missing.length, "Strict mode: libraries not found next to the engine: " + missing.join(", ") +
+	" (" + Object.keys(found).length + " of " + Object.keys(reviewed).length + " reviewed sites checked)");
+assert(!strict || Object.keys(found).length === Object.keys(reviewed).length, "Strict mode: " + Object.keys(found).length +
+	" sites found, " + Object.keys(reviewed).length + " reviewed");
+print("relayed-call-names OK (" + (strict ? "strict, " : "") + Object.keys(found).length + " sites in " + scanned.join(", ") + (missing.length ? "; not found here: " + missing.join(", ") : "") + ")");

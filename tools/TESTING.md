@@ -138,6 +138,12 @@ receive a separate short `TMPDIR` under the host temporary directory, removed
 when the runner exits, so tsx sockets fit macOS's Unix socket path limit even
 when the checkout is deeply nested.
 
+`tests/relayed-call-names.js` reviews the blocks every Flow library calls with a
+computed name. It scans the libraries found next to the engine checkout and
+reports the missing ones. Before a release, run it on the aligned layout of the
+libraries with `FLOW_RELAYED_CALL_NAMES_STRICT=1`: it then fails when a library
+is missing or when fewer sites than reviewed are checked.
+
 The Engine/MCP totals count standalone `tests/*.js` and `tests/*.cjs` programs;
 `tests/run-rhino.cjs` is a helper and is excluded. Explicit MCP argument-order
 exceptions live in `lib_flow_mcp/tools/test-arguments.json`, including
