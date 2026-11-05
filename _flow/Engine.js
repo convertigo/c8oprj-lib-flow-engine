@@ -1077,9 +1077,9 @@
 		try { runtimeHandleUtils().assertSerializable(value, where, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
 	}
 
-	function normalizeTree(value) {
+	function normalizeTree(value, preserveHandles) {
 		var allocation = executionState().allocationProfiler ? executionState().allocationProfiler.open("boundary", "normalizeTree", "") : null;
-		try { return runtimeHandleUtils().normalize(value, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
+		try { return runtimeHandleUtils().normalize(value, runtimeHandleEnv(), preserveHandles === true); } finally { if (allocation) allocation.close(); }
 	}
 
 	function mergedContext(base, override) {

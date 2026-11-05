@@ -127,29 +127,29 @@
 
 	// Nested callbacks also require an activation scope. Isolate the array
 	// callback so every primitive/object visit can use ordinary local variables.
-	function normalizeArray(value, env) {
+	function normalizeArray(value, env, preserveHandles) {
 		return value.map(function (item) {
-			return normalize(item, env);
+			return normalize(item, env, preserveHandles);
 		});
 	}
 
-	function normalize(value, env) {
+	function normalize(value, env, preserveHandles) {
 		value = jsValue(value, env);
 		if (value === null || (typeof value !== "object" && typeof value !== "function")) {
 			return value;
 		}
 		if (isHandle(value)) {
-			return summary(value);
+			return preserveHandles === true ? value : summary(value);
 		}
 		if (value && Object.prototype.toString.call(value) === "[object Array]") {
-			return normalizeArray(value, env);
+			return normalizeArray(value, env, preserveHandles);
 		}
 		if (value && typeof value === "object") {
 			var out = {};
 			var keys = Object.keys(value);
 			for (var i = 0; i < keys.length; i++) {
 				var key = keys[i];
-				var child = normalize(value[key], env);
+				var child = normalize(value[key], env, preserveHandles);
 				if (key === "__proto__") defineDataProperty(out, key, child);
 				else out[key] = child;
 			}

@@ -1876,11 +1876,16 @@
 			if (value === undefined || value === null) {
 				return {};
 			}
+			// Only the engine creates this non-enumerable link. Internal child Flows borrow the
+			// request's live handles (for example an ambient transaction), never their JSON summaries.
+			// A child owns and closes only handles it creates; its request root remains a separate object.
+			var parent = Object.getOwnPropertyDescriptor(request, "__parentRun");
+			var internalContext = name === "context" && parent && parent.enumerable === false && parent.value;
 			if (request.__deferResultSerializationSafety === true && value && typeof value === "object" &&
 				Object.prototype.toString.call(value) === "[object Object]") {
 				return Object.assign({}, value);
 			}
-			return normalizeTree(value);
+			return normalizeTree(value, !!internalContext);
 		}
 
 		// The declared inputs of a Flow receive their values converted to their types (type-conversion.js), whatever the
