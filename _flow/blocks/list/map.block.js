@@ -62,13 +62,11 @@ const _meta = {
 			return ctx.input({ value: value });
 		}
 		if (typeof value.__flowBlock === "string") {
-			var properties = {};
-			Object.keys(value.properties || {}).forEach(function (key) {
-				properties[key] = ctx.input({ value: value.properties[key] });
-			});
 			var metadata = value.metadata || {};
 			if (metadata.disabled) return undefined;
-			return ctx.callBlock(value.__flowBlock, properties, { trace: false, id:metadata.id, out:metadata.out });
+			// A projection block is a node of this definition: its properties are source, evaluated once by the block
+			// in the frame of the projection (current is the item).
+			return ctx.callBlock(value.__flowBlock, value.properties || {}, { source: true, trace: false, id:metadata.id, out:metadata.out });
 		}
 		if (Object.prototype.toString.call(value) === "[object Array]") {
 			return value.map(function (item) { return projectValue(ctx, item); });

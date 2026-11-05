@@ -276,7 +276,22 @@
 		return prepared && prepared.props ? prepared.props : nodeProps(node);
 	}
 
+	// A relayed call (ctx.callBlock) gives values, not source: each property given is read as data, as its kind reads a
+	// relayed value (ctx.relayedProperty); the defaults of the properties left out are already evaluated.
+	function relayedGraphBlockProps(ctx, node, catalog) {
+		var props = ctx.props(node);
+		var descriptors = catalog.props || {};
+		Object.keys(node.props || {}).forEach(function (key) {
+			var descriptor = descriptors[key] || {};
+			props[key] = ctx.relayedProperty(props[key], String(descriptor.kind || descriptor.type || ""));
+		});
+		return props;
+	}
+
 	function resolveGraphBlockProps(ctx, node, catalog) {
+		if (node && node.__flowRelayedProps) {
+			return relayedGraphBlockProps(ctx, node, catalog);
+		}
 		var prepared = node && node.__flowRuntimeNode;
 		if (prepared && prepared.graphPropsCatalog === catalog && prepared.graphPropsResolver) {
 			if (ctx.profile) {
