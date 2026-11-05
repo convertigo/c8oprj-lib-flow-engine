@@ -1,6 +1,9 @@
 // Every run context created by the engine has relayedValues, the mode of the values it evaluates: a run starts on its
-// source (the default of its prototype), a lane takes the mode of the block that opens it. A new kind of run context must state its mode, and be
-// listed here with where it takes it from.
+// source (the default of its prototype), a lane takes the mode of the block that opens it. A new kind of run context
+// must state its mode, and be listed here with where it takes it from.
+// This guard is textual: it finds the contexts created by var x = Object.create(runContextPrototype) or
+// Object.create(laneContextPrototype). A run context created any other way (copied, assigned a prototype later, built by
+// another module or by Java) is not detected and needs its own review.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var files = Packages.org.apache.commons.io.FileUtils;
 var reviewed = {

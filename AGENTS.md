@@ -463,6 +463,21 @@ ctx.props(node)       business properties (excludes engine output metadata)
 ctx.outputPath(node)  engine result destination, independent of business out
 ```
 
+Values and source. `ctx.callBlock(name, props, options)` passes values: the
+called block reads them as data and evaluates nothing in them, whatever the
+kind of its properties. Three helpers run what they are given instead:
+
+- `ctx.callBlock(name, props, { source: true })` evaluates `props` as source;
+- `ctx.runNodes(nodes)` (and `ctx.runLoopBody(nodes)`) runs `nodes` as nodes of
+  a definition;
+- `ctx.runFlowSource(source, config, options)` runs `source` as a Flow.
+
+Give them only what the definition holds (the slots of the node, a projection
+written in the source) or a Flow of the project read by name. Never give them a
+value that comes from data: the properties of a relayed call, an input, a row,
+a file, a response, or anything built from them. `{ source: true }` is refused
+while a block runs on relayed values (`CALL_BLOCK_SOURCE_REFUSED`).
+
 For generic values, expose a single `value` property. A literal string is a
 literal, mixed text can contain `{{ expression }}`, and a string containing only
 `{{ expression }}` returns the expression value with its native type.
