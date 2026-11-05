@@ -9470,6 +9470,12 @@
 			var exitCode = process.waitFor();
 			frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
 			return { output: output, exitCode: exitCode };
+		} catch (error) {
+			// Destroying a cancelled process can close its output stream before the reader reaches EOF.
+			if (cancel && cancel.get("cancelled").get()) {
+				return { output: "Cancelled: the development mode of the project started.", exitCode: -1 };
+			}
+			throw error;
 		} finally {
 			if (cancel) {
 				cancel.get("processes").remove(process);
