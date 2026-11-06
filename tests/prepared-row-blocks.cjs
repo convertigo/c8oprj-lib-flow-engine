@@ -7,8 +7,12 @@ function block(name){const source=fs.readFileSync(path.join(root,'blocks',name+'
 function context(props,input){const ctx={scopes:{input,local:{target:{}},result:{}},props:()=>props,readObjectPath:(o,p)=>scope.readObjectPath(o,p)};
  ctx.template=v=>expressions.renderTree(ctx,v,env);ctx.expr=v=>expressions.evaluate(ctx,v,env);ctx.input=p=>p.value===undefined?undefined:ctx.template(p.value);
  ctx.collections={put(p,k,v){if(typeof k!=='string'||!k||['__proto__','prototype','constructor'].includes(k))env.raise('INVALID_MAP_KEY','invalid map key');ctx.scopes.local.target[k]=v;return ctx.scopes.local.target;}};
+ // lib/text-pattern.js runs java.util.regex on the server; here the native RegExp stands for it
+ ctx.lib=name=>name==='text-pattern'?textPattern:undefined;
  return ctx;
 }
+const textPattern={compile:(pattern,flags)=>new RegExp(pattern,flags),failure:()=>null,
+ match:(regexp,text)=>{const found=regexp.exec(text);return found?{matched:true,groups:Array.from(found,g=>g==null?'':String(g))}:{matched:false,groups:[]};}};
 function prepared(name,props){const api=block(name);let compiles=0;const helpers={props,compileValue(v){compiles++;return expressions.compileTemplate(v,env);},compileExpression(v){compiles++;return expressions.compile(v,env);}};
  return {api,run:api.prepareNode({},helpers),compiles:()=>compiles};}
 function equal(a,b){assert.equal(JSON.stringify(a),JSON.stringify(b));}
