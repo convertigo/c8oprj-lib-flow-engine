@@ -9968,8 +9968,8 @@
 				durationMs: frontendDurationMs(startedAt)
 			};
 		}
-		var shared = stepAction === "installApp" ? frontendSharedAppModules(resourceRoot, generatedRoot, npm) : null;
-		if (shared && frontendRestoreSharedAppModules(generatedRoot, shared.store, shared.key)) {
+		var appModules = stepAction === "installApp" ? frontendSharedAppModules(resourceRoot, generatedRoot, npm) : null;
+		if (appModules && frontendRestoreSharedAppModules(generatedRoot, appModules.store, appModules.key)) {
 			writeFrontendDependencyInstallStamp(generatedRoot, frontendDependencyFingerprint(generatedRoot, npm), "app");
 			frontendStudioLog("[Svelte frontbuilder] App dependencies copied from an application with the same dependencies.");
 			return {
@@ -10026,8 +10026,8 @@
 			if (stepAction === "installBuilder") {
 				runtimeState.frontendDependencyFingerprints = {};
 			}
-			if (shared) {
-				frontendKeepSharedAppModules(generatedRoot, shared.store, shared.key);
+			if (appModules) {
+				frontendKeepSharedAppModules(generatedRoot, appModules.store, appModules.key);
 			}
 		}
 		return {
@@ -12123,12 +12123,12 @@
 		}
 		// the installations of the application run one at a time
 		var projectLock = frontendProjectActionLock(request);
-		var shared = null;
+		var appModules = null;
 		var restored = false;
 		projectLock.lock();
 		try {
-			shared = frontendSharedAppModules(resourceRoot, generatedRoot, npm);
-			restored = !!shared && frontendRestoreSharedAppModules(generatedRoot, shared.store, shared.key);
+			appModules = frontendSharedAppModules(resourceRoot, generatedRoot, npm);
+			restored = !!appModules && frontendRestoreSharedAppModules(generatedRoot, appModules.store, appModules.key);
 			if (restored) {
 				writeFrontendDependencyInstallStamp(generatedRoot, frontendDependencyFingerprint(generatedRoot, npm), "app");
 			}
@@ -12152,7 +12152,7 @@
 			"incremental"
 		);
 		frontendStartDependencyPreparation(entry, args, generatedRoot, envValues, generatedRoot, fingerprint, "app");
-		entry.sharedAppModules = shared;
+		entry.sharedAppModules = appModules;
 		frontendStudioLog("[Svelte dev] App dependencies are being installed while authoring continues.");
 	}
 
@@ -12272,11 +12272,11 @@
 				if (entry.setupKind !== "app") {
 					runtimeState.frontendDependencyFingerprints = {};
 				}
-				var shared = entry.setupKind === "app" ? entry.sharedAppModules : null;
-				if (shared) {
+				var appModules = entry.setupKind === "app" ? entry.sharedAppModules : null;
+				if (appModules) {
 					// before Vite starts and writes in node_modules
 					entry.sharedAppModules = null;
-					frontendKeepSharedAppModules(entry.setupRoot, shared.store, shared.key);
+					frontendKeepSharedAppModules(entry.setupRoot, appModules.store, appModules.key);
 				}
 				entry.status = "prepared";
 				frontendStudioLog("[Svelte dev] " + (entry.setupKind === "app" ? "App" : "Builder") +
