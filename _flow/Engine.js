@@ -2430,10 +2430,23 @@
 	// configuration at their next call, instead of the one parsed under the stamp the server kept for the file (up to a
 	// minute), until a cache clear.
 	function projectConfigWritten(result) {
-		if (result && result.ok !== false && result.dryRun !== true && String(result.path) === sourcePaths().path("engine.yaml")) {
+		if (result && result.ok !== false && result.dryRun !== true && String(result.path) === sourcePaths().path("engine.yaml")
+			&& serverConfigurationReady()) {
 			notifySourceMutation({ projectDir: String(projectDir() || ""), path: String(new File(projectDir(), result.path).getAbsolutePath()) });
 		}
 		return result;
+	}
+
+	// Outside a started Convertigo (a library test in a plain Rhino shell), the server bridge cannot be loaded: its
+	// classes fail in their static initialization with an Error that a script cannot catch. Nothing to tell then.
+	function serverConfigurationReady() {
+		try {
+			var EnginePropertiesManager = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager;
+			EnginePropertiesManager.getProperty(EnginePropertiesManager.PropertyName.APPLICATION_SERVER_CONVERTIGO_URL);
+			return true;
+		} catch (notStarted) {
+			return false;
+		}
 	}
 
 	function notifySourceMutation(request) {
