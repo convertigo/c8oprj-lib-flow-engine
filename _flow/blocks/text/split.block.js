@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:format-list-bulleted",
-  "description": "Splits a text on a literal separator into a list of texts, trimmed and without empty items by default (\"a, b,\" gives [\"a\", \"b\"]).",
+  "description": "Splits a text on a literal separator, or with regex: true on a regular expression (JavaScript syntax, captured groups included, under the execution budget of text.match), into a list of texts, trimmed and without empty items by default (\"a, b,\" gives [\"a\", \"b\"]).",
   "summary": "split {{text}} on {{separator}}",
   "targets": [
     "backend",
@@ -31,7 +31,7 @@ const _meta = {
       "kind": "template",
       "type": "string",
       "default": ",",
-      "description": "Literal separator.",
+      "description": "Literal separator; with regex: true, a regular expression (JavaScript syntax, at most 500 characters).",
     },
     "trim": {
       "label": "Trim items",
@@ -49,6 +49,29 @@ const _meta = {
       "default": true,
       "description": "Drop the items that are empty (after trimming).",
     },
+    "regex": {
+      "label": "Regular expression",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Read separator as a regular expression, as String.prototype.split does (set trim and removeEmpty to false for its exact items).",
+    },
+    "flags": {
+      "label": "Flags",
+      "category": "Expert",
+      "kind": "template",
+      "type": "string",
+      "default": "",
+      "description": "With regex: true, letters among i, m, s (g is ignored, as in JavaScript).",
+    },
+    "dynamicPattern": {
+      "label": "Pattern from data",
+      "category": "Expert",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "With regex: true, allow a pattern built from data in a Flow callable over HTTP. It still runs under the execution budget.",
+    },
   },
   "outputs": {
     "out": {
@@ -63,6 +86,7 @@ const _meta = {
     "text",
     "split",
     "list",
+    "regex",
     "portable",
   ],
 }
@@ -81,46 +105,53 @@ const _meta = {
     return !(resolved === false || String(resolved) === "false");
   }
 
+  function resolve(ctx, node) {
+    var p = ctx.props(node), regex = p.regex === true || String(p.regex) === "true";
+    return {
+      text: text(ctx, p.text, ""),
+      separator: text(ctx, p.separator, ","),
+      trim: flag(ctx, p.trim),
+      removeEmpty: flag(ctx, p.removeEmpty),
+      regex: regex,
+      flags: regex ? text(ctx, p.flags, "") : ""
+    };
+  }
+
+  // with regex: true, the pattern runs in lib/text-pattern.js (java.util.regex under a budget of reads of the text)
+  function items(ctx, node, args) {
+    if (!args.regex) {
+      return args.text === "" ? [] : args.separator === "" ? [args.text] : args.text.split(args.separator);
+    }
+    var patterns = ctx.lib("text-pattern");
+    try {
+      return patterns.split(patterns.compile(args.separator, args.flags.replace(/g/g, "")), args.text);
+    } catch (e) {
+      var failure = patterns.failure(e);
+      if (failure) {
+        return ctx.throwFlow({ code: failure.textPatternCode, message: "text.split: " + failure.message, hint: failure.hint, status: failure.status }, node);
+      }
+      throw e;
+    }
+  }
+
+  function run(ctx, node, args) {
+    var found = items(ctx, node, args), list = [];
+    for (var i = 0; i < found.length; i++) {
+      var item = args.trim ? found[i].trim() : found[i];
+      if (!args.removeEmpty || item !== "") {
+        list.push(item);
+      }
+    }
+    return list;
+  }
+
   return {
     run: function (ctx, node) {
-      var props = ctx.props(node);
-      var value = text(ctx, props.text, "");
-      var separator = text(ctx, props.separator, ",");
-      var trim = flag(ctx, props.trim);
-      var removeEmpty = flag(ctx, props.removeEmpty);
-      if (value === "") {
-        return [];
-      }
-      var items = separator === "" ? [value] : value.split(separator);
-      var list = [];
-      for (var i = 0; i < items.length; i++) {
-        var item = trim ? items[i].trim() : items[i];
-        if (!removeEmpty || item !== "") {
-          list.push(item);
-        }
-      }
-      return list;
+      return run(ctx, node, resolve(ctx, node));
     },
-		debug: {
-			resolve: function (ctx, node) {
-				var p = ctx.props(node);
-				return {
-					text: text(ctx, p.text, ""),
-					separator: text(ctx, p.separator, ","),
-					trim: flag(ctx, p.trim),
-					removeEmpty: flag(ctx, p.removeEmpty)
-				};
-			},
-			run: function (ctx, node, args) {
-				if (args.text === "") return [];
-				var items = args.separator === "" ? [args.text] : args.text.split(args.separator),
-					list = [];
-				for (var i = 0; i < items.length; i++) {
-					var item = args.trim ? items[i].trim() : items[i];
-					if (!args.removeEmpty || item !== "") list.push(item);
-				}
-				return list;
-			}
-		}
-	};
+    debug: {
+      resolve: resolve,
+      run: run
+    }
+  };
 }())
