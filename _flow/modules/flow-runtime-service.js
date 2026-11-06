@@ -2058,7 +2058,8 @@
 				if (value === undefined) {
 					if (declaration["default"] === undefined) {
 						if (declaration.required === true) {
-							inputError("FLOW_INPUT_REQUIRED", name, "Input " + name + " is required.", "");
+							inputError("FLOW_INPUT_REQUIRED", name, "Input " + name + " is required.",
+								"To return your own error code, keep this input optional and validate it in the Flow with throw { code, message, status: 400 }.");
 						}
 						delete input[name];
 						return;
