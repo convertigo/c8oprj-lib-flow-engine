@@ -1,5 +1,5 @@
 const _meta = {
-  longDescription: "```flowscript\nthrow { code: \"INVALID\", message: \"Invalid input\", status: 400 }\n```\nAny other field (line: local.line) is evaluated like a details value and placed at the top of the response error, beside code and message; path, stack, operation and names starting with __ or convertigo. are refused.",
+  longDescription: "```flowscript\nthrow { code: \"INVALID\", message: \"Invalid input\" }\n```\nAny other field (line: local.line) is evaluated like a details value and placed at the top of the response error, beside code and message; path, stack, operation and names starting with __ or convertigo. are refused.",
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:alert-circle-outline",
@@ -24,7 +24,7 @@ const _meta = {
       "label": "Status code",
       "kind": "expression",
       "type": "number",
-      "description": "Optional HTTP-style status code.",
+      "description": "Status code for REST operations of the URL mapper only.",
     },
     "details": {
       "label": "Details",
