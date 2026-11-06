@@ -357,8 +357,9 @@
 		"sin", "cos", "tan", "asin", "acos", "atan", "atan2"];
 	var MATH_IMPLEMENTATIONS = MATH_FUNCTIONS.map(function (name) { return Math[name]; });
 	var parseIntegerText = parseInt, parseFloatText = parseFloat, isNaNNumber = isNaN, isFiniteNumber = isFinite;
-	// The names an expression may read as a value, besides the scopes, true, false, null and undefined
-	var EXPRESSION_CONSTANTS = { Infinity: Infinity, NaN: NaN, "Math.PI": Math.PI, "Math.E": Math.E };
+	// The names an expression may read as a value, besides the scopes, true, false, null and undefined: a table of no
+	// prototype, frozen
+	var EXPRESSION_CONSTANTS = functionTable({ Infinity: Infinity, NaN: NaN, "Math.PI": Math.PI, "Math.E": Math.E });
 
 	function withNumberFunctions(fns, env) {
 		function text(value) { return String(strictValue(value, env)); }
