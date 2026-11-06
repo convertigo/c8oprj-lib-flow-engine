@@ -2566,8 +2566,86 @@
 			return lower(root, destination);
 		}
 
+		// A regular expression literal is not an expression. Assigned alone in one of its exact JavaScript forms, it is
+		// read as the text block that does the same, and the source written at promote is that block:
+		//   x = /p/f.test(s)        local.xMatch = text.match({ text: String(s), pattern: "p", flags: "f" }), x = local.xMatch.matched
+		//   x = s.match(/p/f)       the same text.match, x = local.xMatch.matched ? local.xMatch.groups : null
+		//   x = s.replace(/p/f, y)  text.replace({ text: s, search: "p", replacement: y, regex: true, all: false without g })
+		//   x = s.replaceAll(/p/g, y), x = s.split(/p/f)  text.replace and text.split({ ..., regex: true, trim: false, removeEmpty: false })
+		// Any other form (a literal inside a condition or a longer expression, other flags, other arguments, a replacement
+		// function) is refused at its line with the block to write (expression-utils.js regularExpressionHint).
+		function lowerRegularExpressionAssignment(blocks, imports, locals, destination, rhs, lineNumber) {
+			var text = String(rhs || "").trim();
+			if (!env.regularExpressionAdvice || text.indexOf("/") === -1) {
+				return null;
+			}
+			var start = text.charAt(0) === "/" ? 0 : -1;
+			var method = /\.\s*(match|replace|replaceAll|split)\s*\(\s*\//g, found;
+			while (start < 0 && (found = method.exec(text))) {
+				var candidate = env.regularExpressionAdvice(text, found.index + found[0].length - 1);
+				if (candidate.callStart === 0 && candidate.callEnd === text.length) start = found.index + found[0].length - 1;
+			}
+			if (start < 0) {
+				raiseRegularExpressionLiteral(text, lineNumber);
+				return null;
+			}
+			var advice = env.regularExpressionAdvice(text, start);
+			var exact = advice.closed && advice.flagsSupported && advice.callStart === 0 && advice.callEnd === text.length && !advice.extraArguments &&
+				advice.pattern !== "" && (advice.method === "test" ? advice.argument !== "" : advice.receiver !== "") &&
+				/^(test|match|replace|replaceAll|split)$/.test(advice.method) &&
+				!(advice.method === "replaceAll" && advice.flags.indexOf("g") === -1) &&
+				!(/^replace/.test(advice.method) && (advice.replacement === "" || /^function\b|=>/.test(advice.replacement)));
+			if (!exact) {
+				// /x/y.test(s), /x/.test(a) && b: an expression, refused by its checks with the same hint
+				if (start === 0) return null;
+				raiseRegularExpressionLiteral(text, lineNumber, start);
+			}
+			var pattern = JSON.stringify(advice.pattern);
+			var flags = advice.flags.replace(/g/g, "");
+			if (advice.method === "replace" || advice.method === "replaceAll") {
+				return buildNaturalScopeAssignment(blocks, imports, locals, destination, "text.replace({ text: " + advice.receiver + ", search: " + pattern +
+					", replacement: " + advice.replacement + ", regex: true" + (advice.flags.indexOf("g") === -1 ? ", all: false" : "") +
+					(flags ? ", flags: " + JSON.stringify(flags) : "") + " })", lineNumber);
+			}
+			if (advice.method === "split") {
+				return buildNaturalScopeAssignment(blocks, imports, locals, destination, "text.split({ text: " + advice.receiver + ", separator: " + pattern +
+					", regex: true, trim: false, removeEmpty: false" + (flags ? ", flags: " + JSON.stringify(flags) : "") + " })", lineNumber);
+			}
+			var base = env.safeIdentifier(destination.replace(/^(local|result|parent)\./, "").replace(/[^\w$]+/g, "_")) + "Match", name = base;
+			for (var n = 2; locals[name]; n++) name = base + n;
+			locals[name] = true;
+			var call = "text.match({ text: " + (advice.method === "test" ? "String(" + advice.argument + ")" : advice.receiver) + ", pattern: " + pattern +
+				(advice.flags ? ", flags: " + JSON.stringify(advice.flags) : "") + " })";
+			return buildNaturalScopeAssignment(blocks, imports, locals, "local." + name, call, lineNumber).concat(
+				buildNaturalScopeAssignment(blocks, imports, locals, destination, advice.method === "test"
+					? "local." + name + ".matched" : "local." + name + ".matched ? local." + name + ".groups : null", lineNumber));
+		}
+
+		// A statement whose regular expression literal is the target or the first argument of a call (value.replace(/x/g, y)
+		// written alone, value.match(/x/, 1)) would be read as a call of a block named value.replace: it is refused at its
+		// line with the block to write, as a JavaScript loop is (raiseJavaScriptLoop). A literal inside an expression of a
+		// condition or a value is refused by the expression checks, at its line too.
+		function raiseRegularExpressionLiteral(line, lineNumber, at) {
+			var start = at;
+			if (start === undefined) {
+				var call = /^(?:[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(\s*\/|\/)/.exec(String(line || ""));
+				if (!call || !env.regularExpressionAdvice) {
+					return;
+				}
+				start = call[0].length - 1;
+			}
+			var advice = env.regularExpressionAdvice(line, start);
+			if (!advice.closed) {
+				return;
+			}
+			env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "A regular expression literal is not FlowScript at line " + lineNumber + ": " +
+				String(line).substring(0, 120) + " (" + advice.block + " does it).", null, env.regularExpressionHint(line, start));
+		}
+
 		function buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, rhs, lineNumber) {
 			rhs = stripFlowScriptSemicolon(rhs);
+			var regex = lowerRegularExpressionAssignment(blocks, imports, locals, "local." + env.safeIdentifier(varName), rhs, lineNumber);
+			if (regex) return regex;
 			var lowered = lowerBlockExpression(blocks, imports, locals, "local." + env.safeIdentifier(varName), rhs, lineNumber);
 			if (lowered) return lowered;
 			var callMember = parseNaturalFlowScriptCallMember(rhs);
@@ -2627,6 +2705,8 @@
 	
 		function buildNaturalScopeAssignment(blocks, imports, locals, scopePath, rhs, lineNumber) {
 			rhs = stripFlowScriptSemicolon(rhs);
+			var regex = lowerRegularExpressionAssignment(blocks, imports, locals, scopePath, rhs, lineNumber);
+			if (regex) return regex;
 			var lowered = lowerBlockExpression(blocks, imports, locals, scopePath, rhs, lineNumber);
 			if (lowered) return lowered;
 			var call = parseNaturalFlowScriptCall(rhs);
@@ -3169,6 +3249,7 @@
 					continue;
 				}
 				raiseJavaScriptLoop(line, lineNumber);
+				raiseRegularExpressionLiteral(line, lineNumber);
 				var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(([\s\S]*)\)\s*(\{)?\s*;?$/);
 				if (!match) {
 					env.raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,

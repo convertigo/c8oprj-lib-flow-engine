@@ -489,6 +489,193 @@
 		return "";
 	}
 
+	// A regular expression literal of a JavaScript-like text at the / of start, with the call it is the target of
+	// (/x/.test(value), /x/.exec(value)) or the first argument of (value.match(/x/), value.replace(/x/g, y),
+	// value.split(/x/), value.search(/x/)). The diagnostics of the expressions and of the FlowScript statements name
+	// the block to write from it, with the operands of the text; the parser rewrites the exact forms (callStart 0 and
+	// callEnd the end of the value) to that block. A / that the reading cannot tell from a division is a literal here:
+	// the callers only ask at a / where a value is expected.
+	function regularExpressionAdvice(source, start) {
+		var text = String(source || "");
+		var end = regularExpressionClosingSlash(text, start);
+		var closed = text.charAt(end) === "/";
+		var flags = closed ? /^[A-Za-z]*/.exec(text.substring(end + 1))[0] : "";
+		var literalEnd = closed ? end + 1 + flags.length : Math.min(end, text.length);
+		var advice = {
+			literal: text.substring(start, literalEnd),
+			pattern: text.substring(start + 1, Math.min(end, text.length)),
+			flags: flags,
+			closed: closed,
+			flagsSupported: /^(?!.*(.).*\1)[gims]*$/.test(flags),
+			method: "",
+			receiver: "",
+			argument: "",
+			replacement: "",
+			extraArguments: false,
+			callStart: start,
+			callEnd: literalEnd
+		};
+		var after = /^\s*\.\s*(test|exec)\s*\(/.exec(text.substring(literalEnd));
+		var before = /\.\s*(match|matchAll|replace|replaceAll|split|search)\s*\(\s*$/.exec(text.substring(0, start));
+		var open, close, args;
+		if (closed && after) {
+			open = literalEnd + after[0].length - 1;
+			close = closingParenthesis(text, open);
+			if (close > open) {
+				args = topLevelArguments(text.substring(open + 1, close));
+				advice.method = after[1];
+				advice.argument = args[0] || "";
+				advice.extraArguments = args.length > 1;
+				advice.callEnd = close + 1;
+			}
+		} else if (closed && before) {
+			open = text.lastIndexOf("(", start);
+			close = closingParenthesis(text, open);
+			var receiverStart = operandStart(text, before.index);
+			if (close > open && receiverStart < before.index) {
+				args = topLevelArguments(text.substring(literalEnd, close).replace(/^\s*,/, ""));
+				advice.method = before[1];
+				advice.receiver = text.substring(receiverStart, before.index).trim();
+				advice.replacement = /^replace/.test(before[1]) ? args[0] || "" : "";
+				advice.extraArguments = /^replace/.test(before[1]) ? args.length !== 1 : args.length > 0;
+				advice.callStart = receiverStart;
+				advice.callEnd = close + 1;
+			}
+		}
+		advice.block = /^replace/.test(advice.method) ? "text.replace" : advice.method === "split" ? "text.split" : "text.match";
+		advice.example = regularExpressionExample(advice);
+		return advice;
+	}
+
+	// The block call that does what the literal did, written with the operands of the text, ready to paste
+	function regularExpressionExample(advice) {
+		var operand = advice.argument || advice.receiver || "value";
+		var name = (/([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*$/.exec(operand) || [0, "text"])[1];
+		var pattern = JSON.stringify(advice.pattern);
+		var flags = advice.flags.replace(/[^gims]/g, "");
+		if (advice.block === "text.replace") {
+			var replaceFlags = flags.replace(/g/g, "");
+			return "local." + name + " = text.replace({ text: " + operand + ", search: " + pattern + ", replacement: " +
+				(advice.replacement || "\"\"") + ", regex: true" + (flags.indexOf("g") === -1 ? ", all: false" : "") +
+				(replaceFlags ? ", flags: " + JSON.stringify(replaceFlags) : "") + " })";
+		}
+		if (advice.block === "text.split") {
+			var splitFlags = flags.replace(/g/g, "");
+			return "local." + name + "Parts = text.split({ text: " + operand + ", separator: " + pattern +
+				", regex: true, trim: false, removeEmpty: false" + (splitFlags ? ", flags: " + JSON.stringify(splitFlags) : "") + " })";
+		}
+		return "local." + name + "Match = text.match({ text: String(" + operand + "), pattern: " + pattern +
+			(flags ? ", flags: " + JSON.stringify(flags) : "") + " }), then read local." + name + "Match.matched where the " +
+			(advice.method === "test" || !advice.method ? "test" : advice.method) + " was (local." + name + "Match.groups holds " +
+			(flags.indexOf("g") !== -1 ? "every whole match" : "the whole match then the captured groups") + ")";
+	}
+
+	// The hint of a regular expression literal: the block to write instead, with the operands of the text, written by
+	// the expression checks and by the FlowScript parser at the line of the statement
+	function regularExpressionHint(text, start) {
+		var advice = regularExpressionAdvice(text, start);
+		var unsupported = advice.flagsSupported ? "" : "The flags of a pattern are g, i, m and s; " + JSON.stringify(advice.flags) + " has others. ";
+		var block = advice.block === "text.match" ? "the text.match block" : "the " + advice.block + " block with regex: true";
+		return unsupported + "Write " + block + ", the pattern written as a quoted text (backslashes doubled): " + advice.example + ". " +
+			"Assigned alone (local.x = /x/.test(value), value.match(/x/), value.replace(/x/g, y), value.split(/x/)), the literal is rewritten to that block. " +
+			"Simple tests need no pattern: value.startsWith(\"x\"), value.endsWith(\"x\"), value.includes(\"x\"), value.length; replace and replaceAll without regex take a text.";
+	}
+
+	// The index of the / that closes the literal opened at start (the end of the line or of the text when unclosed)
+	function regularExpressionClosingSlash(text, start) {
+		var end = start + 1, inClass = false;
+		while (end < text.length) {
+			var c = text.charAt(end);
+			if (c === "\\") {
+				end += 2;
+				continue;
+			}
+			if (c === "[") inClass = true;
+			else if (c === "]") inClass = false;
+			else if (c === "/" && !inClass) break;
+			else if (c === "\n" || c === "\r") break;
+			end++;
+		}
+		return end;
+	}
+
+	// The ) that closes the ( at open, past the strings and the regular expression literals; -1 when it is not closed
+	function closingParenthesis(text, open) {
+		var depth = 0, quote = "", previous = "";
+		for (var i = open; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === "\\") i++;
+				else if (ch === quote) quote = "";
+				continue;
+			}
+			if (ch === "\"" || ch === "'" || ch === "`") {
+				quote = ch;
+			} else if (ch === "/" && (previous === "" || /[(,=:\[!&|?{};+\-*%<>~^]/.test(previous))) {
+				var slash = regularExpressionClosingSlash(text, i);
+				if (text.charAt(slash) === "/") i = slash;
+			} else if (ch === "(" || ch === "[" || ch === "{") {
+				depth++;
+			} else if (ch === ")" || ch === "]" || ch === "}") {
+				depth--;
+				if (depth === 0) return ch === ")" ? i : -1;
+			}
+			if (!/\s/.test(ch)) previous = ch;
+		}
+		return -1;
+	}
+
+	// The arguments of a call, split on its top-level commas, trimmed (an empty text has none)
+	function topLevelArguments(text) {
+		var args = [], depth = 0, quote = "", from = 0;
+		for (var i = 0; i < text.length; i++) {
+			var ch = text.charAt(i);
+			if (quote) {
+				if (ch === "\\") i++;
+				else if (ch === quote) quote = "";
+				continue;
+			}
+			if (ch === "\"" || ch === "'" || ch === "`") quote = ch;
+			else if (ch === "(" || ch === "[" || ch === "{") depth++;
+			else if (ch === ")" || ch === "]" || ch === "}") depth--;
+			else if (ch === "," && depth === 0) {
+				args.push(text.substring(from, i).trim());
+				from = i + 1;
+			}
+		}
+		if (text.trim() !== "" || args.length) args.push(text.substring(from).trim());
+		return args;
+	}
+
+	// The start of the operand that ends before index (a path, a call, an index or a string: input.text,
+	// String(local.q).trim(), local.items[0], "a-b")
+	function operandStart(text, index) {
+		var i = index - 1;
+		while (i >= 0 && /\s/.test(text.charAt(i))) i--;
+		while (i >= 0) {
+			var ch = text.charAt(i);
+			if (ch === ")" || ch === "]") {
+				var depth = 0;
+				for (; i >= 0; i--) {
+					var c = text.charAt(i);
+					if (c === ")" || c === "]") depth++;
+					else if (c === "(" || c === "[") depth--;
+					if (depth === 0) break;
+				}
+				i--;
+			} else if (ch === "\"" || ch === "'") {
+				i--;
+				while (i >= 0 && !(text.charAt(i) === ch && text.charAt(i - 1) !== "\\")) i--;
+				i--;
+			} else if (/[\w$.]/.test(ch)) {
+				i--;
+			} else {
+				break;
+			}
+		}
+		return i + 1;
+	}
+
 	function tokenize(source, env) {
 		var text = String(source || "");
 		var tokens = [];
@@ -517,25 +704,8 @@
 		// refused with the block that tests a pattern, instead of an "Unsupported expression character" on its first
 		// character that named neither the construction nor what to write.
 		function regularExpressionLiteral(start) {
-			var end = start + 1, inClass = false;
-			while (end < text.length) {
-				var c = text.charAt(end);
-				if (c === "\\") {
-					end += 2;
-					continue;
-				}
-				if (c === "[") inClass = true;
-				else if (c === "]") inClass = false;
-				else if (c === "/" && !inClass) break;
-				end++;
-			}
-			var flags = /^[a-z]*/.exec(text.substring(end + 1))[0];
-			var literal = text.substring(start, Math.min(text.length, end + 1)) + flags;
-			var pattern = text.substring(start + 1, Math.min(text.length, end));
-			env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "A regular expression literal is not supported in a Flow expression: " + literal + ".", null,
-				"Test the text with the text.match block, the pattern written as a quoted text (backslashes doubled): local.check = text.match({ text: String(value), pattern: " +
-				JSON.stringify(pattern) + (flags.indexOf("i") !== -1 ? ", ignoreCase: true" : "") + " }), then read local.check.matched (local.check.groups for the captured groups). " +
-				"Simple tests need no pattern: value.startsWith(\"x\"), value.endsWith(\"x\"), value.includes(\"x\"), value.length; replace and replaceAll take a text.");
+			env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "A regular expression literal is not supported in a Flow expression: " +
+				regularExpressionAdvice(text, start).literal + ".", null, regularExpressionHint(text, start));
 		}
 		function isDigit(ch) {
 			return ch >= "0" && ch <= "9";
@@ -1275,6 +1445,9 @@
 		// the methods an expression may call, by type of value (the checks of the sources read them)
 		methods: { text: STRING_METHODS.slice(0), list: ARRAY_METHODS.slice(0), number: NUMBER_METHODS.slice(0) },
 		tokenize: tokenize,
+		// a regular expression literal at a / of a text, with its call and the block to write (the FlowScript parser)
+		regularExpressionAdvice: regularExpressionAdvice,
+		regularExpressionHint: regularExpressionHint,
 		// the tokens of an expression, those of the expressions of its template literals after each of them (a "," between
 		// two): what the checks walk to find the paths and the calls of an expression
 		flatTokens: flatTokens,

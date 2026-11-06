@@ -4415,7 +4415,9 @@
 			blockLocalName: blockLocalName,
 			balancedObjectEnd: balancedObjectEnd,
 			canonicalFlowDefinition: canonicalFlowDefinition,
-			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax
+			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
+			regularExpressionAdvice: function (text, start) { return expressionUtils().regularExpressionAdvice(text, start); },
+			regularExpressionHint: function (text, start) { return expressionUtils().regularExpressionHint(text, start); }
 		};
 	}
 
