@@ -26,7 +26,7 @@ const _meta = {
       "label": "Input variables",
       "kind": "template",
       "type": "object",
-      "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary.",
+      "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary. Any other key starting with __ or convertigo., apart from __nativeCall, is refused (REQUESTABLE_RESERVED_INPUT): the requestable and its context come from the definition.",
     },
     "onError": {
       "label": "On error",
@@ -137,6 +137,33 @@ const _meta = {
 		});
 	}
 
+	// The controls of the call an input may give: the cache controls (__responseExpiryDate, __nocache) and the native call
+	// of a sequence (__nativeCall). Any other key starting with __ or convertigo. is a parameter of the requester (the
+	// requestable, its project, its context, the session, the logs), never an input variable: the definition decides it.
+	var INPUT_CONTROLS = { __responseExpiryDate: true, __nocache: true, __nativeCall: true };
+
+	function reservedInputKeys(input) {
+		return Object.keys(input || {}).filter(function (key) {
+			key = String(key);
+			return (key.indexOf("__") === 0 || key.indexOf("convertigo.") === 0) && !hasOwn(INPUT_CONTROLS, key);
+		});
+	}
+
+	// Checked before any path of the call (child execution, direct Flow run, requester), for run and debug.run alike
+	function checkInput(ctx, node, input) {
+		var keys = reservedInputKeys(input);
+		if (keys.length) {
+			ctx.throwFlow({
+				code: "REQUESTABLE_RESERVED_INPUT",
+				message: "The input of a requestable call cannot set parameters of the requester.",
+				status: 400,
+				details: { keys: keys },
+				hint: "Give the variables of the requestable only: the requestable and its context come from the definition. " +
+					"Accepted controls: __responseExpiryDate, __nocache, __nativeCall."
+			}, node);
+		}
+	}
+
 	function currentProject(ctx) {
 		if (ctx.scopes && ctx.scopes.request && ctx.scopes.request.project) {
 			return String(ctx.scopes.request.project);
@@ -235,16 +262,22 @@ const _meta = {
 			null, "Use .Sequence, .Flow or .Connector.Transaction for the current project; use Project.Sequence or Project.Connector.Transaction for another project.");
 	}
 
-	function requestFromTarget(target) {
+	// The input variables, then the routing of the definition over them: no input key, even one checkInput would accept,
+	// chooses the project, the requestable or the context of the call.
+	function requestFromTarget(target, input) {
 		var request = new HashMap();
+		putInput(request, input, target);
 		request.put("__project", target.project);
 		request.put("__context", "flow-" + String(UUID.randomUUID()));
 		request.put("__removeContext", "true");
 		if (target.kind === "transaction") {
 			request.put("__connector", target.connector);
 			request.put("__transaction", target.transaction || target.requestable);
+			request.remove("__sequence");
 		} else {
 			request.put("__sequence", target.sequence || target.requestable);
+			request.remove("__connector");
+			request.remove("__transaction");
 		}
 		return request;
 	}
@@ -381,7 +414,8 @@ const _meta = {
 		}, node);
 	}
 
-	function runInternal(ctx, target, input) {
+	function runInternal(ctx, node, target, input) {
+		checkInput(ctx, node, input);
 		if (!target || !target.project || !target.requestable) {
 			ctx.raise("INVALID_REQUESTABLE_TARGET", "Invalid requestable target.");
 		}
@@ -392,8 +426,7 @@ const _meta = {
 			var direct = ctx.tryDirectRequestable(target.dbo, input);
 			if (direct && direct.handled === true) return direct.failed === true ? failedCall(direct.value && direct.value.error) : direct.value;
 		}
-		var request = requestFromTarget(target);
-		putInput(request, input, target);
+		var request = requestFromTarget(target, input);
 		if (nativeBoundaryAvailable) {
 			var requester = new NativeJsonRequester(request, ctx.convertigoContext().httpServletRequest);
 			// Explicit native calls retain their business object contract. Keep the
@@ -448,7 +481,7 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var target = resolveTarget(ctx, ctx.template(props.requestable || ""));
-			return callOutcome(ctx, node, props, target, runInternal(ctx, target, ctx.template(props.input) || {}));
+			return callOutcome(ctx, node, props, target, runInternal(ctx, node, target, ctx.template(props.input) || {}));
 		},
 		debug: {
 			resolve: function (ctx, node) {
@@ -465,7 +498,7 @@ const _meta = {
 					node,
 					args.__props,
 					args.__target,
-					runInternal(ctx, args.__target, args.input)
+					runInternal(ctx, node, args.__target, args.input)
 				);
 			}
 		}
