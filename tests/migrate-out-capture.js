@@ -70,6 +70,17 @@ check(plan(comment).edits.length === 1 && plan(comment).code.includes(comment.sp
   'list.first({ items: [/out: text/], out: "local.x" })',
   'list.first({ items: [`${input.value}`], out: "local.x" })'
 ].forEach(body => refused(body));
+// A source migrated by hand that kept out next to the same $$out: only the repeated out goes, with its line.
+const repeated = plan('  list.first({\n    items: [1],\n    $$out: "local.x",\n    out: "local.x",\n  })');
+check(repeated.issues.length === 0 && repeated.edits.length === 1 && repeated.edits[0].removed === true, 'A repeated out is planned for removal');
+check(repeated.code === source('  list.first({\n    items: [1],\n    $$out: "local.x",\n  })'), 'The repeated out and its line go, the rest stays byte for byte');
+const inline = plan('list.first({ items: [1], out: "local.x", $$out: "local.x" })');
+check(inline.code === source('list.first({ items: [1], $$out: "local.x" })'), 'An inline repeated out goes with its comma');
+const last = plan('list.first({ items: [1], $$out: "local.x", out: "local.x" })');
+check(last.code === source('list.first({ items: [1], $$out: "local.x" })'), 'A last repeated out takes the comma before it');
+check(planSource(repeated.code, catalog).edits.length === 0 && planSource(repeated.code, catalog).issues.length === 0, 'The removal is idempotent');
+refused('list.first({ items: [1], out: input.x, $$out: "local.x" })');
+refused('list.first({ items: [1], out: "local.x", $$out: "local.x", $$out: "local.y" })');
 const dynamic = new Map([['proof.dynamic', {props: {}, dynamic: true}]]);
 refused('proof.dynamic({ out: "local.x" })', dynamic);
 const unknown = path.join(tmp, '_flow/flows/Unknown.flow.js');

@@ -202,6 +202,9 @@ Each edit reports file:line and the original/rewritten line. Declared business
 `out`, data keys, strings and comments are preserved; existing `$$out` is kept.
 Only direct named calls with a quoted static destination are rewritten. Matching
 assignment destinations are allowed; competing captures require manual review.
+A source migrated by hand that kept `out` next to a `$$out` naming the same quoted
+destination loses only that repeated `out` (with its comma, and its line when it
+stands alone); an `out` that differs from the `$$out` is reported for review.
 Unknown/duplicate/incomplete contracts, open property contracts, uncomposed traits,
 spreads, computed/shorthand keys and unsupported syntax are reported. The scanner
 conservatively refuses non-JavaScript FlowScript forms, slash expressions,

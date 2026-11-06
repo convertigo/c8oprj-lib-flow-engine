@@ -142,10 +142,28 @@ function properties(ts, open) {
   for (let i = open + 1; i < ts[open].close;) {
     const start = i;
     while (i < ts[open].close && !(ts[i].kind === 'punctuation' && ts[i].value === ',')) i = ts[i].close === undefined ? i + 1 : ts[i].close + 1;
-    if (i > start) props.push({key: ts[start], colon: ts[start + 1], value: ts.slice(start + 2, i), end: i});
+    if (i > start) props.push({key: ts[start], colon: ts[start + 1], value: ts.slice(start + 2, i), index: start, end: i});
     i++;
   }
   return props;
+}
+// The text of a property to remove: with its comma, and its whole line when it stands alone on it.
+function removal(source, ts, prop, block) {
+  const next = ts[prop.end];
+  let start = prop.key.start, end;
+  if (next && next.value === ',') {
+    end = next.end;
+    while (source[end] === ' ' || source[end] === '\t') end++;
+  }
+  else {
+    // The last property, without a trailing comma: the comma before it goes with it.
+    end = ts[prop.end - 1].end;
+    if (ts[prop.index - 1]?.value === ',') start = ts[prop.index - 1].start;
+  }
+  const lineStart = Math.max(source.lastIndexOf('\n', start - 1), source.lastIndexOf('\r', start - 1)) + 1;
+  const newline = /^[ \t]*(\r\n|\n|\r)/.exec(source.slice(end));
+  if (/^[ \t]*$/.test(source.slice(lineStart, start)) && newline) { start = lineStart; end += newline[0].length; }
+  return {start, end, before: source.slice(start, end), after: '', block, line: lineAt(source, prop.key.start), removed: true};
 }
 function callName(ts, open) {
   let i = open - 1;
@@ -210,6 +228,17 @@ function planSource(source, catalog) {
       if (contract.dynamic) { refuse('open business property contract'); continue; }
       if (uncertain || outs.length !== 1) { refuse('spread, computed, shorthand, method or duplicate property'); continue; }
       const keys = props.map(p => p.key.value);
+      const captures = props.filter(p => p.key.value === '$$out');
+      if (captures.length === 1 && new Set(keys).size === keys.length) {
+        // A source migrated by hand that kept its old key: when out repeats the $$out capture word for word, only that
+        // repeated out is removed. Any other difference needs a review.
+        const out = outs[0], capture = captures[0];
+        const quoted = prop => prop.value.length === 1 && prop.value[0].kind === 'string';
+        if (!quoted(out) || !quoted(capture) || out.value[0].value !== capture.value[0].value) { refuse('out and the existing $$out capture differ'); continue; }
+        if (ts[ts[open].close + 1]?.value !== ')' || ts[open - 1].close !== ts[open].close + 1) { refuse('expected one named argument object'); continue; }
+        edits.push(removal(source, ts, out, call.name));
+        continue;
+      }
       if (new Set(keys).size !== keys.length || keys.includes('$$out')) { refuse('duplicate property or existing $$out capture'); continue; }
       if (ts[ts[open].close + 1]?.value !== ')' || ts[open - 1].close !== ts[open].close + 1) { refuse('expected one named argument object'); continue; }
       const out = outs[0];
@@ -257,6 +286,11 @@ function main(args) {
   for (const plan of plans) {
     for (const problem of plan.issues) console.log(`${plan.file}:${lineAt(plan.source, problem.offset)} REVIEW ${problem.message}`);
     for (const edit of plan.edits) {
+      if (edit.removed) {
+        console.log(`${plan.file}:${edit.line} ${blocked ? 'HELD' : write ? 'WRITE' : 'DRY-RUN'} ${edit.block} removes the out that repeats $$out\n- ${edit.before.trim()}`);
+        count++;
+        continue;
+      }
       const lineStart = Math.max(plan.source.lastIndexOf('\n', edit.start - 1), plan.source.lastIndexOf('\r', edit.start - 1)) + 1;
       const rest = plan.source.slice(edit.end), end = rest.search(/[\r\n]/);
       const lineEnd = end < 0 ? plan.source.length : edit.end + end;
@@ -271,7 +305,7 @@ function main(args) {
     for (const plan of plans) if (fs.readFileSync(plan.file, 'utf8') !== plan.source) issue('Source changed during review: ' + plan.file);
     for (const plan of plans) if (plan.edits.length) fs.writeFileSync(plan.file, plan.code, 'utf8');
   }
-  console.log(`${count} rewrite(s), ${plans.reduce((n, p) => n + p.issues.length, 0)} review item(s); ${blocked ? 'nothing written' : write ? 'write complete' : 'dry run; nothing written'}.`);
+  console.log(`${count} rewrite(s) or removal(s), ${plans.reduce((n, p) => n + p.issues.length, 0)} review item(s); ${blocked ? 'nothing written' : write ? 'write complete' : 'dry run; nothing written'}.`);
   return blocked ? 2 : 0;
 }
 module.exports = {loadCatalog, defaultCatalogPaths, planSource, main};
