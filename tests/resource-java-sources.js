@@ -118,6 +118,15 @@ try {
 		service.patch({ path: "libs/other.yaml", patch: "--- /dev/null\n+++ b/x\n@@ -0,0 +1 @@\n+a: b\n" }, env);
 	}), "only libs/jars.yaml");
 
+	// A configuration key read as a resource path (seen: config.sql.queries.booksCount, three times in a row) is sent to
+	// _flow/engine.yaml, which holds it; other refused paths keep the generic hint.
+	var hinted = Object.assign({}, env, { raise: function (code, message, details, hint) {
+		var error = new Error(code + ": " + message); error.code = code; error.hint = hint; throw error; } });
+	function refusalHint(path) { try { service.get({ path: path }, hinted); } catch (e) { return e.code + " " + (e.hint || ""); } return "accepted"; }
+	var configHint = refusalHint("config.sql.queries.booksCount");
+	assert(/^RESOURCE_PATH_NOT_ALLOWED /.test(configHint) && configHint.indexOf("_flow/engine.yaml") >= 0 && /configuration key/.test(configHint),
+		"a configuration key is sent to _flow/engine.yaml: " + configHint);
+	assert(!/configuration key/.test(refusalHint("libs/other.yaml")), "another refused path keeps its hint");
 	var removed = service.remove({ path: "libs/src/com/acme/Rows.java" }, env);
 	assert(removed.deleted && !file.exists(), "deleted: " + JSON.stringify(removed));
 	print("resource-java-sources OK");

@@ -12,6 +12,12 @@
 		}
 		var normalized = env.normalizeResourcePath(path);
 		if (!env.isAllowedResourcePath(normalized)) {
+			// A configuration key (config.sql.queries.<name>) is not a file: it is read in _flow/engine.yaml.
+			if (/^config(?:\.[A-Za-z0-9_$-]+)+$/.test(normalized)) {
+				env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
+					null, normalized + " is a configuration key, not a file: read it in path " + env.sourcePaths.root + "/engine.yaml" +
+					", or with authoring-tree surface:\"backend\" focusPath:\"" + normalized + "\".");
+			}
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
 				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + ", public resources/, project documents docs/ or the Java sources libs/src/ (*.java). Use the flowCode* APIs for Flow sources.");
 		}
