@@ -2802,7 +2802,8 @@
 			try { loadFlowLibrary(String(name)); return { name: String(name), ok: true, durationMs: Number(JavaSystem.nanoTime()-begin)/1000000 }; }
 			catch (e) { return { name: String(name), ok: false, error: failure("preload",e).error }; }
 		});
-		var blockNames = (loadProjectEngineDefinition().preload || {}).blocks || [];
+		var definition = loadProjectEngineDefinition();
+		var blockNames = (definition.preload || {}).blocks || [];
 		if (!Array.isArray(blockNames) || blockNames.length > 128) raise("FLOW_PRELOAD_BLOCKS_INVALID", "preload.blocks is a bounded array of block names.");
 		var blockPlans = blockNames.map(function (name) {
 			name = String(name);
@@ -2811,6 +2812,18 @@
 				flowName: "__block_preload__", flowSource: "function __block_preload__({input,result}){\n" + name + "({})\n}" });
 			prepared.block = name; return prepared;
 		});
+		// The implementations of the data providers of the project: data.read and the other data blocks call them by
+		// name at run time, out of reach of the plans, and their first call compiled them (seconds for sql.table).
+		var providers = ((definition.config || {}).data || {}).providers || {};
+		Object.keys(providers).map(function (key) { return providers[key] && providers[key].implementation; })
+			.filter(function (name, index, names) { return typeof name === "string" && Object.prototype.hasOwnProperty.call(blocks, name) && names.indexOf(name) === index; })
+			.forEach(function (name) {
+				var begin = JavaSystem.nanoTime(), entry = { block: name, provider: true };
+				try { materializeFlowScriptBlock(blocks, name); entry.ok = true; }
+				catch (e) { entry.ok = false; entry.error = failure("preload", e).error; }
+				entry.durationMs = Number(JavaSystem.nanoTime() - begin) / 1000000;
+				blockPlans.push(entry);
+			});
 		var plans = flows ? flows.map(function (flow) { return preloadRunPlan(request, flow); }) : null;
 		var result = {
 			ok: true,
