@@ -49,7 +49,7 @@ try {
 	refused([{ oldText: "local.price = 12", newText: "local.price = 1" }], "INVALID_PATCH", "either edits or a unified patch",
 		{ codepatch: "@@ -3,1 +3,1 @@\n-  local.price = 12\n+  local.price = 1\n" });
 	// an edit giving an invalid source is refused by the check like any other patch
-	var invalid = api("flowCodePatch", { name: "Basket", revision: api("flowCodeGet", { name: "Basket" }).revision, edits: [{ oldText: "local.price = 12", newText: "local.price = /x/.test(\"x\")" }] });
+	var invalid = api("flowCodePatch", { name: "Basket", revision: api("flowCodeGet", { name: "Basket" }).revision, edits: [{ oldText: "local.price = 12", newText: "local.price = /x/.test(\"x\") ? 1 : 2" }] });
 	assert(!invalid.ok && JSON.stringify(invalid).indexOf("FLOWSCRIPT_EXPRESSION_UNSUPPORTED") !== -1, "The patched source is checked: " + JSON.stringify(invalid).substring(0, 300));
 
 	// the saved Flow, a project block and a project resource take edits too

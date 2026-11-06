@@ -113,11 +113,12 @@ refused("digits", [
 	"  result.ok = true",
 	"}"
 ], "FLOWSCRIPT_VALIDATION_FAILED", 4, ["text.match"]);
+// (input.text.replace(/-/g, " ") assigned alone is rewritten to text.replace with regex: true, flowscript-regex-literals.js)
 refused("cleaned", [
 	"function cleaned({ input, result }) {",
-	"  result.text = input.text.replace(/-/g, \" \")",
+	"  result.text = input.text.replace(/-/g, \" \").trim()",
 	"}"
-], "FLOWSCRIPT_VALIDATION_FAILED", 2, ["text.match", "replaceAll take a text"]);
+], "FLOWSCRIPT_EXPRESSION_UNSUPPORTED", 2, ["text.replace block with regex: true", "replaceAll without regex take a text"]);
 
 // 7. The while block itself, with its body as $$nodes, still runs: the greatest common divisor
 var gcd = api("flowCodeSet", { name: "gcdBlock", code: [
