@@ -246,6 +246,28 @@
 		return flowCodeDiagnosticReport(flowCodeParseDiagnostics(error), request);
 	}
 
+	// A revision is a SHA-256 digest: a supplied value of the same length that differs from the current one in a few
+	// characters is a mistyped copy of it (two different sources never hash that close), not a changed working copy.
+	function revisionCopySlip(supplied, current) {
+		supplied = String(supplied || "").toLowerCase();
+		current = String(current || "").toLowerCase();
+		if (supplied.length < 32 || supplied.length !== current.length) return 0;
+		var diff = 0;
+		for (var i = 0; i < current.length; i++) {
+			if (supplied.charAt(i) !== current.charAt(i)) diff++;
+		}
+		return diff > 0 && diff <= 8 ? diff : 0;
+	}
+
+	// The refusal of a mistyped revision keeps the lock and names the revision to copy (and, when given, the other route).
+	function revisionCopySlipError(code, supplied, current, name, hint) {
+		return flowCodeError(code,
+			"Supplied revision " + String(supplied) + " is a mistyped copy of the current revision " + current + " for " + name +
+				" (" + revisionCopySlip(supplied, current) + " characters differ): the source did not change.",
+			(hint ? hint + ", or copy" : "Retry with") + " this revision exactly: " + current + ".",
+			{property:"revision",receivedRevision:String(supplied),currentRevision:current,name:name,copySlip:true});
+	}
+
 	function flowCodeError(code, message, hint, details) {
 		var out = {
 			code: String(code || "FLOW_CODE_ERROR"),
@@ -640,7 +662,9 @@
 				name: name,
 				draft: true,
 				revision: current.revision,
-				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
+				error: revisionCopySlip(expectedRevision, current.revision)
+					? revisionCopySlipError("FLOW_CODE_DRAFT_REVISION_MISMATCH", expectedRevision, current.revision, name)
+					: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
 					"FlowScript working copy changed since it was read: " + name,
 					"Call flow-code-get again and regenerate the patch from the new working copy revision."),
 				warnings: []
@@ -771,7 +795,9 @@
 				name: name,
 				draft: current.draft === true,
 				revision: current.revision,
-				error: flowCodeError("FLOW_CODE_REVISION_MISMATCH",
+				error: revisionCopySlip(expectedRevision, current.revision)
+					? revisionCopySlipError("FLOW_CODE_REVISION_MISMATCH", expectedRevision, current.revision, name)
+					: flowCodeError("FLOW_CODE_REVISION_MISMATCH",
 					"FlowScript changed since it was read: " + name,
 					"Call flow-code-get again and regenerate the patch from the new revision."),
 				warnings: []
@@ -1202,7 +1228,9 @@
 				name: name,
 				draft: true,
 				revision: current.revision,
-				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
+				error: revisionCopySlip(expectedRevision, current.revision)
+					? revisionCopySlipError("FLOW_CODE_DRAFT_REVISION_MISMATCH", expectedRevision, current.revision, name, "Promote again without revision to promote this working copy")
+					: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH",
 					"Supplied revision " + String(expectedRevision) + " is not the current working copy revision " + current.revision + " for " + name + ".",
 					"Copy the revision returned by code-get or code-check exactly, then promote that checked revision. A mismatch alone does not establish that the working copy changed.",
 					{property:"revision",receivedRevision:String(expectedRevision),currentRevision:current.revision,name:name}),
