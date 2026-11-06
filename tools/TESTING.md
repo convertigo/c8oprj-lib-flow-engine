@@ -216,3 +216,29 @@ Targeted tests, one at a time, with a new `FLOW_TEST_LOG_DIR` for each invocatio
 `bash tools/run-tests.sh migrate-out-capture`. The latter also validates rewritten
 fixtures with `flowSourceValidate`; the normal test harness supplies its Rhino
 classpath. Neither test executes HTTP requests. No startup/runtime migration exists.
+
+## Repeated explicit block names
+
+Since 0.2.20 the FlowScript parser refuses a Flow or a FlowScript block whose
+explicit names repeat (`FLOWSCRIPT_DUPLICATE_EXPLICIT_NAME`); older tools wrote
+such sources. `tools/dedupe-explicit-ids.js` renames them offline:
+
+```sh
+node tools/dedupe-explicit-ids.js /path/to/project            # dry run
+node tools/dedupe-explicit-ids.js /path/to/project --write
+# Also accepts a .flow.js or .block.js file, a _flow directory or a workspace.
+```
+
+It reads `_flow/flows/**/*.flow.js` and the blocks written in FlowScript
+(`_flow/blocks/**/*.block.js` whose main function takes named parameters);
+JavaScript blocks are skipped and counted. The first occurrence of a name keeps
+it; each following `$$id` takes the first free suffix (`names2`, `if11_2`).
+A statement label counts as a name, together with the `$$id` of the call it
+labels; a repeated label, a computed `$$id`, a regular expression or an
+unreadable form is reported for review, and one doubtful file holds every write
+of the run. Each rename reports file:line and the line before and after. Nothing
+is evaluated and no server is contacted.
+
+`bash tools/run-tests.sh dedupe-explicit-ids` also checks with
+`flowSourceValidate` that the engine refuses the original fixture and accepts
+the rewritten one, without running it.
