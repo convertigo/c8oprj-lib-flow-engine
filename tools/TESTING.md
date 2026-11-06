@@ -177,3 +177,42 @@ and `tests/resource-publication.js`. The separate Java host acceptance probe,
 host lacking the bootstrap and archive changes described in
 [project-resource-host-contract.md](../docs/project-resource-host-contract.md).
 It is not part of the regular JS suite.
+
+## Offline migration of former `out` captures
+
+Use Node only (no external dependencies, Java, server, or source execution):
+
+```sh
+node tools/migrate-out-capture.js /path/to/project/_flow/flows
+node tools/migrate-out-capture.js /path/to/project/_flow/flows --write
+# A single .flow.js file is also accepted. Review the dry run before --write.
+node tools/migrate-out-capture.js /path/to/Example.flow.js --catalog /path/to/full-catalog.json
+```
+
+The default reads literal block contracts from this engine, the target project,
+and neighboring `lib_flow_*` / `c8oprj-lib-flow-*` projects. Keep this local layout
+aligned with the served libraries. `--catalog` replaces discovery and accepts a
+full served catalog JSON (`{detail:"full",blocks:[{blockId,props,...}]}` or its
+blocks array), a project, `_flow`, or `blocks` directory; repeat it for multiple
+roots. JSON contracts must include `props`, including an empty object for none.
+Use a complete, current served export for composed traits or ambiguous providers;
+the tool neither contacts a server nor infers project references from YAML.
+
+Each edit reports file:line and the original/rewritten line. Declared business
+`out`, data keys, strings and comments are preserved; existing `$$out` is kept.
+Only direct named calls with a quoted static destination are rewritten. Matching
+assignment destinations are allowed; competing captures require manual review.
+Unknown/duplicate/incomplete contracts, open property contracts, uncomposed traits,
+spreads, computed/shorthand keys and unsupported syntax are reported. The scanner
+conservatively refuses non-JavaScript FlowScript forms, slash expressions,
+interpolated templates and complex local bindings. It is not a Flow validator:
+run `flowSourceValidate` separately on the migrated sources before using them.
+Any review item prevents **all** writes in that invocation (exit 2); success is
+exit 0. A second successful pass makes no changes. Run against a quiescent local
+checkout: filesystem failures during writes are not a multi-file transaction.
+
+Targeted tests, one at a time, with a new `FLOW_TEST_LOG_DIR` for each invocation:
+`bash tools/run-tests.sh out-capture-diagnostic` and
+`bash tools/run-tests.sh migrate-out-capture`. The latter also validates rewritten
+fixtures with `flowSourceValidate`; the normal test harness supplies its Rhino
+classpath. Neither test executes HTTP requests. No startup/runtime migration exists.

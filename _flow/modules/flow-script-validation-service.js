@@ -284,6 +284,21 @@
 						}
 						if (!props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
+							if (key === "out") {
+								diagnostics.push({
+									severity: "error",
+									code: "UNKNOWN_BLOCK_PROPERTY",
+									line: line,
+									block: name,
+									property: key,
+									message: "Unknown property out for Flow block " + name + ": out is the former capture (before engine 0.1.0); assign the call or use $$out.",
+									expected: expectedProps(block, env),
+									candidates: propertyCandidates,
+									next: "Replace the former out capture (before engine 0.1.0) with an assignment of the call, or use $$out. This block does not declare a business out property.",
+									hint: "Use local.value = " + name + "({ ... }) or " + name + "({ $$out: \"local.value\", ... })."
+								});
+								return;
+							}
 							// $id, $nodes... with one dollar: an engine attribute that lost a dollar, usually in a
 							// String.replace whose replacement text held $$ (a pattern that writes $).
 							if (/^\$[A-Za-z]/.test(key)) {
