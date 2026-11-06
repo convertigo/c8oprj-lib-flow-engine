@@ -11,7 +11,7 @@ var __flowProjectDir = String(java.nio.file.Files.createTempDirectory("lib-flow-
 // a Rhino block of the project that writes functions in the scope (a fixture of point 4)
 FileUtils.writeStringToFile(new java.io.File(__flowProjectDir, "_flow/blocks/proof/functions.block.js"), 'const _meta = { sourceVersion: 2, runtime: "rhino", ' +
 	'properties: {} };\n(function(){return {run:function(ctx,node){ctx.write("local.fn", {f: function () { return 1; }, ' +
-	'l: [function () { return 2; }, "x"], o: {g: function () { return 3; }}}); return {};}};}())', "UTF-8");
+	'l: [function () { return 2; }, "x"], o: {g: function () { return 3; }}, "a b": function () { return 4; }, "c d": {h: function () { return 5; }}}); return {};}};}())', "UTF-8");
 var engine = eval(source);
 var checks = 0, failures = [];
 function witness(name, ok, detail) {
@@ -69,6 +69,7 @@ witness("a computed constructor or __proto__ key reads as undefined", computed.o
 	JSON.stringify(computed.result) === JSON.stringify({ a: "undefined", b: "undefined", c: "undefined" }), computed);
 
 // 4. A function in the scope reads as undefined: a path, a member, an index of a list, at(), a template literal.
+// A path with a quoted key that is not a name (local.fn["a b"]) is read by ctx.read, the others by the simple path reader.
 
 var reads = run("  proof.functions({})\n  local.i = 0\n  return { path: typeof local.fn.f, member: typeof local.fn.o.g, index: typeof local.fn.l[0], " +
 	"computed: typeof local.fn.l[local.i], at: typeof local.fn.l.at(0), last: typeof local.fn.l.at(-2), template: `${local.fn.f}`, kept: local.fn.l[1] }");
@@ -76,10 +77,13 @@ var template = reads.ok ? reads.result.template : null;
 if (reads.ok) delete reads.result.template;
 witness("no function value is read from the scope", reads.ok && (template === undefined || template === "") && JSON.stringify(reads.result) === JSON.stringify(
 	{ path: "undefined", member: "undefined", index: "undefined", computed: "undefined", at: "undefined", last: "undefined", kept: "x" }), { response: reads, template: template });
-var direct = module.compile("local.fn.l[0]", { isScopePath: function () { return true; }, raise: function (code, message) { throw new Error(code + ": " + message); },
-	normalizeTree: function (value) { return value; } });
-var scope = { scopes: { local: { fn: { l: [function () { return 2; }] } } }, read: function () { return undefined; } };
-witness("a compiled expression returns no function", typeof direct(scope) === "undefined", typeof direct(scope));
+var stub = { isScopePath: function (name) { return /^local\./.test(String(name)); }, raise: function (code, message) { throw new Error(code + ": " + message); },
+	normalizeTree: function (value) { return value; } };
+var scope = { scopes: { local: { fn: { l: [function () { return 2; }] } } }, read: function (path) { return path === "local.fn.a b" ? function () { return 4; } : undefined; } };
+witness("a compiled expression returns no function: an index of a list", typeof module.compile("local.fn.l[0]", stub)(scope) === "undefined",
+	typeof module.compile("local.fn.l[0]", stub)(scope));
+witness("a compiled expression returns no function: a path read by ctx.read", typeof module.compile("local.fn[\"a b\"]", stub)(scope) === "undefined",
+	typeof module.compile("local.fn[\"a b\"]", stub)(scope));
 
 print(JSON.stringify({ passed: failures.length === 0, checks: checks, failures: failures }));
 if (failures.length) throw new Error("expression prototype: " + failures.length + " failed: " + failures.join("; "));
