@@ -925,6 +925,12 @@
 					return;
 				}
 				var line = stripFlowScriptComment(raw).trim();
+				var currentWrite = line.match(/^current(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])+\s*(?:[+\-*\/%]?=(?!=)|\+\+|--)/);
+				if (currentWrite) {
+					env.raise("FLOWSCRIPT_WRITE_SCOPE_UNSUPPORTED", "Cannot write " + currentWrite[0].replace(/\s*(?:[+\-*\/%]?=|\+\+|--)$/, "")
+						+ " at line " + (index + base) + ".", null,
+						"current is read-only in an iterator. Build a new value with list.map, or update a declared local/result collection with json.put or json.push.");
+				}
 				if (line === "" && !pending) {
 					if (index !== 0) { flushComments(); blankBefore = true; }
 					return;
