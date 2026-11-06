@@ -246,6 +246,11 @@
 								message:name+"."+key+" received "+JSON.stringify(value)+"; allowed values: "+descriptor.enum.map(function(choice){return JSON.stringify(choice);}).join(", ")+".",
 								hint:"Set "+key+" to one of "+descriptor.enum.map(function(choice){return JSON.stringify(choice);}).join(", ")+" from the block contract."});
 						}
+						if (name === "throw" && !props[key] && /^(path|stack|operation)$|^__|^convertigo\./.test(key)) {
+							diagnostics.push({severity: "error", code: "RESERVED_ERROR_FIELD", line: line, block: name, property: key,
+								message: "throw cannot set " + key + ": the error envelope owns this name.",
+								hint: "Rename the field (line: ..., field: ...) or put it in details."});
+						}
 						if (!props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
 							// $id, $nodes... with one dollar: an engine attribute that lost a dollar, usually in a

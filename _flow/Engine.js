@@ -940,7 +940,20 @@
 		if (error.details !== undefined && error.details !== null) {
 			out.error.details = normalizeTree(error.details);
 		}
+		if (error.fields) {
+			Object.keys(error.fields).forEach(function (key) {
+				if (!(key in out.error) && !reservedErrorField(key)) out.error[key] = normalizeTree(error.fields[key]);
+			});
+		}
 		return out;
+	}
+
+	// throw { code, message, status, line: 3 }: names beside the block contract go to the top of
+	// the error; the envelope's own names cannot be replaced.
+	function reservedErrorField(key) {
+		key = String(key);
+		return ["code", "message", "details", "path", "stack", "operation", "hint", "status"].indexOf(key) >= 0 ||
+			key.indexOf("__") === 0 || key.indexOf("convertigo.") === 0 || key.charAt(0) === "$";
 	}
 
 	function raise(code, message, node, hint) {
@@ -959,6 +972,11 @@
 		error.hint = options.hint ? String(options.hint) : "";
 		error.status = options.status;
 		error.details = options.details;
+		Object.keys(options).forEach(function (key) {
+			if (reservedErrorField(key) || options[key] === undefined) return;
+			error.fields = error.fields || {};
+			error.fields[key] = options[key];
+		});
 		throw error;
 	}
 
