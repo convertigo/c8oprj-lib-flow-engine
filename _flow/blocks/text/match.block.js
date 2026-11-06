@@ -49,6 +49,14 @@ const _meta = {
       "default": "",
       "description": "Letters among g (every match), i (ignore case), m (^ and $ at each line) and s (. matches line ends).",
     },
+    "dynamicPattern": {
+      "label": "Pattern from data",
+      "category": "Expert",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Allow a pattern built from data (a template or an expression) in a Flow callable over HTTP. It still runs under the execution budget.",
+    },
   },
   "outputs": {
     "out": {

@@ -348,6 +348,94 @@
 		return /^(?:test|Test|TEST)(?:_|[A-Z0-9]|$)/.test(name);
 	}
 
+	// The blocks that run a pattern (lib/text-pattern.js), the property holding it and the literal property that turns
+	// it into a pattern when it is not always one.
+	var PATTERN_PROPERTIES = {
+		"text.match": { property: "pattern" },
+		"text.replace": { property: "search", when: "regex" },
+		"text.split": { property: "separator", when: "regex" }
+	};
+
+	function literalTrue(value) {
+		return value === true || String(value) === "true";
+	}
+
+	// In a Flow a caller reaches over HTTP (public or hidden, or without _flow.accessibility: the accessibility of the
+	// Flow, public by default, applies), a pattern built from data is refused unless the block says dynamicPattern: true;
+	// a literal pattern that repeats a repetition is reported. Every pattern also runs under the execution budget.
+	function patternDiagnostics(blocks, definition, env) {
+		var accessibility = String(flowMetaFromDefinition(definition).accessibility || "public").toLowerCase();
+		if (accessibility === "private") return [];
+		var diagnostics = [], writes = {};
+		// a local written once, by a set of a literal text (local.pattern = "^[0-9]+$"), is a literal pattern too
+		function each(nodes, visit) {
+			(nodes || []).forEach(function (node) {
+				visit(node);
+				["nodes", "then", "else", "fields"].forEach(function (slot) {
+					if (Object.prototype.toString.call(node[slot]) === "[object Array]") each(node[slot], visit);
+				});
+			});
+		}
+		function count(path, literal) {
+			if (typeof path !== "string" || path.indexOf("local.") !== 0) return;
+			var known = writes[path] || (writes[path] = { count: 0, literal: false });
+			known.count++;
+			known.literal = literal;
+		}
+		[definition.nodes].concat((definition.helpers || []).map(function (helper) { return helper.nodes; })).forEach(function (nodes) {
+			each(nodes, function (node) {
+				if (env.blockName(node) === "set") {
+					var assigned = flowScriptPropertyValue(node, "value");
+					count(flowScriptPropertyValue(node, "path"), typeof assigned === "string" && !env.templateSyntax.hasExpression(assigned));
+				}
+				count(node.out, false);
+			});
+		});
+		function constantLocal(value) {
+			var reference = /^\$\{\s*(local\.[A-Za-z_$][\w$]*)\s*\}$|^\{\{\s*(local\.[A-Za-z_$][\w$]*)\s*\}\}$/.exec(String(value).trim());
+			var known = reference && writes[reference[1] || reference[2]];
+			return !!(known && known.count === 1 && known.literal);
+		}
+		function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				var name = env.blockName(node), rule = PATTERN_PROPERTIES[name];
+				if (rule && (!rule.when || literalTrue(flowScriptPropertyValue(node, rule.when)))) {
+					var value = flowScriptPropertyValue(node, rule.property), line = node.__flowScriptLine || 0;
+					var dynamic = value !== undefined && value !== null && (typeof value !== "string" || env.templateSyntax.hasExpression(value) && !constantLocal(value));
+					if (dynamic && !literalTrue(flowScriptPropertyValue(node, "dynamicPattern"))) {
+						diagnostics.push({
+							severity: "error",
+							code: "TEXT_PATTERN_NOT_LITERAL",
+							line: line,
+							block: name,
+							property: rule.property,
+							message: name + "." + rule.property + " is a pattern built from data in a Flow callable over HTTP (" + accessibility +
+								"): a caller could choose a pattern that backtracks for long.",
+							hint: "Write the pattern as a literal text. To find a text given by the caller, use value.includes(text), startsWith or endsWith" +
+								(name === "text.match" ? "" : ", or " + name + " without regex") + ". When the pattern is meant to come from data, set dynamicPattern: true on the block; it still runs under its budget (TEXT_PATTERN_TIMEOUT)."
+						});
+					} else if (typeof value === "string" && /\([^()]*[+*][^()]*\)(?:[+*]|\{\d+,\d*\})/.test(value)) {
+						diagnostics.push({
+							severity: "warning",
+							code: "TEXT_PATTERN_NESTED_REPETITION",
+							line: line,
+							block: name,
+							property: rule.property,
+							message: name + "." + rule.property + " repeats a group that repeats, which may backtrack for long on a text of the caller (TEXT_PATTERN_TIMEOUT).",
+							hint: "Repeat a single class instead, for example [a-z0-9-]+ rather than ([a-z0-9]+-?)+, or anchor the pattern on a separator."
+						});
+					}
+				}
+				["nodes", "then", "else", "fields"].forEach(function (slot) {
+					if (Object.prototype.toString.call(node[slot]) === "[object Array]") walk(node[slot]);
+				});
+			});
+		}
+		(definition.helpers || []).forEach(function (helper) { walk(helper.nodes || []); });
+		walk(definition.nodes || []);
+		return diagnostics;
+	}
+
 	function flowMetaFromDefinition(definition) {
 		return definition && (definition.flow || definition._flow) || {};
 	}
@@ -1019,6 +1107,9 @@
 				actual:note.before,expected:note.after,message:note.property+" is normalized from "+JSON.stringify(note.before)+" to "+JSON.stringify(note.after)+". Accepted as equivalent; source text is unchanged."});
 		});
 		(nativeDiagnostics.length ? [] : accessibilityDiagnostics(definition)).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		if (request.blockMode !== true) patternDiagnostics(activeBlocks, definition, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		var inputVariables = inputVariablesFromDefinition(activeBlocks, definition, env);
