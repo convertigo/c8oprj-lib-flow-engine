@@ -24,7 +24,7 @@ const _meta = {
       "label": "Status code",
       "kind": "expression",
       "type": "number",
-      "description": "Status code for REST operations of the URL mapper only.",
+      "description": "Optional HTTP status, rarely needed: the SDK and the frontbuilder expect 200 with the error envelope. Set it only when a client outside the SDK requires one; standard REST codes belong to URL mapper operations.",
     },
     "details": {
       "label": "Details",
