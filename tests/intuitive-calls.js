@@ -44,16 +44,16 @@ try {
 	var patch = proposed.proposedPatch;
 	assert(proposed.ok === false && patch && patch.revision === proposed.revision && patch.threshold === 0.9,
 		'a refused code-set proposes a patch of its working copy: ' + JSON.stringify(proposed).substring(0, 1500));
-	assert(patch.edits.length === 11 && !edit(patch, 'Math.max'), 'one edit per intuitive call, none for the Math.max expression: ' + JSON.stringify(patch.edits, null, 1));
+	// Math.pow and parseInt are expression functions (tests/expression-number-functions.js): no edit for them
+	assert(patch.edits.length === 9 && !edit(patch, 'Math.max') && !edit(patch, 'Math.pow') && !edit(patch, 'parseInt'),
+		'one edit per intuitive call, none for the Math.max, Math.pow and parseInt expressions: ' + JSON.stringify(patch.edits, null, 1));
 	[
-		['Math.pow(input.a, 2)', 'input.a * input.a', 0.95, ''],
 		['Object.assign({}, input.defaults, input.options)', 'object.merge({ target: input.defaults, source: input.options })', 0.95, 'object.merge'],
 		['Object.keys(local.merged)', 'object.keys({ source: local.merged })', 0.95, 'object.keys'],
 		['JSON.stringify(local.merged)', 'json.stringify({ value: local.merged })', 0.95, 'json.stringify'],
 		['crypto.md5(local.payload)', 'crypto.hash({ text: local.payload, algorithm: "md5" })', 0.95, 'crypto.hash'],
 		['text.trimm(input.label)', 'text.trim({ text: input.label })', 0.95, 'text.trim'],
 		['list.sort(input.rows, current.name)', 'list.sort({ items: input.rows, by: current.name })', 0.9, 'list.sort'],
-		['parseInt(input.page)', 'floor(Number(input.page))', 0.7, ''],
 		['text.replace(local.label, "-", " ")', 'text.replace({ text: local.label, search: "-", replacement: " " })', 0.75, 'text.replace'],
 		['console.log(local.label)', 'log({ message: local.label })', 0.9, 'log'],
 		['smtp.send({ to: input.email, subject: "Report", body: "Your report is ready." })',
@@ -65,7 +65,6 @@ try {
 			typeof found.line === 'number' && typeof found.reason === 'string' && found.reason.length > 10,
 			'edit of ' + expected[0] + ': ' + JSON.stringify(found));
 	});
-	assert(edit(patch, 'parseInt').reason.indexOf('floor(-3.7) is -4') !== -1, 'a different behavior is said, never silent: ' + edit(patch, 'parseInt').reason);
 	assert(edit(patch, 'text.replace').reason.indexOf('several assignments fit') !== -1, 'an ambiguous positional order is said: ' + edit(patch, 'text.replace').reason);
 	assert(edit(patch, 'Object.keys').line === 5 && edit(patch, 'smtp.send').line === 13, 'lines of the source');
 
@@ -77,7 +76,7 @@ try {
 
 	// 3. Compatibility flag is advisory: every guess remains a reviewable proposal.
 	var auto = api('flowCodeSet', { name: 'Intuitive', code: intuitive, autoCorrect: true });
-	assert(!auto.ok && !auto.autoCorrected && auto.proposedPatch.edits.length === 11,'autoCorrect proposes every edit');
+	assert(!auto.ok && !auto.autoCorrected && auto.proposedPatch.edits.length === 9,'autoCorrect proposes every edit');
 	assert(api('flowCodeGet',{name:'Intuitive'}).code === intuitive,'source is exactly authored');
 	var left=auto.proposedPatch;
 	var done=api('flowCodePatch',{name:'Intuitive',revision:left.revision,edits:left.edits});
@@ -115,7 +114,7 @@ try {
 	var input = { a: 3, b: 7, defaults: { size: 10, sort: 'name' }, options: { size: 25 }, label: '  Quarterly report  ',
 		rows: [{ name: 'beta' }, { name: 'alpha' }, { name: 'gamma' }] };
 	var equivalent = api('flowCodeSet', { name: 'Equivalent', code: confident, autoCorrect: true });
-	assert(!equivalent.ok && !equivalent.autoCorrected && equivalent.proposedPatch.edits.length===8,'confident guesses still require review');
+	assert(!equivalent.ok && !equivalent.autoCorrected && equivalent.proposedPatch.edits.length===7,'confident guesses still require review');
 	assert(equivalent.proposedPatch.edits.some(function(entry){return entry.oldText.indexOf('order: "desc"')>=0 && entry.newText.indexOf('direction: "desc"')>=0;}),'guessed key is proposed');
 	equivalent=api('flowCodePatch',{name:'Equivalent',revision:equivalent.revision,edits:equivalent.proposedPatch.edits});
 	assert(equivalent.ok,'reviewed equivalent passes');
@@ -132,7 +131,7 @@ try {
 
 	// 6. Never below the threshold, never an ambiguous choice: a threshold under 0.8 is raised to 0.8
 	var low = api('flowCodeSet', { name: 'Intuitive', code: intuitive, autoCorrect: true, autoCorrectThreshold: 0.5 });
-	assert(!low.autoCorrected && low.proposedPatch.threshold===0.8 && low.proposedPatch.edits.length===11,'threshold never enables writes');
+	assert(!low.autoCorrected && low.proposedPatch.threshold===0.8 && low.proposedPatch.edits.length===9,'threshold never enables writes');
 	assert(api('flowCodeGet',{name:'Intuitive'}).code===intuitive,'low threshold preserves source');
 	var otherDomain = api('flowCodeSet', { name: 'OtherDomain', code: 'function OtherDomain({ input, result }) {\n  local.sent = invoice.send({ to: input.email, subject: "Invoice" })\n}', autoCorrect: true });
 	var guessed = edit(otherDomain.proposedPatch, 'invoice.send');
@@ -167,10 +166,10 @@ try {
 	assert(lifted.ok,'explicit lifting preserves evaluation order');
 
 	// 8. code-check of a working copy proposes the same patch, with its revision; no mapping is reported as unresolved
-	api('flowCodeSet', { name: 'Checked', code: 'function Checked({ input, result }) {\n  result.keys = Object.keys(input.a)\n  result.root = Math.sqrt(input.n)\n}' });
+	api('flowCodeSet', { name: 'Checked', code: 'function Checked({ input, result }) {\n  result.keys = Object.keys(input.a)\n  result.root = Math.random()\n}' });
 	var check = api('flowCodeCheck', { name: 'Checked' });
 	assert(check.ok === false && check.proposedPatch && check.proposedPatch.revision === check.revision && edit(check.proposedPatch, 'Object.keys') &&
-		check.proposedPatch.unresolved.length === 1 && check.proposedPatch.unresolved[0].call === 'Math.sqrt(input.n)',
+		check.proposedPatch.unresolved.length === 1 && check.proposedPatch.unresolved[0].call === 'Math.random()',
 		'code-check proposes the patch of the working copy and names what it cannot map: ' + JSON.stringify(check.proposedPatch));
 
 	// 9. code-patch takes autoCorrect too, and a project sets its threshold (authoring.intuitiveCall in _flow/engine.yaml)

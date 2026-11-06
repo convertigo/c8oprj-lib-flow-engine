@@ -214,7 +214,7 @@
 	}
 
 	function expressionFunctions(env) {
-		return {
+		return withNumberFunctions({
 			"Array.isArray": function (value) { return Object.prototype.toString.call(value) === "[object Array]"; },
 			lower: function (value) {
 				return String(value === undefined || value === null ? "" : value).toLowerCase();
@@ -307,7 +307,53 @@
 			json: function (value) {
 				return JSON.stringify(env.sanitizeRuntimeValue(value));
 			}
+		}, env);
+	}
+
+	// The pure number functions of JavaScript an author writes first (parseInt, Number.isInteger, Math.sqrt...), with
+	// the results of JavaScript (NaN, Infinity). Each one converts its arguments with Number or String, then calls the
+	// function this module captured when it loaded: an expression never reaches a global object, a prototype or a
+	// function value. Math.random is left out: it is not pure (crypto.random is the block).
+	var MATH_FUNCTIONS = ["sqrt", "cbrt", "pow", "exp", "log", "log2", "log10", "trunc", "sign", "hypot",
+		"sin", "cos", "tan", "asin", "acos", "atan", "atan2"];
+	var MATH_IMPLEMENTATIONS = MATH_FUNCTIONS.map(function (name) { return Math[name]; });
+	var parseIntegerText = parseInt, parseFloatText = parseFloat, isNaNNumber = isNaN, isFiniteNumber = isFinite;
+	// The names an expression may read as a value, besides the scopes, true, false, null and undefined
+	var EXPRESSION_CONSTANTS = { Infinity: Infinity, NaN: NaN, "Math.PI": Math.PI, "Math.E": Math.E };
+
+	function withNumberFunctions(fns, env) {
+		function text(value) { return String(strictValue(value, env)); }
+		function number(value) { return Number(strictValue(value, env)); }
+		function integer(value, radix) {
+			return radix === undefined || radix === null ? parseIntegerText(text(value)) : parseIntegerText(text(value), number(radix));
+		}
+		function decimal(value) { return parseFloatText(text(value)); }
+		fns.parseInt = integer;
+		fns["Number.parseInt"] = integer;
+		fns.parseFloat = decimal;
+		fns["Number.parseFloat"] = decimal;
+		fns.isNaN = function (value) { return isNaNNumber(number(value)); };
+		fns.isFinite = function (value) { return isFiniteNumber(number(value)); };
+		// The Number.* predicates do not convert, as in JavaScript: Number.isInteger("3") is false
+		fns["Number.isNaN"] = function (value) {
+			value = strictValue(value, env);
+			return typeof value === "number" && value !== value;
 		};
+		fns["Number.isFinite"] = function (value) {
+			value = strictValue(value, env);
+			return typeof value === "number" && isFiniteNumber(value);
+		};
+		fns["Number.isInteger"] = function (value) {
+			value = strictValue(value, env);
+			return typeof value === "number" && isFiniteNumber(value) && Math.floor(value) === value;
+		};
+		MATH_FUNCTIONS.forEach(function (name, index) {
+			var implementation = MATH_IMPLEMENTATIONS[index];
+			fns["Math." + name] = function () {
+				return implementation.apply(null, numberArguments(arguments));
+			};
+		});
+		return fns;
 	}
 
 	function tokensFor(ctx, source, env) {
@@ -961,9 +1007,15 @@
 					program.flowLabel = receiverLabel ? receiverLabel + "." + member + "()" : "";
 				} else {
 					program = (function (receiverProgram, name) {
+						var hidden = name === "__proto__" || name === "constructor" || name === "prototype";
 						return function (runCtx) {
 							var receiver = receiverProgram(runCtx);
-							return receiver === null || receiver === undefined ? undefined : receiver[name];
+							if (receiver === null || receiver === undefined || hidden) {
+								return undefined;
+							}
+							// as value[key]: a member is data, never a function ("abc".constructor gave String)
+							var value = receiver[name];
+							return typeof value === "function" ? undefined : value;
 						};
 					})(program, member);
 					program.flowLabel = receiverLabel ? receiverLabel + "." + member : "";
@@ -1056,7 +1108,8 @@
 					consume("(");
 					var args = parseArgs();
 					consume(")");
-					if (fns[name]) {
+					// Own names only: a name of Object.prototype (toString, constructor, __defineGetter__) is no function
+					if (Object.prototype.hasOwnProperty.call(fns, name)) {
 						return parsePostfix(labelled(function (runCtx) {
 							return fns[name].apply(null, runArgs(args, runCtx));
 						}, name + "()"));
@@ -1078,6 +1131,9 @@
 				}
 				if (name === "undefined") {
 					return constant(undefined);
+				}
+				if (Object.prototype.hasOwnProperty.call(EXPRESSION_CONSTANTS, name)) {
+					return parsePostfix(labelled(constant(EXPRESSION_CONSTANTS[name]), name));
 				}
 				if (env.isScopePath(name)) {
 					if (isSimpleScopePath(name, env)) {

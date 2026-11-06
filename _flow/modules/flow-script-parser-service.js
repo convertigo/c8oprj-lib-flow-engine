@@ -83,6 +83,16 @@
 		} catch (_notExpressionSyntax) { return false; }
 	}
 
+	// The functions of the expressions (expressionFunctions of expression-utils.js): calls of them are expressions,
+	// never block calls. tests/expression-number-functions.js checks this list against expression-utils.js.
+	var EXPRESSION_FUNCTION_NAMES = ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
+		"length", "list.length", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
+		"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number", "Array.isArray",
+		"parseInt", "parseFloat", "isNaN", "isFinite", "Number.parseInt", "Number.parseFloat", "Number.isNaN",
+		"Number.isFinite", "Number.isInteger", "Math.sqrt", "Math.cbrt", "Math.pow", "Math.exp", "Math.log", "Math.log2",
+		"Math.log10", "Math.trunc", "Math.sign", "Math.hypot", "Math.sin", "Math.cos", "Math.tan", "Math.asin",
+		"Math.acos", "Math.atan", "Math.atan2"];
+
 	// The JavaScript globals an author writes first, read as calls of unknown blocks: the refusal names the supported equivalent
 	var JAVASCRIPT_GLOBAL_EQUIVALENTS = {
 		"Object.assign": "the object.merge block (object.merge({ target, source }))",
@@ -91,14 +101,8 @@
 		"Object.entries": "the object.keys block, then object.get for each key",
 		"JSON.stringify": "the json.stringify block",
 		"JSON.parse": "the json.parse block (json.safeParse to get an error instead of a failure)",
-		"parseInt": "an input typed integer, or the expression floor(Number(value))",
-		"parseFloat": "an input typed number, or the expression Number(value)",
-		"isNaN": "an input typed number, or the expression Number(value) === Number(value)",
 		"Date.now": "the date.now block",
-		"Math.pow": "a product in the expression (value * value)",
-		"Math.random": "the crypto.random block",
-		"Math.sqrt": "a dedicated project block (the expressions give round, floor, ceil, abs, min, max and %)",
-		"Math.trunc": "the expression floor(value) for a positive value, ceil(value) for a negative one"
+		"Math.random": "the crypto.random block"
 	};
 
 	function javaScriptGlobalEquivalent(name) {
@@ -106,7 +110,7 @@
 		if (!Object.prototype.hasOwnProperty.call(JAVASCRIPT_GLOBAL_EQUIVALENTS, name)) {
 			return "";
 		}
-		return name + " is JavaScript, not a Flow block; FlowScript expressions only give lower, upper, trim, contains, startsWith, endsWith, length, round, floor, ceil, abs, min, max (and their Math.* spellings), default, json, oneOf, overlaps, String, Number, the operators and %. Use "
+		return name + " is JavaScript, not a Flow block; FlowScript expressions only give lower, upper, trim, contains, startsWith, endsWith, length, round, floor, ceil, abs, min, max, the pure Math functions (Math.sqrt, Math.pow, Math.trunc...), parseInt, parseFloat, isNaN, isFinite, Number.isInteger, Number.isFinite, default, json, oneOf, overlaps, String, Number, the operators and %. Use "
 			+ JAVASCRIPT_GLOBAL_EQUIVALENTS[name] + " instead.";
 	}
 
@@ -347,7 +351,7 @@
 			var name = text(node.getTarget()).replace(/\s/g, "");
 			if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) || /^(input|local|current|result|request|config|trace)\./.test(name) || blockName(node)) return;
 			// Math.max(1, 2) and list.length(x) are expression functions, as the run reads them
-			if (/^(Array\.isArray|list\.length|Math\.(round|floor|ceil|abs|min|max))$/.test(name)) return;
+			if (EXPRESSION_FUNCTION_NAMES.indexOf(name) !== -1) return;
 			unknownBlock(blocks, name, line(start(node)), env);
 		});
 		for (var pass = 0; pass < 128; pass++) {
@@ -2092,9 +2096,7 @@
 		}
 
 		// The functions of the expressions (expression-utils.js)
-		var FLOWSCRIPT_EXPRESSION_FUNCTIONS = ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
-			"length", "list.length", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
-			"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number", "Array.isArray"];
+		var FLOWSCRIPT_EXPRESSION_FUNCTIONS = EXPRESSION_FUNCTION_NAMES;
 
 		function parseNaturalFlowScriptCallMember(text) {
 			text = stripFlowScriptSemicolon(text);
