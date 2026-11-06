@@ -67,6 +67,7 @@ var projectRootAbove = extract("projectRootAbove");
 var frontendSharedAppModulesStore = extract("frontendSharedAppModulesStore");
 var frontendToolIdentity = extract("frontendToolIdentity");
 var frontendSharedAppModulesKey = extract("frontendSharedAppModulesKey");
+var frontendLocalStorage = extract("frontendLocalStorage");
 var frontendSharedAppModules = extract("frontendSharedAppModules");
 var frontendCloneFileCall = extract("frontendCloneFileCall");
 var frontendCopyFolder = extract("frontendCopyFolder");
@@ -214,6 +215,21 @@ try {
 	});
 	assertEqual(frontendSharedAppModulesKey(new File(base, "none"), npm), "", "a folder without package.json is not shared");
 
+	// only on local storage: a copy on a network or virtual file system is slower than npm
+	["virtiofs", "9p", "nfs", "nfs4", "cifs", "smbfs", "fuse", "fuse.sshfs", "afpfs", "webdav"].forEach(function (type) {
+		assertTrue(FRONTEND_SHARED_APP_MODULES_REMOTE.test(type), type + " is not local storage");
+	});
+	["apfs", "hfs", "ext4", "xfs", "btrfs", "zfs", "overlay", "tmpfs"].forEach(function (type) {
+		assertTrue(!FRONTEND_SHARED_APP_MODULES_REMOTE.test(type), type + " is local storage");
+	});
+	assertTrue(frontendLocalStorage(new File(store, "not/created/yet")), "a folder to create is checked by its nearest parent");
+	var localStorage = frontendLocalStorage;
+	frontendLocalStorage = function (file) { return String(file.getPath()).indexOf(String(store.getPath())) !== 0; };
+	assertEqual(frontendSharedAppModules(resourceRoot, first, npm), null, "a store on a remote file system is not used");
+	frontendLocalStorage = function (file) { return String(file.getPath()).indexOf(String(first.getPath())) !== 0; };
+	assertEqual(frontendSharedAppModules(resourceRoot, first, npm), null, "nor for an application on a remote file system");
+	frontendLocalStorage = localStorage;
+
 	// the first application installs, and its packages are kept
 	var firstShared = frontendSharedAppModules(resourceRoot, first, npm);
 	assertEqual([String(firstShared.store.getPath()), firstShared.key], [String(store.getPath()), firstKey],
@@ -269,7 +285,7 @@ try {
 	assertEqual(names(store).filter(function (name) { return name.charAt(0) === "."; }), [], "the other copy goes");
 
 	// concurrent installations keep one complete entry, and concurrent copies are complete
-	var concurrentKey = "c" + firstKey.substring(1);
+	var concurrentKey = sha256Hex("concurrent installations");
 	var roots = [];
 	for (var i = 0; i < 6; i++) {
 		var root = application("Writer" + i);
@@ -359,6 +375,7 @@ try {
 	assertTrue(frontendRestoreSharedAppModules(fourth, store, firstKey), "cp gives the packages too");
 	assertEqual(read(new File(fourth, "node_modules/pkg/index.js")), "module.exports = 'First';", "complete");
 	assertTrue(Files.isSymbolicLink(new File(fourth, "node_modules/.bin/pkg").toPath()), "with its links");
+	assertEqual(read(new File(fourth, "node_modules/.package-lock.json")), "{\"hidden\":\"First\"}", "and its hidden entries");
 	assertEqual(names(fourth).filter(function (name) { return name.indexOf("shared-") >= 0; }), [], "and no temporary copy");
 } finally {
 	FileUtils.deleteQuietly(base);

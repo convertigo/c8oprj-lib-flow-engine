@@ -9233,9 +9233,14 @@
 	// - An entry appears complete (renamed into place at once) and is never written again; an application receives its
 	//   copy under a temporary name, renamed node_modules at once: concurrent builds never see a partial folder.
 	// - The store keeps the entries used last; the others leave once unused for an hour.
+	// - Only on local storage: a network or virtual file system (a Docker Desktop bind mount) copies more slowly than
+	//   npm installs. Servers keep applications on local storage with a local working directory.
 	var FRONTEND_SHARED_APP_MODULES = "svelte-app-modules";
 	var FRONTEND_SHARED_APP_MODULES_KEPT = 3;
 	var FRONTEND_SHARED_APP_MODULES_IDLE_MS = 3600000;
+	// a copy file by file on a network or virtual file system (a Docker Desktop bind mount, NFS, SMB) takes longer than
+	// npm, which writes in parallel: 222 s against 95 s with npm cache on a Docker Desktop bind mount
+	var FRONTEND_SHARED_APP_MODULES_REMOTE = /^(virtiofs|9p|nfs\d*|cifs|smb\w*|afpfs|webdav|davfs|fuse(\..*)?|ceph|glusterfs|lustre|gpfs)$/i;
 	// written in node_modules by the tools of an application (SvelteKit, Vite), not by npm
 	var FRONTEND_SHARED_APP_MODULES_GENERATED = ["$app", ".vite", ".vite-temp", ".cache"];
 	var FRONTEND_APP_INSTALL_SCRIPTS = ["preinstall", "install", "postinstall", "prepublish", "preprepare", "prepare", "postprepare"];
@@ -9379,6 +9384,20 @@
 		}
 	}
 
+	// @return whether a folder, or else its nearest existing parent, is on local storage
+	function frontendLocalStorage(file) {
+		try {
+			var path = file.getAbsoluteFile().toPath();
+			while (path != null && !java.nio.file.Files.exists(path)) {
+				path = path.getParent();
+			}
+			return path != null
+				&& !FRONTEND_SHARED_APP_MODULES_REMOTE.test(String(java.nio.file.Files.getFileStore(path.toRealPath()).type()));
+		} catch (e) {
+			return false;
+		}
+	}
+
 	// @return {store, key} for an application without node_modules whose packages are shared, else null
 	function frontendSharedAppModules(resourceRoot, generatedRoot, npm) {
 		if (!generatedRoot || java.nio.file.Files.exists(new File(generatedRoot, "node_modules").toPath(),
@@ -9386,7 +9405,10 @@
 			return null;
 		}
 		var store = frontendSharedAppModulesStore(resourceRoot);
-		var key = store ? frontendSharedAppModulesKey(generatedRoot, npm) : "";
+		if (!store || !frontendLocalStorage(store) || !frontendLocalStorage(generatedRoot)) {
+			return null;
+		}
+		var key = frontendSharedAppModulesKey(generatedRoot, npm);
 		return key ? { store: store, key: key } : null;
 	}
 
