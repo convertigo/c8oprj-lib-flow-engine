@@ -50,4 +50,10 @@ var refused = JSON.parse(engine.run(JSON.stringify({ flowSource: flow("  local.x
 if (refused.ok !== false || JSON.stringify(refused).indexOf("Unsupported method") === -1) {
 	throw new Error("a method outside the list is refused: " + JSON.stringify(refused).substring(0, 400));
 }
+var objectReplace = JSON.parse(engine.run(JSON.stringify({ flowSource: flow(
+  '  result.text = input.q.replace({ search: "\\r\\n", replacement: "\\n" })'), input: input, includeTrace: false })));
+if (objectReplace.ok !== false || objectReplace.error.code !== 'INVALID_EXPRESSION' ||
+    !/text\.replace/.test(objectReplace.error.hint || '') || !/two text arguments/.test(objectReplace.error.hint || '')) {
+	throw new Error('replace object refusal must name both valid repairs: ' + JSON.stringify(objectReplace).substring(0, 800));
+}
 print("expression method chains: ok");

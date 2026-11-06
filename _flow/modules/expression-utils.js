@@ -1130,7 +1130,8 @@
 			}
 			if (typeof receiver === "string" && STRING_METHODS.indexOf(method) !== -1) {
 				if ((method === "replace" || method === "replaceAll") && typeof values[0] !== "string") {
-					env.raise("INVALID_EXPRESSION", "replace takes a text pattern in an expression, not a regular expression.");
+					env.raise("INVALID_EXPRESSION", "replace takes a text pattern in an expression, not a regular expression.", null,
+						"Call .replace(search, replacement) with two text arguments, or use the text.replace block with { text, search, replacement, regex: true } in a separate statement.");
 				}
 				if (method === "replaceAll") {
 					return receiver.split(String(values[0])).join(String(values[1]));
