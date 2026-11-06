@@ -2418,11 +2418,22 @@
 	}
 
 	function resourcePatchRequest(request) {
-		return resourceService().patch(request, resourceServiceEnv());
+		return projectConfigWritten(resourceService().patch(request, resourceServiceEnv()));
 	}
 
 	function resourceDeleteRequest(request) {
-		return resourceService().remove(request, resourceServiceEnv());
+		return projectConfigWritten(resourceService().remove(request, resourceServiceEnv()));
+	}
+
+	// engine.yaml written or deleted by the engine (flow-resource-patch): Convertigo did not write it, so it is told, as
+	// for the blocks (projectBlockWritten). The runtimes of the project and of the projects using it then read the new
+	// configuration at their next call, instead of the one parsed under the stamp the server kept for the file (up to a
+	// minute), until a cache clear.
+	function projectConfigWritten(result) {
+		if (result && result.ok !== false && result.dryRun !== true && String(result.path) === sourcePaths().path("engine.yaml")) {
+			notifySourceMutation({ projectDir: String(projectDir() || ""), path: String(new File(projectDir(), result.path).getAbsolutePath()) });
+		}
+		return result;
 	}
 
 	function notifySourceMutation(request) {
