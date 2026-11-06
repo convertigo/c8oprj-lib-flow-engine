@@ -26,12 +26,12 @@ var reviewed = {
 	"lib_flow_crud_data:blocks/data/invoke.block.js:implementation": 1,
 	// the literal names given to the local helper checked(block, parameters) of sql.jdbc
 	"lib_flow_sql:blocks/sql/jdbc.block.js:block": 1,
-	// entity.<operation>, the operation checked against a closed list
-	"lib_flow_entity:blocks/entity/dispatch.block.js:\"entity.\"+operation": 1,
+	// entity.<operation>Resolved, the operation checked against a closed list (entity-access operation())
+	"lib_flow_entity:lib/entity-access.js:\"entity.\"+name+\"Resolved\"": 1,
 	// the actor provider of config.entities.actorProvider
-	"lib_flow_entity:blocks/entity/resolve.block.js:provider": 1,
+	"lib_flow_entity:lib/entity-access.js:provider": 1,
 	// the directory provider of the entity model of the project
-	"lib_flow_entity:lib/entity-directory.js:e.source.provider": 1,
+	"lib_flow_entity:lib/entity-directory.js:entity.source.provider": 1,
 	// MCP tools: the authoring block of a tool kind and a checked operation, the block of a published tool, the target
 	// declared by a tool block
 	"lib_flow_mcp:blocks/mcp/tool/code/dispatch.block.js:internalBlock": 1,
