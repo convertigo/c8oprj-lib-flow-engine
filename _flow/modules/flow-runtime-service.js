@@ -461,7 +461,60 @@
 			return props;
 		}
 
+		// The declared defaults are source written by the author of the block: a relayed call that leaves a property out
+		// receives its default evaluated as a node of a definition would evaluate it.
+		function sourceDefault(ctx, descriptor, value) {
+			var kind = String(descriptor.kind || descriptor.type || "");
+			if (kind === "expression") {
+				return evaluateExpression(ctx, value);
+			}
+			if (kind === "literal" || kind === "text" || kind === "schema" || kind === "secret" || kind === "path" && descriptor.mode === "write") {
+				return value;
+			}
+			return renderTemplateTree(ctx, value);
+		}
+
+		// The properties of a relayed call (ctx.callBlock): the values given by the caller, kept as they are, and the
+		// declared defaults of the properties left out.
+		function relayedProps(ctx, node, block) {
+			var props = nodeProps(node);
+			var declared = declaredWithHistory((blockCatalog(block) || {}).props || {}, ctx.blocks, blockName(node));
+			Object.keys(declared).forEach(function (key) {
+				var descriptor = declared[key];
+				if (props[key] === undefined && descriptor && descriptor["default"] !== undefined) {
+					props[key] = sourceDefault(ctx, descriptor, normalizeTree(descriptor["default"]));
+				}
+			});
+			return props;
+		}
+
+		// A value relayed to a block is data, never source: nothing in it is evaluated. Only the literal notations callers
+		// use to pass data are read: a JSON text given to an expression, and a template made of one ${…} holding a JSON
+		// literal (${"name"}); any other text stays the text itself, an object stays as it is.
+		function relayedValue(value, template) {
+			if (typeof value !== "string") {
+				return literalValue(value);
+			}
+			var literal = value;
+			if (template) {
+				var exact = /^\$\{([\s\S]*)\}$/.exec(value);
+				if (!exact) {
+					return value;
+				}
+				literal = exact[1];
+			}
+			try {
+				return JSON.parse(literal);
+			} catch (notLiteral) {
+				return value;
+			}
+		}
+
 		runContextPrototype.props = function (node) {
+			var relayed = node && node.__flowRelayedProps;
+			if (relayed) {
+				return nodeProps({ props: relayed });
+			}
 			var prepared = preparedNodeFor(this, node);
 			if (prepared && prepared.catalog === this.blocks && prepared.props) {
 				profileCount(this, "preparedPropsHits");
@@ -481,12 +534,31 @@
 		runContextPrototype.write = function (path, value) {
 			return writeScopePath(this.scopes, path, value);
 		};
+		// While a block runs on relayed values (relayedValues, set by callBlock), what it evaluates is data. A run starts
+		// on the source of its definition: the default mode, false, is read from the prototype, which a shared runtime
+		// freezes; setting the mode gives the context its own slot.
+		Object.defineProperty(runContextPrototype, "relayedValues", {
+			get: function () { return false; },
+			set: function (value) {
+				Object.defineProperty(this, "relayedValues", { value: value === true, writable: true, enumerable: false, configurable: true });
+			}
+		});
 		runContextPrototype.value = function (value) {
-			return evaluateExpression(this, value);
+			return this.relayedValues ? relayedValue(value, false) : evaluateExpression(this, value);
 		};
 		runContextPrototype.expr = runContextPrototype.value;
+		// A property of a relayed call read as its kind reads it (resolution of a composite block)
+		runContextPrototype.relayedProperty = function (value, kind) {
+			if (kind === "literal" || kind === "text" || kind === "schema" || kind === "secret" || kind === "path") {
+				return value;
+			}
+			return relayedValue(value, kind !== "expression");
+		};
 		runContextPrototype.compileExpr = function (value) {
 			var ctx = this;
+			if (this.relayedValues) {
+				return function () { return relayedValue(value, false); };
+			}
 			var compiled = compileExpression(value);
 			return function () { return compiled(ctx); };
 		};
@@ -497,10 +569,14 @@
 			return literalValue(value);
 		};
 		runContextPrototype.render = function (template) {
+			if (this.relayedValues) {
+				var text = relayedValue(template, true);
+				return text === undefined || text === null ? "" : typeof text === "string" ? text : JSON.stringify(text);
+			}
 			return renderTemplate(template, this);
 		};
 		runContextPrototype.template = function (value) {
-			return renderTemplateTree(this, value);
+			return this.relayedValues ? relayedValue(value, true) : renderTemplateTree(this, value);
 		};
 		// A value converted to a declared type, as the inputs of a Flow: { ok, value } or { ok: false, message }.
 		runContextPrototype.nativePropertyContract = function () { return env.nativePropertyContract(); };
@@ -508,7 +584,11 @@
 			return env.typeConversion.convert(value, schema);
 		};
 		runContextPrototype.input = function (props, fallback) {
-			return inputValue(this, props || {}, fallback);
+			props = props || {};
+			if (this.relayedValues) {
+				return props.value !== undefined ? relayedValue(props.value, true) : fallback;
+			}
+			return inputValue(this, props, fallback);
 		};
 		runContextPrototype.parseYaml = function (text) {
 			return parseYamlSource(text, "null\n");
@@ -918,6 +998,8 @@
 				// resolved here, on the calling thread: the HTTP calls of the lanes keep the cookies of the call
 				invocationContext: invocationContextOf(ctx),
 				traceEnabled: ctx.traceEnabled !== false,
+				// a block running on relayed values that opens lanes: what its lanes evaluate stays data
+				relayedValues: ctx.relayedValues === true,
 				traced: !!scopes.trace && typeof scopes.trace === "object",
 				profiled: !!ctx.profile,
 				config: undefined,
@@ -1012,6 +1094,7 @@
 			lane.returned = undefined;
 			lane.stopped = false;
 			lane.traceEnabled = template.traceEnabled;
+			lane.relayedValues = template.relayedValues;
 			lane.graphBlockStack = template.graphBlockStack.slice();
 			var shared = template.scopes;
 			var caller = template.caller;
@@ -1073,6 +1156,7 @@
 			lane.__flowTaskRecords = records;
 			lane.returned = undefined;
 			lane.stopped = false;
+			lane.relayedValues = template.relayedValues;
 			if (template.traced) lane.scopes.trace = records.trace = { nodes: [] };
 			if (template.profiled) lane.profile = records.profile = { blocks: [], hotPath: {} };
 			try {
@@ -1138,6 +1222,10 @@
 		}
 
 		function prepareNodeRunner(block, node, props) {
+			// a prepared runner compiles the properties of a node of a definition: a relayed call never gets one
+			if (node && node.__flowRelayedProps) {
+				raise("RELAYED_CALL_PREPARED", "A call relayed by ctx.callBlock is never prepared: " + blockName(node) + ".");
+			}
 			var trustedRuntime = String(block && block.__flowOrigin || "") === "core" ||
 				String(block && block.__blockImplementationRuntime || "") === "flow" ||
 				env.sharedRuntime && block && block.__graphRhino && block.__graphRhino.script.stateless === true;
@@ -1468,9 +1556,22 @@
 			var previousSkipping = ctx.skipping;
 			var previousLoopDepth = ctx.loopDepth;
 			var previousTraceEnabled = ctx.traceEnabled;
-			ctx.scopes.props = nodeProperties;
-			ctx.scopes.input = ctx.scopes.props;
-			ctx.scopes.local = {};
+			var previousRelayed = ctx.relayedValues;
+			// The properties of a call are values, given by the code of a block: the called block reads them as data and
+			// never evaluates them. { source: true } relays a node of the definition of the caller instead (list.map
+			// projections): its properties are source, evaluated by the called block in the frame of the caller. Only a
+			// block running on source relays source: a block running on relayed values relays values.
+			var source = options.source === true;
+			if (source && ctx.relayedValues === true) {
+				raise("CALL_BLOCK_SOURCE_REFUSED", "A block running on values relayed by ctx.callBlock cannot relay source to " + name + ".",
+					null, "Relay values: call ctx.callBlock without { source: true }.");
+			}
+			ctx.relayedValues = false;
+			if (!source) {
+				ctx.scopes.props = nodeProperties;
+				ctx.scopes.input = ctx.scopes.props;
+				ctx.scopes.local = {};
+			}
 			ctx.returned = undefined;
 			ctx.stopped = false;
 			ctx.skipping = false;
@@ -1482,6 +1583,14 @@
 			var started = profiled ? nanoTime() : 0;
 			var callAllocated = profiled ? allocatedBytes() : null;
 			try {
+				if (!source) {
+					// the defaults of the properties left out are evaluated in the frame of the call, before the values
+					nodeProperties = relayedProps(ctx, node, block);
+					Object.defineProperty(node, "__flowRelayedProps", { value: nodeProperties, enumerable: false });
+					ctx.scopes.props = nodeProperties;
+					ctx.scopes.input = ctx.scopes.props;
+					ctx.relayedValues = true;
+				}
 				var runStarted = profiled ? nanoTime() : 0;
 				var result;
 				ensureCanContinue(ctx, node);
@@ -1516,12 +1625,27 @@
 				ctx.skipping = previousSkipping;
 				ctx.loopDepth = previousLoopDepth;
 				ctx.traceEnabled = previousTraceEnabled;
+				ctx.relayedValues = previousRelayed;
 				profileAdd(ctx, "callBlockFrameRestoreMs", restoreStarted);
 				profileAdd(ctx, "callBlockTotalMs", totalStarted);
 			}
 		}
 
+		// The nodes of a definition are source, also when a block running on relayed values runs them (a composite block,
+		// the slots of a block).
 		function executeNodes(ctx, nodes) {
+			if (ctx.relayedValues) {
+				ctx.relayedValues = false;
+				try {
+					return executeSourceNodes(ctx, nodes);
+				} finally {
+					ctx.relayedValues = true;
+				}
+			}
+			return executeSourceNodes(ctx, nodes);
+		}
+
+		function executeSourceNodes(ctx, nodes) {
 			var result;
 			nodes = nodes || [];
 			var chain = !ctx.profile && !ctx.allocationTrace && ctx.executionChains && ctx.executionChains.get(nodes);

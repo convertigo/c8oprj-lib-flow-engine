@@ -82,13 +82,15 @@ const _meta = {
     if (value === undefined || value === null) {
       return ""
     }
+    // A bare scope path written as the value (local.text, the former spelling of ${local.text}) is read; the text a
+    // template gives is data and stays as it is
+    if (typeof value === "string" && !/\$\{|\{\{/.test(value) && /^(input|local|config|current|result)(?:\.|\[)/.test(value.trim())) {
+      var evaluated = ctx.expr(value.trim())
+      return evaluated === undefined || evaluated === null ? "" : String(evaluated)
+    }
     var rendered = String(ctx.template(value))
     if (rendered === "undefined" || rendered === "null") {
       return ""
-    }
-    if (/^(input|local|config|current|result)(?:\.|\[)/.test(rendered.trim())) {
-      var evaluated = ctx.expr(rendered.trim())
-      return evaluated === undefined || evaluated === null ? "" : String(evaluated)
     }
     return rendered
   }

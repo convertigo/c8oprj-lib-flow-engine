@@ -15,6 +15,9 @@ function HashMap() {
 HashMap.prototype.put = function (key, value) {
 	this.values[String(key)] = value;
 };
+HashMap.prototype.remove = function (key) {
+	delete this.values[String(key)];
+};
 
 var internalRequests = 0;
 var lastInternalRequest = null;
