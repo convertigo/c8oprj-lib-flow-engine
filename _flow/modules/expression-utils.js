@@ -8,6 +8,26 @@
 	var JavaString = javaClass("java.lang.String");
 	var JavaCharSequence = javaClass("java.lang.CharSequence");
 
+	// The names an expression never reads: the members that lead to a constructor or a prototype.
+	var HIDDEN_NAMES = ["constructor", "__proto__", "prototype"];
+	function hiddenName(name) {
+		return HIDDEN_NAMES.indexOf(String(name)) !== -1;
+	}
+	// A function is never a value of an expression: it reads as undefined.
+	function dataValue(value) {
+		return typeof value === "function" ? undefined : value;
+	}
+	// The this of the functions of expressions: an object of no prototype, frozen.
+	var NO_THIS = Object.freeze(Object.create(null));
+	// A key of an object an expression builds is data: __proto__ is an own property, never the prototype.
+	function ownValue(out, key, value) {
+		if (key === "__proto__") {
+			Object.defineProperty(out, key, { value: value, enumerable: true, writable: true, configurable: true });
+		} else {
+			out[key] = value;
+		}
+	}
+
 	function isStructuredValue(value) {
 		return value && (Object.prototype.toString.call(value) === "[object Array]" ||
 			Object.prototype.toString.call(value) === "[object Object]");
@@ -41,12 +61,12 @@
 	function readSimpleScopeParts(ctx, parts) {
 		var current = ctx.scopes[parts[0]];
 		for (var i = 1; i < parts.length; i++) {
-			if (current === null || current === undefined) {
+			if (current === null || current === undefined || hiddenName(parts[i])) {
 				return undefined;
 			}
-			current = current[parts[i]];
+			current = dataValue(current[parts[i]]);
 		}
-		return current;
+		return dataValue(current);
 	}
 
 	function comparableValue(value) {
@@ -160,7 +180,7 @@
 			return function (ctx) {
 				var out = {};
 				for (var i = 0; i < keys.length; i++) {
-					out[keys[i]] = fieldCompilers[i](ctx);
+					ownValue(out, keys[i], fieldCompilers[i](ctx));
 				}
 				return out;
 			};
@@ -174,12 +194,22 @@
 		}
 		if (typeof value === "string" && isSimpleScopePath(value, env)) {
 			var parts = String(value).split(".");
+			refuseHiddenPath(parts, value, env);
 			return function (ctx) { return readSimpleScopeParts(ctx, parts); };
 		}
 		if (typeof value === "string") {
 			return expressionProgramFor(null, value, env);
 		}
 		return function () { return literalValue(value, env); };
+	}
+
+	function refuseHiddenPath(parts, source, env) {
+		for (var i = 1; i < parts.length; i++) {
+			if (hiddenName(parts[i])) {
+				env.raise("INVALID_EXPRESSION", parts[i] + " cannot be read in an expression: " + source, null,
+					"constructor, __proto__ and prototype are not data. Read a field of the value instead.");
+			}
+		}
 	}
 
 	function literalValue(value, env) {
@@ -213,8 +243,17 @@
 		return numbers;
 	}
 
+	function functionTable(functions) {
+		var table = Object.create(null);
+		Object.keys(functions).forEach(function (name) {
+			table[name] = functions[name];
+		});
+		return Object.freeze(table);
+	}
+
+	// The functions of expressions, by name: a table of no prototype, frozen.
 	function expressionFunctions(env) {
-		return {
+		return functionTable({
 			"Array.isArray": function (value) { return Object.prototype.toString.call(value) === "[object Array]"; },
 			lower: function (value) {
 				return String(value === undefined || value === null ? "" : value).toLowerCase();
@@ -307,7 +346,7 @@
 			json: function (value) {
 				return JSON.stringify(env.sanitizeRuntimeValue(value));
 			}
-		};
+		});
 	}
 
 	function tokensFor(ctx, source, env) {
@@ -884,7 +923,7 @@
 			if (Object.prototype.toString.call(receiver) === "[object Array]" && ARRAY_METHODS.indexOf(method) !== -1) {
 				if (method === "at") {
 					var index = Number(values[0]);
-					return receiver[index < 0 ? receiver.length + index : index];
+					return dataValue(receiver[index < 0 ? receiver.length + index : index]);
 				}
 				return Array.prototype[method].apply(receiver, values);
 			}
@@ -917,20 +956,19 @@
 				key = env.jsValue(key);
 			}
 			var name = String(key);
-			if (name === "__proto__" || name === "constructor" || name === "prototype") {
+			if (hiddenName(name)) {
 				return undefined;
 			}
 			if (typeof receiver === "string" || Object.prototype.toString.call(receiver) === "[object Array]") {
 				if (name === "length") {
 					return receiver.length;
 				}
-				return /^(?:0|[1-9][0-9]*)$/.test(name) ? (typeof receiver === "string" ? receiver.charAt(Number(name)) || undefined : receiver[Number(name)]) : undefined;
+				return /^(?:0|[1-9][0-9]*)$/.test(name) ? (typeof receiver === "string" ? receiver.charAt(Number(name)) || undefined : dataValue(receiver[Number(name)])) : undefined;
 			}
 			if (typeof receiver !== "object") {
 				return undefined;
 			}
-			var value = receiver[name];
-			return typeof value === "function" ? undefined : value;
+			return dataValue(receiver[name]);
 		}
 		function parsePostfix(program) {
 			while (peek().type === "member" || peek("[")) {
@@ -949,6 +987,10 @@
 				}
 				var member = consume().value;
 				var receiverLabel = program.flowLabel || "";
+				if (hiddenName(member) && !peek("(")) {
+					env.raise("INVALID_EXPRESSION", member + " cannot be read in an expression: " + source, null,
+						"constructor, __proto__ and prototype are not data. Read a field of the value instead.");
+				}
 				if (peek("(")) {
 					consume("(");
 					var memberArgs = parseArgs();
@@ -963,7 +1005,7 @@
 					program = (function (receiverProgram, name) {
 						return function (runCtx) {
 							var receiver = receiverProgram(runCtx);
-							return receiver === null || receiver === undefined ? undefined : receiver[name];
+							return receiver === null || receiver === undefined ? undefined : dataValue(receiver[name]);
 						};
 					})(program, member);
 					program.flowLabel = receiverLabel ? receiverLabel + "." + member : "";
@@ -1058,7 +1100,7 @@
 					consume(")");
 					if (fns[name]) {
 						return parsePostfix(labelled(function (runCtx) {
-							return fns[name].apply(null, runArgs(args, runCtx));
+							return fns[name].apply(NO_THIS, runArgs(args, runCtx));
 						}, name + "()"));
 					}
 					var method = methodProgram(name, args);
@@ -1080,11 +1122,12 @@
 					return constant(undefined);
 				}
 				if (env.isScopePath(name)) {
+					var parts = String(name).split(".");
+					refuseHiddenPath(parts, source, env);
 					if (isSimpleScopePath(name, env)) {
-						var parts = String(name).split(".");
 						return parsePostfix(labelled(function (runCtx) { return readSimpleScopeParts(runCtx, parts); }, name));
 					}
-					return parsePostfix(labelled(function (runCtx) { return runCtx.read(name); }, name));
+					return parsePostfix(labelled(function (runCtx) { return dataValue(runCtx.read(name)); }, name));
 				}
 				env.raise("INVALID_EXPRESSION", "Unknown expression identifier: " + name, null, unknownIdentifierHint(name));
 			}
@@ -1140,7 +1183,7 @@
 			return function (runCtx) {
 				var out = {};
 				for (var i = 0; i < keys.length; i++) {
-					out[keys[i]] = values[i](runCtx);
+					ownValue(out, keys[i], values[i](runCtx));
 				}
 				return out;
 			};
@@ -1151,7 +1194,8 @@
 			env.raise("INVALID_EXPRESSION", "Unexpected " + (extra.type === "string" ? JSON.stringify(extra.value) : String(extra.value)) +
 				" in expression: " + source, null, "Write one expression: a value, a path, a call or an operation (local.a + local.b, local.items[0], local.text.trim()).");
 		}
-		return program;
+		var label = program.flowLabel;
+		return labelled(function (runCtx) { return dataValue(program(runCtx)); }, label);
 	}
 
 	function evaluate(ctx, source, env) {
