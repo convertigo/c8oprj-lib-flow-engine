@@ -3028,6 +3028,31 @@
 			});
 		}
 	
+		// A JavaScript loop statement (while (...) {, for (...) {, do {) was read as a call of a block named while or for
+		// with a text for its properties, and failed with "Cannot set property "0" of undefined" at line 0. It is
+		// refused at its line with the loop blocks to write instead; the while block keeps its iteration limit.
+		function raiseJavaScriptLoop(line, lineNumber) {
+			var loop = /^(while|for)\s*\(([\s\S]*?)\)\s*\{?\s*;?$/.exec(line) || /^(while|for)\s*\(([\s\S]*)$/.exec(line) || /^(do)\s*\{/.exec(line);
+			if (!loop || loop[1] === "while" && isFlowScriptObjectLiteral(String(loop[2] || "").trim())) {
+				return;
+			}
+			var whileBlock = "while({ condition: CONDITION, maxIterations: 1000, $$nodes: function () { ... } })";
+			var limit = "maxIterations is 1000 when omitted (1 to 1000000; WHILE_ITERATION_LIMIT when the condition is still true after it) and timeoutMs 60000 (at most 600000)";
+			var hint;
+			if (loop[1] === "for") {
+				var of = /^\s*(?:const|let|var)?\s*[A-Za-z_$][\w$]*\s+(?:of|in)\s+([\s\S]+)$/.exec(String(loop[2] || ""));
+				hint = "To go through a list, use the forEach block, the item being current: forEach({ items: " + (of ? of[1].trim() : "local.items") +
+					", $$nodes: function () { ... current ... } }). To count, set a local before the while block and increase it in its body: local.i = 0, then " +
+					whileBlock.replace("CONDITION", "local.i < input.count").replace("...", "...; local.i = local.i + 1") + "; " + limit + ".";
+			} else {
+				hint = "Write the while block, its body in $$nodes: " +
+					whileBlock.replace("CONDITION", loop[1] === "while" && String(loop[2] || "").trim() ? String(loop[2]).trim() : "local.again") +
+					"; " + limit + ". To go through a list, use forEach({ items, $$nodes: function () { ... current ... } }).";
+			}
+			env.raise("FLOWSCRIPT_LOOP_UNSUPPORTED", "A JavaScript " + (loop[1] === "do" ? "do...while" : loop[1]) + " loop is not FlowScript at line " + lineNumber + ": " +
+				line.substring(0, 120), null, hint);
+		}
+
 		function parseFlowScriptStatementsInto(blocks, imports, locals, root, statements) {
 			var stack = [{ root: root, slot: "nodes" }];
 			for (var i = 0; i < statements.length; i++) {
@@ -3143,6 +3168,7 @@
 					}
 					continue;
 				}
+				raiseJavaScriptLoop(line, lineNumber);
 				var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(([\s\S]*)\)\s*(\{)?\s*;?$/);
 				if (!match) {
 					env.raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,
