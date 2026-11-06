@@ -203,16 +203,23 @@ names.filter(function (name) { return /^(parseInt|parseFloat|isNaN|isFinite|Numb
 	api("flowCodeDiscard", { name: "Closed" });
 });
 
-// A member of a value is data, never a function: "abc".constructor and (1).constructor.constructor gave String and
-// Function as values (value[key] already refused them)
-var members = result([
+// A member of a value is data, never a function: since 0.2.30, "abc".constructor and (1).constructor are refused when
+// the expression compiles (expression-prototype.js holds the full witness), and a data member still reads
+var hiddenMember = run([
 	"function Members({ input, result }) {",
 	"  if (\"abc\".constructor != null || (1).constructor != null || String(input.n).constructor != null) {",
 	"    result.reached = true",
 	"  }",
+	"}"
+], { n: 49 });
+assertTrue(hiddenMember.ok === false && JSON.stringify(hiddenMember.error).indexOf("INVALID_EXPRESSION") !== -1
+	&& JSON.stringify(hiddenMember.error).indexOf("constructor cannot be read") !== -1,
+	"constructor is no data member: " + JSON.stringify(hiddenMember).substring(0, 600));
+var members = result([
+	"function Members({ input, result }) {",
 	"  result.length = \"abc\".length + String(input.n).length",
 	"}"
 ], { n: 49 });
-assertTrue(members.reached === undefined && members.length === 5, "a member is data, never a function: " + JSON.stringify(members));
+assertTrue(members.length === 5, "a data member reads: " + JSON.stringify(members));
 
 print("expression-number-functions: " + checks + " checks");
