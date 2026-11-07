@@ -110,7 +110,7 @@ var requiredNull = run({ id: { type: "integer", required: true } }, "  return { 
 assertTrue(!requiredNull.ok && requiredNull.error.code === "FLOW_INPUT_REQUIRED", "a required input cannot be null: " + JSON.stringify(requiredNull));
 var required = run({ id: { type: "string", required: true } }, "  return { id: input.id }", {});
 assertTrue(!required.ok && required.error.code === "FLOW_INPUT_REQUIRED", "a required input: " + JSON.stringify(required));
-assertTrue(required.error.status === 400 && /optional/.test(required.error.hint) && /throw/.test(required.error.hint),
+assertTrue(required.error.status === undefined && /optional/.test(required.error.hint) && /throw \{ code, message \}/.test(required.error.hint),
 	"a required input explains how to return an application error: " + JSON.stringify(required));
 var strict = run({ n: { type: "number" } }, "  return { same: input.n === 4 }", { n: "4" });
 assertTrue(strict.ok && strict.result.same === true, "=== compares the converted value: " + JSON.stringify(strict));

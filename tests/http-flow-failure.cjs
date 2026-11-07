@@ -7,7 +7,7 @@ const throwSource=fs.readFileSync('_flow/blocks/throw.block.js','utf8');
 const throwBlock=vm.runInNewContext(throwSource.slice(throwSource.indexOf('(function () {')));
 function authorThrow(props){
  const ctx={props:()=>props,template:value=>value,expr:value=>value,
-  throwFlow(options){const error=new Error(options.message);Object.assign(error,{code:options.code,status:options.status,details:options.details});throw error;}};
+  throwFlow(options,node,flags){const error=new Error(options.message);Object.assign(error,{code:options.code,status:options.status,details:options.details});if(flags&&flags.applicative===true)policy.markApplication(error);throw error;}};
  try{throwBlock.run(ctx,{});}catch(error){return error;}
  assert.fail('the throw block must raise');
 }

@@ -964,7 +964,8 @@
 		throw error;
 	}
 
-	function throwFlowError(options, node) {
+	// flags.applicative: an application error (http-flow-failure.js), answered 200 with its envelope when it has no status.
+	function throwFlowError(options, node, flags) {
 		options = options || {};
 		var error = new Error(String(options.message || "Flow error"));
 		error.code = String(options.code || "FLOW_THROW");
@@ -977,6 +978,7 @@
 			error.fields = error.fields || {};
 			error.fields[key] = options[key];
 		});
+		if (flags && flags.applicative === true) loadEngineModule("http-flow-failure.js").markApplication(error);
 		throw error;
 	}
 
@@ -13365,13 +13367,17 @@
 			Object.defineProperty(request, "__parentRun", { value: ctx });
 			// The plan resolved above for this request (same source, same runtime): the child frame does not look it up again
 			Object.defineProperty(request, "__resolvedPlan", { value: resolved });
-			var result;
+			var result, applicative = false;
 			try {
 				result = runWithActiveRequest(request, null, 0);
 				result.result = sharedRuntime.childResult(result.result, function (envelope) { return sanitizeSerializableRuntimeValue(envelope, "result"); });
-			} catch (error) { result = failure("run", error); }
-			// failed: the error of the called Flow, told apart from a result that holds an error property
-			return { handled: true, value: result.ok ? result.result : { error: result.error }, failed: !result.ok };
+			} catch (error) {
+				result = failure("run", error);
+				applicative = loadEngineModule("http-flow-failure.js").applicationError(error);
+			}
+			// failed: the error of the called Flow, told apart from a result that holds an error property;
+			// applicative: that error is an application error, raised as such by the caller
+			return { handled: true, value: result.ok ? result.result : { error: result.error }, failed: !result.ok, applicative: !result.ok && applicative };
 		} finally { lease.close(); }
 	}
 

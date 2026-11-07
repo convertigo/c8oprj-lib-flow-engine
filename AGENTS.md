@@ -773,6 +773,13 @@ objects with an error field do not own that HTTP status. Leave private requestab
 An author's throw without status sets none: the requester answers 200 with the error envelope. The throw block marks
 its error with a hidden property that never reaches the envelope. Internal failures (unknown block, runtime exception,
 engine FLOW_* errors) answer 500; an explicit status from 400 to 599 is kept.
+Application error API for blocks and libraries: `ctx.throwFlow({code, message, status, details, hint}, node,
+{applicative: true})`. Without status it answers 200 with the error envelope, with a status from 400 to 599 that
+status; without the option the error is internal (500). The throw block and FLOW_INPUT_REQUIRED use it.
+requestable.call raises the application error of a called Flow as an application error, as flow.call lets it
+through; `try` or `onError: "return"` catch it. A run called through another requester (a requestable.call of a
+regular Flow) answers its internal failure with status 500 in its envelope, so its caller tells it apart.
+Tests: `tests/n72-applicative-errors.js`, `tests/requestable-call-applicative.js`.
 response.status and response.header set the response of a requestable run and of the runs it calls, as status/header
 steps of a called sequence (http-flow-failure.js requestableRun, ctx.httpResponse); without HTTP request, no effect.
 response.error writes { code, message, details } at result.error (or its path) beside the rest of result, without status.

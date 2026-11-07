@@ -342,16 +342,27 @@ const _meta = {
 		return failedCall(execution && execution.error ? execution.error : {
 			code: "FLOW_REQUESTABLE_FAILED",
 			message: "The called Flow did not return a result."
-		});
+		}, applicationFailure(execution && execution.error));
 	}
 
-	// The error of a called Flow, marked as such: a Flow may also return a result holding an error property
-	function FailedCall(error) {
+	// The error of a called Flow, marked as such: a Flow may also return a result holding an error property.
+	// applicative: an application error of the called Flow, raised as an application error of the caller.
+	function FailedCall(error, applicative) {
 		this.error = error;
+		this.applicative = applicative === true;
 	}
 
-	function failedCall(error) {
-		return new FailedCall(error);
+	function failedCall(error, applicative) {
+		return new FailedCall(error, applicative);
+	}
+
+	var APPLICATIVE = Object.freeze({ applicative: true });
+
+	// Through a requester, the envelope of a called Flow tells its kind: its run answers status 500 for an internal
+	// failure (http-flow-failure.js answerCaller), no status or its own for an application error. An error document of
+	// the engine has no operation: an internal failure.
+	function applicationFailure(error) {
+		return !!error && typeof error === "object" && String(error.operation) === "run" && Number(error.status) !== 500;
 	}
 
 	// The failure the engine answers for a Flow run (Engine.js failure("run", e)), alone in its result: { error } with
@@ -377,7 +388,7 @@ const _meta = {
 	function regularFlowOutcome(answer, value, documentAnswer) {
 		var failed = answer && typeof answer === "object" ? answer.failed : undefined;
 		if (typeof failed !== "boolean") {
-			return isFlowFailure(value, documentAnswer) ? failedCall(value.error) : value;
+			return isFlowFailure(value, documentAnswer) ? failedCall(value.error, applicationFailure(value.error)) : value;
 		}
 		if (!failed) {
 			return value;
@@ -386,7 +397,7 @@ const _meta = {
 		return failedCall(error && typeof error === "object" ? error : {
 			code: "FLOW_REQUESTABLE_FAILED",
 			message: "The called Flow failed."
-		});
+		}, applicationFailure(error));
 	}
 
 	function callOutcome(ctx, node, props, target, value) {
@@ -403,15 +414,17 @@ const _meta = {
 			});
 			return { error: returned };
 		}
-		var status = Number(error.status);
+		// an application error of the called Flow stays one (200 with its envelope when it has no status); its internal
+		// failure stays 500, as flow.call, which lets the error of the called Flow through
+		var status = Number(error.status), explicit = Number.isInteger(status) && status >= 400 && status <= 599;
 		return ctx.throwFlow({
 			code: String(error.code || "FLOW_REQUESTABLE_FAILED"),
 			message: String(error.message || "The called requestable failed."),
-			status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500,
+			status: explicit ? status : value.applicative ? undefined : 500,
 			details: error.details,
 			hint: "Raised by " + qnameFor(target) + (error.path ? " at " + error.path : "")
 				+ ". Catch it with try, or set onError: \"return\" to get { error } instead."
-		}, node);
+		}, node, value.applicative ? APPLICATIVE : undefined);
 	}
 
 	function runInternal(ctx, node, target, input) {
@@ -424,7 +437,7 @@ const _meta = {
 		}
 		if (nativeBoundaryAvailable && ctx.tryDirectRequestable && target.dbo) {
 			var direct = ctx.tryDirectRequestable(target.dbo, input);
-			if (direct && direct.handled === true) return direct.failed === true ? failedCall(direct.value && direct.value.error) : direct.value;
+			if (direct && direct.handled === true) return direct.failed === true ? failedCall(direct.value && direct.value.error, direct.applicative === true) : direct.value;
 		}
 		var request = requestFromTarget(target, input);
 		if (nativeBoundaryAvailable) {

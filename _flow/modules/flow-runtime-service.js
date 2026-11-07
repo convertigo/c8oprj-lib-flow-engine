@@ -756,8 +756,9 @@
 			this.stopped = true;
 			return value;
 		};
-		runContextPrototype.throwFlow = function (options, node) {
-			return throwFlowError(options, node);
+		// flags.applicative: an application error (a library's refusal), 200 with its envelope when it has no status
+		runContextPrototype.throwFlow = function (options, node, flags) {
+			return throwFlowError(options, node, flags);
 		};
 		// response.status and response.header: the Convertigo context of a requestable run or of a run it calls, whose
 		// HTTP request is shared up to the request at the root of the calls (http-flow-failure.js requestableRun), else
@@ -2065,8 +2066,10 @@
 				if (value === undefined) {
 					if (declaration["default"] === undefined) {
 						if (declaration.required === true) {
+							// an application error without status, as the EngineException of a sequence missing a required variable
 							inputError("FLOW_INPUT_REQUIRED", name, "Input " + name + " is required.",
-								"To return your own error code, keep this input optional and validate it in the Flow with throw { code, message, status: 400 }.");
+								"To return your own error code, keep this input optional, validate it in the Flow and throw { code, message }; " +
+								"set a status only when a client outside the SDK requires one.", true);
 						}
 						delete input[name];
 						return;
@@ -2102,8 +2105,9 @@
 			return value;
 		}
 
-		function inputError(code, name, message, hint) {
-			return throwFlowError({ code: code, message: message, hint: hint, status: 400, details: { input: name } });
+		function inputError(code, name, message, hint, applicative) {
+			return applicative ? throwFlowError({ code: code, message: message, hint: hint, details: { input: name } }, undefined, { applicative: true })
+				: throwFlowError({ code: code, message: message, hint: hint, status: 400, details: { input: name } });
 		}
 
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {

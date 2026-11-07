@@ -5,7 +5,11 @@
 	// none: the requester answers 200 with the error envelope. Internal failures answer 500, an explicit
 	// status from 400 to 599 is kept.
 	function apply(request, result, invocation, thrown) {
-		if (!result || result.ok !== false || !result.error || !owns(request, invocation)) return;
+		if (!result || result.ok !== false || !result.error) return;
+		if (!owns(request, invocation)) {
+			answerCaller(request, result, invocation, thrown);
+			return;
+		}
 		try {
 			var status = result.error.status;
 			if (applicationError(thrown) && (status === undefined || status === null || status === "")) return;
@@ -30,6 +34,27 @@
 			return false;
 		}
 	}
+	// A run asked through another requester (a requestable.call of a regular Flow, a legacy call, a schedule) answers its
+	// caller, not the HTTP response: an internal failure says status 500 in its envelope, an application error keeps no
+	// status or its own, so requestable.call raises it as it was (call.block.js applicationFailure).
+	function answerCaller(request, result, invocation, thrown) {
+		if (!request || request.__parentRun || !request.flowQName || !invocation || applicationError(thrown)) return;
+		try {
+			if (!invocation.requestedObject || String(invocation.requestedObject.getQName()) !== String(request.flowQName)) return;
+		} catch (_noRequestedObject) {
+			return;
+		}
+		var status = Number(result.error.status);
+		if (!Number.isInteger(status) || status < 400 || status > 599) result.error.status = 500;
+	}
+	// An application error (an author's throw, a missing required input, ctx.throwFlow(error, node, {applicative: true}))
+	// carries a hidden property of the thrown error: never copied to an envelope (Engine.js failure).
+	function markApplication(error) {
+		if (error && typeof error === "object" && Object.isExtensible(error) && error.__flowApplicationError !== true) {
+			Object.defineProperty(error, "__flowApplicationError", {value: true});
+		}
+		return error;
+	}
 	function applicationError(thrown) {
 		return !!thrown && typeof thrown === "object" && thrown.__flowApplicationError === true;
 	}
@@ -50,5 +75,6 @@
 		}
 		return false;
 	}
-	return {apply: apply, owns: owns, requestableRun: requestableRun};
+	return {apply: apply, owns: owns, requestableRun: requestableRun, markApplication: markApplication,
+		applicationError: applicationError};
 }())
