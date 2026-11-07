@@ -759,6 +759,27 @@
 		runContextPrototype.throwFlow = function (options, node) {
 			return throwFlowError(options, node);
 		};
+		// response.status and response.header: the Convertigo context whose HTTP response this run owns, else null
+		// (a child Flow, an MCP tool, a schedule, a run without requester), see http-flow-failure.js owns.
+		runContextPrototype.httpResponse = function () {
+			var invocation = invocationContextOf(this);
+			return invocation && typeof env.httpResponseOwner === "function" && env.httpResponseOwner(this.request, invocation) ? invocation : null;
+		};
+		// response.error: the error envelope this run answers in place of its result, the run going on. A later call
+		// replaces it; a throw still fails the run.
+		runContextPrototype.respondError = function (error) {
+			var state = frameStateForRequestScope(this.scopes.request);
+			if (!state) {
+				raise("RESPONSE_UNAVAILABLE", "response.error needs the run of a Flow.");
+			}
+			error = error || {};
+			var envelope = { code: String(error.code || "FLOW_ERROR"),
+				message: error.message === undefined || error.message === null ? "" : String(error.message) };
+			if (error.details !== undefined && error.details !== null) {
+				envelope.details = normalizeTree(error.details);
+			}
+			state.responseError = envelope;
+		};
 		runContextPrototype.trace = function (node, name, result) {
 			if (!this.traceEnabled) {
 				return;
@@ -1919,7 +1940,9 @@
 					profile.executeNodesMs = profileDuration(executeStarted);
 				}
 				var selectStarted = measure ? nanoTime() : 0;
-				var result = ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
+				var answeredState = frameStateForRequestScope(ctx.scopes.request);
+				var responseError = answeredState && answeredState.responseError;
+				var result = responseError ? { error: responseError } : ctx.returned === undefined ? ctx.scopes.result : ctx.returned;
 				if (profile) {
 					profile.selectResultMs = profileDuration(selectStarted);
 				}
@@ -1931,7 +1954,7 @@
 					profile.resultSafetyMs = profileDuration(safetyStarted);
 				}
 				var schemaStarted = measure ? nanoTime() : 0;
-				var resultSchema = shouldLearnResultSchema(request) ? learnResultSchema(request, definition, result) : null;
+				var resultSchema = !responseError && shouldLearnResultSchema(request) ? learnResultSchema(request, definition, result) : null;
 				if (resultSchema && resultSchema.learned === true) {
 					appendSchemaUpdate(ctx, {
 						scope: "result",

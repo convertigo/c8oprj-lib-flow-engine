@@ -6083,6 +6083,7 @@
 			flowCode: flowCodeApi(),
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
+			httpResponseOwner: function (request, invocation) { return loadEngineModule("http-flow-failure.js").owns(request, invocation); },
 			createRowsPlan: createRowsPlan,
 			createRowsCursor: createRowsCursor,
 			rowsCursorNext: rowsCursorNext,
