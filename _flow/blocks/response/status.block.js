@@ -2,8 +2,8 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:numeric",
-  "description": "Sets the HTTP status of the response of the Flow called by the requester.",
-  "longDescription": "A rare, explicit choice for a client outside the SDK: by default a Flow answers 200, and throw { code, message } gives the SDK 200 with the error envelope. The code is an integer from 100 to 599. Only the Flow requested over HTTP sets it: a Flow called by another one (flow.call, requestable.call), an MCP tool or a schedule leaves the response of its caller unchanged. A later call replaces the earlier one; an internal failure still answers 500.",
+  "description": "Sets the HTTP status of the response, also from a Flow called by another one.",
+  "longDescription": "A rare, explicit choice for a client outside the SDK: by default a Flow answers 200, and throw { code, message } gives the SDK 200 with the error envelope. The code is an integer from 100 to 599. As the status step of a sequence, a Flow called by another one (flow.call, requestable.call) sets the response of the HTTP request at the root of its calls; a call without HTTP request (a schedule, a FullSync listener) has no effect, without error. A later call replaces the earlier one; an internal failure still answers 500.",
   "summary": "response status {{code}}",
   "properties": {
     "code": {

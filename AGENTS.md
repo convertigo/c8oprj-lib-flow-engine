@@ -773,8 +773,9 @@ objects with an error field do not own that HTTP status. Leave private requestab
 An author's throw without status sets none: the requester answers 200 with the error envelope. The throw block marks
 its error with a hidden property that never reaches the envelope. Internal failures (unknown block, runtime exception,
 engine FLOW_* errors) answer 500; an explicit status from 400 to 599 is kept.
-response.status and response.header use the same ownership check (http-flow-failure.js owns, ctx.httpResponse);
-response.error (ctx.respondError) answers { error: { code, message, details } } in place of the result, without status.
+response.status and response.header set the response of a requestable run and of the runs it calls, as status/header
+steps of a called sequence (http-flow-failure.js requestableRun, ctx.httpResponse); without HTTP request, no effect.
+response.error writes { code, message, details } at result.error (or its path) beside the rest of result, without status.
 Test: `tests/response-blocks.js`.
 Tests: `tests/http-flow-failure-context.js`, `tests/http-flow-failure.cjs`, `tests/throw-envelope-status.js`,
 `tests/block-dependencies.cjs`.

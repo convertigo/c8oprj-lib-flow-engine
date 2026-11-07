@@ -18,7 +18,6 @@
 	}
 	// The run that owns the HTTP response: the Flow the requester was asked for, in its own requester context. A nested
 	// Flow (request.__parentRun), an MCP tool, a schedule or another requestable sharing the HTTP request does not.
-	// Also the guard of response.status and response.header (ctx.httpResponse).
 	function owns(request, invocation) {
 		if (!request || request.__parentRun || !request.flowQName || !invocation) return false;
 		try {
@@ -34,5 +33,22 @@
 	function applicationError(thrown) {
 		return !!thrown && typeof thrown === "object" && thrown.__flowApplicationError === true;
 	}
-	return {apply: apply, owns: owns};
+	// response.status and response.header: a requestable run, or a run called by one (flow.call, requestable.call), sets
+	// the response of its Convertigo context, whose HTTP request a called requestable shares up to the root request (a
+	// SetResponseStatusStep of a called sequence does the same, InternalRequester keeping the HTTP request of its caller).
+	// Without HTTP request (a schedule, a FullSync listener), the request is internal: nothing reaches a response. An
+	// authoring or MCP tool run is not a requestable run of its context: it sets nothing.
+	function requestableRun(request, invocation) {
+		if (!invocation) return false;
+		try {
+			var qname = invocation.requestedObject ? String(invocation.requestedObject.getQName()) : "";
+			for (var run = request, depth = 0; qname && run && depth < 64; run = run.__parentRun && run.__parentRun.request, depth++) {
+				if (run.flowQName && String(run.flowQName) === qname) return true;
+			}
+		} catch (_noRequestedObject) {
+			// no requestable run
+		}
+		return false;
+	}
+	return {apply: apply, owns: owns, requestableRun: requestableRun};
 }())

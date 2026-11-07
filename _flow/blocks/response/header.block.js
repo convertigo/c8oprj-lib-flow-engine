@@ -2,8 +2,8 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:format-header-pound",
-  "description": "Sets an HTTP header of the response of the Flow called by the requester.",
-  "longDescription": "A rare, explicit choice for a client outside the SDK. Only the Flow requested over HTTP sets it: a Flow called by another one (flow.call, requestable.call), an MCP tool or a schedule leaves the response of its caller unchanged. The name is an HTTP token and the value has no CR or LF. The headers the engine owns are refused: framing (Content-Length, Transfer-Encoding, Connection, Content-Type, Content-Encoding), cookies (Set-Cookie), security (Content-Security-Policy, Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options...), CORS (Access-Control-*) and X-Convertigo-*.",
+  "description": "Sets an HTTP header of the response, also from a Flow called by another one.",
+  "longDescription": "A rare, explicit choice for a client outside the SDK. As the header step of a sequence, a Flow called by another one (flow.call, requestable.call) sets the response of the HTTP request at the root of its calls; a call without HTTP request (a schedule, a FullSync listener) has no effect, without error. The name is an HTTP token and the value has no CR or LF. The headers the engine owns are refused: framing (Content-Length, Transfer-Encoding, Connection, Content-Type, Content-Encoding), cookies (Set-Cookie), security (Content-Security-Policy, Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options...), CORS (Access-Control-*) and X-Convertigo-*.",
   "summary": "response header {{name}}",
   "properties": {
     "name": {

@@ -176,6 +176,6 @@ on an empty value.
 Rare, explicit choices for a client outside the SDK. By default write
 `throw { code, message }`: the SDK receives 200 with the error envelope.
 
-- `response.error({code, message, details})` answers that envelope in place of the result, without stopping the Flow or setting a status; a later call replaces it.
-- `response.status({code})` sets the HTTP status (100 to 599) of the Flow requested over HTTP only; a child call (`flow.call`, `requestable.call`) never changes its caller's response.
-- `response.header({name, value})` sets one header of that response; CR/LF and the headers the engine owns (`Set-Cookie`, `Content-Length`, CORS, security, `X-Convertigo-*`) are refused.
+- `response.error({code, message, details, path})` writes `{code, message, details}` at `result.error` (or `path`) beside the rest of the result, without stopping the Flow or setting a status; a later call at the same path replaces it.
+- `response.status({code})` sets the HTTP status (100 to 599) of the response, also from a Flow called by another one (`flow.call`, `requestable.call`); without HTTP request (schedule, FullSync listener) it has no effect.
+- `response.header({name, value})` sets one header of that response, the same way; CR/LF and the headers the engine owns (`Set-Cookie`, `Content-Length`, CORS, security, `X-Convertigo-*`) are refused.

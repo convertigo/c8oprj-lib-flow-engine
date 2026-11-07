@@ -2,8 +2,8 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:alert-outline",
-  "description": "Answers the error envelope instead of the result, without stopping the Flow and without HTTP status.",
-  "longDescription": "A rare, explicit choice: by default write throw { code, message }, which stops the Flow and gives the SDK 200 with the error envelope. response.error lets the Flow go on, then answers { error: { code, message, details } } in place of its result or return, the same envelope as a throw. A later call replaces the earlier one; a later throw still fails the Flow. A caller (flow.call, requestable.call) receives it as a result holding an error property.",
+  "description": "Writes the standard error structure { code, message, details } at a path, result.error by default, without stopping the Flow and without HTTP status.",
+  "longDescription": "A rare, explicit choice: by default write throw { code, message }, which stops the Flow and gives the SDK 200 with the error envelope. Like the error step of a sequence, response.error adds an error beside what the Flow already answers: the rest of result stays, the Flow goes on. A later call at the same path replaces the earlier one. With a local path (local.error), the structure is only a value for the next blocks, as an error step whose output is false.",
   "summary": "response error {{code}}: {{message}}",
   "properties": {
     "code": {
@@ -24,13 +24,24 @@ const _meta = {
       "label": "Details",
       "category": "Expert",
       "kind": "template",
-      "type": "object",
-      "description": "Optional structured error details: each value is evaluated, a path or an expression giving its value.",
+      "type": "unknown",
+      "description": "Optional error details: a text or an object whose values are evaluated. Empty text when omitted, as the error step of a sequence.",
+    },
+    "path": {
+      "label": "Destination",
+      "category": "Expert",
+      "kind": "path",
+      "mode": "write",
+      "default": "result.error",
+      "description": "Scope path receiving { code, message, details }: result.error by default, local.error for a value kept out of the response.",
     },
   },
   "runtime": "rhino",
   "targets": ["backend"],
   "outputs": { "out": { "type": "unknown", "hidden": true } },
+  "hooks": {
+    "file": "error.hooks.js",
+  },
 }
 
 (function () {
@@ -39,11 +50,19 @@ const _meta = {
 		return {
 			code: props.code || "FLOW_ERROR",
 			message: ctx.template(props.message === undefined ? "" : props.message),
-			details: props.details === undefined ? undefined : ctx.template(props.details)
+			details: props.details === undefined ? "" : ctx.template(props.details),
+			path: props.path || "result.error"
 		};
 	}
+	// The structure of the error step of a sequence: code, message and details (empty text when omitted, which the SDK
+	// reads as an error), written at its path beside what is already there.
 	function respond(ctx, node, args) {
-		ctx.respondError(args);
+		var details = args.details === undefined || args.details === null ? "" : args.details;
+		ctx.write(args.path || "result.error", {
+			code: String(args.code || "FLOW_ERROR"),
+			message: args.message === undefined || args.message === null ? "" : String(args.message),
+			details: details
+		});
 	}
 	return {
 		stateless: true,
