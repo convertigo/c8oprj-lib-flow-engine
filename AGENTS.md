@@ -795,3 +795,8 @@ blank line before a node with model metadata, hidden from properties. Backend pr
 These backend rules take precedence over older backend examples above; frontend naming and component syntax are unchanged.
 
 Mission 34 compact follow-up: object literals, return objects, metadata and calls stay on one line when the complete line fits 120 columns. Only wider values split by property. Preserve return-object layout metadata through tree edits; promotion still compares executable trees.
+
+## Expressions read data only (0.2.30)
+
+- **0.2.30** — Expressions read data only: names inherited from the object prototype are no longer expression functions, `constructor`, `__proto__` and `prototype` cannot be read in a path or a member, a function never reads as a value, and `__proto__` in an object literal is an ordinary key.
+- **Compatibility:** business data whose key is `constructor`, `prototype` or `__proto__` (JSON received from an API, a stored document) is still received and serialized unchanged, but it can no longer be read in an expression with a dotted path or a member access, for example `local.doc.constructor`. Such a reference is refused when the source is compiled. Rename the key where the data is produced.
