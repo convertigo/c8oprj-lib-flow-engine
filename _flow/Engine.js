@@ -13419,7 +13419,7 @@
 			return response(value, "result", functionProfile, detach);
 		} catch (e) {
 			var failed = failure("run", e);
-			if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, failed, context);
+			if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, failed, context, e);
 			return response(failed, "", null, detach);
 		} finally { executionState().allocationProfiler = previousAllocationProfiler; }
 	}

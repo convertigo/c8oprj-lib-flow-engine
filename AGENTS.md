@@ -770,7 +770,11 @@ inside the current analysis context. `sql.query -> sql.nativePlan -> data.scalar
 Only the HTTP requester's own uncaught Flow failure changes its response status through Context.setResponseStatus.
 Check requester-context ownership and the requested QName; nested calls, MCP tool failures, schedules and business
 objects with an error field do not own that HTTP status. Leave private requestable access to the Java requester.
-Tests: `tests/http-flow-failure-context.js`, `tests/http-flow-failure.cjs`, `tests/block-dependencies.cjs`.
+An author's throw without status sets none: the requester answers 200 with the error envelope. The throw block marks
+its error with a hidden property that never reaches the envelope. Internal failures (unknown block, runtime exception,
+engine FLOW_* errors) answer 500; an explicit status from 400 to 599 is kept.
+Tests: `tests/http-flow-failure-context.js`, `tests/http-flow-failure.cjs`, `tests/throw-envelope-status.js`,
+`tests/block-dependencies.cjs`.
 
 ## Requestable result ownership in Studio
 

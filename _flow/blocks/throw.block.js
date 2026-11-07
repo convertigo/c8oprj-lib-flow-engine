@@ -69,9 +69,18 @@ const _meta = {
 		});
 		return args;
 	}
+	// An author's throw is an application error: without status, the HTTP requester answers 200 with the error
+	// envelope (http-flow-failure.js). The mark stays on the thrown error, hidden: it never reaches the envelope.
+	function raise(ctx,node,args){
+		try { return ctx.throwFlow(args,node); }
+		catch (error) {
+			if(error && typeof error==="object" && Object.isExtensible(error))Object.defineProperty(error,"__flowApplicationError",{value:true});
+			throw error;
+		}
+	}
 	return {
 		stateless:true,
-		debug: {resolve:argumentsFor,run:function(ctx,node,args){return ctx.throwFlow(args,node);}},
-		run:function(ctx,node){return ctx.throwFlow(argumentsFor(ctx,node),node);}
+		debug: {resolve:argumentsFor,run:raise},
+		run:function(ctx,node){return raise(ctx,node,argumentsFor(ctx,node));}
 	};
 }())
