@@ -775,7 +775,9 @@ its error with a hidden property that never reaches the envelope. Internal failu
 engine FLOW_* errors) answer 500; an explicit status from 400 to 599 is kept.
 Application error API for blocks and libraries: `ctx.throwFlow({code, message, status, details, hint}, node,
 {applicative: true})`. Without status it answers 200 with the error envelope, with a status from 400 to 599 that
-status; without the option the error is internal (500). The throw block and FLOW_INPUT_REQUIRED use it.
+status; without the option the error is internal (500). The throw block and the input errors (FLOW_INPUT_REQUIRED,
+FLOW_INPUT_TYPE_INVALID) use it; an input error names the input and its type, never the value received. Every error
+a run answers its requester holds details, empty text by default (requesterError), as the error step of a sequence.
 requestable.call raises the application error of a called Flow as an application error, as flow.call lets it
 through; `try` or `onError: "return"` catch it. A run called through another requester (a requestable.call of a
 regular Flow) answers its internal failure with status 500 in its envelope, so its caller tells it apart.
@@ -796,6 +798,21 @@ This is not a certification of Studio session isolation. `requestable-studio-con
 the actual ContextManager: Studio replaces distinct context names and session IDs with studio_<project>:S:<flow>.
 The core Java context naming and any data race before the requester detaches its response remain outside this
 library's scope. Do not claim the shared Studio context is secure solely because the library handoff test passes.
+
+## HTTP statuses of errors and response blocks (after 0.2.30, decision 72)
+
+As the sequences they replace, with the SDK unchanged:
+- An application error answers 200 with the error envelope `{error:{code, message, details}}`: an author's throw
+  without status, a missing or mistyped input (never repeating the value received), a library refusal raised with
+  `ctx.throwFlow(error, node, {applicative: true})`, and the uncaught application error of a called Flow (flow.call,
+  requestable.call). An explicit status from 400 to 599 is kept; internal failures answer 500.
+- The envelope always holds `details`, empty text by default, as the error step of a sequence.
+- Blocks `response.error` (the error structure at result.error or its path, beside the rest of the result),
+  `response.status` and `response.header` (also from a called run; refused protected headers; no effect without
+  HTTP request).
+- Compatibility: with requestable.call through the requester, the caller and the called Flow must run the same
+  lib_flow_engine version. A called run answers its internal failure with status 500 in its envelope; an older called
+  run does not, and its internal failure would be read as an application error (200).
 
 ## Backend FlowScript phase 1 (0.2.21 engine / 0.2.32 MCP)
 

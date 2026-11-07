@@ -923,6 +923,15 @@
 		return JSON.stringify(payload);
 	}
 
+	// The error a run answers its requester always holds details, empty text by default, as the error step of a sequence:
+	// the SDK reads an error by its code, message and details.
+	function requesterError(result) {
+		if (result && result.error && typeof result.error === "object" && (result.error.details === undefined || result.error.details === null)) {
+			result.error.details = "";
+		}
+		return result;
+	}
+
 	function failure(operation, error) {
 		var out = {
 			ok: false,
@@ -13422,10 +13431,13 @@
 			} : null;
 			var activeStarted = profileRequest ? JavaSystem.nanoTime() : 0;
 			var value = runWithActiveRequest(request, functionProfile, activeStarted);
-			if (value && value.ok === false && typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, value, context);
+			if (value && value.ok === false) {
+				requesterError(value);
+				if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, value, context);
+			}
 			return response(value, "result", functionProfile, detach);
 		} catch (e) {
-			var failed = failure("run", e);
+			var failed = requesterError(failure("run", e));
 			if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, failed, context, e);
 			return response(failed, "", null, detach);
 		} finally { executionState().allocationProfiler = previousAllocationProfiler; }

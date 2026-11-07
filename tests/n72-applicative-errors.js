@@ -78,6 +78,27 @@ try{
   r=run(body(' probe.deny({ mode: "internal" })'));
   check(r.out.error.code==='PROBE_BROKEN'&&JSON.stringify(r.statuses)==='[500]','a library error without the option stays internal (500)',r);clean(r,'internal');
  });
+ // 4. Every envelope the requester renders holds details, empty text by default, as the error step of a sequence (the SDK
+ // reads an error by its code, message and details).
+ point('4 details',function(){
+  var r=run(body(' throw { code: "ORDER_NOT_FOUND", message: "No order" }'));
+  check(r.out.ok===false&&r.out.error.details===''&&r.statuses.length===0,'a throw without details answers details ""',r);
+  r=run(body(' throw { code: "ORDER_NOT_FOUND", message: "No order", details: { id: 42 } }'));
+  check(r.out.error.details&&r.out.error.details.id===42,'given details stay',r);
+  r=run(body(' result.value = json.parse({ text: "{" })'));
+  check(r.out.ok===false&&r.out.error.details===''&&JSON.stringify(r.statuses)==='[500]','an internal failure answers details "" too',r);
+ });
+ // 5. A value of the wrong type is an application error that never repeats the value received.
+ point('5 input type',function(){
+  var source='const _flow = { sourceVersion: 2, inputs: { amount: { type: "integer" }, numbers: { type: "array", items: { type: "number" } } } }\n\n'+body(' result.amount = input.amount');
+  var r=run(source,{amount:SECRET});
+  check(r.out.ok===false&&r.out.error.code==='FLOW_INPUT_TYPE_INVALID'&&r.out.error.status===undefined&&r.statuses.length===0,'a wrong type answers 200 with the envelope',r);
+  check(/amount/.test(r.out.error.message)&&/integer/.test(r.out.error.message)&&r.out.error.details&&r.out.error.details.input==='amount','the message names the field and its type',r);
+  clean(r,'wrong type');
+  r=run(source,{numbers:'[1, "'+SECRET+'"]'});
+  check(r.out.ok===false&&r.out.error.code==='FLOW_INPUT_TYPE_INVALID'&&r.statuses.length===0,'a wrong item type answers 200 with the envelope',r);
+  clean(r,'wrong item type');
+ });
  if(failures.length)throw Error('failed points: '+failures.join(', '));
  print('n72-applicative-errors OK');
 }finally{IO.deleteDirectory(project);}

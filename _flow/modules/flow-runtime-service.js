@@ -2069,7 +2069,7 @@
 							// an application error without status, as the EngineException of a sequence missing a required variable
 							inputError("FLOW_INPUT_REQUIRED", name, "Input " + name + " is required.",
 								"To return your own error code, keep this input optional, validate it in the Flow and throw { code, message }; " +
-								"set a status only when a client outside the SDK requires one.", true);
+								"set a status only when a client outside the SDK requires one.");
 						}
 						delete input[name];
 						return;
@@ -2084,7 +2084,8 @@
 					? (entry.convertReference ? entry.convertReference(value) : conversion.convertReference(value, declaration))
 					: (entry.convert ? entry.convert(value) : conversion.convert(value, declaration));
 				if (!converted.ok) {
-					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + ": " + converted.message,
+					// the field and its type only: the value received never comes back (it may be a secret)
+					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + " must be of type " + declaredTypes.join(" or ") + ".",
 						"Send a value of type " + declaredTypes.join(" or ") + ".");
 				}
 				if (converted.warning && frameState) {
@@ -2105,9 +2106,10 @@
 			return value;
 		}
 
-		function inputError(code, name, message, hint, applicative) {
-			return applicative ? throwFlowError({ code: code, message: message, hint: hint, details: { input: name } }, undefined, { applicative: true })
-				: throwFlowError({ code: code, message: message, hint: hint, status: 400, details: { input: name } });
+		// An input the caller did not send as declared: an application error without status (200 with its envelope), as the
+		// engine answers a sequence missing a required variable. Its message, hint and details never hold the value received.
+		function inputError(code, name, message, hint) {
+			return throwFlowError({ code: code, message: message, hint: hint, details: { input: name } }, undefined, { applicative: true });
 		}
 
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {

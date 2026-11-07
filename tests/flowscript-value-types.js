@@ -30,8 +30,8 @@ var single = run("  result.ids = input.ids", { ids: "42" });
 assert(single.ok === true && JSON.stringify(single.result.ids) === "[\"42\"]" && single.warnings === undefined, "a parameter sent once is a list without warning");
 assert(JSON.stringify(run("  result.ids = input.ids", { ids: "[\"1\",\"2\"]" }).result.ids) === "[\"1\",\"2\"]", "a JSON array text is a list");
 var typedItems = run("  result.numbers = input.numbers", { numbers: "1,2" });
-assert(typedItems.ok === false && typedItems.error.code === "FLOW_INPUT_TYPE_INVALID" && /received the text "1,2"/.test(typedItems.error.message),
-	"typed items refuse it, naming the text: " + JSON.stringify(typedItems));
+assert(typedItems.ok === false && typedItems.error.code === "FLOW_INPUT_TYPE_INVALID" && /numbers/.test(typedItems.error.message) &&
+	JSON.stringify(typedItems).indexOf("1,2") < 0, "typed items refuse it, naming the input but never the value received: " + JSON.stringify(typedItems));
 
 // A text method on a list, at run time.
 var split = run("  result.parts = input.ids.split(\",\")", { ids: ["1", "2"] });
