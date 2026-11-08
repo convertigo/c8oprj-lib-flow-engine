@@ -28,7 +28,19 @@
 		return env.templateSyntax.expressions(value);
 	}
 
-	function expressionDiagnostic(error, node, blockName, property, expression) {
+	function unknownIdentifierHint(error, context) {
+		var match = /^Unknown expression identifier: ([A-Za-z_$][\w$]*)$/.exec(String(error && error.message || ""));
+		if (!match || !context) return error && error.hint;
+		var name = match[1], available = [];
+		["input", "local", "config"].forEach(function (scope) {
+			if (Object.prototype.hasOwnProperty.call(context.known[scope], name)) available.push(scope + "." + name);
+		});
+		if (context.current) available.push("current." + name + " (item field)");
+		return (available.length ? "Read " + available.join(" or ") + ". " : "") +
+			"Quote literal text (\"" + name + "\"). Read other values through their existing input.*, local.* or config.* scope.";
+	}
+
+	function expressionDiagnostic(error, node, blockName, property, expression, context) {
 		return {
 			severity: "error",
 			code: error && error.code ? String(error.code) : "INVALID_EXPRESSION",
@@ -37,11 +49,11 @@
 			property: property,
 			expression: expression,
 			message: "Invalid FlowScript expression for " + blockName + "." + property + ": " + String(error && error.message || error || ""),
-			hint: error && error.hint ? String(error.hint) : "Use FlowScript expressions over input.*, config.*, local.*, current.* or result.*; use blocks or literal properties for structured objects/arrays."
+			hint: unknownIdentifierHint(error, context) || "Use FlowScript expressions over input.*, config.*, local.* or result.*; use blocks or literal properties for structured objects/arrays."
 		};
 	}
 
-	function validateExpressionText(diagnostics, node, blockName, property, expression, env) {
+	function validateExpressionText(diagnostics, node, blockName, property, expression, env, context) {
 		expression = String(expression || "").trim();
 		if (!expression || !env.tokenizeExpression) {
 			return;
@@ -49,7 +61,7 @@
 		try {
 			env.tokenizeExpression(expression);
 		} catch (e) {
-			diagnostics.push(expressionDiagnostic(e, node, blockName, property, expression));
+			diagnostics.push(expressionDiagnostic(e, node, blockName, property, expression, context));
 		}
 	}
 
@@ -95,29 +107,29 @@
 		});
 	}
 
-	function validateTemplateExpressions(diagnostics, node, blockName, property, value, env) {
+	function validateTemplateExpressions(diagnostics, node, blockName, property, value, env, context) {
 		templateExpressions(value, env).forEach(function (expression) {
-			validateExpressionText(diagnostics, node, blockName, property, expression, env);
+			validateExpressionText(diagnostics, node, blockName, property, expression, env, context);
 		});
 	}
 
-	function validateStructuredTemplates(diagnostics, node, blockName, property, value, env) {
+	function validateStructuredTemplates(diagnostics, node, blockName, property, value, env, context) {
 		if (Object.prototype.toString.call(value) === "[object Array]") {
 			value.forEach(function (item) {
-				validateStructuredTemplates(diagnostics, node, blockName, property, item, env);
+				validateStructuredTemplates(diagnostics, node, blockName, property, item, env, context);
 			});
 			return;
 		}
 		if (value && typeof value === "object") {
 			Object.keys(value).forEach(function (key) {
-				validateStructuredTemplates(diagnostics, node, blockName, property + "." + key, value[key], env);
+				validateStructuredTemplates(diagnostics, node, blockName, property + "." + key, value[key], env, context);
 			});
 			return;
 		}
-		validateTemplateExpressions(diagnostics, node, blockName, property, value, env);
+		validateTemplateExpressions(diagnostics, node, blockName, property, value, env, context);
 	}
 
-	function validateNodeExpressions(diagnostics, blocks, node, blockName, env) {
+	function validateNodeExpressions(diagnostics, blocks, node, blockName, env, context) {
 		var catalog = env.blockCatalog(blocks[blockName]) || {};
 		var props = catalog.props || {};
 		var slotMap = {};
@@ -127,17 +139,21 @@
 		businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
 			var descriptor = props[key] || (catalog.dynamicProperties === true ? catalog.additionalProperties || {} : {});
 			var value = flowScriptPropertyValue(node, key);
+			var expressionContext = {known: context.known, current: context.current ||
+				(blockName === "list.map" && key === "select") ||
+				(blockName === "list.filter" && key === "where") ||
+				(blockName === "list.sort" && key === "by")};
 			if (descriptor.kind === "expression") {
 				if (typeof value === "string") {
-					validateExpressionText(diagnostics, node, blockName, key, value, env);
+					validateExpressionText(diagnostics, node, blockName, key, value, env, expressionContext);
 					quotedExpressionDiagnostic(diagnostics, node, blockName, key, value, descriptor, env);
 				} else {
-					validateStructuredTemplates(diagnostics, node, blockName, key, value, env);
+					validateStructuredTemplates(diagnostics, node, blockName, key, value, env, expressionContext);
 				}
 				return;
 			}
 			if (descriptor.kind === "template" || descriptor.kind === "value" || descriptor.kind === undefined) {
-				validateStructuredTemplates(diagnostics, node, blockName, key, value, env);
+				validateStructuredTemplates(diagnostics, node, blockName, key, value, env, expressionContext);
 			}
 		});
 	}
@@ -146,8 +162,12 @@
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var dependencyContext = {blocks: activeBlocks};
 		var diagnostics = [];
+		var meta = definition.flow || definition._flow || {};
+		var known = {input: meta.inputs || meta.input || definition.inputs || definition.input || {},
+			local: {}, config: meta.config || {}};
 		target = String(target || "backend").trim().toLowerCase() || "backend";
-		function walk(nodes) {
+		function walk(nodes, context) {
+			context = context || {known: known, current: false};
 			(nodes || []).forEach(function (node) {
 				var name = env.blockName(node);
 				var block = activeBlocks[name];
@@ -231,7 +251,8 @@
 					var slotMap = {};
 					function inline(value) {
 					if(!value || typeof value!=="object")return;
-					if(value.__flowBlock){walk([Object.assign({block:value.__flowBlock,props:value.properties || {},__flowScriptLine:line},value.metadata || {})]);return;}
+					if(value.__flowBlock){walk([Object.assign({block:value.__flowBlock,props:value.properties || {},__flowScriptLine:line},value.metadata || {})],
+						{known: context.known, current: context.current || name === "list.map"});return;}
 					Object.keys(value).forEach(function(key){inline(value[key]);});
 				}
 				if(name==='list.map')inline((node.props || {}).select);
@@ -289,19 +310,23 @@
 							});
 						}
 					});
-					validateNodeExpressions(diagnostics, activeBlocks, node, name, env);
+					validateNodeExpressions(diagnostics, activeBlocks, node, name, env, context);
 				}
+				var output = String(node.out || (name === "set" && node.props && node.props.path) || "");
+				var localName = /^local\.([A-Za-z_$][\w$]*)/.exec(output);
+				if (localName) context.known.local[localName[1]] = true;
 				["nodes", "then", "else", "fields"].forEach(function (slot) {
 					if (Object.prototype.toString.call(node[slot]) === "[object Array]") {
-						walk(node[slot]);
+					walk(node[slot], {known: {input: context.known.input, local: Object.assign({}, context.known.local),
+						config: context.known.config}, current: context.current || name === "forEach"});
 					}
 				});
 			});
 		}
 		(definition.helpers || []).forEach(function (helper) {
-			walk(helper.nodes || []);
+			walk(helper.nodes || [], {known: {input: known.input, local: {}, config: known.config}, current: false});
 		});
-		walk(definition.nodes || []);
+		walk(definition.nodes || [], {known: known, current: false});
 		return diagnostics;
 	}
 

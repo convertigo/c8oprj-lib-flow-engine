@@ -475,16 +475,16 @@
 	function unknownIdentifierHint(name) {
 		name = String(name || "");
 		if (/^current\d+(?:[.[]|$)/.test(name)) {
-			return "current is the item of the innermost list.map/list.filter/list.sort or forEach; numbered aliases such as current0/current2 do not exist. Before entering the inner block, copy the outer value to a local (local.k = current.key), then read local.k inside it.";
+			return "Numbered current aliases such as current0/current2 do not exist: current is the item of the innermost iteration. In a nested iteration, copy the outer item field to a local (local.k) before entering the inner block, then read local.k there.";
 		}
 		if (name === "index") {
 			return "No implicit index variable is available in list.map/list.filter expressions yet. Use list.take for top-N slicing, or create an explicit flow when you need counters.";
 		}
 		if (name === "item") {
-			return "Use current for the item exposed by forEach/list.map/list.filter, for example current.title.";
+			return "Quote literal text. Read an item through the scope available at this expression; an iteration exposes its item as current.";
 		}
 		if (name.match(/^[A-Za-z_$][\w$]*$/)) {
-			return "Use explicit Flow scopes: input.*, config.*, local.*, current.* or result.*. Inside list.sort/list.map/list.filter, use current." + name + " for an item field.";
+			return "Quote literal text (\"" + name + "\"). Read a value through its existing input.*, local.* or config.* scope.";
 		}
 		return "";
 	}

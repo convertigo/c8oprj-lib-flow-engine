@@ -543,8 +543,27 @@
 				Object.defineProperty(this, "relayedValues", { value: value === true, writable: true, enumerable: false, configurable: true });
 			}
 		});
+		function contextualExpressionHint(error, scopes, itemExpression) {
+			if (!error || error.code !== "INVALID_EXPRESSION") return;
+			var match = /^Unknown expression identifier: ([A-Za-z_$][\w$]*)$/.exec(String(error.message || ""));
+			if (!match) return;
+			var name = match[1], available = [];
+			["input", "local", "config"].forEach(function (scope) {
+				try {
+					var values = scopes[scope];
+					if (values && Object.prototype.hasOwnProperty.call(values, name)) available.push(scope + "." + name);
+				} catch (_unavailableScope) {}
+			});
+			if (itemExpression || scopes.current !== null && scopes.current !== undefined) {
+				available.push("current." + name + " (item field)");
+			}
+			error.hint = (available.length ? "Read " + available.join(" or ") + ". " : "") +
+				"Quote literal text (\"" + name + "\"). Read other values through their existing input.*, local.* or config.* scope.";
+		}
 		runContextPrototype.value = function (value) {
-			return this.relayedValues ? relayedValue(value, false) : evaluateExpression(this, value);
+			if (this.relayedValues) return relayedValue(value, false);
+			try { return evaluateExpression(this, value); }
+			catch (error) { contextualExpressionHint(error, this.scopes, false); throw error; }
 		};
 		runContextPrototype.expr = runContextPrototype.value;
 		// A property of a relayed call read as its kind reads it (resolution of a composite block)
@@ -554,12 +573,14 @@
 			}
 			return relayedValue(value, kind !== "expression");
 		};
-		runContextPrototype.compileExpr = function (value) {
+		runContextPrototype.compileExpr = function (value, itemExpression) {
 			var ctx = this;
 			if (this.relayedValues) {
 				return function () { return relayedValue(value, false); };
 			}
-			var compiled = compileExpression(value);
+			var compiled;
+			try { compiled = compileExpression(value); }
+			catch (error) { contextualExpressionHint(error, this.scopes, itemExpression === true); throw error; }
 			return function () { return compiled(ctx); };
 		};
 		runContextPrototype.path = function (path) {
