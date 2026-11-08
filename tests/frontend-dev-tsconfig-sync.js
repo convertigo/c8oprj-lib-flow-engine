@@ -1,5 +1,6 @@
 var File = java.io.File;
 var IO = Packages.org.apache.commons.io.FileUtils;
+var FileUtils = IO;
 var source = String(IO.readFileToString(new File(arguments[0], "Engine.js"), "UTF-8"));
 var start = source.indexOf("\n\tfunction frontendPrepareDevTsconfig(") + 2;
 var end = source.indexOf("\n\tfunction ", start + 1);
@@ -23,7 +24,7 @@ try {
 	var missing = frontendPrepareDevTsconfig(root);
 	assert(!missing.ok && /\$app\/tsconfig\.json/.test(missing.message), "missing alias must fail clearly");
 	assert(runs.length === 1 && runs[0].args[2] === "sync" && runs[0].cwd === String(root.getAbsolutePath()),
-		"sync runs in the generated application");
+		"sync runs in the generated application: " + JSON.stringify(runs) + " / " + JSON.stringify(missing));
 	creates = true;
 	var ready = frontendPrepareDevTsconfig(root);
 	assert(ready.ok && target.isFile(), "sync must create the alias before readiness");

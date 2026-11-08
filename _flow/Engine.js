@@ -9999,6 +9999,28 @@
 		return { command: args.join(" "), output: run.output, exitCode: run.exitCode };
 	}
 
+	function frontendPrepareDevTsconfig(generatedRoot) {
+		var target = new File(generatedRoot, "node_modules/$app/tsconfig.json");
+		var kit = new File(generatedRoot, "node_modules/@sveltejs/kit");
+		var bin;
+		try {
+			var manifest = JSON.parse(String(FileUtils.readFileToString(new File(kit, "package.json"), "UTF-8")));
+			bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin && manifest.bin["svelte-kit"];
+		} catch (error) {}
+		var cli = bin ? new File(kit, String(bin)) : null;
+		if (!cli || !cli.isFile()) {
+			return {ok: false, message: "Cannot prepare node_modules/$app/tsconfig.json: the installed svelte-kit command is missing."};
+		}
+		var run = frontendRunProcess([frontendExecutable("node"), String(cli.getAbsolutePath()), "sync"], generatedRoot, {});
+		if (run.exitCode !== 0) {
+			return {ok: false, message: "svelte-kit sync failed before starting Vite: " + String(run.output || "exit " + run.exitCode)};
+		}
+		if (!target.isFile()) {
+			return {ok: false, message: "svelte-kit sync completed, but node_modules/$app/tsconfig.json is missing."};
+		}
+		return {ok: true};
+	}
+
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
 		if (stepAction !== "installBuilder") {
 			return frontendRunStepLocked(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues);
@@ -11932,6 +11954,14 @@
 				}
 			});
 		}
+		var prepared = frontendPrepareDevTsconfig(generatedRoot);
+		if (!prepared.ok) {
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_DEV_TSCONFIG_MISSING",
+				message: prepared.message,
+				details: { generatedRoot: String(generatedRoot.getAbsolutePath()) }
+			});
+		}
 		var npm = frontendExecutable("npm");
 		frontendDeleteDevViewers(request, info);
 		var port = freePort();
@@ -12623,7 +12653,14 @@
 				try {
 					connection.setConnectTimeout(timeout); connection.setReadTimeout(timeout);
 					connection.setUseCaches(false); connection.setInstanceFollowRedirects(false);
-					return Number(connection.getResponseCode());
+					var status = Number(connection.getResponseCode());
+					if (status < 200 || status >= 400) return {status: status, html: ""};
+					var reader = new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(connection.getInputStream(), "UTF-8"));
+					var html = "", line;
+					try {
+						while (html.length < 65536 && (line = reader.readLine()) !== null) html += String(line) + "\n";
+					} finally { reader.close(); }
+					return {status: status, html: html};
 				} finally { connection.disconnect(); }
 			}
 		});
