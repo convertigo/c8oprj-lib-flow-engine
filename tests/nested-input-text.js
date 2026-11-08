@@ -76,6 +76,9 @@ sameBoth(out, data, "input: input passes the data as it is");
 out = run(both("{ data: input, list: [input.a, input.b, input.c, input.d], one: input.c, text: `p-${input.c}` }"), data);
 sameBoth(out, { data: data, list: ["local.x", "config.y", "${local.z}", "{{ local.z }}"], one: "${local.z}", text: "p-${local.z}" },
 	"data read by an expression of the input object is passed as it is");
+[{ value: 3, unit: "kg" }, { value: "x" }].forEach(function (payload) {
+	sameBoth(run(both("input"), payload), payload, "input: input keeps value-shaped data");
+});
 
 // 5. Data relayed by a block with ctx.callBlock, as an object, inside lists and objects, or as JSON text (entity.hook):
 // the JSON text is read as JSON even when the data holds ${ or {{.
@@ -84,7 +87,9 @@ var set = api("blockCodeSet", { name: "proof.relayInput", code: 'const _meta = {
 	'(function(){return {run:function(ctx,node){var p=ctx.props(node),v=ctx.expr(p.value),input={text:v,list:[v],deep:{v:v}},' +
 	'props=p.target==="use"?{contract:"echo@1",implementation:"Echo"}:{flow:"Echo"},json=Object.assign({},props);' +
 	'props.input=input;json.input=JSON.stringify(input);' +
-	'return {object:ctx.callBlock(p.target,props,{trace:false}).got,json:ctx.callBlock(p.target,json,{trace:false}).got};}};}())' });
+	'var direct=Object.assign({},props);direct.input=v;' +
+	'return {object:ctx.callBlock(p.target,props,{trace:false}).got,json:ctx.callBlock(p.target,json,{trace:false}).got,' +
+	'direct:ctx.callBlock(p.target,direct,{trace:false}).got};}};}())' });
 assert(set.ok, "blockCodeSet proof.relayInput: " + JSON.stringify(set));
 ["local.x", "config.y", "${local.z}", "{{ local.z }}", "x ${config.y} y", "input.a", "3", ""].forEach(function (text) {
 	["flow.call", "use"].forEach(function (target) {
@@ -92,6 +97,12 @@ assert(set.ok, "blockCodeSet proof.relayInput: " + JSON.stringify(set));
 		var expected = { text: text, list: [text], deep: { v: text } };
 		same(relayed.r.object, expected, target + " relayed as an object " + JSON.stringify(text));
 		same(relayed.r.json, expected, target + " relayed as JSON text " + JSON.stringify(text));
+	});
+});
+[{ value: 3, unit: "kg" }, { value: "x" }].forEach(function (payload) {
+	["flow.call", "use"].forEach(function (target) {
+		var relayed = run(caller("  result.r = proof.relayInput({ target: \"" + target + "\", value: input })"), payload);
+		same(relayed.r.direct, payload, target + " callBlock keeps value-shaped data");
 	});
 });
 
