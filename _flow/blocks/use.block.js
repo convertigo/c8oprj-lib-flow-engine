@@ -46,17 +46,10 @@ const _meta = {
 		return value && Object.prototype.toString.call(value) === "[object Object]";
 	}
 
-	function hasInputDescriptor(value) {
-		return isObject(value) && value.value !== undefined;
-	}
-
 	// input as a whole is an expression (input: local.in), or the JSON text a block relays; a tree may still give it as
 	// one ${...}. Inside an object or a list, an expression is ${...} and any other string is the text itself
 	// (name: "input.name"), never read as an expression.
 	function inputValue(ctx, value, nested) {
-		if (hasInputDescriptor(value)) {
-			return ctx.input(value);
-		}
 		if (typeof value === "string") {
 			if (!nested) return /^\s*(?:\$\{|\{\{)/.test(value) ? ctx.template(value) : ctx.expr(value);
 			return /\$\{|\{\{/.test(value) ? ctx.template(value) : value;
