@@ -3139,6 +3139,44 @@
 				line.substring(0, 120), null, hint);
 		}
 
+		function rejectFunctionArguments(line, lineNumber) {
+			if (!/\bfunction\b|=>/.test(line)) return;
+			var prefix = "function __argument_check() {\n", found = null;
+			try {
+				var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+				options.setLanguageVersion(200);
+				var ast = new Packages.org.mozilla.javascript.Parser(options).parse(prefix + line + "\n}", "flow-function-arguments", 1);
+				ast.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({visit:function (node) {
+					if (found || String(node.getClass().getSimpleName()) !== "FunctionCall") return !found;
+					var args = node.getArguments();
+					for (var index = 0; args && index < args.size(); index++) {
+						if (String(args.get(index).getClass().getSimpleName()) === "FunctionNode") {
+							found = {call:node, argument:args.get(index)};
+							break;
+						}
+					}
+					return !found;
+				}}));
+			} catch (_notJavaScript) { return; }
+			if (!found) return;
+			var target = String(found.call.getTarget().toSource()).replace(/\s/g, "");
+			// Only list callbacks are reported here; other calls keep their own diagnostic (text.replace with regex, for example)
+			var method = /\.(sort|map|filter|reduce|forEach|find|findIndex|some|every|flatMap)$/.exec(target);
+			if (!method) return;
+			var receiver = method ? target.substring(0, target.length - method[0].length) : "local.items";
+			if (!/^(?:local|input|result|current)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(receiver)) receiver = "local.items";
+			var hint = method && method[1] === "sort"
+				? "Use list.sort({ items: " + receiver + ", by: current.name, direction: \"asc\" }) to sort by one key per item. A two-argument comparator is not supported; compose a key in by when possible, or create a dedicated block for comparator logic."
+				: method && method[1] === "map"
+				? "Use list.map({ items: " + receiver + ", select: current.name }) to select one value per item."
+				: method && method[1] === "filter"
+				? "Use list.filter({ items: " + receiver + ", where: current.active }) to keep matching items."
+				: "Function arguments are not supported. Use a Flow block with named expression properties or write the operations as separate statements.";
+			var offset = Math.max(0, Number(found.argument.getAbsolutePosition()) - prefix.length);
+			var argumentLine = lineNumber + (line.substring(0, offset).match(/\n/g) || []).length;
+			env.raise("FLOWSCRIPT_FUNCTION_ARGUMENT_UNSUPPORTED", "Function argument to " + target + " is not supported at line " + argumentLine + ".", null, hint);
+		}
+
 		function parseFlowScriptStatementsInto(blocks, imports, locals, root, statements) {
 			var stack = [{ root: root, slot: "nodes" }];
 			for (var i = 0; i < statements.length; i++) {
@@ -3173,6 +3211,7 @@
 				if (line === "") {
 					continue;
 				}
+				rejectFunctionArguments(line, lineNumber);
 				if (line.match(/^import\s+/)) {
 					parseFlowScriptImport(line, lineNumber, imports);
 					continue;
