@@ -42,6 +42,17 @@ try {
  assert(run('result.v = typeof (input.d) == "string" && '+B,{d:'x'}).v===true,'typeof with parentheses');
  assert(run('result.v = input.flag && -input.n > 0 && '+B,{flag:true,n:5}).v===false,'unary minus');
  assert(run('result.v = input.flag && !!input.n && '+B,{flag:true,n:0}).v===false,'double negation');
+ var F='date.compare({left:"2026-01-02",right:"2026-01-01"}) < 0', C='date.compare({left:"2026-01-01",right:"2026-01-02"})';
+ assert(run('result.v = (input.a && !input.b) || '+F,{a:true,b:true}).v===false,'! inside a parenthesized left operand');
+ assert(run('result.v = input.a && (!input.b && '+B+')',{a:true,b:true}).v===false,'! inside a parenthesized right operand');
+ assert(run('result.v = input.c ? !input.b && '+B+' : true',{c:true,b:true}).v===false,'! in a ternary branch');
+ assert(run('result.v = !(input.b) && '+B,{b:true}).v===false,'! before parentheses');
+ assert(run('result.v = input.a && !input.b == true && '+B,{a:true,b:true}).v===false,'! inside a comparison');
+ assert(run('result.v = typeof input.d == "string" ? '+B+' : false',{d:'x'}).v===true,'typeof in a ternary test');
+ assert(run('result.v = -input.n + '+C,{n:5}).v===-6,'unary minus in arithmetic');
+ assert(run('result.v = (-input.n) * '+C,{n:5}).v===5,'parenthesized unary minus in arithmetic');
+ assert(run('result.v = input.a || !input.b || '+F,{a:false,b:true}).v===false,'! in an || chain');
+ assert(run('result.v = !input.b ?? '+B,{b:true}).v===false,'! before ??');
  var tilde=api('run',{flowSource:code('result.v = input.flag && ~input.n && '+B),input:{flag:true,n:-1},includeTrace:false});
  assert(!tilde.ok && JSON.stringify(tilde.error).indexOf('~input.n')>=0,'an unsupported operator is refused, never dropped: '+JSON.stringify(tilde.error));
  var ordered=run('local.before = 3\nresult.n = local.before + set({path:"local.before",value:7})\nresult.after = local.before');
