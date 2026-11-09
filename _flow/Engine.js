@@ -10265,6 +10265,85 @@
 		};
 	}
 
+	// The lines of a step output that name its failure: errors, npm and Vite failures, prerendering, exit codes. A
+	// build prints its failure last (SvelteKit reports the prerendering after the compiled chunks), so the last
+	// lines are kept when there are too many.
+	function frontendStepErrorLines(text) {
+		var max = 20;
+		var pattern = /Error\b|\berror\b|\bERR!|prerender|\[vite\]|\bexit(?:ed)?\s+(?:with\s+)?(?:code|status)\b|\bELIFECYCLE\b|\bfailed\b/i;
+		var lines = [];
+		String(text || "").split(/\r?\n/).forEach(function (line) {
+			line = line.trim();
+			if (!line || !pattern.test(line) || lines[lines.length - 1] === line) {
+				return;
+			}
+			lines.push(line.length > 300 ? line.substring(0, 299) + "…" : line);
+		});
+		return {
+			lines: lines.length > max ? lines.slice(lines.length - max) : lines,
+			omitted: Math.max(0, lines.length - max)
+		};
+	}
+
+	// The output of a failed step in a response: its start and its end, where a build reports its failure, with the
+	// number of characters cut and the private file that keeps the whole output.
+	function frontendStepOutputExcerpt(text, logPath) {
+		var head = 1000;
+		var tail = 3000;
+		text = String(text || "");
+		if (text.length <= head + tail) {
+			return { stdout: text, truncatedChars: 0 };
+		}
+		var cut = text.length - head - tail;
+		return {
+			stdout: text.substring(0, head) + "\n[… " + cut + " characters cut"
+				+ (logPath ? ", full output in " + logPath : "") + " …]\n" + text.substring(text.length - tail),
+			truncatedChars: cut
+		};
+	}
+
+	// Writes the whole output of a failed step to a private file of the project and returns its project relative
+	// path, or "" when it cannot be written: the Studio log of the frontbuilder is not kept in any server log.
+	function frontendWriteStepOutputLog(projectRoot, step) {
+		if (!projectRoot) {
+			return "";
+		}
+		var path = "_private/logs/frontbuilder-" + String(step.action || "action").replace(/[^A-Za-z0-9_-]/g, "_") + ".log";
+		try {
+			FileUtils.writeStringToFile(new File(projectRoot, path), [
+				"# " + new Date().toISOString() + " " + String(step.action || "") + " exit " + step.exitCode,
+				step.command ? "# " + String(step.command) : "",
+				step.cwd ? "# in " + String(step.cwd) : "",
+				String(step.stdout || "")
+			].filter(function (line) { return line !== ""; }).join("\n") + "\n", "UTF-8");
+			return path;
+		} catch (e) {
+			return "";
+		}
+	}
+
+	// The compact form of a failed step output: excerpt, error lines and private log of the whole output.
+	function frontendFailedStepOutput(out, step, projectRoot) {
+		var text = String(step.stdout || "");
+		var errors = frontendStepErrorLines(text);
+		var logPath = frontendWriteStepOutputLog(projectRoot, step);
+		var excerpt = frontendStepOutputExcerpt(text, logPath);
+		out.stdout = excerpt.stdout;
+		if (excerpt.truncatedChars > 0) {
+			out.truncatedChars = excerpt.truncatedChars;
+		}
+		if (errors.lines.length) {
+			out.errorLines = errors.lines;
+			if (errors.omitted > 0) {
+				out.errorLinesOmitted = errors.omitted;
+			}
+		}
+		if (logPath) {
+			out.outputLog = logPath;
+		}
+		return out;
+	}
+
 	function frontendRunAction(request, blocks, action) {
 		// the production build lock first: a background rebuild holds it before running its build
 		var production = action === "build" ? frontendProductionBuildLock : null;
@@ -10422,7 +10501,7 @@
 				out.shared = true;
 			}
 			if (step.ok === false && step.stdout) {
-				out.stdout = String(step.stdout).substring(0, 4000);
+				frontendFailedStepOutput(out, step, projectRoot);
 			}
 			return out;
 		});
