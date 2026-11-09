@@ -35,7 +35,7 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '25'
           distribution: 'temurin'
 
       - name: Check deterministic code-check budgets
@@ -53,7 +53,7 @@ jobs:
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '25'
           distribution: 'temurin'
 
       - name: Cache Gradle Dependencies
@@ -110,12 +110,10 @@ jobs:
               -Pconvertigo.deploy.user=$C8O_USER \
               -Pconvertigo.deploy.password=$C8O_PASSWORD
           else
-            echo "Deploying to development server $C8O_SERVER";
-            sh gradlew --stacktrace --info car deploy -x generateMobileBuilder \
-              "${PROJECT_VERSION_ARG[@]}" \
-              -Pconvertigo.deploy.server=$C8O_SERVER \
-              -Pconvertigo.deploy.user=$C8O_USER \
-              -Pconvertigo.deploy.password=$C8O_PASSWORD
+            # a branch push builds and checks the CAR only: deployments come from tags
+            echo "Building CAR for ${{ github.ref_name }} without deploying";
+            sh gradlew --stacktrace --info car -x generateMobileBuilder \
+              "${PROJECT_VERSION_ARG[@]}"
           fi
 
       - name: Check the committed libs/build
