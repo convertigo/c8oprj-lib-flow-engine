@@ -106,7 +106,7 @@ const _meta = {
 		}
 		return projectsBlocks(ctx, node, relayed, select)
 			? function () { return projectValue(ctx, select); }
-			: ctx.compileExpr ? ctx.compileExpr(select) : function () { return ctx.expr(select); };
+			: ctx.compileExpr ? ctx.compileExpr(select, true) : function () { return ctx.expr(select); };
 	}
 
 	return {

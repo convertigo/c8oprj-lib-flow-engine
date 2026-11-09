@@ -923,6 +923,15 @@
 		return JSON.stringify(payload);
 	}
 
+	// The error a run answers its requester always holds details, empty text by default, as the error step of a sequence:
+	// the SDK reads an error by its code, message and details.
+	function requesterError(result) {
+		if (result && result.error && typeof result.error === "object" && (result.error.details === undefined || result.error.details === null)) {
+			result.error.details = "";
+		}
+		return result;
+	}
+
 	function failure(operation, error) {
 		var out = {
 			ok: false,
@@ -940,7 +949,20 @@
 		if (error.details !== undefined && error.details !== null) {
 			out.error.details = normalizeTree(error.details);
 		}
+		if (error.fields) {
+			Object.keys(error.fields).forEach(function (key) {
+				if (!(key in out.error) && !reservedErrorField(key)) out.error[key] = normalizeTree(error.fields[key]);
+			});
+		}
 		return out;
+	}
+
+	// throw { code, message, status, line: 3 }: names beside the block contract go to the top of
+	// the error; the envelope's own names cannot be replaced.
+	function reservedErrorField(key) {
+		key = String(key);
+		return ["code", "message", "details", "path", "stack", "operation", "hint", "status"].indexOf(key) >= 0 ||
+			key.indexOf("__") === 0 || key.indexOf("convertigo.") === 0 || key.charAt(0) === "$";
 	}
 
 	function raise(code, message, node, hint) {
@@ -951,7 +973,8 @@
 		throw error;
 	}
 
-	function throwFlowError(options, node) {
+	// flags.applicative: an application error (http-flow-failure.js), answered 200 with its envelope when it has no status.
+	function throwFlowError(options, node, flags) {
 		options = options || {};
 		var error = new Error(String(options.message || "Flow error"));
 		error.code = String(options.code || "FLOW_THROW");
@@ -959,6 +982,12 @@
 		error.hint = options.hint ? String(options.hint) : "";
 		error.status = options.status;
 		error.details = options.details;
+		Object.keys(options).forEach(function (key) {
+			if (reservedErrorField(key) || options[key] === undefined) return;
+			error.fields = error.fields || {};
+			error.fields[key] = options[key];
+		});
+		if (flags && flags.applicative === true) loadEngineModule("http-flow-failure.js").markApplication(error);
 		throw error;
 	}
 
@@ -1077,9 +1106,9 @@
 		try { runtimeHandleUtils().assertSerializable(value, where, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
 	}
 
-	function normalizeTree(value) {
+	function normalizeTree(value, preserveHandles) {
 		var allocation = executionState().allocationProfiler ? executionState().allocationProfiler.open("boundary", "normalizeTree", "") : null;
-		try { return runtimeHandleUtils().normalize(value, runtimeHandleEnv()); } finally { if (allocation) allocation.close(); }
+		try { return runtimeHandleUtils().normalize(value, runtimeHandleEnv(), preserveHandles === true); } finally { if (allocation) allocation.close(); }
 	}
 
 	function mergedContext(base, override) {
@@ -2400,11 +2429,35 @@
 	}
 
 	function resourcePatchRequest(request) {
-		return resourceService().patch(request, resourceServiceEnv());
+		return projectConfigWritten(resourceService().patch(request, resourceServiceEnv()));
 	}
 
 	function resourceDeleteRequest(request) {
-		return resourceService().remove(request, resourceServiceEnv());
+		return projectConfigWritten(resourceService().remove(request, resourceServiceEnv()));
+	}
+
+	// engine.yaml written or deleted by the engine (flow-resource-patch): Convertigo did not write it, so it is told, as
+	// for the blocks (projectBlockWritten). The runtimes of the project and of the projects using it then read the new
+	// configuration at their next call, instead of the one parsed under the stamp the server kept for the file (up to a
+	// minute), until a cache clear.
+	function projectConfigWritten(result) {
+		if (result && result.ok !== false && result.dryRun !== true && String(result.path) === sourcePaths().path("engine.yaml")
+			&& serverConfigurationReady()) {
+			notifySourceMutation({ projectDir: String(projectDir() || ""), path: String(new File(projectDir(), result.path).getAbsolutePath()) });
+		}
+		return result;
+	}
+
+	// Outside a started Convertigo (a library test in a plain Rhino shell), the server bridge cannot be loaded: its
+	// classes fail in their static initialization with an Error that a script cannot catch. Nothing to tell then.
+	function serverConfigurationReady() {
+		try {
+			var EnginePropertiesManager = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager;
+			EnginePropertiesManager.getProperty(EnginePropertiesManager.PropertyName.APPLICATION_SERVER_CONVERTIGO_URL);
+			return true;
+		} catch (notStarted) {
+			return false;
+		}
 	}
 
 	function notifySourceMutation(request) {
@@ -2802,7 +2855,8 @@
 			try { loadFlowLibrary(String(name)); return { name: String(name), ok: true, durationMs: Number(JavaSystem.nanoTime()-begin)/1000000 }; }
 			catch (e) { return { name: String(name), ok: false, error: failure("preload",e).error }; }
 		});
-		var blockNames = (loadProjectEngineDefinition().preload || {}).blocks || [];
+		var definition = loadProjectEngineDefinition();
+		var blockNames = (definition.preload || {}).blocks || [];
 		if (!Array.isArray(blockNames) || blockNames.length > 128) raise("FLOW_PRELOAD_BLOCKS_INVALID", "preload.blocks is a bounded array of block names.");
 		var blockPlans = blockNames.map(function (name) {
 			name = String(name);
@@ -2811,6 +2865,18 @@
 				flowName: "__block_preload__", flowSource: "function __block_preload__({input,result}){\n" + name + "({})\n}" });
 			prepared.block = name; return prepared;
 		});
+		// The implementations of the data providers of the project: data.read and the other data blocks call them by
+		// name at run time, out of reach of the plans, and their first call compiled them (seconds for sql.table).
+		var providers = ((definition.config || {}).data || {}).providers || {};
+		Object.keys(providers).map(function (key) { return providers[key] && providers[key].implementation; })
+			.filter(function (name, index, names) { return typeof name === "string" && Object.prototype.hasOwnProperty.call(blocks, name) && names.indexOf(name) === index; })
+			.forEach(function (name) {
+				var begin = JavaSystem.nanoTime(), entry = { block: name, provider: true };
+				try { materializeFlowScriptBlock(blocks, name); entry.ok = true; }
+				catch (e) { entry.ok = false; entry.error = failure("preload", e).error; }
+				entry.durationMs = Number(JavaSystem.nanoTime() - begin) / 1000000;
+				blockPlans.push(entry);
+			});
 		var plans = flows ? flows.map(function (flow) { return preloadRunPlan(request, flow); }) : null;
 		var result = {
 			ok: true,
@@ -4415,7 +4481,9 @@
 			blockLocalName: blockLocalName,
 			balancedObjectEnd: balancedObjectEnd,
 			canonicalFlowDefinition: canonicalFlowDefinition,
-			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax
+			normalizeFlowScriptFunctionSyntax: normalizeFlowScriptFunctionSyntax,
+			regularExpressionAdvice: function (text, start) { return expressionUtils().regularExpressionAdvice(text, start); },
+			regularExpressionHint: function (text, start) { return expressionUtils().regularExpressionHint(text, start); }
 		};
 	}
 
@@ -6026,6 +6094,7 @@
 			flowCode: flowCodeApi(),
 			requestables: requestableApi(),
 			throwFlowError: throwFlowError,
+			httpResponseRun: function (request, invocation) { return loadEngineModule("http-flow-failure.js").requestableRun(request, invocation); },
 			createRowsPlan: createRowsPlan,
 			createRowsCursor: createRowsCursor,
 			rowsCursorNext: rowsCursorNext,
@@ -9221,6 +9290,377 @@
 		}
 	}
 
+	// Generated applications with the same dependencies get the same packages: the packages npm installs for the first
+	// one are kept in a store, and the next ones receive a copy instead of installing them again (30 to 50 s without
+	// npm cache): a clone of the whole folder on macOS (APFS, under a second), else a copy by cp, which clones the files
+	// where the storage allows it.
+	// - The key of an entry covers what npm installs from: package.json, the lockfile, .npmrc, the content of the local
+	//   tarballs, Node.js, npm and the platform. Dependencies npm resolves elsewhere (git, folders, links, aliases, URLs)
+	//   and installation scripts of the application are never shared: npm installs them.
+	// - Only an application without node_modules receives a copy, and only a first installation is kept: npm updates
+	//   an existing node_modules itself.
+	// - An entry appears complete (renamed into place at once) and is never written again; an application receives its
+	//   copy under a temporary name, renamed node_modules at once: concurrent builds never see a partial folder.
+	// - The store keeps the entries used last; the others leave once unused for an hour.
+	// - Only on local storage: a network or virtual file system (a Docker Desktop bind mount) copies more slowly than
+	//   npm installs. Servers keep applications on local storage with a local working directory.
+	var FRONTEND_SHARED_APP_MODULES = "svelte-app-modules";
+	var FRONTEND_SHARED_APP_MODULES_KEPT = 3;
+	var FRONTEND_SHARED_APP_MODULES_IDLE_MS = 3600000;
+	// a copy file by file on a network or virtual file system (a Docker Desktop bind mount, NFS, SMB) takes longer than
+	// npm, which writes in parallel: 222 s against 95 s with npm cache on a Docker Desktop bind mount
+	var FRONTEND_SHARED_APP_MODULES_REMOTE = /^(virtiofs|9p|nfs\d*|cifs|smb\w*|afpfs|webdav|davfs|fuse(\..*)?|ceph|glusterfs|lustre|gpfs)$/i;
+	// written in node_modules by the tools of an application (SvelteKit, Vite), not by npm
+	var FRONTEND_SHARED_APP_MODULES_GENERATED = ["$app", ".vite", ".vite-temp", ".cache"];
+	var FRONTEND_APP_INSTALL_SCRIPTS = ["preinstall", "install", "postinstall", "prepublish", "preprepare", "prepare", "postprepare"];
+
+	// @return the store: in the local working directory of the engine, else in the private folder of the builder
+	//         project (out of its sources and archives); null when there is none
+	function frontendSharedAppModulesStore(resourceRoot) {
+		try {
+			var local = localWorkDirectory();
+			if (local && local.isEnabled()) {
+				return local.getDirectory(FRONTEND_SHARED_APP_MODULES);
+			}
+			var builderProject = resourceRoot ? projectRootAbove(resourceRoot.getCanonicalFile()) : null;
+			return builderProject ? new File(builderProject, "_private/" + FRONTEND_SHARED_APP_MODULES) : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	// the versions of the tools, by path, size and date of their file (threads of the shared runtime)
+	var frontendToolVersions = new ConcurrentHashMap();
+
+	// @return the path of a tool of Node.js and its version, which a copy of the folder of the tool keeps (unlike
+	//         dates): node --version for node, the version of its package for npm; "" when unknown
+	function frontendToolIdentity(file, node) {
+		try {
+			var real = file.getCanonicalFile();
+			var path = String(real.getPath());
+			var cacheKey = path + "\n" + real.length() + "\n" + real.lastModified();
+			var known = frontendToolVersions.get(cacheKey);
+			if (known == null) {
+				var version = "";
+				if (node) {
+					var pb = new Packages.java.lang.ProcessBuilder(javaStringList([path, "--version"]));
+					pb.redirectErrorStream(true);
+					var process = pb.start();
+					if (process.waitFor(10, Packages.java.util.concurrent.TimeUnit.SECONDS)) {
+						var output = String(Packages.org.apache.commons.io.IOUtils.toString(process.getInputStream(), "UTF-8")).trim();
+						version = process.exitValue() === 0 ? output : "";
+					} else {
+						process.destroyForcibly();
+					}
+				} else {
+					// npm-cli.js in the npm package
+					for (var folder = real.getParentFile(), depth = 0; folder && depth < 3; folder = folder.getParentFile(), depth++) {
+						var manifest = new File(folder, "package.json");
+						if (manifest.isFile()) {
+							var value = JSON.parse(String(FileUtils.readFileToString(manifest, "UTF-8")));
+							version = value.name === "npm" ? String(value.version || "") : "";
+							break;
+						}
+					}
+				}
+				frontendToolVersions.put(cacheKey, version);
+				known = version;
+			}
+			known = String(known);
+			return known ? path + "\n" + known : "";
+		} catch (e) {
+			return "";
+		}
+	}
+
+	// @return the key of the packages npm installs in root, "" when they are not shared
+	function frontendSharedAppModulesKey(root, npm) {
+		try {
+			var manifestFile = new File(root, "package.json");
+			if (!manifestFile.isFile()) {
+				return "";
+			}
+			var manifest = JSON.parse(String(FileUtils.readFileToString(manifestFile, "UTF-8")));
+			var scripts = manifest.scripts || {};
+			if (manifest.workspaces || manifest.bundleDependencies || manifest.bundledDependencies
+					|| FRONTEND_APP_INSTALL_SCRIPTS.some(function (name) {
+						return Object.prototype.hasOwnProperty.call(scripts, name);
+					})) {
+				return "";
+			}
+			if (String(JavaSystem.getProperty("os.name") || "").toLowerCase().indexOf("windows") >= 0) {
+				// no copy that keeps the links of node_modules
+				return "";
+			}
+			var npmFile = new File(String(npm || ""));
+			var npmIdentity = frontendToolIdentity(npmFile, false);
+			// npm runs the node next to it (frontendExecutablePathPrefix)
+			var nodeIdentity = frontendToolIdentity(new File(npmFile.getParentFile(), "node"), true);
+			if (!npmIdentity || !nodeIdentity) {
+				return "";
+			}
+			var entries = [
+				"version\n1",
+				"platform\n" + JavaSystem.getProperty("os.name") + "\n" + JavaSystem.getProperty("os.arch"),
+				"npm\n" + npmIdentity,
+				"node\n" + nodeIdentity,
+				"package.json\n" + sha256FileHex(manifestFile)
+			];
+			var shareable = true;
+			var check = function (name, spec) {
+				spec = String(spec);
+				if (spec.indexOf("file:") === 0) {
+					var path = spec.substring(5);
+					var tarball = (new File(path).isAbsolute() ? new File(path) : new File(root, path)).toPath().normalize().toFile();
+					if (tarball.isFile()) {
+						entries.push("file\n" + name + "\n" + sha256FileHex(tarball));
+					} else {
+						// a folder, linked by npm
+						shareable = false;
+					}
+				} else if (/[:\/\\#]/.test(spec)) {
+					// git, link:, npm: alias, URL, GitHub shorthand
+					shareable = false;
+				}
+			};
+			["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].forEach(function (section) {
+				var dependencies = manifest[section] || {};
+				Object.keys(dependencies).sort().forEach(function (name) {
+					check(name, dependencies[name]);
+				});
+			});
+			(function overrides(value, name) {
+				if (value && typeof value === "object") {
+					Object.keys(value).sort().forEach(function (key) {
+						overrides(value[key], key);
+					});
+				} else if (typeof value === "string") {
+					check(name, value);
+				}
+			})(manifest.overrides || {}, "");
+			if (!shareable) {
+				return "";
+			}
+			["package-lock.json", "npm-shrinkwrap.json", ".npmrc"].forEach(function (name) {
+				var file = new File(root, name);
+				if (file.isFile()) {
+					entries.push(name + "\n" + sha256FileHex(file));
+				}
+			});
+			return sha256Hex(entries.join("\n"));
+		} catch (e) {
+			return "";
+		}
+	}
+
+	// @return whether a folder, or else its nearest existing parent, is on local storage
+	function frontendLocalStorage(file) {
+		try {
+			var path = file.getAbsoluteFile().toPath();
+			while (path != null && !java.nio.file.Files.exists(path)) {
+				path = path.getParent();
+			}
+			return path != null
+				&& !FRONTEND_SHARED_APP_MODULES_REMOTE.test(String(java.nio.file.Files.getFileStore(path.toRealPath()).type()));
+		} catch (e) {
+			return false;
+		}
+	}
+
+	// @return {store, key} for an application without node_modules whose packages are shared, else null
+	function frontendSharedAppModules(resourceRoot, generatedRoot, npm) {
+		if (!generatedRoot || java.nio.file.Files.exists(new File(generatedRoot, "node_modules").toPath(),
+				java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+			return null;
+		}
+		var store = frontendSharedAppModulesStore(resourceRoot);
+		if (!store || !frontendLocalStorage(store) || !frontendLocalStorage(generatedRoot)) {
+			return null;
+		}
+		var key = frontendSharedAppModulesKey(generatedRoot, npm);
+		return key ? { store: store, key: key } : null;
+	}
+
+	var frontendCloneFileHandle = null;
+
+	// clonefile(2) of macOS through the foreign function interface (Java 22 and later), null without them
+	function frontendCloneFileCall() {
+		if (frontendCloneFileHandle === null) {
+			frontendCloneFileHandle = false;
+			try {
+				var ValueLayout = engineClass("java.lang.foreign.ValueLayout");
+				var linker = engineClass("java.lang.foreign.Linker").nativeLinker();
+				var symbol = linker.defaultLookup().find("clonefile");
+				if (symbol.isPresent()) {
+					frontendCloneFileHandle = linker.downcallHandle(symbol.get(), engineClass("java.lang.foreign.FunctionDescriptor")
+						.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+				}
+			} catch (e) {
+				// copied by cp
+			}
+		}
+		return frontendCloneFileHandle || null;
+	}
+
+	// Copies the folder source to target, which does not exist yet: one clone of the whole folder on macOS, else cp,
+	// cloning the files where the storage allows it. Links stay links.
+	// @return whether target is a complete copy; a failed copy may leave a partial target, for the caller to remove
+	function frontendCopyFolder(source, target) {
+		var os = String(JavaSystem.getProperty("os.name") || "").toLowerCase();
+		if (os.indexOf("windows") >= 0) {
+			return false;
+		}
+		var mac = os.indexOf("mac") >= 0;
+		var cloneFile = mac ? frontendCloneFileCall() : null;
+		if (cloneFile) {
+			var arena = engineClass("java.lang.foreign.Arena").ofConfined();
+			try {
+				var args = engineClass("java.lang.reflect.Array").newInstance(JavaObject, 3);
+				args[0] = arena.allocateFrom(String(source.getAbsolutePath()));
+				args[1] = arena.allocateFrom(String(target.getAbsolutePath()));
+				args[2] = engineClass("java.lang.Integer").valueOf(0);
+				if (Number(cloneFile.invokeWithArguments(args)) === 0) {
+					return true;
+				}
+			} catch (e) {
+				// copied by cp
+			} finally {
+				arena.close();
+			}
+			FileUtils.deleteQuietly(target);
+		}
+		var command = mac
+			? ["/bin/cp", "-c", "-R", "-p", String(source.getAbsolutePath()), String(target.getAbsolutePath())]
+			: ["cp", "-a", "--reflink=auto", String(source.getAbsolutePath()), String(target.getAbsolutePath())];
+		return frontendRunProcess(command, source.getParentFile(), {}).exitCode === 0;
+	}
+
+	// Gives root, an application without node_modules, the packages of the entry key and the lockfile npm wrote for
+	// them. @return whether node_modules is in place
+	function frontendRestoreSharedAppModules(root, store, key) {
+		var Files = java.nio.file.Files;
+		var entry = new File(store, key);
+		var description = new File(entry, "entry.json");
+		if (!description.isFile() || !new File(entry, "node_modules").isDirectory()) {
+			return false;
+		}
+		// in use: kept by the cleanup of the store
+		description.setLastModified(JavaSystem.currentTimeMillis());
+		var nodeModules = new File(root, "node_modules");
+		var copy = new File(root, ".node_modules.shared-" + Packages.java.util.UUID.randomUUID());
+		try {
+			// copies left by an interrupted restore of this application (its installations run one at a time)
+			(root.listFiles() || []).forEach(function (file) {
+				if (String(file.getName()).indexOf(".node_modules.shared-") === 0) {
+					FileUtils.deleteQuietly(file);
+				}
+			});
+			if (!frontendCopyFolder(new File(entry, "node_modules"), copy)) {
+				return false;
+			}
+			Files.move(copy.toPath(), nodeModules.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+			var lock = new File(entry, "package-lock.json");
+			if (lock.isFile()) {
+				var lockCopy = new File(root, ".package-lock.json.shared-" + Packages.java.util.UUID.randomUUID());
+				FileUtils.copyFile(lock, lockCopy);
+				Files.move(lockCopy.toPath(), new File(root, "package-lock.json").toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+			}
+			return true;
+		} catch (e) {
+			frontendStudioLog("[Svelte frontbuilder] Unable to copy the shared app dependencies, npm installs them: " + String(e), true);
+			return false;
+		} finally {
+			if (Files.exists(copy.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+				FileUtils.deleteQuietly(copy);
+			}
+		}
+	}
+
+	// Keeps the packages npm has just installed in root, which had none, as the entry key, unless the store has it
+	function frontendKeepSharedAppModules(root, store, key) {
+		var Files = java.nio.file.Files;
+		var entry = new File(store, key);
+		if (new File(entry, "entry.json").isFile()) {
+			return;
+		}
+		var local = localWorkDirectory();
+		var temporary = new File(store, ".tmp-" + Packages.java.util.UUID.randomUUID());
+		try {
+			temporary.mkdirs();
+			if (local) {
+				// removed at the next engine start when interrupted
+				local.beginWork(temporary);
+			}
+			var modules = new File(temporary, "node_modules");
+			if (!frontendCopyFolder(new File(root, "node_modules"), modules)) {
+				return;
+			}
+			FRONTEND_SHARED_APP_MODULES_GENERATED.forEach(function (name) {
+				FileUtils.deleteQuietly(new File(modules, name));
+			});
+			var lock = new File(root, "package-lock.json");
+			if (lock.isFile()) {
+				FileUtils.copyFile(lock, new File(temporary, "package-lock.json"));
+			}
+			FileUtils.writeStringToFile(new File(temporary, "entry.json"), JSON.stringify({
+				version: 1,
+				key: key,
+				createdAt: new Date().toISOString()
+			}), "UTF-8");
+			// fails when another build kept it first: an entry is never replaced
+			Files.move(temporary.toPath(), entry.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+			frontendStudioLog("[Svelte frontbuilder] App dependencies kept for the next applications with the same dependencies.");
+		} catch (e) {
+			if (!new File(entry, "entry.json").isFile()) {
+				frontendStudioLog("[Svelte frontbuilder] Unable to keep the app dependencies: " + String(e), true);
+			}
+		} finally {
+			if (Files.exists(temporary.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+				FileUtils.deleteQuietly(temporary);
+			}
+			if (local) {
+				local.endWork(temporary);
+			}
+		}
+		frontendCleanSharedAppModules(store);
+	}
+
+	// The entries used last stay, the others leave once unused for an hour, as do the leftovers of interrupted work
+	function frontendCleanSharedAppModules(store) {
+		var now = JavaSystem.currentTimeMillis();
+		var entries = [];
+		var leftovers = [];
+		(store.listFiles() || []).forEach(function (file) {
+			var name = String(file.getName());
+			if (name.indexOf(".tmp-") === 0 || name.indexOf(".trash-") === 0) {
+				if (now - file.lastModified() > FRONTEND_SHARED_APP_MODULES_IDLE_MS) {
+					leftovers.push(file);
+				}
+			} else if (file.isDirectory()) {
+				entries.push({ file: file, used: new File(file, "entry.json").lastModified() });
+			}
+		});
+		entries.sort(function (a, b) {
+			return b.used - a.used;
+		});
+		entries.slice(FRONTEND_SHARED_APP_MODULES_KEPT).forEach(function (entry) {
+			if (now - entry.used > FRONTEND_SHARED_APP_MODULES_IDLE_MS) {
+				try {
+					// out of reach at once, then deleted
+					var trash = new File(store, ".trash-" + Packages.java.util.UUID.randomUUID());
+					java.nio.file.Files.move(entry.file.toPath(), trash.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+					leftovers.push(trash);
+				} catch (e) {
+					// left for a next cleanup
+				}
+			}
+		});
+		leftovers.forEach(function (file) {
+			FileUtils.deleteQuietly(file);
+		});
+	}
+
 	var relocatedBuilderModules = {};
 	var BUILDER_INSTALL_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
 
@@ -9470,6 +9910,12 @@
 			var exitCode = process.waitFor();
 			frontendStudioLog("[Svelte frontbuilder] exit " + exitCode + ": " + args[0]);
 			return { output: output, exitCode: exitCode };
+		} catch (error) {
+			// Destroying a cancelled process can close its output stream before the reader reaches EOF.
+			if (cancel && cancel.get("cancelled").get()) {
+				return { output: "Cancelled: the development mode of the project started.", exitCode: -1 };
+			}
+			throw error;
 		} finally {
 			if (cancel) {
 				cancel.get("processes").remove(process);
@@ -9553,6 +9999,28 @@
 		return { command: args.join(" "), output: run.output, exitCode: run.exitCode };
 	}
 
+	function frontendPrepareDevTsconfig(generatedRoot) {
+		var target = new File(generatedRoot, "node_modules/$app/tsconfig.json");
+		var kit = new File(generatedRoot, "node_modules/@sveltejs/kit");
+		var bin;
+		try {
+			var manifest = JSON.parse(String(FileUtils.readFileToString(new File(kit, "package.json"), "UTF-8")));
+			bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin && manifest.bin["svelte-kit"];
+		} catch (error) {}
+		var cli = bin ? new File(kit, String(bin)) : null;
+		if (!cli || !cli.isFile()) {
+			return {ok: false, message: "Cannot prepare node_modules/$app/tsconfig.json: the installed svelte-kit command is missing."};
+		}
+		var run = frontendRunProcess([frontendExecutable("node"), String(cli.getAbsolutePath()), "sync"], generatedRoot, {});
+		if (run.exitCode !== 0) {
+			return {ok: false, message: "svelte-kit sync failed before starting Vite: " + String(run.output || "exit " + run.exitCode)};
+		}
+		if (!target.isFile()) {
+			return {ok: false, message: "svelte-kit sync completed, but node_modules/$app/tsconfig.json is missing."};
+		}
+		return {ok: true};
+	}
+
 	function frontendRunStep(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues) {
 		if (stepAction !== "installBuilder") {
 			return frontendRunStepLocked(stepAction, npm, resourceRoot, projectRoot, projectName, modelPath, generatedRoot, generationMode, envValues);
@@ -9588,6 +10056,23 @@
 				stderr: "",
 				ok: true,
 				skipped: true,
+				durationMs: frontendDurationMs(startedAt)
+			};
+		}
+		var appModules = stepAction === "installApp" ? frontendSharedAppModules(resourceRoot, generatedRoot, npm) : null;
+		if (appModules && frontendRestoreSharedAppModules(generatedRoot, appModules.store, appModules.key)) {
+			writeFrontendDependencyInstallStamp(generatedRoot, frontendDependencyFingerprint(generatedRoot, npm), "app");
+			frontendStudioLog("[Svelte frontbuilder] App dependencies copied from an application with the same dependencies.");
+			return {
+				action: stepAction,
+				command: "",
+				cwd: String(generatedRoot.getAbsolutePath()),
+				exitCode: 0,
+				stdout: "",
+				stderr: "",
+				ok: true,
+				skipped: false,
+				shared: true,
 				durationMs: frontendDurationMs(startedAt)
 			};
 		}
@@ -9631,6 +10116,9 @@
 			);
 			if (stepAction === "installBuilder") {
 				runtimeState.frontendDependencyFingerprints = {};
+			}
+			if (appModules) {
+				frontendKeepSharedAppModules(generatedRoot, appModules.store, appModules.key);
 			}
 		}
 		return {
@@ -9928,6 +10416,9 @@
 				skipped: step.skipped === true,
 				durationMs: Number(step.durationMs || 0)
 			};
+			if (step.shared === true) {
+				out.shared = true;
+			}
 			if (step.ok === false && step.stdout) {
 				out.stdout = String(step.stdout).substring(0, 4000);
 			}
@@ -11463,6 +11954,14 @@
 				}
 			});
 		}
+		var prepared = frontendPrepareDevTsconfig(generatedRoot);
+		if (!prepared.ok) {
+			return failure("frontbuilder", {
+				code: "FRONTBUILDER_DEV_TSCONFIG_MISSING",
+				message: prepared.message,
+				details: { generatedRoot: String(generatedRoot.getAbsolutePath()) }
+			});
+		}
 		var npm = frontendExecutable("npm");
 		frontendDeleteDevViewers(request, info);
 		var port = freePort();
@@ -11721,6 +12220,26 @@
 			frontendStudioLog("[Svelte dev] Reusing installed app dependencies; automatic Vite startup is ready.");
 			return;
 		}
+		// the installations of the application run one at a time
+		var projectLock = frontendProjectActionLock(request);
+		var appModules = null;
+		var restored = false;
+		projectLock.lock();
+		try {
+			appModules = frontendSharedAppModules(resourceRoot, generatedRoot, npm);
+			restored = !!appModules && frontendRestoreSharedAppModules(generatedRoot, appModules.store, appModules.key);
+			if (restored) {
+				writeFrontendDependencyInstallStamp(generatedRoot, frontendDependencyFingerprint(generatedRoot, npm), "app");
+			}
+		} finally {
+			projectLock.unlock();
+		}
+		if (restored) {
+			entry.status = "prepared";
+			entry.setupKind = "app";
+			frontendStudioLog("[Svelte dev] App dependencies copied from an application with the same dependencies; automatic Vite startup is ready.");
+			return;
+		}
 		var args = frontendRunCommandFor(
 			"installApp",
 			npm,
@@ -11732,6 +12251,7 @@
 			"incremental"
 		);
 		frontendStartDependencyPreparation(entry, args, generatedRoot, envValues, generatedRoot, fingerprint, "app");
+		entry.sharedAppModules = appModules;
 		frontendStudioLog("[Svelte dev] App dependencies are being installed while authoring continues.");
 	}
 
@@ -11850,6 +12370,12 @@
 				writeFrontendDependencyInstallStamp(entry.setupRoot, entry.setupFingerprint, entry.setupKind || "builder");
 				if (entry.setupKind !== "app") {
 					runtimeState.frontendDependencyFingerprints = {};
+				}
+				var appModules = entry.setupKind === "app" ? entry.sharedAppModules : null;
+				if (appModules) {
+					// before Vite starts and writes in node_modules
+					entry.sharedAppModules = null;
+					frontendKeepSharedAppModules(entry.setupRoot, appModules.store, appModules.key);
 				}
 				entry.status = "prepared";
 				frontendStudioLog("[Svelte dev] " + (entry.setupKind === "app" ? "App" : "Builder") +
@@ -12127,7 +12653,14 @@
 				try {
 					connection.setConnectTimeout(timeout); connection.setReadTimeout(timeout);
 					connection.setUseCaches(false); connection.setInstanceFollowRedirects(false);
-					return Number(connection.getResponseCode());
+					var status = Number(connection.getResponseCode());
+					if (status < 200 || status >= 400) return {status: status, html: ""};
+					var reader = new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(connection.getInputStream(), "UTF-8"));
+					var html = "", line;
+					try {
+						while (html.length < 65536 && (line = reader.readLine()) !== null) html += String(line) + "\n";
+					} finally { reader.close(); }
+					return {status: status, html: html};
 				} finally { connection.disconnect(); }
 			}
 		});
@@ -12880,13 +13413,17 @@
 			Object.defineProperty(request, "__parentRun", { value: ctx });
 			// The plan resolved above for this request (same source, same runtime): the child frame does not look it up again
 			Object.defineProperty(request, "__resolvedPlan", { value: resolved });
-			var result;
+			var result, applicative = false;
 			try {
 				result = runWithActiveRequest(request, null, 0);
 				result.result = sharedRuntime.childResult(result.result, function (envelope) { return sanitizeSerializableRuntimeValue(envelope, "result"); });
-			} catch (error) { result = failure("run", error); }
-			// failed: the error of the called Flow, told apart from a result that holds an error property
-			return { handled: true, value: result.ok ? result.result : { error: result.error }, failed: !result.ok };
+			} catch (error) {
+				result = failure("run", error);
+				applicative = loadEngineModule("http-flow-failure.js").applicationError(error);
+			}
+			// failed: the error of the called Flow, told apart from a result that holds an error property;
+			// applicative: that error is an application error, raised as such by the caller
+			return { handled: true, value: result.ok ? result.result : { error: result.error }, failed: !result.ok, applicative: !result.ok && applicative };
 		} finally { lease.close(); }
 	}
 
@@ -12931,11 +13468,14 @@
 			} : null;
 			var activeStarted = profileRequest ? JavaSystem.nanoTime() : 0;
 			var value = runWithActiveRequest(request, functionProfile, activeStarted);
-			if (value && value.ok === false && typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, value, context);
+			if (value && value.ok === false) {
+				requesterError(value);
+				if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, value, context);
+			}
 			return response(value, "result", functionProfile, detach);
 		} catch (e) {
-			var failed = failure("run", e);
-			if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, failed, context);
+			var failed = requesterError(failure("run", e));
+			if (typeof context !== "undefined" && context) loadEngineModule("http-flow-failure.js").apply(request, failed, context, e);
 			return response(failed, "", null, detach);
 		} finally { executionState().allocationProfiler = previousAllocationProfiler; }
 	}

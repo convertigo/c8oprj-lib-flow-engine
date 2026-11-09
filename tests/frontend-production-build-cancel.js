@@ -20,7 +20,13 @@ function javaStringList(args) {
 }
 var logs = [];
 function frontendStudioLog(message) { logs.push(String(message)); }
-function frontendReadProcessOutput(stream) { return String(Packages.org.apache.commons.io.IOUtils.toString(stream, "UTF-8")); }
+function frontendReadProcessOutput(stream) {
+ var output = String(Packages.org.apache.commons.io.IOUtils.toString(stream, "UTF-8"));
+ var active = frontendCancellableBuild.get();
+ // Force the close-before-EOF case even when this host happened to return EOF cleanly.
+ if (active && active.get("cancelled").get()) throw new Error("Stream closed");
+ return output;
+}
 var sharedServerJavaMap = extract("sharedServerJavaMap");
 var frontendCancellableBuild = new Packages.java.lang.ThreadLocal();
 var localProductionBuildCancels = new Packages.java.util.concurrent.ConcurrentHashMap();
@@ -62,7 +68,7 @@ assert(frontendCancelProductionBuild(key), "the start of the development mode ca
 thread.join(10000);
 var elapsed = java.lang.System.currentTimeMillis() - startedAt;
 assert(!thread.isAlive() && elapsed < 10000, "the build stops at once: " + elapsed + " ms");
-assert(results[0].exitCode !== 0, "the running step fails: " + results[0].exitCode);
+assert(results[0].exitCode === -1 && /Cancelled/.test(results[0].output), "a closed output stream after cancellation is a clean cancellation");
 assert(results[1].exitCode === -1 && /Cancelled/.test(results[1].output), "the next step does not start: " + JSON.stringify(results[1]));
 children.forEach(function (child) { assert(!child.isAlive(), "the children are destroyed: " + child.pid()); });
 assert(!frontendCancelProductionBuild(key), "a build is cancelled once");
@@ -74,4 +80,12 @@ assert(state.dirty === true && state.status === "dirty" && state.failure === "" 
 	"the production state stays dirty, without failure: " + JSON.stringify(state));
 var startDev = source.substring(source.indexOf("\n\tfunction frontendStartDev("), source.indexOf("\n\tfunction ", source.indexOf("\n\tfunction frontendStartDev(") + 1));
 assert(startDev.indexOf("frontendCancelProductionBuild(frontendDevKey(request, info))") > 0, "frontendStartDev cancels the build of its project");
+var normal = frontendRunProcess(["sh", "-c", "printf normal"], new File("."), {});
+assert(normal.exitCode === 0 && normal.output === "normal", "an ordinary process still returns its output");
+var readOutput = frontendReadProcessOutput, ordinaryError = null;
+frontendReadProcessOutput = function () { throw new Error("ordinary read failure"); };
+try { frontendRunProcess(["sh", "-c", "exit 0"], new File("."), {}); }
+catch (error) { ordinaryError = error; }
+finally { frontendReadProcessOutput = readOutput; }
+assert(ordinaryError && /ordinary read failure/.test(String(ordinaryError)), "an IO failure without cancellation still propagates");
 print("frontend-production-build-cancel OK");

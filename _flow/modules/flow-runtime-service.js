@@ -543,8 +543,27 @@
 				Object.defineProperty(this, "relayedValues", { value: value === true, writable: true, enumerable: false, configurable: true });
 			}
 		});
+		function contextualExpressionHint(error, scopes, itemExpression) {
+			if (!error || error.code !== "INVALID_EXPRESSION") return;
+			var match = /^Unknown expression identifier: ([A-Za-z_$][\w$]*)$/.exec(String(error.message || ""));
+			if (!match) return;
+			var name = match[1], available = [];
+			["input", "local", "config"].forEach(function (scope) {
+				try {
+					var values = scopes[scope];
+					if (values && Object.prototype.hasOwnProperty.call(values, name)) available.push(scope + "." + name);
+				} catch (_unavailableScope) {}
+			});
+			if (itemExpression || scopes.current !== null && scopes.current !== undefined) {
+				available.push("current." + name + " (item field)");
+			}
+			error.hint = (available.length ? "Read " + available.join(" or ") + ". " : "") +
+				"Quote literal text (\"" + name + "\"). Read other values through their existing input.*, local.* or config.* scope.";
+		}
 		runContextPrototype.value = function (value) {
-			return this.relayedValues ? relayedValue(value, false) : evaluateExpression(this, value);
+			if (this.relayedValues) return relayedValue(value, false);
+			try { return evaluateExpression(this, value); }
+			catch (error) { contextualExpressionHint(error, this.scopes, false); throw error; }
 		};
 		runContextPrototype.expr = runContextPrototype.value;
 		// A property of a relayed call read as its kind reads it (resolution of a composite block)
@@ -554,12 +573,14 @@
 			}
 			return relayedValue(value, kind !== "expression");
 		};
-		runContextPrototype.compileExpr = function (value) {
+		runContextPrototype.compileExpr = function (value, itemExpression) {
 			var ctx = this;
 			if (this.relayedValues) {
 				return function () { return relayedValue(value, false); };
 			}
-			var compiled = compileExpression(value);
+			var compiled;
+			try { compiled = compileExpression(value); }
+			catch (error) { contextualExpressionHint(error, this.scopes, itemExpression === true); throw error; }
 			return function () { return compiled(ctx); };
 		};
 		runContextPrototype.path = function (path) {
@@ -756,8 +777,16 @@
 			this.stopped = true;
 			return value;
 		};
-		runContextPrototype.throwFlow = function (options, node) {
-			return throwFlowError(options, node);
+		// flags.applicative: an application error (a library's refusal), 200 with its envelope when it has no status
+		runContextPrototype.throwFlow = function (options, node, flags) {
+			return throwFlowError(options, node, flags);
+		};
+		// response.status and response.header: the Convertigo context of a requestable run or of a run it calls, whose
+		// HTTP request is shared up to the request at the root of the calls (http-flow-failure.js requestableRun), else
+		// null (an authoring or MCP tool run, a standalone run).
+		runContextPrototype.httpResponse = function () {
+			var invocation = invocationContextOf(this);
+			return invocation && typeof env.httpResponseRun === "function" && env.httpResponseRun(this.request, invocation) ? invocation : null;
 		};
 		runContextPrototype.trace = function (node, name, result) {
 			if (!this.traceEnabled) {
@@ -2000,11 +2029,16 @@
 			if (value === undefined || value === null) {
 				return {};
 			}
+			// Only the engine creates this non-enumerable link. Internal child Flows borrow the
+			// request's live handles (for example an ambient transaction), never their JSON summaries.
+			// A child owns and closes only handles it creates; its request root remains a separate object.
+			var parent = Object.getOwnPropertyDescriptor(request, "__parentRun");
+			var internalContext = name === "context" && parent && parent.enumerable === false && parent.value;
 			if (request.__deferResultSerializationSafety === true && value && typeof value === "object" &&
 				Object.prototype.toString.call(value) === "[object Object]") {
 				return Object.assign({}, value);
 			}
-			return normalizeTree(value);
+			return normalizeTree(value, !!internalContext);
 		}
 
 		// The declared inputs of a Flow receive their values converted to their types (type-conversion.js), whatever the
@@ -2053,7 +2087,10 @@
 				if (value === undefined) {
 					if (declaration["default"] === undefined) {
 						if (declaration.required === true) {
-							inputError("FLOW_INPUT_REQUIRED", name, "Input " + name + " is required.", "");
+							// an application error without status, as the EngineException of a sequence missing a required variable
+							inputError("FLOW_INPUT_REQUIRED", name, "Input " + name + " is required.",
+								"To return your own error code, keep this input optional, validate it in the Flow and throw { code, message }; " +
+								"set a status only when a client outside the SDK requires one.");
 						}
 						delete input[name];
 						return;
@@ -2068,7 +2105,8 @@
 					? (entry.convertReference ? entry.convertReference(value) : conversion.convertReference(value, declaration))
 					: (entry.convert ? entry.convert(value) : conversion.convert(value, declaration));
 				if (!converted.ok) {
-					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + ": " + converted.message,
+					// the field and its type only: the value received never comes back (it may be a secret)
+					inputError("FLOW_INPUT_TYPE_INVALID", name, "Input " + name + " must be of type " + declaredTypes.join(" or ") + ".",
 						"Send a value of type " + declaredTypes.join(" or ") + ".");
 				}
 				if (converted.warning && frameState) {
@@ -2089,8 +2127,10 @@
 			return value;
 		}
 
+		// An input the caller did not send as declared: an application error without status (200 with its envelope), as the
+		// engine answers a sequence missing a required variable. Its message, hint and details never hold the value received.
 		function inputError(code, name, message, hint) {
-			return throwFlowError({ code: code, message: message, hint: hint, status: 400, details: { input: name } });
+			return throwFlowError({ code: code, message: message, hint: hint, details: { input: name } }, undefined, { applicative: true });
 		}
 
 		function createRunContext(request, definition, blocks, projectEngine, plan, frameProfile, requestProfile) {

@@ -1,0 +1,10 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const source = fs.readFileSync(path.join(__dirname, '../_flow/blocks/throw.block.js'), 'utf8');
+const description = source.match(/longDescription:\s*"([^\n]+)"/);
+assert.ok(description, 'throw block has a long description');
+assert.doesNotMatch(description[1], /throw[^\n]*status/);
+assert.match(source, /"status":\s*\{[\s\S]*?"description":\s*"[^"]*REST[^"]*URL mapper[^"]*"/);
+console.log('no-requester-status-description OK');

@@ -1,6 +1,7 @@
 // JavaScript globals an author writes first (Object.assign, parseInt, JSON.stringify) were refused as block calls with a
 // hint to call them with one object parameter (Use Object.assign({  })), never naming what FlowScript gives instead.
-// The refusal now names the supported equivalent.
+// The refusal now names the supported equivalent. parseInt, isNaN and the pure Math functions are expression functions
+// now (tests/expression-number-functions.js).
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var __flowEngineDir = engineDir;
 var __flowProjectDir = String(java.nio.file.Files.createTempDirectory("lib-flow-engine-js-globals").toFile().getAbsolutePath());
@@ -23,7 +24,7 @@ function refusal(line) {
 
 [
 	["local.x = Object.assign({}, input)", "object.merge"],
-	["local.n = parseInt(input.offset, 10)", "integer"],
+	["result.p = JSON.parse(input.offset)", "json.parse"],
 	["result.y = JSON.stringify(input)", "json.stringify"],
 	["result.k = Object.keys(input)", "object.keys"]
 ].forEach(function (entry) {

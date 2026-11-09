@@ -154,7 +154,7 @@ var converted = run(typedFlow, { limit: "", page: "3.5" });
 assertTrue(converted.limit === 20 && converted.page === 3,
 	"An empty field takes the default and an integer is truncated: " + JSON.stringify(converted));
 var refused = JSON.parse(engine.run(JSON.stringify({ flowSource: typedFlow, input: { exact: "yes" }, includeTrace: false })));
-assertTrue(refused.ok === false && refused.error.code === "FLOW_INPUT_TYPE_INVALID" && refused.error.status === 400,
+assertTrue(refused.ok === false && refused.error.code === "FLOW_INPUT_TYPE_INVALID" && refused.error.status === undefined,
 	"A text that does not convert to the declared type is refused: " + JSON.stringify(refused));
 
 // Rhino Java wrappers written by a block compare as their JavaScript values.

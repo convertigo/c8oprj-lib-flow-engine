@@ -29,12 +29,13 @@ try {
 		return out.error;
 	}
 
-	// A regular expression literal: its own code, the line of the file and the block that tests a pattern.
-	var regex = refusedSet('  local.code = String(input.type)\n  local.valid = /^[0-9]{1,18}$/.test(local.code)\n  result.valid = local.valid');
+	// A regular expression literal: its own code, the line of the file and the block that tests a pattern (assigned
+	// alone, /x/.test(value) is rewritten to that block instead: flowscript-regex-literals.js).
+	var regex = refusedSet('  local.code = String(input.type)\n  local.valid = /^[0-9]{1,18}$/.test(local.code) && local.code !== "0"\n  result.valid = local.valid');
 	var first = regex.details.diagnostics[0];
 	assert(first.code === "FLOWSCRIPT_EXPRESSION_UNSUPPORTED" && first.line === 8, "The regular expression literal is reported at line 8: " + JSON.stringify(first));
-	assert(first.expression === "/^[0-9]{1,18}$/.test(local.code)", "with the expression it is in: " + JSON.stringify(first));
-	assert(first.message.indexOf("/^[0-9]{1,18}$/") !== -1 && first.hint.indexOf('text.match({ text: String(value), pattern: "^[0-9]{1,18}$" })') !== -1,
+	assert(first.expression === "/^[0-9]{1,18}$/.test(local.code) && local.code !== \"0\"", "with the expression it is in: " + JSON.stringify(first));
+	assert(first.message.indexOf("/^[0-9]{1,18}$/") !== -1 && first.hint.indexOf('text.match({ text: String(local.code), pattern: "^[0-9]{1,18}$" })') !== -1,
 		"It names the literal and the text.match call to write: " + JSON.stringify(first));
 	assert(regex.message.indexOf("at line 8: FLOWSCRIPT_EXPRESSION_UNSUPPORTED") !== -1 && regex.message.indexOf("text.match") !== -1,
 		"The message alone names the line, the code and the fix: " + regex.message);
@@ -44,11 +45,11 @@ try {
 	// A project block: the same refusal, at the line of the block file.
 	var head = 'const _meta = {\n  "sourceVersion": 2,\n  "properties": { "code": { "kind": "value", "type": "string" } },\n' +
 		'  "outputs": { "out": { "type": "object" } }\n}\n\nfunction tickets_check({ input, config }) {\n  local.code = String(input.code)\n';
-	var block = api("blockCodeSet", { name: "tickets.check", code: head + '  local.valid = /^T-[0-9]+$/i.test(local.code)\n  return { valid: local.valid }\n}\n' });
+	var block = api("blockCodeSet", { name: "tickets.check", code: head + '  local.valid = /^T-[0-9]+$/i.test(local.code) === true\n  return { valid: local.valid }\n}\n' });
 	assert(!block.ok && block.error.code === "FLOWSCRIPT_BLOCK_VALIDATION_FAILED", "The block is refused: " + JSON.stringify(block));
 	assert(block.error.details[0].line === 9 && block.error.details[0].code === "FLOWSCRIPT_EXPRESSION_UNSUPPORTED",
 		"At line 9 of the block file: " + JSON.stringify(block.error.details[0]));
-	assert(block.error.message.indexOf("at line 9: FLOWSCRIPT_EXPRESSION_UNSUPPORTED") !== -1 && block.error.message.indexOf("ignoreCase: true") !== -1,
+	assert(block.error.message.indexOf("at line 9: FLOWSCRIPT_EXPRESSION_UNSUPPORTED") !== -1 && block.error.message.indexOf('flags: "i"') !== -1,
 		"The message names the line and keeps the i flag: " + block.error.message);
 	var unknown = api("blockCodeSet", { name: "tickets.check", code: head + '  local.other = missing.block({ value: 1 })\n  return { valid: true }\n}\n' });
 	assert(!unknown.ok && unknown.error.message.indexOf("at line 9") !== -1, "A parser refusal of a block names the line of the file: " + JSON.stringify(unknown.error));
@@ -85,7 +86,7 @@ try {
 	assert(kept.date === "2026-01-05" && kept.local === 3, "local.input = 3 leaves input.date to the input scope: " + JSON.stringify(kept));
 
 	// A refused working copy is kept with its diagnostics, for code-check and code-patch.
-	var draft = api("flowCodeSet", { name: "Tickets", code: flow('  local.code = "1"\n  result.valid = /^[0-9]+$/.test(local.code)') });
+	var draft = api("flowCodeSet", { name: "Tickets", code: flow('  local.code = "1"\n  result.valid = !/^[0-9]+$/.test(local.code)') });
 	assert(!draft.ok && draft.written === true && draft.error.message.indexOf("at line 8") !== -1, "The working copy is written with its refusal: " + JSON.stringify(draft));
 	var checked = api("flowCodeCheck", { name: "Tickets" });
 	assert(!checked.ok && JSON.stringify(checked).indexOf("FLOWSCRIPT_EXPRESSION_UNSUPPORTED") !== -1, "code-check reports it: " + JSON.stringify(checked).substring(0, 600));

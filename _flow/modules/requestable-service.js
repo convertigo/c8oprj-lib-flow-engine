@@ -689,7 +689,7 @@
 				ok: false,
 				target: targetPublic(target, env.currentProjectName(request)),
 				error: env.flowCodeError("REQUESTABLE_SCHEMA_UNAVAILABLE", "No schema available for requestable: " + text,
-					"Run or learn the requestable schema in Studio, or retry with learn:true when executing the requestable is safe.")
+					"A requestable has no output schema until it has run. To see a connector transaction's output, run it with requestable-execute; a schema only matters to bind a page. Otherwise retry with learn:true when executing the requestable is safe.")
 			};
 		}
 		output = env.objectSchema(output);

@@ -83,6 +83,16 @@
 		} catch (_notExpressionSyntax) { return false; }
 	}
 
+	// The functions of the expressions (expressionFunctions of expression-utils.js): calls of them are expressions,
+	// never block calls. tests/expression-number-functions.js checks this list against expression-utils.js.
+	var EXPRESSION_FUNCTION_NAMES = ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
+		"length", "list.length", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
+		"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number", "Array.isArray",
+		"parseInt", "parseFloat", "isNaN", "isFinite", "Number.parseInt", "Number.parseFloat", "Number.isNaN",
+		"Number.isFinite", "Number.isInteger", "Math.sqrt", "Math.cbrt", "Math.pow", "Math.exp", "Math.log", "Math.log2",
+		"Math.log10", "Math.trunc", "Math.sign", "Math.hypot", "Math.sin", "Math.cos", "Math.tan", "Math.asin",
+		"Math.acos", "Math.atan", "Math.atan2"];
+
 	// The JavaScript globals an author writes first, read as calls of unknown blocks: the refusal names the supported equivalent
 	var JAVASCRIPT_GLOBAL_EQUIVALENTS = {
 		"Object.assign": "the object.merge block (object.merge({ target, source }))",
@@ -91,14 +101,8 @@
 		"Object.entries": "the object.keys block, then object.get for each key",
 		"JSON.stringify": "the json.stringify block",
 		"JSON.parse": "the json.parse block (json.safeParse to get an error instead of a failure)",
-		"parseInt": "an input typed integer, or the expression floor(Number(value))",
-		"parseFloat": "an input typed number, or the expression Number(value)",
-		"isNaN": "an input typed number, or the expression Number(value) === Number(value)",
 		"Date.now": "the date.now block",
-		"Math.pow": "a product in the expression (value * value)",
-		"Math.random": "the crypto.random block",
-		"Math.sqrt": "a dedicated project block (the expressions give round, floor, ceil, abs, min, max and %)",
-		"Math.trunc": "the expression floor(value) for a positive value, ceil(value) for a negative one"
+		"Math.random": "the crypto.random block"
 	};
 
 	function javaScriptGlobalEquivalent(name) {
@@ -106,7 +110,7 @@
 		if (!Object.prototype.hasOwnProperty.call(JAVASCRIPT_GLOBAL_EQUIVALENTS, name)) {
 			return "";
 		}
-		return name + " is JavaScript, not a Flow block; FlowScript expressions only give lower, upper, trim, contains, startsWith, endsWith, length, round, floor, ceil, abs, min, max (and their Math.* spellings), default, json, oneOf, overlaps, String, Number, the operators and %. Use "
+		return name + " is JavaScript, not a Flow block; FlowScript expressions only give lower, upper, trim, contains, startsWith, endsWith, length, round, floor, ceil, abs, min, max, the pure Math functions (Math.sqrt, Math.pow, Math.trunc...), parseInt, parseFloat, isNaN, isFinite, Number.isInteger, Number.isFinite, default, json, oneOf, overlaps, String, Number, the operators and %. Use "
 			+ JAVASCRIPT_GLOBAL_EQUIVALENTS[name] + " instead.";
 	}
 
@@ -347,7 +351,7 @@
 			var name = text(node.getTarget()).replace(/\s/g, "");
 			if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(name) || /^(input|local|current|result|request|config|trace)\./.test(name) || blockName(node)) return;
 			// Math.max(1, 2) and list.length(x) are expression functions, as the run reads them
-			if (/^(Array\.isArray|list\.length|Math\.(round|floor|ceil|abs|min|max))$/.test(name)) return;
+			if (EXPRESSION_FUNCTION_NAMES.indexOf(name) !== -1) return;
 			unknownBlock(blocks, name, line(start(node)), env);
 		});
 		for (var pass = 0; pass < 128; pass++) {
@@ -921,6 +925,12 @@
 					return;
 				}
 				var line = stripFlowScriptComment(raw).trim();
+				var currentWrite = line.match(/^current(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])+\s*(?:[+\-*\/%]?=(?!=)|\+\+|--)/);
+				if (currentWrite) {
+					env.raise("FLOWSCRIPT_WRITE_SCOPE_UNSUPPORTED", "Cannot write " + currentWrite[0].replace(/\s*(?:[+\-*\/%]?=|\+\+|--)$/, "")
+						+ " at line " + (index + base) + ".", null,
+						"current is read-only in an iterator. Build a new value with list.map, or update a declared local/result collection with json.put or json.push.");
+				}
 				if (line === "" && !pending) {
 					if (index !== 0) { flushComments(); blankBefore = true; }
 					return;
@@ -2092,9 +2102,7 @@
 		}
 
 		// The functions of the expressions (expression-utils.js)
-		var FLOWSCRIPT_EXPRESSION_FUNCTIONS = ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
-			"length", "list.length", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
-			"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number", "Array.isArray"];
+		var FLOWSCRIPT_EXPRESSION_FUNCTIONS = EXPRESSION_FUNCTION_NAMES;
 
 		function parseNaturalFlowScriptCallMember(text) {
 			text = stripFlowScriptSemicolon(text);
@@ -2564,8 +2572,86 @@
 			return lower(root, destination);
 		}
 
+		// A regular expression literal is not an expression. Assigned alone in one of its exact JavaScript forms, it is
+		// read as the text block that does the same, and the source written at promote is that block:
+		//   x = /p/f.test(s)        local.xMatch = text.match({ text: String(s), pattern: "p", flags: "f" }), x = local.xMatch.matched
+		//   x = s.match(/p/f)       the same text.match, x = local.xMatch.matched ? local.xMatch.groups : null
+		//   x = s.replace(/p/f, y)  text.replace({ text: s, search: "p", replacement: y, regex: true, all: false without g })
+		//   x = s.replaceAll(/p/g, y), x = s.split(/p/f)  text.replace and text.split({ ..., regex: true, trim: false, removeEmpty: false })
+		// Any other form (a literal inside a condition or a longer expression, other flags, other arguments, a replacement
+		// function) is refused at its line with the block to write (expression-utils.js regularExpressionHint).
+		function lowerRegularExpressionAssignment(blocks, imports, locals, destination, rhs, lineNumber) {
+			var text = String(rhs || "").trim();
+			if (!env.regularExpressionAdvice || text.indexOf("/") === -1) {
+				return null;
+			}
+			var start = text.charAt(0) === "/" ? 0 : -1;
+			var method = /\.\s*(match|replace|replaceAll|split)\s*\(\s*\//g, found;
+			while (start < 0 && (found = method.exec(text))) {
+				var candidate = env.regularExpressionAdvice(text, found.index + found[0].length - 1);
+				if (candidate.callStart === 0 && candidate.callEnd === text.length) start = found.index + found[0].length - 1;
+			}
+			if (start < 0) {
+				raiseRegularExpressionLiteral(text, lineNumber);
+				return null;
+			}
+			var advice = env.regularExpressionAdvice(text, start);
+			var exact = advice.closed && advice.flagsSupported && advice.callStart === 0 && advice.callEnd === text.length && !advice.extraArguments &&
+				advice.pattern !== "" && (advice.method === "test" ? advice.argument !== "" : advice.receiver !== "") &&
+				/^(test|match|replace|replaceAll|split)$/.test(advice.method) &&
+				!(advice.method === "replaceAll" && advice.flags.indexOf("g") === -1) &&
+				!(/^replace/.test(advice.method) && (advice.replacement === "" || /^function\b|=>/.test(advice.replacement)));
+			if (!exact) {
+				// /x/y.test(s), /x/.test(a) && b: an expression, refused by its checks with the same hint
+				if (start === 0) return null;
+				raiseRegularExpressionLiteral(text, lineNumber, start);
+			}
+			var pattern = JSON.stringify(advice.pattern);
+			var flags = advice.flags.replace(/g/g, "");
+			if (advice.method === "replace" || advice.method === "replaceAll") {
+				return buildNaturalScopeAssignment(blocks, imports, locals, destination, "text.replace({ text: " + advice.receiver + ", search: " + pattern +
+					", replacement: " + advice.replacement + ", regex: true" + (advice.flags.indexOf("g") === -1 ? ", all: false" : "") +
+					(flags ? ", flags: " + JSON.stringify(flags) : "") + " })", lineNumber);
+			}
+			if (advice.method === "split") {
+				return buildNaturalScopeAssignment(blocks, imports, locals, destination, "text.split({ text: " + advice.receiver + ", separator: " + pattern +
+					", regex: true, trim: false, removeEmpty: false" + (flags ? ", flags: " + JSON.stringify(flags) : "") + " })", lineNumber);
+			}
+			var base = env.safeIdentifier(destination.replace(/^(local|result|parent)\./, "").replace(/[^\w$]+/g, "_")) + "Match", name = base;
+			for (var n = 2; locals[name]; n++) name = base + n;
+			locals[name] = true;
+			var call = "text.match({ text: " + (advice.method === "test" ? "String(" + advice.argument + ")" : advice.receiver) + ", pattern: " + pattern +
+				(advice.flags ? ", flags: " + JSON.stringify(advice.flags) : "") + " })";
+			return buildNaturalScopeAssignment(blocks, imports, locals, "local." + name, call, lineNumber).concat(
+				buildNaturalScopeAssignment(blocks, imports, locals, destination, advice.method === "test"
+					? "local." + name + ".matched" : "local." + name + ".matched ? local." + name + ".groups : null", lineNumber));
+		}
+
+		// A statement whose regular expression literal is the target or the first argument of a call (value.replace(/x/g, y)
+		// written alone, value.match(/x/, 1)) would be read as a call of a block named value.replace: it is refused at its
+		// line with the block to write, as a JavaScript loop is (raiseJavaScriptLoop). A literal inside an expression of a
+		// condition or a value is refused by the expression checks, at its line too.
+		function raiseRegularExpressionLiteral(line, lineNumber, at) {
+			var start = at;
+			if (start === undefined) {
+				var call = /^(?:[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\(\s*\/|\/)/.exec(String(line || ""));
+				if (!call || !env.regularExpressionAdvice) {
+					return;
+				}
+				start = call[0].length - 1;
+			}
+			var advice = env.regularExpressionAdvice(line, start);
+			if (!advice.closed) {
+				return;
+			}
+			env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", "A regular expression literal is not FlowScript at line " + lineNumber + ": " +
+				String(line).substring(0, 120) + " (" + advice.block + " does it).", null, env.regularExpressionHint(line, start));
+		}
+
 		function buildNaturalFlowScriptAssignment(blocks, imports, locals, varName, rhs, lineNumber) {
 			rhs = stripFlowScriptSemicolon(rhs);
+			var regex = lowerRegularExpressionAssignment(blocks, imports, locals, "local." + env.safeIdentifier(varName), rhs, lineNumber);
+			if (regex) return regex;
 			var lowered = lowerBlockExpression(blocks, imports, locals, "local." + env.safeIdentifier(varName), rhs, lineNumber);
 			if (lowered) return lowered;
 			var callMember = parseNaturalFlowScriptCallMember(rhs);
@@ -2625,6 +2711,8 @@
 	
 		function buildNaturalScopeAssignment(blocks, imports, locals, scopePath, rhs, lineNumber) {
 			rhs = stripFlowScriptSemicolon(rhs);
+			var regex = lowerRegularExpressionAssignment(blocks, imports, locals, scopePath, rhs, lineNumber);
+			if (regex) return regex;
 			var lowered = lowerBlockExpression(blocks, imports, locals, scopePath, rhs, lineNumber);
 			if (lowered) return lowered;
 			var call = parseNaturalFlowScriptCall(rhs);
@@ -3026,6 +3114,77 @@
 			});
 		}
 	
+		// A JavaScript loop statement (while (...) {, for (...) {, do {) was read as a call of a block named while or for
+		// with a text for its properties, and failed with "Cannot set property "0" of undefined" at line 0. It is
+		// refused at its line with the loop blocks to write instead; the while block keeps its iteration limit.
+		function raiseJavaScriptLoop(line, lineNumber) {
+			var loop = /^(while|for)\s*\(([\s\S]*?)\)\s*\{?\s*;?$/.exec(line) || /^(while|for)\s*\(([\s\S]*)$/.exec(line) || /^(do)\s*\{/.exec(line);
+			if (!loop || loop[1] === "while" && isFlowScriptObjectLiteral(String(loop[2] || "").trim())) {
+				return;
+			}
+			var whileBlock = "while({ condition: CONDITION, maxIterations: 1000, $$nodes: function () { ... } })";
+			var limit = "maxIterations is 1000 when omitted (1 to 1000000; WHILE_ITERATION_LIMIT when the condition is still true after it) and timeoutMs 60000 (at most 600000)";
+			var hint;
+			if (loop[1] === "for") {
+				var of = /^\s*(?:const|let|var)?\s*[A-Za-z_$][\w$]*\s+(?:of|in)\s+([\s\S]+)$/.exec(String(loop[2] || ""));
+				hint = "To go through a list, use the forEach block, the item being current: forEach({ items: " + (of ? of[1].trim() : "local.items") +
+					", $$nodes: function () { ... current ... } }). To count, set a local before the while block and increase it in its body: local.i = 0, then " +
+					whileBlock.replace("CONDITION", "local.i < input.count").replace("...", "...; local.i = local.i + 1") + "; " + limit + ".";
+			} else {
+				hint = "Write the while block, its body in $$nodes: " +
+					whileBlock.replace("CONDITION", loop[1] === "while" && String(loop[2] || "").trim() ? String(loop[2]).trim() : "local.again") +
+					"; " + limit + ". To go through a list, use forEach({ items, $$nodes: function () { ... current ... } }).";
+			}
+			env.raise("FLOWSCRIPT_LOOP_UNSUPPORTED", "A JavaScript " + (loop[1] === "do" ? "do...while" : loop[1]) + " loop is not FlowScript at line " + lineNumber + ": " +
+				line.substring(0, 120), null, hint);
+		}
+
+		function rejectFunctionArguments(line, lineNumber) {
+			if (!/\bfunction\b|=>/.test(line)) return;
+			var prefix = "function __argument_check() {\n", found = null;
+			try {
+				var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+				options.setLanguageVersion(200);
+				var ast = new Packages.org.mozilla.javascript.Parser(options).parse(prefix + line + "\n}", "flow-function-arguments", 1);
+				ast.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({visit:function (node) {
+					if (found || String(node.getClass().getSimpleName()) !== "FunctionCall") return !found;
+					var args = node.getArguments();
+					for (var index = 0; args && index < args.size(); index++) {
+						if (String(args.get(index).getClass().getSimpleName()) === "FunctionNode") {
+							found = {call:node, argument:args.get(index)};
+							break;
+						}
+					}
+					return !found;
+				}}));
+			} catch (_notJavaScript) { return; }
+			if (!found) return;
+			var target = String(found.call.getTarget().toSource()).replace(/\s/g, "");
+			// Only list callbacks are reported here; other calls keep their own diagnostic (text.replace with regex, for example)
+			var method = /\.(sort|map|filter|reduce|forEach|find|findIndex|some|every|flatMap)$/.exec(target);
+			if (!method) return;
+			var receiver = method ? target.substring(0, target.length - method[0].length) : "local.items";
+			if (!/^(?:local|input|result|current)\.[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(receiver)) receiver = "local.items";
+			var hint = method && method[1] === "sort"
+				? "Use list.sort({ items: " + receiver + ", by: current.name, direction: \"asc\" }) to sort by one key per item. A two-argument comparator is not supported; compose a key in by when possible, or create a dedicated block for comparator logic."
+				: method && method[1] === "map"
+				? "Use list.map({ items: " + receiver + ", select: { id: current.id, name: current.name } }) to build one object per item; adapt the fields to the source."
+				: method && method[1] === "filter"
+				? "Use list.filter({ items: " + receiver + ", where: current.active }) to keep matching items."
+				: method && method[1] === "some"
+				? "Use local.matches = list.filter({ items: " + receiver + ", where: current.active }); local.count = list.count({ items: local.matches }); local.found = local.count > 0. Replace current.active with the callback condition."
+				: method && method[1] === "every"
+				? "Use local.matches = list.filter({ items: " + receiver + ", where: current.active }); local.count = list.count({ items: local.matches }); local.total = list.count({ items: " + receiver + " }); local.all = local.count == local.total. Replace current.active with the callback condition."
+				: method && method[1] === "find"
+				? "Use local.matches = list.filter({ items: " + receiver + ", where: current.active }); local.found = list.first({ items: local.matches }). Replace current.active with the callback condition."
+				: method && method[1] === "findIndex"
+				? "Use local.index = -1; local.i = 0; forEach({ items: " + receiver + ", $$nodes: function () { if (local.index == -1 && current.active) { local.index = local.i }; local.i = local.i + 1 } }). Replace current.active with the callback condition."
+				: "Function arguments are not supported. Use a Flow block with named expression properties or write the operations as separate statements.";
+			var offset = Math.max(0, Number(found.argument.getAbsolutePosition()) - prefix.length);
+			var argumentLine = lineNumber + (line.substring(0, offset).match(/\n/g) || []).length;
+			env.raise("FLOWSCRIPT_FUNCTION_ARGUMENT_UNSUPPORTED", "Function argument to " + target + " is not supported at line " + argumentLine + ".", null, hint);
+		}
+
 		function parseFlowScriptStatementsInto(blocks, imports, locals, root, statements) {
 			var stack = [{ root: root, slot: "nodes" }];
 			for (var i = 0; i < statements.length; i++) {
@@ -3060,6 +3219,7 @@
 				if (line === "") {
 					continue;
 				}
+				rejectFunctionArguments(line, lineNumber);
 				if (line.match(/^import\s+/)) {
 					parseFlowScriptImport(line, lineNumber, imports);
 					continue;
@@ -3141,6 +3301,8 @@
 					}
 					continue;
 				}
+				raiseJavaScriptLoop(line, lineNumber);
+				raiseRegularExpressionLiteral(line, lineNumber);
 				var match = line.match(/^([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*\(([\s\S]*)\)\s*(\{)?\s*;?$/);
 				if (!match) {
 					env.raise("FLOWSCRIPT_UNSUPPORTED_SYNTAX", "Unsupported FlowScript syntax at line " + lineNumber + ": " + line,

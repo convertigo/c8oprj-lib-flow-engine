@@ -161,7 +161,12 @@ assertTrue(b.user && b.user.id==='session-B','B must get its own result');
 b.records[0].owner='changed-B';
 assertTrue(a.records[0].owner==='session-A','A must never expose B data or share nested caller results');
 print('requestable-session-result-handoff OK (two identities; detached requester result, no mutable Context reread)');
-Requester.prototype.processRequestAsObject=function(){return {result:{error:{operation:'run',code:'INVALID_DESTINATION',message:'Use a static named path.',hint:'Use local.value.'}}};};
+// A called run answers its internal failure with status 500 (http-flow-failure.js answerCaller): the caller raises 500.
+Requester.prototype.processRequestAsObject=function(){return {result:{error:{operation:'run',code:'INVALID_DESTINATION',message:'Use a static named path.',hint:'Use local.value.',status:500}}};};
 var failure=null;try{call('session-A');}catch(e){failure=e;}
-assertTrue(failure && failure.code==='INVALID_DESTINATION' && failure.status===500,'An uncaught child Flow failure without a status must propagate HTTP 500: '+JSON.stringify(failure));
+assertTrue(failure && failure.code==='INVALID_DESTINATION' && failure.status===500,'An uncaught child Flow internal failure must propagate HTTP 500: '+JSON.stringify(failure));
+// Its application error has no status: the caller raises it as an application error, without status (200 with the envelope).
+Requester.prototype.processRequestAsObject=function(){return {result:{error:{operation:'run',code:'ORDER_NOT_FOUND',message:'No order.',hint:''}}};};
+failure=null;try{call('session-A');}catch(e){failure=e;}
+assertTrue(failure && failure.code==='ORDER_NOT_FOUND' && failure.status===undefined,'An uncaught child application error must propagate without status: '+JSON.stringify(failure));
 print('requestable-missing-error-status OK');

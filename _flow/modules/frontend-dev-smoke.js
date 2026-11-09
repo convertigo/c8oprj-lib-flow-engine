@@ -10,9 +10,12 @@
 				return;
 			}
 			try {
-				var status = env.probe(route, Math.min(2000, Math.max(1, 15000 - (env.now() - started))));
-				var ok = status >= 200 && status < 400;
-				outcomes.push({route: route, httpStatus: status, status: ok ? "passed" : "failed"});
+				var response = env.probe(route, Math.min(2000, Math.max(1, 15000 - (env.now() - started))));
+				var status = typeof response === "number" ? response : response.status;
+				var overlay = /\[TSCONFIG_ERROR\]|vite-error-overlay/i.test(String(response.html || ""));
+				var ok = status >= 200 && status < 400 && !overlay;
+				outcomes.push({route: route, httpStatus: status, status: ok ? "passed" : "failed",
+					message: overlay ? "Vite served an error overlay." : undefined});
 				if (!ok) failed = true;
 			} catch (error) {
 				failed = true;

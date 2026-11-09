@@ -1,6 +1,6 @@
 (function () {
-	// An agent writes FlowScript as JavaScript first: Math.pow(n, 2), Object.assign({}, a, b), JSON.stringify(x),
-	// parseInt(s), console.log(m), a block name it guesses (smtp.send, crypto.md5, text.trimm), keys it guesses
+	// An agent writes FlowScript as JavaScript first: Object.assign({}, a, b), JSON.stringify(x), Date.now(),
+	// console.log(m), a block name it guesses (smtp.send, crypto.md5, text.trimm), keys it guesses
 	// (order for direction) or positional arguments. The resolver maps each such call onto the catalog, as one global
 	// patch of the whole source:
 	//   edits: [{ oldText, newText, line, confidence, reason, block }]
@@ -30,8 +30,12 @@
 		length: "number", "list.length": "number", round: "number", floor: "number", ceil: "number", abs: "number",
 		min: "number", max: "number", "Math.round": "number", "Math.floor": "number", "Math.ceil": "number",
 		"Math.abs": "number", "Math.min": "number", "Math.max": "number", "default": "any", json: "string",
-		oneOf: "boolean", overlaps: "boolean", String: "string", Number: "number", "Array.isArray": "boolean"
+		oneOf: "boolean", overlaps: "boolean", String: "string", Number: "number", "Array.isArray": "boolean",
+		parseInt: "number", parseFloat: "number", isNaN: "boolean", isFinite: "boolean", "Number.parseInt": "number",
+		"Number.parseFloat": "number", "Number.isNaN": "boolean", "Number.isFinite": "boolean", "Number.isInteger": "boolean"
 	};
+	["sqrt", "cbrt", "pow", "exp", "log", "log2", "log10", "trunc", "sign", "hypot", "sin", "cos", "tan", "asin", "acos",
+		"atan", "atan2"].forEach(function (name) { EXPRESSION_FUNCTIONS["Math." + name] = "number"; });
 
 	// The keys an author writes for a property of another name, the most likely first
 	var KEY_SYNONYMS = {
@@ -181,10 +185,6 @@
 			if (!R.blockExists(name)) return { unresolved: name + " is not in the catalog of this project." };
 			return { text: R.blockCall(name, props), confidence: confidence, reason: reason, block: name };
 		}
-		function operand(R, node) {
-			var text = R.text(node);
-			return /^[\w$.\[\]"']+$/.test(text) ? text : "(" + text + ")";
-		}
 		function console(level) {
 			return function (R, args) {
 				if (!args.length || args.length > 2) return { unresolved: "log takes one message and one data value; join the values first." };
@@ -194,14 +194,6 @@
 				if (args.length > 1) props.push(["data", R.text(args[1])]);
 				return block(R, "log", props, 0.9, "console." + (level || "log") + " is the log block" + (level ? " at level " + level : "") + ".");
 			};
-		}
-		function parseNumber(R, args, name) {
-			if (args.length === 2 && !(R.info(args[1]).literal && R.info(args[1]).value === 10)) {
-				return { unresolved: name + " with a radix other than 10 has no equivalent." };
-			}
-			if (args.length < 1 || args.length > 2) return { unresolved: name + " takes one value." };
-			return { text: "floor(Number(" + R.text(args[0]) + "))", confidence: 0.7, block: "",
-				reason: name + " is not FlowScript: floor(Number(value)) converts a number text; it differs on a text with a suffix (\"12px\" gives NaN, not 12) and on a negative decimal (floor(-3.7) is -4, parseInt gives -3). An input typed integer converts at the boundary instead." };
 		}
 		var table = {
 			"Object.assign": function (R, args, call) {
@@ -255,34 +247,6 @@
 				return args.length === 1 ? block(R, "text.urlEncode", [["text", R.text(args[0])]], 0.95, "encodeURIComponent is the text.urlEncode block.")
 					: { unresolved: "encodeURIComponent takes one value." };
 			},
-			"parseInt": function (R, args) { return parseNumber(R, args, "parseInt"); },
-			"Number.parseInt": function (R, args) { return parseNumber(R, args, "Number.parseInt"); },
-			"parseFloat": function (R, args) {
-				return args.length === 1 ? { text: "Number(" + R.text(args[0]) + ")", confidence: 0.75, block: "",
-					reason: "parseFloat is not FlowScript: Number(value) converts a number text; it gives NaN for a text with a suffix (\"3.5px\"), where parseFloat gives 3.5." }
-					: { unresolved: "parseFloat takes one value." };
-			},
-			"Number.parseFloat": function (R, args) { return table.parseFloat(R, args); },
-			"isNaN": function (R, args) {
-				return args.length === 1 ? { text: "(Number(" + R.text(args[0]) + ") !== Number(" + R.text(args[0]) + "))", confidence: 0.9, block: "",
-					reason: "isNaN(value) converts its value as Number does: Number(value) !== Number(value) is true for NaN only." }
-					: { unresolved: "isNaN takes one value." };
-			},
-			"Math.pow": function (R, args) {
-				var exponent = args.length === 2 ? R.info(args[1]) : null;
-				if (!exponent || !exponent.literal || (exponent.value !== 2 && exponent.value !== 3)) {
-					return { unresolved: "Only a square or a cube has an expression (value * value); use a project block for another power." };
-				}
-				var base = operand(R, args[0]), product = exponent.value === 2 ? base + " * " + base : base + " * " + base + " * " + base;
-				return { text: R.needsParentheses() ? "(" + product + ")" : product, confidence: 0.95, block: "",
-					reason: "Math.pow is not an expression function: a square or a cube is a product." };
-			},
-			"Math.trunc": function (R, args) {
-				if (args.length !== 1) return { unresolved: "Math.trunc takes one value." };
-				var value = operand(R, args[0]);
-				return { text: "(" + value + " < 0 ? ceil(" + R.text(args[0]) + ") : floor(" + R.text(args[0]) + "))", confidence: 0.92, block: "",
-					reason: "Math.trunc is floor for a positive value and ceil for a negative one." };
-			},
 			"Math.random": function () { return { unresolved: "No random number in the expressions: crypto.random gives a random text (bytes, encoding)." }; },
 			"console.log": console(""),
 			"console.info": console("info"),
@@ -290,11 +254,6 @@
 			"console.error": console("error"),
 			"console.debug": console("debug")
 		};
-		["sqrt", "cbrt", "log", "log2", "log10", "exp", "sin", "cos", "tan", "atan", "atan2", "sign", "hypot"].forEach(function (name) {
-			table["Math." + name] = function () {
-				return { unresolved: "Math." + name + " has no expression: the expressions give round, floor, ceil, abs, min, max, the operators and %; write a project block." };
-			};
-		});
 		return table;
 	}
 

@@ -28,7 +28,19 @@
 		return env.templateSyntax.expressions(value);
 	}
 
-	function expressionDiagnostic(error, node, blockName, property, expression) {
+	function unknownIdentifierHint(error, context) {
+		var match = /^Unknown expression identifier: ([A-Za-z_$][\w$]*)$/.exec(String(error && error.message || ""));
+		if (!match || !context) return error && error.hint;
+		var name = match[1], available = [];
+		["input", "local", "config"].forEach(function (scope) {
+			if (Object.prototype.hasOwnProperty.call(context.known[scope], name)) available.push(scope + "." + name);
+		});
+		if (context.current) available.push("current." + name + " (item field)");
+		return (available.length ? "Read " + available.join(" or ") + ". " : "") +
+			"Quote literal text (\"" + name + "\"). Read other values through their existing input.*, local.* or config.* scope.";
+	}
+
+	function expressionDiagnostic(error, node, blockName, property, expression, context) {
 		return {
 			severity: "error",
 			code: error && error.code ? String(error.code) : "INVALID_EXPRESSION",
@@ -37,11 +49,11 @@
 			property: property,
 			expression: expression,
 			message: "Invalid FlowScript expression for " + blockName + "." + property + ": " + String(error && error.message || error || ""),
-			hint: error && error.hint ? String(error.hint) : "Use FlowScript expressions over input.*, config.*, local.*, current.* or result.*; use blocks or literal properties for structured objects/arrays."
+			hint: unknownIdentifierHint(error, context) || "Use FlowScript expressions over input.*, config.*, local.* or result.*; use blocks or literal properties for structured objects/arrays."
 		};
 	}
 
-	function validateExpressionText(diagnostics, node, blockName, property, expression, env) {
+	function validateExpressionText(diagnostics, node, blockName, property, expression, env, context) {
 		expression = String(expression || "").trim();
 		if (!expression || !env.tokenizeExpression) {
 			return;
@@ -49,7 +61,7 @@
 		try {
 			env.tokenizeExpression(expression);
 		} catch (e) {
-			diagnostics.push(expressionDiagnostic(e, node, blockName, property, expression));
+			diagnostics.push(expressionDiagnostic(e, node, blockName, property, expression, context));
 		}
 	}
 
@@ -95,29 +107,29 @@
 		});
 	}
 
-	function validateTemplateExpressions(diagnostics, node, blockName, property, value, env) {
+	function validateTemplateExpressions(diagnostics, node, blockName, property, value, env, context) {
 		templateExpressions(value, env).forEach(function (expression) {
-			validateExpressionText(diagnostics, node, blockName, property, expression, env);
+			validateExpressionText(diagnostics, node, blockName, property, expression, env, context);
 		});
 	}
 
-	function validateStructuredTemplates(diagnostics, node, blockName, property, value, env) {
+	function validateStructuredTemplates(diagnostics, node, blockName, property, value, env, context) {
 		if (Object.prototype.toString.call(value) === "[object Array]") {
 			value.forEach(function (item) {
-				validateStructuredTemplates(diagnostics, node, blockName, property, item, env);
+				validateStructuredTemplates(diagnostics, node, blockName, property, item, env, context);
 			});
 			return;
 		}
 		if (value && typeof value === "object") {
 			Object.keys(value).forEach(function (key) {
-				validateStructuredTemplates(diagnostics, node, blockName, property + "." + key, value[key], env);
+				validateStructuredTemplates(diagnostics, node, blockName, property + "." + key, value[key], env, context);
 			});
 			return;
 		}
-		validateTemplateExpressions(diagnostics, node, blockName, property, value, env);
+		validateTemplateExpressions(diagnostics, node, blockName, property, value, env, context);
 	}
 
-	function validateNodeExpressions(diagnostics, blocks, node, blockName, env) {
+	function validateNodeExpressions(diagnostics, blocks, node, blockName, env, context) {
 		var catalog = env.blockCatalog(blocks[blockName]) || {};
 		var props = catalog.props || {};
 		var slotMap = {};
@@ -127,17 +139,21 @@
 		businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
 			var descriptor = props[key] || (catalog.dynamicProperties === true ? catalog.additionalProperties || {} : {});
 			var value = flowScriptPropertyValue(node, key);
+			var expressionContext = {known: context.known, current: context.current ||
+				(blockName === "list.map" && key === "select") ||
+				(blockName === "list.filter" && key === "where") ||
+				(blockName === "list.sort" && key === "by")};
 			if (descriptor.kind === "expression") {
 				if (typeof value === "string") {
-					validateExpressionText(diagnostics, node, blockName, key, value, env);
+					validateExpressionText(diagnostics, node, blockName, key, value, env, expressionContext);
 					quotedExpressionDiagnostic(diagnostics, node, blockName, key, value, descriptor, env);
 				} else {
-					validateStructuredTemplates(diagnostics, node, blockName, key, value, env);
+					validateStructuredTemplates(diagnostics, node, blockName, key, value, env, expressionContext);
 				}
 				return;
 			}
 			if (descriptor.kind === "template" || descriptor.kind === "value" || descriptor.kind === undefined) {
-				validateStructuredTemplates(diagnostics, node, blockName, key, value, env);
+				validateStructuredTemplates(diagnostics, node, blockName, key, value, env, expressionContext);
 			}
 		});
 	}
@@ -146,8 +162,12 @@
 		var activeBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var dependencyContext = {blocks: activeBlocks};
 		var diagnostics = [];
+		var meta = definition.flow || definition._flow || {};
+		var known = {input: meta.inputs || meta.input || definition.inputs || definition.input || {},
+			local: {}, config: meta.config || {}};
 		target = String(target || "backend").trim().toLowerCase() || "backend";
-		function walk(nodes) {
+		function walk(nodes, context) {
+			context = context || {known: known, current: false};
 			(nodes || []).forEach(function (node) {
 				var name = env.blockName(node);
 				var block = activeBlocks[name];
@@ -231,7 +251,8 @@
 					var slotMap = {};
 					function inline(value) {
 					if(!value || typeof value!=="object")return;
-					if(value.__flowBlock){walk([Object.assign({block:value.__flowBlock,props:value.properties || {},__flowScriptLine:line},value.metadata || {})]);return;}
+					if(value.__flowBlock){walk([Object.assign({block:value.__flowBlock,props:value.properties || {},__flowScriptLine:line},value.metadata || {})],
+						{known: context.known, current: context.current || name === "list.map"});return;}
 					Object.keys(value).forEach(function(key){inline(value[key]);});
 				}
 				if(name==='list.map')inline((node.props || {}).select);
@@ -245,6 +266,11 @@
 							diagnostics.push({severity:"error",code:"BLOCK_PROPERTY_ENUM_INVALID",line:line,block:name,property:key,
 								message:name+"."+key+" received "+JSON.stringify(value)+"; allowed values: "+descriptor.enum.map(function(choice){return JSON.stringify(choice);}).join(", ")+".",
 								hint:"Set "+key+" to one of "+descriptor.enum.map(function(choice){return JSON.stringify(choice);}).join(", ")+" from the block contract."});
+						}
+						if (name === "throw" && !props[key] && /^(path|stack|operation)$|^__|^convertigo\./.test(key)) {
+							diagnostics.push({severity: "error", code: "RESERVED_ERROR_FIELD", line: line, block: name, property: key,
+								message: "throw cannot set " + key + ": the error envelope owns this name.",
+								hint: "Rename the field (line: ..., field: ...) or put it in details."});
 						}
 						if (!props[key] && !acceptsAdditionalProperties) {
 							var propertyCandidates = env.flowScriptPropertyCandidates(props, key, 5);
@@ -284,19 +310,23 @@
 							});
 						}
 					});
-					validateNodeExpressions(diagnostics, activeBlocks, node, name, env);
+					validateNodeExpressions(diagnostics, activeBlocks, node, name, env, context);
 				}
+				var output = String(node.out || (name === "set" && node.props && node.props.path) || "");
+				var localName = /^local\.([A-Za-z_$][\w$]*)/.exec(output);
+				if (localName) context.known.local[localName[1]] = true;
 				["nodes", "then", "else", "fields"].forEach(function (slot) {
 					if (Object.prototype.toString.call(node[slot]) === "[object Array]") {
-						walk(node[slot]);
+					walk(node[slot], {known: {input: context.known.input, local: Object.assign({}, context.known.local),
+						config: context.known.config}, current: context.current || name === "forEach"});
 					}
 				});
 			});
 		}
 		(definition.helpers || []).forEach(function (helper) {
-			walk(helper.nodes || []);
+			walk(helper.nodes || [], {known: {input: known.input, local: {}, config: known.config}, current: false});
 		});
-		walk(definition.nodes || []);
+		walk(definition.nodes || [], {known: known, current: false});
 		return diagnostics;
 	}
 
@@ -346,6 +376,94 @@
 		var name = String(request.name || request.flowName || request.flowQName || request.qname || "");
 		name = name.substring(name.lastIndexOf(".") + 1);
 		return /^(?:test|Test|TEST)(?:_|[A-Z0-9]|$)/.test(name);
+	}
+
+	// The blocks that run a pattern (lib/text-pattern.js), the property holding it and the literal property that turns
+	// it into a pattern when it is not always one.
+	var PATTERN_PROPERTIES = {
+		"text.match": { property: "pattern" },
+		"text.replace": { property: "search", when: "regex" },
+		"text.split": { property: "separator", when: "regex" }
+	};
+
+	function literalTrue(value) {
+		return value === true || String(value) === "true";
+	}
+
+	// In a Flow a caller reaches over HTTP (public or hidden, or without _flow.accessibility: the accessibility of the
+	// Flow, public by default, applies), a pattern built from data is refused unless the block says dynamicPattern: true;
+	// a literal pattern that repeats a repetition is reported. Every pattern also runs under the execution budget.
+	function patternDiagnostics(blocks, definition, env) {
+		var accessibility = String(flowMetaFromDefinition(definition).accessibility || "public").toLowerCase();
+		if (accessibility === "private") return [];
+		var diagnostics = [], writes = {};
+		// a local written once, by a set of a literal text (local.pattern = "^[0-9]+$"), is a literal pattern too
+		function each(nodes, visit) {
+			(nodes || []).forEach(function (node) {
+				visit(node);
+				["nodes", "then", "else", "fields"].forEach(function (slot) {
+					if (Object.prototype.toString.call(node[slot]) === "[object Array]") each(node[slot], visit);
+				});
+			});
+		}
+		function count(path, literal) {
+			if (typeof path !== "string" || path.indexOf("local.") !== 0) return;
+			var known = writes[path] || (writes[path] = { count: 0, literal: false });
+			known.count++;
+			known.literal = literal;
+		}
+		[definition.nodes].concat((definition.helpers || []).map(function (helper) { return helper.nodes; })).forEach(function (nodes) {
+			each(nodes, function (node) {
+				if (env.blockName(node) === "set") {
+					var assigned = flowScriptPropertyValue(node, "value");
+					count(flowScriptPropertyValue(node, "path"), typeof assigned === "string" && !env.templateSyntax.hasExpression(assigned));
+				}
+				count(node.out, false);
+			});
+		});
+		function constantLocal(value) {
+			var reference = /^\$\{\s*(local\.[A-Za-z_$][\w$]*)\s*\}$|^\{\{\s*(local\.[A-Za-z_$][\w$]*)\s*\}\}$/.exec(String(value).trim());
+			var known = reference && writes[reference[1] || reference[2]];
+			return !!(known && known.count === 1 && known.literal);
+		}
+		function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				var name = env.blockName(node), rule = PATTERN_PROPERTIES[name];
+				if (rule && (!rule.when || literalTrue(flowScriptPropertyValue(node, rule.when)))) {
+					var value = flowScriptPropertyValue(node, rule.property), line = node.__flowScriptLine || 0;
+					var dynamic = value !== undefined && value !== null && (typeof value !== "string" || env.templateSyntax.hasExpression(value) && !constantLocal(value));
+					if (dynamic && !literalTrue(flowScriptPropertyValue(node, "dynamicPattern"))) {
+						diagnostics.push({
+							severity: "error",
+							code: "TEXT_PATTERN_NOT_LITERAL",
+							line: line,
+							block: name,
+							property: rule.property,
+							message: name + "." + rule.property + " is a pattern built from data in a Flow callable over HTTP (" + accessibility +
+								"): a caller could choose a pattern that backtracks for long.",
+							hint: "Write the pattern as a literal text. To find a text given by the caller, use value.includes(text), startsWith or endsWith" +
+								(name === "text.match" ? "" : ", or " + name + " without regex") + ". When the pattern is meant to come from data, set dynamicPattern: true on the block; it still runs under its budget (TEXT_PATTERN_TIMEOUT)."
+						});
+					} else if (typeof value === "string" && /\([^()]*[+*][^()]*\)(?:[+*]|\{\d+,\d*\})/.test(value)) {
+						diagnostics.push({
+							severity: "warning",
+							code: "TEXT_PATTERN_NESTED_REPETITION",
+							line: line,
+							block: name,
+							property: rule.property,
+							message: name + "." + rule.property + " repeats a group that repeats, which may backtrack for long on a text of the caller (TEXT_PATTERN_TIMEOUT).",
+							hint: "Repeat a single class instead, for example [a-z0-9-]+ rather than ([a-z0-9]+-?)+, or anchor the pattern on a separator."
+						});
+					}
+				}
+				["nodes", "then", "else", "fields"].forEach(function (slot) {
+					if (Object.prototype.toString.call(node[slot]) === "[object Array]") walk(node[slot]);
+				});
+			});
+		}
+		(definition.helpers || []).forEach(function (helper) { walk(helper.nodes || []); });
+		walk(definition.nodes || []);
+		return diagnostics;
 	}
 
 	function flowMetaFromDefinition(definition) {
@@ -1019,6 +1137,9 @@
 				actual:note.before,expected:note.after,message:note.property+" is normalized from "+JSON.stringify(note.before)+" to "+JSON.stringify(note.after)+". Accepted as equivalent; source text is unchanged."});
 		});
 		(nativeDiagnostics.length ? [] : accessibilityDiagnostics(definition)).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		if (request.blockMode !== true) patternDiagnostics(activeBlocks, definition, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		var inputVariables = inputVariablesFromDefinition(activeBlocks, definition, env);

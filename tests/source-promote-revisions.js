@@ -24,6 +24,15 @@ reset();var stale=promote({revision:'r0'});
 assert(!stale.ok && stale.error.code==='FLOW_CODE_DRAFT_REVISION_MISMATCH' && !saved && validations===0,'Explicit stale revision must fail before validation');
 assert(stale.error.message.indexOf('r0')>=0 && stale.error.message.indexOf('r1')>=0 && !/changed since/.test(stale.error.message) &&
  stale.error.details.receivedRevision==='r0' && stale.error.details.currentRevision==='r1','An unrecognized revision must name both revisions without inventing a concurrent change');
+// A revision recopied with a few characters swapped (seen: 3 of 64) is a copy slip, not another source:
+// the error says so, offers to omit revision, and still refuses before validation (the lock stays).
+var current64='8ab2cb4ad133d89fdeffd72b2347dc2d9568db3d793c10a26fce7d8930aa85b5', slipped64='8ab2cb4ad133d89fdeffd72b2347dc2d9568db3d793c10a26cef7d8930aa85b5';
+reset();working={code:'checked',revision:current64};var slip=promote({revision:slipped64});
+assert(!slip.ok && slip.error.code==='FLOW_CODE_DRAFT_REVISION_MISMATCH' && !saved && validations===0,'A copy slip must still be refused before validation');
+assert(/mistyped copy/.test(slip.error.message) && /the source did not change/.test(slip.error.message) && /without revision/.test(slip.error.hint) && slip.error.hint.indexOf(current64)>=0 &&
+ slip.error.details.copySlip===true,'A copy slip must be named, with the omit-revision route and the exact revision: '+JSON.stringify(slip.error));
+reset();var unrelated=promote({revision:'r0'});
+assert(!/mistyped/.test(unrelated.error.message) && unrelated.error.details.copySlip===undefined,'An unrelated revision is not a copy slip');
 reset();mutate=true;var raced=promote();
 assert(!raced.ok && raced.error.code==='FLOW_CODE_DRAFT_REVISION_MISMATCH' && raced.revision==='r2' && !saved,'Changed draft was promoted after validation');
 reset();var selected=promote();

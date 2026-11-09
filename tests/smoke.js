@@ -2677,7 +2677,7 @@ var flowCallRun = JSON.parse(engine.run(JSON.stringify({
 		"    props:",
 		"      flow: ChildSmoke",
 		"      input:",
-		"        name: input.name",
+		"        name: \"${input.name}\"",
 		"    out: result.child",
 		""
 	].join("\n"),

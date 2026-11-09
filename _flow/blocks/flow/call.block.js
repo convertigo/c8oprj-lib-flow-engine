@@ -41,19 +41,23 @@ const _meta = {
 		return value && Object.prototype.toString.call(value) === "[object Object]";
 	}
 
-	function inputValue(ctx, value) {
+	// input as a whole is an expression (input: local.in), or the JSON text a block relays; a tree may still give it as
+	// one ${...}. Inside an object or a list, values follow the value notation: an expression is ${...}, any other
+	// string is the text itself (status: "AVAILABLE", name: "input.name", count: "3"), never read as an expression.
+	function inputValue(ctx, value, nested) {
 		if (typeof value === "string") {
-			return /\$\{|\{\{/.test(value) ? ctx.template(value) : ctx.expr(value);
+			if (!nested) return /^\s*(?:\$\{|\{\{)/.test(value) ? ctx.template(value) : ctx.expr(value);
+			return /\$\{|\{\{/.test(value) ? ctx.template(value) : value;
 		}
 		if (Object.prototype.toString.call(value) === "[object Array]") {
 			return value.map(function (item) {
-				return inputValue(ctx, item);
+				return inputValue(ctx, item, true);
 			});
 		}
 		if (isObject(value)) {
 			var out = {};
 			Object.keys(value).forEach(function (key) {
-				out[key] = inputValue(ctx, value[key]);
+				out[key] = inputValue(ctx, value[key], true);
 			});
 			return out;
 		}

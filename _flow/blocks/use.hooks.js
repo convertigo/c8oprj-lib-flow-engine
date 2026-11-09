@@ -1,34 +1,4 @@
 (function () {
-	function isObject(value) {
-		return value && Object.prototype.toString.call(value) === "[object Object]";
-	}
-
-	function hasInputDescriptor(value) {
-		return isObject(value) && value.value !== undefined;
-	}
-
-	function inputValue(ctx, value) {
-		if (hasInputDescriptor(value)) {
-			return ctx.input(value);
-		}
-		if (typeof value === "string") {
-			return ctx.expr(value);
-		}
-		if (Object.prototype.toString.call(value) === "[object Array]") {
-			return value.map(function (item) {
-				return inputValue(ctx, item);
-			});
-		}
-		if (isObject(value)) {
-			var out = {};
-			Object.keys(value).forEach(function (key) {
-				out[key] = inputValue(ctx, value[key]);
-			});
-			return out;
-		}
-		return ctx.literal(value);
-	}
-
 	function contracts(definition) {
 		var raw = definition.contracts || {};
 		var out = {};

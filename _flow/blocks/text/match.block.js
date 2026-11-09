@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:regex",
-  "description": "Tests a text against a regular expression (JavaScript syntax). out.matched tells whether it matches, out.groups holds the whole match then each captured group (an unmatched group is empty).",
+  "description": "Tests a text against a regular expression (JavaScript syntax), under an execution budget. out.matched tells whether it matches, out.groups holds the whole match then each captured group (an unmatched group is empty); with the g flag, every whole match. A pattern of more than 500 characters, an unsupported syntax or flag gives TEXT_PATTERN_INVALID, a text of more than 100000 characters TEXT_INPUT_TOO_LONG, too much backtracking TEXT_PATTERN_TIMEOUT.",
   "summary": "match {{text}} with {{pattern}}",
   "targets": [
     "backend",
@@ -31,7 +31,7 @@ const _meta = {
       "kind": "template",
       "type": "string",
       "default": "",
-      "description": "Regular expression, for example ^https://([^/]+)/. Anchor it with ^ and $ to test the whole text.",
+      "description": "Regular expression in JavaScript syntax, for example ^https://([^/]+)/, at most 500 characters. Anchor it with ^ and $ to test the whole text.",
     },
     "ignoreCase": {
       "label": "Ignore case",
@@ -40,6 +40,22 @@ const _meta = {
       "type": "boolean",
       "default": false,
       "description": "Match letters regardless of their case.",
+    },
+    "flags": {
+      "label": "Flags",
+      "category": "Expert",
+      "kind": "template",
+      "type": "string",
+      "default": "",
+      "description": "Letters among g (every match), i (ignore case), m (^ and $ at each line) and s (. matches line ends).",
+    },
+    "dynamicPattern": {
+      "label": "Pattern from data",
+      "category": "Expert",
+      "kind": "literal",
+      "type": "boolean",
+      "default": false,
+      "description": "Allow a pattern built from data (a template or an expression) in a Flow callable over HTTP. It still runs under the execution budget.",
     },
   },
   "outputs": {
@@ -73,43 +89,53 @@ const _meta = {
     return rendered === undefined || rendered === null ? "" : String(rendered);
   }
 
-  function matched(found) {
-    if (found === null) {
-      return { matched: false, groups: [] };
+  function resolve(ctx, node) {
+    var props = ctx.props(node);
+    var ignoreCase = props.ignoreCase === undefined ? false : ctx.input({ value: props.ignoreCase });
+    var flags = text(ctx, props.flags);
+    if ((ignoreCase === true || String(ignoreCase) === "true") && flags.indexOf("i") < 0) {
+      flags += "i";
     }
-    var groups = [];
-    for (var i = 0; i < found.length; i++) {
-      groups.push(found[i] === undefined || found[i] === null ? "" : String(found[i]));
+    return { text: text(ctx, props.text), pattern: text(ctx, props.pattern), flags: flags };
+  }
+
+  // the pattern is run by lib/text-pattern.js: java.util.regex under a budget of reads of the text
+  function run(ctx, node, args) {
+    var patterns = ctx.lib("text-pattern");
+    try {
+      return patterns.match(patterns.compile(args.pattern, args.flags), args.text);
+    } catch (e) {
+      var failure = patterns.failure(e);
+      if (failure) {
+        return ctx.throwFlow({ code: failure.textPatternCode, message: "text.match: " + failure.message, hint: failure.hint, status: failure.status }, node);
+      }
+      throw e;
     }
-    return { matched: true, groups: groups };
   }
 
   return {
+    // the templates are compiled once for the node; the pattern is compiled once for its spelling (lib/text-pattern.js)
     prepareNode: function (node, helpers) {
       var props = helpers.props, resolveText = helpers.compileValue(props.text), resolvePattern = helpers.compileValue(props.pattern);
       var resolveCase = helpers.compileValue(props.ignoreCase === undefined ? false : props.ignoreCase);
-      var staticPattern = typeof props.pattern === "string" && !/\$\{|\{\{/.test(props.pattern);
-      var staticCase = typeof props.ignoreCase !== "string" || !/\$\{|\{\{/.test(props.ignoreCase);
-      var regexp = staticPattern && staticCase ? new RegExp(props.pattern, props.ignoreCase === true || String(props.ignoreCase) === "true" ? "i" : "") : null;
-      var runner = function (ctx) {
-        var value = resolveText(ctx), pattern = regexp;
-        if (!pattern) {
-          var spelling = resolvePattern(ctx), ignoreCase = resolveCase(ctx);
-          pattern = new RegExp(spelling == null ? "" : String(spelling), ignoreCase === true || String(ignoreCase) === "true" ? "i" : "");
+      var resolveFlags = props.flags === undefined || props.flags === null ? null : helpers.compileValue(props.flags);
+      var resolveArgs = function (ctx) {
+        var value = resolveText(ctx), pattern = resolvePattern(ctx), ignoreCase = resolveCase(ctx), flags = resolveFlags ? resolveFlags(ctx) : "";
+        flags = flags === undefined || flags === null ? "" : String(flags);
+        if ((ignoreCase === true || String(ignoreCase) === "true") && flags.indexOf("i") < 0) {
+          flags += "i";
         }
-        return matched(pattern.exec(value == null ? "" : String(value)));
+        return { text: value == null ? "" : String(value), pattern: pattern == null ? "" : String(pattern), flags: flags };
       };
-      return helpers.debug ? helpers.debug(runner,
-        function(ctx){return {text:resolveText(ctx),pattern:regexp ? props.pattern : resolvePattern(ctx),ignoreCase:regexp ? regexp.ignoreCase : resolveCase(ctx)};},
-        function(_ctx,_node,args){
-          var pattern=regexp || new RegExp(args.pattern==null ? "" : String(args.pattern),args.ignoreCase===true || String(args.ignoreCase)==="true" ? "i" : "");
-          return matched(pattern.exec(args.text==null ? "" : String(args.text)));
-        }) : runner;
+      var runner = function (ctx, runNode) {
+        return run(ctx, runNode || node, resolveArgs(ctx));
+      };
+      return helpers.debug ? helpers.debug(runner, resolveArgs, function (ctx, debugNode, args) {
+        return run(ctx, debugNode || node, args);
+      }) : runner;
     },
     run: function (ctx, node) {
-      var props = ctx.props(node);
-      var ignoreCase = props.ignoreCase === undefined ? false : ctx.input({ value: props.ignoreCase });
-      return matched(new RegExp(text(ctx, props.pattern), ignoreCase === true || String(ignoreCase) === "true" ? "i" : "").exec(text(ctx, props.text)));
+      return run(ctx, node, resolve(ctx, node));
     }
   };
 }())

@@ -17,7 +17,7 @@ check(seen.name==="Alice","FlowScript input name resolves");
 check(seen.enabled===false&&seen.count===0,"Typed false and zero survive");
 check(seen.nested.items[0]==="Alice","Nested arrays and objects resolve");
 implementation.run(context,{props:{flow:"Child",input:{name:"input.name"}}});
-check(seen.name==="Alice","Existing expression input remains compatible");
+check(seen.name==="input.name","A plain string of the input object is text");
 implementation.run(context,{props:{flow:"Child",input:{name:"{{input.name}}"}}});
 check(seen.name==="Alice","Migration notation remains readable");
 implementation.run(context,{props:{flow:"Child",input:{value:"${input.count}",nested:{value:"${input.name}"}}}});
