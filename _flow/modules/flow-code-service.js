@@ -537,7 +537,7 @@
 			}
 		}
 		var current = flowScriptReadRequest(blocks, Object.assign({}, request, { name: name, includeHeader: false }));
-		return {
+		var out = {
 			ok: true,
 			qname: flowCodeQName(request, name),
 			name: name,
@@ -550,6 +550,15 @@
 			revision: current.revision,
 			code: current.code
 		};
+		if (current.valid === false) {
+			// the saved source no longer compiles: it is still the source to repair
+			out.valid = false;
+			flowCodeAddDiagnosticReport(out, current.diagnostics || [], request);
+			var first = (out.diagnostics || []).filter(function (diagnostic) { return diagnostic && diagnostic.severity === "error"; })[0];
+			out.next = "The saved source no longer compiles" + (first ? " (line " + (first.line || "?") + ": " + String(first.message || first.code).replace(/\.$/, "") + ")" : "") +
+				". Fix it with flow-code-set or flow-code-patch using revision=" + out.revision + ", then save with flow-code-promote.";
+		}
+		return out;
 	}
 
 	function flowCodeOfficialRead(blocks, request, name) {

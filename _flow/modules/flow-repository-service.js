@@ -81,6 +81,38 @@
 			};
 		}
 
+		// The text of the FlowScript file of a Flow: null without a file.
+		function readProjectFlowFileCode(name, request) {
+			var storage = projectFlowStorage(name);
+			var official = officialMode(request);
+			if (!official && sources ? sources.isFile(storage.codeFile) : storage.codeFile.isFile()) {
+				var code = !official && sources ? sources.read(storage.codeFile)
+					: FileUtils.readFileToString(storage.codeFile, "UTF-8");
+				return code === null || code === undefined ? null : String(code);
+			}
+			return null;
+		}
+
+		// The FlowScript of a Flow as getProjectFlow reads it (the working copy of a loaded Flow, else its file), without
+		// compiling it: {code, codeFile}, or null without a source. A Flow that no longer compiles (a block it calls
+		// changed its contract) stays readable for its repair.
+		function readProjectFlowCode(name, request) {
+			var storage = projectFlowStorage(name);
+			var official = officialMode(request);
+			var codeFile = String(storage.codeFile.getAbsolutePath());
+			if (!official && sources && sources.removed(storage.codeFile)) {
+				return null;
+			}
+			var working = official || !env.readProjectFlowWorkingCode || sources && sources.draft(storage.codeFile) !== null
+				? null
+				: env.readProjectFlowWorkingCode(name, false);
+			if (working) {
+				return { code: String(working.code), codeFile: String(working.codeFile || codeFile) };
+			}
+			var code = readProjectFlowFileCode(name, request);
+			return code === null ? null : { code: code, codeFile: codeFile };
+		}
+
 		function officialMode(request) {
 			request = request || {};
 			return request.official === true
@@ -102,9 +134,8 @@
 			if (working) {
 				return working;
 			}
-			if (!official && sources ? sources.isFile(storage.codeFile) : storage.codeFile.isFile()) {
-				var code = !official && sources ? sources.read(storage.codeFile)
-					: String(FileUtils.readFileToString(storage.codeFile, "UTF-8"));
+			var code = readProjectFlowFileCode(name, request);
+			if (code !== null) {
 				var compiled = sourceFromFlowScript(blocks || loadBlocks(), name, code);
 				var inputSync = syncLoadedProjectFlowInputs(name, compiled, request);
 				return {
@@ -208,6 +239,7 @@
 		return {
 			sourceFromFlowScript: sourceFromFlowScript,
 			getProjectFlow: getProjectFlow,
+			readProjectFlowCode: readProjectFlowCode,
 			listFlowsFromRoot: listFlowsFromRoot,
 			visibleSearchFlows: visibleSearchFlows
 		};
@@ -223,6 +255,9 @@
 				request = null;
 			}
 			return create(env).getProjectFlow(name, blocks, request);
+		},
+		readProjectFlowCode: function (name, request, env) {
+			return create(env).readProjectFlowCode(name, request);
 		},
 		listFlowsFromRoot: function (root, projectName, origin, samplesOnly, env) {
 			return create(env).listFlowsFromRoot(root, projectName, origin, samplesOnly);

@@ -75,9 +75,14 @@ try {
 		"Named check skipped semantic validation: " + JSON.stringify(invalidCheck));
 	write(sourceFile, code.replace('value: input.name', 'unknownProperty: input.name'));
 	engine.cacheClear();
+	// A source that no longer compiles stays readable for its repair, with the diagnostics of its compilation.
 	var invalidCanonical = JSON.parse(engine.flowCodeGet(JSON.stringify({ name: "Counted", draft: false })));
-	assert(!invalidCanonical.ok && invalidCanonical.error.code === "FLOWSCRIPT_CANONICAL_INVALID",
+	assert(invalidCanonical.ok && invalidCanonical.valid === false && invalidCanonical.code.indexOf("unknownProperty") !== -1 &&
+		invalidCanonical.diagnostics.some(function (d) { return d.code === "UNKNOWN_BLOCK_PROPERTY" && d.property === "unknownProperty"; }),
 		"Canonical source validation was bypassed: " + JSON.stringify(invalidCanonical));
+	var invalidCanonicalCheck = JSON.parse(engine.flowCodeCheck(JSON.stringify({ name: "Counted", draft: false })));
+	assert(!invalidCanonicalCheck.ok && JSON.stringify(invalidCanonicalCheck.error).indexOf("UNKNOWN_BLOCK_PROPERTY") !== -1,
+		"Named check accepted a source that no longer compiles: " + JSON.stringify(invalidCanonicalCheck));
 	var missing = JSON.parse(engine.flowCodeGet(JSON.stringify({ name: "Missing", draft: false })));
 	assert(!missing.ok && missing.error.code === "UNKNOWN_FLOW", "Missing Flow error changed");
 	print("code-check-single-analysis OK (" + checks + " checks)");

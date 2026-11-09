@@ -3851,6 +3851,7 @@
 			sourceFromDefinition: sourceFromDefinition,
 			projectFlowStorage: projectFlowStorage,
 			readProjectFlowWorkingCopy: readProjectFlowWorkingCopy,
+			readProjectFlowWorkingCode: readProjectFlowWorkingCode,
 			parseSource: parseSource,
 			raise: raise,
 			sha256Hex: sha256Hex,
@@ -4825,9 +4826,46 @@
 	}
 
 	// Code consumers that validate later must not analyze the saved source here.
+	// The text of a Flow that no longer compiles, with the diagnostics of its compilation: a block it calls changed its
+	// contract (a property removed, a block renamed), and reading, rewriting and discarding the Flow repair it.
+	function invalidFlowScriptRead(name, request, error) {
+		var read = String(error && error.code || "") === "FLOWSCRIPT_CANONICAL_INVALID"
+			? flowRepositoryService().readProjectFlowCode(name, request, flowRepositoryEnv())
+			: null;
+		if (read === null) {
+			return null;
+		}
+		var code = read.code;
+		var file = read.codeFile;
+		return {
+			ok: true,
+			name: String(name),
+			format: "flowscript",
+			canonical: true,
+			valid: false,
+			file: file,
+			codeFile: file,
+			codeFromMirror: false,
+			codeMirrorStale: false,
+			revision: sha256Hex(code),
+			code: code,
+			sourceHash: "",
+			diagnostics: [].concat(error.details || [])
+		};
+	}
+
 	function flowScriptReadRequest(blocks, request) {
 		request = request || {};
-		var flow = getProjectFlow(request.name || request.flowName, blocks, request);
+		var flow;
+		try {
+			flow = getProjectFlow(request.name || request.flowName, blocks, request);
+		} catch (e) {
+			var invalid = invalidFlowScriptRead(request.name || request.flowName, request, e);
+			if (invalid) {
+				return invalid;
+			}
+			throw e;
+		}
 		var codeInfo = flow.format === "flowscript" ? {
 			code: flow.code,
 			file: flow.codeFile || flow.file,
