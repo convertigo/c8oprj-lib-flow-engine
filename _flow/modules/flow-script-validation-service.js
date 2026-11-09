@@ -1086,6 +1086,83 @@
 		return diagnostics;
 	}
 
+	function editDistance(left, right) {
+		left = String(left || "").toLowerCase();
+		right = String(right || "").toLowerCase();
+		var previous = [];
+		for (var j = 0; j <= right.length; j++) previous[j] = j;
+		for (var i = 1; i <= left.length; i++) {
+			var current = [i];
+			for (j = 1; j <= right.length; j++) {
+				current[j] = Math.min(current[j - 1] + 1, previous[j] + 1,
+					previous[j - 1] + (left.charAt(i - 1) === right.charAt(j - 1) ? 0 : 1));
+			}
+			previous = current;
+		}
+		return previous[right.length];
+	}
+
+	// The assigned local name closest to a read one: a typo, or a name extended or shortened (page, pageAll).
+	function nearestLocalName(name, assigned) {
+		var lower = String(name).toLowerCase();
+		var best = null;
+		(assigned || []).forEach(function (candidate) {
+			if (candidate === "*") return;
+			var other = String(candidate).toLowerCase();
+			var distance = editDistance(lower, other);
+			var shorter = Math.min(lower.length, other.length);
+			var related = shorter >= 3 && (other.indexOf(lower) === 0 || lower.indexOf(other) === 0);
+			if (!related && distance > Math.max(2, Math.floor(Math.max(lower.length, other.length) / 3))) return;
+			if (!best || distance < best.distance || distance === best.distance && candidate < best.name) {
+				best = { name: candidate, distance: distance };
+			}
+		});
+		return best ? best.name : "";
+	}
+
+	// A local read that no node of the Flow assigns: no assignment, $$out, write path or block output gives it a value,
+	// so it is null at run time and the Flow goes on with it. A warning: a Rhino block could still write it by code.
+	function unassignedLocalDiagnostics(analysis, code) {
+		var codeLines = String(code || "").split(/\r?\n/);
+		return (analysis && analysis.unassignedLocals || []).map(function (entry) {
+			// the first line of the source that reads it, not one that assigns it in a helper: the nodes of a slot carry a
+			// line of their slot
+			var name = entry.name.replace(/\$/g, "\\$");
+			var read = new RegExp("\\blocal\\." + name + "(?![\\w$])(?![^=]*=(?!=))");
+			var line = 0;
+			codeLines.some(function (text, index) {
+				if (read.test(text)) {
+					line = index + 1;
+					return true;
+				}
+				return false;
+			});
+			(line ? [] : analysis.nodes || []).some(function (node) {
+				if ((node.reads || []).indexOf(entry.path) !== -1 && node.line) {
+					line = node.line;
+					return true;
+				}
+				return false;
+			});
+			var nearest = nearestLocalName(entry.name, entry.assigned);
+			var diagnostic = {
+				severity: "warning",
+				code: "FLOWSCRIPT_LOCAL_NOT_ASSIGNED",
+				line: line,
+				path: entry.path,
+				message: "local." + entry.name + " is read (" + entry.path + ") but never assigned in this Flow: it is null when it runs" +
+					(nearest ? ". Did you mean local." + nearest + "?" : "."),
+				next: nearest
+					? "Read local." + nearest + " instead, or assign local." + entry.name + " before reading it."
+					: "Assign local." + entry.name + " before reading it (local." + entry.name + " = ..., or $$out of a block), or read the path that holds the value. A helper function or a project block keeps its own local: return the value from it."
+			};
+			if (nearest) {
+				diagnostic.candidates = ["local." + nearest];
+			}
+			return diagnostic;
+		});
+	}
+
 	function maxDiagnostics(request) {
 		request = request || {};
 		var value = request.maxDiagnostics !== undefined && request.maxDiagnostics !== null && request.maxDiagnostics !== ""
@@ -1179,7 +1256,7 @@
 			(analysis.nodes || []).forEach(function(node){
 				if(!node.line)node.line=sourceLines[node.block+'\n'+node.id] || (node.inlineParent && sourceLines[node.inlineParent.block+'\n'+node.inlineParent.id]) || 0;
 			});
-			analysisDiagnostics(activeBlocks, analysis, env).forEach(function (diagnostic) {
+			analysisDiagnostics(activeBlocks, analysis, env).concat(unassignedLocalDiagnostics(analysis, code)).forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
 			// a typed collection whose type the runtime refuses (json.array itemType: { type: ["string", "null"] }) is

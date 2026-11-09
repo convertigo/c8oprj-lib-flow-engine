@@ -151,13 +151,27 @@
 			var addUniquePath = env.createUniqueAdder();
 			var addUniqueRead = env.createUniqueAdder();
 			var addUniqueWrite = env.createUniqueAdder();
+			// The local names given a value by a node: a write, an output, or a path a block publishes (the error of a
+			// try, the as of a reader), parent.x of a chunk loop writing the local x of its caller. "*" stands for the
+			// whole local scope or a computed name.
+			ctx.assignedLocals = {};
+			var reading = false;
 			function addPath(path) {
 				addUniquePath(ctx.paths, path);
+				if (!reading && typeof path === "string" && /^(?:local|parent)(?:$|[.\[])/.test(path)) {
+					var local = /^(?:local|parent)\.([A-Za-z_$][\w$]*)(?=$|[.\[])/.exec(path);
+					ctx.assignedLocals[local ? local[1] : "*"] = true;
+				}
 			}
 			ctx.addPath = addPath;
 			ctx.addRead = function (path) {
 				addUniqueRead(ctx.reads, path);
-				ctx.addPath(path);
+				reading = true;
+				try {
+					ctx.addPath(path);
+				} finally {
+					reading = false;
+				}
 			};
 			ctx.addWrite = function (path) {
 				addUniqueWrite(ctx.writes, path);
@@ -259,7 +273,7 @@
 				if(metadata.disabled)return {type:"unknown"};
 				var parent=ctx.currentNodeInfo, start=ctx.nodes.length;
 				var temporary="local.__flow_inline_"+start;
-				var snapshot={paths:ctx.paths.slice(),reads:ctx.reads.slice(),writes:ctx.writes.slice(),schemas:cloneMap(ctx.schemas),providers:cloneMap(ctx.providers),declared:cloneMap(ctx.declaredSchemas),returns:ctx.returnSchemas.slice()};
+				var snapshot={paths:ctx.paths.slice(),reads:ctx.reads.slice(),writes:ctx.writes.slice(),schemas:cloneMap(ctx.schemas),providers:cloneMap(ctx.providers),declared:cloneMap(ctx.declaredSchemas),returns:ctx.returnSchemas.slice(),assigned:cloneMap(ctx.assignedLocals)};
 				var node=Object.assign({block:value.__flowBlock,props:value.properties || {},id:metadata.id || (parent?parent.id:'value')+'.select'+start},metadata,{out:temporary});
 				var schema;
 				delete ctx.schemas[temporary];delete ctx.declaredSchemas[temporary];
@@ -275,7 +289,7 @@
 					}
 				} finally {
 					restoreMap(ctx.schemas,snapshot.schemas);restoreMap(ctx.providers,snapshot.providers);restoreMap(ctx.declaredSchemas,snapshot.declared);
-					restoreArray(ctx.paths,snapshot.paths);restoreArray(ctx.reads,snapshot.reads);restoreArray(ctx.writes,snapshot.writes);restoreArray(ctx.returnSchemas,snapshot.returns);
+					restoreArray(ctx.paths,snapshot.paths);restoreArray(ctx.reads,snapshot.reads);restoreArray(ctx.writes,snapshot.writes);restoreArray(ctx.returnSchemas,snapshot.returns);restoreMap(ctx.assignedLocals,snapshot.assigned);
 				}
 				if(metadata.out && schema){ctx.addSchema(metadata.out,schema);ctx.addWrite(metadata.out);}
 				return schema || {type:"unknown"};
@@ -609,7 +623,8 @@
 					schemas: cloneMap(ctx.schemas),
 					scopedSchemas: cloneMap(ctx.scopedSchemas),
 					returnSchemas: ctx.returnSchemas.slice(0),
-					currentSources: ctx.currentSources.slice(0)
+					currentSources: ctx.currentSources.slice(0),
+					assignedLocals: cloneMap(ctx.assignedLocals)
 				};
 				ctx.declaredSchemas = {};
 				ctx.addPath("input");
@@ -650,6 +665,7 @@
 					restoreMap(ctx.scopedSchemas, snapshot.scopedSchemas);
 					restoreArray(ctx.returnSchemas, snapshot.returnSchemas);
 					restoreArray(ctx.currentSources, snapshot.currentSources);
+					restoreMap(ctx.assignedLocals, snapshot.assignedLocals);
 					if (graphName) {
 						stack.pop();
 					}
@@ -1083,7 +1099,7 @@
 			definition = expandFlowDefinition(activeBlocks, definition);
 			var ctx = createAnalysisContext(activeBlocks, request || {}, definition);
 			ctx.visitNodes(definition.nodes || []);
-			return {
+			var analysis = {
 				ok: true,
 				version: definition.version || 1,
 				paths: ctx.paths,
@@ -1094,6 +1110,37 @@
 				returnSchemas: ctx.returnSchemas,
 				errors: ctx.errors
 			};
+			var unassigned = unassignedLocalReads(ctx);
+			if (unassigned.length) {
+				analysis.unassignedLocals = unassigned;
+			}
+			return analysis;
+		}
+
+		// The local names the Flow reads but no node gives a value, wherever they are in the Flow (a loop reads a
+		// name before the step that assigns it): {name, path, assigned}, assigned being the local names it gives.
+		function unassignedLocalReads(ctx) {
+			var assigned = ctx.assignedLocals || {};
+			if (assigned["*"]) {
+				return [];
+			}
+			var out = [];
+			var seen = {};
+			(ctx.reads || []).forEach(function (path) {
+				var local = typeof path === "string" ? /^local\.([A-Za-z_$][\w$]*)(?=$|[.\[])/.exec(path) : null;
+				if (!local || assigned[local[1]] || seen[local[1]]) {
+					return;
+				}
+				seen[local[1]] = true;
+				out.push({ name: local[1], path: path });
+			});
+			if (out.length) {
+				var names = Object.keys(assigned);
+				out.forEach(function (entry) {
+					entry.assigned = names;
+				});
+			}
+			return out;
 		}
 
 		function resultSchemaFromAnalysis(analysis) {
