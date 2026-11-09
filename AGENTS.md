@@ -814,6 +814,15 @@ As the sequences they replace, with the SDK unchanged:
   lib_flow_engine version. A called run answers its internal failure with status 500 in its envelope; an older called
   run does not, and its internal failure would be read as an application error (200).
 
+## Typed project block properties without kind (after 0.2.30)
+
+Project block properties that declare a type (boolean, integer, number, array, object) without a kind now receive the value of their argument, as the compiler lowers it, instead of its text. A block that compared such a property to "true" or "false", or parsed it, must compare the value itself.
+
+The runtime derives the kind of such a property as `flowScriptPropKind` of the compiler does (`propertyKind` of
+`graph-block-runtime-service.js`): an expression for those types, a template for a string, a value otherwise.
+`tests/library-block-property-kinds.js` keeps every library block and trait property of those types explicit about its
+kind; `tests/block-typed-property-warm-cache.js` checks the reading through warm caches after an engine or block update.
+
 ## Backend FlowScript phase 1 (0.2.21 engine / 0.2.32 MCP)
 
 For backend authoring, code-set and code-patch keep and compile the exact submitted text. Corrections are proposals only,

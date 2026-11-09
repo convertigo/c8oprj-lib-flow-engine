@@ -685,6 +685,10 @@ literal     raw JSON value, no resolution
 schema      data shape metadata
 ```
 
+A project block property that declares only a `type` is read as the compiler
+lowers its argument: `expression` for boolean, integer, number, array and object,
+`template` for string, `value` otherwise. Library blocks always declare the kind.
+
 The property `type` may be a runtime handle type, for example
 `handle<file.writer>`. A consumer block should only accept compatible handles,
 and a producer block should expose handle outputs through its `out` or `as`
