@@ -1,4 +1,26 @@
 (function () {
+	// The kind a property is read with when it declares only a type, as the FlowScript compiler lowers its value
+	// (flowScriptPropKind of flow-script-parser-service): a list, an object, a boolean or a number is an expression, a
+	// string a template, another type a value. Reading the type as the kind gave the block the text of its argument:
+	// "input.months" for an integer property given input.months, "false" for a boolean one given false.
+	function propertyKind(descriptor) {
+		descriptor = descriptor || {};
+		if (descriptor.kind) {
+			return String(descriptor.kind);
+		}
+		var type = String(descriptor.type || "").toLowerCase();
+		if (type === "expression" || type === "path" || type === "template") {
+			return type;
+		}
+		if (type === "string") {
+			return "template";
+		}
+		if (type === "array" || type === "object" || type === "boolean" || type === "number" || type === "integer") {
+			return "expression";
+		}
+		return "value";
+	}
+
 	function create(env) {
 		var File = env.File;
 		var FileUtils = env.FileUtils;
@@ -194,7 +216,7 @@
 
 	function resolveGraphBlockProp(ctx, descriptor, value) {
 		descriptor = descriptor || {};
-		var kind = descriptor.kind || descriptor.type || "";
+		var kind = propertyKind(descriptor);
 		var mode = descriptor.mode || "";
 		if (value === undefined && descriptor["default"] !== undefined) {
 			value = descriptor["default"];
@@ -222,7 +244,7 @@
 
 	function compileGraphBlockProp(descriptor, value) {
 		descriptor = descriptor || {};
-		var kind = descriptor.kind || descriptor.type || "";
+		var kind = propertyKind(descriptor);
 		var mode = descriptor.mode || "";
 		if (value === undefined && descriptor["default"] !== undefined) {
 			value = descriptor["default"];
@@ -287,7 +309,7 @@
 		var descriptors = catalog.props || {};
 		Object.keys(node.props || {}).forEach(function (key) {
 			var descriptor = descriptors[key] || {};
-			props[key] = ctx.relayedProperty(props[key], String(descriptor.kind || descriptor.type || ""));
+			props[key] = ctx.relayedProperty(props[key], propertyKind(descriptor));
 		});
 		return props;
 	}
@@ -425,7 +447,7 @@
 		var raw = ctx.props(node);
 		Object.keys(catalog.props || {}).forEach(function (key) {
 			var descriptor = catalog.props[key] || {};
-			var kind = String(descriptor.kind || descriptor.type || "");
+			var kind = propertyKind(descriptor);
 			var mode = String(descriptor.mode || "");
 			if (kind === "path" && mode === "write") {
 				var value = raw[key] !== undefined ? raw[key] : descriptor["default"];
@@ -599,6 +621,7 @@
 	}
 
 	return {
+		propertyKind: propertyKind,
 		validateBlockFlowImplementationSource: function (name, source, env) {
 			return serviceFor(env).validateBlockFlowImplementationSource(name, source);
 		},
