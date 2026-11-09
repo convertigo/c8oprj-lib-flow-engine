@@ -2527,7 +2527,21 @@
 					.getFirstChild().getExpression().getExpression();
 			} catch (_notAnExpression) { return null; }
 			function kind(node) { return String(node.getClass().getSimpleName()); }
-			function text(node) { return rhs.substring(Number(node.getAbsolutePosition()) - 1, Number(node.getAbsolutePosition()) - 1 + Number(node.getLength())); }
+			// Rhino bounds a prefix unary node (!x, -x, typeof x, void x, ~x, +x) by its operand only: an operand sliced by
+			// position would lose its operator (!a && b() ran as a && b()). A node starts at its leftmost token.
+			function position(node) { return Number(node.getAbsolutePosition()) - 1; }
+			function start(node) {
+				var k = kind(node), at;
+				if (k === "InfixExpression") return Math.min(position(node), start(node.getLeft()));
+				if (k === "ConditionalExpression") return Math.min(position(node), start(node.getTestExpression()));
+				if (k !== "UnaryExpression") return position(node); // x++ and x-- are UpdateExpression nodes, bounded right
+				var op = String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(node.getOperator()));
+				at = start(node.getOperand());
+				while (at > 0 && /\s/.test(rhs.charAt(at - 1))) at--;
+				if (rhs.substring(at - op.length, at) !== op) throw new Error("FlowScript expression operator " + op + " not found at line " + lineNumber);
+				return Math.min(position(node), at - op.length);
+			}
+			function text(node) { return rhs.substring(start(node), position(node) + Number(node.getLength())); }
 			function temp() {
 				var name;
 				do { name = "flowExpression" + (++expressionSequence); } while (expressionSource.indexOf(name) >= 0 || locals[name]);

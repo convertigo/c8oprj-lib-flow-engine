@@ -32,6 +32,18 @@ try {
  assert(run('local.flowExpression1 = 40\nresult.n = local.flowExpression1 + date.compare({left:"2026-01-02",right:"2026-01-01"})').n===41,'generated local avoids source names');
  assert(run('result.n = (input.flag && date.compare({left:"2026-01-02",right:"2026-01-01"})) || 9',{flag:false}).n===9,'nested lazy expression');
  assert(run('result.n = null ?? date.compare({left:"2026-01-02",right:"2026-01-01"})').n===1,'nullish fallback');
+ // A prefix operator keeps its place when the expression around a block is lowered (Rhino bounds !x by x alone)
+ var B='date.compare({left:"2026-01-01",right:"2026-01-02"}) < 0';
+ assert(run('result.v = input.flag && !input.blocked && '+B,{flag:true,blocked:true}).v===false,'! guard stays negated');
+ assert(run('result.v = input.flag && !input.blocked && '+B,{flag:true,blocked:false}).v===true,'! guard passes');
+ assert(run('result.v = !input.blocked && '+B,{blocked:true}).v===false,'leading ! stays negated');
+ assert(run('result.v = !input.blocked ? '+B+' : false',{blocked:true}).v===false,'! in a ternary test');
+ assert(run('result.v = input.ok && typeof input.d == "string" && input.d.length == 10 && '+B,{ok:true,d:'2026-01-01'}).v===true,'typeof in a chain');
+ assert(run('result.v = typeof (input.d) == "string" && '+B,{d:'x'}).v===true,'typeof with parentheses');
+ assert(run('result.v = input.flag && -input.n > 0 && '+B,{flag:true,n:5}).v===false,'unary minus');
+ assert(run('result.v = input.flag && !!input.n && '+B,{flag:true,n:0}).v===false,'double negation');
+ var tilde=api('run',{flowSource:code('result.v = input.flag && ~input.n && '+B),input:{flag:true,n:-1},includeTrace:false});
+ assert(!tilde.ok && JSON.stringify(tilde.error).indexOf('~input.n')>=0,'an unsupported operator is refused, never dropped: '+JSON.stringify(tilde.error));
  var ordered=run('local.before = 3\nresult.n = local.before + set({path:"local.before",value:7})\nresult.after = local.before');
  assert(ordered.n===10 && ordered.after===7,'freeze earlier reads before a block writes: '+JSON.stringify(ordered));
  print('agent-write-expressions OK ('+checks+' checks)');
