@@ -2519,14 +2519,35 @@
 		var expressionSource = "", expressionSequence = 0;
 		function lowerBlockExpression(blocks, imports, locals, destination, rhs, lineNumber) {
 			if (!containsNestedBlockCall(blocks, rhs) || parseNaturalFlowScriptCall(rhs)) return null;
-			var root;
-			try {
-				var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
-				options.setLanguageVersion(200);
-				root = new Packages.org.mozilla.javascript.Parser(options).parse("(" + rhs + ");", "flow-expression", 1)
+			var root, options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+			options.setLanguageVersion(200);
+			function parse(source) {
+				return new Packages.org.mozilla.javascript.Parser(options).parse("(" + source + ");", "flow-expression", 1)
 					.getFirstChild().getExpression().getExpression();
-			} catch (_notAnExpression) { return null; }
+			}
+			try { root = parse(rhs); } catch (_notAnExpression) { return null; }
 			function kind(node) { return String(node.getClass().getSimpleName()); }
+			function unsupported(message) {
+				env.raise("FLOWSCRIPT_EXPRESSION_UNSUPPORTED", message + " at line " + lineNumber, null,
+					"Compute this operand on its own line, then use the local in the expression with the block call.");
+			}
+			// Invariant: the operands written out keep every prefix operator of the source expression.
+			function prefixOperators(node) {
+				var count = 0;
+				node.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (child) {
+					if (kind(child) === "UnaryExpression") count++;
+					return true;
+				} }));
+				return count;
+			}
+			var written = 0;
+			function slice(node) {
+				var token = text(node), copy;
+				try { copy = parse(token); } catch (_lost) { copy = null; }
+				if (!copy || prefixOperators(copy) !== prefixOperators(node)) unsupported("An operand of this expression could not be kept whole");
+				written += prefixOperators(node);
+				return token;
+			}
 			// Rhino bounds a prefix unary node (!x, -x, typeof x, void x, ~x, +x) by its operand only: an operand sliced by
 			// position would lose its operator (!a && b() ran as a && b()). A node starts at its leftmost token.
 			function position(node) { return Number(node.getAbsolutePosition()) - 1; }
@@ -2538,7 +2559,7 @@
 				var op = String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(node.getOperator()));
 				at = start(node.getOperand());
 				while (at > 0 && /\s/.test(rhs.charAt(at - 1))) at--;
-				if (rhs.substring(at - op.length, at) !== op) throw new Error("FlowScript expression operator " + op + " not found at line " + lineNumber);
+				if (rhs.substring(at - op.length, at) !== op) unsupported("A comment or other text between the operator " + op + " and its operand is not supported in an expression with a block call");
 				return Math.min(position(node), at - op.length);
 			}
 			function text(node) { return rhs.substring(start(node), position(node) + Number(node.getLength())); }
@@ -2560,9 +2581,9 @@
 			if (!supported(root)) return null;
 			function lower(node, path) {
 				var k = kind(node), token = text(node);
-				if (!containsNestedBlockCall(blocks, token)) return [set(path, token)];
+				if (!containsNestedBlockCall(blocks, token)) return [set(path, slice(node))];
 				if (k === "ParenthesizedExpression") return lower(node.getExpression(), path);
-				if (k === "FunctionCall") return buildNaturalScopeAssignment(blocks, imports, locals, path, token, lineNumber);
+				if (k === "FunctionCall") return buildNaturalScopeAssignment(blocks, imports, locals, path, slice(node), lineNumber);
 				var left = temp(), nodes;
 				if (k === "ConditionalExpression") {
 					nodes = lower(node.getTestExpression(), left);
@@ -2583,7 +2604,9 @@
 				}
 				return nodes;
 			}
-			return lower(root, destination);
+			var lowered = lower(root, destination);
+			if (written !== prefixOperators(root)) unsupported("An operator of this expression could not be kept");
+			return lowered;
 		}
 
 		// A regular expression literal is not an expression. Assigned alone in one of its exact JavaScript forms, it is

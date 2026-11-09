@@ -53,6 +53,14 @@ try {
  assert(run('result.v = (-input.n) * '+C,{n:5}).v===5,'parenthesized unary minus in arithmetic');
  assert(run('result.v = input.a || !input.b || '+F,{a:false,b:true}).v===false,'! in an || chain');
  assert(run('result.v = !input.b ?? '+B,{b:true}).v===false,'! before ??');
+ assert(run('result.v = !(input.a || input.b) && '+B,{a:false,b:true}).v===false,'! before a parenthesized ||');
+ assert(run('result.v = !!input.n && '+B,{n:0}).v===false,'leading double negation');
+ assert(run('result.v = - -input.n + '+C,{n:5}).v===4,'double unary minus');
+ assert(run('result.v = -(-input.n) + '+C,{n:5}).v===4,'unary minus before parentheses');
+ assert(run('result.v = input.c ? true : !input.b && '+B,{c:false,b:true}).v===false,'! in a ternary else branch');
+ assert(run('result.v = typeof input.d == "string" && typeof input.e == "number" && '+B,{d:'x',e:1}).v===true,'two typeof in one chain');
+ var comment=api('run',{flowSource:code('result.v = input.a && ! /* note */ input.b && '+B),input:{a:true,b:true},includeTrace:false});
+ assert(!comment.ok && JSON.stringify(comment.error).indexOf('FLOWSCRIPT_EXPRESSION_UNSUPPORTED')>=0,'a comment between ! and its operand is refused, never dropped: '+JSON.stringify(comment.error));
  var tilde=api('run',{flowSource:code('result.v = input.flag && ~input.n && '+B),input:{flag:true,n:-1},includeTrace:false});
  assert(!tilde.ok && JSON.stringify(tilde.error).indexOf('~input.n')>=0,'an unsupported operator is refused, never dropped: '+JSON.stringify(tilde.error));
  var ordered=run('local.before = 3\nresult.n = local.before + set({path:"local.before",value:7})\nresult.after = local.before');
