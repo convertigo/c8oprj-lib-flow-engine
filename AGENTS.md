@@ -799,7 +799,7 @@ the actual ContextManager: Studio replaces distinct context names and session ID
 The core Java context naming and any data race before the requester detaches its response remain outside this
 library's scope. Do not claim the shared Studio context is secure solely because the library handoff test passes.
 
-## HTTP statuses of errors and response blocks (after 0.2.30, decision 72)
+## HTTP statuses of errors and response blocks (0.2.31, decision 72)
 
 As the sequences they replace, with the SDK unchanged:
 - An application error answers 200 with the error envelope `{error:{code, message, details}}`: an author's throw
@@ -832,3 +832,12 @@ Mission 34 compact follow-up: object literals, return objects, metadata and call
 
 - **0.2.30** — Expressions read data only: names inherited from the object prototype are no longer expression functions, `constructor`, `__proto__` and `prototype` cannot be read in a path or a member, a function never reads as a value, and `__proto__` in an object literal is an ordinary key.
 - **Compatibility:** business data whose key is `constructor`, `prototype` or `__proto__` (JSON received from an API, a stored document) is still received and serialized unchanged, but it can no longer be read in an expression with a dotted path or a member access, for example `local.doc.constructor`. Such a reference is refused when the source is compiled. Rename the key where the data is produced.
+
+## Release 0.2.31
+
+- **0.2.31** — Application errors answer 200 with the envelope `{error:{code, message, details}}` (author throw without status, input errors, `ctx.throwFlow(…, {applicative: true})`, uncaught error of a called Flow); internal failures answer 500 and an explicit status from 400 to 599 is kept. New blocks `response.error`, `response.status` and `response.header`.
+- Expressions gain the pure number functions of JavaScript (`parseInt`, `parseFloat`, `isNaN`, `isFinite`, `Number.*`, `Math.*` except `random`, `Infinity`, `NaN`, `Math.PI`, `Math.E`) in the frozen table of 0.2.30. `text.match` runs under an execution budget, `text.replace` and `text.split` take a `regex` option, and a pattern built from data is refused in a requestable callable over HTTP.
+- In the `input` of `flow.call` and `use`, a quoted string stays text, even when it looks like a path or a number; only `${…}` is evaluated. `use` no longer unwraps `{ value: … }`.
+- Compile-time refusals name the form to write: a function passed to `.map`, `.sort`, `.filter`…, a JavaScript loop statement, a write to `current.*`; clearer hints for unknown identifiers, required inputs, missing requestable schemas and mistyped revisions.
+- Runtime: borrowed runtime handles survive internal calls, a closed process output is a cancellation only when cancelled, data provider blocks compile at preload, generated applications share their packages on local storage, and the Svelte dev server is ready only after `svelte-kit sync` and its tsconfig.
+- **Compatibility:** with `requestable.call` through the requester, caller and called Flow must both run 0.2.31. A client outside the SDK that relied on 500 for an author's throw must set an explicit status. A nested input written `"input.name"` is now that text: write `${input.name}`.
