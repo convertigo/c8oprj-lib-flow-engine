@@ -3168,9 +3168,17 @@
 			var hint = method && method[1] === "sort"
 				? "Use list.sort({ items: " + receiver + ", by: current.name, direction: \"asc\" }) to sort by one key per item. A two-argument comparator is not supported; compose a key in by when possible, or create a dedicated block for comparator logic."
 				: method && method[1] === "map"
-				? "Use list.map({ items: " + receiver + ", select: current.name }) to select one value per item."
+				? "Use list.map({ items: " + receiver + ", select: { id: current.id, name: current.name } }) to build one object per item; adapt the fields to the source."
 				: method && method[1] === "filter"
 				? "Use list.filter({ items: " + receiver + ", where: current.active }) to keep matching items."
+				: method && method[1] === "some"
+				? "Use local.matches = list.filter({ items: " + receiver + ", where: current.active }); local.count = list.count({ items: local.matches }); local.found = local.count > 0. Replace current.active with the callback condition."
+				: method && method[1] === "every"
+				? "Use local.matches = list.filter({ items: " + receiver + ", where: current.active }); local.count = list.count({ items: local.matches }); local.total = list.count({ items: " + receiver + " }); local.all = local.count == local.total. Replace current.active with the callback condition."
+				: method && method[1] === "find"
+				? "Use local.matches = list.filter({ items: " + receiver + ", where: current.active }); local.found = list.first({ items: local.matches }). Replace current.active with the callback condition."
+				: method && method[1] === "findIndex"
+				? "Use local.index = -1; local.i = 0; forEach({ items: " + receiver + ", $$nodes: function () { if (local.index == -1 && current.active) { local.index = local.i }; local.i = local.i + 1 } }). Replace current.active with the callback condition."
 				: "Function arguments are not supported. Use a Flow block with named expression properties or write the operations as separate statements.";
 			var offset = Math.max(0, Number(found.argument.getAbsolutePosition()) - prefix.length);
 			var argumentLine = lineNumber + (line.substring(0, offset).match(/\n/g) || []).length;
