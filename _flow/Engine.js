@@ -4811,6 +4811,8 @@
 		var threshold = request.autoCorrectThreshold !== undefined && request.autoCorrectThreshold !== null && request.autoCorrectThreshold !== ""
 			? request.autoCorrectThreshold : configured;
 		return intuitiveCallResolver().resolve(blocks, code, { threshold: threshold }, {
+			sourceStart: flowScriptParserService().sourceStart,
+			prefixOperatorCount: flowScriptParserService().prefixOperatorCount,
 			blockCatalog: readOnlyBlockCatalog,
 			blockDescriptor: function (block) { return catalogService().blockDescriptor(block, catalogServiceEnv(), { includeIcons: false }); },
 			blockCandidateScore: function (descriptor, wanted) { return flowScriptIntentUtils().blockCandidateScore(descriptor, wanted, flowScriptIntentEnv()); },

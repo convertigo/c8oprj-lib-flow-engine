@@ -132,13 +132,58 @@
 		throw error;
 	}
 
+	// Rhino bounds a prefix unary node (!x, -x, +x, ~x, typeof x, void x, delete x) by its operand only, and a node that
+	// begins with one (a && b, a ? b : c, an expression statement) inherits that start: source sliced by position loses
+	// the operator (!a && b() ran as a && b()). The offset of the leftmost token of a node parsed from source as it is;
+	// its end, position + length, is exact. Text between an operator and its operand is an error, never a silent change.
+	function sourceStart(node, source) {
+		var at = Number(node.getAbsolutePosition()), k = String(node.getClass().getSimpleName());
+		if (node instanceof Packages.org.mozilla.javascript.ast.InfixExpression) return Math.min(at, sourceStart(node.getLeft(), source));
+		if (k === "ConditionalExpression") return Math.min(at, sourceStart(node.getTestExpression(), source));
+		if (k === "ExpressionStatement") return Math.min(at, sourceStart(node.getExpression(), source));
+		if (k !== "UnaryExpression") return at; // x++ and x-- are UpdateExpression nodes, bounded right
+		var op = String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(node.getOperator()));
+		var from = sourceStart(node.getOperand(), source);
+		while (from > 0 && /\s/.test(source.charAt(from - 1))) from--;
+		if (source.substring(from - op.length, from) !== op) {
+			var error = new Error("Text between the operator " + op + " and its operand at line "
+				+ source.substring(0, from).split(/\r\n|\r|\n/).length + " cannot be kept in a rewrite.");
+			error.code = "FLOWSCRIPT_PREFIX_OPERATOR_LOST";
+			throw error;
+		}
+		return Math.min(at, from - op.length);
+	}
+
+	// The prefix operators of a node, or of source read as statements: a rewrite writes as many as the node it replaces
+	// (an operator moved to another statement is lost for its own). null when the source is not JavaScript.
+	function prefixOperatorCount(value) {
+		var count = 0, visitor = new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (node) {
+			if (node instanceof Packages.org.mozilla.javascript.ast.UnaryExpression) count++;
+			return true;
+		} });
+		if (value instanceof Packages.org.mozilla.javascript.ast.AstNode) { value.visit(visitor); return count; }
+		var masked = String(value || "").replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|\b(?:if|try|while|throw)\s*(?=\(\s*\{)/g,
+			function (token) { return token.replace(/^(if|try|while|throw)/, function (keyword) { return keyword.charAt(0) + new Array(keyword.length).join("_"); }); });
+		try {
+			var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+			options.setLanguageVersion(200);
+			options.setErrorReporter(new Packages.org.mozilla.javascript.ErrorReporter({
+				warning: function () {}, error: function (message) { throw new Error(String(message)); },
+				runtimeError: function (message) { return new Packages.org.mozilla.javascript.EvaluatorException(String(message)); }
+			}));
+			// statements of a function body: a lifted return statement reads as one
+			new Packages.org.mozilla.javascript.Parser(options).parse("function __flowPrefixOperators() {\n" + masked + "\n}", "flow-prefix-operators", 1).visit(visitor);
+		} catch (_notJavaScript) { return null; }
+		return count;
+	}
+
 	function correctSource(blocks, source, request, env) {
 		source = String(source || "");
 		request = request || {};
 		var fixes = [], catalogs = Object.create(null), original = source;
 		function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
-		function start(node) { return Number(node.getAbsolutePosition()); }
-		function end(node) { return start(node) + Number(node.getLength()); }
+		function start(node) { return sourceStart(node, source); }
+		function end(node) { return Number(node.getAbsolutePosition()) + Number(node.getLength()); }
 		function text(node) { return source.substring(start(node), end(node)); }
 		function list(value) {
 			var out = [];
@@ -152,6 +197,14 @@
 		}
 		function line(offset) { return source.substring(0, offset).split(/\r\n|\r|\n/).length; }
 		function fix(code, offset, before, after) { fixes.push({ code: code, line: line(offset), before: before, after: after }); }
+		// Invariant: the text written for a node keeps its prefix operators. A loss is an error, never a proposal.
+		function kept(node, after) {
+			if (prefixOperatorCount(node) === prefixOperatorCount(after)) return after;
+			var error = new Error("A correction at line " + line(start(node)) + " would not keep every prefix operator (!, -, typeof...).");
+			error.code = "FLOWSCRIPT_PREFIX_OPERATOR_LOST";
+			error.hint = "Write the statement explicitly; no correction is proposed when an operator could be lost.";
+			throw error;
+		}
 		function fail(node, message) {
 			var error = new Error(message + " at line " + line(start(node)) + ".");
 			error.code = "FLOWSCRIPT_BLOCK_CALL_UNSAFE_CONTEXT";
@@ -267,7 +320,7 @@
 				});
 			});
 			inputEdits.sort(function(a,b){return b.start-a.start;}).forEach(function(edit){headerText=headerText.substring(0,edit.start)+edit.after+headerText.substring(edit.end);});
-			var from = start(call), to = end(call), before = text(call), after = "const _flow = " + headerText;
+			var from = start(call), to = end(call), before = text(call), after = kept(call, "const _flow = " + headerText);
 			var corrected = source.substring(0,from) + after + source.substring(to);
 			if (source.indexOf(before) !== from || source.lastIndexOf(before) !== from
 					|| corrected.substring(0,from) !== source.substring(0,from)
@@ -385,7 +438,7 @@
 				open -= start(call);
 				after = after.substring(0, after.length - 1) + "})";
 				after = after.substring(0, open + 1) + "{" + after.substring(open + 1);
-				fix("FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED", start(call), before, after);
+				fix("FLOWSCRIPT_BLOCK_ARGUMENTS_NAMED", start(call), before, kept(call, after));
 				source = source.substring(0, start(call)) + after + source.substring(end(call));
 				changed = true; break;
 			}
@@ -472,7 +525,7 @@
 				replacements.push({ start: start(call), end: end(call), value: destination });
 			});
 			var before = text(statement), indent = source.substring(0, start(statement)).split(/\r\n|\r|\n/).pop().match(/^\s*/)[0];
-			var after = prefix.join("\n" + indent) + "\n" + indent + replaced(statement);
+			var after = kept(statement, prefix.join("\n" + indent) + "\n" + indent + replaced(statement));
 			fix("FLOWSCRIPT_BLOCK_CALL_LIFTED", start(statement), before, after);
 			edits.push({ start: start(statement), end: end(statement), value: after });
 		});
@@ -3564,6 +3617,8 @@
 
 	return {
 		correctSource: correctSource,
+		sourceStart: sourceStart,
+		prefixOperatorCount: prefixOperatorCount,
 		parseFlowScriptArgs: function (text, lineNumber, env) {
 			return create(env).parseFlowScriptArgs(text, lineNumber);
 		},

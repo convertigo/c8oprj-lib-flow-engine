@@ -81,8 +81,6 @@
 	}
 
 	function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
-	function start(node) { return Number(node.getAbsolutePosition()); }
-	function end(node) { return start(node) + Number(node.getLength()); }
 	function list(value) {
 		var out = [];
 		for (var i = 0; value && i < value.size(); i++) out.push(value.get(i));
@@ -279,6 +277,9 @@
 		var ast = parse(source);
 		if (!ast) return empty;
 
+		// A node starts at its leftmost token: Rhino bounds !x, -x or typeof x by x alone (sourceStart of the parser)
+		function start(node) { return env.sourceStart(node, source); }
+		function end(node) { return Number(node.getAbsolutePosition()) + Number(node.getLength()); }
 		function text(node) { return source.substring(start(node), end(node)); }
 		function line(offset) { return source.substring(0, offset).split(/\r\n|\r|\n/).length; }
 		function catalog(name) {
@@ -609,6 +610,11 @@
 						reason: name + " is not a block: " + best.block + " (name " + best.name + (best.domain ? "" : ", another namespace") + ")" +
 							(best.mapping.notes.length ? "; " + best.mapping.notes.join("; ") : "") + others + "." };
 				}
+			}
+			// Invariant: the call written keeps every prefix operator of the call read; a loss is refused, never proposed
+			if (env.prefixOperatorCount(call) !== env.prefixOperatorCount(result.text)) {
+				unresolved.push({ line: line(start(call)), call: text(call), reason: name + ": the rewrite would not keep every prefix operator (!, -, typeof...) of its arguments; write it with named properties." });
+				return;
 			}
 			var lazy = result.block ? lazyContext(call) : "";
 			if (lazy) {
