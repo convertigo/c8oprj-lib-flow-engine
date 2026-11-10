@@ -40,6 +40,16 @@
 			"Quote literal text (\"" + name + "\"). Read other values through their existing input.*, local.* or config.* scope.";
 	}
 
+	// A block called in an expression that runs once per item (list.filter.where, list.map.select): assigned before the
+	// iteration, as the general advice says, it would not see current.
+	function perItemBlockHint(error, context) {
+		var match = /^Unknown expression function: ([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+)$/.exec(String(error && error.message || ""));
+		if (!match || !context || !context.perItem || /^(input|local|current|result|request|config|trace)\./.test(match[1])) return "";
+		return match[1] + " is a block, and this expression runs once per item: no block runs inside it, and one assigned before the " +
+			"iteration does not see current. Iterate instead: json.array({ path: \"local.kept\", itemType: { type: \"object\" } }), then " +
+			"forEach({ items, $$nodes() { local.v = " + match[1] + "({ ... }); if (local.v ...) { json.push({ path: \"local.kept\", value: current }) } } }).";
+	}
+
 	function expressionDiagnostic(error, node, blockName, property, expression, context) {
 		return {
 			severity: "error",
@@ -49,7 +59,7 @@
 			property: property,
 			expression: expression,
 			message: "Invalid FlowScript expression for " + blockName + "." + property + ": " + String(error && error.message || error || ""),
-			hint: unknownIdentifierHint(error, context) || "Use FlowScript expressions over input.*, config.*, local.* or result.*; use blocks or literal properties for structured objects/arrays."
+			hint: perItemBlockHint(error, context) || unknownIdentifierHint(error, context) || "Use FlowScript expressions over input.*, config.*, local.* or result.*; use blocks or literal properties for structured objects/arrays."
 		};
 	}
 
@@ -139,7 +149,7 @@
 		businessPropertyKeys(node, Object.keys(slotMap), env).forEach(function (key) {
 			var descriptor = props[key] || (catalog.dynamicProperties === true ? catalog.additionalProperties || {} : {});
 			var value = flowScriptPropertyValue(node, key);
-			var expressionContext = {known: context.known, current: context.current ||
+			var expressionContext = {known: context.known, perItem: !!descriptor.current, current: context.current ||
 				(blockName === "list.map" && key === "select") ||
 				(blockName === "list.filter" && key === "where") ||
 				(blockName === "list.sort" && key === "by")};

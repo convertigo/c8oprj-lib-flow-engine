@@ -2210,7 +2210,8 @@
 					paren--;
 					if (paren === 0) {
 						var rest = text.substring(i + 1).trim();
-						if (!rest || !rest.match(/^(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])+$/)) {
+						// static members only: json.select reads [local.k] as the text of a key, not as the value of local.k
+						if (!rest || !rest.match(/^(?:\.[A-Za-z_$][\w$]*|\[\d+\]|\["[^"\\\]]*"\]|\['[^'\\\]]*'\])+$/)) {
 							return null;
 						}
 						var path = rest.charAt(0) === "." ? rest.substring(1) : rest;
@@ -2830,6 +2831,27 @@
 			if (regex) return regex;
 			var lowered = lowerBlockExpression(blocks, imports, locals, scopePath, rhs, lineNumber);
 			if (lowered) return lowered;
+			// result.x = block(...).y.z, as const x = block(...).y.z: the block runs into a local of its own, then y.z is
+			// read into the destination, in the order of the statement. A call of anything but a block stays an expression.
+			var callMember = parseNaturalFlowScriptCallMember(rhs);
+			if (callMember && blocks && blocks[resolveFlowScriptName(callMember.name, imports)]) {
+				var base = env.safeIdentifier(scopePath.replace(/^(local|result|parent)\./, "").replace(/\W+/g, "_").replace(/_+$/, "") + "Source"), sourceName = base;
+				for (var n = 2; locals[sourceName] || expressionSource.indexOf(sourceName) >= 0; n++) sourceName = base + n;
+				locals[sourceName] = true;
+				var sourceNodes = buildNaturalFlowScriptCall(blocks, imports, locals, sourceName, callMember.name + "(" + callMember.args + ")", lineNumber);
+				if (sourceNodes.length !== 1) {
+					env.raise("FLOWSCRIPT_UNSUPPORTED_ASSIGNMENT", "Unsupported chained FlowScript block call at line " + lineNumber + ": " + rhs,
+						null, "Assign the block call first, then select from the local variable.");
+				}
+				return sourceNodes.concat([{
+					id: env.safeIdentifier(scopePath.replace(/^(local|result|parent)\./, "")),
+					block: "json.select",
+					source: "local." + sourceName,
+					path: callMember.path,
+					out: scopePath,
+					__flowScriptLine: lineNumber
+				}]);
+			}
 			var call = parseNaturalFlowScriptCall(rhs);
 			if (call) {
 				var block = resolveFlowScriptName(call.name, imports);
