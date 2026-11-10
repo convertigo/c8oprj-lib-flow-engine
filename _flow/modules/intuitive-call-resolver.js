@@ -277,9 +277,10 @@
 		var ast = parse(source);
 		if (!ast) return empty;
 
-		// A node starts at its leftmost token: Rhino bounds !x, -x or typeof x by x alone (sourceStart of the parser)
+		// A node starts at its leftmost token: Rhino bounds !x, -x or typeof x by x alone (sourceStart of the parser), and
+		// ends at its last: Rhino bounds null, true, false or this by the next token too (sourceEnd of the parser)
 		function start(node) { return env.sourceStart(node, source); }
-		function end(node) { return Number(node.getAbsolutePosition()) + Number(node.getLength()); }
+		function end(node) { return env.sourceEnd ? env.sourceEnd(node, source) : Number(node.getAbsolutePosition()) + Number(node.getLength()); }
 		function text(node) { return source.substring(start(node), end(node)); }
 		function line(offset) { return source.substring(0, offset).split(/\r\n|\r|\n/).length; }
 		function catalog(name) {

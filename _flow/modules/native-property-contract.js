@@ -123,12 +123,13 @@
  }
  // AST ranges of static metadata, never a text search for a property name inside
  // comments, defaults or executable statements. Mask the Flow `if({...})` spelling.
- function locations(code){
+ // sourceEnd (flow-script-parser-service.js) ends a keyword literal with its keyword: Rhino bounds "true," by the comma too.
+ function locations(code,sourceEnd){
   var out=Object.create(null),masked=String(code).replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|\bif\s*(?=\(\s*\{)/g,function(t){return /^if\b/.test(t)?'i_'+t.substring(2):t;});
   function kind(n){return n&&String(n.getClass().getSimpleName());}
   function key(n){return kind(n)==='Name'?String(n.getIdentifier()):kind(n)==='StringLiteral'?String(n.getValue()):'';}
   function walk(n,path){
-   out[path]={line:Number(n.getLineno()),start:Number(n.getAbsolutePosition()),end:Number(n.getAbsolutePosition()+n.getLength())};
+   out[path]={line:Number(n.getLineno()),start:Number(n.getAbsolutePosition()),end:sourceEnd?sourceEnd(n,masked):Number(n.getAbsolutePosition()+n.getLength())};
    if(kind(n)!=='ObjectLiteral')return;
    var list=n.getElements();for(var i=0;i<list.size();i++){var p=list.get(i);walk(p.getValue(),path+'.'+key(p.getKey()));}
   }
@@ -142,9 +143,9 @@
   }catch(_unsupportedDsl){/* existing parser diagnoses syntax; no unsafe source rewrite */}
   return out;
  }
- function sourceMetadata(code,raw,conversion,rewrite){
+ function sourceMetadata(code,raw,conversion,rewrite,sourceEnd){
   var positions,checked;
-  function where(path){positions=positions||locations(code);return positions[path]||positions._flow||{line:1};}
+  function where(path){positions=positions||locations(code,sourceEnd);return positions[path]||positions._flow||{line:1};}
   try{checked=metadata(raw,conversion);}catch(e){
    var path=e.details&&e.details.property||'_flow',line=where(path).line;
    e.message+=' at line '+line+'.';

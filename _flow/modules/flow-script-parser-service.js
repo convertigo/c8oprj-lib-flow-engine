@@ -154,6 +154,30 @@
 		return Math.min(at, from - op.length);
 	}
 
+	// Rhino bounds a keyword literal (null, true, false, this) followed by another token with that token ("null,",
+	// "true)", "false}"), and a node that ends with one (a || null, b: false, c ? 1 : null, !true) inherits that end:
+	// source sliced by position takes the next token. The offset just after the last token of a node parsed from
+	// source as it is; a keyword literal ends with its keyword.
+	function sourceEnd(node, source) {
+		var at = Number(node.getAbsolutePosition()), end = at + Number(node.getLength()), k = String(node.getClass().getSimpleName());
+		if (k === "KeywordLiteral") {
+			var keyword = String(node.toSource());
+			return String(source).substring(at, at + keyword.length) === keyword ? at + keyword.length : end;
+		}
+		var last = node instanceof Packages.org.mozilla.javascript.ast.InfixExpression ? node.getRight()
+			: k === "ObjectProperty" ? node.getValue()
+			: k === "ConditionalExpression" ? node.getFalseExpression()
+			: k === "UnaryExpression" ? node.getOperand()
+			: k === "VariableInitializer" ? node.getInitializer()
+			: k === "ReturnStatement" ? node.getReturnValue()
+			: k === "ExpressionStatement" ? node.getExpression() : null;
+		if (!last || Number(last.getAbsolutePosition()) + Number(last.getLength()) !== end) return end;
+		var inner = sourceEnd(last, source);
+		// an expression statement keeps its semicolon, as Rhino bounds it when its expression ends otherwise
+		if (k === "ExpressionStatement" && /^\s*;$/.test(String(source).substring(inner, end))) return end;
+		return Math.min(end, inner);
+	}
+
 	// The prefix operators of a node, or of source read as statements: a rewrite writes as many as the node it replaces
 	// (an operator moved to another statement is lost for its own). null when the source is not JavaScript.
 	function prefixOperatorCount(value) {
@@ -183,7 +207,7 @@
 		var fixes = [], catalogs = Object.create(null), original = source;
 		function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
 		function start(node) { return sourceStart(node, source); }
-		function end(node) { return Number(node.getAbsolutePosition()) + Number(node.getLength()); }
+		function end(node) { return sourceEnd(node, source); }
 		function text(node) { return source.substring(start(node), end(node)); }
 		function list(value) {
 			var out = [];
@@ -2615,7 +2639,8 @@
 				if (rhs.substring(at - op.length, at) !== op) unsupported("A comment or other text between the operator " + op + " and its operand is not supported in an expression with a block call");
 				return Math.min(position(node), at - op.length);
 			}
-			function text(node) { return rhs.substring(start(node), position(node) + Number(node.getLength())); }
+			// a keyword literal ends with its keyword (sourceEnd): Rhino bounds null|| or true: by the next token too
+			function text(node) { return rhs.substring(start(node), sourceEnd(node, "(" + rhs + ");") - 1); }
 			function temp() {
 				var name;
 				do { name = "flowExpression" + (++expressionSequence); } while (expressionSource.indexOf(name) >= 0 || locals[name]);
@@ -3618,6 +3643,7 @@
 	return {
 		correctSource: correctSource,
 		sourceStart: sourceStart,
+		sourceEnd: sourceEnd,
 		prefixOperatorCount: prefixOperatorCount,
 		parseFlowScriptArgs: function (text, lineNumber, env) {
 			return create(env).parseFlowScriptArgs(text, lineNumber);

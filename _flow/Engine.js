@@ -3971,7 +3971,7 @@
 	function nativePropertyContract() { return loadEngineModule("native-property-contract.js"); }
 	function nativeFlowMetadata(meta, code, rewrite) {
 		return code === undefined ? nativePropertyContract().metadata(meta || {}, loadEngineModule("type-conversion.js"))
-			: nativePropertyContract().sourceMetadata(String(code), meta || {}, loadEngineModule("type-conversion.js"), rewrite === true);
+			: nativePropertyContract().sourceMetadata(String(code), meta || {}, loadEngineModule("type-conversion.js"), rewrite === true, flowScriptParserService().sourceEnd);
 	}
 
 	function syncProjectFlowInputs(name, inputDefinitions, args) {
@@ -4813,6 +4813,7 @@
 			? request.autoCorrectThreshold : configured;
 		return intuitiveCallResolver().resolve(blocks, code, { threshold: threshold }, {
 			sourceStart: flowScriptParserService().sourceStart,
+			sourceEnd: flowScriptParserService().sourceEnd,
 			prefixOperatorCount: flowScriptParserService().prefixOperatorCount,
 			blockCatalog: readOnlyBlockCatalog,
 			blockDescriptor: function (block) { return catalogService().blockDescriptor(block, catalogServiceEnv(), { includeIcons: false }); },
