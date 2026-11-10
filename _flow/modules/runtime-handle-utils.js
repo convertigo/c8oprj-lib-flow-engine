@@ -52,9 +52,17 @@
 		return value;
 	}
 
+	// A Java array or class answers the read of a member it does not have with an error, not undefined:
+	// test the member before reading it.
 	function isHandle(value) {
-		return value != null && (typeof value === "object" || typeof value === "function") && value.__flowHandle === true;
+		return value != null && (typeof value === "object" || typeof value === "function") &&
+			"__flowHandle" in value && value.__flowHandle === true;
 	}
+
+	// A Java object other than a String, Number or Boolean (a File, a Map, a Java array...) is never walked member by
+	// member: its bean properties lead to its class, its constructors and the rest of the reflection API. It is a leaf,
+	// written as its text. A Java List keeps its index walk.
+	var HOST_OBJECT_TAGS = { "[object JavaObject]": true, "[object JavaArray]": true, "[object JavaMap]": true };
 
 	function type(value) {
 		return String(value && value.__flowHandleType || "unknown");
@@ -94,8 +102,12 @@
 			}
 			return summary(value);
 		}
-		if (value && Object.prototype.toString.call(value) === "[object Array]") {
+		var tag = Object.prototype.toString.call(value);
+		if (tag === "[object Array]") {
 			return sanitizeArray(value, env, seen, rejectWhere);
+		}
+		if (HOST_OBJECT_TAGS[tag] === true) {
+			return String(value);
 		}
 		if (value && typeof value === "object") {
 			seen = seen || [];
@@ -141,8 +153,12 @@
 		if (isHandle(value)) {
 			return preserveHandles === true ? value : summary(value);
 		}
-		if (value && Object.prototype.toString.call(value) === "[object Array]") {
+		var tag = Object.prototype.toString.call(value);
+		if (tag === "[object Array]") {
 			return normalizeArray(value, env, preserveHandles);
+		}
+		if (HOST_OBJECT_TAGS[tag] === true) {
+			return String(value);
 		}
 		if (value && typeof value === "object") {
 			var out = {};
@@ -190,13 +206,17 @@
 		if (!value || typeof value !== "object") {
 			return false;
 		}
+		var tag = Object.prototype.toString.call(value);
+		if (HOST_OBJECT_TAGS[tag] === true) {
+			return false;
+		}
 		seen = seen || [];
 		if (seen.indexOf(value) !== -1) {
 			return false;
 		}
 		seen.push(value);
 		var found = false;
-		if (Object.prototype.toString.call(value) === "[object Array]") {
+		if (tag === "[object Array]") {
 			for (var i = 0; i < value.length && !found; i++) {
 				found = contains(value[i], env, seen);
 			}
