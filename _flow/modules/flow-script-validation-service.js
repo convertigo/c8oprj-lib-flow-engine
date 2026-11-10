@@ -316,7 +316,12 @@
 								next: propertyCandidates.length
 									? "Use property " + propertyCandidates[0].property + " if it matches the intent, otherwise inspect the block contract with flow-block-get."
 									: "Use only expected properties, or create/patch a project block if this property is part of a new contract.",
-								hint: "Use " + name + "({ " + expectedProps(block, env).map(function (prop) { return prop + ": ..."; }).join(", ") + " })."
+								hint: (key === "onError"
+									? name + " has no onError: its failure stops the Flow (only a block that declares onError, such as sql.* or " +
+										"requestable.call, returns its error as a value). To handle it, call it in try({ error: \"local.failure\", " +
+										"$$try() { ... }, $$catch() { ... } }) and read local.failure.code in $$catch. "
+									: "") +
+									"Use " + name + "({ " + expectedProps(block, env).map(function (prop) { return prop + ": ..."; }).join(", ") + " })."
 							});
 						}
 					});
@@ -325,7 +330,9 @@
 				var output = String(node.out || (name === "set" && node.props && node.props.path) || "");
 				var localName = /^local\.([A-Za-z_$][\w$]*)/.exec(output);
 				if (localName) context.known.local[localName[1]] = true;
-				["nodes", "then", "else", "fields"].forEach(function (slot) {
+				// Every child slot of the block, not only nodes/then/else/fields: the calls in try and catch were never checked,
+				// so an unknown property (onError on a block without it) or block there passed the check and was ignored at run.
+				env.flowScriptSlotNames(activeBlocks, node).forEach(function (slot) {
 					if (Object.prototype.toString.call(node[slot]) === "[object Array]") {
 					walk(node[slot], {known: {input: context.known.input, local: Object.assign({}, context.known.local),
 						config: context.known.config}, current: context.current || name === "forEach"});
