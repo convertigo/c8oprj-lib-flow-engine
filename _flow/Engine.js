@@ -10040,6 +10040,34 @@
 		return { command: args.join(" "), output: run.output, exitCode: run.exitCode };
 	}
 
+	// npm install removes node_modules/$app, which is no package: SvelteKit 3 writes there the tsconfig.json that the one of
+	// the application extends, and Vite reads it to transform each module. A Vite left running after an installation (a
+	// dev.sync that refreshed the dependencies without restarting it) then fails every module on [TSCONFIG_ERROR] Failed
+	// to load tsconfig '$app/tsconfig', while the pages are still served 200 (the browser shows the error overlay). The
+	// same sync as before its start writes it back; Vite keeps the failure until the tsconfig.json of the application
+	// changes, which the same content written again tells it. Nothing runs while the file is in place.
+	// @return null when nothing was needed, else the preparation ({ok, message}) with its durationMs
+	function frontendRestoreDevTsconfig(generatedRoot) {
+		if (!generatedRoot || !new File(generatedRoot, "node_modules").isDirectory()
+				|| new File(generatedRoot, "node_modules/$app/tsconfig.json").isFile()) {
+			return null;
+		}
+		var startedAt = JavaSystem.nanoTime();
+		var prepared = frontendPrepareDevTsconfig(generatedRoot);
+		var tsconfig = new File(generatedRoot, "tsconfig.json");
+		try {
+			if (prepared.ok && tsconfig.isFile()) {
+				FileUtils.writeStringToFile(tsconfig, FileUtils.readFileToString(tsconfig, "UTF-8"), "UTF-8");
+			}
+		} catch (unwritable) {
+			// the smoke check tells whether Vite transforms again
+		}
+		prepared.durationMs = frontendDurationMs(startedAt);
+		frontendStudioLog("[Svelte dev] node_modules/$app/tsconfig.json was missing (npm install removes it): "
+			+ (prepared.ok ? "written back by svelte-kit sync" : prepared.message) + " in " + prepared.durationMs + " ms.", !prepared.ok);
+		return prepared;
+	}
+
 	function frontendPrepareDevTsconfig(generatedRoot) {
 		var target = new File(generatedRoot, "node_modules/$app/tsconfig.json");
 		var kit = new File(generatedRoot, "node_modules/@sveltejs/kit");
@@ -12769,8 +12797,15 @@
 		};
 	}
 
-	function frontendSmokeDevRoutes(request, info, entry) {
+	// @param settleMs how long a module may keep failing after a change Vite has still to notice (0: probed once)
+	function frontendSmokeDevRoutes(request, info, entry, settleMs) {
 		var root = frontendGeneratedRootFile(request, info), routes = ["/"];
+		// A page answers 200 with its HTML shell (ssr is off) even when the browser then fails to load its modules: Vite
+		// transforms a module when it is requested, and answers 500 when that fails. The module of the root layout, which
+		// every page loads, is requested as the browser does.
+		var modules = ["src/routes/+layout.ts", "src/routes/+layout.svelte"].filter(function (path) {
+			return root && new File(root, path).isFile();
+		}).slice(0, 1);
 		var routesRoot = root ? new File(root, "src/routes") : null;
 		function scan(folder, path) {
 			if (!folder || !folder.isDirectory() || routes.length >= 50) return;
@@ -12785,6 +12820,8 @@
 		var base = frontendDevHealthUrl(entry).replace(/\/?$/, "/");
 		var smoke = loadEngineModule("frontend-dev-smoke.js").check(routes, {
 			now: function () { return Number(JavaSystem.currentTimeMillis()); },
+			sleep: function (ms) { Packages.java.lang.Thread.sleep(ms); },
+			settleMs: Number(settleMs || 0),
 			logTail: function () { return frontendLogTail(new File(String(entry.logFile || "")), 60); },
 			probe: function (route, timeout) {
 				var connection = new Packages.java.net.URL(base + route.replace(/^\//, "")).openConnection();
@@ -12792,8 +12829,10 @@
 					connection.setConnectTimeout(timeout); connection.setReadTimeout(timeout);
 					connection.setUseCaches(false); connection.setInstanceFollowRedirects(false);
 					var status = Number(connection.getResponseCode());
-					if (status < 200 || status >= 400) return {status: status, html: ""};
-					var reader = new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(connection.getInputStream(), "UTF-8"));
+					// the error page of Vite carries the message of the error
+					var stream = status < 200 || status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+					if (!stream) return {status: status, html: ""};
+					var reader = new Packages.java.io.BufferedReader(new Packages.java.io.InputStreamReader(stream, "UTF-8"));
 					var html = "", line;
 					try {
 						while (html.length < 65536 && (line = reader.readLine()) !== null) html += String(line) + "\n";
@@ -12801,7 +12840,7 @@
 					return {status: status, html: html};
 				} finally { connection.disconnect(); }
 			}
-		});
+		}, modules);
 		if (routes.length >= 50) { smoke.complete = false; smoke.discoveryLimited = true; }
 		return smoke;
 	}
@@ -12899,9 +12938,26 @@
 				frontendNotifyStudioBrowser(request, browser);
 			}
 		}
+		// a restarted Vite was prepared before its start (frontendLaunchVite)
+		var tsconfig = generated.ok !== false && !dependenciesChanged ? frontendRestoreDevTsconfig(generatedRoot) : null;
+		if (tsconfig && !tsconfig.ok) {
+			generated.ok = false;
+			generated.error = {code: "FRONTBUILDER_DEV_TSCONFIG_MISSING", message: tsconfig.message,
+				details: {generatedRoot: String(generatedRoot.getAbsolutePath())},
+				hint: "The dev server cannot transform the modules of the application: call dev.stop, then dev.ensure, then dev.sync again."};
+		} else if (tsconfig) {
+			generated.tsconfigRestored = {durationMs: tsconfig.durationMs};
+		}
 		if (generated.ok !== false) {
-			generated.smoke = frontendSmokeDevRoutes(request, info, entry);
-			if (!generated.smoke.ok) {
+			generated.smoke = frontendSmokeDevRoutes(request, info, entry, tsconfig ? 2000 : 0);
+			var brokenModule = (generated.smoke.modules || []).filter(function (item) { return item.status === "failed"; })[0];
+			if (brokenModule) {
+				generated.ok = false;
+				generated.error = {code: "FRONTEND_DEV_MODULE_FAILED",
+					message: "The dev server failed to transform " + brokenModule.module + ", which every page loads: the pages show the Vite error overlay.",
+					details: generated.smoke,
+					hint: "Read smoke.modules and smoke.logTail. A [TSCONFIG_ERROR] comes from the dev server, not from the page: call dev.stop, then dev.ensure, then dev.sync again."};
+			} else if (!generated.smoke.ok) {
 				generated.ok = false;
 				generated.error = {code: "FRONTEND_DEV_ROUTE_FAILED", message: "A generated route failed its HTTP smoke check.",
 					details: generated.smoke, hint: "Fix the route named in smoke.routes using smoke.logTail, then call dev.sync again."};
@@ -12913,7 +12969,9 @@
 		generated.dependenciesInstalled = dependenciesInstalled;
 		generated.dependenciesChanged = dependenciesChanged;
 		generated.message = generated.ok === false
-			? generated.smoke && !generated.smoke.ok ? "Svelte sources generated, but a route failed its HTTP smoke check. Read smoke.routes and smoke.logTail." : "Svelte dev source update failed."
+			? generated.error && generated.error.code === "FRONTEND_DEV_MODULE_FAILED" ? "Svelte sources generated, but the dev server failed to transform the root layout. Read smoke.modules and smoke.logTail."
+				: generated.smoke && !generated.smoke.ok ? "Svelte sources generated, but a route failed its HTTP smoke check. Read smoke.routes and smoke.logTail."
+				: generated.error && generated.error.code === "FRONTBUILDER_DEV_TSCONFIG_MISSING" ? "Svelte sources generated, but node_modules/$app/tsconfig.json could not be written back." : "Svelte dev source update failed."
 			: dependenciesChanged
 				? "Svelte dev source updated; dependencies installed and dev mode restarted."
 				: dependenciesInstalled

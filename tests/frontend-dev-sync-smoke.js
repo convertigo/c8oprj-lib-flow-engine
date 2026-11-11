@@ -15,6 +15,7 @@ function frontendWriteDevState(){}
 function frontendStudioBrowser(){return {};}
 function frontendNotifyStudioBrowser(){}
 function frontendDevDetails(){return {};}
+function frontendRestoreDevTsconfig(){return null;}
 var probed=0;
 function frontendSmokeDevRoutes(){probed++;return {ok:false,routes:[{route:'/draft/',httpStatus:500,status:'failed'}],logTail:'TypeError: state is null at +page.flow.svelte:4'};}
 var out=frontendSyncDev({},{});

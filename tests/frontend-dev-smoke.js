@@ -13,4 +13,19 @@ assert(!over.complete && over.routes[1].status==='not_checked','total budget bou
 	var overlay=module.check(['/'],{now:function(){return 0;},probe:function(){return {status:200,html:html};},logTail:function(){return '';}});
 	assert(!overlay.ok && overlay.routes[0].httpStatus===200 && overlay.routes[0].status==='failed','HTTP 200 with Vite overlay must fail');
 });
+// The module of the root layout: a page served 200 (its HTML shell) does not prove that Vite transforms its modules
+var vitePage='<script type="module">\nconst error = '+JSON.stringify({message:"Transform failed with 1 error:\n\n[TSCONFIG_ERROR] Failed to load tsconfig '$app/tsconfig': Tsconfig not found"})+'\n</script>';
+var broken=module.check(['/'],{now:function(){return 0;},probe:function(path){return path==='/'?{status:200,html:'<div id="svelte"></div>'}:{status:500,html:vitePage};},logTail:function(){return 'vite log';}},['src/routes/+layout.ts']);
+assert(!broken.ok && broken.routes[0].status==='passed' && broken.modules[0].module==='src/routes/+layout.ts' && broken.modules[0].httpStatus===500,'a module Vite fails to transform fails the smoke check: '+JSON.stringify(broken));
+assert(broken.modules[0].message==="Transform failed with 1 error: [TSCONFIG_ERROR] Failed to load tsconfig '$app/tsconfig': Tsconfig not found" && broken.logTail==='vite log','with the message of Vite: '+JSON.stringify(broken.modules));
+// settleMs: a module may fail while Vite notices a change just made, then pass
+var now=0,tries=0,settled=module.check(['/'],{now:function(){return now;},sleep:function(ms){now+=ms;},settleMs:2000,probe:function(path){return path==='/'?200:(++tries<3?500:200);},logTail:function(){return '';}},['src/routes/+layout.ts']);
+assert(settled.ok && tries===3 && settled.modules[0].status==='passed','a module that passes within settleMs passes: '+JSON.stringify(settled));
+now=0;tries=0;
+var once=module.check([],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(){tries++;return 500;},logTail:function(){return '';}},['src/routes/+layout.ts']);
+assert(!once.ok && tries===1,'without settleMs a module is requested once');
+now=0;tries=0;
+var bounded=module.check([],{now:function(){return now;},sleep:function(ms){now+=ms;},settleMs:2000,probe:function(){tries++;return 500;},logTail:function(){return '';}},['src/routes/+layout.ts']);
+assert(!bounded.ok && tries===21 && now===2000,'settleMs bounds the retries: '+tries+' requests, '+now+' ms');
+assert(result.modules===undefined,'without modules the result keeps its shape');
 print('frontend-dev-smoke OK');
