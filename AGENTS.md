@@ -814,7 +814,7 @@ As the sequences they replace, with the SDK unchanged:
   lib_flow_engine version. A called run answers its internal failure with status 500 in its envelope; an older called
   run does not, and its internal failure would be read as an application error (200).
 
-## Typed project block properties without kind (after 0.2.30)
+## Typed project block properties without kind (0.2.32)
 
 Project block properties that declare a type (boolean, integer, number, array, object) without a kind now receive the value of their argument, as the compiler lowers it, instead of its text. A block that compared such a property to "true" or "false", or parsed it, must compare the value itself.
 
@@ -851,3 +851,12 @@ Mission 34 compact follow-up: object literals, return objects, metadata and call
 - Runtime: borrowed runtime handles survive internal calls, a closed process output is a cancellation only when cancelled, data provider blocks compile at preload, generated applications share their packages on local storage, and the Svelte dev server is ready only after `svelte-kit sync` and its tsconfig.
 - An expression mixing a block call with a prefix operator (`!`, `-`, `typeof`…) kept its operator only partly: fixed; such expressions written since 0.2.30 should be re-run. Source corrections and call proposals keep prefix operators as well; a rewrite that would lose one is refused.
 - **Compatibility:** with `requestable.call` through the requester, caller and called Flow must both run 0.2.31. A client outside the SDK that relied on 500 for an author's throw must set an explicit status. A nested input written `"input.name"` is now that text: write `${input.name}`.
+
+## Release 0.2.32
+
+- **0.2.32** — A project block property that declares only a type receives the value of its argument as the compiler lowers it (an expression for boolean, integer, number, array and object, a template for a string), instead of its text; library blocks always declare the kind, which a test keeps.
+- Checks: the calls of every slot are checked, `try` and `catch` included, and an unknown `onError` gives the `try` form; code-check warns when a script reads a local that nothing assigns, with the closest assigned name; `local.x = block(…).y` (also `result.*` and `parent.*`) reads a static member of the block result, and a computed member is refused with the intermediate to write.
+- Sources: a saved source that no longer compiles because a block it calls changed its contract is read with `valid:false` and its diagnostics, and can be corrected by code-set, discarded or promoted; `null`, `true`, `false` and `this` end at their keyword when a source is cut by position, for corrections, call proposals and metadata locations.
+- Frontend: a failed step keeps the start and the end of its output, lists its error lines and writes the whole output to `_private/logs/frontbuilder-<step>.log`; `dev.sync` writes `node_modules/$app/tsconfig.json` back after an install, and the dev server is ready only once the module of the root layout loads (`FRONTEND_DEV_MODULE_FAILED`); a dev server that does not answer yet (restarting after a configuration change) is waited for up to 8 s, then reported as `FRONTEND_DEV_UNREACHABLE`; a missing frontend model file is named with the bootstrap call that creates it.
+- Runtime: a Java object, map or array is a leaf in handle checks and normalization.
+- **Compatibility:** a project block that compared a typed property to `"true"` or `"false"`, or parsed it, must compare the value itself. A source with an unknown property on a block inside `try` or `catch`, or that reads a computed member of a block call, is now refused when checked: write the `try` form or an intermediate local.
