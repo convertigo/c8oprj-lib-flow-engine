@@ -12951,7 +12951,15 @@
 		if (generated.ok !== false) {
 			generated.smoke = frontendSmokeDevRoutes(request, info, entry, tsconfig ? 2000 : 0);
 			var brokenModule = (generated.smoke.modules || []).filter(function (item) { return item.status === "failed"; })[0];
-			if (brokenModule) {
+			var silentModule = (generated.smoke.modules || []).filter(function (item) { return item.status === "unreachable"; })[0];
+			if (silentModule && !brokenModule) {
+				// No answer at all is not a transform failure: Vite was still restarting (a regenerated vite.config.ts).
+				generated.ok = false;
+				generated.error = {code: "FRONTEND_DEV_UNREACHABLE",
+					message: "The dev server did not answer within 8 s: it may still be restarting after a configuration change.",
+					details: generated.smoke,
+					hint: "Call dev.sync again; if the dev server still does not answer, call dev.ensure, then dev.sync."};
+			} else if (brokenModule) {
 				generated.ok = false;
 				generated.error = {code: "FRONTEND_DEV_MODULE_FAILED",
 					message: "The dev server failed to transform " + brokenModule.module + ", which every page loads: the pages show the Vite error overlay.",
@@ -12970,6 +12978,7 @@
 		generated.dependenciesChanged = dependenciesChanged;
 		generated.message = generated.ok === false
 			? generated.error && generated.error.code === "FRONTEND_DEV_MODULE_FAILED" ? "Svelte sources generated, but the dev server failed to transform the root layout. Read smoke.modules and smoke.logTail."
+				: generated.error && generated.error.code === "FRONTEND_DEV_UNREACHABLE" ? "Svelte sources generated, but the dev server did not answer yet: call dev.sync again."
 				: generated.smoke && !generated.smoke.ok ? "Svelte sources generated, but a route failed its HTTP smoke check. Read smoke.routes and smoke.logTail."
 				: generated.error && generated.error.code === "FRONTBUILDER_DEV_TSCONFIG_MISSING" ? "Svelte sources generated, but node_modules/$app/tsconfig.json could not be written back." : "Svelte dev source update failed."
 			: dependenciesChanged

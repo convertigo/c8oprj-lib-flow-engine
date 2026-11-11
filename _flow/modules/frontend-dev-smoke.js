@@ -4,11 +4,14 @@
 	// modules: paths from the root of the application, requested before the routes. A page answers 200 with its HTML
 	// shell even when the browser then fails to load its modules, whereas Vite answers 500 for a module it fails to
 	// transform. env.settleMs (with env.sleep) lets a module fail that long while Vite notices a change just made.
+	// A module the dev server does not answer at all (connection refused or reset: Vite restarting after a regenerated
+	// vite.config.ts) is not a transform failure: it is requested again for up to 8 s, then reported "unreachable".
+	var UNREACHABLE_MS = 8000;
 	function check(routes, env, modules) {
 		var started = env.now(), outcomes = [], failed = false, complete = true, moduleOutcomes = [];
 		var budget = function () { return Math.min(2000, Math.max(1, 15000 - (env.now() - started))); };
 		(modules || []).forEach(function (path) {
-			var settleUntil = env.now() + Number(env.settleMs || 0), outcome;
+			var first = env.now(), settleUntil = first + Number(env.settleMs || 0), outcome;
 			do {
 				try {
 					var response = env.probe(path, budget());
@@ -16,12 +19,14 @@
 					outcome = status >= 200 && status < 400 ? {module: path, httpStatus: status, status: "passed"}
 						: {module: path, httpStatus: status, status: "failed", message: viteError(response) || "The dev server failed to transform this module."};
 				} catch (error) {
-					outcome = {module: path, status: "failed", message: String(error.message || error)};
+					outcome = {module: path, status: "unreachable", message: String(error.message || error)};
 				}
-				if (outcome.status === "passed" || !env.sleep || env.now() >= settleUntil) break;
-				env.sleep(100);
+				if (outcome.status === "passed" || !env.sleep) break;
+				if (outcome.status === "failed" && env.now() >= settleUntil) break;
+				if (outcome.status === "unreachable" && env.now() - first >= UNREACHABLE_MS) break;
+				env.sleep(outcome.status === "unreachable" ? 250 : 100);
 			} while (env.now() - started < 15000);
-			if (outcome.status === "failed") failed = true;
+			if (outcome.status !== "passed") failed = true;
 			moduleOutcomes.push(outcome);
 		});
 		routes.forEach(function (route) {

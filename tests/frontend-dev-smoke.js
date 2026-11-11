@@ -27,5 +27,13 @@ assert(!once.ok && tries===1,'without settleMs a module is requested once');
 now=0;tries=0;
 var bounded=module.check([],{now:function(){return now;},sleep:function(ms){now+=ms;},settleMs:2000,probe:function(){tries++;return 500;},logTail:function(){return '';}},['src/routes/+layout.ts']);
 assert(!bounded.ok && tries===21 && now===2000,'settleMs bounds the retries: '+tries+' requests, '+now+' ms');
+// A dev server that does not answer (Vite restarting after a regenerated vite.config.ts) is waited for, never reported
+// as a module it failed to transform (runs i80l17f_haiku, i80l17f_ml4)
+now=0;tries=0;
+var restarting=module.check(['/'],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(path){if(path!=='/'&&++tries<4)throw Error('Connection refused');return 200;},logTail:function(){return '';}},['src/routes/+layout.ts']);
+assert(restarting.ok && tries===4 && restarting.modules[0].status==='passed','a module the restarting dev server answers later passes, without settleMs: '+JSON.stringify(restarting));
+now=0;tries=0;
+var down=module.check([],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(){tries++;throw Error('Connection refused');},logTail:function(){return '';}},['src/routes/+layout.ts']);
+assert(!down.ok && down.modules[0].status==='unreachable' && now>=8000 && now<=8250,'a dev server that never answers is unreachable after 8 s, not a failed transform: '+JSON.stringify(down)+' '+now);
 assert(result.modules===undefined,'without modules the result keeps its shape');
 print('frontend-dev-smoke OK');
