@@ -10300,8 +10300,33 @@
 		].join("\n");
 	}
 
+	// One path of flow-acceptance.json in its own format only: a known kind, the known fields, texts of 200 characters
+	// and lists of 20 texts at most, once a boolean; anything else is left out (a file edited by hand or left by a
+	// failed generation passes nothing else to the agent).
+	function frontendAcceptancePath(entry) {
+		if (!entry || typeof entry !== "object" || ["write", "carry", "load"].indexOf(entry.kind) < 0) {
+			return null;
+		}
+		var path = { kind: entry.kind };
+		// in the order the provider writes them
+		["page", "trigger", "to", "carries", "calls", "once", "prove"].forEach(function (key) {
+			var value = entry[key];
+			if (key === "once") {
+				if (value === true || value === false) path.once = value;
+			} else if (key === "carries" || key === "calls") {
+				if (Object.prototype.toString.call(value) === "[object Array]") {
+					path[key] = value.filter(function (item) { return typeof item === "string"; }).slice(0, 20)
+						.map(function (item) { return item.substring(0, 200); });
+				}
+			} else if (typeof value === "string") {
+				path[key] = value.substring(0, 200);
+			}
+		});
+		return path;
+	}
+
 	// The paths a person walks to prove the application (flow-acceptance.json, which the Svelte provider writes beside
-	// the generated sources: writes, carried values, loads), 60 at most, as they are; the server never runs them.
+	// the generated sources: writes, carried values, loads), 60 at most, each in its own format; the server never runs them.
 	function frontendAcceptancePaths(request) {
 		try {
 			var root = request ? frontendGeneratedRootFile(request, frontbuilderSettingsForRequest(request)) : null;
@@ -10310,7 +10335,8 @@
 				return null;
 			}
 			var manifest = JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
-			var paths = manifest && Object.prototype.toString.call(manifest.paths) === "[object Array]" ? manifest.paths.slice(0, 60) : [];
+			var paths = manifest && Object.prototype.toString.call(manifest.paths) === "[object Array]"
+				? manifest.paths.slice(0, 60).map(frontendAcceptancePath).filter(Boolean) : [];
 			return paths.length ? paths : null;
 		} catch (_unreadable) {
 			return null;
