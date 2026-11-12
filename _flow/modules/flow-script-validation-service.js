@@ -508,6 +508,33 @@
 		}];
 	}
 
+	// A Flow a job of the server scheduler runs is started by the server, without a caller: declared hidden or public,
+	// anyone who reaches it over HTTP starts it too, with its writes and its mails. scheduler-apply only schedules a
+	// private Flow; this keeps it private after. Without a declaration, the accessibility property of the Flow applies.
+	function scheduledAccessibilityDiagnostics(definition, request, env) {
+		var declared = String((definition && definition.flow || {}).accessibility || "").toLowerCase();
+		if (request.blockMode === true || !/^(hidden|public)$/.test(declared) || typeof env.scheduledJobsOfFlow !== "function") {
+			return [];
+		}
+		var name = String(request.name || request.flowName || request.flowQName || request.qname || "");
+		var jobs = env.scheduledJobsOfFlow(name) || [];
+		if (!jobs.length) {
+			return [];
+		}
+		return [{
+			severity: "error",
+			code: "FLOW_SCHEDULED_NOT_PRIVATE",
+			path: "_flow.accessibility",
+			property: "accessibility",
+			actual: declared,
+			expected: "private",
+			message: "Flow " + name.substring(name.lastIndexOf(".") + 1) + " is run by the scheduled job " + jobs.join(", ") + ": declared " +
+				declared + ", anyone who reaches it over HTTP starts it too.",
+			hint: "Keep _flow.accessibility \"private\". To start the job from a page, call a separate hidden Flow that checks the ADMIN " +
+				"role, then calls this one with requestable.call."
+		}];
+	}
+
 	function inputContractDiagnostics(blocks, definition, request, env, variables) {
 		request = request || {};
 		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) return [];
@@ -1230,9 +1257,10 @@
 			diagnostics.push({severity:"warning",code:note.code,line:note.line,path:note.property,property:note.property,
 				actual:note.before,expected:note.after,message:note.property+" is normalized from "+JSON.stringify(note.before)+" to "+JSON.stringify(note.after)+". Accepted as equivalent; source text is unchanged."});
 		});
-		(nativeDiagnostics.length ? [] : accessibilityDiagnostics(definition)).forEach(function (diagnostic) {
-			diagnostics.push(diagnostic);
-		});
+		(nativeDiagnostics.length ? [] : accessibilityDiagnostics(definition).concat(scheduledAccessibilityDiagnostics(definition, request, env)))
+			.forEach(function (diagnostic) {
+				diagnostics.push(diagnostic);
+			});
 		if (request.blockMode !== true) patternDiagnostics(activeBlocks, definition, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});

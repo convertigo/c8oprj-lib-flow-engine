@@ -4781,8 +4781,43 @@
 			stripFlowScriptMetadata: stripFlowScriptMetadata,
 			sourceFromDefinition: sourceFromDefinition,
 			analyzeFlowSource: analyzeFlowSource,
-			sha256Hex: sha256Hex
+			sha256Hex: sha256Hex,
+			scheduledJobsOfFlow: scheduledJobsOfFlow
 		};
+	}
+
+	// The jobs of the server scheduler that run a Flow of this project, enabled or not: the server starts that Flow
+	// without a caller. [] without a scheduler (a standalone engine); __flowScheduledJobs ({"Project.Flow": [jobs]})
+	// stands for it in the tests of the engine.
+	function scheduledJobsOfFlow(name) {
+		var flow = String(name || "");
+		flow = flow.substring(flow.lastIndexOf(".") + 1);
+		var project = projectDir() ? projectNameForRoot(projectDir()) : "";
+		var jobs = [];
+		if (!flow || !project) {
+			return jobs;
+		}
+		try {
+			if (typeof __flowScheduledJobs !== "undefined" && __flowScheduledJobs) {
+				return (__flowScheduledJobs[project + "." + flow] || []).map(String);
+			}
+			var app = Packages.com.twinsoft.convertigo.engine.Engine.theApp;
+			var manager = app ? app.schedulerManager : null;
+			if (!manager) {
+				return jobs;
+			}
+			var iterator = manager.getSchedulerXML().getScheduledJobs().iterator();
+			while (iterator.hasNext()) {
+				var job = iterator.next().getJob();
+				if (job && typeof job.getProjectName === "function" && typeof job.getSequenceName === "function" &&
+						String(job.getProjectName()) === project && String(job.getSequenceName()) === flow) {
+					addUnique(jobs, String(job.getName()));
+				}
+			}
+		} catch (unreadable) {
+			return jobs;
+		}
+		return jobs;
 	}
 
 	function validateFlowScriptDefinition(blocks, definition) {
@@ -5085,7 +5120,9 @@
 			directoryFingerprint(projectFlowsDir()),
 			hasNoSourceWorkingCopies(drafts) ? "" : sourceView(drafts).fingerprint(),
 			sha256Hex(JSON.stringify(request.tagContext || null)),
-			sha256Hex(JSON.stringify(root === undefined ? null : root))
+			sha256Hex(JSON.stringify(root === undefined ? null : root)),
+			// a job scheduled or removed since: the check of the accessibility of the Flow answers again
+			sha256Hex(JSON.stringify(scheduledJobsOfFlow(name)))
 		].join("\n");
 	}
 

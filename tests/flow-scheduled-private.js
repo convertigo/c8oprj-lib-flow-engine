@@ -22,7 +22,8 @@ try {
 		return "const _flow = " + JSON.stringify(meta) + "\nfunction DailyJob({input, result}) {\nresult.day = input.day\nreturn result\n}";
 	}
 	function scheduled(out) {
-		return (out.diagnostics || []).filter(function (d) { return d.code === "FLOW_SCHEDULED_NOT_PRIVATE"; })[0];
+		// a check that fails answers its diagnostics under error
+		return (out.diagnostics || (out.error && out.error.diagnostics) || []).filter(function (d) { return d.code === "FLOW_SCHEDULED_NOT_PRIVATE"; })[0];
 	}
 	write(new java.io.File(project, "_flow/flows/DailyJob.flow.js"), code("private"));
 
@@ -41,11 +42,16 @@ try {
 	assert(diagnostic.property === "accessibility" && diagnostic.expected === "private", "the property is named: " + JSON.stringify(diagnostic));
 	assert(scheduled(api("flowCodeCheck", { name: "DailyJob", code: code("public") })), "public is refused too");
 
-	// code-set does not write the working copy.
+	// code-set says it (the working copy is kept for the repair), code-promote refuses it: the saved Flow stays private.
 	var saved = api("flowCodeGet", { name: "DailyJob", draft: false });
 	var set = api("flowCodeSet", { name: "DailyJob", code: code("hidden"), revision: saved.revision });
-	assert(!set.ok && scheduled(set), "code-set refuses it: " + JSON.stringify(set));
-	assert(String(api("flowCodeGet", { name: "DailyJob", draft: true }).code).indexOf("hidden") === -1, "no working copy declares it hidden");
+	assert(!set.ok && scheduled(set), "code-set says it: " + JSON.stringify(set));
+	var promoted = api("flowCodePromote", { name: "DailyJob" });
+	assert(!promoted.ok, "code-promote refuses it: " + JSON.stringify(promoted));
+	var official = String(api("flowCodeGet", { name: "DailyJob", draft: false }).code);
+	assert(official.indexOf("\"private\"") !== -1 && official.indexOf("hidden") === -1, "the saved Flow stays private: " + official);
+	var direct = api("flowCodePromote", { name: "DailyJob", code: code("public") });
+	assert(!direct.ok && String(api("flowCodeGet", { name: "DailyJob", draft: false }).code).indexOf("public") === -1, "promoting code directly is refused too");
 
 	// Private, or without a declaration (the accessibility property of the Flow, which scheduler-apply checked): accepted.
 	assert(!scheduled(api("flowCodeCheck", { name: "DailyJob", code: code("private") })), "a scheduled private Flow is accepted");
