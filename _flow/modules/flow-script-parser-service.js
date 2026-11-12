@@ -1864,7 +1864,7 @@
 				} else if (kind === "path") {
 					args[key] = propertyPathFromToken(blocks, block, key, tokens[key], locals, lineNumber);
 				} else if (kind === "template" || kind === "value") {
-					args[key] = flowScriptValueFromToken(tokens[key], locals, lineNumber);
+					args[key] = flowScriptPropertyValueFromToken(blocks, block, key, tokens[key], locals, lineNumber);
 				} else if (kind === "schema") {
 					args[key] = parseFlowScriptMetadataValue(tokens[key], lineNumber);
 				} else if (kind === "text" || kind === "secret") {
@@ -1936,6 +1936,15 @@
 				return propertyPathFromToken(blocks, block, key, token, locals, lineNumber);
 			}
 			if (kind === "template" || kind === "value") {
+				var quoted = String(token).trim();
+				if (kind === "template" && (quoted.charAt(0) === '"' || quoted.charAt(0) === "'")) {
+					var text = flowScriptLiteralTokenValue(token, lineNumber);
+					if (typeof text === "string" && text.indexOf("${") !== -1) {
+						env.raise("FLOWSCRIPT_QUOTED_TEMPLATE", block + "." + key + " at line " + lineNumber +
+							" receives quoted text containing ${...}; it will not interpolate.", null,
+							"Use a backtick template literal for interpolation, or escape ${ in a backtick literal for intentional text.");
+					}
+				}
 				return flowScriptValueFromToken(token, locals, lineNumber);
 			}
 			if (kind === "schema") return parseFlowScriptMetadataValue(token, lineNumber);
