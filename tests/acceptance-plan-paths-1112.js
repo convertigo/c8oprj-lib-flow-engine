@@ -49,7 +49,24 @@ try {
 	assert(/walk each of paths/.test(plan.next), "the next step names the paths: " + plan.next);
 	assert(plan.calls.length === 7 && plan.calls[0].tool === "browser_navigate", "the probes are unchanged");
 
-	// 3. A list too long or unreadable is never a failure of openBuilt: at most 60 paths, nothing when it is not JSON
+	// 3. Each entry is read in its own format only (security review of 12/11, R1): the known fields, texts of 200
+	// characters at most, lists of 20 texts at most, once a boolean; anything else, an unknown kind included, is left out
+	var long = new Array(501).join("x"), many20 = [];
+	for (var k = 0; k < 30; k++) many20.push(".Call" + k);
+	files.writeStringToFile(new java.io.File(generated, "flow-acceptance.json"), JSON.stringify({ version: 1, paths: [
+		{ kind: "write", page: "/", trigger: long, calls: many20.concat([42, { x: 1 }]), once: "yes", script: "run me", prove: "Fill." },
+		{ kind: "exec", page: "/", prove: "Do something else." },
+		"not an object"
+	] }), "UTF-8");
+	var normalized = JSON.parse(engine.contextAction(JSON.stringify(request))).acceptance.paths;
+	assert(normalized.length === 1 && normalized[0].kind === "write", "only the entries of a known kind: " + JSON.stringify(normalized));
+	var entry = normalized[0];
+	assert(entry.trigger.length === 200 && entry.calls.length === 20 && entry.calls.every(function (c) { return typeof c === "string"; }),
+		"texts and lists are bounded: " + JSON.stringify(entry).substring(0, 300));
+	assert(entry.script === undefined && entry.once === undefined && entry.prove === "Fill." && entry.page === "/",
+		"unknown fields and a once that is no boolean are left out: " + JSON.stringify(Object.keys(entry)));
+
+	// 4. A list too long or unreadable is never a failure of openBuilt: at most 60 paths, nothing when it is not JSON
 	var many = { version: 1, paths: [] };
 	for (var i = 0; i < 80; i++) many.paths.push({ kind: "write", page: "/p" + i, trigger: "Save", calls: [".Save"], prove: "x" });
 	files.writeStringToFile(new java.io.File(generated, "flow-acceptance.json"), JSON.stringify(many), "UTF-8");
