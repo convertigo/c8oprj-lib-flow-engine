@@ -131,7 +131,7 @@
 			return !severity || diagnostic.severity === severity;
 		}).map(function (diagnostic) {
 			var out = {};
-			["severity", "phase", "code", "line", "message", "block", "property", "path", "expression", "actual", "expected", "candidates", "candidateDecision", "next", "create", "mock", "hint"].forEach(function (key) {
+			["severity", "phase", "code", "line", "message", "sourcePath", "block", "property", "path", "expression", "actual", "expected", "candidates", "candidateDecision", "next", "create", "mock", "hint"].forEach(function (key) {
 				if (diagnostic[key] !== undefined && diagnostic[key] !== null && diagnostic[key] !== "") {
 					out[key] = diagnostic[key];
 				}

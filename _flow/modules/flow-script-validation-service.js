@@ -559,6 +559,81 @@
 		return diagnostics;
 	}
 
+	function entityScopeDiagnostics(definition, request, env) {
+		var scopes = [], diagnostics = [], policy = request.blockMode === true &&
+			String(request.checkingBlock || request.correctingBlock || request.block || request.name || "") === "app.entityAccess";
+		function visit(nodes, inside, entity) {
+			(nodes || []).forEach(function (node) {
+				if (node.disabled === true) return;
+				var name = env.blockName(node), value = flowScriptPropertyValue(node, "value");
+				if (inside && name === "set" && flowScriptPropertyValue(node, "path") === "result.scope" && value && typeof value === "object" && !Array.isArray(value))
+					scopes.push({scope: value, line: node.__flowScriptLine || 0, entity: entity});
+				Object.keys(node).forEach(function (key) {
+					if (Array.isArray(node[key]) && key !== "props") {
+						var match = key === "then" && /(?:input|current)\.request\.entity\s*===?\s*["']([A-Za-z_][\w]*)["']/.exec(String(flowScriptPropertyValue(node, "condition")));
+						visit(node[key], inside || key === "authorize", match ? match[1] : entity);
+					}
+				});
+			});
+		}
+		visit(definition.nodes, policy);
+		if (!policy && env.entityPolicyDefinitionForCheck) {
+			var controlled = false;
+			walkDefinitionNodes(definition.nodes, function (node) {
+				var name = env.blockName(node), checked = flowScriptPropertyValue(node, "checkAccess");
+				if (name === "entity.applyGateway" || /^entity\./.test(name) && (checked === true || checked === "true")) controlled = true;
+			});
+			if (controlled) {
+				try {
+					var external = env.entityPolicyDefinitionForCheck(), first = scopes.length;
+					if (external) {
+						visit(external.definition.nodes, true);
+						for (var i = first; i < scopes.length; i++) scopes[i].file = external.file;
+					}
+				} catch (_unreadablePolicy) { /* Dynamic/native policies keep their runtime check. */ }
+			}
+		}
+		if (!scopes.length || !env.entityModelForCheck) return diagnostics;
+		var model;
+		try { model = env.entityModelForCheck(); } catch (_unreadable) { return diagnostics; }
+		var entities = model && model.entities || {};
+		function accepts(field, value) {
+			if (value === null) return field.nullable === true;
+			var type = field.type || "string";
+			if (type === "boolean") return typeof value === "boolean";
+			if (type === "int64") {
+				if (typeof value !== "string" || !/^-?(0|[1-9][0-9]*)$/.test(value)) return false;
+				var digits = value.replace(/^-/, ""), bound = value.charAt(0) === "-" ? "9223372036854775808" : "9223372036854775807";
+				return digits.length < bound.length || digits.length === bound.length && digits <= bound;
+			}
+			if (type === "decimal") return typeof value === "string" && /^-?(0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value);
+			if (["string", "text", "enum", "date", "timestamp", "datetime"].indexOf(type) >= 0) return typeof value === "string";
+			return true;
+		}
+		scopes.forEach(function (entry) {
+			var names = Object.keys(entry.scope), candidates = Object.keys(entities).filter(function (name) { return !entry.entity || name === entry.entity; }).map(function (name) {
+				var entity = entities[name], fields = Object.assign({}, entity.fields || {});
+				if (!entity.identity && !fields.id) fields.id = {type: "int64", identity: true};
+				return fields;
+			}).filter(function (fields) { return names.every(function (name) { return !!fields[name]; }); });
+			names.forEach(function (name) {
+				var value = entry.scope[name];
+				if (typeof value === "string" && env.templateSyntax.hasExpression(value)) return;
+				var literal = typeof value === "string" ? env.templateSyntax.literalText(value) : value;
+				if (literal === "__none__" || literal === "none" || literal === -1 || literal === "-1" ||
+					literal === "" && (/id$/i.test(name) || candidates.some(function (f) { return !!f[name].identity || !!f[name].relation; })))
+					diagnostics.push({severity: "warning", code: "ENTITY_SCOPE_SENTINEL", line: entry.line, sourcePath: entry.file, property: "scope." + name,
+						message: "scope." + name + " looks like a sentinel for no rows.", hint: "Return {none: true} alone instead of a sentinel equality."});
+				// Different entities can share a field name with different types: diagnose only an unambiguous rejection.
+				if (candidates.length && candidates.every(function (fields) { return !accepts(fields[name], literal); }))
+					diagnostics.push({severity: "error", code: "ENTITY_SCOPE_LITERAL_TYPE", line: entry.line, sourcePath: entry.file, property: "scope." + name,
+						message: "The literal scope value is incompatible with field " + name + ".",
+						hint: "Use the field's declared scalar encoding (int64 and decimal are text), or {none: true} for no rows."});
+			});
+		});
+		return diagnostics;
+	}
+
 	function inputDeclarationSnippet(missing) {
 		return "const _flow = { inputs: { " + missing.map(function (name) {
 			return name + ": { type: \"string\", description: \"TODO\", default: \"\" }";
@@ -1386,6 +1461,7 @@
 			.forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
+		entityScopeDiagnostics(definition, request, env).forEach(function (d) { diagnostics.push(d); });
 		demoResetDiagnostics(definition, request, env).forEach(function (d) { diagnostics.push(d); });
 		writesWithoutTransactionDiagnostics(definition, request, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);

@@ -161,6 +161,7 @@
 					sourceVersion: meta.sourceVersion,
 					includeHeader: false,
 					blockMode: true,
+					checkingBlock: request && request.code !== undefined ? name : undefined,
 					authoringCorrections: request && request.correctSource === true
 				});
 			} catch (refused) {

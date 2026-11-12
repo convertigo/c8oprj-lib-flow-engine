@@ -4783,6 +4783,18 @@
 			analyzeFlowSource: analyzeFlowSource,
 			sha256Hex: sha256Hex,
 			scheduledJobsOfFlow: scheduledJobsOfFlow,
+			entityPolicyDefinitionForCheck: function () {
+				var file = new File(projectDir(), sourcePaths().path("blocks/app/entityAccess.block.js"));
+				if (!file.isFile() || file.length() > 262144) return null;
+				var source = String(FileUtils.readFileToString(file, "UTF-8")), extracted = extractFlowScriptBlockMeta(source);
+				if (blockCodeRuntimeFromMeta(extracted.meta || {}) !== "flow") return null;
+				return {definition: parseFlowScript(loadBlocks(), ensureFlowScriptBlockFunction("app.entityAccess", extracted.code)), file: String(file)};
+			},
+			entityModelForCheck: function () {
+				var file = new File(projectDir(), sourcePaths().path("data/model.yaml"));
+				if (!file.isFile() || file.length() > 262144) return null;
+				return parseYamlSource(String(FileUtils.readFileToString(file, "UTF-8")), "{}");
+			},
 			definitionForCheck: function (name) {
 				// Read source without synchronizing beans or executing a target Flow.
 				var source = flowRepositoryService().readProjectFlowCode(name, {}, flowRepositoryEnv());
