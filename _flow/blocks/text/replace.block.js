@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:find-replace",
-  "description": "Replaces literal text, or with regex: true the matches of a regular expression (JavaScript syntax, $1 $& $<name> in the replacement, under the execution budget of text.match on the server; in a page the browser runs its native RegExp without a budget).",
+  "description": "Replaces literal text, or with regex: true the matches of a regular expression (JavaScript syntax, $1 $& $<name> in the replacement, under the execution budget of text.match on the server; in a page the browser runs its native RegExp without a budget: no nested quantifier such as `(a+)+` or `(a|a)*` there, never a pattern over data written by other users, and any check that guards data runs again in the server Flow).",
   "summary": "replace {{search}} by {{replacement}} in {{text}}",
   "targets": [
     "backend",

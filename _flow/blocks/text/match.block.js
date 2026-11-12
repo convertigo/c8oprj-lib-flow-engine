@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:regex",
-  "description": "Tests a text against a regular expression (JavaScript syntax), under an execution budget on the server; in a page the browser runs its native RegExp without a budget, so keep a pattern applied to user input simple there. out.matched tells whether it matches, out.groups holds the whole match then each captured group (an unmatched group is empty); with the g flag, every whole match. A pattern of more than 500 characters, an unsupported syntax or flag gives TEXT_PATTERN_INVALID, a text of more than 100000 characters TEXT_INPUT_TOO_LONG, too much backtracking TEXT_PATTERN_TIMEOUT (on the server).",
+  "description": "Tests a text against a regular expression (JavaScript syntax), under an execution budget on the server; in a page the browser runs its native RegExp without a budget: no nested quantifier such as `(a+)+` or `(a|a)*` there, never a pattern over data written by other users, and any check that guards data runs again in the server Flow. out.matched tells whether it matches, out.groups holds the whole match then each captured group (an unmatched group is empty); with the g flag, every whole match. A pattern of more than 500 characters, an unsupported syntax or flag gives TEXT_PATTERN_INVALID, a text of more than 100000 characters TEXT_INPUT_TOO_LONG, too much backtracking TEXT_PATTERN_TIMEOUT (on the server).",
   "summary": "match {{text}} with {{pattern}}",
   "targets": [
     "backend",
