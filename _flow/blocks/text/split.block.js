@@ -2,7 +2,7 @@ const _meta = {
   "sourceVersion": 2,
   "version": 1,
   "icon": "mdi:format-list-bulleted",
-  "description": "Splits a text on a literal separator, or with regex: true on a regular expression (JavaScript syntax, captured groups included, under the execution budget of text.match), into a list of texts, trimmed and without empty items by default (\"a, b,\" gives [\"a\", \"b\"]).",
+  "description": "Splits a text on a literal separator, or with regex: true on a regular expression (JavaScript syntax, captured groups included, under the execution budget of text.match on the server; in a page the browser runs its native RegExp without a budget), into a list of texts, trimmed and without empty items by default (\"a, b,\" gives [\"a\", \"b\"]).",
   "summary": "split {{text}} on {{separator}}",
   "targets": [
     "backend",
