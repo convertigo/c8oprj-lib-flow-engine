@@ -535,6 +535,55 @@
 		}];
 	}
 
+	// Several entity writes of one Flow commit one by one unless they share a sql.transaction: a failure in the middle
+	// keeps the writes already done. In the PCA of 11/11 a grouped declaration saved a declaration and its item for each
+	// selected item, then a journal line, and a refusal on the third item kept the first two. A write in a loop writes
+	// many times. The main Flow and each helper are counted on their own; the nodes of a transaction are left out.
+	var ENTITY_WRITES = { "entity.save": true, "entity.delete": true };
+	var WRITE_LOOPS = { "forEach": true, "forEachChunk": true, "while": true };
+	var WRITE_TRANSACTIONS = { "sql.transaction": true, "entity.atomic": true };
+
+	function writesWithoutTransactionDiagnostics(definition, request, env) {
+		if (request.blockMode === true) return [];
+		var diagnostics = [];
+		var flow = String(request.name || request.flowName || request.flowQName || request.qname || "Flow");
+		flow = flow.substring(flow.lastIndexOf(".") + 1);
+		function isNode(value) {
+			return !!value && typeof value === "object" && Object.prototype.toString.call(value) !== "[object Array]" && env.blockName(value) !== "";
+		}
+		function walk(nodes, loop, writes) {
+			(nodes || []).forEach(function (node) {
+				if (!isNode(node)) return;
+				var name = env.blockName(node);
+				if (WRITE_TRANSACTIONS[name]) return;
+				if (ENTITY_WRITES[name]) writes.push({ block: name, line: node.__flowScriptLine || 0, loop: loop });
+				var nested = loop || (WRITE_LOOPS[name] ? name : "");
+				Object.keys(node).forEach(function (key) {
+					var value = node[key];
+					if (key.charAt(0) !== "_" && Object.prototype.toString.call(value) === "[object Array]" && value.some(isNode)) walk(value, nested, writes);
+				});
+			});
+		}
+		[definition.nodes].concat((definition.helpers || []).map(function (helper) { return helper.nodes; })).forEach(function (nodes) {
+			var writes = [];
+			walk(nodes, "", writes);
+			if (writes.length < 2 && !writes.some(function (write) { return write.loop; })) return;
+			var where = writes.map(function (write) { return write.line + (write.loop ? " in " + write.loop : ""); });
+			diagnostics.push({
+				severity: "warning",
+				code: "FLOWSCRIPT_WRITES_WITHOUT_TRANSACTION",
+				line: writes[0].line,
+				message: flow + " writes with " + writes.map(function (write) { return write.block; }).filter(function (name, index, all) {
+					return all.indexOf(name) === index;
+				}).join(" and ") + " at line" + (where.length > 1 ? "s " : " ") + where.join(", ") + " outside a sql.transaction: each write " +
+					"commits alone, and a failure in the middle keeps the writes already done.",
+				hint: "Put the related writes in the $$nodes of one sql.transaction({ connection, $$nodes: function () { ... } }): they commit " +
+					"together or not at all. Keep outside only a write that must stay after a refusal (a journal line of it)."
+			});
+		});
+		return diagnostics;
+	}
+
 	function inputContractDiagnostics(blocks, definition, request, env, variables) {
 		request = request || {};
 		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) return [];
@@ -1261,6 +1310,9 @@
 			.forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
+		writesWithoutTransactionDiagnostics(definition, request, env).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
 		if (request.blockMode !== true) patternDiagnostics(activeBlocks, definition, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});

@@ -23,9 +23,11 @@ try {
 		'(function () { return { run: function (ctx, node) { return ctx.runChildren ? ctx.runChildren(node.nodes || []) : null; } }; }())');
 	var engine = eval(String(FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 	function api(method, request) { return JSON.parse(engine[method](JSON.stringify(request))); }
+	var last = null;
 	function check(body) {
 		var code = 'const _flow = { sourceVersion: 2, inputs: { items: { type: "array", default: [] } } }\nfunction Declare({ input, result }) {\n' + body + '\n}';
 		var out = api("flowCodeCheck", { name: "Declare", code: code });
+		last = out;
 		return (out.diagnostics || (out.error && out.error.diagnostics) || []).filter(function (d) { return d.code === "FLOWSCRIPT_WRITES_WITHOUT_TRANSACTION"; });
 	}
 	var save = function (entity) { return '  entity.save({ entity: "' + entity + '", values: {} })'; };
@@ -33,7 +35,7 @@ try {
 	var two = check([save("Declaration"), save("Item")].join("\n"));
 	assert(two.length === 1 && two[0].severity === "warning", "two writes outside a transaction are said: " + JSON.stringify(two));
 	assert(/sql\.transaction/.test(two[0].hint) && /\$\$nodes/.test(two[0].hint), "the hint gives sql.transaction and its $$nodes: " + two[0].hint);
-	assert(/lines? 4, 5/.test(two[0].message), "the lines of the writes are given: " + two[0].message);
+	assert(/lines 3, 4 /.test(two[0].message), "the lines of the writes are given: " + two[0].message);
 
 	var looped = check(['  forEach({', '    items: input.items,', '    $$nodes: function () {', '      entity.save({ entity: "Item", values: {} })', '    },', '  })'].join("\n"));
 	assert(looped.length === 1 && /forEach/.test(looped[0].message), "one write in a loop writes many times: " + JSON.stringify(looped));
@@ -43,6 +45,7 @@ try {
 
 	assert(check(['  sql.transaction({', '    connection: "app",', '    $$nodes: function () {', '  ' + save("Declaration"), '  ' + save("Item"), '    },', '  })'].join("\n")).length === 0,
 		"writes that share a sql.transaction are not said");
+	assert(last.ok === true, "the stand-in blocks are known and the transaction checks: " + JSON.stringify(last.diagnostics || last.error));
 	assert(check(save("Item")).length === 0, "a single write is not said");
 	print("entity-writes-transaction OK (" + checks + " checks)");
 } finally {
