@@ -10300,8 +10300,45 @@
 		].join("\n");
 	}
 
-	function frontendAcceptancePlan(url) {
+	// The paths a person walks to prove the application (flow-acceptance.json, which the Svelte provider writes beside
+	// the generated sources: writes, carried values, loads), 60 at most, as they are; the server never runs them.
+	function frontendAcceptancePaths(request) {
+		try {
+			var root = request ? frontendGeneratedRootFile(request, frontbuilderSettingsForRequest(request)) : null;
+			var file = root ? new File(root, "flow-acceptance.json") : null;
+			if (!file || !file.isFile() || file.length() > 262144) {
+				return null;
+			}
+			var manifest = JSON.parse(String(FileUtils.readFileToString(file, "UTF-8")));
+			var paths = manifest && Object.prototype.toString.call(manifest.paths) === "[object Array]" ? manifest.paths.slice(0, 60) : [];
+			return paths.length ? paths : null;
+		} catch (_unreadable) {
+			return null;
+		}
+	}
+
+	// The probes prove that the build renders; the walk of the paths and of each criterion proves that it works
+	// (flow://guide/frontend-svelte-proof, Application Acceptance).
+	function frontendAcceptanceWalk(paths) {
+		return (paths ? "Then walk each of paths, and each acceptance criterion of the specification that goes through a screen, "
+			: "Then walk each acceptance criterion of the specification that goes through a screen, ") +
+			"as its user would, with a verifier or a sub-agent of your host: fill, submit and read the result on the screen, " +
+			"one refused value per form whose message must show, leave each list and come back. A direct Flow call proves no " +
+			"screen (flow://guide/frontend-svelte-proof, Application Acceptance).";
+	}
+
+	function frontendAcceptancePlan(url, request) {
 		var probe = frontendAcceptanceProbe();
+		var paths = frontendAcceptancePaths(request);
+		var plan = frontendAcceptanceProbes(url, probe);
+		if (paths) {
+			plan.paths = paths;
+		}
+		plan.next = plan.next + " " + frontendAcceptanceWalk(paths);
+		return plan;
+	}
+
+	function frontendAcceptanceProbes(url, probe) {
 		if (frontendStudioViewer()) {
 			return {
 				strategy: "studio-viewer-plan",
@@ -10311,7 +10348,7 @@
 				],
 				checks: ["the built page answers 200", "every script and style it loads answers 200"],
 				studioRule: "The Studio viewer is one page: never navigate, open, close or resize it. openBuilt shows the build to the user in a Studio browser that Playwright does not drive.",
-				next: "Execute the call unchanged on the current viewer page: ok must be true. Prove the behaviour on the dev viewer, whose sources are the ones built."
+				next: "Execute the call unchanged on the current viewer page: ok must be true; it proves that the build renders, not that it works. Prove the behaviour on the dev viewer, whose sources are the ones built."
 			};
 		}
 		return {
@@ -10328,7 +10365,7 @@
 			],
 			checks: ["expected visible content", "broken images", "pending startup state", "console and page errors", "desktop and mobile overflow"],
 			selectorRule: "Flow ids are authoring identities, not guaranteed DOM ids. Prefer roles, visible text, images and rendered semantic selectors.",
-			next: "Execute calls unchanged and in order. Add one focused interaction only when a required business workflow is not covered by these probes."
+			next: "Execute calls unchanged and in order: they prove that the build renders, not that it works."
 		};
 	}
 
@@ -10629,7 +10666,7 @@
 			response.details.production = productionState;
 			var builtUrl = frontendBuiltUrl(request);
 			response.openUrl = builtUrl;
-			response.acceptance = builtUrl ? frontendAcceptancePlan(builtUrl) : null;
+			response.acceptance = builtUrl ? frontendAcceptancePlan(builtUrl, request) : null;
 		}
 		if (ok && (action === "install" || action === "generate")) {
 			response.details.production = frontendObserveProductionState(request, frontbuilderSettingsForRequest(request));
@@ -13333,7 +13370,7 @@
 				message: builtUrl ? "Opening built production frontend." : "Unable to resolve built production URL.",
 				openUrl: builtUrl,
 				browser: builtUrl ? frontendStudioBrowser(request, builtUrl, "Svelte production frontend", "frontbuilder.svelte.prod") : null,
-				acceptance: builtUrl ? frontendAcceptancePlan(builtUrl) : null
+				acceptance: builtUrl ? frontendAcceptancePlan(builtUrl, request) : null
 			};
 		}
 		if (id === "frontbuilder.svelte.dev.sync") {
