@@ -10346,8 +10346,9 @@
 	// The probes prove that the build renders; the walk of the paths and of each criterion proves that it works
 	// (flow://guide/frontend-svelte-proof, Application Acceptance).
 	function frontendAcceptanceWalk(paths) {
-		return (paths ? "Then walk each of paths, and each acceptance criterion of the specification that goes through a screen, "
-			: "Then walk each acceptance criterion of the specification that goes through a screen, ") +
+		return "Fill the seen column of your acceptance table (criterion, path, seen), written from the specification before building: " +
+			(paths ? "walk each of paths, and each acceptance criterion of the specification that goes through a screen, "
+			: "walk each acceptance criterion of the specification that goes through a screen, ") +
 			"as its user would, with a verifier or a sub-agent of your host: fill, submit and read the result on the screen, " +
 			"one refused value per form whose message must show, leave each list and come back. A direct Flow call proves no " +
 			"screen (flow://guide/frontend-svelte-proof, Application Acceptance).";
