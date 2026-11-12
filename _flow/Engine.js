@@ -4782,7 +4782,12 @@
 			sourceFromDefinition: sourceFromDefinition,
 			analyzeFlowSource: analyzeFlowSource,
 			sha256Hex: sha256Hex,
-			scheduledJobsOfFlow: scheduledJobsOfFlow
+			scheduledJobsOfFlow: scheduledJobsOfFlow,
+			definitionForCheck: function (name) {
+				// Read source without synchronizing beans or executing a target Flow.
+				var source = flowRepositoryService().readProjectFlowCode(name, {}, flowRepositoryEnv());
+				return source === null ? null : parseFlowScript(loadBlocks(), source.code);
+			}
 		};
 	}
 

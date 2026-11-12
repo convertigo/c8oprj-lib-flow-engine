@@ -487,6 +487,78 @@
 		return definition && (definition.flow || definition._flow) || {};
 	}
 
+	// The direct reset is private regardless of any apparent role check. Indirect public
+	// callers get an advisory: a source-level role test is never treated as authorization proof.
+	function demoResetDiagnostics(definition, request, env) {
+		if (request.blockMode === true) return [];
+		var diagnostics = [], seen = {}, cache = {};
+		function nodes(definition, visit) {
+			function inline(value, line) {
+				if (Array.isArray(value)) { value.forEach(function (v) { inline(v, line); }); return; }
+				if (!value || typeof value !== "object") return;
+				if (typeof value.__flowBlock === "string") {
+					if (value.metadata && value.metadata.disabled === true) return;
+					var call = {block: value.__flowBlock, props: value.properties || {}, __flowScriptLine: line};
+					visit(call);
+					inline(call.props, line);
+					return;
+				}
+				Object.keys(value).forEach(function (key) { inline(value[key], line); });
+			}
+			function walk(list) {
+				(list || []).forEach(function (node) {
+					if (!node || typeof node !== "object" || node.disabled === true) return;
+					visit(node);
+					inline(node.props, node.__flowScriptLine || 0);
+					Object.keys(node).forEach(function (key) {
+						if (key !== "props" && key.charAt(0) !== "_" && Array.isArray(node[key])) walk(node[key]);
+					});
+				});
+			}
+			if (!definition) return;
+			walk(definition.nodes);
+			(definition.helpers || []).forEach(function (helper) { walk(helper.nodes); });
+		}
+		function target(node) {
+			var block = env.blockName(node), name;
+			if (block === "flow.call") name = flowScriptPropertyValue(node, "flow");
+			if (block === "requestable.call") {
+				name = flowScriptPropertyValue(node, "requestable");
+				// A local Flow only; never interpret another project's target as a local name.
+				if (typeof name !== "string" || !/^\.[A-Za-z_$][\w$]*$/.test(name)) return "";
+				name = name.substring(1);
+			}
+			return typeof name === "string" && /^[A-Za-z_$][\w$]*$/.test(name) ? name : "";
+		}
+		function resets(name) {
+			if (!name) return false;
+			if (Object.prototype.hasOwnProperty.call(cache, name)) return cache[name];
+			if (seen[name] || !env.definitionForCheck) return false;
+			seen[name] = true;
+			var found = false, child;
+			try { child = env.definitionForCheck(name); } catch (_unreadable) { child = null; }
+			nodes(child, function (node) {
+				if (env.blockName(node) === "entity.demoReset" || resets(target(node))) found = true;
+			});
+			delete seen[name];
+			cache[name] = found;
+			return found;
+		}
+		if (String(flowMetaFromDefinition(definition).accessibility || "public").toLowerCase() === "private") return [];
+		nodes({nodes: definition.nodes, helpers: definition.helpers}, function (node) {
+			var direct = env.blockName(node) === "entity.demoReset", name = target(node);
+			if (!direct && (!name || !resets(name))) return;
+			diagnostics.push({severity: direct ? "error" : "warning",
+				code: direct ? "FLOW_DEMO_RESET_NOT_PRIVATE" : "FLOW_DEMO_RESET_ADMIN_UNVERIFIED",
+				line: node.__flowScriptLine || 0, block: env.blockName(node),
+				message: direct ? "A Flow calling entity.demoReset must declare private accessibility." :
+					"This non-private Flow calls a reset Flow; verify that ADMIN is required before this call.",
+				hint: "Declare the reset Flow private. A separate hidden entry point must verify ADMIN, then call it with requestable.call. " +
+					"This advisory does not prove or replace runtime authorization."});
+		});
+		return diagnostics;
+	}
+
 	function inputDeclarationSnippet(missing) {
 		return "const _flow = { inputs: { " + missing.map(function (name) {
 			return name + ": { type: \"string\", description: \"TODO\", default: \"\" }";
@@ -1314,6 +1386,7 @@
 			.forEach(function (diagnostic) {
 				diagnostics.push(diagnostic);
 			});
+		demoResetDiagnostics(definition, request, env).forEach(function (d) { diagnostics.push(d); });
 		writesWithoutTransactionDiagnostics(definition, request, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
