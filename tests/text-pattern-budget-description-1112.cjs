@@ -16,6 +16,9 @@ for (const name of ['match', 'replace', 'split']) {
   assert.match(description, /on the server/, name + ': the budget is said to be the one of the server: ' + description);
   checks++;
   assert.match(description, /in a page the browser runs its native RegExp without a budget/, name + ': the browser has none: ' + description);
+  checks++;
+  assert.match(description, /no nested quantifier such as `\(a\+\)\+` or `\(a\|a\)\*` there, never a pattern over data written by other users, and any check that guards data runs again in the server Flow/,
+    name + ': what to avoid in a page (security review of 12/11, 10h56): ' + description);
   const browser = fs.readFileSync(path.join(dir, name + '.browser.js'), 'utf8');
   checks++;
   assert.match(browser, /a browser cannot stop its own RegExp/, name + ': the browser implementation has no budget');
