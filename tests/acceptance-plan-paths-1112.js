@@ -30,6 +30,9 @@ try {
 	var bare = JSON.parse(engine.contextAction(JSON.stringify(request))).acceptance;
 	assert(bare && bare.strategy === "safe-playwright-plan", "the plan: " + JSON.stringify(bare));
 	assert(bare.paths === undefined, "no paths without their list: " + JSON.stringify(bare.paths));
+	// the acceptance table the agent wrote from the specification before building is filled by the walk (lot 1b, 12/11)
+	assert(/Fill the seen column of your acceptance table \(criterion, path, seen\), written from the specification before building/.test(bare.next),
+		"the next step names the acceptance table: " + bare.next);
 	assert(!/one focused interaction/.test(bare.next) && /renders, not that it works/.test(bare.next)
 		&& /each acceptance criterion of the specification that goes through a screen/.test(bare.next)
 		&& /one refused value per form/.test(bare.next) && /Application Acceptance/.test(bare.next),
