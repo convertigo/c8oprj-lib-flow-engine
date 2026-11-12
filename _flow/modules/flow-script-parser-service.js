@@ -86,7 +86,7 @@
 	// The functions of the expressions (expressionFunctions of expression-utils.js): calls of them are expressions,
 	// never block calls. tests/expression-number-functions.js checks this list against expression-utils.js.
 	var EXPRESSION_FUNCTION_NAMES = ["lower", "upper", "trim", "contains", "startsWith", "endsWith",
-		"length", "list.length", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
+		"length", "list.length", "text.repeat", "round", "floor", "ceil", "abs", "min", "max", "Math.round", "Math.floor", "Math.ceil",
 		"Math.abs", "Math.min", "Math.max", "default", "json", "oneOf", "overlaps", "String", "Number", "Array.isArray",
 		"parseInt", "parseFloat", "isNaN", "isFinite", "Number.parseInt", "Number.parseFloat", "Number.isNaN",
 		"Number.isFinite", "Number.isInteger", "Math.sqrt", "Math.cbrt", "Math.pow", "Math.exp", "Math.log", "Math.log2",

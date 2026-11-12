@@ -27,7 +27,7 @@
 	// The functions of the expressions (expression-utils.js): not blocks, nothing to resolve
 	var EXPRESSION_FUNCTIONS = {
 		lower: "string", upper: "string", trim: "string", contains: "boolean", startsWith: "boolean", endsWith: "boolean",
-		length: "number", "list.length": "number", round: "number", floor: "number", ceil: "number", abs: "number",
+		length: "number", "list.length": "number", "text.repeat": "string", round: "number", floor: "number", ceil: "number", abs: "number",
 		min: "number", max: "number", "Math.round": "number", "Math.floor": "number", "Math.ceil": "number",
 		"Math.abs": "number", "Math.min": "number", "Math.max": "number", "default": "any", json: "string",
 		oneOf: "boolean", overlaps: "boolean", String: "string", Number: "number", "Array.isArray": "boolean",
