@@ -243,31 +243,36 @@
 		return numbers;
 	}
 
-	// The longest text an expression builds by repetition (text.repeat, .repeat, .padStart, .padEnd) or multiplication
-	// (.replaceAll, .join of a list): the ceiling of a text.replace result (text-pattern.js, ten times its 100000
-	// characters of input). It is checked before the text is built, so that a count from a caller never fills the heap.
+	// The most characters an expression adds to texts it already has, by repetition (text.repeat, .repeat, .padStart,
+	// .padEnd: all they build) or multiplication (.replaceAll: the result over the text, .join: the separators): the
+	// ceiling of a text.replace result (text-pattern.js, ten times its 100000 characters of input). It is checked before
+	// the text is built, so that a count from a caller never fills the heap; data already held is never refused. The
+	// refusal answers 413, as TEXT_INPUT_TOO_LONG: a caller's count is no internal failure.
 	var MAX_BUILT_TEXT = 1000000;
 
-	function builtText(env, length, what) {
-		if (length > MAX_BUILT_TEXT) {
-			env.raise("EXPRESSION_TEXT_TOO_LONG", what + " would build a text of " + length + " characters, more than the " +
-				MAX_BUILT_TEXT + " an expression builds.", null,
-				"Check the count before the expression (a number input with a maximum, an if that throws), or use a block for large data.");
+	function builtText(env, added, what) {
+		if (added > MAX_BUILT_TEXT) {
+			try {
+				env.raise("EXPRESSION_TEXT_TOO_LONG", what + " would build " + added + " characters, more than the " +
+					MAX_BUILT_TEXT + " an expression builds.", null,
+					"Check the count before the expression (a number input with a maximum, an if that throws), or use a block for large data.");
+			} catch (error) {
+				error.status = 413;
+				throw error;
+			}
 		}
 	}
 
-	// The count of String.prototype.repeat (ToIntegerOrInfinity): truncated, NaN as 0
-	function wholeCount(count) {
+	// The count of String.prototype.repeat (ToIntegerOrInfinity: truncated, NaN as 0), refused when negative or
+	// infinite as JavaScript does, with the count read, never the value received (a text may hold line breaks)
+	function repeatCount(env, count, what) {
 		var value = Number(count);
-		return value !== value ? 0 : value < 0 ? Math.ceil(value) : Math.floor(value);
-	}
-
-	function joinedLength(items, separator) {
-		var length = items.length > 1 ? (items.length - 1) * separator.length : 0;
-		for (var i = 0; i < items.length && length <= MAX_BUILT_TEXT; i++) {
-			length += items[i] === null || items[i] === undefined ? 0 : String(items[i]).length;
+		var times = value !== value ? 0 : value < 0 ? Math.ceil(value) : Math.floor(value);
+		if (times < 0 || times === Infinity) {
+			env.raise("INVALID_EXPRESSION", what + " takes a count of 0 or more, not " + times + ".", null,
+				"text.repeat(value, count) repeats the value count times, as String.prototype.repeat: a whole count from 0, for example text.repeat(\"x\", 2001).");
 		}
-		return length;
+		return times;
 	}
 
 	function functionTable(functions) {
@@ -309,11 +314,7 @@
 			// limit of 2000, never typed by hand
 			"text.repeat": function (value, count) {
 				var text = String(value === undefined || value === null ? "" : value);
-				var times = wholeCount(count);
-				if (times < 0 || times === Infinity) {
-					env.raise("INVALID_EXPRESSION", "text.repeat takes a count of 0 or more, not " + String(count) + ".", null,
-						"text.repeat(value, count) repeats the value count times, as String.prototype.repeat: a whole count from 0, for example text.repeat(\"x\", 2001).");
-				}
+				var times = repeatCount(env, count, "text.repeat");
 				builtText(env, text.length * times, "text.repeat");
 				return text.repeat(times);
 			},
@@ -1175,11 +1176,11 @@
 				if (method === "replaceAll") {
 					var search = String(values[0]), replacement = String(values[1]);
 					var parts = receiver.split(search);
-					builtText(env, receiver.length + (parts.length - 1) * (replacement.length - search.length), ".replaceAll");
+					builtText(env, (parts.length - 1) * (replacement.length - search.length), ".replaceAll");
 					return parts.join(replacement);
 				}
 				if (method === "repeat") {
-					builtText(env, receiver.length * wholeCount(values[0]), ".repeat");
+					builtText(env, receiver.length * repeatCount(env, values[0], ".repeat"), ".repeat");
 				} else if ((method === "padStart" || method === "padEnd") && (values[1] === undefined || String(values[1]) !== "")) {
 					builtText(env, Number(values[0]), "." + method);
 				}
@@ -1190,8 +1191,8 @@
 					var index = Number(values[0]);
 					return dataValue(receiver[index < 0 ? receiver.length + index : index]);
 				}
-				if (method === "join") {
-					builtText(env, joinedLength(receiver, values[0] === undefined ? "," : String(values[0])), ".join");
+				if (method === "join" && receiver.length > 1) {
+					builtText(env, (receiver.length - 1) * (values[0] === undefined ? 1 : String(values[0]).length), ".join");
 				}
 				return Array.prototype[method].apply(receiver, values);
 			}
