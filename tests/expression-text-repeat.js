@@ -108,15 +108,21 @@ Object.keys(expected).forEach(function (key) {
 	assertTrue(meaning[key] === expected[key], key + ": expected " + JSON.stringify(expected[key]) + ", got " + JSON.stringify(meaning[key]));
 });
 
-// 3. A count String.prototype.repeat refuses (negative, infinite) is refused with what to write
-["-1", "Infinity"].forEach(function (count) {
+// 3. A count String.prototype.repeat refuses (negative, infinite) is refused with what to write, by the function and by
+// the method alike, and the refusal gives the count read, never the text received (no line break of a caller in a log)
+[["text.repeat(\"x\", -1)", "text.repeat"], ["text.repeat(\"x\", Infinity)", "text.repeat"],
+	["text.repeat(\"x\", input.padded)", "text.repeat"], ["\"x\".repeat(-1)", ".repeat"], ["\"\".repeat(Infinity)", ".repeat"]].forEach(function (call) {
 	var error = refused([
-		"function Count({ result }) {",
-		"  result.value = text.repeat(\"x\", " + count + ")",
+		"const _flow = { sourceVersion: 2, inputs: { padded: { type: \"string\" } } }",
+		"",
+		"function Count({ input, result }) {",
+		"  result.value = " + call[0],
 		"}"
-	], {}, "INVALID_EXPRESSION", "count " + count);
-	assertTrue(String(error.message).indexOf("text.repeat") !== -1 && String(error.hint || "").indexOf("0") !== -1,
-		"the refusal names text.repeat and the counts it takes: " + JSON.stringify(error));
+	], { padded: "\n\n-0000000001\n" }, "INVALID_EXPRESSION", call[0]);
+	assertTrue(String(error.message).indexOf(call[1]) !== -1 && String(error.hint || "").indexOf("0") !== -1,
+		"the refusal names " + call[1] + " and the counts it takes: " + JSON.stringify(error));
+	assertTrue(String(error.message).indexOf("\n") === -1 && String(error.message).indexOf("0000000001") === -1,
+		"the refusal gives the count read, not the text received: " + JSON.stringify(error.message));
 });
 
 // 4. The ceiling: one million characters is built, one more is refused before it is built
@@ -133,6 +139,7 @@ var over = refused([
 ], {}, "EXPRESSION_TEXT_TOO_LONG", "text.repeat over the ceiling");
 assertTrue(String(over.message).indexOf("1000001") !== -1 && String(over.message).indexOf("1000000") !== -1,
 	"the refusal gives the length and the ceiling: " + JSON.stringify(over));
+assertTrue(over.status === 413, "a count of a caller is no internal failure: 413, as TEXT_INPUT_TOO_LONG: " + JSON.stringify(over));
 
 // 5. Every way an expression multiplies a text is bounded the same, from the count of a caller too: each case first
 // just over the ceiling (built in memory without the bound, two megabytes), then a billion characters
@@ -152,25 +159,31 @@ var amplifiers = [
 		], { n: n }, "EXPRESSION_TEXT_TOO_LONG", amplifier[0] + " of " + n);
 	});
 });
-// a replacement or a separator of a thousand characters, a thousand times: 1001000 and 1001001 characters
+// .replaceAll and .join are bounded by what they add: a replacement 1002 characters long for a thousand characters of
+// one, a separator of 1001 characters a thousand times, both 1001000 characters more
 refused([
 	"function Multiplied({ result }) {",
-	"  result.length = \"x\".repeat(1000).replaceAll(\"x\", \"y\".repeat(1001)).length",
+	"  result.length = \"x\".repeat(1000).replaceAll(\"x\", \"y\".repeat(1002)).length",
 	"}"
 ], {}, "EXPRESSION_TEXT_TOO_LONG", "replaceAll");
 refused([
 	"function Joined({ result }) {",
-	"  result.length = \"x\".repeat(1001).split(\"\").join(\"y\".repeat(1000)).length",
+	"  result.length = \"x\".repeat(1001).split(\"\").join(\"y\".repeat(1001)).length",
 	"}"
 ], {}, "EXPRESSION_TEXT_TOO_LONG", "join");
+// exactly one million characters more is built; data already held is never refused, even over a million characters:
+// a text shortened by .replaceAll, a list of long texts joined
 var underCeiling = result([
 	"function Under({ result }) {",
-	"  result.replaced = \"x\".repeat(1000).replaceAll(\"x\", \"y\".repeat(999)).length",
-	"  result.joined = \"x\".repeat(1000).split(\"\").join(\"y\".repeat(999)).length",
+	"  result.replaced = \"x\".repeat(1000).replaceAll(\"x\", \"y\".repeat(1001)).length",
+	"  result.joined = \"x\".repeat(1001).split(\"\").join(\"y\".repeat(1000)).length",
+	"  local.body = \"ab\".repeat(500000) + \"\\r\\n\" + \"cd\".repeat(10)",
+	"  result.shortened = local.body.replaceAll(\"\\r\\n\", \"\\n\").length",
+	"  result.held = [\"x\".repeat(1000000), \"y\".repeat(10)].join(\",\").length",
 	"}"
 ]);
-assertTrue(underCeiling.replaced === 999000 && underCeiling.joined === 999001,
-	"under the ceiling, replaceAll and join build: " + JSON.stringify(underCeiling));
+assertTrue(underCeiling.replaced === 1001000 && underCeiling.joined === 1001001 && underCeiling.shortened === 1000021 &&
+	underCeiling.held === 1000011, "what an expression adds up to the ceiling, and data it holds, are built: " + JSON.stringify(underCeiling));
 
 // 6. The parser reads every function of the evaluator as an expression
 var utils = eval(String(files.readFileToString(new java.io.File(engineDir, "modules/expression-utils.js"), "UTF-8")));
