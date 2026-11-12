@@ -4786,38 +4786,51 @@
 		};
 	}
 
-	// The jobs of the server scheduler that run a Flow of this project, enabled or not: the server starts that Flow
-	// without a caller. [] without a scheduler (a standalone engine); __flowScheduledJobs ({"Project.Flow": [jobs]})
-	// stands for it in the tests of the engine.
+	// The jobs of the server scheduler that can run a Flow of this project, and the accessibility of that Flow as the
+	// server holds it. Every job definition naming the Flow counts, enabled or not: scheduled itself, member of a
+	// scheduled group (JobGroupJob, whose members are definitions too) or only run on demand; the server starts it without
+	// a caller. Nothing without a scheduler (a standalone engine); __flowScheduler stands for it in the tests of the engine
+	// ({xml: an object answering getJobs() as the SchedulerXML of the server, accessibility: {"Project.Flow": "Hidden"}}).
 	function scheduledJobsOfFlow(name) {
 		var flow = String(name || "");
 		flow = flow.substring(flow.lastIndexOf(".") + 1);
 		var project = projectDir() ? projectNameForRoot(projectDir()) : "";
-		var jobs = [];
+		var out = { jobs: [], accessibility: "" };
 		if (!flow || !project) {
-			return jobs;
+			return out;
 		}
+		var fake = typeof __flowScheduler !== "undefined" && __flowScheduler ? __flowScheduler : null;
+		var app = null;
 		try {
-			if (typeof __flowScheduledJobs !== "undefined" && __flowScheduledJobs) {
-				return (__flowScheduledJobs[project + "." + flow] || []).map(String);
-			}
-			var app = Packages.com.twinsoft.convertigo.engine.Engine.theApp;
+			app = fake ? null : Packages.com.twinsoft.convertigo.engine.Engine.theApp;
 			var manager = app ? app.schedulerManager : null;
-			if (!manager) {
-				return jobs;
-			}
-			var iterator = manager.getSchedulerXML().getScheduledJobs().iterator();
-			while (iterator.hasNext()) {
-				var job = iterator.next().getJob();
+			var xml = fake ? fake.xml : manager ? manager.getSchedulerXML() : null;
+			var definitions = xml ? xml.getJobs().toArray() : [];
+			for (var i = 0; i < definitions.length; i++) {
+				var job = definitions[i];
 				if (job && typeof job.getProjectName === "function" && typeof job.getSequenceName === "function" &&
 						String(job.getProjectName()) === project && String(job.getSequenceName()) === flow) {
-					addUnique(jobs, String(job.getName()));
+					addUnique(out.jobs, String(job.getName()));
 				}
 			}
 		} catch (unreadable) {
-			return jobs;
+			// A scheduler that cannot be read checks nothing: an authoring check, said in the log of the server.
+			try { EngineClass.logEngine.warn("Flow check: the scheduler could not be read for " + project + "." + flow + ": " + unreadable); } catch (standalone) {}
 		}
-		return jobs;
+		try {
+			if (fake) {
+				out.accessibility = String((fake.accessibility || {})[project + "." + flow] || "").toLowerCase();
+			} else if (app && out.jobs.length) {
+				var owner = app.databaseObjectsManager.getOriginalProjectByName(project, false);
+				var requestable = owner ? owner.getSequenceByName(flow) : null;
+				if (requestable) {
+					out.accessibility = requestable.isPrivateAccessibility() ? "private" : requestable.isHiddenAccessibility() ? "hidden" : "public";
+				}
+			}
+		} catch (absent) {
+			out.accessibility = "";
+		}
+		return out;
 	}
 
 	function validateFlowScriptDefinition(blocks, definition) {

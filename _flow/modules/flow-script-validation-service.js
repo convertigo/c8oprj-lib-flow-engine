@@ -508,17 +508,21 @@
 		}];
 	}
 
-	// A Flow a job of the server scheduler runs is started by the server, without a caller: declared hidden or public,
-	// anyone who reaches it over HTTP starts it too, with its writes and its mails. scheduler-apply only schedules a
-	// private Flow; this keeps it private after. Without a declaration, the accessibility property of the Flow applies.
+	// A Flow a job of the server scheduler runs (itself, through a scheduled group, or on demand) is started by the
+	// server, without a caller: hidden or public, anyone who reaches it over HTTP starts it too, with its writes and its
+	// mails. scheduler-apply only schedules a private Flow; this keeps it private after. Without a declaration in its
+	// source, the accessibility property of the Flow as the server holds it (set by the Studio or another tool) decides.
 	function scheduledAccessibilityDiagnostics(definition, request, env) {
-		var declared = String((definition && definition.flow || {}).accessibility || "").toLowerCase();
-		if (request.blockMode === true || !/^(hidden|public)$/.test(declared) || typeof env.scheduledJobsOfFlow !== "function") {
+		var written = (definition && definition.flow || {}).accessibility;
+		if (request.blockMode === true || typeof env.scheduledJobsOfFlow !== "function" ||
+				(written !== undefined && !/^(hidden|public)$/i.test(String(written)))) {
 			return [];
 		}
 		var name = String(request.name || request.flowName || request.flowQName || request.qname || "");
-		var jobs = env.scheduledJobsOfFlow(name) || [];
-		if (!jobs.length) {
+		var scheduled = env.scheduledJobsOfFlow(name) || {};
+		var jobs = scheduled.jobs || [];
+		var declared = written !== undefined ? String(written).toLowerCase() : String(scheduled.accessibility || "");
+		if (!jobs.length || !/^(hidden|public)$/.test(declared)) {
 			return [];
 		}
 		return [{
@@ -528,8 +532,8 @@
 			property: "accessibility",
 			actual: declared,
 			expected: "private",
-			message: "Flow " + name.substring(name.lastIndexOf(".") + 1) + " is run by the scheduled job " + jobs.join(", ") + ": declared " +
-				declared + ", anyone who reaches it over HTTP starts it too.",
+			message: "Flow " + name.substring(name.lastIndexOf(".") + 1) + " is run by the scheduled job " + jobs.join(", ") + ": " +
+				(written !== undefined ? "declared " : "its accessibility property is ") + declared + ", anyone who reaches it over HTTP starts it too.",
 			hint: "Keep _flow.accessibility \"private\". To start the job from a page, call a separate hidden Flow that checks the ADMIN " +
 				"role, then calls this one with requestable.call."
 		}];
