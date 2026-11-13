@@ -17,8 +17,10 @@
 		throw error;
 	}
 
-	// @return { kind: studio | internal | mcp | admin, user }, or raises AUTHORING_FORBIDDEN
-	function principal(convertigoContext, env) {
+	// The principal of the root request, without raising: { kind: studio | internal | mcp | admin, user }, or
+	// { kind: "application", reason } for any other caller (an HTTP request of an application, an administrator session
+	// without POST and its XSRF token). A library guards its own protected operations with it (ctx.requestPrincipal).
+	function classify(convertigoContext, env) {
 		if (env.studioMode()) {
 			return { kind: "studio", user: "studio" };
 		}
@@ -32,17 +34,26 @@
 		}
 		var session = request.getSession(false);
 		if (session === null || session === undefined || !env.isWebAdmin(session)) {
-			forbidden(env, "no administrator session nor authenticated MCP call");
+			return { kind: "application", reason: "no administrator session nor authenticated MCP call" };
 		}
 		if (String(request.getMethod()).toUpperCase() !== "POST") {
-			forbidden(env, "an administrator change requires POST");
+			return { kind: "application", reason: "an administrator change requires POST" };
 		}
 		var expected = env.xsrfToken(session);
 		var provided = request.getHeader("X-XSRF-TOKEN") || request.getParameter("__xsrfToken");
 		if (!expected || !provided || String(expected) !== String(provided)) {
-			forbidden(env, "an administrator change requires the session XSRF token");
+			return { kind: "application", reason: "an administrator change requires the session XSRF token" };
 		}
 		return { kind: "admin", user: env.sessionUser(session) || "admin" };
+	}
+
+	// @return { kind: studio | internal | mcp | admin, user }, or raises AUTHORING_FORBIDDEN
+	function principal(convertigoContext, env) {
+		var who = classify(convertigoContext, env);
+		if (who.kind === "application") {
+			forbidden(env, who.reason);
+		}
+		return who;
 	}
 
 	// A secret never travels as a value: under a secret key, only a reference to a .secret global symbol, whose default
@@ -307,6 +318,7 @@
 	return {
 		PRINCIPAL_ATTRIBUTE: PRINCIPAL_ATTRIBUTE,
 		principal: principal,
+		classify: classify,
 		checkSecrets: checkSecrets,
 		configMutate: configMutate,
 		schemaAdopt: schemaAdopt

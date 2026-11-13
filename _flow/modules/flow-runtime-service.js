@@ -723,6 +723,21 @@
 			}
 			return env.schemaAdopt(args || {}, invocation);
 		};
+		// The principal of the root request, for the protected operations of a library (a demo account, an impersonation):
+		// studio, internal, mcp or admin, else application. A Flow called directly by another one without a Convertigo
+		// context of its own is never taken for a server-side origin.
+		runContextPrototype.requestPrincipal = function () {
+			var invocation = null;
+			try {
+				invocation = this.convertigoContext();
+			} catch (standalone) {
+				invocation = null;
+			}
+			if (invocation === null && this.request && this.request.__directInvocation === true) {
+				return { kind: "application", reason: "a direct call without a Convertigo context" };
+			}
+			return env.requestPrincipal ? env.requestPrincipal(invocation) : { kind: "application", reason: "no principal service" };
+		};
 		runContextPrototype.runNodes = function (nodes) {
 			return executeNodes(this, nodes);
 		};

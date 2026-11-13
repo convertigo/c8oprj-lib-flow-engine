@@ -93,6 +93,13 @@ try {
 		var error = refused("AUTHORING_FORBIDDEN", function () { service.principal(context(item.options), env); });
 		assert(error && error.message === "This operation is not allowed." && error.status === 403, item.name + " may not, with a plain answer (403)");
 	});
+	// The same principal without raising, for the protected operations of a library (ctx.requestPrincipal)
+	assert(service.classify(context({ mcp: "mcp:agent" }), env).kind === "mcp" && service.classify(null, env).kind === "internal",
+		"classify tells the allowed principals as principal does");
+	[{}, { session: { admin: false } }, { session: admin, token: "t0k3n", method: "GET" }, { session: admin }, { mcp: "admin" }].forEach(function (options) {
+		var who = service.classify(context(options), env);
+		assert(who.kind === "application" && who.reason && who.user === undefined, "classify tells any other caller an application, without raising: " + JSON.stringify(who));
+	});
 	engines.App = flowEngineOf("version: 1\nconfig:\n  greeting: Hello\nconfigs:\n  lab:\n    data:\n      sources: {}\n");
 	assert(refused("AUTHORING_FORBIDDEN", function () {
 		service.configMutate({ project: "App", configuration: "lab", path: "data.sources.orders", value: { table: "orders" }, dryRun: true }, context({}), env);

@@ -2510,6 +2510,10 @@
 		return authoringPrimitiveService().schemaAdopt(request, convertigoContext, authoringPrimitiveEnv());
 	}
 
+	function requestPrincipalRequest(convertigoContext) {
+		return authoringPrimitiveService().classify(convertigoContext, authoringPrimitiveEnv());
+	}
+
 	function authoringPrimitiveEnv() {
 		var convertigo = Packages.com.twinsoft.convertigo.engine;
 		function caches(flowEngine) {
@@ -6171,6 +6175,7 @@
 			intOption: intOption,
 			configMutate: configMutateRequest,
 			schemaAdopt: schemaAdoptRequest,
+			requestPrincipal: requestPrincipalRequest,
 			effectiveConfig: runtimeEffectiveConfig,
 			readScopePath: readScopePath,
 			readObjectPath: readObjectPath,
