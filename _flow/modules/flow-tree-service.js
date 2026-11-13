@@ -6579,11 +6579,24 @@
 					category: String(descriptor.category || ""),
 					properties: descriptorPropertyContract(descriptor.properties, descriptor),
 					slots: descriptor.slots || {},
+					// the named snippets of a widget ({cell2: {parameters: [{name: "row"}]}}): child tags of the source too, with
+					// the values they receive (EntityTable declares only these: its contract showed no slot, L27F of 13/11)
+					snippets: descriptorSnippets(descriptor),
 					// the handlers of the events the block raises (OnClick, OnSelectionChange...)
 					events: descriptorEventHandlers(descriptor)
 				};
 			})
 		};
+	}
+
+	function descriptorSnippets(descriptor) {
+		var snippets = descriptor && descriptor.snippets, out = {};
+		if (!snippets || typeof snippets !== "object" || Array.isArray(snippets)) return out;
+		Object.keys(snippets).forEach(function (name) {
+			var parameters = snippets[name] && snippets[name].parameters;
+			out[name] = { parameters: Array.isArray(parameters) ? parameters.map(function (p) { return { name: String(p && p.name || p) }; }) : [] };
+		});
+		return out;
 	}
 
 	function descriptorEventHandlers(descriptor) {
