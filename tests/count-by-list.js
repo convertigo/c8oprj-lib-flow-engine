@@ -51,6 +51,14 @@ try {
 	var processed = check([list].concat(loop).concat(['  result.analysed = local.page.rows.length']).join("\n"));
 	assert(processed.length === 0, "a processing over the rows is not said: " + JSON.stringify(processed));
 
+	// A lookup is not a count: an emptiness test of the rows, or a page of one row (it93, L18: room_set_active).
+	assert(check([list, '  if (local.page.rows.length === 0) {', '    throw { code: "NOT_FOUND", message: "none" }', '  }', '  result.first = local.page.rows[0]'].join("\n")).length === 0,
+		"an emptiness test is not a count");
+	assert(check([list, '  if (0 < local.page.rows.length) {', '    result.any = true', '  }'].join("\n")).length === 0, "a reversed emptiness test is not a count");
+	assert(check(['  local.found = entity.list({ entity: "Room", checkAccess: true, options: { limit: 1, filter: { code: "A" } } })', '  result.n = local.found.rows.length'].join("\n")).length === 0,
+		"a lookup of one row is not a count");
+	assert(check([list, '  result.n = local.page.rows.length > 10'].join("\n")).length === 1, "a comparison with another number still counts");
+
 	// What stays silent: entity.count, the total of the page, the listed rows returned, a count of another list.
 	assert(check('  local.n = entity.count({ entity: "Poste", checkAccess: true, options: { filter: { statut: "A_RELANCER" } } })\n  result.n = local.n.total').length === 0,
 		"entity.count is not said");

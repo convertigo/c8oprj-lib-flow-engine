@@ -790,15 +790,22 @@
 					var items = String(flowScriptPropertyValue(node, "items") || "");
 					// a Flow that goes through the rows (a processing) needs them: only a page cut short is said then
 					if (/^(?:forEach|forEachChunk)$/.test(name) && refs.some(function (ref) { return new RegExp(ref).test(items); })) source.iterated = true;
+					// an emptiness test (.length === 0, > 0, < 1...) checks a lookup, it does not count rows
+					var lengthOf = function (ref) {
+						var length = ref + "\\.length(?![\\w$])", compare = "\\s*(?:===|!==|==|!=|>=|<=|>|<)\\s*";
+						return new RegExp(length).test(text.replace(new RegExp(length + compare + "[01](?![\\d.])", "g"), "")
+							.replace(new RegExp("(?:^|[^\\w.])[01]" + compare + length, "g"), ""));
+					};
 					var counted = name === "list.count" ? refs.some(function (ref) { return new RegExp(ref).test(items); })
-						: refs.some(function (ref) { return new RegExp(ref + "\\.length(?![\\w$])").test(text); });
+						: refs.some(lengthOf);
 					if (counted && source.counts.indexOf(line) < 0) source.counts.push(line);
 				});
 			});
 			sources.forEach(function (source) {
 				// a processing that goes through the rows needs them: it is not said (ENTITY_LIST_PAGE_UNCHECKED of the MCP
 				// already says a page whose hasMore is not read)
-				if (!source.counts.length || source.iterated) return;
+				// a lookup of one row (limit 1) is not a count
+				if (!source.counts.length || source.iterated || source.limit === 1) return;
 				var entity = source.entity ? " " + source.entity : "", where = source.counts.join(", ");
 				diagnostics.push({
 					severity: "warning",
