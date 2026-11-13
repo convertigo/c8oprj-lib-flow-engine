@@ -735,6 +735,93 @@
 		return diagnostics;
 	}
 
+	// A count of listed entity rows (entity.list, then .length or list.count of its rows, filtered or not) recomputes in
+	// memory what entity.count computes in SQL with the same filter and policy, and stops at the page limit: the
+	// dashboards of the PCA of 12/11 counted 200 listed rows. Without a read of hasMore or nextOffset of that page, the
+	// count is silently too small beyond the limit.
+	function countByListDiagnostics(definition, request, env) {
+		if (request.blockMode === true) return [];
+		var diagnostics = [];
+		var flow = String(request.name || request.flowName || request.flowQName || request.qname || "Flow");
+		flow = flow.substring(flow.lastIndexOf(".") + 1);
+		function isList(value) { return Object.prototype.toString.call(value) === "[object Array]"; }
+		function isNode(value) {
+			return !!value && typeof value === "object" && !isList(value) && env.blockName(value) !== "";
+		}
+		// the node's own property values as one text, without its child nodes
+		function own(node) {
+			var source = node.props && typeof node.props === "object" ? node.props : node, parts = [];
+			Object.keys(source).forEach(function (key) {
+				var value = source[key];
+				if (key.charAt(0) === "_" || key === "out" || (isList(value) && value.some(isNode))) return;
+				try { parts.push(typeof value === "string" ? value : JSON.stringify(value)); } catch (unserializable) { }
+			});
+			return parts.join("\n");
+		}
+		function quote(text) { return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+		[definition.nodes].concat((definition.helpers || []).map(function (helper) { return helper.nodes; })).forEach(function (nodes) {
+			var ordered = [];
+			(function walk(list) {
+				(list || []).forEach(function (node) {
+					if (!isNode(node)) return;
+					ordered.push(node);
+					Object.keys(node).forEach(function (key) {
+						var value = node[key];
+						if (key.charAt(0) !== "_" && isList(value) && value.some(isNode)) walk(value);
+					});
+				});
+			}(nodes));
+			var sources = [];
+			ordered.forEach(function (node) {
+				var out = String(node.out || "");
+				if (env.blockName(node) !== "entity.list" || !/^local\.[A-Za-z_$][\w$]*$/.test(out)) return;
+				var limit = /"?limit"?\s*:\s*(\d+)/.exec(own(node));
+				sources.push({ path: out, line: node.__flowScriptLine || 0, entity: String(flowScriptPropertyValue(node, "entity") || ""),
+					limit: limit ? Number(limit[1]) : null, counts: [], paged: false, iterated: false, derived: [] });
+			});
+			if (!sources.length) return;
+			ordered.forEach(function (node) {
+				var name = env.blockName(node), out = String(node.out || ""), text = own(node), line = node.__flowScriptLine || 0;
+				sources.forEach(function (source) {
+					if (new RegExp(quote(source.path) + "\\.(?:hasMore|nextOffset)(?![\\w$])").test(text)) source.paged = true;
+					var refs = [quote(source.path) + "\\.rows(?![\\w$])"].concat(source.derived.map(function (path) { return quote(path) + "(?![\\w$])"; }));
+					if (!refs.some(function (ref) { return new RegExp(ref).test(text); })) return;
+					if (/^list\.(?:filter|map|sort)$/.test(name) && /^local\.[A-Za-z_$][\w$]*$/.test(out) && source.derived.indexOf(out) < 0) source.derived.push(out);
+					var items = String(flowScriptPropertyValue(node, "items") || "");
+					// a Flow that goes through the rows (a processing) needs them: only a page cut short is said then
+					if (/^(?:forEach|forEachChunk)$/.test(name) && refs.some(function (ref) { return new RegExp(ref).test(items); })) source.iterated = true;
+					var counted = name === "list.count" ? refs.some(function (ref) { return new RegExp(ref).test(items); })
+						: refs.some(function (ref) { return new RegExp(ref + "\\.length(?![\\w$])").test(text); });
+					if (counted && source.counts.indexOf(line) < 0) source.counts.push(line);
+				});
+			});
+			sources.forEach(function (source) {
+				if (!source.counts.length) return;
+				var entity = source.entity ? " " + source.entity : "", where = source.counts.join(", ");
+				if (!source.iterated) diagnostics.push({
+					severity: "warning",
+					code: "FLOWSCRIPT_COUNT_BY_LIST",
+					line: source.line,
+					message: flow + " counts at line" + (source.counts.length > 1 ? "s " : " ") + where + " the" + entity + " rows listed at line " + source.line +
+						" (" + source.path + "): the count is recomputed in memory over one page of at most " + (source.limit || "its limit of") + " rows.",
+					hint: "Count with entity.count({ entity: \"" + (source.entity || "Entity") + "\", checkAccess: true, options: { filter, active } }): one SQL COUNT, " +
+						"exact at any volume, under the same policy and scope. A status computed by a trait (Échéance) is filtered in SQL too. " +
+						"Keep entity.list for the rows you show; its total gives the total of the listed filter."
+				});
+				if (source.paged) return;
+				diagnostics.push({
+					severity: "warning",
+					code: "FLOWSCRIPT_COUNT_TRUNCATED",
+					line: source.line,
+					message: flow + " never reads " + source.path + ".hasMore or nextOffset: beyond " + (source.limit ? source.limit + " rows (its limit)" : "the page limit") +
+						", the count at line" + (source.counts.length > 1 ? "s " : " ") + where + " is silently too small.",
+					hint: "Use entity.count for a count. If the rows themselves are needed, read hasMore: fail with TOO_MANY_ROWS, or page with nextOffset."
+				});
+			});
+		});
+		return diagnostics;
+	}
+
 	function inputContractDiagnostics(blocks, definition, request, env, variables) {
 		request = request || {};
 		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) return [];
@@ -1464,6 +1551,9 @@
 		entityScopeDiagnostics(definition, request, env).forEach(function (d) { diagnostics.push(d); });
 		demoResetDiagnostics(definition, request, env).forEach(function (d) { diagnostics.push(d); });
 		writesWithoutTransactionDiagnostics(definition, request, env).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		countByListDiagnostics(definition, request, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		if (request.blockMode !== true) patternDiagnostics(activeBlocks, definition, env).forEach(function (diagnostic) {
