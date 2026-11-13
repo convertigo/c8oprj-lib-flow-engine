@@ -42,6 +42,22 @@ try {
 	assert(said('  result.x = entity.save({ entity: "Poste", checkAccess: true, values: { numero: input.numero } })').length === 0,
 		"a pass-through facade without checks is not said");
 	assert(said(checked.replace("checkAccess: true", "checkAccess: false")).length === 0, "a trusted write is not said");
+	// Wider checks (securite-cve, 13/11): a return, an error answer or a control call before the write is a check too,
+	// in the same branch or not; a write returned at once by a facade is not.
+	var save = '  result.x = entity.save({ entity: "Poste", checkAccess: true, values: { numero: input.numero } })';
+	assert(said(['  if (!input.numero) {', '    return { ok: false }', '  }', save].join("\n")).length === 1, "a return before the write is a check");
+	assert(said(['  if (!input.numero) {', '    response.error({ code: "VALIDATION_FAILED", message: "numero" })', '  }', save].join("\n")).length === 1,
+		"an error answer is a check");
+	assert(said(['  local.allowed = flow.call({ flow: "CheckPoste", input: { numero: input.numero } })', save].join("\n")).length === 1,
+		"a control Flow called before the write is a check");
+	assert(said('  return entity.save({ entity: "Poste", checkAccess: true, values: { numero: input.numero } })').length === 0,
+		"a facade returning its write at once is not said");
+	// A gateway is recognized by its block, whatever the name of its Flow.
+	new java.io.File(project, "_flow/flows/EntityGateway.flow.js")["delete"]();
+	write("_flow/flows/Passerelle.flow.js", 'const _flow = { sourceVersion: 2, accessibility: "hidden" }\nfunction Passerelle({ input, result }) {\n  result.out = entity.applyGateway({ entity: input.entity, operation: input.operation, payload: input.payload })\n}');
+	engine = eval(engineSource);
+	var renamed = said(checked);
+	assert(renamed.length === 1 && /Passerelle/.test(renamed[0].message), "a gateway Flow under another name is recognized by its block: " + JSON.stringify(renamed));
 	model(true);
 	assert(said(checked).length === 0, "an entity whose writes are kept to its Flows is not said");
 	print("gateway-writes-open: " + checks + " checks passed");

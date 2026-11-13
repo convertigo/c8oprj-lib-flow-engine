@@ -823,9 +823,12 @@
 		return diagnostics;
 	}
 
-	// A business Flow that checks before it writes an entity (a throw before entity.save or entity.delete with checkAccess:
-	// true) holds rules the entity gateway does not run: when the project also has an EntityGateway and the model does not
-	// keep that entity's writes to its Flows, the gateway writes it without those checks (the PCA of 12/11, passage 1).
+	// A business Flow that checks before it writes an entity (entity.save or entity.delete with checkAccess: true) holds
+	// rules the entity gateway does not run: when the project also opens a gateway and the model does not keep that
+	// entity's writes to its Flows, the gateway writes it without those checks (the PCA of 12/11, passage 1). A check is
+	// wide on purpose (a warning): a throw or an error answer anywhere (response.error, response.status), or a return, a
+	// flow.call or a requestable.call before the write, in the same branch or not. A gateway is any Flow using the
+	// entity.applyGateway block, whatever its name (securite-cve, 13/11).
 	function gatewayWritesOpenDiagnostics(definition, request, env) {
 		if (request.blockMode === true || !env.definitionForCheck || !env.entityModelForCheck) return [];
 		var flow = String(request.name || request.flowName || request.flowQName || request.qname || "Flow");
@@ -833,12 +836,14 @@
 		if (flow === "EntityGateway") return [];
 		function isList(value) { return Object.prototype.toString.call(value) === "[object Array]"; }
 		function isNode(value) { return !!value && typeof value === "object" && !isList(value) && env.blockName(value) !== ""; }
-		var checks = false, writes = [];
+		var anywhere = false, before = [], writes = [], gatewayItself = false;
 		(function walk(nodes) {
 			(nodes || []).forEach(function (node) {
 				if (!isNode(node)) return;
-				var name = env.blockName(node);
-				if (name === "throw") checks = true;
+				var name = env.blockName(node), line = node.__flowScriptLine || 0;
+				if (name === "throw" || name === "response.error" || name === "response.status") anywhere = true;
+				if (name === "return" || name === "flow.call" || name === "requestable.call") before.push(line);
+				if (name === "entity.applyGateway") gatewayItself = true;
 				if ((name === "entity.save" || name === "entity.delete") && literalTrue(flowScriptPropertyValue(node, "checkAccess"))) {
 					var entity = flowScriptPropertyValue(node, "entity");
 					if (typeof entity === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(entity)) writes.push({ entity: entity, line: node.__flowScriptLine || 0 });
@@ -849,11 +854,18 @@
 				});
 			});
 		}([definition.nodes].concat((definition.helpers || []).map(function (helper) { return helper.nodes; })).reduce(function (all, nodes) { return all.concat(nodes || []); }, [])));
-		if (!checks || !writes.length) return [];
-		var gateway, model;
-		// null: no EntityGateway; an unreadable one is still a gateway
-		try { gateway = env.definitionForCheck("EntityGateway"); } catch (_unreadable) { gateway = true; }
-		if (!gateway) return [];
+		if (gatewayItself) return [];
+		writes = writes.filter(function (write) { return anywhere || before.some(function (line) { return line < write.line; }); });
+		if (!writes.length) return [];
+		var gateways, model;
+		if (typeof env.gatewayFlowsForCheck === "function") {
+			try { gateways = env.gatewayFlowsForCheck() || []; } catch (_unlisted) { gateways = ["EntityGateway"]; }
+		} else {
+			// null: no EntityGateway; an unreadable one is still a gateway
+			try { gateways = env.definitionForCheck("EntityGateway") ? ["EntityGateway"] : []; } catch (_unreadable) { gateways = ["EntityGateway"]; }
+		}
+		gateways = gateways.filter(function (name) { return name !== flow; });
+		if (!gateways.length) return [];
 		try { model = env.entityModelForCheck(); } catch (_unreadableModel) { return []; }
 		var entities = model && model.entities || {}, diagnostics = [], said = {};
 		writes.forEach(function (write) {
@@ -864,8 +876,8 @@
 				severity: "warning",
 				code: "ENTITY_GATEWAY_WRITES_OPEN",
 				line: write.line,
-				message: flow + " checks before it writes " + write.entity + " (line " + write.line + "), and the EntityGateway of this project can write " +
-					write.entity + " too, without these checks.",
+				message: flow + " checks before it writes " + write.entity + " (line " + write.line + "), and the gateway of this project (" + gateways.join(", ") +
+					") can write " + write.entity + " too, without these checks.",
 				hint: "Keep the writes of " + write.entity + " to its business Flows with \"gateway\": {\"writes\": false} on the entity in the model, " +
 					"or move these checks into a model hook (beforeSave) that every path runs. A component then names this Flow in its flows."
 			});

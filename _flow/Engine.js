@@ -4795,6 +4795,24 @@
 				if (!file.isFile() || file.length() > 262144) return null;
 				return parseYamlSource(String(FileUtils.readFileToString(file, "UTF-8")), "{}");
 			},
+			// The Flows of the project that open an entity gateway (they use the entity.applyGateway block), whatever their
+			// name; an EntityGateway Flow counts even unreadable. The text is scanned, bounded, without parsing a Flow.
+			gatewayFlowsForCheck: function () {
+				var dir = projectFlowsDir(), out = [];
+				var listed = dir && dir.isDirectory() ? dir.listFiles() : null;
+				if (!listed) return out;
+				Arrays.asList(listed).toArray().slice(0, 1000).forEach(function (file) {
+					var fileName = String(file.getName());
+					if (!file.isFile() || !/\.flow\.js$/.test(fileName)) return;
+					var flowName = fileName.replace(/\.flow\.js$/, "");
+					if (flowName === "EntityGateway") { out.push(flowName); return; }
+					if (file.length() > 262144) return;
+					try {
+						if (/\bentity\.applyGateway\s*\(/.test(String(FileUtils.readFileToString(file, "UTF-8")))) out.push(flowName);
+					} catch (_unreadable) { /* a Flow that cannot be read is no gateway the check can name */ }
+				});
+				return out;
+			},
 			definitionForCheck: function (name) {
 				// Read source without synchronizing beans or executing a target Flow.
 				var source = flowRepositoryService().readProjectFlowCode(name, {}, flowRepositoryEnv());
