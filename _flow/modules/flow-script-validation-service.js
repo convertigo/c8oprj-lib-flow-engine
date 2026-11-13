@@ -796,26 +796,20 @@
 				});
 			});
 			sources.forEach(function (source) {
-				if (!source.counts.length) return;
+				// a processing that goes through the rows needs them: it is not said (ENTITY_LIST_PAGE_UNCHECKED of the MCP
+				// already says a page whose hasMore is not read)
+				if (!source.counts.length || source.iterated) return;
 				var entity = source.entity ? " " + source.entity : "", where = source.counts.join(", ");
-				if (!source.iterated) diagnostics.push({
+				diagnostics.push({
 					severity: "warning",
 					code: "FLOWSCRIPT_COUNT_BY_LIST",
 					line: source.line,
 					message: flow + " counts at line" + (source.counts.length > 1 ? "s " : " ") + where + " the" + entity + " rows listed at line " + source.line +
-						" (" + source.path + "): the count is recomputed in memory over one page of at most " + (source.limit || "its limit of") + " rows.",
+						" (" + source.path + "): the count is recomputed in memory over one page of at most " + (source.limit || "its limit of") + " rows" +
+						(source.paged ? "." : ", and " + source.path + ".hasMore is never read: beyond, the count is silently too small."),
 					hint: "Count with entity.count({ entity: \"" + (source.entity || "Entity") + "\", checkAccess: true, options: { filter, active } }): one SQL COUNT, " +
 						"exact at any volume, under the same policy and scope. A status computed by a trait (Échéance) is filtered in SQL too. " +
 						"Keep entity.list for the rows you show; its total gives the total of the listed filter."
-				});
-				if (source.paged) return;
-				diagnostics.push({
-					severity: "warning",
-					code: "FLOWSCRIPT_COUNT_TRUNCATED",
-					line: source.line,
-					message: flow + " never reads " + source.path + ".hasMore or nextOffset: beyond " + (source.limit ? source.limit + " rows (its limit)" : "the page limit") +
-						", the count at line" + (source.counts.length > 1 ? "s " : " ") + where + " is silently too small.",
-					hint: "Use entity.count for a count. If the rows themselves are needed, read hasMore: fail with TOO_MANY_ROWS, or page with nextOffset."
 				});
 			});
 		});
