@@ -823,6 +823,56 @@
 		return diagnostics;
 	}
 
+	// A business Flow that checks before it writes an entity (a throw before entity.save or entity.delete with checkAccess:
+	// true) holds rules the entity gateway does not run: when the project also has an EntityGateway and the model does not
+	// keep that entity's writes to its Flows, the gateway writes it without those checks (the PCA of 12/11, passage 1).
+	function gatewayWritesOpenDiagnostics(definition, request, env) {
+		if (request.blockMode === true || !env.definitionForCheck || !env.entityModelForCheck) return [];
+		var flow = String(request.name || request.flowName || request.flowQName || request.qname || "Flow");
+		flow = flow.substring(flow.lastIndexOf(".") + 1);
+		if (flow === "EntityGateway") return [];
+		function isList(value) { return Object.prototype.toString.call(value) === "[object Array]"; }
+		function isNode(value) { return !!value && typeof value === "object" && !isList(value) && env.blockName(value) !== ""; }
+		var checks = false, writes = [];
+		(function walk(nodes) {
+			(nodes || []).forEach(function (node) {
+				if (!isNode(node)) return;
+				var name = env.blockName(node);
+				if (name === "throw") checks = true;
+				if ((name === "entity.save" || name === "entity.delete") && literalTrue(flowScriptPropertyValue(node, "checkAccess"))) {
+					var entity = flowScriptPropertyValue(node, "entity");
+					if (typeof entity === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(entity)) writes.push({ entity: entity, line: node.__flowScriptLine || 0 });
+				}
+				Object.keys(node).forEach(function (key) {
+					var value = node[key];
+					if (key.charAt(0) !== "_" && isList(value) && value.some(isNode)) walk(value);
+				});
+			});
+		}([definition.nodes].concat((definition.helpers || []).map(function (helper) { return helper.nodes; })).reduce(function (all, nodes) { return all.concat(nodes || []); }, [])));
+		if (!checks || !writes.length) return [];
+		var gateway, model;
+		// null: no EntityGateway; an unreadable one is still a gateway
+		try { gateway = env.definitionForCheck("EntityGateway"); } catch (_unreadable) { gateway = true; }
+		if (!gateway) return [];
+		try { model = env.entityModelForCheck(); } catch (_unreadableModel) { return []; }
+		var entities = model && model.entities || {}, diagnostics = [], said = {};
+		writes.forEach(function (write) {
+			var declared = entities[write.entity];
+			if (!declared || said[write.entity] || (declared.gateway && declared.gateway.writes === false)) return;
+			said[write.entity] = true;
+			diagnostics.push({
+				severity: "warning",
+				code: "ENTITY_GATEWAY_WRITES_OPEN",
+				line: write.line,
+				message: flow + " checks before it writes " + write.entity + " (line " + write.line + "), and the EntityGateway of this project can write " +
+					write.entity + " too, without these checks.",
+				hint: "Keep the writes of " + write.entity + " to its business Flows with \"gateway\": {\"writes\": false} on the entity in the model, " +
+					"or move these checks into a model hook (beforeSave) that every path runs. A component then names this Flow in its flows."
+			});
+		});
+		return diagnostics;
+	}
+
 	function inputContractDiagnostics(blocks, definition, request, env, variables) {
 		request = request || {};
 		if (request.blockMode === true || request.block === true || request.skipInputContractWarnings === true) return [];
@@ -1555,6 +1605,9 @@
 			diagnostics.push(diagnostic);
 		});
 		countByListDiagnostics(definition, request, env).forEach(function (diagnostic) {
+			diagnostics.push(diagnostic);
+		});
+		gatewayWritesOpenDiagnostics(definition, request, env).forEach(function (diagnostic) {
 			diagnostics.push(diagnostic);
 		});
 		if (request.blockMode !== true) patternDiagnostics(activeBlocks, definition, env).forEach(function (diagnostic) {

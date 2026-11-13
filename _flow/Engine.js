@@ -5121,6 +5121,16 @@
 	// Flow), the working copies of the request but the checked Flow, its tag context, the configuration of the project
 	// its HTTP request targets, the symbols, and the generations of the caches and of the data of the server
 	// (requestables, writes Convertigo is told about).
+	function entityCheckInputsFingerprint() {
+		try {
+			return ["data/model.yaml", "blocks/app/entityAccess.block.js"].map(function (path) {
+				var file = new File(projectDir(), sourcePaths().path(path));
+				return file.isFile() ? fileFingerprint(file) : "";
+			}).join(":");
+		} catch (unreadable) {
+			return "";
+		}
+	}
 	function flowCodeValidationRevision(request, name) {
 		var own = "";
 		try {
@@ -5152,7 +5162,9 @@
 			sha256Hex(JSON.stringify(request.tagContext || null)),
 			sha256Hex(JSON.stringify(root === undefined ? null : root)),
 			// a job scheduled or removed since: the check of the accessibility of the Flow answers again
-			sha256Hex(JSON.stringify(scheduledJobsOfFlow(name)))
+			sha256Hex(JSON.stringify(scheduledJobsOfFlow(name))),
+			// the entity model and the access policy the entity checks read (policy scopes, gateway writes)
+			entityCheckInputsFingerprint()
 		].join("\n");
 	}
 
