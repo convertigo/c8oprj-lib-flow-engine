@@ -422,8 +422,10 @@ const _meta = {
 			message: String(error.message || "The called requestable failed."),
 			status: explicit ? status : value.applicative ? undefined : 500,
 			details: error.details,
-			hint: "Raised by " + qnameFor(target) + (error.path ? " at " + error.path : "")
-				+ ". Catch it with try, or set onError: \"return\" to get { error } instead."
+			// the hint of the called Flow says how to fix its error (a refused schema change: restore the declaration);
+			// it is kept first, never replaced by the generic way of catching it
+			hint: (error.hint ? String(error.hint) + " " : "") + "Raised by " + qnameFor(target) + (error.path ? " at " + error.path : "")
+				+ (error.hint ? "." : ". Catch it with try, or set onError: \"return\" to get { error } instead.")
 		}, node, value.applicative ? APPLICATIVE : undefined);
 	}
 

@@ -44,6 +44,16 @@ function expect(label, actual, expected) {
 	if (JSON.stringify(actual) !== JSON.stringify(expected)) failures.push(label + ": " + JSON.stringify(actual) + " != " + JSON.stringify(expected));
 }
 function regular(error) { answer = { document: { error: error, attr: {} }, failed: true }; return raised(context()); }
+// The hint of the called Flow is kept first (E6, L27F of 13/11: a refused schema change showed "Catch it with try"
+// instead of "Restore the previous declaration"); without one, the generic way of catching the error stays.
+function hintOf(error) {
+	answer = { document: { error: error, attr: {} }, failed: true };
+	try { implementation.run(context(), { props: { requestable: "ChildProject.Child", input: {} } }); } catch (thrown) { return String(thrown.options && thrown.options.hint || ""); }
+	return "";
+}
+var kept = hintOf({ code: "SQL_SCHEMA_MIGRATION_UNSUPPORTED", operation: "run", path: "plan", message: "Refused", hint: "Restore the previous declaration." });
+expect("the hint of the called Flow comes first", kept.indexOf("Restore the previous declaration.") === 0 && kept.indexOf("Raised by ChildProject.Child at plan") > 0 && kept.indexOf("Catch it with try") < 0, true);
+expect("without a hint, the way of catching it stays", hintOf({ code: "CHILD_REFUSED", operation: "run", path: "throw", message: "No", hint: "" }).indexOf("Catch it with try") > 0, true);
 // Through the regular requester: the envelope of the called Flow tells its kind (no status: application error).
 expect("regular, child application error", regular({ code: "CHILD_REFUSED", operation: "run", path: "throw", message: "No", hint: "" }),
 	{ code: "CHILD_REFUSED", applicative: true });
