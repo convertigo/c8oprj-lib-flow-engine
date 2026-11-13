@@ -4,6 +4,8 @@
 	// (POST with the session XSRF token), an authenticated MCP call (marked by the MCP), the Studio, or a server-side
 	// origin without HTTP caller. Anyone else gets a plain refusal, dry runs included.
 	var PRINCIPAL_ATTRIBUTE = "com.convertigo.flow.principal";
+	// The authenticated MCP caller (kind, scope, user, token id), set by the MCP with the principal
+	var CALLER_ATTRIBUTE = "com.convertigo.flow.mcp.caller";
 	// keys holding a secret: password, clientSecret, accessToken, apiKey... (not secretFile, a path, nor tokenUrl)
 	var SECRET_KEY = /(password|passwd|secret|token|apikey|api_key|privatekey|private_key)$/i;
 	var SECRET_REFERENCE = /^\$\{[^}=]+\.secret(=[^}]*)?\}$/;
@@ -17,20 +19,35 @@
 		throw error;
 	}
 
-	// The principal of the root request, without raising: { kind: studio | internal | mcp | admin, user }, or
-	// { kind: "application", reason } for any other caller (an HTTP request of an application, an administrator session
-	// without POST and its XSRF token). A library guards its own protected operations with it (ctx.requestPrincipal).
+	// The principal of the root request, without raising: { kind: studio | internal | mcp | admin, user } (with the
+	// scope of the token for mcp), or { kind: "application", reason } for any other caller: an HTTP request of an
+	// application, an internal request made on behalf of a client (a FullSync listener wraps the request of the client
+	// that wrote the document), an administrator session without POST and its XSRF token. A library guards its own
+	// protected operations with it (ctx.requestPrincipal).
 	function classify(convertigoContext, env) {
 		if (env.studioMode()) {
 			return { kind: "studio", user: "studio" };
 		}
 		var request = convertigoContext ? convertigoContext.httpServletRequest : null;
-		if (request === null || request === undefined || env.isInternalRequest(request)) {
+		if (request === null || request === undefined) {
+			return { kind: "internal", user: "internal" };
+		}
+		if (env.isInternalRequest(request)) {
+			if (typeof env.internalOnBehalfOfClient === "function" && env.internalOnBehalfOfClient(request)) {
+				return { kind: "application", reason: "an internal request on behalf of a client" };
+			}
 			return { kind: "internal", user: "internal" };
 		}
 		var mcp = request.getAttribute(PRINCIPAL_ATTRIBUTE);
 		if (mcp !== null && mcp !== undefined && String(mcp).indexOf("mcp:") === 0) {
-			return { kind: "mcp", user: String(mcp).substring(4) };
+			var scope = "";
+			try {
+				var caller = request.getAttribute(CALLER_ATTRIBUTE);
+				scope = caller === null || caller === undefined ? "" : String(JSON.parse(String(caller)).scope || "");
+			} catch (unreadable) {
+				scope = "";
+			}
+			return { kind: "mcp", user: String(mcp).substring(4), scope: scope };
 		}
 		var session = request.getSession(false);
 		if (session === null || session === undefined || !env.isWebAdmin(session)) {
@@ -317,6 +334,7 @@
 
 	return {
 		PRINCIPAL_ATTRIBUTE: PRINCIPAL_ATTRIBUTE,
+		CALLER_ATTRIBUTE: CALLER_ATTRIBUTE,
 		principal: principal,
 		classify: classify,
 		checkSecrets: checkSecrets,

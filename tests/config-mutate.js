@@ -37,6 +37,7 @@ try {
 		log: function (message) { logs.push(String(message)); },
 		studioMode: function () { return studio; },
 		isInternalRequest: function (request) { return request.internal === true; },
+		internalOnBehalfOfClient: function (request) { return request.client === true; },
 		isWebAdmin: function (session) { return session.admin === true; },
 		xsrfToken: function (session) { return session.token || ""; },
 		sessionUser: function (session) { return session.user || ""; },
@@ -64,7 +65,11 @@ try {
 		options = options || {};
 		return {
 			internal: options.internal === true,
-			getAttribute: function (name) { return name === service.PRINCIPAL_ATTRIBUTE ? options.mcp || null : null; },
+			client: options.client === true,
+			getAttribute: function (name) {
+				if (name === service.CALLER_ATTRIBUTE) return options.scope ? JSON.stringify({ kind: "token", scope: options.scope }) : null;
+				return name === service.PRINCIPAL_ATTRIBUTE ? options.mcp || null : null;
+			},
 			getSession: function () { return options.session || null; },
 			getMethod: function () { return options.method || "POST"; },
 			getHeader: function (name) { return name === "X-XSRF-TOKEN" ? options.token || null : null; },
@@ -96,6 +101,14 @@ try {
 	// The same principal without raising, for the protected operations of a library (ctx.requestPrincipal)
 	assert(service.classify(context({ mcp: "mcp:agent" }), env).kind === "mcp" && service.classify(null, env).kind === "internal",
 		"classify tells the allowed principals as principal does");
+	assert(service.classify(context({ mcp: "mcp:agent", scope: "mcp:full" }), env).scope === "mcp:full" &&
+		service.classify(context({ mcp: "mcp:agent" }), env).scope === "", "classify gives the scope of an MCP token, empty when unknown");
+	// A FullSync listener runs on an internal request wrapping the request of the client that wrote the document
+	var wrapped = service.classify(context({ internal: true, client: true }), env);
+	assert(wrapped.kind === "application" && /on behalf of a client/.test(wrapped.reason), "an internal request on behalf of a client is an application: " + JSON.stringify(wrapped));
+	assert(refused("AUTHORING_FORBIDDEN", function () {
+		service.configMutate({ project: "App", path: "greeting", value: "Hi", dryRun: true }, context({ internal: true, client: true }), env);
+	}), "config.mutate refuses an internal request on behalf of a client");
 	[{}, { session: { admin: false } }, { session: admin, token: "t0k3n", method: "GET" }, { session: admin }, { mcp: "admin" }].forEach(function (options) {
 		var who = service.classify(context(options), env);
 		assert(who.kind === "application" && who.reason && who.user === undefined, "classify tells any other caller an application, without raising: " + JSON.stringify(who));

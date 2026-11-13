@@ -2533,6 +2533,17 @@
 			isInternalRequest: function (request) {
 				return request instanceof convertigo.requesters.InternalHttpServletRequest;
 			},
+			// A FullSync listener wraps the request of the client that wrote the document: its headers, attributes and
+			// servlet context are copied. The internal request of a job, of the project start or of a requester without
+			// caller has none of them. Unreadable: taken for a client.
+			internalOnBehalfOfClient: function (request) {
+				try {
+					var names = request.getHeaderNames();
+					return (names !== null && names !== undefined && names.hasMoreElements()) || request.getServletContext() !== null;
+				} catch (unreadable) {
+					return true;
+				}
+			},
 			isWebAdmin: function (session) {
 				return convertigo.Engine.authenticatedSessionManager.hasRole(session,
 					convertigo.AuthenticatedSessionManager.Role.WEB_ADMIN) === true;
