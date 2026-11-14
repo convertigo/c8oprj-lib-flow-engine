@@ -100,6 +100,10 @@
 		var props = Object.keys(descriptor.props || {}).join(" ").toLowerCase();
 		var desc = String(descriptor.description || "").toLowerCase();
 		var score = 0;
+		// a name agents guess for this block (aliases of its _meta: currency.format for number.format) designates it
+		if ((descriptor.aliases || []).some(function (alias) { return String(alias).toLowerCase() === wantedText; })) {
+			score += 150;
+		}
 		if (blockId === wantedText || localName === wantedText) {
 			score += 120;
 		} else if (blockId.replace(/\./g, "") === wantedText.replace(/\./g, "")) {

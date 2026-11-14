@@ -1,0 +1,186 @@
+{
+ "cases": [
+  {
+   "input": {
+    "value": 12500,
+    "style": "currency",
+    "currency": "USD",
+    "locale": "en-US",
+    "maximumFractionDigits": 0
+   },
+   "expected": "$12,500"
+  },
+  {
+   "input": {
+    "value": 12500,
+    "style": "currency",
+    "currency": "USD",
+    "locale": "en-US"
+   },
+   "expected": "$12,500.00"
+  },
+  {
+   "input": {
+    "value": "12500.00",
+    "style": "currency",
+    "currency": "USD",
+    "locale": "en-US"
+   },
+   "expected": "$12,500.00"
+  },
+  {
+   "input": {
+    "value": 1234.5,
+    "locale": "en-US"
+   },
+   "expected": "1,234.5"
+  },
+  {
+   "input": {
+    "value": "1234567.891",
+    "locale": "en-US"
+   },
+   "expected": "1,234,567.891"
+  },
+  {
+   "input": {
+    "value": 0.256,
+    "style": "percent",
+    "locale": "en-US"
+   },
+   "expected": "26%"
+  },
+  {
+   "input": {
+    "value": -1500.5,
+    "style": "currency",
+    "currency": "USD",
+    "locale": "en-US"
+   },
+   "expected": "-$1,500.50"
+  },
+  {
+   "input": {
+    "value": "12345678901234567890",
+    "locale": "en-US"
+   },
+   "expected": "12,345,678,901,234,567,890"
+  },
+  {
+   "input": {
+    "value": 2.5,
+    "locale": "en-US",
+    "maximumFractionDigits": 0
+   },
+   "expected": "3"
+  },
+  {
+   "input": {
+    "value": -2.5,
+    "locale": "en-US",
+    "maximumFractionDigits": 0
+   },
+   "expected": "-3"
+  },
+  {
+   "input": {
+    "value": 1234.5,
+    "locale": "en-US",
+    "grouping": false,
+    "minimumFractionDigits": 2
+   },
+   "expected": "1234.50"
+  },
+  {
+   "input": {
+    "value": 1000,
+    "style": "currency",
+    "currency": "JPY",
+    "locale": "en-US"
+   },
+   "expected": "¥1,000"
+  },
+  {
+   "input": {
+    "value": 12500,
+    "style": "currency",
+    "currency": "EUR",
+    "locale": "fr-FR"
+   },
+   "expected": "12 500,00 €"
+  },
+  {
+   "input": {
+    "value": 1234.5,
+    "locale": "fr-FR"
+   },
+   "expected": "1 234,5"
+  },
+  {
+   "input": {
+    "value": 12500,
+    "style": "currency",
+    "currency": "EUR",
+    "locale": "de-DE"
+   },
+   "expected": "12.500,00 €"
+  },
+  {
+   "input": {
+    "value": "abc",
+    "fallback": "—"
+   },
+   "expected": "—"
+  },
+  {
+   "input": {
+    "value": null
+   },
+   "expected": ""
+  },
+  {
+   "input": {
+    "value": "",
+    "fallback": "n/a",
+    "locale": "en-US"
+   },
+   "expected": "n/a"
+  }
+ ],
+ "errors": [
+  {
+   "input": {
+    "value": 1,
+    "style": "currency",
+    "currency": "XXXX",
+    "locale": "en-US"
+   },
+   "error": "NUMBER_FORMAT_CURRENCY_INVALID"
+  },
+  {
+   "input": {
+    "value": 1,
+    "style": "money",
+    "locale": "en-US"
+   },
+   "error": "NUMBER_FORMAT_STYLE_INVALID"
+  },
+  {
+   "input": {
+    "value": 1,
+    "locale": "en-US",
+    "maximumFractionDigits": 30
+   },
+   "error": "NUMBER_FORMAT_DIGITS_INVALID"
+  },
+  {
+   "input": {
+    "value": 1,
+    "locale": "en-US",
+    "minimumFractionDigits": 3,
+    "maximumFractionDigits": 1
+   },
+   "error": "NUMBER_FORMAT_DIGITS_INVALID"
+  }
+ ]
+}

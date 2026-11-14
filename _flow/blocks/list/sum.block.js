@@ -33,6 +33,12 @@ const _meta = {
     },
   },
   "runtime": "rhino",
+  "aliases": [
+    "number.sum",
+    "math.sum",
+    "array.sum",
+    "list.total"
+  ],
   "tags": [
     "list",
     "array",

@@ -133,6 +133,8 @@
 			namespace: namespace,
 			icon: definition.icon || "mdi:puzzle-outline",
 			tags: definition.tags || (definition.kind ? [String(definition.kind)] : []),
+			// names agents guess for this block (number.sum for list.sum), which designate it in UNKNOWN_BLOCK candidates
+			aliases: Array.isArray(definition.aliases) ? definition.aliases.map(String) : [],
 			implementation: config.runtime,
 			runtime: config.runtime,
 			props: props,
