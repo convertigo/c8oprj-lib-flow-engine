@@ -10616,12 +10616,23 @@
 		// publishes atomically, so the dev server keeps serving; only the automatic catch-up waits for dev to stop.
 		var modelPath = frontendModelPath(request, info);
 		if (!modelPath || !sourceView(request).isFile(modelPath)) {
+			var projectLabel = String(request.project || (request.targetObject && request.targetObject.project) || "<project>");
+			var bootstrapHint = "For a project without a Svelte frontend yet, call flow-project-bootstrap({project:" + JSON.stringify(projectLabel) +
+				", ui:true}): it creates the frontend and its first page _flow/frontbuilder/svelte/model/" + projectLabel +
+				"/src/routes/+page.flow.svelte, and keeps the backend and the existing engine.yaml values, so modelPath must name that page. Writing config.frontbuilder.svelte by hand creates no page.";
 			if (!modelPath) {
+				// No setting at all: a backend project whose frontend was never created gets the call that creates it (it111:
+				// the hint told every agent never to bootstrap such a project again); a project with model sources lost its
+				// setting, restored from the bootstrap value.
+				var projectDirFile = request.projectDir ? fileForProjectPath(new File("."), request.projectDir) : null;
+				var hasModel = projectDirFile !== null && new File(projectDirFile, "_flow/frontbuilder/svelte/model").isDirectory();
 				return failure("frontbuilder", {
 					code: "FRONTBUILDER_MODEL_REQUIRED",
 					message: "No frontend model file is available: check engine.yaml property config.frontbuilder.svelte.modelPath.",
 					details: {property: "config.frontbuilder.svelte.modelPath", modelPath: null},
-					hint: "Restore the bootstrap setting config.frontbuilder.svelte.modelPath: _flow/frontbuilder/svelte/model/<project>/src/routes/+page.flow.svelte and its model sources; do not bootstrap the existing project again."
+					hint: hasModel
+						? "Restore the bootstrap setting config.frontbuilder.svelte.modelPath: _flow/frontbuilder/svelte/model/<project>/src/routes/+page.flow.svelte and its model sources; do not bootstrap the existing project again."
+						: bootstrapHint
 				});
 			}
 			// A modelPath naming no file: the frontend of the project was never created (its config written by hand).
@@ -10631,14 +10642,11 @@
 			if (projectRootPath && missingModel.indexOf(projectRootPath) === 0) {
 				missingModel = missingModel.substring(projectRootPath.length).replace(/\\/g, "/");
 			}
-			var projectLabel = String(request.project || (request.targetObject && request.targetObject.project) || "<project>");
 			return failure("frontbuilder", {
 				code: "FRONTBUILDER_MODEL_REQUIRED",
 				message: "The frontend model file " + missingModel + " named by engine.yaml property config.frontbuilder.svelte.modelPath does not exist.",
 				details: {property: "config.frontbuilder.svelte.modelPath", modelPath: missingModel},
-				hint: "For a project without a Svelte frontend yet, call flow-project-bootstrap({project:" + JSON.stringify(projectLabel) +
-					", ui:true}): it creates the frontend and its first page _flow/frontbuilder/svelte/model/" + projectLabel +
-					"/src/routes/+page.flow.svelte, and keeps the backend and the existing engine.yaml values, so modelPath must name that page. Writing config.frontbuilder.svelte by hand creates no page."
+				hint: bootstrapHint
 			});
 		}
 		var effective = frontendEffectiveModelPath(request, info, modelPath);

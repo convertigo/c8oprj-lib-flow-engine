@@ -35,6 +35,24 @@ try {
 			action + " hint gives the call that creates the frontend: " + error.hint);
 	});
 	assert(!new java.io.File(projectDirFile, modelPath).exists(), "the diagnostic creates no page");
+	// No config.frontbuilder at all (a backend project given to add a frontend, it111): the call that creates it, never
+	// « do not bootstrap the existing project again »; with model sources but no setting, restore the setting.
+	var generateWith = function (source) {
+		var response = JSON.parse(engine.contextAction(JSON.stringify({
+			project: "Orders", projectDir: __flowProjectDir, actionId: "generate", builder: "svelte", wait: true,
+			action: { id: "frontbuilder.svelte.generate" },
+			targetObject: { kind: "frontendBuilder", type: "svelte", path: "frontends.svelte", summary: "svelte builder" },
+			engineSource: source
+		})));
+		return response.error || (response.details && response.details.error) || {};
+	};
+	var bare = generateWith("version: 1\nconfig: {}\n");
+	assert(bare.code === "FRONTBUILDER_MODEL_REQUIRED" && String(bare.hint).indexOf('flow-project-bootstrap({project:"Orders", ui:true})') >= 0 &&
+		String(bare.hint).indexOf("do not bootstrap") < 0, "without frontend setting nor model, the hint gives the bootstrap call: " + bare.hint);
+	assert(new java.io.File(projectDirFile, "_flow/frontbuilder/svelte/model/Orders/src/routes").mkdirs(), "model folder created");
+	var lost = generateWith("version: 1\nconfig: {}\n");
+	assert(lost.code === "FRONTBUILDER_MODEL_REQUIRED" && String(lost.hint).indexOf("Restore the bootstrap setting") === 0,
+		"with model sources and no setting, the hint restores the setting: " + lost.hint);
 	print("frontend-model-missing-file OK (" + checks + " checks)");
 } finally {
 	files.deleteQuietly(projectDirFile);
