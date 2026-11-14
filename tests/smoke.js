@@ -244,12 +244,14 @@ assertTrue(embeddedLiteralBinding.diagnostics.length === 0,
 	"Embedded Flow Svelte projection rejected literal binding attributes");
 var embeddedActionExpression = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
 	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',
-	'  <Structure><CallSequence $$id="load" requestable=".Load"><Variables><Variable name="id" value={item.id} /></Variables></CallSequence></Structure>',
+	'  <Structure><CallSequence $$id="load" requestable=".Load"><Variables><Variable $$id="param" name="id" value={item.id} /></Variables></CallSequence></Structure>',
 	'</FlowComponent>'
 ].join("\n"));
 assertTrue(embeddedActionExpression.diagnostics.length === 1 &&
 	embeddedActionExpression.diagnostics[0].code === "FRONTEND_ACTION_EXPRESSION_NOT_PORTABLE" &&
-	embeddedActionExpression.diagnostics[0].suggestedReference === "@item.id",
+	embeddedActionExpression.diagnostics[0].suggestedReference === "@item.id" &&
+	embeddedActionExpression.diagnostics[0].nodeId === "param" &&
+	embeddedActionExpression.diagnostics[0].expression === "item.id",
 	"Embedded Flow Svelte projection did not reject a client action expression with a source correction");
 var embeddedDynamicMarker = isolatedFlowTreeService.embeddedFlowSvelteDocument("/smoke/+page.flow.svelte", [
 	'<script module>export const _flow = { sourceVersion: 2 };</script><FlowComponent $$id="smoke" label="Smoke">',

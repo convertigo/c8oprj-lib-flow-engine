@@ -2178,7 +2178,9 @@
 					var actionDiagnostic = {
 						severity: "error",
 						code: "FRONTEND_ACTION_EXPRESSION_NOT_PORTABLE",
-						message: "Client action property " + property + " does not execute free browser expressions. Use a literal, a schema-backed source, or a dual-target Flow block.",
+						message: "Client action " + String(node.id || node.tag || "node") + " property " + property + " does not execute free browser expressions. Use a literal, a schema-backed source, or a dual-target Flow block.",
+						nodeId: String(node.id || ""),
+						expression: expression.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g, "<literal>").slice(0, 200),
 						path: propertyPath
 					};
 					if (suggestedReference) {
