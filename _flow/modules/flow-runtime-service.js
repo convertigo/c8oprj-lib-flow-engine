@@ -154,7 +154,7 @@
 			"authoringContractSource", "authoringPaletteSource", "authoringMutateSource",
 			"contextMenuSource", "contextActionSource", "outputSchemaSource", "nodeOutputSchemaSource",
 			"schemaForOutput", "learnOutputSchema", "schemaReset", "resourceSearch", "resourceList",
-			"resourceGet", "resourcePatch", "resourceDelete", "notifySourceMutation", "runFlowSource",
+			"assetRead", "resourceGet", "resourcePatch", "resourceDelete", "notifySourceMutation", "runFlowSource",
 			"blockList", "blockGet", "blockCreate", "blockDuplicate", "blockEdit", "blockCodeSet",
 			"blockCodeCheck", "blockCodeGet", "blockCodePatch", "blockCodeRg", "typeList", "typeGet",
 			"typeCreate", "blockTest", "flowList", "flowGet", "flowSet", "flowTest", "flowSourceGet",
@@ -2389,6 +2389,9 @@
 				return withProjectDir(args.projectDir, function () {
 					return resources.list(args);
 				});
+			};
+			ctx.assetRead = function (path) {
+				return resources.get({ path: path, assetOnly: true, allowLarge: true }).content || "";
 			};
 			ctx.resourceGet = function (args) {
 				args = args || {};

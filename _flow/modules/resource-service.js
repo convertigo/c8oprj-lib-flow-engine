@@ -346,6 +346,14 @@
 		var entry = request.path !== undefined && request.path !== null && String(request.path).trim() !== ""
 			? projectResourceFile(request.path, true, env)
 			: projectResourceEntryForUri(request.uri, env);
+		if (request.assetOnly === true) {
+			var base = env.canonicalPath(env.projectDir());
+			var actual = env.canonicalPath(entry.file);
+			var allowed = [env.sourcePaths.path("resources"), "resources"].some(function (root) {
+				return actual.indexOf(base + env.File.separator + root.replace(/\//g, env.File.separator) + env.File.separator) === 0;
+			});
+			if (!allowed) env.raise("ASSET_PATH_NOT_ALLOWED", "Asset reads require a file under _flow/resources or resources.");
+		}
 		var maxBytes = env.intOption(request.maxBytes, 12000, 1000, 5000000);
 		var content = sourceForFile(entry.file, env);
 		var summary = resourceSummary(entry, content, env);

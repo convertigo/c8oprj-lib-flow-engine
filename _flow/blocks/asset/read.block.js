@@ -32,11 +32,7 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var path = String(ctx.template(props.path || "") || "");
-			var resource = ctx.resourceGet({
-				path: path,
-				allowLarge: props.allowLarge !== false
-			});
-			return resource.content || "";
+			return ctx.assetRead(path);
 		},
 		debug: {
 			resolve: function (ctx, node) {
@@ -44,7 +40,7 @@ const _meta = {
 				return { path: String(ctx.template(p.path || "") || ""), allowLarge: p.allowLarge !== false };
 			},
 			run: function (ctx, node, args) {
-				return ctx.resourceGet(args).content || "";
+				return ctx.assetRead(args.path);
 			}
 		}
 	};
