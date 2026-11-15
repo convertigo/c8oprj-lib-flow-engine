@@ -6,7 +6,9 @@ var context = { remoteAddr: "trusted-client" };
 var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 var code = String(files.readFileToString(new java.io.File(engineDir, "blocks/rate/check.block.js"), "UTF-8"));
 var now = 0;
-var block = (function (Date) { return eval(code.substring(code.indexOf("(function ()"))); })({ now: function () { return now; } });
+var blockSource = code.substring(code.indexOf("(function ()"));
+var inspectedSource = blockSource.replace("return { run: execute };", "return { run: execute, inspect: table };");
+var block = (function (Date) { return eval(inspectedSource); })({ now: function () { return now; } });
 var checks = 0;
 function eq(actual, expected, message) {
 	checks++;
@@ -37,19 +39,52 @@ eq(call("hit", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "fu
 eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "cap remains stable");
 eq(call("peek", "bob"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "independent key");
 eq(call("hit", "bob"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "second key starts fresh");
-eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "peek refreshes LRU");
-eq(call("hit", "carol"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "third key enters table");
-eq(call("peek", "bob"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "least recent key is evicted");
-eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "recent key survives eviction");
+eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "first key stays blocked");
+eq(call("hit", "carol"), { allowed: false, retryAfterSeconds: 18, count: 0 }, "new key fails closed at capacity");
+eq(call("peek", "carol"), { allowed: false, retryAfterSeconds: 18, count: 0 }, "new key peek fails closed at capacity");
+eq(call("peek", "bob"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "existing key remains available");
+eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "blocked key survives table saturation");
+eq(call("reset", "bob"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "reset frees a slot");
+eq(call("hit", "carol"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "new key enters after reset");
 eq(call("reset", "alice"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "successful login resets");
 eq(call("peek", "alice"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "reset clears count");
 eq(call("peek", "", {}), { allowed: false, retryAfterSeconds: 0, count: 0 }, "invalid key fails closed without throwing");
 now = 25000;
-eq(call("peek", "carol"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "sliding window expires");
+eq(call("peek", "carol"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "fixed window expires");
 eq(call("hit", "plain", { backoff: false, limit: 1 }), { allowed: true, retryAfterSeconds: 0, count: 1 }, "quota accepts its first event");
 eq(call("peek", "plain", { backoff: false, limit: 1 }), { allowed: false, retryAfterSeconds: 20, count: 1 }, "quota without backoff waits for the window");
 now = 45000;
 eq(call("peek", "plain", { backoff: false, limit: 1 }), { allowed: true, retryAfterSeconds: 0, count: 0 }, "quota renews at window expiry");
+
+eq(call("hit", "victim", { bucket: "protected", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 }),
+	{ allowed: true, retryAfterSeconds: 0, count: 1 }, "protected bucket records victim");
+eq(call("hit", "one", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
+	{ allowed: true, retryAfterSeconds: 0, count: 1 }, "flood bucket first key");
+eq(call("hit", "two", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
+	{ allowed: true, retryAfterSeconds: 0, count: 1 }, "flood bucket second key");
+eq(call("hit", "three", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
+	{ allowed: false, retryAfterSeconds: 60, count: 0 }, "flood bucket refuses overflow");
+for (var flooded = 4; flooded < 1004; flooded++) {
+	eq(call("hit", "new-" + flooded, { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
+		{ allowed: false, retryAfterSeconds: 60, count: 0 }, "flood key " + flooded + " is refused");
+}
+eq(call("peek", "victim", { bucket: "protected", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 }),
+	{ allowed: false, retryAfterSeconds: 60, count: 1 }, "victim remains blocked during other bucket flood");
+eq(call("peek", "new", { bucket: "protected", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 }),
+	{ allowed: false, retryAfterSeconds: 60, count: 0 }, "protected bucket also refuses overflow");
+
+var stress = { bucket: "stress", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 };
+eq(call("hit", "same", stress), { allowed: true, retryAfterSeconds: 0, count: 1 }, "stress key starts");
+var firstState = block.inspect().get("stress").get("entries").get("same");
+for (var i = 1; i < 10000; i++) call("hit", "same", stress);
+var stressEntries = block.inspect().get("stress").get("entries");
+eq(stressEntries.size(), 1, "ten thousand attempts keep one entry");
+eq(stressEntries.get("same") === firstState, true, "ten thousand attempts reuse the same state");
+eq(firstState.length(), 3, "per-key state has three fixed slots");
+eq(Number(firstState.get(1)), 10000, "counter includes ten thousand attempts");
+now = 105000;
+eq(call("hit", "three", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
+	{ allowed: true, retryAfterSeconds: 0, count: 1 }, "expired entries free capacity");
 
 var request = { definition: { nodes: [{ id: "rate", block: "rate.check", props: {
 	operation: "hit", bucket: "address", key: "{{ request.clientAddress }}", limit: 1, windowSeconds: 60
