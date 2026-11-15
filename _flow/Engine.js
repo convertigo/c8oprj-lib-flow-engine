@@ -640,7 +640,8 @@
 			if (event.is(Event.ID.MappingStart) || event.is(Event.ID.SequenceStart)) depth++;
 			if (depth > YAML_DEPTH_LIMIT) raise("YAML_DEPTH_LIMIT", "YAML nesting exceeds the depth limit.");
 			// Upper bound for escaped scalars, delimiters and indentation, before retaining or emitting them.
-			var cost = 32 + depth * 2 + (event.is(Event.ID.Scalar) ? String(event.getValue()).length * 6 : 0);
+			var cost = 32 + depth * 2 + (event.is(Event.ID.Scalar) ? String(event.getValue()).length * 6 : 0)
+				+ ((event.is(Event.ID.Scalar) || event.is(Event.ID.MappingStart) || event.is(Event.ID.SequenceStart)) ? String(event.getTag() || "").length * 12 : 0);
 			if (cost > YAML_EXPANDED_LIMIT - expanded) raise("YAML_ALIAS_EXPANSION_LIMIT", "YAML aliases expand to more than the character budget.");
 			expanded += cost;
 			if (event.is(Event.ID.MappingEnd) || event.is(Event.ID.SequenceEnd)) depth--;
