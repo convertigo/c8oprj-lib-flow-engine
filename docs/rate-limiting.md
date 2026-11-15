@@ -5,7 +5,9 @@
 counted; on a refused hit, its retry delay reflects the newly counted event.
 `reset` clears the counter. All return
 `{ allowed, retryAfterSeconds, count }`; invalid input fails closed as data.
-Use a stable `bucket` for each quota and a normalized `key`.
+Use a stable `bucket` for each quota and a normalized `key`. Buckets belong to
+the project of the running Flow: the same bucket name in another project is an
+independent bucket, so another application cannot fill or reset it.
 
 For login, `peek` by normalized identifier before `password.verify`, whether or
 not the account exists. On failure, `hit`; on success, `reset`. Check a second

@@ -9,6 +9,7 @@ var now = 0;
 var blockSource = code.substring(code.indexOf("(function ()"));
 var inspectedSource = blockSource.replace("return { run: execute };", "return { run: execute, inspect: table };");
 var block = (function (Date) { return eval(inspectedSource); })({ now: function () { return now; } });
+function bucketOf(name, project) { project = project || ""; return block.inspect().get(project.length + ":" + project + "/" + name); }
 var checks = 0;
 function eq(actual, expected, message) {
 	checks++;
@@ -75,9 +76,9 @@ eq(call("peek", "new", { bucket: "protected", limit: 1, windowSeconds: 60, backo
 
 var stress = { bucket: "stress", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 };
 eq(call("hit", "same", stress), { allowed: true, retryAfterSeconds: 0, count: 1 }, "stress key starts");
-var firstState = block.inspect().get("stress").get("entries").get("same");
+var firstState = bucketOf("stress").get("entries").get("same");
 for (var i = 1; i < 10000; i++) call("hit", "same", stress);
-var stressEntries = block.inspect().get("stress").get("entries");
+var stressEntries = bucketOf("stress").get("entries");
 eq(stressEntries.size(), 1, "ten thousand attempts keep one entry");
 eq(stressEntries.get("same") === firstState, true, "ten thousand attempts reuse the same state");
 eq(firstState.length(), 3, "per-key state has three fixed slots");
@@ -85,6 +86,20 @@ eq(Number(firstState.get(1)), 10000, "counter includes ten thousand attempts");
 now = 105000;
 eq(call("hit", "three", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
 	{ allowed: true, retryAfterSeconds: 0, count: 1 }, "expired entries free capacity");
+
+var projectA = { props: ctx.props, input: ctx.input, template: ctx.template, scopes: { request: { project: "appA" } } };
+var projectB = { props: ctx.props, input: ctx.input, template: ctx.template, scopes: { request: { project: "appB" } } };
+var shared = { operation: "hit", bucket: "login.user", key: "x", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 };
+eq(block.run(projectA, shared), { allowed: true, retryAfterSeconds: 0, count: 1 }, "project A fills its bucket");
+shared.key = "y";
+eq(block.run(projectA, shared), { allowed: false, retryAfterSeconds: 60, count: 0 }, "project A bucket is full");
+eq(block.run(projectB, shared), { allowed: true, retryAfterSeconds: 0, count: 1 }, "same bucket name in project B is independent");
+eq(bucketOf("login.user", "appA").get("entries").containsKey("y"), false, "project B counters stay out of project A");
+eq(bucketOf("login.user", "appB").get("entries").containsKey("x"), false, "project A counters stay out of project B");
+shared.operation = "peek"; shared.key = "x";
+eq(block.run(projectA, shared), { allowed: false, retryAfterSeconds: 60, count: 1 }, "project A still sees its own counter");
+eq(block.run({ props: ctx.props, input: ctx.input, template: ctx.template, scopes: { request: { project: new Array(258).join("p") } } }, shared),
+	{ allowed: false, retryAfterSeconds: 0, count: 0 }, "an oversized project name fails closed");
 
 var request = { definition: { nodes: [{ id: "rate", block: "rate.check", props: {
 	operation: "hit", bucket: "address", key: "{{ request.clientAddress }}", limit: 1, windowSeconds: 60

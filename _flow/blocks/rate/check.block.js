@@ -8,7 +8,7 @@ const _meta = {
   tags: ["rate", "security", "quota"],
   summary: "rate {{operation}} {{bucket}}",
   description: "Checks, records or resets a server-local fixed-window rate limit. Example: call peek before password.verify, hit after a failed login, and reset after success; use request.clientAddress for an address quota. Never reads raw forwarding headers. A refusal is returned as data, not thrown.",
-  longDescription: "Counters are shared by Flows on one Convertigo server instance, not across instances. Each bucket has its own table of at most maxEntries keys (default 10000); new keys fail closed when it is full. Backoff starts at one second when the limit is reached, doubles for each further hit and is capped by maxDelaySeconds. A hit reports whether that event was allowed before counting it. A blocked hit still counts for an existing key, so callers should use peek before expensive work. With backoff, the next event is permitted when its delay expires, even while events remain in the fixed window. Without backoff, the quota renews at the fixed window boundary. Empty bucket/key or invalid options fail closed with allowed=false and no exception.",
+  longDescription: "Counters are shared by the Flows of one project on one Convertigo server instance, not across instances: the same bucket name in another project is an independent bucket. Each bucket has its own table of at most maxEntries keys (default 10000); new keys fail closed when it is full. Backoff starts at one second when the limit is reached, doubles for each further hit and is capped by maxDelaySeconds. A hit reports whether that event was allowed before counting it. A blocked hit still counts for an existing key, so callers should use peek before expensive work. With backoff, the next event is permitted when its delay expires, even while events remain in the fixed window. Without backoff, the quota renews at the fixed window boundary. Empty bucket/key or invalid options fail closed with allowed=false and no exception.",
   properties: {
     operation: { label: "Operation", kind: "value", type: "string", enum: ["peek", "hit", "reset"], default: "peek", description: "peek does not count; hit counts one event; reset clears this key." },
     bucket: { label: "Bucket", kind: "template", type: "string", default: "", description: "Namespace for independent limits, for example login.user or signup.address." },
@@ -97,23 +97,24 @@ const _meta = {
 			var p = ctx.props(node), operation = String(ctx.input({ value: p.operation === undefined ? "peek" : p.operation }));
 			var bucket = String(ctx.template(p.bucket === undefined ? "" : p.bucket));
 			var key = String(ctx.template(p.key === undefined ? "" : p.key));
+			var request = ctx.scopes && ctx.scopes.request, project = request && request.project ? String(request.project) : "";
 			var limit = positive(ctx.input({ value: p.limit }), 5, 1000000);
 			var window = positive(ctx.input({ value: p.windowSeconds }), 900, 86400) * 1000;
 			var maxDelay = positive(ctx.input({ value: p.maxDelaySeconds }), 900, 86400);
 			var maxEntries = positive(ctx.input({ value: p.maxEntries }), 10000, 100000);
 			var backoff = ctx.input({ value: p.backoff === undefined ? false : p.backoff }) === true;
-			if (!bucket || bucket.length > 128 || !key || key.length > 512 || !limit || !window || !maxDelay || !maxEntries ||
+			if (!bucket || bucket.length > 128 || project.length > 256 || !key || key.length > 512 || !limit || !window || !maxDelay || !maxEntries ||
 				(operation !== "peek" && operation !== "hit" && operation !== "reset")) {
 				return { allowed: false, retryAfterSeconds: 0, count: 0 };
 			}
-			var store = table();
+			var store = table(), bucketId = project.length + ":" + project + "/" + bucket;
 			return new Synchronizer(function () {
-				var bucketState = store.get(bucket);
+				var bucketState = store.get(bucketId);
 				if (operation === "reset") {
 					if (bucketState != null) {
 						var resetEntries = bucketState.get("entries");
 						resetEntries.remove(key);
-						if (resetEntries.isEmpty()) store.remove(bucket);
+						if (resetEntries.isEmpty()) store.remove(bucketId);
 					}
 					return { allowed: true, retryAfterSeconds: 0, count: 0 };
 				}
@@ -130,7 +131,7 @@ const _meta = {
 					bucketState.put("capacity", maxEntries);
 					bucketState.put("entries", new LinkedHashMap());
 					bucketState.put("earliestExpiry", Infinity);
-					store.put(bucket, bucketState);
+					store.put(bucketId, bucketState);
 				}
 				bucketState.put("capacity", Math.min(Number(bucketState.get("capacity")), maxEntries));
 				var entries = bucketState.get("entries"), state = entries.get(key);
@@ -150,7 +151,7 @@ const _meta = {
 						};
 					}
 					if (operation === "peek") {
-						if (entries.isEmpty()) store.remove(bucket);
+						if (entries.isEmpty()) store.remove(bucketId);
 						return { allowed: true, retryAfterSeconds: 0, count: 0 };
 					}
 					state = new AtomicLongArray(3);
