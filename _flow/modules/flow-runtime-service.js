@@ -1481,8 +1481,9 @@
 		function prepareExecutionPlan(plan) {
 			if (plan && plan.definition && plan.blocks) {
 				plan.definition = removeComments(plan.definition);
-				// Immutable (frozen) definitions keep prepared runners beside the plan.
-				plan.preparedNodes = plan.machineImage === true ? [] : null;
+				// Keep lazy runners beside the plan; standalone plans can run on several threads.
+				plan.preparedNodes = plan.machineImage === true ? []
+					: env.createPreparedNodeRegistry ? env.createPreparedNodeRegistry() : new Map();
 				plan.inputContract = compileInputContract(plan.definition);
 				plan.preparation = {
 					mode: "lazy",

@@ -6152,6 +6152,11 @@
 		}
 		flowRuntimeServiceEnvInstance = {
 			sharedRuntime: sharedRuntime,
+			createPreparedNodeRegistry: function () {
+				var entries = new ConcurrentHashMap();
+				return { get: function (node) { return entries.get(node); },
+					set: function (node, prepared) { entries.putIfAbsent(node, prepared); } };
+			},
 			nativePropertyContract: nativePropertyContract,
 			projectPackages: projectPackages,
 			schemaContract: schemaContract(),

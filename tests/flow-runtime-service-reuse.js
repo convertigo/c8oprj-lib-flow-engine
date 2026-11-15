@@ -376,27 +376,27 @@ const preparedBlock = {
 	run: () => { throw new Error("prepared runner was not used"); },
 };
 const preparedNode = { block: "prepared", props: { out: "result.answer", value: 42 } };
-runtime.prepareExecutionPlan({
+const preparedPlan = runtime.prepareExecutionPlan({
 	definition: { nodes: [preparedNode] },
 	blocks: { prepared: preparedBlock },
 }, preparedEnv);
 assert.strictEqual(preparedNode.__flowRuntimeNode, undefined,
 	"plan compilation should not prepare a node before it is reached");
 const preparedWrites = [];
-const preparedCtx = runtime.createRunContext({}, {}, { prepared: preparedBlock }, {}, null, preparedEnv);
+const preparedCtx = runtime.createRunContext({}, preparedPlan.definition, preparedPlan.blocks, {}, preparedPlan, preparedEnv);
 preparedCtx.scopes.input.answer = 42;
 preparedCtx.write = (out, value) => preparedWrites.push({ out, value });
 preparedCtx.trace = () => {};
 assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 42);
-assert.strictEqual(Object.prototype.propertyIsEnumerable.call(preparedNode, "__flowRuntimeNode"), false);
-assert.strictEqual(JSON.stringify(preparedNode).includes("__flowRuntimeNode"), false);
-assert.strictEqual(typeof preparedNode.__flowRuntimeNode.execute, "function");
+assert.strictEqual(preparedNode.__flowRuntimeNode, undefined,
+	"standalone concurrent runs must not publish runners on a shared node");
+assert.strictEqual(typeof preparedCtx.preparedNodes.get(preparedNode).execute, "function");
 assert.deepStrictEqual(preparedWrites, [{ out: "result.answer", value: 42 }]);
 assert.strictEqual(preparedNodePropsCalls, 1,
 	"prepared dispatch rebuilt node properties on the hot path");
 assert.strictEqual(preparedRunnerBuilds, 1,
 	"prepared runner should be built exactly once with the plan");
-assert.strictEqual(Object.isFrozen(preparedNode.__flowRuntimeNode.props), true);
+assert.strictEqual(Object.isFrozen(preparedCtx.preparedNodes.get(preparedNode).props), true);
 
 preparedCtx.scopes.input.answer = 84;
 assert.strictEqual(runtime.executeNode(preparedCtx, preparedNode, preparedEnv), 84,
@@ -415,13 +415,13 @@ const preparedFlowBlock = {
 	},
 	run: () => { throw new Error("prepared Flow runner was not used"); },
 };
-runtime.prepareExecutionPlan({
+const preparedFlowPlan = runtime.prepareExecutionPlan({
 	definition: { nodes: [preparedFlowNode] },
 	blocks: { "prepared.flow": preparedFlowBlock },
 }, preparedEnv);
 assert.strictEqual(preparedFlowNode.__flowRuntimeNode, undefined);
 const preparedFlowWrites = [];
-const preparedFlowCtx = runtime.createRunContext({}, {}, { "prepared.flow": preparedFlowBlock }, {}, null, preparedEnv);
+const preparedFlowCtx = runtime.createRunContext({}, preparedFlowPlan.definition, preparedFlowPlan.blocks, {}, preparedFlowPlan, preparedEnv);
 preparedFlowCtx.scopes.input.answer = 9;
 preparedFlowCtx.write = (out, value) => preparedFlowWrites.push({ out, value });
 preparedFlowCtx.trace = () => {};
