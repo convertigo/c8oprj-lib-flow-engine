@@ -281,6 +281,16 @@
 		function requestProjectDirSet(value) {
 			materializeLazyValue(this, "projectDir", value);
 		}
+		function requestClientAddressGet() {
+			// Convertigo's ServletRequester stores HttpServletRequest.getRemoteAddr() here.
+			// The servlet container, not a Flow or a raw forwarding header, decides proxy trust.
+			var state = frameStateForRequestScope(this);
+			var invocation = state && Object.prototype.hasOwnProperty.call(state, "invocationContext")
+				? state.invocationContext : currentConvertigoContext();
+			if (state && !Object.prototype.hasOwnProperty.call(state, "invocationContext")) state.invocationContext = invocation;
+			var address = invocation && invocation.remoteAddr;
+			return address === null || address === undefined ? "" : String(address);
+		}
 		function scopesConfigGet() {
 			var state = frameStateForRequestScope(this.request);
 			return materializeLazyValue(this, "config",
@@ -305,6 +315,9 @@
 		};
 		var requestProjectDirDescriptor = {
 			configurable: true, enumerable: true, get: requestProjectDirGet, set: requestProjectDirSet
+		};
+		var requestClientAddressDescriptor = {
+			configurable: false, enumerable: true, get: requestClientAddressGet
 		};
 		var scopesConfigDescriptor = {
 			configurable: true, enumerable: true, get: scopesConfigGet, set: scopesConfigSet
@@ -2180,6 +2193,7 @@
 			Object.defineProperty(requestScope, "engineDir", requestEngineDirDescriptor);
 			Object.defineProperty(requestScope, "engineProjectDir", requestEngineProjectDirDescriptor);
 			Object.defineProperty(requestScope, "projectDir", requestProjectDirDescriptor);
+			Object.defineProperty(requestScope, "clientAddress", requestClientAddressDescriptor);
 			if (frameProfile) {
 				frameProfile.requestScopeMs = profileDuration(requestStarted);
 			}

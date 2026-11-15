@@ -14,8 +14,8 @@ class FakeFile {
 
 let blockNameReads = 0;
 let materializeCalls = 0;
-const firstLiveContext = { request: "first" };
-const secondLiveContext = { request: "second" };
+const firstLiveContext = { request: "first", remoteAddr: "client-one" };
+const secondLiveContext = { request: "second", remoteAddr: "client-two" };
 let liveContext = firstLiveContext;
 let liveProjectDir = "/project/first";
 let liveContextReads = 0;
@@ -161,6 +161,10 @@ assert.strictEqual(second.convertigoContext(), secondLiveContext,
 	"the second frame did not lazily capture its Convertigo request context");
 assert.strictEqual(first.convertigoContext(), firstLiveContext,
 	"a Flow frame resolved another invocation's Convertigo context");
+assert.strictEqual(first.scopes.request.clientAddress, "client-one",
+	"the address must remain bound to the first Convertigo context");
+assert.strictEqual(second.scopes.request.clientAddress, "client-two",
+	"the address must come from the second Convertigo context");
 assert.strictEqual(first.scopes.request.projectDir, "/project/first",
 	"a Flow frame resolved another invocation's project directory");
 assert.strictEqual(second.scopes.request.projectDir, "/project/second",
@@ -266,7 +270,7 @@ assert.strictEqual(envelopeResult.profile.hotPath, undefined,
 	"envelope profiling must not allocate deep hot-path counters");
 assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 9);
 assert.strictEqual(envelopeResult.profile.frameBefore.scopesOwnSlotCount, 8);
-assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 5);
+assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 6);
 assert.strictEqual(envelopeResult.profile.frameBefore.frameStateOwnSlotCount, 4);
 assert.strictEqual(envelopeResult.profile.frameBefore.frameStateIsContext, false);
 assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 13,
