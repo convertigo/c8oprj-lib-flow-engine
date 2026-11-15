@@ -132,6 +132,9 @@ if (suite !== 'frontbuilder') {
   const engineJar = env.CONVERTIGO_ENGINE_JAR || jarIn(libs, 'convertigo-engine-');
   if (!classpath && file(dependencies) && file(engineJar)) classpath = [engineJar, dependencies, path.join(libs, '*')].join(path.delimiter);
   if (!classpath) fail('Missing complete Convertigo classpath. Build sibling convertigo (:engine:jar :engine:dependenciesJar), or set CONVERTIGO_TEST_CLASSPATH to engine + dependencies/runtime JARs.');
+  const projectClasses = path.join(engineProject, 'libs/build/classes');
+  if (file(path.join(projectClasses, 'com/convertigo/libflowengine/HttpAccess.class')))
+    classpath += path.delimiter + projectClasses;
   env.CONVERTIGO_TEST_CLASSPATH = classpath;
   // These Node parity tests use the historical variable as an entire Java -cp,
   // including engine JSON classes, not just the shaded dependencies JAR.
@@ -147,8 +150,10 @@ env.TMPDIR = nodeTmp;
 process.on('exit', () => fs.rmSync(nodeTmp, {recursive: true, force: true}));
 // Rhino and the JDK localize their error messages; tests compare the English ones on every host.
 const locale = ['-Duser.language=en', '-Duser.country=US'];
-env.JAVA_TOOL_OPTIONS = (env.JAVA_TOOL_OPTIONS || '') + ' -Djava.awt.headless=true ' + locale.join(' ') + ' -Djava.io.tmpdir=' + JSON.stringify(tmp);
-const javaFlags = ['-Djava.awt.headless=true', ...locale, '-Djava.io.tmpdir=' + tmp];
+// Standalone fixtures use a loopback HTTP server; declare it through the server-owned policy.
+const fixtureHost = '-Dconvertigo.flow.http.allowedHosts=127.0.0.1,localhost';
+env.JAVA_TOOL_OPTIONS = (env.JAVA_TOOL_OPTIONS || '') + ' -Djava.awt.headless=true ' + locale.join(' ') + ' ' + fixtureHost + ' -Djava.io.tmpdir=' + JSON.stringify(tmp);
+const javaFlags = ['-Djava.awt.headless=true', ...locale, fixtureHost, '-Djava.io.tmpdir=' + tmp];
 const main = 'org.mozilla.javascript.tools.shell.Main';
 const bootstrap = path.join(logRoot, 'run-rhino.js');
 fs.writeFileSync(bootstrap, 'var file = arguments[0]; arguments = Array.prototype.slice.call(arguments, 1);\ntry { if (String(new java.io.File(file).getName()) !== "crypto-password-blocks.js") { Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.initProperties(); Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.setProperty(Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName.SERVER_BUILD, "studio"); } load(file); java.lang.System.exit(0); } catch (e) { print(String(e)); if(e.stack) print(e.stack); java.lang.System.exit(1); }\n');

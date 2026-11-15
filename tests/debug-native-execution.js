@@ -31,7 +31,7 @@ try{
  parity(one('flow.wait',{delayMs:0}));
  var polled=parity([{block:'flow.poll',id:'poll',out:'result.value',props:{intervalMs:10,timeoutMs:1000,maxAttempts:3,until:'local.n===2'},nodes:[{block:'set',id:'next',props:{path:'local.n',value:'{{(local.n||0)+1}}'}}]}]);check(polled.ok&&polled.result.value.attempts===2,'poll twice');
  parity([{block:'forEachChunk',id:'chunks',out:'result.value',props:{source:'input.items',size:2,maxChunks:10,parallel:1,onError:'stop',ordered:false,into:'rows'},each:[{block:'emit',id:'emit',props:{rows:'chunk.rows'}}]}],{items:[1,2,3]});
- var output=new java.io.File(project,'lines.txt');
+ var output=new java.io.File(project,'_private/flow-data/lines.txt');output.getParentFile().mkdirs();
  var write=[{id:'writer',block:'file.withWriter',props:{path:String(output),as:'local.writer'},nodes:[{id:'write',block:'file.write',props:{value:'${input.text}',newline:true}}]},{id:'read',block:'file.readText',out:'result.text',props:{path:String(output)}}];
  parity(write,{text:'fixture'},function(){output.delete();});check(seen.some(function(f){return f.block==='file.write'&&f.args.value==='fixture';}),'file content captured once');
  parity([{id:'reader',block:'file.withReader',props:{path:String(output),as:'local.reader'},nodes:[{id:'line',block:'file.readLine',out:'result.line',props:{reader:'local.reader'}}]}]);

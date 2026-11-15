@@ -509,6 +509,8 @@ const _meta = {
 				uri = next;
 			}
 		} catch (failure) {
+			if (JavaThread.currentThread().isInterrupted())
+				ctx.throwFlow({code:"FLOW_EXECUTION_CANCELLED",message:"The HTTP call was interrupted.",status:499},node);
 			try { budget.check(); } catch (expired) { failure = expired; }
 			return httpFailure(ctx, node, failure);
 		} finally {

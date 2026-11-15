@@ -2291,8 +2291,15 @@ var flowBackedRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(flowBackedRun.result.message === "Hello flow backed block",
 	"canonical YAML Flow block did not execute through its implementation file");
-var httpInputUrlFile = new java.io.File(projectDirFile, "flow-http-input-url-smoke.txt");
-Packages.org.apache.commons.io.FileUtils.writeStringToFile(httpInputUrlFile, "Flow HTTP input URL smoke", "UTF-8");
+var httpInputServer = Packages.com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+httpInputServer.createContext("/", function (exchange) {
+	var bytes = new java.lang.String("Flow HTTP input URL smoke").getBytes("UTF-8");
+	exchange.sendResponseHeaders(200, bytes.length);
+	exchange.getResponseBody().write(bytes);
+	exchange.close();
+});
+httpInputServer.start();
+var httpInputUrl = "http://127.0.0.1:" + httpInputServer.getAddress().getPort() + "/";
 var httpInputUrlCodeSource = [
 	"const _meta = {",
 	"\t\"description\": \"Reads an URL received through block input.\",",
@@ -2323,7 +2330,7 @@ var httpInputUrlRun = JSON.parse(engine.run(JSON.stringify({
 		"    block: set",
 		"    props:",
 		"      path: local.url",
-		"      value: " + JSON.stringify(String(httpInputUrlFile.toURI().toURL())),
+		"      value: " + JSON.stringify(httpInputUrl),
 		"  - id: read",
 		"    block: smoke.httpInputUrl",
 		"    props:",
@@ -2335,6 +2342,7 @@ var httpInputUrlRun = JSON.parse(engine.run(JSON.stringify({
 })));
 assertTrue(httpInputUrlRun.result.text === "Flow HTTP input URL smoke",
 	"http.get shortcut lost the caller input scope inside a FlowScript block");
+httpInputServer.stop(0);
 var xmlParseCatalog = JSON.parse(engine.catalog(JSON.stringify({ q: "xml.parse" })));
 var xmlParseCatalogBlock = xmlParseCatalog.blocks.filter(function (block) {
 	return block.blockId === "xml.parse" && block.namespace === "xml" && block.origin === "core";
@@ -3450,7 +3458,18 @@ debugPrint(JSON.stringify(throwRun));
 assertTrue(throwRun.ok === false && throwRun.error.code === "WEATHER_ALERT_ERROR",
 	"Flow throw did not produce a structured error");
 
-var fixtureUrl = new java.io.File(new java.io.File(engineDir).getParentFile(), "fixtures/weather-alert.json").toURI().toURL().toString();
+var fixtureBody = String(Packages.org.apache.commons.io.FileUtils.readFileToString(
+	new java.io.File(new java.io.File(engineDir).getParentFile(), "fixtures/weather-alert.json"), "UTF-8"));
+var weatherServer = Packages.com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+weatherServer.createContext("/", function (exchange) {
+	var bytes = new java.lang.String(fixtureBody).getBytes("UTF-8");
+	exchange.getResponseHeaders().add("Content-Type", "application/json");
+	exchange.sendResponseHeaders(200, bytes.length);
+	exchange.getResponseBody().write(bytes);
+	exchange.close();
+});
+weatherServer.start();
+var fixtureUrl = "http://127.0.0.1:" + weatherServer.getAddress().getPort() + "/";
 var weatherUrl = new java.lang.String(fixtureUrl);
 var apiKey = new java.lang.String("demo-key");
 var threshold = new java.lang.String("35");
@@ -3693,6 +3712,7 @@ var compactWeatherRun = JSON.parse(engine.run(JSON.stringify({
 debugPrint(JSON.stringify(compactWeatherRun));
 assertTrue(compactWeatherRun.result.hotCities.join(",") === "Marseille,Paris",
 	"Compact weather flow did not filter, sort and map hot cities");
+weatherServer.stop(0);
 
 var listSchemaPropagationFlowSource = [
 	"version: 1",
@@ -4092,7 +4112,8 @@ assertTrue(inputRun.result.city === "Paris" &&
 	inputRun.result.message === "from body",
 	"Flow input scope did not expose request input");
 
-var writerFile = new java.io.File(projectDirFile, "handle-writer.txt");
+var writerFile = new java.io.File(projectDirFile, "_private/flow-data/handle-writer.txt");
+writerFile.getParentFile().mkdirs();
 var writerFlowSource = [
 	"version: 1",
 	"nodes:",
@@ -4146,7 +4167,7 @@ var forbiddenHandleResultFlowSource = [
 	"  - id: openFile",
 	"    block: file.withWriter",
 	"    props:",
-	"      path: " + JSON.stringify(String(new java.io.File(projectDirFile, "handle-leak.txt").getAbsolutePath())),
+	"      path: " + JSON.stringify(String(new java.io.File(projectDirFile, "_private/flow-data/handle-leak.txt").getAbsolutePath())),
 	"      as: local.writer",
 	"    nodes:",
 	"      - id: leakHandle",
@@ -5794,15 +5815,15 @@ var flowSvelteSyntaxIntentRoundTrip = JSON.parse(engine.applySourceMutation(JSON
 	source: flowSvelteSyntaxIntentSource,
 	mutation: {
 		op: "replace",
-		path: "frontAst.slots.structure.children[0].props.outputSchema",
-		value: { type: "object", properties: { rows: { type: "array" } } }
+		path: "frontAst.slots.structure.children[0].props.test",
+		value: "@catalog.items"
 	}
 })));
 assertTrue(flowSvelteSyntaxIntentRoundTrip.ok === true &&
-	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('test="@catalog.rows"') !== -1 &&
+	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('test="@catalog.items"') !== -1 &&
 	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('sticky={true}') !== -1 &&
 	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('count={itemIndex + 1}') !== -1 &&
-	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('test={@catalog.rows}') === -1,
+	String(flowSvelteSyntaxIntentRoundTrip.source).indexOf('test={@catalog.items}') === -1,
 	"flow-svelte AST mutations should preserve quoted, literal and expression attribute intent: " +
 		JSON.stringify(flowSvelteSyntaxIntentRoundTrip));
 var flowSvelteNaturalBindingSource = [

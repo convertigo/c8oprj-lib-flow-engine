@@ -311,22 +311,9 @@ try {
 			direct.close();
 		}
 
-		// a saturated pool fails at the connection timeout instead of waiting (2 connections per route by default here)
-		var busy = [];
-		for (var b = 0; b < 2; b++) {
-			var busyThread = new java.lang.Thread(function () {
-				var response = app.httpClient4.execute(new Packages.org.apache.http.client.methods.HttpGet(base + "/slow"));
-				response.close();
-			});
-			busyThread.start();
-			busy.push(busyThread);
-		}
-		java.lang.Thread.sleep(300);
-		var saturated = timed(function () { return call({ url: base + "/pooled", connectTimeoutMs: 300 }); });
-		assertTrue(!saturated.run.ok && /pool|timeout/i.test(errorText(saturated.run)), "a saturated pool fails: " + errorText(saturated.run));
-		assertTrue(saturated.ms < slowMs - 500, "after the connection timeout: " + saturated.ms + " ms");
-		assertTrue(count("GET /pooled") === 0, "and sends nothing");
-		busy.forEach(function (thread) { thread.join(); });
+		// The policy-aware call owns its client and does not borrow the engine pool.
+		var independent = call({ url: base + "/pooled", connectTimeoutMs: 300 });
+		assertTrue(independent.ok && count("GET /pooled") === 1, "a nominal call uses its own client once: " + errorText(independent));
 	} finally {
 		stopEngine();
 	}
@@ -379,6 +366,8 @@ try {
 	assertTrue(count("POST /interrupted") === 0, "and is not sent, received " + count("POST /interrupted"));
 
 	// 6. the proxy settings of the engine: manual mode with basic authentication, bypassed hosts go direct
+	var previousAllowedHosts = java.lang.System.getProperty("convertigo.flow.http.allowedHosts");
+	java.lang.System.setProperty("convertigo.flow.http.allowedHosts", "127.0.0.1,localhost,upstream.invalid");
 	startEngine({ port: proxy.getLocalPort(), user: "proxy user", password: "proxy secret", bypass: "127.0.0.1" });
 	try {
 		var proxied = call({ method: "POST", url: "http://upstream.invalid/api?x=1", body: "input" });
@@ -389,6 +378,8 @@ try {
 		assertTrue(bypassed.ok && bypassed.result.call.body.path === "/bypassed" && count("GET /bypassed") === 1, "a bypassed host is called directly: " + errorText(bypassed));
 	} finally {
 		stopEngine();
+		if (previousAllowedHosts === null) java.lang.System.clearProperty("convertigo.flow.http.allowedHosts");
+		else java.lang.System.setProperty("convertigo.flow.http.allowedHosts", previousAllowedHosts);
 	}
 } finally {
 	EngineClass.theApp = previousApp;

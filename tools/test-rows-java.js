@@ -11,7 +11,9 @@
  cases.forEach(function(f,index){
   var p=JSON.parse(JSON.stringify(f.input)),before=JSON.stringify(p),expected=reference[f.operation](p);
   var actual=javaRows.run(f.operation,p,null);
-  if(actual===null){fallbackCount++;if(!f.fallback)throw Error('Unexpected fallback: '+f.name);actual=reference[f.operation](p);}else nativeCount++;
+  // Rich table cells use the JS formatter, which applies the output text policy.
+  var expectsFallback=f.fallback || f.operation==='formatCells' && f.input.profile==='table' && f.input.valuesOnly!==true;
+  if(actual===null){fallbackCount++;if(!expectsFallback)throw Error('Unexpected fallback: '+f.name);actual=reference[f.operation](p);}else nativeCount++;
   if(JSON.stringify(canonical(actual))!==JSON.stringify(canonical(expected)))throw Error('Parity: '+f.name+' expected '+JSON.stringify(canonical(expected))+' got '+JSON.stringify(canonical(actual)));
   if(JSON.stringify(p)!==before)throw Error('Input mutation: '+f.name);
   values.push(JSON.parse(JSON.stringify(actual)));
@@ -29,7 +31,7 @@
  });
  var getterReads=0,exotic={rows:[{x:1}]};Object.defineProperty(exotic,'columns',{get:function(){getterReads++;return ['x'];}});
  if(javaRows.run('select',exotic,null)!==null||getterReads!==0)throw Error('Speculative getter invoked');
- var steps=[{operation:'formatCells',options:{profile:'table',includeFields:true,schema:[{name:'x',type:'number',number_decimal_places:2}]}},{operation:'select',options:{columns:['x']}}];
+ var steps=[{operation:'formatCells',options:{profile:'table',valuesOnly:true,includeFields:true,schema:[{name:'x',type:'number',number_decimal_places:2}]}},{operation:'select',options:{columns:['x']}}];
  var pipeline=javaRows.prepare(steps);if(pipeline===null)throw Error('Pipeline unavailable');
  for(var pi=0;pi<20;pi++){
   var rows=[{x:String(pi+'.25'),unused:'discard'}];

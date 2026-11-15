@@ -23,8 +23,8 @@ public final class HttpAccess {
     private static final ScheduledThreadPoolExecutor TIMER = new ScheduledThreadPoolExecutor(1, task -> {
         var thread = new Thread(task, "flow-http-deadline"); thread.setDaemon(true); thread.setContextClassLoader(Engine.class.getClassLoader()); return thread;
     });
-    private static final ThreadPoolExecutor DNS = new ThreadPoolExecutor(0, 2, 30, TimeUnit.SECONDS,
-        new SynchronousQueue<>(), task -> { var thread = new Thread(task, "flow-http-dns"); thread.setDaemon(true); thread.setContextClassLoader(Engine.class.getClassLoader()); return thread; });
+    private static final ThreadPoolExecutor DNS = new ThreadPoolExecutor(2, 4, 30, TimeUnit.SECONDS,
+        new ArrayBlockingQueue<>(64), task -> { var thread = new Thread(task, "flow-http-dns"); thread.setDaemon(true); thread.setContextClassLoader(Engine.class.getClassLoader()); return thread; });
     static { TIMER.setRemoveOnCancelPolicy(true); TIMER.setKeepAliveTime(30, TimeUnit.SECONDS); TIMER.allowCoreThreadTimeOut(true); }
     private HttpAccess() {}
 
@@ -121,7 +121,21 @@ public final class HttpAccess {
         public void check() throws IOException {
             if (Thread.currentThread().isInterrupted() || System.nanoTime() >= deadline) throw new IOException("HTTP_TOTAL_TIMEOUT: HTTP deadline exceeded.");
         }
-        public void destination(URI uri) throws IOException { checkUri(uri); resolve(host(uri.getHost()), this); }
+        public void destination(URI uri) throws IOException {
+            checkUri(uri);
+            var name = host(uri.getHost());
+            var app = Engine.theApp;
+            if (app != null && app.proxyManager != null && app.proxyManager.proxyMode == ProxyMode.manual) {
+                var bypass = false;
+                for (var domain : app.proxyManager.getBypassDomains()) if (name.equals(host(domain))) { bypass = true; break; }
+                if (!bypass) {
+                    // The proxy resolves this host. Only server-approved names may take that route.
+                    if (!allowedHost(name)) throw refused();
+                    return;
+                }
+            }
+            resolve(name, this);
+        }
         public ScheduledFuture<?> watch(HttpUriRequest request) throws IOException {
             return TIMER.schedule(request::abort, Math.max(0, remaining()), TimeUnit.NANOSECONDS);
         }

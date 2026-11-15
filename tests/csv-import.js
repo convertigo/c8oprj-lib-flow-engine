@@ -20,9 +20,9 @@ try{
  assert(typedData.ok&&typedData.result.csv.rows[0].key.id==='9007199254740993'&&typedData.result.csv.rows[0].values.active===true&&typedData.result.csv.rows[0].values.amount==='123456789.123456789','data.rowSchema envelope, readable labels and exact int64/decimal: '+JSON.stringify(typedData));
  var projectedData=parse({text:'Nom\nété\n',rowSchema:dataSchema,columns:[{field:'label',header:'Nom'}]});
  assert(projectedData.ok&&projectedData.result.csv.rows[0].values.label==='été'&&Object.keys(projectedData.result.csv.rows[0].key).length===0,'Export-compatible field/header selection and empty creation key');
- var imported=new java.io.File(project,'upload.csv');files.writeStringToFile(imported,text,'UTF-8');
+ var imported=new java.io.File(project,'_private/flow-data/upload.csv');imported.getParentFile().mkdirs();files.writeStringToFile(imported,text,'UTF-8');
  var b=parse({path:String(imported),rowSchema:schema});assert(b.ok&&JSON.stringify(b.result.csv)===JSON.stringify(a.result.csv),'Uploaded absolute path and text have identical contract');
- var relative=parse({path:'upload.csv',rowSchema:schema});assert(relative.ok&&relative.result.csv.rowCount===2,'Project-relative CSV');
+ var relative=parse({path:'_private/flow-data/upload.csv',rowSchema:schema});assert(relative.ok&&relative.result.csv.rowCount===2,'Project-relative CSV');
  var comma=parse({text:'id,name\n1,a\n',separator:',',columns:['name','id'],rowSchema:{type:'object',properties:{id:{type:'integer'},name:{type:'string'}}}});assert(comma.ok&&comma.result.csv.rows[0].id===1&&comma.result.csv.columns[0]==='name','Explicit order + delimiter');
  var noHeader=parse({text:'1;été\n2;jour\n',header:false,columns:['id','label'],rowSchema:{type:'object',properties:{id:{type:'integer'},label:{type:'string'}}}});assert(noHeader.ok&&noHeader.result.csv.rows[1].id===2,'Explicit columns without header');
  var mapped=parse({text:'3;jour\n',header:'false',columns:[{field:'id'},{field:'label'}],rowSchema:{type:'object',properties:{id:{type:'integer'},label:{type:'string'}}}});assert(mapped.ok&&mapped.result.csv.rows[0].id===3,'Field mappings work without a header, including typed HTTP boolean text');

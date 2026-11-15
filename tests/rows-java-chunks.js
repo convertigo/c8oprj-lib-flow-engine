@@ -33,7 +33,9 @@ if (typeof RowChunk !== "function" || typeof javaRows.run !== "function" || !jav
     var actual = optimized[f.operation](input);
     assert(JSON.stringify(canonical(plain(actual))) === JSON.stringify(canonical(expected)), "Chunk parity: " + f.name + " expected " + JSON.stringify(canonical(expected)) + " got " + JSON.stringify(canonical(plain(actual))));
     var rows = Array.isArray(actual) ? actual : actual.rows;
-    if (!f.fallback) { assert(isChunk(rows), "The rows of " + f.name + " stay a chunk"); chunked++; }
+    // Rich cells take the JS text path; only value-only table rows use the Java chunk path.
+    var keepsChunk = !f.fallback && !(f.operation === "formatCells" && f.input.profile === "table" && f.input.valuesOnly !== true);
+    if (keepsChunk) { assert(isChunk(rows), "The rows of " + f.name + " stay a chunk"); chunked++; }
   });
   assert(chunked > 20, "Most fixtures run on chunks: " + chunked);
 
@@ -53,9 +55,9 @@ if (typeof RowChunk !== "function" || typeof javaRows.run !== "function" || !jav
   assert(rows[0].name === "changed", "A row read from a chunk is an ordinary object");
 
   // two kernels in a row: the output of formatCells, still a chunk, feeds select
-  var cells = optimized.formatCells({rows: chunk([{id: 1, Amount: "12.5"}, {id: 2, Amount: null}]), profile: "table", schema: [{name: "Amount", type: "number", number_decimal_places: 2}]});
+  var cells = optimized.formatCells({rows: chunk([{id: 1, Amount: "12.5"}, {id: 2, Amount: null}]), profile: "table", valuesOnly: true, schema: [{name: "Amount", type: "number", number_decimal_places: 2}]});
   var selected = optimized.select({rows: cells, firstColumns: ["id"], columns: [{key: "Amount", path: "$[\"Amount\"]"}]});
-  var expectedCells = reference.formatCells({rows: [{id: 1, Amount: "12.5"}, {id: 2, Amount: null}], profile: "table", schema: [{name: "Amount", type: "number", number_decimal_places: 2}]});
+  var expectedCells = reference.formatCells({rows: [{id: 1, Amount: "12.5"}, {id: 2, Amount: null}], profile: "table", valuesOnly: true, schema: [{name: "Amount", type: "number", number_decimal_places: 2}]});
   var expectedSelected = reference.select({rows: expectedCells, firstColumns: ["id"], columns: [{key: "Amount", path: "$[\"Amount\"]"}]});
   assert(isChunk(cells) && isChunk(selected), "Chained kernels keep a chunk");
   assert(JSON.stringify(canonical(plain(selected))) === JSON.stringify(canonical(expectedSelected)), "Chained kernels match the reference: " + JSON.stringify(plain(selected)));

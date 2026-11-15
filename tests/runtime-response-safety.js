@@ -30,7 +30,8 @@ var safe = JSON.parse(engine.run(JSON.stringify({
 assertTrue(safe.ok === true && safe.result.payload.rows.length === 2 && safe.result.payload.complete === true,
 	"Combined response safety changed a regular JSON result: " + JSON.stringify(safe));
 
-var leakFile = new java.io.File(projectDir, "handle-leak.txt");
+var leakFile = new java.io.File(projectDir, "_private/flow-data/handle-leak.txt");
+leakFile.getParentFile().mkdirs();
 var forbidden = JSON.parse(engine.run(JSON.stringify({
 	definition: {
 		version: 1,
