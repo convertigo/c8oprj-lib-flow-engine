@@ -607,7 +607,8 @@
 		}
 		// The tree of Jackson keeps an alias as the text of its name (columns: *cols became "cols"):
 		// a document that may hold one is read with its aliases and merge keys resolved.
-		var root = /(?:^|[\s\[{,:])\*[^\s\[\]{},]/.test(source) ? readYamlTreeWithAliases(source) : yamlMapper.readTree(source);
+		if (source.length > YAML_INPUT_LIMIT) raise("YAML_INPUT_LIMIT", "YAML source exceeds the input character limit.");
+		var root = readYamlTreeWithAliases(source);
 		return JSON.parse(String(jsonMapper.writeValueAsString(root)));
 	}
 
@@ -616,6 +617,7 @@
 	// <<: [*a, *b]) are applied: the entries of the mapping win, then the merged mappings in their order.
 	// The events of SnakeYAML carry the anchors of scalars, which the parser of Jackson does not report.
 	var YAML_ALIAS_EVENT_LIMIT = 100000;
+	var YAML_INPUT_LIMIT = 2097152, YAML_EXPANDED_LIMIT = 16777216, YAML_DEPTH_LIMIT = 100;
 	function readYamlTreeWithAliases(source) {
 		var snake = "org.yaml.snakeyaml.";
 		var Event = engineClass(snake + "events.Event");
@@ -624,6 +626,7 @@
 		var SequenceStartEvent = engineClass(snake + "events.SequenceStartEvent");
 		var events = new (engineClass(snake + "Yaml"))().parse(new (engineClass("java.io.StringReader"))(String(source))).iterator();
 		var output = [], anchors = {}, open = [], aliased = false, merges = false;
+		var expanded = 0, depth = 0;
 		function anchorless(event) {
 			if (event.is(Event.ID.Scalar)) {
 				return new ScalarEvent(null, event.getTag(), event.getImplicit(), event.getValue(), event.getStartMark(), event.getEndMark(), event.getScalarStyle());
@@ -634,6 +637,13 @@
 			return new SequenceStartEvent(null, event.getTag(), event.getImplicit(), event.getStartMark(), event.getEndMark(), event.getFlowStyle());
 		}
 		function emit(event) {
+			if (event.is(Event.ID.MappingStart) || event.is(Event.ID.SequenceStart)) depth++;
+			if (depth > YAML_DEPTH_LIMIT) raise("YAML_DEPTH_LIMIT", "YAML nesting exceeds the depth limit.");
+			// Upper bound for escaped scalars, delimiters and indentation, before retaining or emitting them.
+			var cost = 32 + depth * 2 + (event.is(Event.ID.Scalar) ? String(event.getValue()).length * 6 : 0);
+			if (cost > YAML_EXPANDED_LIMIT - expanded) raise("YAML_ALIAS_EXPANSION_LIMIT", "YAML aliases expand to more than the character budget.");
+			expanded += cost;
+			if (event.is(Event.ID.MappingEnd) || event.is(Event.ID.SequenceEnd)) depth--;
 			if (output.length >= YAML_ALIAS_EVENT_LIMIT) {
 				raise("YAML_ALIAS_EXPANSION_LIMIT", "YAML aliases expand to more than " + YAML_ALIAS_EVENT_LIMIT + " values.", null,
 					"Write the repeated values once, or reference fewer aliases.");

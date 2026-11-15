@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync('_flow/Engine.js','utf8');
+const start=source.indexOf('\tfunction parseYamlSource('),end=source.indexOf('\n\tfunction applyYamlMergeKeys',start);
+let sequence=[],emitted=0,parsed=0;
+const ID={};for(const name of ['Scalar','MappingStart','SequenceStart','MappingEnd','SequenceEnd','Alias','DocumentStart'])ID[name]=name;
+const event=(type,value,anchor=null)=>({is:x=>x===type,getAnchor:()=>anchor,getValue:()=>value,getTag:()=>null,getImplicit:()=>({canOmitTagInPlainScalar:()=>true}),getStartMark:()=>null,getEndMark:()=>null,getScalarStyle:()=>null,getFlowStyle:()=>null});
+const env={engineClass:name=>{
+ if(name.endsWith('events.Event'))return {ID};
+ if(name.endsWith('events.ScalarEvent'))return function(anchor,tag,implicit,value){return event('Scalar',value,anchor);};
+ if(name.endsWith('.Yaml'))return function(){this.parse=()=>({iterator:()=>{let i=0;return {hasNext:()=>i<sequence.length,next:()=>sequence[i++]};}});};
+ if(name.endsWith('DumperOptions'))return function(){this.setSplitLines=this.setWidth=this.setAllowUnicode=()=>{};};
+ if(name.endsWith('emitter.Emitter'))return function(){this.emit=()=>emitted++;};
+ return function(){};
+},yamlMapper:{readTree:()=>{parsed++;return {};}},jsonMapper:{writeValueAsString:()=> '{}'},raise:code=>{throw Error(code);}};
+vm.runInNewContext(source.slice(start,end)+'\nthis.parse=parseYamlSource;',env);
+sequence=[event('Scalar','x'.repeat(65536),'large'),...Array.from({length:1000},()=>event('Alias',null,'large'))];
+assert.throws(()=>env.parse('a: &large text\nb: *large'),/YAML_ALIAS_EXPANSION_LIMIT/);
+assert.equal(emitted,0,'reject before emitting expanded text');
+sequence=[...Array.from({length:150},()=>event('SequenceStart'))];
+assert.throws(()=>env.parse('nested: []'),/YAML_DEPTH_LIMIT/);
+assert.throws(()=>env.parse('x'.repeat(2097153)),/YAML_INPUT_LIMIT/);
+sequence=[event('Scalar','ok','a'),event('Alias',null,'a')];
+assert.equal(JSON.stringify(env.parse('a: &a ok\nb: *a')),'{}');assert(emitted>0);
+console.log('audit-yaml-budgets OK');
