@@ -5,7 +5,7 @@ const _meta = {
   "targets": [
     "backend"
   ],
-  "description": "Reads bounded UTF-8 CSV text or a file (including an uploaded-file path) into typed rows. RFC4180 quotes/newlines, optional BOM, headers and explicit rowSchema. Parses only; never writes a data source.",
+  "description": "Reads bounded UTF-8 CSV text or a file under _private/flow-data into typed rows. RFC4180 quotes/newlines, optional BOM, headers and explicit rowSchema. Parses only; never writes a data source.",
   "uses": ["file-access"],
   "properties": {
     "unrestrictedPath": {"kind":"value","type":"boolean","default":false,"description":"Use a path outside _private/flow-data with explicit author permission."},
@@ -17,7 +17,7 @@ const _meta = {
     "path": {
       "type": "string",
       "kind": "value",
-      "description": "CSV file path; relative paths resolve from request.projectDir. Uploaded file paths are accepted."
+      "description": "CSV file path under _private/flow-data; relative paths resolve from request.projectDir. Copy uploads into that data directory first."
     },
     "separator": {
       "type": "string",
