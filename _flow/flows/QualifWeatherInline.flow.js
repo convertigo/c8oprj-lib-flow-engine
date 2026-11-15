@@ -10,6 +10,7 @@ function QualifWeatherInline({ input, config, result }) {
     $$id: "fetchWeather",
     method: "GET",
     url: `file://${request.engineProjectDir}/fixtures/weather-alert.json`,
+    allowFileUrl: true,
   })
   local.metropoles = json.select({
     $$id: "selectMetropoles",

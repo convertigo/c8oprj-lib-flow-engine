@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync('_flow/blocks/http/request.block.js','utf8');
+let reads=0;
+const dummy=new Proxy(function(){},{get:()=>dummy,apply:()=>dummy,construct:()=>dummy});
+const classes={'org.apache.http.impl.client.CookieSpecRegistries':{createDefault:()=>({})},'java.net.URI':{create:s=>({getScheme:()=>String(s).split(':')[0],toString:()=>s})},'java.io.File':function(){this.isFile=()=>true;this.toPath=()=>'';},'java.nio.file.Files':{probeContentType:()=>''},'org.apache.commons.io.FileUtils':{readFileToString(){reads++;return 'local';}},'java.lang.Thread':{currentThread:()=>({isInterrupted:()=>false})}};
+const block=vm.runInNewContext(source.slice(source.indexOf('(function ()')),{flowEngineClass:n=>classes[n]||dummy,Packages:{},JavaAdapter:function(){},java:{}});
+const ctx={props:()=>({url:'file:///private/server.txt'}),template:v=>v,expr:v=>v,outputPath:()=>'',throwFlow:e=>{throw Error(e.code);},requireAuthoring:()=>{throw Error('AUTHORING_FORBIDDEN');}};
+for(const call of [()=>block.run(ctx,{}),()=>block.debug.run(ctx,{},block.debug.resolve(ctx,{}))]) assert.throws(call,/HTTP_(DESTINATION_REFUSED|FILE_REFUSED)/);
+assert.equal(reads,0);
+console.log('audit-http-boundaries OK');

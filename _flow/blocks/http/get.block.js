@@ -33,6 +33,7 @@ const _meta = {
     },
   },
   "properties": {
+    "allowFileUrl": {"kind":"value","type":"boolean","default":false,"description":"Explicit local file URL access for an authorized author or internal caller."},
     "url": {
       "label": "URL",
       "kind": "template",
@@ -82,6 +83,7 @@ const _meta = {
 			var props = ctx.props(node);
 			return ctx.callBlock("http.request", {
 				method: "GET",
+				allowFileUrl: props.allowFileUrl === true,
 				url: ctx.template(props.url),
 				query: ctx.template(props.query),
 				headers: ctx.template(props.headers),
@@ -96,6 +98,7 @@ const _meta = {
 			resolve: function (ctx, node) {
 				var props = ctx.props(node),
 					args = {
+						allowFileUrl: props.allowFileUrl === true,
 						method: "GET",
 						url: ctx.template(props.url),
 						query: ctx.template(props.query),

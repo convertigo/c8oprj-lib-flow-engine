@@ -27,6 +27,7 @@ const _meta = {
     },
   },
   "properties": {
+    "allowFileUrl": {"kind":"value","type":"boolean","default":false,"description":"Explicit local file URL access for an authorized author or internal caller."},
     "responseType": {"kind":"value","type":"string","enum":["auto","text"],"default":"auto","description":"auto parses JSON bodies; text leaves the original response text in body for a downstream reader."},
     "method": {
       "label": "Method",
@@ -108,11 +109,10 @@ const _meta = {
 }
 
 (function () {
-	// One client, the one of the Convertigo engine (its pool and proxy settings), and no second one: a request is sent
-	// once. Each request carries an entity, empty without a body, so that the retry handler of the client only sends it
-	// again when it failed before being sent. Its cookies are never those of the store the client shares between all the
-	// calls of the server: each call has its cookie context, on the HttpState of its Convertigo context as with the HTTP
-	// connectors, and follows the redirections itself to read and write them at each step.
+	// One policy-aware client per call, with the engine proxy settings: a request is sent
+	// once, with retries disabled. Each request carries an entity, empty without a body. Each call has its own cookie
+	// context, backed by the HttpState of its Convertigo context as with the HTTP connectors, and follows redirections
+	// itself to read and write cookies at each step.
 	//
 	// Stateless (see the export): the module holds constants, Java classes and thread-safe httpclient objects (the cookie
 	// interceptors and specifications are immutable or synchronized); every value of a call (its cookie context, request,
@@ -126,9 +126,11 @@ const _meta = {
 	function javaClass(name) {
 		return typeof flowEngineClass === "function" ? flowEngineClass(name) : Packages[name];
 	}
-	var Engine = javaClass("com.twinsoft.convertigo.engine.Engine");
-	var HttpUtils = javaClass("com.twinsoft.convertigo.engine.util.HttpUtils");
-	var EntityUtils = javaClass("org.apache.http.util.EntityUtils");
+	function access(ctx, node) {
+		var helper = typeof flowProjectClass === "function" ? flowProjectClass("com.convertigo.libflowengine.HttpAccess") : Packages["com.convertigo.libflowengine.HttpAccess"];
+		if (typeof helper !== "function") ctx.throwFlow({code:"HTTP_CLIENT_UNAVAILABLE",message:"HTTP calls require the current project HTTP helper.",status:500},node);
+		return helper;
+	}
 	var RequestBuilder = javaClass("org.apache.http.client.methods.RequestBuilder");
 	var RequestConfig = javaClass("org.apache.http.client.config.RequestConfig");
 	var CookieSpecs = javaClass("org.apache.http.client.config.CookieSpecs");
@@ -154,7 +156,6 @@ const _meta = {
 	var URI = javaClass("java.net.URI");
 	var File = javaClass("java.io.File");
 	var Files = javaClass("java.nio.file.Files");
-	var FileUtils = javaClass("org.apache.commons.io.FileUtils");
 	var StandardCharsets = javaClass("java.nio.charset.StandardCharsets");
 	var Base64 = javaClass("java.util.Base64");
 
@@ -275,19 +276,31 @@ const _meta = {
 	}
 
 	// the text in the charset of the response, UTF-8 when it has none
-	function readResponse(response, allocationTrace, responseType) {
+	function readResponse(response, allocationTrace, responseType, budget) {
 		var entity = response.getEntity();
 		var contentType = response.getFirstHeader("Content-Type");
-		var text = entity ? String(EntityUtils.toString(entity, "UTF-8")) : "";
+		var text = entity ? String(budget.read(entity)) : "";
 		return responseObject(Number(response.getStatusLine().getStatusCode()), String(contentType ? contentType.getValue() : ""),
 			responseHeaders(response), text, allocationTrace, responseType);
+	}
+
+	function httpFailure(ctx, node, failure) {
+		var code = String(failure && failure.message || failure).match(/HTTP_(DESTINATION_REFUSED|RESPONSE_TOO_LARGE|TOTAL_TIMEOUT|DNS_BUSY)/);
+		if (!code) throw failure;
+		code = code[0];
+		var statuses = {HTTP_DESTINATION_REFUSED:403, HTTP_RESPONSE_TOO_LARGE:502, HTTP_TOTAL_TIMEOUT:504, HTTP_DNS_BUSY:503};
+		var messages = {HTTP_DESTINATION_REFUSED:"HTTP destination is not allowed.", HTTP_RESPONSE_TOO_LARGE:"HTTP response exceeds its byte limit.", HTTP_TOTAL_TIMEOUT:"HTTP deadline exceeded.", HTTP_DNS_BUSY:"HTTP name resolution is busy."};
+		ctx.throwFlow({code:code, message:messages[code], status:statuses[code]}, node, {applicative:true});
 	}
 
 	function isFileUrl(url) {
 		return String(url || "").match(/^file:/i) !== null;
 	}
 
-	function runFileHttp(method, url, allocationTrace, responseType) {
+	function runFileHttp(ctx, node, method, url, allocationTrace, responseType) {
+		if (ctx.props(node).allowFileUrl !== true) ctx.throwFlow({code:"HTTP_FILE_REFUSED",message:"Local file URLs require explicit author access.",status:403},node);
+		ctx.requireAuthoring("http.file");
+		var budget = access(ctx, node).budget();
 		method = String(method || "GET").toUpperCase();
 		if (method !== "GET" && method !== "HEAD") {
 			throw new Error("Unsupported file URL HTTP method: " + method);
@@ -297,7 +310,9 @@ const _meta = {
 			return responseObject(404, "", {}, "", allocationTrace, responseType);
 		}
 		var contentType = String(Files.probeContentType(file.toPath()) || "");
-		var text = method === "HEAD" ? "" : String(FileUtils.readFileToString(file, "UTF-8"));
+		var text;
+		try { text = method === "HEAD" ? "" : String(budget.readFile(file)); }
+		catch (failure) { return httpFailure(ctx, node, failure); }
 		return responseObject(200, contentType, contentType ? { "content-type": contentType } : {}, text, allocationTrace, responseType);
 	}
 
@@ -437,45 +452,45 @@ const _meta = {
 	}
 
 	function sameOrigin(uri, next) {
+		function port(value) { return Number(value.getPort()) < 0 ? String(value.getScheme()).toLowerCase() === "https" ? 443 : 80 : Number(value.getPort()); }
 		return String(uri.getScheme()).toLowerCase() === String(next.getScheme()).toLowerCase()
-			&& String(uri.getRawAuthority()) === String(next.getRawAuthority());
+			&& String(uri.getHost()).toLowerCase() === String(next.getHost()).toLowerCase() && port(uri) === port(next);
 	}
 
-	// Engine.theApp.httpClient4 when the engine runs (read at each call: the engine replaces it when its proxy settings
-	// change); otherwise a client of this call alone, with the same settings
-	function engineClient(ctx, node) {
-		if (typeof HttpUtils !== "function") {
-			ctx.throwFlow({code: "HTTP_CLIENT_UNAVAILABLE", message: "http.request needs the HTTP client of the Convertigo engine.", status: 500}, node);
-		}
-		var app = Engine.theApp;
-		var shared = app ? app.httpClient4 : null;
-		return shared ? { client: shared, owned: false } : { client: HttpUtils.makeHttpClient(false), owned: true };
-	}
 
 	function send(ctx, node, method, uri, headers, body, cookieMode, config, responseType) {
 		var cookies = cookieContext(ctx, cookieMode);
 		var bytes = bodyBytes(body, headers);
-		var engine = engineClient(ctx, node);
+		var policy = access(ctx, node);
+		var budget = policy.budget();
+		var client = policy.client(budget);
 		try {
 			for (var responses = 1; ; responses++) {
 				// a parallel chunk stopped after a failed one sends nothing more
 				if (JavaThread.currentThread().isInterrupted()) {
 					ctx.throwFlow({code: "FLOW_EXECUTION_CANCELLED", message: "The HTTP call was not sent: its thread was interrupted.", status: 499}, node);
 				}
+				budget.destination(uri);
 				var request = buildRequest(method, uri, headers, bytes, config);
 				addCookies(cookies, request, uri);
-				var response = engine.client.execute(request);
+				var watch = budget.watch(request);
+				var response = null;
 				var status, next;
 				try {
+					response = client.execute(request);
+					budget.check();
 					responseCookies.process(response, cookies);
 					status = Number(response.getStatusLine().getStatusCode());
 					next = responses < MAX_RESPONSES ? redirection(status, response, uri) : null;
 					if (next === null) {
-						return readResponse(response, ctx.allocationTrace, responseType);
+						return readResponse(response, ctx.allocationTrace, responseType, budget);
 					}
-					EntityUtils.consumeQuietly(response.getEntity());
+					if (!sameOrigin(uri, next) && !policy.allowedHost(String(next.getHost()))) {
+						ctx.throwFlow({code:"HTTP_DESTINATION_REFUSED",message:"Redirects to another origin require an allowed host.",status:403},node);
+					}
+					// Close the connection without consuming an unbounded redirect body.
 				} finally {
-					response.close();
+					try { if (response !== null) response.close(); } finally { watch.cancel(false); }
 				}
 				// as the JDK client: 303 and a POST redirected by 301 or 302 become a GET without body
 				var nextMethod = status === 303 || (status === 301 || status === 302) && method === "POST" ? "GET" : method;
@@ -493,10 +508,11 @@ const _meta = {
 				method = nextMethod;
 				uri = next;
 			}
+		} catch (failure) {
+			try { budget.check(); } catch (expired) { failure = expired; }
+			return httpFailure(ctx, node, failure);
 		} finally {
-			if (engine.owned && typeof engine.client.close === "function") {
-				try { engine.client.close(); } catch (closing) { /* the client of this call only */ }
-			}
+			client.close();
 		}
 	}
 
@@ -531,7 +547,7 @@ const _meta = {
 			var readTimeoutMs = timeout(ctx, node, props.readTimeoutMs, "readTimeoutMs");
 			var body = formBody(props.bodyResolved === true ? props.body : props.body === undefined ? undefined : ctx.expr(props.body), headers);
 			var response = isFileUrl(url)
-				? runFileHttp(method, url, ctx.allocationTrace, responseType)
+				? runFileHttp(ctx, node, method, url, ctx.allocationTrace, responseType)
 				: send(ctx, node, method, URI.create(url), headers, body, cookies, requestConfig(connectTimeoutMs, readTimeoutMs), responseType);
 			if (ctx.outputPath(node) && response.status < 400 && ctx.learnOutputSchema) {
 				ctx.learnOutputSchema(node, "out", ctx.outputPath(node), response);
@@ -615,7 +631,7 @@ const _meta = {
 				var readTimeoutMs = capturedState.readTimeoutMs;
 				var body = capturedState.body;
 				var response = isFileUrl(url)
-					? runFileHttp(method, url, ctx.allocationTrace, responseType)
+					? runFileHttp(ctx, node, method, url, ctx.allocationTrace, responseType)
 					: send(
 							ctx,
 							node,

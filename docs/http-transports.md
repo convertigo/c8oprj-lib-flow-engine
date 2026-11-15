@@ -1,32 +1,53 @@
 # HTTP transport of http.request
 
-`http.request` (and its shortcuts `http.get`, `http.post`, `http.put`, `http.delete`) sends every request with the HTTP
-client of the Convertigo engine, and only with it: `Engine.theApp.httpClient4` when the engine runs (its connection pool
-and its proxy settings: manual mode, bypassed hosts, basic proxy authentication), read at each call because the engine
-replaces it when these settings change; otherwise, in a standalone runtime, `HttpUtils.makeHttpClient(false)`, created
-and closed by the call. There is no second client and no fallback: a request reaches the server once.
+`http.request` and its shortcuts use the project `HttpAccess` helper and a client owned by the call. This allows the
+DNS resolver used by the connection to enforce the same destination policy as the initial URL and each redirect.
+The engine's manual proxy, bypassed hosts and basic proxy credentials are read at each call. The shared engine pool
+cannot supply a per-call DNS policy and is no longer used. HTTP calls require the matching `libs/build` classes.
+
+## Destinations
+
+Only HTTP and HTTPS are accepted; user information and scoped addresses in the URI are refused. Resolved loopback,
+link-local, private, unspecified, multicast and shared-address-space destinations are refused by default, including
+mixed public/private DNS answer sets. The resolver checks the addresses it returns to the connecting socket.
+
+Set the JVM property `convertigo.flow.http.allowedHosts` to a comma-separated list of exact trusted DNS names or IP
+literals to allow exceptions. This is server configuration, never a Flow input or project config. A trusted name
+allows all addresses it resolves to; no wildcard or suffix matching is used. Redirects to another origin also require
+an allowed destination host, following the default origin restriction of the engine transaction destination policy
+(`HttpUriOverridePolicy` and `HttpConnector.checkRedirectDestination`). That transaction policy has no reusable
+resolved-address check. Scheme downgrades remain refused. A proxy resolves targets itself: a proxied target requires
+an explicit allowed-host entry, and the proxy's own resolved address is checked too.
+
+`file:` requires `allowFileUrl:true` and root author permission, including for debug execution. This is an explicit
+privileged local read; applications should use `file.readText` under `_private/flow-data` instead.
 
 ## Sent once
 
-Every request carries an entity, empty without a body (`Content-Length: 0`, as the JDK client used until 0.1.114 sent
-it). The retry handler of the engine client repeats a request with an entity only when it failed before being sent
-(a stale pooled connection), never after: a timeout, a connection cut once the request is written or a response the
-client cannot read is an error of the call. A parallel chunk whose thread is interrupted (a chunk after a failed one)
-sends nothing more: `FLOW_EXECUTION_CANCELLED` (499). An exchange already in progress is not cut by the interruption:
-it ends with its response or its read timeout.
+Every request carries an entity, empty without a body (`Content-Length: 0`). Automatic retries are disabled. A parallel
+chunk whose thread is interrupted sends nothing more: `FLOW_EXECUTION_CANCELLED` (499).
 
 ## Timeouts
 
-`connectTimeoutMs` bounds the connection and the wait for a free connection of the pool (a saturated pool fails
-instead of waiting for ever); `readTimeoutMs` is the socket timeout, the longest wait for data from the server. Both
-default to 60000 and take a positive number of milliseconds (`HTTP_TIMEOUT_INVALID` otherwise).
+`connectTimeoutMs` bounds connection establishment; `readTimeoutMs` bounds socket inactivity. Both default to 60000.
+The following JVM properties add server-owned limits that apply to every shortcut, response type and redirect:
+
+| Property | Default | Maximum |
+| --- | --- | --- |
+| `convertigo.flow.http.maxResponseBytes` | 16777216 (16 MiB) | 67108864 (64 MiB) |
+| `convertigo.flow.http.totalTimeoutMs` | 60000 | 300000 |
+
+Limits must be positive integers; an absent or invalid setting uses its default. The byte budget counts actual
+content after decompression. A scheduled abort enforces the total deadline during connection and body reads; DNS
+work also has that deadline and a bounded worker count. Redirect bodies are closed without draining them. Local
+file reads use the same byte and elapsed-time limits. Refusals use `HTTP_DESTINATION_REFUSED` (403),
+`HTTP_RESPONSE_TOO_LARGE` (502), `HTTP_TOTAL_TIMEOUT` (504) or `HTTP_DNS_BUSY` (503); local-file opt-in failures use
+`HTTP_FILE_REFUSED` (403). The existing Flow error envelope remains unchanged.
 
 ## Cookies
 
-The engine client keeps a cookie store shared by all its requests: a request executed without its own context would
-send the cookies another user received. `http.request` never uses it (the request configuration ignores cookies) and
-manages cookies itself, at each step of the redirections, with the cookie interceptors of httpclient 4 (RFC 6265, as
-browsers) over a cookie context of the call:
+`http.request` manages cookies at each redirect with the httpclient 4 interceptors (RFC 6265) over a cookie context
+of the call. Automatic cookie management on the transport client is disabled:
 
 - `cookies: "context"` (default): the `HttpState` of the Convertigo context of the call (`context.httpState`, created
   when missing), where the HTTP connectors keep theirs. A call of a named context sends the cookies received by the
@@ -67,6 +88,8 @@ specification once, synchronized); the cookie context, the request, the response
 call live in the functions called for it. A shared runtime evaluates it once instead of once per call frame, and its
 classes come from the class path of the engine (`flowEngineClass`), never from a copy in the libraries of a project.
 
-`tests/http-engine-client.js` covers a single send on errors and timeouts, cookie isolation and persistence, the
-redirections, the timeouts and the engine proxy settings; `http-engine-client-shared-scope.js` runs it in a scope
-shaped like the one of a call of the shared runtime; `http-basic-auth-form-body.js` covers authentication and bodies.
+`tests/audit-http-runtime.js` checks the complete standalone Engine transport, initial destination refusals, explicit
+exceptions, cross-origin redirects and discarded redirect bodies. `tests/AuditHttpAccessTest.java` checks address
+classes, mixed DNS sets, byte boundaries, decompression and an actively aborted slow stream. The historical
+`tests/http-engine-client.js` assumes shared-client reuse and unrestricted loopback; its deployment-specific proxy
+and context checks must be qualified with the new policy on a live engine.
