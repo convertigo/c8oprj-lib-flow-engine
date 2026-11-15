@@ -740,6 +740,7 @@
 		// studio, internal, mcp or admin, else application. A Flow called directly by another one without a Convertigo
 		// context of its own is never taken for a server-side origin.
 		runContextPrototype.requestPrincipal = function () {
+			if (this.parentRun) return this.parentRun.requestPrincipal();
 			var invocation = null;
 			try {
 				invocation = this.convertigoContext();
@@ -750,6 +751,12 @@
 				return { kind: "application", reason: "a direct call without a Convertigo context" };
 			}
 			return env.requestPrincipal ? env.requestPrincipal(invocation) : { kind: "application", reason: "no principal service" };
+		};
+		runContextPrototype.requireAuthoring = function (operation) {
+			var who = this.requestPrincipal();
+			if (["studio", "internal", "admin"].indexOf(who.kind) !== -1 ||
+				who.kind === "mcp" && String(who.scope || "").split(/\s+/).indexOf("mcp:full") !== -1) return who;
+			raise("AUTHORING_FORBIDDEN", "This operation is not allowed.", null, null, 403);
 		};
 		runContextPrototype.runNodes = function (nodes) {
 			return executeNodes(this, nodes);
@@ -2694,6 +2701,18 @@
 					return requestables.schema(args);
 				});
 			};
+			// Guard every entry before project switching, source validation/evaluation or mutation, including dry runs.
+			["cacheClear", "applyMutationSource", "authoringMutateSource", "contextActionSource", "schemaReset",
+			 "resourceGet", "resourcePatch", "resourceDelete", "blockCreate", "blockDuplicate", "blockEdit",
+			 "blockCodeSet", "blockCodeCheck", "blockCodePatch", "typeCreate", "blockTest", "flowSet", "flowTest",
+			 "flowSourceValidate", "flowSourcePatch", "flowCodeDiscard", "flowCodeSet", "flowCodePatch",
+			 "flowCodeCheck", "flowCodeRun", "flowCodePromote"].forEach(function (name) {
+				var implementation = ctx[name];
+				ctx[name] = function () {
+					this.requireAuthoring(name);
+					return implementation.apply(this, arguments);
+				};
+			});
 		}
 
 		if (env.sharedRuntime) Object.freeze(runContextPrototype);
