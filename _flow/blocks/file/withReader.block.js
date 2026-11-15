@@ -13,12 +13,14 @@ const _meta = {
       "inline": true,
     },
   ],
+  "uses": ["file-access"],
   "properties": {
+    "unrestrictedPath": {"kind":"value","type":"boolean","default":false,"description":"Use a path outside _private/flow-data with explicit author permission."},
     "path": {
       "label": "File path",
       "kind": "template",
       "type": "string",
-      "description": "File path. Relative paths resolve from the current project directory.",
+      "description": "File path under _private/flow-data. Relative paths resolve from the current project directory.",
     },
     "charset": {
       "label": "Charset",
@@ -56,15 +58,12 @@ const _meta = {
 		return node && node.props && node.props[key] !== undefined ? node.props[key] : node && node[key];
 	}
 
-	function resolveFile(ctx, value) {
+	function resolveFile(ctx, value, unrestricted) {
 		var path = String(ctx.template(value || ""));
 		if (!path) {
 			ctx.raise("MISSING_FILE_PATH", "file.withReader requires path.");
 		}
-		var file = new File(path);
-		if (!file.isAbsolute()) {
-			file = new File(String(ctx.read("request.projectDir") || "."), path);
-		}
+		var file = ctx.lib("file-access").resolve(ctx, path, unrestricted === true);
 		if (!file.isFile()) {
 			ctx.raise("FILE_NOT_FOUND", "File not found: " + String(file.getAbsolutePath()));
 		}
@@ -74,7 +73,7 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			var file = resolveFile(ctx, props.path);
+			var file = resolveFile(ctx, props.path, props.unrestrictedPath);
 			var reader = new BufferedReader(new InputStreamReader(
 				new FileInputStream(file),
 				String(props.charset || "UTF-8")
@@ -96,7 +95,7 @@ const _meta = {
 		debug: {
 			resolve: function (ctx, node) {
 				var props = ctx.props(node);
-				var file = resolveFile(ctx, props.path);
+				var file = resolveFile(ctx, props.path, props.unrestrictedPath);
 				var capturedArguments = {
 					path: String(file.getAbsolutePath()),
 					charset: String(props.charset || "UTF-8"),
@@ -108,7 +107,7 @@ const _meta = {
 			run: function (ctx, node, args) {
 				var capturedState = args.__state;
 				var props = capturedState.props;
-				var file = capturedState.file;
+				var file = resolveFile(ctx, props.path, props.unrestrictedPath);
 				var reader = new BufferedReader(
 					new InputStreamReader(new FileInputStream(file), String(props.charset || "UTF-8"))
 				);

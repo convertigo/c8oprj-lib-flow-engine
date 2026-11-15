@@ -6,12 +6,14 @@ const _meta = {
     "resource",
   ],
   "description": "Reads a complete project text file with an explicit size limit.",
+  "uses": ["file-access"],
   "properties": {
+    "unrestrictedPath": {"kind":"value","type":"boolean","default":false,"description":"Use a path outside _private/flow-data with explicit author permission."},
     "path": {
       "label": "File path",
       "kind": "template",
       "type": "string",
-      "description": "File path. Relative paths resolve from the current project directory.",
+      "description": "File path under _private/flow-data. Relative paths resolve from the current project directory.",
     },
     "charset": {
       "label": "Charset",
@@ -46,16 +48,12 @@ const _meta = {
 	var Files = Packages.java.nio.file.Files;
 	var Charset = Packages.java.nio.charset.Charset;
 
-	function resolveFile(ctx, value) {
+	function resolveFile(ctx, value, unrestricted) {
 		var path = String(ctx.template(value || ""));
 		if (!path) {
 			ctx.raise("MISSING_FILE_PATH", "file.readText requires path.");
 		}
-		var file = new File(path);
-		if (!file.isAbsolute()) {
-			file = new File(String(ctx.read("request.projectDir") || "."), path);
-		}
-		file = file.getCanonicalFile();
+		var file = ctx.lib("file-access").resolve(ctx, path, unrestricted === true);
 		if (!file.isFile()) {
 			ctx.raise("FILE_NOT_FOUND", "File not found: " + String(file.getAbsolutePath()));
 		}
@@ -65,7 +63,7 @@ const _meta = {
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
-			var file = resolveFile(ctx, props.path);
+			var file = resolveFile(ctx, props.path, props.unrestrictedPath);
 			var maxBytes = Number(props.maxBytes === undefined || props.maxBytes === null || props.maxBytes === ""
 				? 16777216 : props.maxBytes);
 			var size = Number(file.length());
@@ -81,7 +79,7 @@ const _meta = {
 		debug: {
 			resolve: function (ctx, node) {
 				var props = ctx.props(node);
-				var file = resolveFile(ctx, props.path);
+				var file = resolveFile(ctx, props.path, props.unrestrictedPath);
 				var maxBytes = Number(
 					props.maxBytes === undefined || props.maxBytes === null || props.maxBytes === ""
 						? 16777216
@@ -105,7 +103,7 @@ const _meta = {
 			run: function (ctx, node, args) {
 				var capturedState = args.__state;
 				var props = capturedState.props;
-				var file = capturedState.file;
+				var file = resolveFile(ctx, props.path, props.unrestrictedPath);
 				var bytes = Files.readAllBytes(file.toPath());
 				return String(new java.lang.String(bytes, Charset.forName(String(props.charset || "UTF-8"))));
 			}

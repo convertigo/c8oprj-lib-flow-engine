@@ -6,7 +6,9 @@ const _meta = {
     "backend"
   ],
   "description": "Reads bounded UTF-8 CSV text or a file (including an uploaded-file path) into typed rows. RFC4180 quotes/newlines, optional BOM, headers and explicit rowSchema. Parses only; never writes a data source.",
+  "uses": ["file-access"],
   "properties": {
+    "unrestrictedPath": {"kind":"value","type":"boolean","default":false,"description":"Use a path outside _private/flow-data with explicit author permission."},
     "text": {
       "type": "string",
       "kind": "value",
@@ -109,7 +111,7 @@ const _meta = {
  if((text!==null&&text!==undefined)===(path!==null&&path!==undefined&&String(path)!==''))fail('CSV_SOURCE_INVALID','Supply exactly one of text or path.');
  var bytes;
  if(path!==null&&path!==undefined&&String(path)!==''){
-  var file=new java.io.File(String(path));if(!file.isAbsolute())file=new java.io.File(String(ctx.read('request.projectDir')||'.'),String(path));
+  var file=ctx.lib("file-access").resolve(ctx,String(path),p.unrestrictedPath===true);
   if(!file.isFile())fail('CSV_FILE_NOT_FOUND','CSV file does not exist.');
   if(file.length()>maxBytes)fail('CSV_BYTE_LIMIT_EXCEEDED','CSV file exceeds maxBytes.');
   var stream=Files.newInputStream(file.toPath()),out=new java.io.ByteArrayOutputStream(),buffer=java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE,8192),size=0;
