@@ -2311,7 +2311,10 @@
 		var document;
 		try { document = JSON.parse(String(text)); }
 		catch (error) { raise("SQL_SCHEMA_JSON_INVALID", path + ": invalid JSON: " + error.message, null, "Correct the JSON syntax, then patch again. Nothing written."); }
-		var ctx = {props: function(node) {return node;}, expr: function(value) {return value;}, template: function(value) {return value;}, canContinue: function() {return true;}, read: function(key) {
+		var ctx = {props: function(node) {return node;}, expr: function(value) {return value;}, template: function(value) {return value;}, canContinue: function() {return true;}, httpResponse: function() {return null;}, callBlock: function(name, args) {
+			if (name === "sql.errorOutput" && blocks[name]) return blocks[name].run(ctx, args);
+			throw new Error("Unexpected schema validator block: " + name);
+		}, read: function(key) {
 			return key === "request.projectDir" ? String(projectDir()) : undefined;
 		}, throwFlow: function(error) {throwFlowError(error);}};
 		try {
