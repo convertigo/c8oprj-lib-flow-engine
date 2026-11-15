@@ -120,6 +120,7 @@
 			props.put(prefix + "writetimeout", String(request.timeoutMs));
 			props.put(prefix + "auth", request.user ? "true" : "false");
 			props.put(prefix + "ssl.protocols", "TLSv1.2 TLSv1.3");
+			props.put(prefix + "ssl.checkserveridentity", "true");
 			if (request.security === "starttls") {
 				props.put("mail.smtp.starttls.enable", "true");
 				props.put("mail.smtp.starttls.required", "true");
