@@ -719,6 +719,7 @@
 		};
 		// The protected authoring primitives check the principal of the root request (authoring-primitive-service)
 		runContextPrototype.configMutate = function (args) {
+			this.requireAuthoring("configMutate");
 			var invocation = null;
 			try {
 				invocation = this.convertigoContext();
@@ -728,6 +729,7 @@
 			return env.configMutate(args || {}, invocation);
 		};
 		runContextPrototype.schemaAdopt = function (args) {
+			this.requireAuthoring("schemaAdopt");
 			var invocation = null;
 			try {
 				invocation = this.convertigoContext();
@@ -756,7 +758,10 @@
 			var who = this.requestPrincipal();
 			if (["studio", "internal", "admin"].indexOf(who.kind) !== -1 ||
 				who.kind === "mcp" && String(who.scope || "").split(/\s+/).indexOf("mcp:full") !== -1) return who;
-			raise("AUTHORING_FORBIDDEN", "This operation is not allowed.", null, null, 403);
+			var error = new Error("This operation is not allowed.");
+			error.code = "AUTHORING_FORBIDDEN";
+			error.status = 403;
+			throw error;
 		};
 		runContextPrototype.runNodes = function (nodes) {
 			return executeNodes(this, nodes);
@@ -2705,7 +2710,9 @@
 				});
 			};
 			// Guard every entry before project switching, source validation/evaluation or mutation, including dry runs.
-			["cacheClear", "applyMutationSource", "authoringMutateSource", "contextActionSource", "schemaReset",
+			["resourceSearch", "resourceList", "blockGet", "blockCodeGet", "blockCodeRg", "typeGet",
+			 "flowSourceGet", "flowCodeGet", "flowCodeStatus", "flowCodeRg",
+			 "cacheClear", "applyMutationSource", "authoringMutateSource", "contextActionSource", "schemaReset",
 			 "resourceGet", "resourcePatch", "resourceDelete", "blockCreate", "blockDuplicate", "blockEdit",
 			 "blockCodeSet", "blockCodeCheck", "blockCodePatch", "typeCreate", "blockTest", "flowSet", "flowTest",
 			 "flowSourceValidate", "flowSourcePatch", "flowCodeDiscard", "flowCodeSet", "flowCodePatch",
