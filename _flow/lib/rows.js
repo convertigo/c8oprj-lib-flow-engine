@@ -321,19 +321,25 @@ var base_html = "<div style='display:flex; white-space: normal; align-items:cent
 var close_html = '</div>';
 var get_base_array_html = (value, color)=>{
 	return "<div style=\"background-color: " + (color && colors[color] ? colors[color] : 'lightgrey') + ";border-radius: 10px; padding-left: 10px; padding-top: 4px; padding-bottom: 4px; width: fit-content; padding-right: 10px; margin-top: 3px;\">" +
-		value +
+		escape_base_html(value) +
 	"</div>";
 }
 var get_base_btn_html = (url, label, color)=>{
+	url = normalize_base_url(url);
+	if (!url) return escape_base_html(label);
 	return "<div style=\"background-color: " + (color && colors[color] ? colors[color] : 'lightgrey') + ";border-radius: 10px; padding-left: 10px; padding-top: 4px; padding-bottom: 4px; width: fit-content; padding-right: 10px; margin-top: 3px; cursor:pointer\">" +
-		"<a  href=\"" + url + "\" target=\"_blank\">" + label + "</a>"+
+		"<a  href=\"" + escape_base_html(url) + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + escape_base_html(label) + "</a>"+
 	"</div>";
 }
 var get_base_array_image_html = (url)=>{
-	return "<img style='width: 100%; margin-top: 5px; margin-bottom: 5px; border-radius: 3px; box-shadow: 0px 8px 9px -4px rgba(0,0,0,0.73);' src=\"" + url + "\" ></img>";
+	url = normalize_base_url(url, true);
+	if (!url) return "";
+	return "<img style='width: 100%; margin-top: 5px; margin-bottom: 5px; border-radius: 3px; box-shadow: 0px 8px 9px -4px rgba(0,0,0,0.73);' src=\"" + escape_base_html(url) + "\" ></img>";
 }
 var get_base_array_link_html = (url, visibleName)=>{
-	return "<p style='background-color : lightgray;' ><a  href=\"" + url + "\" target=\"_blank\" download=\""+visibleName+"\">" + visibleName + "</a></p>"
+	url = normalize_base_url(url, true);
+	if (!url) return escape_base_html(visibleName);
+	return "<p style='background-color : lightgray;'><a href=\"" + escape_base_html(url) + "\" target=\"_blank\" rel=\"noopener noreferrer\" download=\"" + escape_base_html(visibleName) + "\">" + escape_base_html(visibleName) + "</a></p>";
 }
 var escape_base_html = (value)=>{
 	return String(value)
@@ -342,10 +348,12 @@ var escape_base_html = (value)=>{
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;");
 }
-var normalize_base_url = (url)=>{
-	if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) {
-		return url;
-	}
+var normalize_base_url = (url, media)=>{
+	url = String(url == null ? "" : url).trim();
+	if (!url || /[\x00-\x20\x7f]/.test(url)) return "";
+	if (/^(https?:\/\/)/i.test(url) || !media && /^(mailto:|tel:)/i.test(url)) return url;
+	if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return "";
+	if (/^(\/|\.\.?\/|#|\?)/.test(url)) return url;
 	return "https://" + url;
 }
 var get_base_url_html = (url)=>{
@@ -353,7 +361,9 @@ var get_base_url_html = (url)=>{
 	if (url.length == 0) {
 		return "";
 	}
-	return "<a href=\"" + escape_base_html(normalize_base_url(url)) + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + escape_base_html(url) + "</a>";
+	var target = normalize_base_url(url);
+	if (!target) return escape_base_html(url);
+	return "<a href=\"" + escape_base_html(target) + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + escape_base_html(url) + "</a>";
 }
 var computeAnyType = (element, nested, type)=>{
 	var value;
@@ -399,7 +409,7 @@ var computeAnyType = (element, nested, type)=>{
 		}
 	}
 	else{
-		innerHtml = type == "url" ? get_base_url_html(element) : element; // + close_html;
+		innerHtml = type == "url" ? get_base_url_html(element) : escape_base_html(element); // + close_html;
 		value = element;
 	}
 	return {innerHtml: innerHtml + (nested ? "" : close_html), value: value};
@@ -712,7 +722,7 @@ var formatBaserowCell = function(element, field, nested, column) {
 	}
 	if (kind == "number") {
 		formattedText = formatNumberValue(primitiveValue, field);
-		return { innerHtml: (nested ? get_base_array_html(escapeDisplayHtml(formattedText), "light-gray") : escapeDisplayHtml(formattedText)) + (nested ? "" : close_html), value: primitiveValue };
+		return { innerHtml: (nested ? get_base_array_html(formattedText, "light-gray") : escapeDisplayHtml(formattedText)) + (nested ? "" : close_html), value: primitiveValue };
 	}
 	if (kind == "email") {
 		return { innerHtml: formatEmailHtml(primitiveValue) + (nested ? "" : close_html), value: primitiveValue };
@@ -722,11 +732,11 @@ var formatBaserowCell = function(element, field, nested, column) {
 	}
 	if (kind == "date") {
 		formattedText = formatDateValue(primitiveValue, field);
-		return { innerHtml: (nested ? get_base_array_html(escapeDisplayHtml(formattedText), "light-gray") : escapeDisplayHtml(formattedText)) + (nested ? "" : close_html), value: primitiveValue };
+		return { innerHtml: (nested ? get_base_array_html(formattedText, "light-gray") : escapeDisplayHtml(formattedText)) + (nested ? "" : close_html), value: primitiveValue };
 	}
 	if (kind == "duration") {
 		formattedText = formatDurationValue(primitiveValue, field);
-		return { innerHtml: (nested ? get_base_array_html(escapeDisplayHtml(formattedText), "light-gray") : escapeDisplayHtml(formattedText)) + (nested ? "" : close_html), value: primitiveValue };
+		return { innerHtml: (nested ? get_base_array_html(formattedText, "light-gray") : escapeDisplayHtml(formattedText)) + (nested ? "" : close_html), value: primitiveValue };
 	}
 	return computeAnyType(element, nested, resolvedType);
 };

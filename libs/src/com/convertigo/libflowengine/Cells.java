@@ -239,7 +239,7 @@ final class Cells {
 
 	/** The table profile: the cells of the native JSON steps (BaserowCellFormat), the reference kernel without it. */
 	static Object table(Map<?, ?> p, Control control, TablePlan layout) throws Exception {
-		if (!Baserow.AVAILABLE)
+		if (!Baserow.AVAILABLE || !truthy(get(p, "valuesOnly")))
 			throw new Unsupported();
 		var rawRows = get(p, "rows");
 		var rows = rawRows == MISSING || nil(rawRows) ? array()

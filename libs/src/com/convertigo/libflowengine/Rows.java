@@ -822,8 +822,10 @@ public final class Rows {
 				var name = (String) step.get("operation");
 				if (name.equals("select"))
 					selections[i] = new Selection(p);
-				if (name.equals("formatCells") && "table".equals(p.get("profile")))
+				if (name.equals("formatCells") && "table".equals(p.get("profile"))) {
+					if (!Cells.truthy(get(p, "valuesOnly"))) return null;
 					tables[i] = new Cells.TablePlan(p);
+				}
 			}
 			var control = new Control(null, null, null);
 			// the options of each step, copied once: only their rows change from one call to the next
