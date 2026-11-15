@@ -5,15 +5,21 @@ var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_
 var FileUtils = Packages.org.apache.commons.io.FileUtils;
 var source = String(FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
 var __flowEngineDir = engineDir;
-var __flowProjectDir = String(new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-number-format-test").getAbsolutePath());
+var __flowProjectDir = String(new java.io.File(java.lang.System.getProperty("java.io.tmpdir"), "lib-flow-engine-number-format-test-" + java.util.UUID.randomUUID()).getAbsolutePath());
 var engine = eval(source);
 function assert(condition, message) { if (!condition) throw new Error(message); }
 var fixture = JSON.parse(String(FileUtils.readFileToString(new java.io.File(engineDir, "../tests/fixtures/number-format-cases.json"), "UTF-8")));
-function run(input) {
-	return JSON.parse(engine.run(JSON.stringify({ definition: { version: 1, nodes: [{ id: "f", block: "number.format", props: input, out: "result.text" }] }, includeTrace: false })));
+function run(input, context) {
+	var request = { definition: { version: 1, nodes: [{ id: "f", block: "number.format", props: input, out: "result.text" }] }, includeTrace: false };
+	if (context && context.configDateLocale) {
+		FileUtils.writeStringToFile(new java.io.File(__flowProjectDir, "_flow/engine.yaml"), JSON.stringify({ version: 1, config: { date: { locale: context.configDateLocale } } }), "UTF-8");
+		request.projectDir = __flowProjectDir;
+	}
+	try { return JSON.parse(engine.run(JSON.stringify(request))); }
+	finally { if (context && context.configDateLocale) FileUtils.deleteQuietly(new java.io.File(__flowProjectDir, "_flow/engine.yaml")); }
 }
 fixture.cases.forEach(function (item) {
-	var r = run(item.input);
+	var r = run(item.input, item.context);
 	assert(r.ok === true && r.result.text === item.expected,
 		"number.format " + JSON.stringify(item.input) + " gives " + JSON.stringify(r.ok ? r.result.text : r.error) + ", expected " + JSON.stringify(item.expected));
 });
@@ -21,12 +27,7 @@ fixture.errors.forEach(function (item) {
 	var r = run(item.input);
 	assert(r.ok === false && r.error && r.error.code === item.error, "number.format " + JSON.stringify(item.input) + " refuses with " + item.error + ": " + JSON.stringify(r.error));
 });
-// The server locale comes from config.date.locale when the call gives none
-FileUtils.writeStringToFile(new java.io.File(__flowProjectDir, "_flow/engine.yaml"), JSON.stringify({ version: 1, config: { date: { locale: "en-US" } } }), "UTF-8");
-var configured = JSON.parse(engine.run(JSON.stringify({ projectDir: __flowProjectDir,
-	definition: { version: 1, nodes: [{ id: "f", block: "number.format", props: { value: 1234.5 }, out: "result.text" }] }, includeTrace: false })));
-FileUtils.deleteQuietly(new java.io.File(__flowProjectDir, "_flow/engine.yaml"));
-assert(configured.ok && configured.result.text === "1,234.5", "config.date.locale is the default locale on the server: " + JSON.stringify(configured));
+FileUtils.deleteQuietly(new java.io.File(__flowProjectDir));
 // In FlowScript
 var script = JSON.parse(engine.run(JSON.stringify({ project: "App", includeTrace: false, input: {}, flowSource:
 	"const _flow = { sourceVersion: 2 }\n\nfunction F({ input, result }) {\n  local.text = number.format({ value: 12500, style: \"currency\", currency: \"USD\", locale: \"en-US\", maximumFractionDigits: 0 })\n  return { amount: local.text }\n}\n" })));

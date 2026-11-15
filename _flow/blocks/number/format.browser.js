@@ -13,7 +13,7 @@ function (input) {
   if (text.charAt(0) === "+") text = text.substring(1);
   var style = String(input.style || "decimal");
   if (["decimal", "currency", "percent"].indexOf(style) < 0) fail("NUMBER_FORMAT_STYLE_INVALID", "style is decimal, currency or percent.");
-  var locale = String(input.locale || "fr-FR");
+  var locale = String(input.locale || (typeof document !== "undefined" && document.documentElement && document.documentElement.lang) || "fr-FR");
   if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(locale)) fail("NUMBER_FORMAT_LOCALE_INVALID", "Use a BCP 47 locale such as en-US or fr-FR.");
   var options = { style: style, roundingMode: "halfExpand" }, min = 0, max = 3;
   if (style === "currency") {

@@ -8,7 +8,7 @@ const _meta = {
   ],
   "effects": [],
   "icon": "mdi:numeric",
-  "description": "Formats a number, an amount of money (currency such as USD) or a percentage for a locale, with its thousands separator and decimals: the same text on the server and in a page.",
+  "description": "Formats a number, an amount of money (currency such as USD) or a percentage for a locale, with its thousands separator and decimals. Without locale, the server uses config.date.locale, then fr-FR; a page uses the application's HTML language, then fr-FR.",
   "longDescription": "number.format({value:12500,style:'currency',currency:'USD',locale:'en-US',maximumFractionDigits:0}) -> '$12,500'; number.format({value:1234.5,locale:'en-US'}) -> '1,234.5'; number.format({value:0.256,style:'percent',locale:'en-US'}) -> '26%'. value: a number or numeric text (an int64 or decimal of an entity as text keeps its precision). Rounding is half away from zero. An invalid value returns fallback. Dates: date.format; a sum of a list: list.sum.",
   "summary": "format {{value}}",
   "tags": [
@@ -75,7 +75,7 @@ const _meta = {
       "kind": "value",
       "type": "string",
       "default": "",
-      "description": "BCP 47 language such as en-US or fr-FR. Empty: config.date.locale on the server, else fr-FR; a page passes the same locale."
+      "description": "BCP 47 language such as en-US or fr-FR. Empty: config.date.locale on the server, or the application's HTML language on a page; fr-FR if neither is available."
     },
     "minimumFractionDigits": {
       "label": "Minimum decimals",

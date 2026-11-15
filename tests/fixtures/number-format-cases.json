@@ -1,6 +1,25 @@
 {
  "cases": [
   {
+   "input": {"value": 1234.5},
+   "expected": "1 234,5"
+  },
+  {
+   "input": {"value": 1234.5},
+   "context": {"pageLang": ""},
+   "expected": "1 234,5"
+  },
+  {
+   "input": {"value": 1234.5},
+   "context": {"configDateLocale": "en-US", "pageLang": "en-US"},
+   "expected": "1,234.5"
+  },
+  {
+   "input": {"value": 1234.5, "locale": "fr-FR"},
+   "context": {"configDateLocale": "en-US", "pageLang": "en-US"},
+   "expected": "1 234,5"
+  },
+  {
    "input": {
     "value": 12500,
     "style": "currency",
