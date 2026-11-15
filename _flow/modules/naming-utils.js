@@ -12,7 +12,8 @@
 	}
 
 	function safeFilePart(value) {
-		return String(value || "").trim().replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
+		var part = String(value || "").trim().replace(/[^A-Za-z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "");
+		return part === "." || part === ".." ? "" : part;
 	}
 
 	function safeIdentifier(value) {

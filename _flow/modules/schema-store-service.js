@@ -1,4 +1,15 @@
 (function () {
+	function schemaFlowDir(dir, flowName, env) {
+		var root = dir.getCanonicalFile();
+		var flowDir = new env.File(root, flowName).getCanonicalFile();
+		if (!flowName || flowName === "." || flowName === ".." ||
+			String(flowDir.getAbsolutePath()) === String(root.getAbsolutePath()) ||
+			!flowDir.toPath().startsWith(root.toPath())) {
+			env.raise("FLOW_SCHEMA_PATH_INVALID", "Flow schema storage requires a strict child directory.");
+		}
+		return flowDir;
+	}
+
 	function schemaNodeKey(node, outPath, env) {
 		return env.safeFilePart(env.nodePath(node) || outPath || env.blockName(node));
 	}
@@ -10,7 +21,7 @@
 		if (!dir || !flowName || !nodeKey) {
 			return null;
 		}
-		var flowDir = new env.File(dir, flowName);
+		var flowDir = schemaFlowDir(dir, flowName, env);
 		return new env.File(flowDir, nodeKey + "." + env.safeFilePart(property || "out") + ".schema.json");
 	}
 
@@ -20,7 +31,7 @@
 		if (!dir || !flowName) {
 			return null;
 		}
-		return new env.File(new env.File(dir, flowName), "result.out.schema.json");
+		return new env.File(schemaFlowDir(dir, flowName, env), "result.out.schema.json");
 	}
 
 	function readOutputSchema(request, definition, node, property, outPath, env) {
@@ -185,7 +196,7 @@
 				file: file ? String(file.getAbsolutePath()) : ""
 			};
 		}
-		var flowDir = new env.File(dir, flowName);
+		var flowDir = schemaFlowDir(dir, flowName, env);
 		var existed = flowDir.isDirectory();
 		if (existed) {
 			env.FileUtils.deleteDirectory(flowDir);
