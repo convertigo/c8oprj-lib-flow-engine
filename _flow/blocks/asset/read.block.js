@@ -32,7 +32,7 @@ const _meta = {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
 			var path = String(ctx.template(props.path || "") || "");
-			return ctx.assetRead(path);
+			return ctx.assetRead(path, props.allowLarge !== false);
 		},
 		debug: {
 			resolve: function (ctx, node) {
@@ -40,7 +40,7 @@ const _meta = {
 				return { path: String(ctx.template(p.path || "") || ""), allowLarge: p.allowLarge !== false };
 			},
 			run: function (ctx, node, args) {
-				return ctx.assetRead(args.path);
+				return ctx.assetRead(args.path, args.allowLarge);
 			}
 		}
 	};

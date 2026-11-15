@@ -2395,8 +2395,8 @@
 					return resources.list(args);
 				});
 			};
-			ctx.assetRead = function (path) {
-				return resources.get({ path: path, assetOnly: true, allowLarge: true }).content || "";
+			ctx.assetRead = function (path, allowLarge) {
+				return resources.get({ path: path, assetOnly: true, allowLarge: allowLarge !== false }).content || "";
 			};
 			ctx.resourceGet = function (args) {
 				args = args || {};
