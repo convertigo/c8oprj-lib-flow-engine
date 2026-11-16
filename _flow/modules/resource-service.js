@@ -27,6 +27,10 @@
 		if (filePath !== basePath && filePath.indexOf(basePath + env.File.separator) !== 0) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path escapes the project: " + normalized);
 		}
+		var canonicalRelative = resourceRelativePath(base, file, env);
+		if (!canonicalRelative || !env.isAllowedResourcePath(canonicalRelative)) {
+			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource target is not allowed: " + normalized);
+		}
 		if (mustExist && !isFile(file, env)) {
 			env.raise("UNKNOWN_RESOURCE", "Unknown Flow resource: " + normalized);
 		}
@@ -45,7 +49,12 @@
 		return filePath.substring(basePath.length + 1).replace(/\\/g, "/");
 	}
 
-	function collectResourceFiles(dir, base, out, env) {
+	function collectResourceFiles(dir, base, out, env, prefix, visited) {
+		// Check before enumerating: even another allowed resource tree is outside this prefix.
+		var canonicalRelative = resourceRelativePath(base, dir, env);
+		if (!canonicalRelative || (canonicalRelative !== prefix && canonicalRelative.indexOf(prefix + "/") !== 0)
+				|| visited[canonicalRelative]) return;
+		visited[canonicalRelative] = true;
 		var listed = dir && (env.sources ? env.sources.files(dir) : dir.listFiles());
 		if (!listed) {
 			return;
@@ -56,7 +65,7 @@
 		});
 		files.forEach(function (file) {
 			if (isDirectory(file, env)) {
-				collectResourceFiles(file, base, out, env);
+				collectResourceFiles(file, base, out, env, prefix, visited);
 				return;
 			}
 			if (!isFile(file, env)) {
@@ -78,24 +87,13 @@
 			return [];
 		}
 		var out = [];
-		var ignoreFile = new env.File(base, ".httpignore");
-		if (isFile(ignoreFile, env)) out.push({path:".httpignore",file:ignoreFile});
-		var engineConfig = new env.File(base, env.sourcePaths.path("engine.yaml"));
-		if (isFile(engineConfig, env)) {
-			out.push({
-				path: env.sourcePaths.path("engine.yaml"),
-				file: engineConfig
-			});
-		}
-		var jars = new env.File(base, "libs/jars.yaml");
-		if (isFile(jars, env)) {
-			out.push({
-				path: "libs/jars.yaml",
-				file: jars
-			});
-		}
+		[".httpignore", env.sourcePaths.path("engine.yaml"), "libs/jars.yaml"].forEach(function (path) {
+			var file = new env.File(base, path);
+			var target = resourceRelativePath(base, file, env);
+			if (target && env.isAllowedResourcePath(target) && isFile(file, env)) out.push({path: path, file: file});
+		});
 		["blocks", "fragments", "lib", "resources", "frontbuilder", "types"].map(env.sourcePaths.path).concat(["resources", "libs/src"]).forEach(function (path) {
-			collectResourceFiles(new env.File(base, path), base, out, env);
+			collectResourceFiles(new env.File(base, path), base, out, env, path, Object.create(null));
 		});
 		return out;
 	}
