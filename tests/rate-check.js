@@ -64,10 +64,10 @@ eq(call("hit", "one", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: f
 eq(call("hit", "two", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
 	{ allowed: true, retryAfterSeconds: 0, count: 1 }, "flood bucket second key");
 eq(call("hit", "three", { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
-	{ allowed: false, retryAfterSeconds: 60, count: 0 }, "flood bucket refuses overflow");
+	{ allowed: true, retryAfterSeconds: 0, count: 0 }, "flood bucket admits overflow without recording");
 for (var flooded = 4; flooded < 1004; flooded++) {
 	eq(call("hit", "new-" + flooded, { bucket: "flood", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 2 }),
-		{ allowed: false, retryAfterSeconds: 60, count: 0 }, "flood key " + flooded + " is refused");
+		{ allowed: true, retryAfterSeconds: 0, count: 0 }, "flood key " + flooded + " is admitted without recording");
 }
 eq(call("peek", "victim", { bucket: "protected", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 }),
 	{ allowed: false, retryAfterSeconds: 60, count: 1 }, "victim remains blocked during other bucket flood");
@@ -92,7 +92,7 @@ var projectB = { props: ctx.props, input: ctx.input, template: ctx.template, sco
 var shared = { operation: "hit", bucket: "login.user", key: "x", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 };
 eq(block.run(projectA, shared), { allowed: true, retryAfterSeconds: 0, count: 1 }, "project A fills its bucket");
 shared.key = "y";
-eq(block.run(projectA, shared), { allowed: false, retryAfterSeconds: 60, count: 0 }, "project A bucket is full");
+eq(block.run(projectA, shared), { allowed: true, retryAfterSeconds: 0, count: 0 }, "project A bucket admits an unknown key without recording");
 eq(block.run(projectB, shared), { allowed: true, retryAfterSeconds: 0, count: 1 }, "same bucket name in project B is independent");
 eq(bucketOf("login.user", "appA").get("entries").containsKey("y"), false, "project B counters stay out of project A");
 eq(bucketOf("login.user", "appB").get("entries").containsKey("x"), false, "project A counters stay out of project B");

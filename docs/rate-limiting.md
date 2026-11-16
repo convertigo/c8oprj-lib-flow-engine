@@ -38,11 +38,12 @@ Each bucket has its own table of at most `maxEntries` keys (default 10,000,
 maximum 100,000). If calls specify different capacities for the same bucket,
 the smallest capacity seen applies until the bucket becomes empty. At capacity,
 an unknown `peek` is allowed without recording a key. A new `hit` replaces the
-oldest live key whose count is still below the limit; it fails closed only when
-all live keys have reached their limit. Expired keys are removed when capacity
+oldest live key whose count is still below the limit among the first 64 entries.
+If no slot can be freed, an unknown `hit` is admitted without recording it and
+returns `count: 0`. Expired keys are removed when capacity
 is needed; `reset` also frees a slot. An existing key continues to work while
 its bucket is full. The server holds at most 1,024 buckets and 64 per project;
-a new bucket fails closed when either limit is reached. A WARN without the
+a new bucket is admitted without recording when either limit is reached. A WARN without the
 quota key is logged once per bucket and window when capacity is reached. Bucket
 names are limited to 128 characters and keys to 512 characters.
 

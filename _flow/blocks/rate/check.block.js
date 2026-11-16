@@ -8,7 +8,7 @@ const _meta = {
   tags: ["rate", "security", "quota"],
   summary: "rate {{operation}} {{bucket}}",
   description: "Checks, records or resets a server-local fixed-window rate limit. Example: call peek before password.verify, hit after a failed login, and reset after success; use request.clientAddressPrefix for an address quota. Never reads raw forwarding headers. A refusal is returned as data, not thrown.",
-  longDescription: "Counters are shared by the Flows of one project on one Convertigo server instance, not across instances. Each bucket holds at most maxEntries keys (default 10000). An unknown peek is allowed when full; a new hit replaces the oldest key below its limit and fails closed if every key has reached its limit. The server holds at most 64 buckets per project and 1024 overall. Backoff starts at one second when the limit is reached, doubles for each further hit and is capped by maxDelaySeconds. A hit reports whether that event was allowed before counting it. A blocked hit still counts for an existing key, so callers should use peek before expensive work. Empty bucket/key or invalid options fail closed with allowed=false and no exception.",
+  longDescription: "Counters are shared by the Flows of one project on one Convertigo server instance, not across instances. Each bucket holds at most maxEntries keys (default 10000). A new hit replaces the oldest key below its limit among the first 64 entries. When a new key or bucket cannot be recorded at capacity, hit and peek are allowed without recording (count 0). The server holds at most 64 buckets per project and 1024 overall. Backoff starts at one second when the limit is reached, doubles for each further hit and is capped by maxDelaySeconds. A hit reports whether that event was allowed before counting it. A blocked hit still counts for an existing key, so callers should use peek before expensive work. Empty bucket/key or invalid options fail closed with allowed=false and no exception.",
   properties: {
     operation: { label: "Operation", kind: "value", type: "string", enum: ["peek", "hit", "reset"], default: "peek", description: "peek does not count; hit counts one event; reset clears this key." },
     bucket: { label: "Bucket", kind: "template", type: "string", default: "", description: "Namespace for independent limits, for example login.user or signup.address." },
@@ -118,6 +118,22 @@ const _meta = {
 		} catch (ignored) { }
 	}
 
+	function warnBucketLimit(store, now, window, project, capacity) {
+		var iterator = store.entrySet().iterator(), state = null;
+		while (iterator.hasNext()) {
+			var candidate = iterator.next();
+			if (capacity === 1024 || String(candidate.getKey()).indexOf(project.length + ":" + project + "/") === 0) {
+				state = candidate.getValue();
+				break;
+			}
+		}
+		if (!state || Number(state.get("bucketLimitWarnUntil") || 0) > now) return;
+		state.put("bucketLimitWarnUntil", now + window);
+		try {
+			Engine.logEngine.warn("rate.check bucket reached capacity: project=" + project + ", capacity=" + capacity);
+		} catch (ignored) { }
+	}
+
 	function execute(ctx, node) {
 		try {
 			var p = ctx.props(node), operation = String(ctx.input({ value: p.operation === undefined ? "peek" : p.operation }));
@@ -148,11 +164,12 @@ const _meta = {
 				if (bucketState == null) {
 					var projectUse = projectBuckets(store, projectPrefix);
 					if (store.size() >= 1024 || projectUse.count >= 64) {
-						var nextBucketExpiry = bucketSpace(store, now);
+						bucketSpace(store, now);
 						projectUse = projectBuckets(store, projectPrefix);
-						if (store.size() >= 1024 || projectUse.count >= 64) return {
-							allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(((projectUse.count >= 64 ? projectUse.earliest : nextBucketExpiry) - now) / 1000)), count: 0
-						};
+						if (store.size() >= 1024 || projectUse.count >= 64) {
+							warnBucketLimit(store, now, window, project, projectUse.count >= 64 ? 64 : 1024);
+							return { allowed: true, retryAfterSeconds: 0, count: 0 };
+						}
 					}
 					if (operation === "peek") return { allowed: true, retryAfterSeconds: 0, count: 0 };
 					bucketState = new HashMap();
@@ -174,22 +191,22 @@ const _meta = {
 						bucketState.put("earliestExpiry", Infinity);
 					}
 					if (entries.size() >= Number(bucketState.get("capacity"))) {
-						var earliest = space(bucketState, now);
+						space(bucketState, now);
 						if (entries.size() >= Number(bucketState.get("capacity"))) {
 							warnCapacity(bucketState, now, window, project);
 							if (operation === "peek") return { allowed: true, retryAfterSeconds: 0, count: 0 };
 							var needed = entries.size() - Number(bucketState.get("capacity")) + 1;
 							var candidates = [], iterator = entries.entrySet().iterator();
-							while (iterator.hasNext() && candidates.length < needed) {
+							var scanned = 0;
+							while (iterator.hasNext() && scanned < 64 && candidates.length < needed) {
 								var entry = iterator.next();
+								scanned++;
 								if (Number(entry.getValue().get(1)) < limit) candidates.push(entry.getKey());
 							}
 							if (candidates.length < needed) return {
-								allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((earliest - now) / 1000)), count: 0
+								allowed: true, retryAfterSeconds: 0, count: 0
 							};
 							candidates.forEach(function (candidate) { entries.remove(candidate); });
-							bucketState.put("earliestExpiry", 0);
-							space(bucketState, now);
 						}
 					}
 					if (operation === "peek") {

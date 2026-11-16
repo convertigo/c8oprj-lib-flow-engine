@@ -23,7 +23,9 @@ var entries = block.inspect().get("1:p/mixed").get("entries");
 assert(!entries.containsKey("old") && entries.containsKey("blocked") && entries.containsKey("fresh"), "blocked key survives eviction");
 assert(call("p", "mixed", "hit", "fresh", 2, 2).allowed, "new key can reach its limit");
 assert(call("p", "mixed", "peek", "unknown", 2, 2).allowed, "peek stays open when all entries block");
-assert(!call("p", "mixed", "hit", "unknown", 2, 2).allowed, "hit closes when every entry blocks");
+var unknown = call("p", "mixed", "hit", "unknown", 2, 2);
+assert(unknown.allowed && unknown.count === 0 && !entries.containsKey("unknown"), "unknown hit is admitted without recording when every entry blocks");
+assert(!call("p", "mixed", "peek", "blocked", 2, 2).allowed, "known blocked key stays refused");
 assert(warnings.length === 1 && warnings[0].indexOf("old") < 0 && warnings[0].indexOf("blocked") < 0,
 	"capacity logs once without a quota key");
 call("p", "mixed", "reset", "blocked", 2, 2);
@@ -36,7 +38,8 @@ assert(call("p", "mixed", "hit", "next-1", 2, 2).allowed, "expired window accept
 assert(call("p", "mixed", "hit", "next-2", 2, 2).allowed, "expired window fills again");
 assert(warnings.length === 2, "a later window logs capacity once again");
 for (var i = 0; i < 63; i++) assert(call("p", "bucket-" + i, "hit", "x", 1, 1).allowed, "project bucket " + i);
-assert(!call("p", "bucket-overflow", "hit", "x", 1, 1).allowed, "project bucket limit applies");
+var overflow = call("p", "bucket-overflow", "hit", "x", 1, 1);
+assert(overflow.allowed && overflow.count === 0 && !block.inspect().containsKey("1:p/bucket-overflow"), "project bucket limit admits without recording");
 assert(call("other", "independent", "hit", "x", 1, 1).allowed, "another project keeps its own capacity");
 assert(call("other", "shrinking", "hit", "a", 4, 3).allowed, "first key before capacity reduction");
 assert(call("other", "shrinking", "hit", "b", 4, 3).allowed, "second key before capacity reduction");
