@@ -8,7 +8,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.entity.ByteArrayEntity;
 import com.sun.net.httpserver.HttpServer;
 
-class AuditHttpAccessTest {
+class HttpAccessBoundaryTest {
     interface Checked { void run() throws Exception; }
     static void check(boolean value) { if (!value) throw new AssertionError(); }
     static void refuses(Checked run) throws Exception {
@@ -59,6 +59,6 @@ class AuditHttpAccessTest {
                 try{refuses(()->{try(var response=client.execute(req)){deadline.read(response.getEntity());}});}finally{watch.cancel(false);}}
             check(TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start)<1200);
         } finally {server.stop(0);workers.shutdownNow();System.clearProperty("convertigo.flow.http.allowedHosts");}
-        System.out.println("AuditHttpAccessTest OK (addresses, DNS sets, exceptions, decompression, shared bytes, active deadline)");
+        System.out.println("HttpAccessBoundaryTest OK (addresses, DNS sets, exceptions, decompression, shared bytes, active deadline)");
     }
 }

@@ -7,4 +7,4 @@ const block=vm.runInNewContext(source.slice(source.indexOf('(function ()')),{flo
 const ctx={props:()=>({url:'file:///private/server.txt'}),template:v=>v,expr:v=>v,outputPath:()=>'',throwFlow:e=>{throw Error(e.code);},requireAuthoring:()=>{throw Error('AUTHORING_FORBIDDEN');}};
 for(const call of [()=>block.run(ctx,{}),()=>block.debug.run(ctx,{},block.debug.resolve(ctx,{}))]) assert.throws(call,/HTTP_(DESTINATION_REFUSED|FILE_REFUSED)/);
 assert.equal(reads,0);
-console.log('audit-http-boundaries OK');
+console.log('boundary-http-boundaries OK');

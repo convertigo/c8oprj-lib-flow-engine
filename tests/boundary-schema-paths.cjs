@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const load = p => vm.runInNewContext(fs.readFileSync(p, 'utf8'));
 const naming = load('_flow/modules/naming-utils.js'), store = load('_flow/modules/schema-store-service.js');
-const root = fs.mkdtempSync(path.resolve('.audit-schema-'));
+const root = fs.mkdtempSync(path.resolve('.boundary-schema-'));
 class File {
   constructor(parent, child) { this.path = path.resolve(String(parent), child || ''); }
   toString() { return this.path; }
@@ -21,4 +21,4 @@ try {
   assert.equal(store.reset({flowName:'Good'},env).deleted,true);
   assert.equal(fs.readFileSync(path.join(root,'_flow/keep.js'),'utf8'),'keep');
 } finally { fs.rmSync(root,{recursive:true,force:true}); }
-console.log('audit-schema-paths OK');
+console.log('boundary-schema-paths OK');

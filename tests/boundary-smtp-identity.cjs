@@ -11,4 +11,4 @@ for (const security of ['starttls', 'ssl', 'none']) {
   assert.equal(values[prefix + 'ssl.trust'], undefined);
   if (security === 'starttls') assert.equal(values['mail.smtp.starttls.required'], 'true');
 }
-console.log('audit-smtp-identity OK');
+console.log('boundary-smtp-identity OK');

@@ -1,6 +1,6 @@
 var File=java.io.File,IO=Packages.org.apache.commons.io.FileUtils;
 var __flowEngineDir=String(new File(arguments[0]||'_flow').getCanonicalPath());
-var project=java.nio.file.Files.createTempDirectory('audit-http-').toFile(),__flowProjectDir=String(project);
+var project=java.nio.file.Files.createTempDirectory('boundary-http-').toFile(),__flowProjectDir=String(project);
 var engine=eval(String(IO.readFileToString(new File(__flowEngineDir,'Engine.js'),'UTF-8'))),checks=0;
 function assert(value,label){checks++;if(!value)throw Error(label);}
 var received=new java.util.concurrent.atomic.AtomicInteger();
@@ -23,5 +23,5 @@ try{
  var redirect=run('/redirect');assert(!redirect.ok&&JSON.stringify(redirect).indexOf('HTTP_DESTINATION_REFUSED')>=0&&received.get()===2,'redirect destination checked: '+JSON.stringify(redirect));
  java.lang.System.setProperty('convertigo.flow.http.maxResponseBytes','8');
  var short=run('/hugeRedirect');assert(short.ok&&short.result.value.text==='ok','redirect body discarded without draining: '+JSON.stringify(short));
- print('audit-http-runtime OK ('+checks+' checks)');
+ print('boundary-http-runtime OK ('+checks+' checks)');
 }finally{java.lang.System.clearProperty('convertigo.flow.http.allowedHosts');java.lang.System.clearProperty('convertigo.flow.http.maxResponseBytes');server.stop(0);workers.shutdownNow();IO.deleteDirectory(project);}

@@ -17,4 +17,4 @@ assert.throws(()=>frame({__parentRun:root}).blockCodeSet('demo',{dry:true}),e=>e
 const context=invocation;invocation=null;
 assert.throws(()=>frame({__directInvocation:true}).blockCodeSet('demo',{dry:true}),e=>e.code==='AUTHORING_FORBIDDEN');invocation=context;
 for(const kind of ['studio','admin','internal']){who={kind};assert.equal(frame().blockCodeSet('demo',{dry:true}),'set');}
-console.log('audit-authoring OK');
+console.log('boundary-authoring OK');

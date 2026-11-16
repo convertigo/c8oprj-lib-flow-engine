@@ -13,4 +13,4 @@ assert.equal(String(resolve(ctx,'_private/flow-data/a.txt')),'/project/_private/
 assert.throws(()=>resolve(ctx,'/etc/passwd',true),/AUTHORING_FORBIDDEN/);
 ctx.requireAuthoring=()=>({kind:'admin'});assert.equal(String(resolve(ctx,'/trusted/export.csv',true)),'/trusted/export.csv');
 for(const name of ['file/readText','file/withReader','file/withWriter','csv/parse'])assert(fs.readFileSync('_flow/blocks/'+name+'.block.js','utf8').includes('file-access'),'every file producer uses the policy');
-console.log('audit-file-paths OK');
+console.log('boundary-file-paths OK');

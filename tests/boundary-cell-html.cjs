@@ -20,4 +20,4 @@ for(const kernel of kernels){
  assert.equal(cell(attack).value,attack);
  assert(!cell(12,'number').displayValue.includes('&amp;'));
 }
-console.log('audit-cell-html OK');
+console.log('boundary-cell-html OK');

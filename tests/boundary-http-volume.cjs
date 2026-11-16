@@ -5,4 +5,4 @@ const large='x'.repeat(1024);
 const read=vm.runInNewContext(source.slice(start,end)+'\nreadResponse',{EntityUtils:{toString:()=>large},responseObject:()=>({text:large}),responseHeaders:()=>({})});
 const response={getEntity:()=>({}),getFirstHeader:()=>null,getStatusLine:()=>({getStatusCode:()=>200})};
 assert.throws(()=>read(response,null,'text',{read(){throw Error('HTTP_RESPONSE_TOO_LARGE');}}),/HTTP_RESPONSE_TOO_LARGE/);
-console.log('audit-http-volume OK');
+console.log('boundary-http-volume OK');

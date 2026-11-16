@@ -88,8 +88,8 @@ specification once, synchronized); the cookie context, the request, the response
 call live in the functions called for it. A shared runtime evaluates it once instead of once per call frame, and its
 classes come from the class path of the engine (`flowEngineClass`), never from a copy in the libraries of a project.
 
-`tests/audit-http-runtime.js` checks the complete standalone Engine transport, initial destination refusals, explicit
-exceptions, cross-origin redirects and discarded redirect bodies. `tests/AuditHttpAccessTest.java` checks address
+`tests/boundary-http-runtime.js` checks the complete standalone Engine transport, initial destination refusals, explicit
+exceptions, cross-origin redirects and discarded redirect bodies. `tests/HttpAccessBoundaryTest.java` checks address
 classes, mixed DNS sets, byte boundaries, decompression and an actively aborted slow stream. The historical
 `tests/http-engine-client.js` assumes shared-client reuse and unrestricted loopback; its deployment-specific proxy
 and context checks must be qualified with the new policy on a live engine.

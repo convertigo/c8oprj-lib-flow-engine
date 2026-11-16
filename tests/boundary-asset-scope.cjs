@@ -10,4 +10,4 @@ assert.equal(service.get({path:'_flow/engine.yaml'},env).content,'text','author 
 const blockSource=fs.readFileSync('_flow/blocks/asset/read.block.js','utf8');
 const block=vm.runInNewContext(blockSource.slice(blockSource.indexOf('(function ()')));
 for(const debug of [false,true]){let called=false;const ctx={props:()=>({path:'_flow/resources/data.txt'}),template:v=>v,assetRead:p=>{called=true;return p;},resourceGet:()=>{throw Error('generic source read');}};const result=debug?block.debug.run(ctx,{},block.debug.resolve(ctx,{})):block.run(ctx,{});assert(called);assert.equal(result,'_flow/resources/data.txt');}
-console.log('audit-asset-scope OK');
+console.log('boundary-asset-scope OK');

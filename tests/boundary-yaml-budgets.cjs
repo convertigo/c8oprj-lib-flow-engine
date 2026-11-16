@@ -21,4 +21,4 @@ assert.throws(()=>env.parse('nested: []'),/YAML_DEPTH_LIMIT/);
 assert.throws(()=>env.parse('x'.repeat(2097153)),/YAML_INPUT_LIMIT/);
 sequence=[event('Scalar','ok','a'),event('Alias',null,'a')];
 assert.equal(JSON.stringify(env.parse('a: &a ok\nb: *a')),'{}');assert(emitted>0);
-console.log('audit-yaml-budgets OK');
+console.log('boundary-yaml-budgets OK');

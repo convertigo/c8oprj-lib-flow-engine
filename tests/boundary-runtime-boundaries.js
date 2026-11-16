@@ -1,7 +1,7 @@
 // Standalone Rhino integration, all files in java.io.tmpdir and no external service.
 var File=java.io.File, IO=Packages.org.apache.commons.io.FileUtils;
 var __flowEngineDir=String(new File(arguments[0]||'_flow').getCanonicalPath());
-var project=java.nio.file.Files.createTempDirectory('audit-boundaries-').toFile();
+var project=java.nio.file.Files.createTempDirectory('boundary-boundaries-').toFile();
 var __flowProjectDir=String(project.getCanonicalPath());
 var context=null, checks=0;
 function assert(value,label){checks++;if(!value)throw Error(label);}
@@ -34,5 +34,5 @@ try{
  refused('yaml.parse',{text:yaml},'character budget');
  var cell=run('rows.formatCells',{rows:[{a:'<img src=x onerror="bad()">'}],profile:'table',schema:[{name:'a',type:'text'}]});
  assert(cell.ok&&cell.result.value[0].a.displayValue.indexOf('&lt;img')>=0,'native-dispatch cell escaping: '+JSON.stringify(cell).substring(0,500));
- print('audit-runtime-boundaries OK ('+checks+' checks)');
+ print('boundary-runtime-boundaries OK ('+checks+' checks)');
 }finally{java.lang.System.clearProperty('convertigo.flow.http.maxResponseBytes');IO.deleteDirectory(project);}
