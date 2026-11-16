@@ -36,7 +36,7 @@ class HttpAccessBoundaryTest {
         check(new HttpAccess.Budget(1000,8).read(new ByteArrayEntity("12345678".getBytes(StandardCharsets.UTF_8))).equals("12345678"));
         var shared = new HttpAccess.Budget(1000,8); shared.read(new ByteArrayEntity(new byte[5])); refuses(()->shared.read(new ByteArrayEntity(new byte[4])));
         System.setProperty("convertigo.flow.http.allowedHosts","127.0.0.1,LOCALHOST.");
-        check(HttpAccess.allowedHost("localhost")); check(!HttpAccess.allowedHost("localhost.attacker.org"));
+        check(HttpAccess.allowedHost("localhost")); check(!HttpAccess.allowedHost("localhost.example.invalid"));
         new HttpAccess.Budget(1000,8).destination(URI.create("http://127.0.0.1/"));
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         var workers=Executors.newCachedThreadPool(task->{var t=new Thread(task);t.setDaemon(true);return t;});server.setExecutor(workers);
