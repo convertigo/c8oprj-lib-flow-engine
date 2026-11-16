@@ -18,7 +18,7 @@ const flowRunSource = fs.readFileSync('_flow/blocks/flow/run.block.js', 'utf8');
 const flowRun = vm.runInNewContext(flowRunSource.slice(flowRunSource.indexOf('(function ()')));
 const runBlock = request => flowRun.run({props: node => node,
   runFlowSource: (...args) => frame(request).runFlowSource(...args)}, {flowSource: 'source'});
-for (const [source, options] of [['source', {}], [null, {definition: {nodes: []}}], [null, {projectDir: '/other'}]]) {
+for (const [source, options] of [['source', {}], [null, {definition: {nodes: []}}], [null, {projectDir: '/other'}], [null, {flowSource: 'x'}], [null, {}], [null, {namedFlowName: 'Saved', projectDir: '/other'}], [null, {namedFlowName: 'Saved', flowSource: 'x'}]]) {
   reads = 0;
   assert.throws(() => frame().runFlowSource(source, {}, options), e => e.code === 'AUTHORING_FORBIDDEN');
   assert.equal(reads, 0, 'source resolution happens after author check');

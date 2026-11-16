@@ -2453,7 +2453,10 @@
 			}
 			ctx.runFlowSource = function (flowSource, config, options) {
 				options = options || {};
-				if (flowSource !== null && flowSource !== undefined || options.definition !== undefined || options.projectDir !== undefined) {
+				// Only a named Flow of the project runs without author rights; any other source (argument, options.flowSource,
+				// definition) or an explicit project location requires the author, before the source is resolved.
+				if (!options.namedFlowName || flowSource !== null && flowSource !== undefined || options.flowSource !== undefined
+					|| options.definition !== undefined || options.projectDir !== undefined) {
 					ctx.requireAuthoring("runFlowSource");
 				}
 				return withProjectDir(options.projectDir, function () {
