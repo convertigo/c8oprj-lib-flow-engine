@@ -10692,12 +10692,10 @@
 		var envValues = {
 			FRONTBUILDER_PROJECT_ROOT: projectRoot ? String(projectRoot.getAbsolutePath()) : String(request.projectDir || ""),
 			FRONTBUILDER_PROJECT_NAME: projectName,
-			FRONTBUILDER_SOURCE_ROOT: sourceRoot,
-			FRONTBUILDER_BUILD_OUTPUT: atomicOutput
-				? String(atomicOutput.staging.getAbsolutePath())
-				: buildOutput,
 			PATH: frontendExecutablePathPrefix(npm) + String(Packages.java.lang.System.getenv("PATH") || "")
 		};
+		var outputEnv = frontendGenerationOutputEnv(projectRoot, projectName, generatedRoot, sourceRoot, buildOutput);
+		Object.keys(outputEnv).forEach(function (name) { envValues[name] = outputEnv[name]; });
 		if (atomicOutput) {
 			envValues.FLOW_SVELTE_BUILD_OUTPUT = String(atomicOutput.staging.getAbsolutePath());
 			envValues.FLOW_SVELTE_BUILD_OUT_DIR = String(atomicOutput.kit.getAbsolutePath());
@@ -11023,6 +11021,29 @@
 	function frontendGeneratedRootFile(request, info) {
 		var settings = info && info.settings || {};
 		return frontendPrivateRootFile(frontendProjectRootFile(request), settings, frontendProjectName(request));
+	}
+
+	function frontendGenerationOutputEnv(projectRoot, projectName, generatedRoot, sourceRoot, buildOutput) {
+		var configured = new File(sourceRoot);
+		var relative = !configured.isAbsolute();
+		if (!configured.isAbsolute()) {
+			configured = new File(projectRoot || new File("."), sourceRoot);
+		}
+		var values = {
+			FRONTBUILDER_SOURCE_ROOT: sourceRoot,
+			FRONTBUILDER_BUILD_OUTPUT: buildOutput,
+			FRONTBUILDER_REAL_SOURCE_ROOT: ""
+		};
+		if (!configured.toPath().toAbsolutePath().normalize().equals(generatedRoot.toPath().toAbsolutePath().normalize())) {
+			var local = localWorkDirectory();
+			var workProject = relative && local && local.isEnabled() ? local.getProjectDirectory(projectName) : null;
+			var approved = workProject ? new File(workProject, sourceRoot).getCanonicalFile() : null;
+			if (!approved || !approved.equals(generatedRoot)) {
+				throw new Error("FLOW_OUTPUT_PATH: output is not approved by the host");
+			}
+			values.FRONTBUILDER_REAL_SOURCE_ROOT = String(generatedRoot.getAbsolutePath());
+		}
+		return values;
 	}
 
 	function frontendProductionLifecycle() {

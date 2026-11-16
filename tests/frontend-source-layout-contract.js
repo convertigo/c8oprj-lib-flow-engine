@@ -35,8 +35,16 @@ try {
 		write(sourceFile, source);
 		var engineSource = "version: 1\nconfig:\n  frontbuilder:\n    svelte:\n      target: svelte5\n"
 			+ "      resourceRoot: " + providerRoot + "\n      modelPath: "
-			+ paths.path("frontbuilder/svelte/model/LayoutFrontend/src/routes/+page.flow.svelte") + "\n";
+			+ paths.path("frontbuilder/svelte/model/LayoutFrontend/src/routes/+page.flow.svelte")
+			+ "\n      privateDir: _private/svelte\n      buildOutput: DisplayObjects/mobile\n";
 		write(new File(project, paths.path("engine.yaml")), engineSource);
+		var LocalWorkDirectory = Packages.com.twinsoft.convertigo.engine.LocalWorkDirectory;
+		var properties = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager;
+		var localProperty = Packages.com.twinsoft.convertigo.engine.EnginePropertiesManager.PropertyName.LOCAL_WORK_DIRECTORY;
+		var previousLocal = String(properties.getProperty(localProperty));
+		properties.setProperty(localProperty, String(new File(base, "local").getAbsolutePath()));
+		LocalWorkDirectory.init();
+		assert(LocalWorkDirectory.isEnabled(), "The fixture uses the real host local work directory");
 		__flowEngineDir = String(engineRoot.getAbsolutePath());
 		__flowProjectDir = String(project.getAbsolutePath());
 		__flowSourceLayout = mode;
@@ -59,10 +67,38 @@ try {
 			var pageSource = read(page);
 			assert(pageSource.indexOf('id="business"') !== -1 && pageSource.indexOf('$$id') === -1, "Generated property changed");
 			assert(read(sourceFile) === source, "Generation overwrote source");
+			// Match the engine's local work directory: generated sources are reached through linked _private,
+			// while a saved page and a new, unpromoted route are combined in the draft overlay.
+			var generatedDir = new File(project, "_private/svelte");
+			assert(java.nio.file.Files.isSymbolicLink(generatedDir.toPath()), "The host relocated the generated sources");
+			var localDir = new File(LocalWorkDirectory.getProjectDirectory("LayoutFrontend"), "_private/svelte");
+			var promotedSource = source.replace('id="business"', 'id="promoted-business"');
+			write(sourceFile, promotedSource);
+			var draftRoute = new File(project, paths.path("frontbuilder/svelte/model/LayoutFrontend/src/routes/about/+page.flow.svelte"));
+			var draftSource = source.replace('id:"home",route:"/"', 'id:"about",route:"/about"')
+				.replace('id="business"', 'id="draft-business"');
+			var drafts = {};
+			drafts[String(draftRoute.getCanonicalPath())] = draftSource;
+			var draftGenerated = api("contextAction", {actionId:"frontbuilder.svelte.generate",
+				targetObject:{kind:"frontendBuilder",type:"svelte",project:"LayoutFrontend"}, sourceDrafts:drafts});
+			assert(draftGenerated.ok, "Generation with saved and unsaved sources in a local work directory failed: " + JSON.stringify(draftGenerated));
+			assert(read(page).indexOf('id="promoted-business"') !== -1, "The promoted source was generated");
+			assert(new File(localDir, "src/routes/about/+page.svelte").isFile(), "The unpromoted route was generated");
+			assert(read(sourceFile) === promotedSource && !draftRoute.exists(), "Generation did not promote the remaining draft");
+			if (String(java.lang.System.getenv("FLOW_TEST_REAL_BUILD") || "") === "1") {
+				var built = api("contextAction", {actionId:"frontbuilder.svelte.build",
+					targetObject:{kind:"frontendBuilder",type:"svelte",project:"LayoutFrontend"}, sourceDrafts:drafts});
+				assert(built.ok, "Production build with drafts failed: " + JSON.stringify(built));
+				assert(new File(project, "DisplayObjects/mobile/index.html").isFile(), "The production application was published");
+			}
 			var info = JSON.parse(engine.cacheInfo()).caches.frontendDocumentServer;
 			assert(info.starts === 1 && info.fallbacks === 0 && info.errors === 0, "Provider contract fell back: " + JSON.stringify(info));
 			print("frontend-source-layout-contract " + mode + " OK");
-		} finally { engine.cacheClear(); }
+		} finally {
+			engine.cacheClear();
+			LocalWorkDirectory.release();
+			properties.setProperty(localProperty, previousLocal);
+		}
 	});
 	print("frontend-source-layout-contract OK (" + checks + " checks)");
 } finally {

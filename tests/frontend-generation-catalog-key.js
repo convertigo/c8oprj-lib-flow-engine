@@ -42,6 +42,7 @@ function frontendDurationMs() { return 0; }
 function frontendObserveProductionState() { return {}; }
 function failure(operation, error) { return { ok: false, error: error }; }
 var frontendActionSteps = extract("frontendActionSteps", "frontendActionStepPerformed");
+var frontendGenerationOutputEnv = extract("frontendGenerationOutputEnv", "frontendProductionLifecycle");
 var frontendRunAction = extract("frontendRunActionLocked", "frontendActionSteps");
 
 try {

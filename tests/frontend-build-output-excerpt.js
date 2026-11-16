@@ -55,6 +55,7 @@ function failure(operation, error) { return { ok: false, error: error }; }
 	}
 }, this);
 var frontendActionSteps = extract("frontendActionSteps");
+var frontendGenerationOutputEnv = extract("frontendGenerationOutputEnv");
 var frontendRunAction = extract("frontendRunActionLocked");
 
 function buildStep(response) {
