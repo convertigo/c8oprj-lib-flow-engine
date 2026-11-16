@@ -11,7 +11,7 @@ independent bucket, so another application cannot fill or reset it.
 
 For login, `peek` by normalized identifier before `password.verify`, whether or
 not the account exists. On failure, `hit`; on success, `reset`. Check a second
-bucket keyed by `request.clientAddress` before hashing. For signup, `hit` the
+bucket keyed by `request.clientAddressPrefix` before hashing. For signup, `hit` the
 address quota before `password.hash`, and check for an existing account first.
 The caller chooses its own error envelope when `allowed` is false.
 
@@ -21,6 +21,11 @@ internal requests). Proxy handling is determined by the configured servlet
 container. This value never comes from a Flow-supplied or raw `X-Forwarded-For`
 header. A request without a Convertigo client address yields an empty string;
 an address quota with that key fails closed.
+
+`request.clientAddressPrefix` uses the same trusted address. IPv4 remains
+unchanged; IPv6 is grouped by its first 64 bits and returned with `/64`.
+Malformed or absent addresses retain the original value. Neither field reads
+raw forwarding headers or Flow-supplied context values.
 
 The counters live in server memory. They are shared by Flows on one Convertigo
 server instance, and are independent across instances; a restart clears them.
@@ -32,11 +37,13 @@ the boundary may allow a burst across two consecutive windows.
 Each bucket has its own table of at most `maxEntries` keys (default 10,000,
 maximum 100,000). If calls specify different capacities for the same bucket,
 the smallest capacity seen applies until the bucket becomes empty. At capacity,
-`peek` and `hit` refuse a new key with `count: 0` and a retry time based on the
-earliest window expiry. They never evict a live counter. Expired keys are
-removed when capacity is needed; `reset` also frees a slot. An existing key
-continues to work while its bucket is full. The server holds at most 1,024
-buckets; a new bucket also fails closed when that limit is reached. Bucket
+an unknown `peek` is allowed without recording a key. A new `hit` replaces the
+oldest live key whose count is still below the limit; it fails closed only when
+all live keys have reached their limit. Expired keys are removed when capacity
+is needed; `reset` also frees a slot. An existing key continues to work while
+its bucket is full. The server holds at most 1,024 buckets and 64 per project;
+a new bucket fails closed when either limit is reached. A WARN without the
+quota key is logged once per bucket and window when capacity is reached. Bucket
 names are limited to 128 characters and keys to 512 characters.
 
 With `backoff: true`, reaching the limit starts a one-second delay; subsequent

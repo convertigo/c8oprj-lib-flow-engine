@@ -162,6 +162,8 @@
 			"flowCodeSet", "flowCodePatch", "flowCodeCheck", "flowCodeRg", "flowCodeRun",
 			"flowCodeAnalyze", "flowCodePromote", "requestableList", "requestableSchema"
 		];
+		// Context capabilities are authoring-only unless execution explicitly needs them.
+		var runtimeCapabilities = ["runFlowSource", "schemaForOutput", "learnOutputSchema", "notifySourceMutation", "assetRead"];
 
 		function defineColdContextMethod(name) {
 			Object.defineProperty(runContextPrototype, name, {
@@ -291,6 +293,19 @@
 			var address = invocation && invocation.remoteAddr;
 			return address === null || address === undefined ? "" : String(address);
 		}
+		function requestClientAddressPrefixGet() {
+			var address = requestClientAddressGet.call(this);
+			if (address.indexOf(":") < 0) return address;
+			try {
+				var parsed = Packages.java.net.InetAddress.getByName(address);
+				var bytes = parsed.getAddress();
+				if (bytes.length !== 16) return address;
+				for (var i = 8; i < 16; i++) bytes[i] = 0;
+				return String(Packages.java.net.InetAddress.getByAddress(bytes).getHostAddress()) + "/64";
+			} catch (invalidAddress) {
+				return address;
+			}
+		}
 		function scopesConfigGet() {
 			var state = frameStateForRequestScope(this.request);
 			return materializeLazyValue(this, "config",
@@ -318,6 +333,9 @@
 		};
 		var requestClientAddressDescriptor = {
 			configurable: false, enumerable: true, get: requestClientAddressGet
+		};
+		var requestClientAddressPrefixDescriptor = {
+			configurable: false, enumerable: true, get: requestClientAddressPrefixGet
 		};
 		var scopesConfigDescriptor = {
 			configurable: true, enumerable: true, get: scopesConfigGet, set: scopesConfigSet
@@ -2207,6 +2225,7 @@
 			Object.defineProperty(requestScope, "engineProjectDir", requestEngineProjectDirDescriptor);
 			Object.defineProperty(requestScope, "projectDir", requestProjectDirDescriptor);
 			Object.defineProperty(requestScope, "clientAddress", requestClientAddressDescriptor);
+			Object.defineProperty(requestScope, "clientAddressPrefix", requestClientAddressPrefixDescriptor);
 			if (frameProfile) {
 				frameProfile.requestScopeMs = profileDuration(requestStarted);
 			}
@@ -2424,7 +2443,8 @@
 			ctx.runFlowSource = function (flowSource, config, options) {
 				options = options || {};
 				return withProjectDir(options.projectDir, function () {
-					var source = sourceForWriteRequest(options, flowSource);
+					var source = options.namedFlowName ? getProjectFlow(options.namedFlowName, loadBlocks()).source
+						: sourceForWriteRequest(options, flowSource);
 					return runFlowRequest(childRunRequest(ctx, {
 						project: options.project || currentProjectName(ctx.request),
 						flowSource: source,
@@ -2711,13 +2731,7 @@
 				});
 			};
 			// Guard every entry before project switching, source validation/evaluation or mutation, including dry runs.
-			["resourceSearch", "resourceList", "blockGet", "blockCodeGet", "blockCodeRg", "typeGet",
-			 "flowSourceGet", "flowCodeGet", "flowCodeStatus", "flowCodeRg",
-			 "cacheClear", "applyMutationSource", "authoringMutateSource", "contextActionSource", "schemaReset",
-			 "resourceGet", "resourcePatch", "resourceDelete", "blockCreate", "blockDuplicate", "blockEdit",
-			 "blockCodeSet", "blockCodeCheck", "blockCodePatch", "typeCreate", "blockTest", "flowSet", "flowTest",
-			 "flowSourceValidate", "flowSourcePatch", "flowCodeDiscard", "flowCodeSet", "flowCodePatch",
-			 "flowCodeCheck", "flowCodeRun", "flowCodePromote"].forEach(function (name) {
+			coldContextMethodNames.filter(function (name) { return runtimeCapabilities.indexOf(name) === -1; }).forEach(function (name) {
 				var implementation = ctx[name];
 				ctx[name] = function () {
 					this.requireAuthoring(name);

@@ -141,9 +141,9 @@ const _meta = {
 			var props = ctx.props(node);
 			var contract = findContract(ctx.definition, String(props.contract || ""));
 			var implementation = resolveImplementation(ctx, props, contract);
-			var flow = ctx.flowGet(implementation);
 			var childInput = inputValue(ctx, props.input || {});
-			var execution = ctx.runFlowSource(flow.source, ctx.scopes.config, {
+			var execution = ctx.runFlowSource(null, ctx.scopes.config, {
+				namedFlowName: implementation,
 				input: childInput,
 				context: {
 					input: childInput
@@ -157,7 +157,6 @@ const _meta = {
 				var props = ctx.props(node);
 				var contract = findContract(ctx.definition, String(props.contract || ""));
 				var implementation = resolveImplementation(ctx, props, contract);
-				var flow = ctx.flowGet(implementation);
 				var childInput = inputValue(ctx, props.input || {});
 				var capturedArguments = {
 					contract: props.contract,
@@ -165,15 +164,15 @@ const _meta = {
 					input: childInput
 				};
 				Object.defineProperty(capturedArguments, "__state", {
-					value: { flow: flow, childInput: childInput }
+					value: { implementation: implementation, childInput: childInput }
 				});
 				return capturedArguments;
 			},
 			run: function (ctx, node, args) {
 				var capturedState = args.__state;
-				var flow = capturedState.flow;
 				var childInput = capturedState.childInput;
-				var execution = ctx.runFlowSource(flow.source, ctx.scopes.config, {
+				var execution = ctx.runFlowSource(null, ctx.scopes.config, {
+					namedFlowName: capturedState.implementation,
 					input: childInput,
 					context: {
 						input: childInput

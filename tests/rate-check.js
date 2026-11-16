@@ -41,12 +41,12 @@ eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "c
 eq(call("peek", "bob"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "independent key");
 eq(call("hit", "bob"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "second key starts fresh");
 eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "first key stays blocked");
-eq(call("hit", "carol"), { allowed: false, retryAfterSeconds: 18, count: 0 }, "new key fails closed at capacity");
-eq(call("peek", "carol"), { allowed: false, retryAfterSeconds: 18, count: 0 }, "new key peek fails closed at capacity");
-eq(call("peek", "bob"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "existing key remains available");
+eq(call("hit", "carol"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "new key replaces the oldest nonblocking key");
+eq(call("peek", "carol"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "new key is recorded");
+eq(call("peek", "bob"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "evicted key is unknown again");
 eq(call("peek", "alice"), { allowed: false, retryAfterSeconds: 3, count: 5 }, "blocked key survives table saturation");
 eq(call("reset", "bob"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "reset frees a slot");
-eq(call("hit", "carol"), { allowed: true, retryAfterSeconds: 0, count: 1 }, "new key enters after reset");
+eq(call("hit", "carol"), { allowed: true, retryAfterSeconds: 0, count: 2 }, "existing key continues after reset");
 eq(call("reset", "alice"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "successful login resets");
 eq(call("peek", "alice"), { allowed: true, retryAfterSeconds: 0, count: 0 }, "reset clears count");
 eq(call("peek", "", {}), { allowed: false, retryAfterSeconds: 0, count: 0 }, "invalid key fails closed without throwing");
@@ -72,7 +72,7 @@ for (var flooded = 4; flooded < 1004; flooded++) {
 eq(call("peek", "victim", { bucket: "protected", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 }),
 	{ allowed: false, retryAfterSeconds: 60, count: 1 }, "victim remains blocked during other bucket flood");
 eq(call("peek", "new", { bucket: "protected", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 }),
-	{ allowed: false, retryAfterSeconds: 60, count: 0 }, "protected bucket also refuses overflow");
+	{ allowed: true, retryAfterSeconds: 0, count: 0 }, "unknown peek remains allowed in a full bucket");
 
 var stress = { bucket: "stress", limit: 1, windowSeconds: 60, backoff: false, maxEntries: 1 };
 eq(call("hit", "same", stress), { allowed: true, retryAfterSeconds: 0, count: 1 }, "stress key starts");

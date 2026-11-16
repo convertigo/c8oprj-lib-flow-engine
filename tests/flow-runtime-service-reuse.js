@@ -270,7 +270,7 @@ assert.strictEqual(envelopeResult.profile.hotPath, undefined,
 	"envelope profiling must not allocate deep hot-path counters");
 assert.strictEqual(envelopeResult.profile.frameBefore.ownSlotCount, 9);
 assert.strictEqual(envelopeResult.profile.frameBefore.scopesOwnSlotCount, 8);
-assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 6);
+assert.strictEqual(envelopeResult.profile.frameBefore.requestScopeOwnSlotCount, 7);
 assert.strictEqual(envelopeResult.profile.frameBefore.frameStateOwnSlotCount, 4);
 assert.strictEqual(envelopeResult.profile.frameBefore.frameStateIsContext, false);
 assert.strictEqual(envelopeResult.profile.frameBefore.retainedFrameSlotCount, 13,

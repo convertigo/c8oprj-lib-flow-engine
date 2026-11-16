@@ -69,9 +69,10 @@ const _meta = {
 		return !/\$\{|\{\{/.test(String(value)) ? String(value) : ctx.render(value);
 	}
 
-	function execute(ctx,source,name,childInput) {
-			var execution = ctx.runFlowSource(source, ctx.scopes.config, {
+	function execute(ctx,name,childInput) {
+			var execution = ctx.runFlowSource(null, ctx.scopes.config, {
 				flowName: name,
+				namedFlowName: name,
 				input: childInput,
 				context: {
 					input: childInput
@@ -89,18 +90,15 @@ const _meta = {
 	function argumentsFor(ctx,node) {
 		var props=ctx.props(node),name=flowName(ctx,prop(node,"flow") || prop(node,"name"));
 		if(!name)ctx.raise("MISSING_FLOW_NAME","flow.call requires a flow name.",node);
-		var flow=ctx.flowGet(name),args={flow:name,input:inputValue(ctx,props.input || {})};
-		Object.defineProperty(args,"source",{value:flow.source});
-		return args;
+		return {flow:name,input:inputValue(ctx,props.input || {})};
 	}
 	return {
-		debug:{resolve:argumentsFor,run:function(ctx,node,args){return execute(ctx,args.source,args.flow,args.input);}},
+		debug:{resolve:argumentsFor,run:function(ctx,node,args){return execute(ctx,args.flow,args.input);}},
 		run:function(ctx,node){
 			var props = ctx.props(node);
 			var name = flowName(ctx, prop(node, "flow") || prop(node, "name"));
 			if (!name) ctx.raise("MISSING_FLOW_NAME", "flow.call requires a flow name.", node);
-			var flow = ctx.flowGet(name);
-			return execute(ctx, flow.source, name, inputValue(ctx, props.input || {}));
+			return execute(ctx, name, inputValue(ctx, props.input || {}));
 		}
 	};
 }())
