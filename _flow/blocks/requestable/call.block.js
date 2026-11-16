@@ -301,7 +301,7 @@ const _meta = {
 	}
 
 	function canRunFlowDirect(ctx, target, input) {
-		return !!(target && target.flow && ctx.runFlowSource && ctx.request &&
+		return !!(target && target.flow && ctx.runStoredRequestableFlow && ctx.request &&
 			!requiresRegularRequestBoundary(input) &&
 			engineQName(ctx.request.engineQName) === projectEngineQName(target.flow.getProject()));
 	}
@@ -322,20 +322,7 @@ const _meta = {
 
 	function runFlowDirect(ctx, target, input) {
 		var project = target.flow.getProject();
-		var execution = ctx.runFlowSource(String(target.flow.getFlowSource()), {}, {
-			project: target.project,
-			projectDir: String(project.getDirPath()),
-			// Same identity as a regular call, so the configurations of the called Flow follow its tags.
-			flowQName: typeof target.flow.getQName === "function" ? String(target.flow.getQName()) : target.project + "." + target.requestable,
-			flowName: target.requestable,
-			tagContext: calledFlowTagContext(ctx, project),
-			input: input || {},
-			context: {
-				project: target.project,
-				sequence: target.requestable
-			},
-			includeTrace: false
-		});
+		var execution = ctx.runStoredRequestableFlow(target.flow, input || {}, calledFlowTagContext(ctx, project));
 		if (execution && execution.ok === true) {
 			return execution.result;
 		}

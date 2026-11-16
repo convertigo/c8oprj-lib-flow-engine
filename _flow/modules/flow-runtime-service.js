@@ -154,7 +154,7 @@
 			"authoringContractSource", "authoringPaletteSource", "authoringMutateSource",
 			"contextMenuSource", "contextActionSource", "outputSchemaSource", "nodeOutputSchemaSource",
 			"schemaForOutput", "learnOutputSchema", "schemaReset", "resourceSearch", "resourceList",
-			"assetRead", "resourceGet", "resourcePatch", "resourceDelete", "notifySourceMutation", "runFlowSource",
+			"assetRead", "resourceGet", "resourcePatch", "resourceDelete", "notifySourceMutation", "runFlowSource", "runStoredRequestableFlow",
 			"blockList", "blockGet", "blockCreate", "blockDuplicate", "blockEdit", "blockCodeSet",
 			"blockCodeCheck", "blockCodeGet", "blockCodePatch", "blockCodeRg", "typeList", "typeGet",
 			"typeCreate", "blockTest", "flowList", "flowGet", "flowSet", "flowTest", "flowSourceGet",
@@ -163,7 +163,7 @@
 			"flowCodeAnalyze", "flowCodePromote", "requestableList", "requestableSchema"
 		];
 		// Context capabilities are authoring-only unless execution explicitly needs them.
-		var runtimeCapabilities = ["runFlowSource", "schemaForOutput", "learnOutputSchema", "notifySourceMutation", "assetRead"];
+		var runtimeCapabilities = ["runFlowSource", "runStoredRequestableFlow", "schemaForOutput", "learnOutputSchema", "notifySourceMutation", "assetRead"];
 
 		function defineColdContextMethod(name) {
 			Object.defineProperty(runContextPrototype, name, {
@@ -2440,12 +2440,8 @@
 				args = args || {};
 				return notifySourceMutation(args);
 			};
-			ctx.runFlowSource = function (flowSource, config, options) {
-				options = options || {};
-				return withProjectDir(options.projectDir, function () {
-					var source = options.namedFlowName ? getProjectFlow(options.namedFlowName, loadBlocks()).source
-						: sourceForWriteRequest(options, flowSource);
-					return runFlowRequest(childRunRequest(ctx, {
+			function runChildSource(source, config, options) {
+				return runFlowRequest(childRunRequest(ctx, {
 						project: options.project || currentProjectName(ctx.request),
 						flowSource: source,
 						config: config || {},
@@ -2454,6 +2450,35 @@
 						includeFlow: options.includeFlow === true || options.includeLocal === true,
 						includeTrace: options.includeTrace === true
 					}, options), loadBlocks());
+			}
+			ctx.runFlowSource = function (flowSource, config, options) {
+				options = options || {};
+				if (flowSource !== null && flowSource !== undefined || options.definition !== undefined || options.projectDir !== undefined) {
+					ctx.requireAuthoring("runFlowSource");
+				}
+				return withProjectDir(options.projectDir, function () {
+					var source = options.namedFlowName ? getProjectFlow(options.namedFlowName, loadBlocks()).source
+						: sourceForWriteRequest(options, flowSource);
+					return runChildSource(source, config, options);
+				});
+			};
+			// The source and project location come from a resolved Convertigo Flow, never from block properties.
+			ctx.runStoredRequestableFlow = function (flow, input, tagContext) {
+				if (!flow || !flow.getClass || String(flow.getClass().getName()) !== "com.twinsoft.convertigo.beans.flow.Flow") {
+					throw new Error("A resolved Convertigo Flow is required.");
+				}
+				var project = flow.getProject(), projectName = String(project.getName()), flowName = String(flow.getName());
+				var options = {
+					project: projectName,
+					flowQName: typeof flow.getQName === "function" ? String(flow.getQName()) : projectName + "." + flowName,
+					flowName: flowName,
+					tagContext: tagContext,
+					input: input || {},
+					context: { project: projectName, sequence: flowName },
+					includeTrace: false
+				};
+				return withProjectDir(String(project.getDirPath()), function () {
+					return runChildSource(String(flow.getFlowSource()), {}, options);
 				});
 			};
 			ctx.blockList = function (args) {

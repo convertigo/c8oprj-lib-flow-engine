@@ -115,8 +115,8 @@ function runContext(engineQName, execution) {
 		props: function (node) { return node.props || {}; },
 		template: function (value) { return value; },
 		convertigoContext: function () { return { httpServletRequest: {} }; },
-		runFlowSource: function (flowSource, config, options) {
-			calls.push({ flowSource: flowSource, config: config, options: options });
+		runStoredRequestableFlow: function (flow, input, tagContext) {
+			calls.push({ flow: flow, input: input, tagContext: tagContext });
 			return execution;
 		},
 		raise: function (code, message) {
@@ -140,33 +140,33 @@ var direct = implementation.run(directContext, {
 	props: { requestable: "ChildProject.Child", input: { name: "Nicolas" } }
 });
 assertTrue(direct.value === "direct", "same-engine Flow call did not return its direct result");
-assertTrue(directContext.calls.length === 1, "same-engine Flow call did not use ctx.runFlowSource exactly once");
+assertTrue(directContext.calls.length === 1, "same-engine Flow call did not use the stored Flow path exactly once");
 assertTrue(internalRequests === 0, "same-engine Flow call re-entered InternalRequester");
-assertTrue(directContext.calls[0].options.project === "ChildProject" &&
-	directContext.calls[0].options.projectDir === "/projects/ChildProject" &&
-	directContext.calls[0].options.input.name === "Nicolas",
+assertTrue(directContext.calls[0].flow === targetFlow &&
+	directContext.calls[0].flow.getProject().getDirPath() === "/projects/ChildProject" &&
+	directContext.calls[0].input.name === "Nicolas",
 	"same-engine Flow call did not preserve target identity, project root or input");
 // The called Flow keeps its own identity and the tag context of its own project, so its named
 // configurations follow its tags exactly as through the regular requestable path.
-var directOptions = directContext.calls[0].options;
-assertTrue(directOptions.flowQName === "ChildProject.Child" && directOptions.flowName === "Child",
-	"same-engine Flow call lost the identity of the called Flow: " + JSON.stringify(directOptions));
-assertTrue(directOptions.tagContext && directOptions.tagContext.project === "ChildProject" &&
-	directOptions.tagContext.assignments["ChildProject.sq:Child"][0] === "t",
+var directCall = directContext.calls[0];
+assertTrue(directCall.flow.getQName() === "ChildProject.Child" && directCall.flow.getName() === "Child",
+	"same-engine Flow call lost the identity of the called Flow");
+assertTrue(directCall.tagContext && directCall.tagContext.project === "ChildProject" &&
+	directCall.tagContext.assignments["ChildProject.sq:Child"][0] === "t",
 	"same-engine Flow call did not carry the tag context of the called Flow's project");
 var parentTagged = runContext("lib_flow_engine.Engine", { ok: true, result: {} });
 parentTagged.request.tagContext = { project: "ParentProject", tags: {}, assignments: {}, aliases: {} };
 implementation.run(parentTagged, { props: { requestable: "ChildProject.Child", input: {} } });
-assertTrue(parentTagged.calls[0].options.tagContext.project === "ChildProject",
+assertTrue(parentTagged.calls[0].tagContext.project === "ChildProject",
 	"a called Flow inherited the tag context of its caller's project");
 tagDomainAvailable = false;
 var sameProject = runContext("lib_flow_engine.Engine", { ok: true, result: {} });
 sameProject.request.tagContext = { project: "ChildProject", tags: {}, assignments: {}, aliases: {} };
 implementation.run(sameProject, { props: { requestable: "ChildProject.Child", input: {} } });
-assertTrue(sameProject.calls[0].options.tagContext === sameProject.request.tagContext,
+assertTrue(sameProject.calls[0].tagContext === sameProject.request.tagContext,
 	"without the tag domain, a call inside the caller's project did not reuse its tag context");
 implementation.run(parentTagged, { props: { requestable: "ChildProject.Child", input: {} } });
-assertTrue(parentTagged.calls[1].options.tagContext === undefined,
+assertTrue(parentTagged.calls[1].tagContext === undefined,
 	"without the tag domain, a call into another project reused the caller's tag context");
 tagDomainAvailable = true;
 

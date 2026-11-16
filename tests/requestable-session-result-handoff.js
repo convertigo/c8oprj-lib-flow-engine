@@ -115,8 +115,8 @@ function runContext(engineQName, execution) {
 		props: function (node) { return node.props || {}; },
 		template: function (value) { return value; },
 		convertigoContext: function () { return { httpServletRequest: {} }; },
-		runFlowSource: function (flowSource, config, options) {
-			calls.push({ flowSource: flowSource, config: config, options: options });
+		runStoredRequestableFlow: function (flow, input, tagContext) {
+			calls.push({ flow: flow, input: input, tagContext: tagContext });
 			return execution;
 		},
 		raise: function (code, message) {

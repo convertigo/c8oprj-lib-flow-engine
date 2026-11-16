@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('_flow/modules/flow-runtime-service.js', 'utf8');
 const runtime = vm.runInNewContext(source);
 const names = [...source.match(/var coldContextMethodNames = \[([\s\S]*?)\];/)[1].matchAll(/"([A-Za-z]+)"/g)].map(m => m[1]);
-const allowed = new Set(['runFlowSource', 'schemaForOutput', 'learnOutputSchema', 'notifySourceMutation', 'assetRead']);
+const allowed = new Set(['runFlowSource', 'runStoredRequestableFlow', 'schemaForOutput', 'learnOutputSchema', 'notifySourceMutation', 'assetRead']);
 const declaredAllowed = [...source.match(/var runtimeCapabilities = \[([^\]]*)\];/)[1].matchAll(/"([A-Za-z]+)"/g)].map(m => m[1]);
 assert.deepEqual([...declaredAllowed].sort(), [...allowed].sort(), 'execution capability allowlist is explicit');
 const implemented = [...source.matchAll(/\bctx\.([A-Za-z]+)\s*=\s*function/g)].map(m => m[1]);
