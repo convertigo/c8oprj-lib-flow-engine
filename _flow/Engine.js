@@ -3855,7 +3855,12 @@
 	}
 
 	function listProjectFlows() {
-		return flowStorageService().listProjectFlows(flowStorageEnv());
+		var listed = flowStorageService().listProjectFlows(flowStorageEnv());
+		var items = flowCodeService().memoryDraftQNames(projectDir()).filter(function (qname) {
+			return flowCodeService().flowCodeDraftRead(qname.substring(qname.lastIndexOf(".") + 1), { qname: qname }, flowCodeServiceEnv()) != null;
+		}).map(function (qname) { return { kind: "flow", qname: qname }; });
+		listed.unsavedSources = { count: items.length, items: items };
+		return listed;
 	}
 
 	function listProjectFragments() {
@@ -5058,6 +5063,7 @@
 
 	function flowCodeServiceEnv() {
 		return {
+			projectDir: projectDir,
 			sourceChangedLines: function (before,after) { return loadEngineModule("source-line-diff.js").changedLines(before,after); },
 			parseSource: parseSource,
 			parseFlowScript: parseFlowScript,
@@ -11238,6 +11244,7 @@
 		var connection = null;
 		try {
 			connection = new Packages.java.net.URL(url).openConnection();
+			connection.setRequestProperty("X-Flow-Dev-Health", "1");
 			var timeout = Math.max(100, Number(timeoutMs || 500));
 			connection.setConnectTimeout(timeout);
 			connection.setReadTimeout(timeout);
@@ -13081,6 +13088,9 @@
 				title: "Svelte dev mode",
 				message: "Svelte dev mode is not running; generated source was not updated.",
 				generated: false,
+				status: String(lastDetails && lastDetails.status || "stopped"),
+				stopReason: String(lastDetails && lastDetails.stopReason || "not-started"),
+				next: "dev.ensure(wait:true)",
 				details: {
 					sourcePath: sourcePath,
 					draftCount: frontendDraftCount(request),
@@ -13088,8 +13098,26 @@
 				}
 			};
 		}
-		if (entry.status === "starting") {
-			frontendWaitForPreparation(entry);
+		if (entry.status === "starting" || entry.status === "prepared") {
+			var payload = request.action && request.action.payload || {};
+			var waitMs = Number(payload.timeoutMs || request.timeoutMs || 120000);
+			waitMs = isFinite(waitMs) && waitMs > 0 ? Math.min(120000, waitMs) : 120000;
+			var deadline = JavaSystem.currentTimeMillis() + waitMs;
+			while (frontendDevWaitRequested(request) && entry &&
+					(entry.status === "starting" || entry.status === "prepared" && entry.activationStarted === true)
+					&& JavaSystem.currentTimeMillis() < deadline) {
+				Packages.java.lang.Thread.sleep(50);
+				entry = frontendDevEntry(request, info);
+			}
+			if (!entry) return frontendSyncDev(request, blocks);
+			if (entry.status === "starting" || entry.status === "prepared" && entry.activationStarted === true) {
+				var timedOut = frontendDevWaitRequested(request);
+				return { ok: !timedOut, status: entry.status, pending: true, generated: false,
+					message: timedOut ? "Svelte dev readiness deadline reached." : "Svelte dev mode is preparing.",
+					next: "dev.ensure(wait:true)",
+					error: timedOut ? { code: "FRONTEND_DEV_READY_TIMEOUT", message: "Dev server is still preparing after " + waitMs + " ms." } : undefined,
+					details: frontendDevDetails(entry) };
+			}
 		}
 		if (entry.status === "failed") {
 			return {
@@ -13102,16 +13130,7 @@
 			};
 		}
 		if (entry.status === "prepared") {
-			if (entry.activationStarted === true) {
-				return {
-					ok: true,
-						title: "Svelte dev mode",
-						message: "Svelte dev mode is opening automatically.",
-						pending: true,
-						generated: false,
-						details: frontendDevDetails(entry)
-					};
-			}
+			if (entry.activationStarted === true) return frontendSyncDev(request, blocks);
 			entry.activationStarted = true;
 			var started = frontendStartDevNow(request, blocks, info);
 			if (started.ok === false) {

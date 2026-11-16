@@ -24,6 +24,13 @@
 			active.push(String(viewer.id || ""));
 			lastViewerAt = Math.max(lastViewerAt, lastSeen);
 		}
+		// Any HTTP client counts, even without the Studio heartbeat or Vite WebSocket.
+		var httpAt = number(viewerState && viewerState.lastHttpAt, 0);
+		if (httpAt && (number(viewerState.activeHttpRequests, 0) > 0 || now - httpAt <= staleMs)) {
+			active.push("http");
+			lastViewerAt = Math.max(lastViewerAt, httpAt);
+		}
+
 		return {
 			viewerCount: active.length,
 			viewerIds: active,

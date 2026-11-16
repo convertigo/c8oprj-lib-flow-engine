@@ -712,6 +712,7 @@
 			delete memoryDrafts()[draftKey];
 		} else {
 			memoryDrafts()[draftKey] = {
+				projectDir: env.projectDir ? String(env.projectDir()) : String(request.projectDir || ""),
 				code: normalized,
 				revision: written && written.revision ? written.revision : sha256Hex(normalized),
 				file: written && written.file || "",
@@ -1366,6 +1367,9 @@
 	}
 
 	return {
+		memoryDraftQNames: function (projectDir) {
+			return Object.keys(memoryDrafts()).filter(function (qname) { return memoryDrafts()[qname].projectDir === String(projectDir); }).sort();
+		},
 		flowCodeProposal: function (blocks,request,code,revision,env) { return create(env).flowCodeProposal(blocks,request,code,revision); },
 		flowCodeName: function () {
 			var args = Array.prototype.slice.call(arguments);
