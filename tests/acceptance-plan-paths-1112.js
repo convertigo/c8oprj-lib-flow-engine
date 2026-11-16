@@ -1,4 +1,4 @@
-// In the PCA of 11/11 an agent ran the acceptance plan of its build (navigate, probe, resize, console) and was told to
+// In the scenario of 11/11 an agent ran the acceptance plan of its build (navigate, probe, resize, console) and was told to
 // "add one focused interaction only when a required business workflow is not covered": it looked at its pages and
 // walked no workflow, and a person found a declaration impossible to save, silent refusals and a list empty after a
 // return. The plan of build and openBuilt now carries the paths the Svelte provider lists beside the generated sources

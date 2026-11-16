@@ -1,4 +1,4 @@
-// A Flow a job of the server scheduler runs is started by the server, without a caller. In the PCA of 11/11 the daily
+// A Flow a job of the server scheduler runs is started by the server, without a caller. In the scenario of 11/11 the daily
 // processing was scheduled while private, then declared hidden to be started from a page: an anonymous call started it,
 // with its mails and its writes. scheduler-apply only schedules a private Flow; the check of its source now keeps it
 // private: a scheduled Flow declared hidden or public is refused, in code-check as in code-set.

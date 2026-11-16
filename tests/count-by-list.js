@@ -1,4 +1,4 @@
-// Counting the rows of an entity.list page in memory gives a wrong number beyond its limit. In the PCA of 12/11 the
+// Counting the rows of an entity.list page in memory gives a wrong number beyond its limit. In the scenario of 12/11 the
 // dashboards listed 200 rows, filtered them by status and took .length: the counts were silently cut beyond 200 rows (or
 // the Flow failed), and one count, read through a nested current, stayed at 0. entity.count counts in SQL with the same
 // filter and policy. code-check now says a count of listed rows (FLOWSCRIPT_COUNT_BY_LIST), and adds that the count stops
@@ -26,11 +26,11 @@ try {
 		return (out.diagnostics || (out.error && out.error.diagnostics) || []).filter(function (d) { return /^FLOWSCRIPT_COUNT_/.test(d.code); });
 	}
 	function codes(found) { return found.map(function (d) { return d.code; }).sort().join(","); }
-	var list = '  local.page = entity.list({ entity: "Poste", checkAccess: true, options: { limit: 200, active: "active" } })';
+	var list = '  local.page = entity.list({ entity: "Dossier", checkAccess: true, options: { limit: 200, active: "active" } })';
 
 	// The dashboard of 12/11: a page of 200 rows, filtered in memory, counted with .length, no hasMore read.
 	var filtered = check([list, '  local.actifs = list.filter({ items: local.page.rows, where: current.values.actif === true })',
-		'  result.postesActifs = local.actifs.length'].join("\n"));
+		'  result.dossiersActifs = local.actifs.length'].join("\n"));
 	assert(codes(filtered) === "FLOWSCRIPT_COUNT_BY_LIST", "a filtered count of a listed page is said once: " + JSON.stringify(filtered));
 	var byList = filtered[0];
 	assert(byList.severity === "warning" && byList.line === 3, "the count is a warning on the line of entity.list: " + JSON.stringify(byList));
@@ -60,7 +60,7 @@ try {
 	assert(check([list, '  result.n = local.page.rows.length > 10'].join("\n")).length === 1, "a comparison with another number still counts");
 
 	// What stays silent: entity.count, the total of the page, the listed rows returned, a count of another list.
-	assert(check('  local.n = entity.count({ entity: "Poste", checkAccess: true, options: { filter: { statut: "A_RELANCER" } } })\n  result.n = local.n.total').length === 0,
+	assert(check('  local.n = entity.count({ entity: "Dossier", checkAccess: true, options: { filter: { statut: "A_SUIVRE" } } })\n  result.n = local.n.total').length === 0,
 		"entity.count is not said");
 	assert(check([list, '  result.total = local.page.total'].join("\n")).length === 0, "the total of the page is not said");
 	assert(check([list, '  result.rows = local.page.rows'].join("\n")).length === 0, "returning the listed rows is not said");

@@ -687,7 +687,7 @@
 	}
 
 	// Several entity writes of one Flow commit one by one unless they share a sql.transaction: a failure in the middle
-	// keeps the writes already done. In the PCA of 11/11 a grouped declaration saved a declaration and its item for each
+	// keeps the writes already done. In the scenario of 11/11 a grouped declaration saved a declaration and its item for each
 	// selected item, then a journal line, and a refusal on the third item kept the first two. A write in a loop writes
 	// many times. The main Flow and each helper are counted on their own; the nodes of a transaction are left out.
 	var ENTITY_WRITES = { "entity.save": true, "entity.delete": true };
@@ -737,7 +737,7 @@
 
 	// A count of listed entity rows (entity.list, then .length or list.count of its rows, filtered or not) recomputes in
 	// memory what entity.count computes in SQL with the same filter and policy, and stops at the page limit: the
-	// dashboards of the PCA of 12/11 counted 200 listed rows. Without a read of hasMore or nextOffset of that page, the
+	// dashboards of the scenario of 12/11 counted 200 listed rows. Without a read of hasMore or nextOffset of that page, the
 	// count is silently too small beyond the limit.
 	function countByListDiagnostics(definition, request, env) {
 		if (request.blockMode === true) return [];
@@ -825,7 +825,7 @@
 
 	// A business Flow that checks before it writes an entity (entity.save or entity.delete with checkAccess: true) holds
 	// rules the entity gateway does not run: when the project also opens a gateway and the model does not keep that
-	// entity's writes to its Flows, the gateway writes it without those checks (the PCA of 12/11, passage 1). A check is
+	// entity's writes to its Flows, the gateway writes it without those checks (the scenario of 12/11, passage 1). A check is
 	// wide on purpose (a warning): a throw or an error answer anywhere (response.error, response.status), or a return, a
 	// flow.call or a requestable.call before the write, in the same branch or not. A gateway is any Flow using the
 	// entity.applyGateway block, whatever its name (securite-cve, 13/11).

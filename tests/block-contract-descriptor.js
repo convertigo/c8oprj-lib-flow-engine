@@ -35,7 +35,7 @@ write("_flow/blocks/proof/table.block.js", "const _meta = " + JSON.stringify({
 	sourceVersion: 2,
 	runtime: "rhino",
 	description: "Reads a page of a table.",
-	longDescription: "Errors: PROOF_TABLE_UNKNOWN (404) when the table does not exist.\n\nExample: proof.table({ table: \"POSTE\" }).",
+	longDescription: "Errors: PROOF_TABLE_UNKNOWN (404) when the table does not exist.\n\nExample: proof.table({ table: \"DOSSIER\" }).",
 	properties: { table: { kind: "template", type: "string", "default": "" } },
 	outputs: outputs
 }, null, 2) + ";\n(function () { return { run: function () { return {}; } }; }())\n");

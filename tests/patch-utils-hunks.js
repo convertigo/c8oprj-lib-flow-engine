@@ -22,16 +22,16 @@ var ENGINE_YAML = [
 	"config:",
 	"  data:",
 	"    sources:",
-	"      postes:",
+	"      dossiers:",
 	"        provider: sql",
-	"        table: POSTE",
+	"        table: DOSSIER",
 	"",
 	"  sql:",
 	"    connections:",
 	"      app:",
 	"        url: jdbc:hsqldb:file:_flow/resources/sql/app",
 	"    writes:",
-	"      posteInsert:",
+	"      dossierInsert:",
 	"        operation: insert",
 	""
 ].join("\n");
@@ -42,19 +42,19 @@ var trialPatch = [
 	"+++ b/_flow/engine.yaml",
 	"@@ -8,5 +8,6 @@",
 	"         provider: sql",
-	"         table: POSTE",
+	"         table: DOSSIER",
 	"+        versionColumn: REVISION",
 	"",
 	"   sql:",
 	"     connections:",
 	"@@ -16,2 +17,3 @@",
-	"       posteInsert:",
+	"       dossierInsert:",
 	"         operation: insert",
 	"+        maxAffectedRows: 1",
 	""
 ].join("\n");
 var trial = apply(ENGINE_YAML, trialPatch);
-var expectedTrial = ENGINE_YAML.replace("        table: POSTE\n", "        table: POSTE\n        versionColumn: REVISION\n")
+var expectedTrial = ENGINE_YAML.replace("        table: DOSSIER\n", "        table: DOSSIER\n        versionColumn: REVISION\n")
 	.replace("        operation: insert\n", "        operation: insert\n        maxAffectedRows: 1\n");
 assert(trial.content === expectedTrial, "both hunks applied in order: " + JSON.stringify(trial.content));
 assert(trial.hunks === 2 && trial.appliedHunks[0].line === 8 && trial.appliedHunks[0].match === "exact" &&
@@ -62,15 +62,15 @@ assert(trial.hunks === 2 && trial.appliedHunks[0].line === 8 && trial.appliedHun
 assert(trial.notes.some(function (note) { return /empty patch line\(s\) read as unchanged empty line/.test(note); }), "the empty context line is reported: " + trial.notes);
 
 // 2. A hunk numbered on the new file, numbers off, hunks bottom first, a bare @@ hunk.
-var renumbered = apply(ENGINE_YAML, "@@ -2,1 +2,2 @@\n engineQName: lib_flow_engine.Engine\n+configVisibility: {}\n@@ -17,2 +18,3 @@\n       posteInsert:\n         operation: insert\n+        minAffectedRows: 1\n");
+var renumbered = apply(ENGINE_YAML, "@@ -2,1 +2,2 @@\n engineQName: lib_flow_engine.Engine\n+configVisibility: {}\n@@ -17,2 +18,3 @@\n       dossierInsert:\n         operation: insert\n+        minAffectedRows: 1\n");
 assert(renumbered.content.indexOf("engineQName: lib_flow_engine.Engine\nconfigVisibility: {}\nbindings") !== -1 &&
 	/operation: insert\n {8}minAffectedRows: 1\n$/.test(renumbered.content) && renumbered.appliedHunks[1].offset === -1 &&
 	renumbered.appliedHunks[1].match === "offset", "a hunk numbered on the new file is applied, its offset reported: " + JSON.stringify(renumbered.appliedHunks));
 var shifted = apply(ENGINE_YAML, "@@ -40,2 +40,2 @@\n       app:\n-        url: jdbc:hsqldb:file:_flow/resources/sql/app\n+        url: jdbc:hsqldb:file:_flow/resources/sql/app;hsqldb.tx=mvcc\n");
 assert(/app;hsqldb\.tx=mvcc\n/.test(shifted.content) && shifted.appliedHunks[0].line === 13 && /instead of line 40/.test(shifted.notes[0]),
 	"unique match despite wrong numbers: " + JSON.stringify(shifted));
-var reversed = apply(ENGINE_YAML, "@@ -16,1 +16,1 @@\n-      posteInsert:\n+      posteCreate:\n@@ -1,1 +1,1 @@\n-version: 1\n+version: 2\n");
-assert(/^version: 2\n/.test(reversed.content) && reversed.content.indexOf("      posteCreate:\n") !== -1, "hunks in reverse order: " + reversed.content);
+var reversed = apply(ENGINE_YAML, "@@ -16,1 +16,1 @@\n-      dossierInsert:\n+      dossierCreate:\n@@ -1,1 +1,1 @@\n-version: 1\n+version: 2\n");
+assert(/^version: 2\n/.test(reversed.content) && reversed.content.indexOf("      dossierCreate:\n") !== -1, "hunks in reverse order: " + reversed.content);
 var bare = apply(ENGINE_YAML, "@@\n   sql:\n+    defaultConnection: app\n");
 assert(bare.content.indexOf("  sql:\n    defaultConnection: app\n    connections:") !== -1 && bare.appliedHunks[0].match === "context", "a bare @@ hunk is placed by its unique lines");
 
@@ -90,8 +90,8 @@ var outside = failure(function () { apply(ENGINE_YAML, "@@ -10,0 +10,1 @@\n+    
 assert(outside && outside.code === "PATCH_INSERT_AMBIGUOUS" && outside.details.oldSideAfterLine === 10 && outside.details.newSideAfterLine === 9,
 	"disagreeing insertion numbers are refused: " + JSON.stringify(outside && outside.details));
 var inserted = apply(ENGINE_YAML, "@@ -9,0 +10,1 @@\n+        readOnly: false\n");
-assert(inserted.content.indexOf("        table: POSTE\n        readOnly: false\n\n  sql:") !== -1 && inserted.appliedHunks[0].afterLine === 9, "agreeing numbers insert after the line");
-assert(apply(ENGINE_YAML, "@@ -10,0 +10,1 @@\n         table: POSTE\n+        readOnly: false\n").content === inserted.content, "one context line places the insertion whatever the numbers");
+assert(inserted.content.indexOf("        table: DOSSIER\n        readOnly: false\n\n  sql:") !== -1 && inserted.appliedHunks[0].afterLine === 9, "agreeing numbers insert after the line");
+assert(apply(ENGINE_YAML, "@@ -10,0 +10,1 @@\n         table: DOSSIER\n+        readOnly: false\n").content === inserted.content, "one context line places the insertion whatever the numbers");
 assert(failure(function () { apply(ENGINE_YAML, "@@\n+x: 1\n"); }).code === "PATCH_INSERT_WITHOUT_CONTEXT", "a bare insertion is refused");
 assert(apply("a\nc\n", "@@ -1,0 +2 @@\n+b\n").content === "a\nb\nc\n", "a hunk without old lines inserts after its line");
 

@@ -42,7 +42,7 @@ var SOURCE = [
 	"        parameters:",
 	"          - { name: email, type: string, nullable: false, default: \"\" }",
 	"    writes:",
-	"      posteInsert:",
+	"      dossierInsert:",
 	"        operation: insert",
 	"        table: SHOP_ITEM",
 	"",
@@ -67,12 +67,12 @@ function changed(before, after) {
 }
 
 // A key added to a mapping: one line, after the last key of the mapping, nothing else moves.
-var added = mutate(SOURCE, { op: "set", path: "config.sql.writes.posteInsert.maxAffectedRows", value: 1 });
+var added = mutate(SOURCE, { op: "set", path: "config.sql.writes.dossierInsert.maxAffectedRows", value: 1 });
 var diff = changed(SOURCE, added.source);
 assert(added.sourceEdit === "minimal" && diff.removed.length === 0 && diff.added.length === 1 && diff.added[0] === "        maxAffectedRows: 1" &&
-	diff.line === 31, "one line added under posteInsert: " + JSON.stringify(diff) + "\n" + added.source);
+	diff.line === 31, "one line added under dossierInsert: " + JSON.stringify(diff) + "\n" + added.source);
 var expected = parse(SOURCE);
-expected.config.sql.writes.posteInsert.maxAffectedRows = 1;
+expected.config.sql.writes.dossierInsert.maxAffectedRows = 1;
 assert(JSON.stringify(parse(added.source)) === JSON.stringify(expected), "the text says the new definition");
 
 // A scalar changed in place: its line only (its comment goes with it), the other lines kept, quotes and block scalar too.

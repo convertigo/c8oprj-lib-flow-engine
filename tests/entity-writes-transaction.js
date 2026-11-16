@@ -1,5 +1,5 @@
 // Several entity writes of one Flow commit one by one unless they share a sql.transaction: a failure in the middle keeps
-// the writes already done. In the PCA of 11/11 a grouped declaration saved, for each selected item, its declaration and
+// the writes already done. In the scenario of 11/11 a grouped declaration saved, for each selected item, its declaration and
 // the item (two entity.save in a forEach), then a journal line: a refusal on the third item kept the first two. A Flow
 // that writes more than once outside a transaction is now said by code-check, with the lines of its writes.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
