@@ -807,18 +807,22 @@
 			if (text.match(/^(flow|function)\s+/) || flowScriptBlockSeparator(text)) {
 				return true;
 			}
-			if (/\s(?:&&|\|\||===?|!==?|<=?|>=?|[+*\/%?:=-])$/.test(text)) return false;
+			// Tests of the end of the statement read its last characters only: this function runs again on every line of a
+			// statement written on many lines, and a scan of the whole text each time grows with the square of its length.
+			var tail = text.length > 64 ? text.slice(-64) : text;
+			if (/\s(?:&&|\|\||===?|!==?|<=?|>=?|[+*\/%?:=-])$/.test(tail)) return false;
 			var balance = knownBalance || flowScriptBalance(text);
-			if (balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
+			var opensBlock = /\{\s*;?$/.test(tail);
+			if (opensBlock && balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
 					text.match(/^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*\s*\(.*\)\s*\{\s*;?$/)) {
 				return true;
 			}
-			if (balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
+			if (opensBlock && balance.paren === 0 && balance.bracket === 0 && balance.brace === 1 &&
 					text.match(/^if\s*\([\s\S]*\)\s*\{\s*;?$/)) {
 				return true;
 			}
 			if (balance.paren <= 0 && balance.brace <= 0 && balance.bracket <= 0) {
-				return !!(text.match(/;\s*$/) ||
+				return !!(/;\s*$/.test(tail) ||
 					text.match(/^import\s+/) ||
 					text.match(/^(return|throw)(?:\s|;|$)/) ||
 					text.match(/^(const|let|var)\s+/) ||
@@ -1027,6 +1031,12 @@
 							null, "Close the current statement before writing the next one.");
 					}
 					pending.text += "\n" + raw;
+					pending.lines = (pending.lines || 1) + 1;
+					if (pending.lines > 20000 || pending.text.length > 2000000) {
+						env.raise("FLOWSCRIPT_STATEMENT_TOO_LONG", "The FlowScript statement starting at line " + pending.line
+							+ " is longer than 20000 lines or 2 MB.", null,
+							"Close the statement earlier, or move a large literal into a resource read by the Flow.");
+					}
 					pending.balance = flowScriptBalanceScan(pending.balance, "\n" + line);
 					if (flowScriptStatementComplete(pending.text, pending.balance)) {
 						emit(pending);
