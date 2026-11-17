@@ -345,9 +345,18 @@
 
 	function get(request, env) {
 		request = request || {};
-		var entry = request.path !== undefined && request.path !== null && String(request.path).trim() !== ""
-			? projectResourceFile(request.path, true, env)
-			: projectResourceEntryForUri(request.uri, env);
+		var entry;
+		try {
+			entry = request.path !== undefined && request.path !== null && String(request.path).trim() !== ""
+				? projectResourceFile(request.path, true, env)
+				: projectResourceEntryForUri(request.uri, env);
+		} catch (e) {
+			// an asset read keeps its own refusal, whatever the resource check that refused the path
+			if (request.assetOnly === true && /RESOURCE_PATH_NOT_ALLOWED/.test(String((e && (e.code || e.message)) || e))) {
+				env.raise("ASSET_PATH_NOT_ALLOWED", "Asset reads require a file under _flow/resources or resources.");
+			}
+			throw e;
+		}
 		if (request.assetOnly === true) {
 			var base = env.canonicalPath(env.projectDir());
 			var actual = env.canonicalPath(entry.file);
@@ -667,7 +676,8 @@
 			var before = patterns(oldContent), after = patterns(content);
 			if (new java.lang.String(content).getBytes("UTF-8").length > 65536 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(content)) env.raise("RESOURCE_HTTPIGNORE_INVALID", ".httpignore must be bounded UTF-8 text (64 KiB), without control characters.");
 			["/" + env.sourcePaths.root + "/", "/tests/", "/docs/"].forEach(function (rule) {
-				if (after.indexOf(rule) < 0) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore must keep " + rule + " private.");
+				// a mandatory rule already present stays; the host adds an absent one before the first write under its folder
+				if (before.indexOf(rule) >= 0 && after.indexOf(rule) < 0) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore must keep " + rule + " private.");
 			});
 			// Ignore rule order is semantic. Keep the old sequence (duplicates included)
 			// and the exact unignore sequence: moving/copying an existing ! rule can reopen a path.
