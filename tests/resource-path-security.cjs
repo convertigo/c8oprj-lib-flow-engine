@@ -124,7 +124,7 @@ for (const target of ['resources', '_flow/resources']) {
     }));
   }
   test('tests file link into '+target+' is refused', () => fixture(({env,write,link})=>{
-    write(target+'/a.py');link('tests/a.py',target+'/a.py');
+    write(target+'/a.md');link('tests/a.py',target+'/a.md');
     refused(()=>service.patch({path:'tests/a.py',content:'changed',validate:false},env));
   }));
 }

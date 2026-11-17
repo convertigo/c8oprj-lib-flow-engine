@@ -66,10 +66,10 @@ try {
  ['html','jar','bin','class'].forEach(function(ext){denied('tests/a.'+ext,'RESOURCE_PATH_NOT_ALLOWED');});
  denied('tests/../x.py','INVALID_RESOURCE_PATH');
  ['resources','_flow/resources'].forEach(function(target,i){
-  write(target+'/a.py','original');link('tests/linked'+i,target);
-  denied('tests/linked'+i+'/new.py','RESOURCE_PATH_NOT_ALLOWED');
-  link('tests/link'+i+'.py',target+'/a.py');denied('tests/link'+i+'.py','RESOURCE_PATH_NOT_ALLOWED');
-  assert(!new File(project,target+'/new.py').exists(),'new canonical target untouched');
+  write(target+'/a.md','original');link('tests/linked'+i,target);
+  denied('tests/linked'+i+'/new.md','RESOURCE_PATH_NOT_ALLOWED');
+  link('tests/link'+i+'.py',target+'/a.md');denied('tests/link'+i+'.py','RESOURCE_PATH_NOT_ALLOWED');
+  assert(!new File(project,target+'/new.md').exists(),'new canonical target untouched');
  });
  // Import path uses the same precondition; invalid UTF-8 and binary content never enter tests/.
  Utils.writeByteArrayToFile(new File(temp,'binary.py'),java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE,2));
