@@ -30,9 +30,13 @@
 	// The jars of the project, downloaded by the server and checked against their sha256
 	var JARS_DESCRIPTOR = "libs/jars.yaml";
 	var PROJECT_DOCS = "docs/";
+	var PROJECT_TESTS = "tests/";
 
 	function isAllowedPath(path, paths) {
 		var ext = extension(path);
+		if (String(path).indexOf(PROJECT_TESTS) === 0) {
+			return ["md", "txt", "json", "yaml", "yml", "csv", "js", "mjs", "cjs", "ts", "py", "sh"].indexOf(ext) !== -1;
+		}
 		if (String(path) === ".httpignore") return true;
 		if (String(path) === paths.path("engine.yaml")) {
 			return true;
@@ -86,6 +90,7 @@
 	}
 
 	function kind(path, paths) {
+		if (String(path).indexOf(PROJECT_TESTS) === 0) return "projectTest";
 		if (String(path) === ".httpignore") return "httpIgnore";
 		if (String(path) === paths.path("engine.yaml")) {
 			return "projectConfig";

@@ -170,3 +170,10 @@ owned disposable HTTP runtime, project, SDK and credentials; its prerequisites
 are documented at the top of that file. It is not part of the historical offline
 suite and is not silently presented as passed. Offline suites do not certify
 interactive Studio behavior or shared Studio session isolation.
+
+Project resource publication witnesses are `tests/resource-path-security.cjs`
+and `tests/resource-publication.js`. The separate Java host acceptance probe,
+`tests/ProjectResourceHostContractTest.java`, intentionally remains nonzero on a
+host lacking the bootstrap and archive changes described in
+[project-resource-host-contract.md](../docs/project-resource-host-contract.md).
+It is not part of the regular JS suite.
