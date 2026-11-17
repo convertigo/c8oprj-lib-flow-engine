@@ -343,6 +343,13 @@
 		return out;
 	}
 
+	function insideAssets(actual, env) {
+		var base = env.canonicalPath(env.projectDir());
+		return [env.sourcePaths.path("resources"), "resources"].some(function (root) {
+			return String(actual).indexOf(base + env.File.separator + root.replace(/\//g, env.File.separator) + env.File.separator) === 0;
+		});
+	}
+
 	function get(request, env) {
 		request = request || {};
 		var entry;
@@ -351,19 +358,19 @@
 				? projectResourceFile(request.path, true, env)
 				: projectResourceEntryForUri(request.uri, env);
 		} catch (e) {
-			// an asset read keeps its own refusal, whatever the resource check that refused the path
-			if (request.assetOnly === true && /RESOURCE_PATH_NOT_ALLOWED/.test(String((e && (e.code || e.message)) || e))) {
-				env.raise("ASSET_PATH_NOT_ALLOWED", "Asset reads require a file under _flow/resources or resources.");
+			// a path resolving outside the asset folders keeps the asset refusal; inside them, the resource refusal stands
+			if (request.assetOnly === true && request.path !== undefined && request.path !== null
+					&& /RESOURCE_PATH_NOT_ALLOWED/.test(String((e && (e.code || e.message)) || e))) {
+				var target = null;
+				try { target = env.canonicalPath(new env.File(env.projectDir(), String(request.path))); } catch (ignored) {}
+				if (target === null || !insideAssets(target, env)) {
+					env.raise("ASSET_PATH_NOT_ALLOWED", "Asset reads require a file under _flow/resources or resources.");
+				}
 			}
 			throw e;
 		}
-		if (request.assetOnly === true) {
-			var base = env.canonicalPath(env.projectDir());
-			var actual = env.canonicalPath(entry.file);
-			var allowed = [env.sourcePaths.path("resources"), "resources"].some(function (root) {
-				return actual.indexOf(base + env.File.separator + root.replace(/\//g, env.File.separator) + env.File.separator) === 0;
-			});
-			if (!allowed) env.raise("ASSET_PATH_NOT_ALLOWED", "Asset reads require a file under _flow/resources or resources.");
+		if (request.assetOnly === true && !insideAssets(env.canonicalPath(entry.file), env)) {
+			env.raise("ASSET_PATH_NOT_ALLOWED", "Asset reads require a file under _flow/resources or resources.");
 		}
 		var maxBytes = env.intOption(request.maxBytes, 12000, 1000, 5000000);
 		var content = sourceForFile(entry.file, env);
