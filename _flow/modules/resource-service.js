@@ -28,7 +28,7 @@
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path escapes the project: " + normalized);
 		}
 		var canonicalRelative = resourceRelativePath(base, file, env);
-		if (!canonicalRelative || !env.isAllowedResourcePath(canonicalRelative)) {
+		if (!canonicalRelative || canonicalRelative !== normalized || !env.isAllowedResourcePath(canonicalRelative)) {
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource target is not allowed: " + normalized);
 		}
 		if (mustExist && !isFile(file, env)) {
@@ -49,10 +49,14 @@
 		return filePath.substring(basePath.length + 1).replace(/\\/g, "/");
 	}
 
+	function lexicalRelativePath(base, file) {
+		return String(file.getAbsolutePath()).substring(String(base.getAbsolutePath()).length + 1).replace(/\\/g, "/");
+	}
+
 	function collectResourceFiles(dir, base, out, env, prefix, visited) {
 		// Check before enumerating: even another allowed resource tree is outside this prefix.
 		var canonicalRelative = resourceRelativePath(base, dir, env);
-		if (!canonicalRelative || (canonicalRelative !== prefix && canonicalRelative.indexOf(prefix + "/") !== 0)
+		if (!canonicalRelative || canonicalRelative !== lexicalRelativePath(base, dir) || (canonicalRelative !== prefix && canonicalRelative.indexOf(prefix + "/") !== 0)
 				|| visited[canonicalRelative]) return;
 		visited[canonicalRelative] = true;
 		var listed = dir && (env.sources ? env.sources.files(dir) : dir.listFiles());
@@ -72,7 +76,7 @@
 				return;
 			}
 			var path = resourceRelativePath(base, file, env);
-			if (path && env.isAllowedResourcePath(path)) {
+			if (path && path === lexicalRelativePath(base, file) && env.isAllowedResourcePath(path)) {
 				out.push({
 					path: path,
 					file: file
@@ -90,9 +94,9 @@
 		[".httpignore", env.sourcePaths.path("engine.yaml"), "libs/jars.yaml"].forEach(function (path) {
 			var file = new env.File(base, path);
 			var target = resourceRelativePath(base, file, env);
-			if (target && env.isAllowedResourcePath(target) && isFile(file, env)) out.push({path: path, file: file});
+			if (target === path && env.isAllowedResourcePath(target) && isFile(file, env)) out.push({path: path, file: file});
 		});
-		["blocks", "fragments", "lib", "resources", "frontbuilder", "types"].map(env.sourcePaths.path).concat(["resources", "libs/src"]).forEach(function (path) {
+		["blocks", "fragments", "lib", "resources", "frontbuilder", "types"].map(env.sourcePaths.path).concat(["resources", "libs/src", "docs", "tests"]).forEach(function (path) {
 			collectResourceFiles(new env.File(base, path), base, out, env, path, Object.create(null));
 		});
 		return out;
@@ -487,7 +491,7 @@
 	}
 
 	// The resources a patch or an import may create; the others have their own creation APIs (blocks, fragments, frontends).
-	var CREATABLE_KINDS = ["javaSource", "jarsDescriptor", "projectDocument", "publicResource", "flowResource", "frontendBlock", "httpIgnore"];
+	var CREATABLE_KINDS = ["javaSource", "jarsDescriptor", "projectDocument", "projectTest", "publicResource", "flowResource", "frontendBlock", "httpIgnore"];
 	var IMPORT_MAX_BYTES = 5000000;
 	// Folders of the Convertigo workspace that hold its configuration, keys, tokens and logs: never a source to import.
 	var IMPORT_PRIVATE_FOLDERS = ["configuration", "certificates", "jwt", "studio", "logs", "cache", "minime", "temp", "tmp"];
@@ -566,12 +570,17 @@
 		}
 		var bytes = Files.readAllBytes(source.path);
 		var content = String(new java.lang.String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+		if (/^tests\//.test(entry.path) && !java.util.Arrays.equals(bytes, new java.lang.String(content).getBytes("UTF-8"))) {
+			env.raise("RESOURCE_TEST_TEXT_REQUIRED", "Project tests must contain UTF-8 text.");
+		}
+		validateTestText(entry.path, content, env);
 		var validation = request.validate === false
 			? { ok: true, skipped: true }
 			: validateResourceContent(entry.path, content, env);
 		var newHash = env.sha256Hex(content);
 		var same = !created && Files.isRegularFile(entry.file.toPath()) && java.util.Arrays.equals(Files.readAllBytes(entry.file.toPath()), bytes);
 		if (request.dryRun !== true && !same) {
+			ensurePrivateResources(entry, env);
 			var target = entry.file.toPath();
 			Files.createDirectories(target.getParent());
 			var staged = target.resolveSibling("." + target.getFileName() + ".flow-import-" + java.util.UUID.randomUUID() + ".tmp");
@@ -598,6 +607,31 @@
 			changed: !same,
 			validation: validation
 		};
+	}
+
+	function validateTestText(path, content, env) {
+		if (/^tests\//.test(path) && /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(String(content))) {
+			env.raise("RESOURCE_TEST_TEXT_REQUIRED", "Project tests must contain UTF-8 text without binary controls.");
+		}
+	}
+
+	// Host-owned precondition for MCP writes, including imports. Fail closed before touching the target.
+	function ensurePrivateResources(entry, env) {
+		if (!/^(docs|tests)\//.test(entry.path)) return;
+		var ignore = projectResourceFile(".httpignore", false, env);
+		try {
+			var content = ignore.file.isFile() ? String(env.FileUtils.readFileToString(ignore.file, "UTF-8")) : "";
+			var rules = ["/_flow/", "/tests/", "/docs/"];
+			// Append after any existing unignore rule. Exact root rules are owned by the host.
+			var suffix = "\n" + rules.join("\n") + "\n";
+			if (!content.endsWith(suffix)) {
+				content += suffix;
+				env.atomicWriteResource(ignore.file, content);
+			}
+			if (String(env.FileUtils.readFileToString(ignore.file, "UTF-8")) !== content) throw new Error("Ignore write was not retained");
+		} catch (failure) {
+			env.raise("RESOURCE_HTTPIGNORE_REQUIRED", "Cannot keep docs/ and tests/ private before writing the resource.");
+		}
 	}
 
 	function patch(request, env) {
@@ -627,11 +661,14 @@
 		}
 		var applied = env.applyRequestPatch ? env.applyRequestPatch(oldContent, request)
 			: env.applyUnifiedPatchText(oldContent, request.patch || request.unifiedDiff || request.diff || "");
+		validateTestText(entry.path, applied.content, env);
 		if (entry.path === ".httpignore") {
 			var content = String(applied.content), patterns = function (text) { return String(text).split(/\r?\n/).map(function (line) { return line.trim(); }).filter(function (line) { return line && line.charAt(0) !== "#"; }); };
 			var before = patterns(oldContent), after = patterns(content);
 			if (new java.lang.String(content).getBytes("UTF-8").length > 65536 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(content)) env.raise("RESOURCE_HTTPIGNORE_INVALID", ".httpignore must be bounded UTF-8 text (64 KiB), without control characters.");
-			if (after.indexOf("/" + env.sourcePaths.root + "/") < 0 && after.indexOf(env.sourcePaths.root + "/") < 0) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore must keep /" + env.sourcePaths.root + "/ private.");
+			["/" + env.sourcePaths.root + "/", "/tests/", "/docs/"].forEach(function (rule) {
+				if (after.indexOf(rule) < 0) env.raise("RESOURCE_HTTPIGNORE_PROTECTED", ".httpignore must keep " + rule + " private.");
+			});
 			// Ignore rule order is semantic. Keep the old sequence (duplicates included)
 			// and the exact unignore sequence: moving/copying an existing ! rule can reopen a path.
 			var cursor = 0; after.forEach(function (line) { if (line === before[cursor]) cursor++; });
@@ -657,7 +694,9 @@
 		}
 		var newHash = env.sha256Hex(applied.content);
 		if (request.dryRun !== true) {
-			env.FileUtils.writeStringToFile(entry.file, applied.content, "UTF-8");
+			ensurePrivateResources(entry, env);
+			if (entry.path === ".httpignore") env.atomicWriteResource(entry.file, applied.content);
+			else env.FileUtils.writeStringToFile(entry.file, applied.content, "UTF-8");
 		}
 		return Object.assign({
 			ok: true,

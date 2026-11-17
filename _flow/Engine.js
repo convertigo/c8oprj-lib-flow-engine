@@ -19,6 +19,8 @@
 	var ObjectMapper = Packages.com.fasterxml.jackson.databind.ObjectMapper;
 	var YAMLFactory = Packages.com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 	var FileUtils = Packages.org.apache.commons.io.FileUtils;
+	var ResourceFiles = Packages.java.nio.file.Files;
+	var ResourceCopyOption = Packages.java.nio.file.StandardCopyOption;
 	var Base64 = Packages.java.util.Base64;
 	var JavaSystem = Packages.java.lang.System;
 	var ConcurrentHashMap = Packages.java.util.concurrent.ConcurrentHashMap;
@@ -2330,6 +2332,17 @@
 		}
 	}
 
+	function atomicWriteResource(file, content) {
+		var target = file.toPath();
+		var temporary = ResourceFiles.createTempFile(target.getParent(), ".flow-resource-", ".tmp");
+		try {
+			FileUtils.writeStringToFile(temporary.toFile(), content, "UTF-8");
+			ResourceFiles.move(temporary, target, ResourceCopyOption.ATOMIC_MOVE, ResourceCopyOption.REPLACE_EXISTING);
+		} finally {
+			ResourceFiles.deleteIfExists(temporary);
+		}
+	}
+
 	function resourceServiceEnv() {
 		return {
 			sources: sourceView(currentActiveRequest()),
@@ -2337,6 +2350,7 @@
 			File: File,
 			Arrays: Arrays,
 			FileUtils: FileUtils,
+			atomicWriteResource: atomicWriteResource,
 			raise: raise,
 			projectDir: projectDir,
 			workspaceDir: workspaceDir,
