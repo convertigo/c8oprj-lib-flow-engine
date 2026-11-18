@@ -102,6 +102,7 @@ function Totals({ input, config, result }) {
   Defaults, rest and nested patterns are refused (`FLOWSCRIPT_V3_DESTRUCTURING`).
 - `x += e`, `x -= e`, `x *= e`, `x /= e`, `x++`, `x--` are statements: `local.x = local.x + (e)`; `x++` is
   `local.x = Number(local.x) + 1`, since JavaScript converts `x` to a number first (`"1"` gives `2`, not `"11"`).
+  The same applies to a field of a local object or of `result`: `o.count++` is `local.o.count = Number(local.o.count) + 1`.
   They are refused inside an expression (`FLOWSCRIPT_V3_COMPOUND_CONTEXT`).
 - `result.x = …` writes one output field. `return { … }` writes the output fields and leaves the Flow.
   A Flow uses one style or the other (`FLOWSCRIPT_V3_RESULT_MIXED`), because JavaScript returns the object
@@ -121,9 +122,9 @@ function Totals({ input, config, result }) {
 
 | JavaScript | Block | Rule |
 |---|---|---|
-| `if (c) {…} else if (d) {…} else {…}` | `if` | An `else if` is an `if` in `else`. A single statement is a body of one statement. |
-| `while (c) {…}` | `while` | `maxIterations` 1000 and `timeoutMs` 60000. Other values: `flow.while({…})` (section 11). |
-| `for (const item of items) {…}` | `forEach` | `item` reads the current element. One level of object destructuring: `for (const { id } of rows)`. |
+| `if (c) {…} else if (d) {…} else {…}` | `if` | An `else if` is an `if` in `else`. A single statement is a body of one statement. A list method or a global call that `c` always evaluates runs before the `if` (section 15). |
+| `while (c) {…}` | `while` | `maxIterations` 1000 and `timeoutMs` 60000. Other values: `flow.while({…})` (section 11). No list method in `c`. |
+| `for (const item of items) {…}` | `forEach` | `item` reads the current element. One level of object destructuring: `for (const { id } of rows)`. `items` may be `Object.keys(o)`, `Object.values(o)` or a list method chain, computed once before the loop. |
 | `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`; `i` is not assigned in the body. `maxIterations` 1000000. With `continue`, the counter steps before the body (section 15). |
 | `switch (x) { case "a": …; break; default: … }` | chain of `if` | Literal labels; every case ends with `break`, `return` or `throw`; `default` last. |
 | `try {…} catch (e) {…}` | `try` | The error is `local.e`, read as `e` inside the catch only. Without a parameter: `local.error`. |
@@ -232,7 +233,8 @@ function Active({ input, config, result }) {
 
 ## 9. Global functions
 
-In an assignment, a `return`, or at the head of a chain:
+In an assignment, a `return`, at the head of a chain, as the list of a `for…of`, or in the condition of an `if` (section
+15):
 
 | JavaScript | Block |
 |---|---|
@@ -273,7 +275,10 @@ function Notify({ input, config, result }) {
 - Every block is called with one object of named properties: `sql.query({ connection, sql })`.
 - A control block whose properties go beyond its JavaScript form keeps its call form, prefixed with `flow.`:
   `flow.while({ condition: …, maxIterations: 100000, $$nodes() { … } })`, `flow.forEach`, `flow.if`, `flow.try`.
-  Its slots keep the v2 keys (`$$then`, `$$else`, `$$nodes`, `$$try`, `$$catch`).
+  Its slots keep the v2 keys (`$$then`, `$$else`, `$$nodes`, `$$try`, `$$catch`). A slot is written as a method
+  (`$$nodes() { … }`), a function (`$$nodes: function () { … }`) or an arrow with a block body (`$$nodes: () => { … }`),
+  without parameter. A call with a slot that is declared, assigned or returned (`const tx = sql.transaction({ …,
+  $$nodes() { … } })`) writes its output with `$$out`.
 - `$$id`, `$$out`, `$$disabled` and `$$comment` stay engine attributes of a call.
 
 ## 12. Names, comments and disabled statements
@@ -442,3 +447,23 @@ replacement. The rules of the previous sections are amended accordingly.
    JavaScript and is refused (`FLOWSCRIPT_V3_UNSUPPORTED`).
 9. **`x++` on a text.** `x++` and the step of a counted `for` add 1 to `Number(x)`, as JavaScript does; `x + 1` joined a
    numeric text (`"1"` gave `"11"`).
+10. **L0′bis (control bench it67v3c, 18/11/2026).**
+   - *`for…of` over a global call or a chain.* `for (const key of Object.keys(o))`, `Object.values(o)`, or a list method
+     chain (`filter`, `map`, `toSorted`, `sort`, `concat`) as the iterated list: the list is computed once, before the
+     loop, in a hidden local `local.__chain<N>`, as JavaScript evaluates the iterated expression once (keys added to
+     `o` in the body are not visited).
+   - *Slots.* A slot accepts the three writings of section 11 wherever a slot exists, including a call that is
+     declared, assigned or returned (`$$out`). An arrow with an expression body or a slot with a parameter is refused
+     (`FLOWSCRIPT_V3_FUNCTION`) with the three writings as the proposal.
+   - *List method in an `if` condition.* The condition of an `if` is evaluated once, whole: each list method or global
+     call it always evaluates runs before the `if`, in a hidden local (`if (!roles.some(r => r == "OWNER"))`), an
+     `else if` condition inside its `else`. Not in the right operand of `&&`, `||`, `??`, a branch of `?:`, an argument
+     of a call, or an arrow (`FLOWSCRIPT_V3_CHAIN`). A `while` condition is evaluated before every pass: a list method
+     there stays refused (`FLOWSCRIPT_V3_CHAIN`), with a `let` computed before the loop and at the end of the body as the
+     proposal.
+   - *Field updates.* `o.count++`, `o.count--` and `o.total += x` change a field of a local object or of `result`. An
+     object read from a map or a list is that object in the Flow as in JavaScript, so `const g = byCat[c]; g.count++`
+     changes the map (tested against Node). A field of a loop item or of `input` stays refused (`FLOWSCRIPT_V3_UNSUPPORTED` for `++` and `--`; the v2 check
+     `FLOWSCRIPT_WRITE_SCOPE_UNSUPPORTED` for `+=`).
+   - *Conditional expression end.* An `if` whose condition is a `?:` emitted one closing parenthesis too many (Rhino
+     1.9.2 extends the expression over the `)` that follows it, as for an infix expression): fixed.

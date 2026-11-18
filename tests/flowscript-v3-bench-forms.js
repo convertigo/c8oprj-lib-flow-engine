@@ -344,6 +344,135 @@ same('const declared again in sibling blocks', [
 ].join('\n'), { n: 1 }, { total: 321 });
 refuses('const without value', '  const x\n  return { x }', 'FLOWSCRIPT_V3_UNSUPPORTED', 3, 'let');
 
+// L0′bis (control bench it67v3c). 1. for…of over Object.keys / Object.values or a list method chain: the list is computed
+// once, before the loop, in a hidden local, as JavaScript evaluates the iterated expression once.
+cases++;
+same('bench for of Object.keys', [
+	'  const names = []',
+	'  for (const key of Object.keys(input.groups)) {',
+	'    names.push(`${key}=${input.groups[key]}`)',
+	'  }',
+	'  let total = 0',
+	'  for (const amount of Object.values(input.groups)) {',
+	'    total += amount',
+	'  }',
+	'  return { names, total }'
+].join('\n'), { groups: { b: 2, a: 1, 10: 4, 2: 3 } }, undefined, /local\.__chain1 = object\.keys\(\{ source: input\.groups \}\)\nforEach\(\{ items: local\.__chain1,/);
+cases++;
+same('for of computed once', [
+	'  const byId = json.map({ valueType: { type: "integer" } })',
+	'  byId["a"] = 1',
+	'  byId["b"] = 2',
+	'  for (const key of Object.keys(byId)) {',
+	'    byId[`${key}x`] = byId[key] * 10',
+	'  }',
+	'  const rows = json.array({ itemType: { type: "integer" } })',
+	'  rows.push(1)',
+	'  rows.push(2)',
+	'  for (const n of rows.filter(n => n > 0).map(n => n * 2)) {',
+	'    rows.push(n)',
+	'  }',
+	'  return { byId, rows }'
+].join('\n'), {}, { byId: { a: 1, b: 2, ax: 10, bx: 20 }, rows: [1, 2, 2, 4] });
+
+// 2. A slot is a method, a function or an arrow with a block body, wherever a slot exists; a call with a slot that is
+// assigned, declared or returned writes its output with $$out.
+var slotForms = [['method', '$$nodes() { n++ }'], ['function', '$$nodes: function () { n++ }'], ['arrow', '$$nodes: () => { n++ }']];
+slotForms.forEach(function (form) {
+	cases++;
+	var code = program([
+		'  let n = 0',
+		'  flow.forEach({ items: input.items, ' + form[1].replace('n++', 'n += current') + ' })',
+		'  const loop = flow.while({ condition: n < 10, maxIterations: 20, ' + form[1] + ' })',
+		'  let again = null',
+		'  again = flow.while({ condition: n < 12, ' + form[1] + ' })',
+		'  return { n, loop, again: again.iterations, last: flow.while({ condition: n < 13, ' + form[1] + ' }) }'
+	].join('\n'));
+	var lowered = translated('slot ' + form[0], code, /while\(\{\n\$\$out: "local\.loop",[\s\S]*\$\$nodes\(\) \{[\s\S]*\$\$out: "local\.again"[\s\S]*\$\$out: "result\.last"/);
+	var ran = flowResult('slot ' + form[0], code, { items: [1, 2, 3] }, lowered);
+	// the fields of the returned object are read in order: n before the last loop, as in JavaScript
+	check(ran === JSON.stringify({ n: 12, loop: { iterations: 4, completed: true }, again: 2, last: { iterations: 1, completed: true } }), 'slot ' + form[0] + ': ' + ran + '\n' + lowered.code);
+});
+cases++;
+var configUse = program('  config.use({\n    overrides: { http: { timeout: 30000 } },\n    $$then: function () {\n      result.timeout = config.http.timeout\n    },\n  })\n  result.after = config.http.timeout');
+var configLowered = translated('config.use slot function', configUse, /config\.use\(\{[\s\S]*\$\$then\(\) \{/);
+var configRun = api('flowCodeRun', { name: 'Example', code: configUse, input: {}, config: { http: { timeout: 5000 } }, includeTrace: false });
+check(configRun.ok && configRun.result.timeout === 30000 && configRun.result.after === 5000, 'config.use slot function: ' + JSON.stringify(configRun).substring(0, 900) + '\n' + configLowered.code);
+var transaction = translated('bench sql.transaction slot', program([
+	'  const plan = input.items',
+	'  const tx = sql.transaction({',
+	'    connection: "app",',
+	'    onError: "return",',
+	'    $$nodes: function () {',
+	'      for (const step of plan) {',
+	'        local.written = step',
+	'      }',
+	'    },',
+	'  })',
+	'  return { ok: tx.ok }'
+].join('\n')), /sql\.transaction\(\{\n\$\$out: "local\.tx",\nconnection: "app",\nonError: "return",\n\$\$nodes\(\) \{\nforEach/);
+refuses('slot arrow without block', '  let n = 0\n  flow.while({ condition: n < 3, $$nodes: () => n++ })', 'FLOWSCRIPT_V3_FUNCTION', 4, '$$nodes: () => { … }');
+refuses('slot with a parameter', '  flow.forEach({ items: input.items, $$nodes: function (item) { result.x = item } })', 'FLOWSCRIPT_V3_FUNCTION', 3, '$$nodes: function () { … }');
+refuses('assigned slot call with its own $$out', '  const r = flow.while({ $$out: "local.other", condition: false, $$nodes() {} })', 'FLOWSCRIPT_V3_UNSUPPORTED', 3, '$$out');
+
+// 3. A list method in the condition of an if, outside a lazy place, runs before the if in a hidden local.
+[{ actor: { roles: ['USER', 'OWNER'] } }, { actor: { roles: ['USER'] } }].forEach(function (input, index) {
+	cases++;
+	same('bench if condition ' + index, [
+		'  const actor = input.actor',
+		'  if (!actor.roles.some(role => role == "OWNER")) {',
+		'    return { owner: false }',
+		'  }',
+		'  return { owner: true }'
+	].join('\n'), input, { owner: index === 0 }, /local\.__chain1 = list\.filter\(\{ items: local\.actor\.roles, where: current == "OWNER" \}\)\nif \(!\(local\.__chain1\.length > 0\)\) \{/);
+});
+[{ a: true }, { a: false, xs: [1, 3, 5], o: {} }, { a: false, xs: [1], o: { k: 1 } }].forEach(function (input, index) {
+	cases++;
+	same('if conditions ' + index, [
+		'  let r = 0',
+		'  if (input.a) {',
+		'    r = 1',
+		'  } else if (input.xs.filter(x => x > 1).length + Object.keys(input.o).length > 1) {',
+		'    r = 2',
+		'  } else if (Object.keys(input.o).includes("k") ? true : false) {',
+		'    r = 3',
+		'  }',
+		'  return { r }'
+	].join('\n'), input, { r: [1, 2, 3][index] });
+});
+refuses('global call after && in an if', '  if (input.ok && Object.keys(input.o).length > 0) {\n    result.x = 1\n  }', 'FLOWSCRIPT_V3_GLOBAL_CALL', 3, 'own assignment');
+refuses('list method after && in an if', '  if (input.ok && input.xs.some(x => x > 1)) {\n    result.x = 1\n  }', 'FLOWSCRIPT_V3_CHAIN', 3, 'const');
+refuses('list method in a branch of ?: in an if', '  if (input.ok ? input.xs.some(x => x > 1) : false) {\n    result.x = 1\n  }', 'FLOWSCRIPT_V3_CHAIN', 3, 'const');
+refuses('list method in a call argument in an if', '  if (Math.max(input.xs.filter(x => x > 1).length, 1) > 1) {\n    result.x = 1\n  }', 'FLOWSCRIPT_V3_CHAIN', 3, 'const');
+refuses('list method in a while condition', '  while (input.xs.some(x => x > 1)) {\n    result.x = 1\n  }', 'FLOWSCRIPT_V3_CHAIN', 3, 'let pending = xs.some(…); while (pending)');
+
+// 4. o.count++ and o.total += x on an object read from a map: the object is shared, as in JavaScript.
+cases++;
+var aliasCode = program([
+	'  const byCat = json.map({ valueType: { type: "object", properties: { count: { type: "number" }, total: { type: "number" } } } })',
+	'  for (const row of input.rows) {',
+	'    const c = row.category',
+	'    if (byCat[c] == null) {',
+	'      byCat[c] = { count: 0, total: 0 }',
+	'    }',
+	'    const g = byCat[c]',
+	'    g.count++',
+	'    g.total += row.amount',
+	'  }',
+	'  const stats = { seen: "0" }',
+	'  stats.seen++',
+	'  stats.seen--',
+	'  stats.seen++',
+	'  return { byCat, stats }'
+].join('\n'));
+check(bridge.translate(aliasCode).diagnostics.length === 0, 'the alias update is no longer refused: ' + JSON.stringify(bridge.translate(aliasCode).diagnostics));
+same('bench alias update', aliasCode.replace(/^[\s\S]*?\{\n/, '').replace(/\n\}$/, ''), { rows: [{ category: 'a', amount: 2 }, { category: 'b', amount: 5 }, { category: 'a', amount: 3 }] },
+	{ byCat: { a: { count: 2, total: 5 }, b: { count: 1, total: 5 } }, stats: { seen: 1 } }, /local\.g\.count = Number\(local\.g\.count\) \+ 1\nlocal\.g\.total = local\.g\.total \+ \(current\.amount\)/);
+cases++;
+same('result field update', '  result.count = 1\n  result.count++\n  result.count--\n  result.count++', {}, { count: 2 });
+refuses('loop item update', '  for (const item of input.items) {\n    item.count++\n  }', 'FLOWSCRIPT_V3_UNSUPPORTED', 4, 'o.count++');
+refuses('undeclared update', '  missing++', 'FLOWSCRIPT_V3_UNSUPPORTED', 3, 'Declare the local first');
+
 // Conformance cases of the grammar: each source is lowered and run; a case marked parsesWithoutPreparation is read by the
 // Rhino 1.9.2 parser as it is written.
 var grammar = JSON.parse(String(files.readFileToString(new java.io.File(engineDir, '../docs/flowscript-v3-grammar.json'), 'UTF-8')));

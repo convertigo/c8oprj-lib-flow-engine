@@ -17,8 +17,10 @@
 		}
 		function end(node) {
 			var finish = Number(node.getAbsolutePosition()) + Number(node.getLength());
-			if (kind(node) === "InfixExpression" && node.getRight && node.getRight()) {
-				var rightEnd = end(node.getRight());
+			// Rhino 1.9.2 extends an infix or conditional expression over the closing parentheses that follow it
+			var last = kind(node) === "InfixExpression" && node.getRight ? node.getRight() : kind(node) === "ConditionalExpression" ? node.getFalseExpression() : null;
+			if (last) {
+				var rightEnd = end(last);
 				if (finish > rightEnd && /^[\s)\]}]+$/.test(source.substring(rightEnd, finish))) return rightEnd;
 			}
 			if (kind(node) === "KeywordLiteral") {
@@ -157,7 +159,7 @@
 			return { code: "", lineMap: [], diagnostics: diagnostics };
 		}
 		var scope = { names: Object.create(null), parent: null }, allNames = Object.create(null), imports = Object.create(null);
-		var resultStyle = "", chain = 0, counted = 0, loopDepth = 0, countedDepth = 0, blockNamespaces = Object.create(null);
+		var resultStyle = "", chain = 0, counted = 0, loopDepth = 0, blockNamespaces = Object.create(null);
 		// local.<name> paths created by json.array or json.map: local.rows.push(v) and local.byId[key] = v on them
 		// are json.push and json.put, as on a declared name (section 14).
 		var typedLocals = { list: Object.create(null), map: Object.create(null) };
@@ -191,12 +193,14 @@
 			var entry = { name: name, type: type, mapped: mapped || "local." + name, loopDepth: loopDepth };
 			current.names[name] = entry; allNames[name] = true; return entry;
 		}
-		function rewritten(node, current) {
+		function rewritten(node, current, replaced) {
 			if (!node) return "undefined";
 			var start = pos(node), finish = end(node), edits = [];
 			visit(node, function (part) {
 				var k = kind(part), parent = part.getParent();
-				if (k === "FunctionCall" && /^(?:Object|JSON|Date)\./.test(raw(part.getTarget()).replace(/\s/g, ""))) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
+				// a step lifted before the statement (liftedCondition) reads its hidden local
+				for (var r = 0; replaced && r < replaced.length; r++) if (replaced[r].node === part) { edits.push({ at: pos(part), to: end(part), value: replaced[r].value }); return false; }
+				if (k === "FunctionCall" && /^(?:Object|JSON|Date)\.[A-Za-z_$][\w$]*$/.test(raw(part.getTarget()).replace(/\s/g, ""))) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
 				if (k === "FunctionCall" && part !== node && ["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0) reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
 				if (k === "FunctionNode") reject("FLOWSCRIPT_V3_FUNCTION", part, "Write the expression inline or use a project block.");
 				if (k === "Assignment" && part !== node || k === "UpdateExpression") reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", part, "Move the assignment to its own statement.");
@@ -513,6 +517,69 @@
 			if (prefix && prefix.before.length) return { before: prefix.before, expression: prefix.expression + "." + name + "(" + args.map(function (a) { return rewritten(a, current); }).join(", ") + ")" };
 			return { before: [], expression: rewritten(node, current) };
 		}
+		// A block step of a condition: a list method with an arrow, or a global call lowered to a block.
+		function blockStep(part) {
+			if (kind(part) !== "FunctionCall") return false;
+			var target = part.getTarget(), receiver = kind(target) === "PropertyGet" ? target.getTarget() : null;
+			if (/^(?:Object|JSON)\.(?:keys|values|parse|stringify)$/.test(raw(target).replace(/\s/g, ""))) return true;
+			return !!receiver && ["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0 &&
+				!(kind(receiver) === "Name" && /^(?:list|json|object|text)$/.test(String(receiver.getIdentifier())));
+		}
+		// The condition of an if is evaluated once, whole, before its branches: each block step it always evaluates (not in
+		// the right operand of && || ??, a branch of ?:, an arrow or an argument of a call) runs before the statement, in a
+		// hidden local, which is the JavaScript order since expressions have no effect. A step in a lazy place stays refused.
+		function liftedCondition(condition, current) {
+			var before = [], replaced = [];
+			visit(condition, function (part) {
+				if (!blockStep(part)) return true;
+				for (var child = part, parent = part.getParent(); child !== condition && parent; child = parent, parent = parent.getParent()) {
+					var k = kind(parent);
+					if (k === "FunctionNode") return true;
+					if (k === "InfixExpression" && ["&&", "||", "??"].indexOf(operator(parent)) >= 0 && parent.getRight() === child) return true;
+					if (k === "ConditionalExpression" && parent.getTestExpression() !== child) return true;
+					if (k === "FunctionCall" && parent.getTarget() !== child) return true;
+				}
+				var lowered = value(part, current);
+				before = before.concat(lowered.before);
+				if (lowered.before.length) replaced.push({ node: part, value: "(" + lowered.expression + ")" });
+				else { var hidden = "local.__chain" + (++chain); before.push(hidden + " = " + lowered.expression); replaced.push({ node: part, value: hidden }); }
+				return false;
+			});
+			return { before: before, expression: rewritten(condition, current, replaced) };
+		}
+		// A call with a slot ($$nodes, $$then…), or a control block: written as a call, its slots as bodies. A slot is a
+		// method ($$nodes() { … }), a function (function () { … }) or an arrow with a block body (() => { … }). Assigned or
+		// returned, its output goes to that destination through $$out, since an assignment holds no slot.
+		function slotted(call) {
+			call = unparen(call);
+			if (kind(call) !== "FunctionCall") return false;
+			var args = argument(call);
+			return /^flow\.(?:while|forEach|if|try)$/.test(raw(call.getTarget()).replace(/\s/g, "")) || args.length === 1 && kind(args[0]) === "ObjectLiteral" &&
+				array(args[0].getElements()).some(function (property) { return kind(property) === "ObjectProperty" && /^\$\$/.test(raw(property.getKey()).trim()) && kind(property.getValue()) === "FunctionNode"; });
+		}
+		function emitSlotted(call, current, origin, out) {
+			call = unparen(call);
+			var controlName = raw(call.getTarget()).replace(/\s/g, ""), controlArgs = argument(call);
+			if (controlArgs.length !== 1 || kind(controlArgs[0]) !== "ObjectLiteral") reject("FLOWSCRIPT_V3_UNSUPPORTED", call, "Call flow control blocks with one object argument.");
+			var properties = array(controlArgs[0].getElements());
+			if (out && properties.some(function (property) { return kind(property) === "ObjectProperty" && raw(property.getKey()).trim() === "$$out"; })) {
+				reject("FLOWSCRIPT_V3_UNSUPPORTED", call, "Write the assignment or $$out, not both.");
+			}
+			// flow.while, flow.forEach, flow.if and flow.try are the control blocks; flow.poll… are flow.* blocks
+			emit((/^flow\.(?:while|forEach|if|try)$/.test(controlName) ? controlName.substring(5) : controlName) + "({", origin);
+			if (out) emit("$$out: " + JSON.stringify(out) + ",", origin);
+			properties.forEach(function (property) {
+				if (kind(property) !== "ObjectProperty") reject("FLOWSCRIPT_V3_UNSUPPORTED", property, "Use named control properties.");
+				var key = raw(property.getKey()).trim(), item = property.getValue();
+				if (/^\$\$[A-Za-z_$][\w$]*$/.test(key) && kind(item) === "FunctionNode") {
+					if (array(item.getParams()).length || item.isGenerator() || source.charAt(pos(item.getBody())) !== "{") {
+						reject("FLOWSCRIPT_V3_FUNCTION", property, "Write the slot with a body and no parameter: " + key + "() { … }, " + key + ": function () { … } or " + key + ": () => { … }.");
+					}
+					emit(key + "() {", line(pos(property))); body(item.getBody(), child(current)); emit("},", line(end(property) - 1));
+				} else emit(key + ": " + rewritten(item, current) + ",", line(pos(property)));
+			});
+			emit("})", line(end(call) - 1));
+		}
 		function holdsBlockStep(node) {
 			var found = false;
 			visit(node, function (part) {
@@ -523,6 +590,7 @@
 			return found;
 		}
 		function emitValue(node, current, target, origin) {
+			if (slotted(node)) { emitSlotted(node, current, origin, target); return; }
 			// A value that is entirely cond ? a : b, with a block step in a branch: if (cond) { target = a } else { target = b },
 			// each branch lowered in its own body, so that only the chosen branch runs, as in JavaScript.
 			var conditional = unparen(node);
@@ -582,7 +650,7 @@
 					if (kind(target) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Declare each field separately.");
 					if (type === "const" && !init) reject("FLOWSCRIPT_V3_UNSUPPORTED", target, "Give the const its value (const x = value), or declare it with let.");
 					var name = String(target.getIdentifier());
-					if (init && kind(unparen(init)) === "ConditionalExpression") {
+					if (init && (kind(unparen(init)) === "ConditionalExpression" || slotted(init))) {
 						emitValue(init, current, "local." + name, origin);
 						declare(name, type, target, current);
 						return;
@@ -616,31 +684,24 @@
 					return;
 				}
 				if (ek === "UpdateExpression") {
-					var operand = expression.getOperand(), updateName = kind(operand) === "Name" ? String(operand.getIdentifier()) : "", update = lookup(updateName, current);
-					if (!update) reject("FLOWSCRIPT_V3_OUT_OF_SCOPE", node, "Declare the local first.");
+					var operand = expression.getOperand(), increment = raw(expression).indexOf("++") >= 0;
+					if (kind(operand) === "PropertyGet") {
+						// o.count++ on a field of a local object (or of result): the object is shared as in JavaScript (an
+						// object read from a map is that object), so the field changes wherever the object is read.
+						var field = rewritten(operand, current);
+						if (!/^(?:local\.[A-Za-z_$][\w$]*|result)(?:\.[A-Za-z_$][\w$]*)+$/.test(field)) reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Update a field of a local object or of result (o.count++), or a local (n++).");
+						if (field.indexOf("result.") === 0) { if (resultStyle === "returnObject") reject("FLOWSCRIPT_V3_RESULT_MIXED", node, "Use one result style."); resultStyle = "resultField"; }
+						emit(field + " = " + (increment ? "Number(" + field + ") + 1" : field + " - 1"), origin); return;
+					}
+					var updateName = kind(operand) === "Name" ? String(operand.getIdentifier()) : "", update = lookup(updateName, current);
+					if (!updateName) reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Update a local (n++) or a field of a local object (o.count++).");
+					if (!update) reject(allNames[updateName] ? "FLOWSCRIPT_V3_OUT_OF_SCOPE" : "FLOWSCRIPT_V3_UNSUPPORTED", node, allNames[updateName] ? "Declare the name in the enclosing block." : "Declare the local first.");
 					if (update.type === "const") reject("FLOWSCRIPT_V3_CONST_ASSIGN", node, "Declare the variable with let.");
 					// x++ adds 1 to the number of x (ToNumeric), where + would join a text; x - 1 already converts.
-					emit(update.mapped + " = " + (raw(expression).indexOf("++") >= 0 ? "Number(" + update.mapped + ") + 1" : update.mapped + " - 1"), origin); return;
+					emit(update.mapped + " = " + (increment ? "Number(" + update.mapped + ") + 1" : update.mapped + " - 1"), origin); return;
 				}
 				if (ek === "FunctionCall") {
-					var controlName = raw(expression.getTarget()).replace(/\s/g, "");
-					var slotArgs = argument(expression), hasSlot = slotArgs.length === 1 && kind(slotArgs[0]) === "ObjectLiteral" &&
-						array(slotArgs[0].getElements()).some(function (property) { return /^\$\$/.test(raw(property.getKey()).trim()) && kind(property.getValue()) === "FunctionNode"; });
-					if (/^flow\.(?:while|forEach|if|try)$/.test(controlName) || hasSlot) {
-						var controlArgs = argument(expression);
-						if (controlArgs.length !== 1 || kind(controlArgs[0]) !== "ObjectLiteral") reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Call flow control blocks with one object argument.");
-						// flow.while, flow.forEach, flow.if and flow.try are the control blocks; flow.poll… are flow.* blocks
-						emit((/^flow\.(?:while|forEach|if|try)$/.test(controlName) ? controlName.substring(5) : controlName) + "({", origin);
-						array(controlArgs[0].getElements()).forEach(function (property) {
-							if (kind(property) !== "ObjectProperty") reject("FLOWSCRIPT_V3_UNSUPPORTED", property, "Use named control properties.");
-							var key = raw(property.getKey()).trim(), item = property.getValue();
-							if (/^\$\$[A-Za-z_$][\w$]*$/.test(key) && kind(item) === "FunctionNode") {
-								if (kind(item) !== "FunctionNode" || array(item.getParams()).length) reject("FLOWSCRIPT_V3_FUNCTION", property, "Use a zero-argument slot function.");
-								emit(key + "() {", line(pos(property))); body(item.getBody(), child(current)); emit("},", line(end(property) - 1));
-							} else emit(key + ": " + rewritten(item, current) + ",", line(pos(property)));
-						});
-						emit("})", line(end(node) - 1)); return;
-					}
+					if (slotted(expression)) { emitSlotted(expression, current, origin, null); return; }
 					var pushReceiver = method(expression) === "push" ? expression.getTarget().getTarget() : null;
 					// json.push({ … }) is the block call, not the push of a list named json
 					var namespacePush = pushReceiver && kind(pushReceiver) === "Name" && !lookup(String(pushReceiver.getIdentifier()), current)
@@ -671,17 +732,24 @@
 						else emitValue(val, current, "result." + key, origin);
 					}); emit("return", origin); return;
 				}
-				if (returned) { var v = value(returned, current); v.before.forEach(function (item) { emit(item, origin); }); emit("return " + v.expression, origin); }
+				if (returned && slotted(returned)) { var output = "local.__chain" + (++chain); emitSlotted(returned, current, origin, output); emit("return " + output, origin); }
+				else if (returned) { var v = value(returned, current); v.before.forEach(function (item) { emit(item, origin); }); emit("return " + v.expression, origin); }
 				else emit("return", origin); return;
 			}
 			if (k === "IfStatement") {
 				if (kind(node.getCondition()) === "ObjectLiteral") reject("FLOWSCRIPT_V3_OBJECT_CONDITION", node.getCondition(), "Use flow.if({ ... }).");
-				emit("if (" + rewritten(node.getCondition(), current) + ") {", origin); body(node.getThenPart(), child(current));
+				var condition = liftedCondition(node.getCondition(), current);
+				condition.before.forEach(function (item) { emit(item, origin); });
+				emit("if (" + condition.expression + ") {", origin); body(node.getThenPart(), child(current));
 				var otherwise = node.getElsePart(); if (otherwise) { emit("} else {", line(pos(otherwise))); body(otherwise, child(current)); }
 				emit("}", line(end(node) - 1)); return;
 			}
 			if (k === "WhileLoop") {
 				if (kind(node.getCondition()) === "ObjectLiteral") reject("FLOWSCRIPT_V3_OBJECT_CONDITION", node.getCondition(), "Use flow.while({ ... }).");
+				visit(node.getCondition(), function (part) {
+					if (blockStep(part)) reject("FLOWSCRIPT_V3_CHAIN", part, "A while condition is evaluated before every pass, so its list method cannot run once before the loop: keep its value in a let, computed before the loop and again at the end of the body (let pending = xs.some(…); while (pending) { …; pending = xs.some(…) }).");
+					return true;
+				});
 				emit("while({ condition: " + rewritten(node.getCondition(), current) + ", maxIterations: 1000, timeoutMs: 60000, $$nodes() {", origin);
 				loopDepth++; body(node.getBody(), child(current)); loopDepth--; emit("} })", line(end(node) - 1)); return;
 			}
@@ -695,7 +763,17 @@
 					itemBinding.loopDepth = loopDepth + 1;
 					if (needsOuterItemCopy(node, item)) itemBinding.mapped = "local." + item;
 				}
-				emit("forEach({ items: " + rewritten(node.getIteratedObject(), current) + ", $$nodes() {", origin);
+				// for (const key of Object.keys(o)), or of a list method chain: the list is computed once, before the loop, in a
+				// hidden local, as JavaScript evaluates the iterated expression once.
+				var iterated = unparen(node.getIteratedObject()), items;
+				if (kind(iterated) === "FunctionCall" && (blockStep(iterated) || method(iterated) === "concat") && ["find", "some", "every"].indexOf(method(iterated)) < 0 &&
+					!/^JSON\./.test(raw(iterated.getTarget()).replace(/\s/g, ""))) {
+					var listed = value(iterated, current);
+					listed.before.forEach(function (before) { emit(before, origin); });
+					if (/^local\.__chain\d+$/.test(listed.expression)) items = listed.expression;
+					else { items = "local.__chain" + (++chain); emit(items + " = " + listed.expression, origin); }
+				} else items = rewritten(node.getIteratedObject(), current);
+				emit("forEach({ items: " + items + ", $$nodes() {", origin);
 				if (kind(targetPattern) === "Name" && itemBinding.mapped !== "current") emit(itemBinding.mapped + " = current", origin);
 				if (kind(targetPattern) === "ObjectLiteral") array(targetPattern.getElements()).forEach(function (field) {
 					if (kind(field) !== "ObjectProperty" || kind(field.getKey()) !== "Name" || kind(field.getValue()) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Use one-level fields without defaults or rest.");

@@ -1,6 +1,6 @@
 {
   "sourceVersion": 3,
-  "status": "draft L3a 2026-11-18, amended L0′ 2026-11-18",
+  "status": "draft L3a 2026-11-18, amended L0′ 2026-11-18, L0′bis 2026-11-18",
   "parser": {
     "engine": "rhino",
     "version": "1.9.2",
@@ -60,9 +60,9 @@
     },
     {
       "id": "assign-compound",
-      "construct": "x += e | x -= e | x *= e | x /= e | x++ | x--",
+      "construct": "x += e | x -= e | x *= e | x /= e | x++ | x-- | o.f++ | o.f += e (a field of a local object or of result)",
       "block": "set",
-      "lowering": "local.x = local.x + (e); x++ is local.x = Number(local.x) + 1 (JavaScript converts to a number first); x-- is local.x = local.x - 1",
+      "lowering": "local.x = local.x + (e); x++ is local.x = Number(local.x) + 1 (JavaScript converts to a number first); x-- is local.x = local.x - 1; o.f++ is local.o.f = Number(local.o.f) + 1, the object being shared as in JavaScript (an object read from a map is that object)",
       "where": "statement only"
     },
     {
@@ -84,7 +84,8 @@
     {
       "id": "if",
       "construct": "if (c) {…} else if (d) {…} else {…}",
-      "block": "if"
+      "block": "if",
+      "lowering": "a list method or a global call that the condition always evaluates (not in the right operand of && || ??, a branch of ?:, a call argument or an arrow) runs before the if in local.__chain<N>; an else if condition inside its else"
     },
     {
       "id": "while",
@@ -93,13 +94,14 @@
       "defaults": {
         "maxIterations": 1000,
         "timeoutMs": 60000
-      }
+      },
+      "where": "no list method or global call in the condition (FLOWSCRIPT_V3_CHAIN): it is evaluated before every pass"
     },
     {
       "id": "for-of",
       "construct": "for (const item of items) {…}",
       "block": "forEach",
-      "lowering": "item read as current in its own body; when a nested construct rebinds current and reads the outer item, copy it to local.item at the start of the outer body; one-level destructured fields are copied from current.field"
+      "lowering": "item read as current in its own body; when a nested construct rebinds current and reads the outer item, copy it to local.item at the start of the outer body; one-level destructured fields are copied from current.field; items may be Object.keys(o), Object.values(o) or a list method chain (filter, map, toSorted, sort, concat), computed once before the loop in local.__chain<N>"
     },
     {
       "id": "for-counted",
@@ -249,7 +251,7 @@
       "properties": {
         "source": "o"
       },
-      "where": "assignment, return or chain head"
+      "where": "assignment, return, chain head, if condition, for…of list"
     },
     {
       "id": "object-values",
@@ -258,7 +260,7 @@
       "properties": {
         "source": "o"
       },
-      "where": "assignment, return or chain head"
+      "where": "assignment, return, chain head, if condition, for…of list"
     },
     {
       "id": "json-parse",
@@ -267,7 +269,7 @@
       "properties": {
         "text": "t"
       },
-      "where": "assignment, return or chain head"
+      "where": "assignment, return, chain head, if condition"
     },
     {
       "id": "json-stringify",
@@ -277,7 +279,7 @@
         "value": "v",
         "pretty": "true with (null, 2)"
       },
-      "where": "assignment, return or chain head"
+      "where": "assignment, return, chain head, if condition"
     },
     {
       "id": "default",
@@ -289,7 +291,7 @@
       "id": "call-fallback",
       "construct": "flow.while({…}) | flow.forEach({…}) | flow.if({…}) | flow.try({…})",
       "block": "while | forEach | if | try",
-      "where": "properties beyond the JavaScript form; slots keep $$ keys"
+      "where": "properties beyond the JavaScript form; slots keep $$ keys, each written $$s() { … }, $$s: function () { … } or $$s: () => { … } without parameter; declared, assigned or returned, the call writes its output with $$out"
     },
     {
       "id": "label",
@@ -400,12 +402,12 @@
     },
     {
       "code": "FLOWSCRIPT_V3_FUNCTION",
-      "construct": "a function other than a top-level helper, a list arrow or a slot: nested, in an expression, a closure",
-      "rewrite": "inline, a top-level helper, or a project block"
+      "construct": "a function other than a top-level helper, a list arrow or a slot: nested, in an expression, a closure; a slot arrow with an expression body, a slot with a parameter",
+      "rewrite": "inline, a top-level helper, or a project block; a slot: $$s() { … }, $$s: function () { … } or $$s: () => { … }"
     },
     {
       "code": "FLOWSCRIPT_V3_CHAIN",
-      "construct": "a block method in a branch of ?: inside a larger expression, in a branch of && || ??, in the test of ?:, in an expression function argument, or after a scope read of the statement",
+      "construct": "a block method in a branch of ?: inside a larger expression, in a branch of && || ??, in the test of ?:, in an expression function argument, or after a scope read of the statement; a list method or global call in a while condition (proposal: a let computed before the loop and at the end of the body)",
       "rewrite": "two const"
     },
     {
@@ -431,7 +433,7 @@
     },
     {
       "code": "FLOWSCRIPT_V3_UNSUPPORTED",
-      "construct": "async, await, generators, classes, this, new, const without a value",
+      "construct": "async, await, generators, classes, this, new, const without a value, o.f++ on a field of a loop item or of input",
       "rewrite": "blocks"
     },
     {
