@@ -4439,8 +4439,7 @@
 		return loadEngineModule("flowscript-v3-renderer.js");
 	}
 
-	// The reading a v3 rendering is checked against: the reader of the code tools, today the prototype bridge
-	// followed by the v2 parser. The Java reader replaces it here, and only here.
+	// The rendering guard reads v3 through the same Java reader used by the code tools.
 	function readFlowScriptV3Definition(blocks, code) {
 		return stripFlowScriptMetadata(parseFlowScript(blocks, code));
 	}

@@ -3547,9 +3547,17 @@
 				if (options && options.sourceVersion !== undefined && options.sourceVersion !== 3) {
 					env.raise("FLOW_SOURCE_VERSION_CONFLICT", "The source header conflicts with the block sourceVersion.");
 				}
-				var translated = env.v3Prototype().translate(submittedCode);
-				if (translated.diagnostics.length) {
-					var diagnostic = translated.diagnostics[0], refusal = new Error(diagnostic.message);
+				var reader = JSON.parse(String(Packages.com.convertigo.libflowengine.FlowScriptV3Reader.read(submittedCode, function (name) {
+					var descriptor = env.blockCatalog(blocks && blocks[String(name)]) || {};
+					var props = {};
+					Object.keys(descriptor.props || {}).forEach(function (key) {
+						var prop = descriptor.props[key] || {};
+						props[key] = { kind: prop.kind, type: prop.type };
+					});
+					return JSON.stringify({ props: props });
+				})));
+				if (reader.diagnostics && reader.diagnostics.length) {
+					var diagnostic = reader.diagnostics[0], refusal = new Error(diagnostic.message);
 					refusal.code = diagnostic.code;
 					refusal.line = diagnostic.line;
 					refusal.hint = diagnostic.hint;
@@ -3557,38 +3565,7 @@
 					refusal.details = [diagnostic];
 					throw refusal;
 				}
-				var parsed;
-				try { parsed = parseFlowScript(blocks, translated.code, { sourceVersion: 2 }); }
-				catch (error) {
-					function remapError(value) {
-						if (!value || typeof value !== "object") return;
-						if (Array.isArray(value)) { value.forEach(remapError); return; }
-						if (Number(value.line) > 0) value.line = translated.lineMap[Number(value.line) - 1] || value.line;
-						Object.keys(value).forEach(function (key) { if (key !== "line" && value[key] && typeof value[key] === "object") remapError(value[key]); });
-					}
-					remapError(error.details);
-					remapError(error.diagnostics);
-					var v2Line = Number(error.line || 0);
-					if (!v2Line) { var match = /\bline\s+(\d+)\b/.exec(String(error.message)); if (match) v2Line = Number(match[1]); }
-					if (v2Line && translated.lineMap[v2Line - 1]) {
-						error.line = translated.lineMap[v2Line - 1];
-						error.message = String(error.message).replace(/\bline\s+\d+\b/, "line " + error.line);
-					}
-					throw error;
-				}
-				function remap(value) {
-					if (!value || typeof value !== "object") return;
-					if (value.__flowScriptLine) value.__flowScriptLine = translated.lineMap[value.__flowScriptLine - 1] || value.__flowScriptLine;
-					Object.keys(value).forEach(function (key) {
-						if (key !== "props" && key !== "flow" && key !== "__flowScriptLine" && key !== "__flowScriptCode" && key !== "__flowScriptBody") {
-							if (Array.isArray(value[key])) value[key].forEach(remap);
-							else if (value[key] && typeof value[key] === "object") remap(value[key]);
-						}
-					});
-				}
-				remap(parsed);
-				parsed.flow = Object.assign({}, parsed.flow || {}, flowMeta, { sourceVersion: 3 });
-				return parsed;
+				return env.canonicalFlowDefinition(reader.definition);
 			}
 			if (options && options.sourceVersion !== undefined) {
 				if (flowMeta.sourceVersion !== undefined && flowMeta.sourceVersion !== options.sourceVersion) {

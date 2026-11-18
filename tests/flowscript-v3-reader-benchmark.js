@@ -1,0 +1,20 @@
+var engineDir = new java.io.File(arguments.length ? arguments[0] : '_flow').getCanonicalFile();
+var __flowEngineDir = String(engineDir.getAbsolutePath());
+var __flowProjectDir = String(java.nio.file.Files.createTempDirectory('flow-v3-benchmark-').toFile().getAbsolutePath());
+var files = Packages.org.apache.commons.io.FileUtils;
+var engine = eval(String(files.readFileToString(new java.io.File(engineDir, 'Engine.js'), 'UTF-8')));
+var bridge = eval(String(files.readFileToString(new java.io.File(engineDir, 'modules/flowscript-v3-prototype.js'), 'UTF-8')));
+var Reader = Packages.com.convertigo.libflowengine.FlowScriptV3Reader;
+var clock = Packages.java.lang.System;
+var lines = ['const _flow = { sourceVersion: 3 }', 'function Example({ input, config, result }) {'];
+for (var i=0; i<2797; i++) lines.push('  result.item' + i + ' = input.value');
+lines.push('}');
+var source = lines.join('\n');
+if (lines.length !== 2800) throw new Error('Expected 2800 lines');
+function time(action) { var start=clock.nanoTime(); var value=action(); return {ms:Number(clock.nanoTime()-start)/1000000,value:value}; }
+var direct=time(function(){return JSON.parse(String(Reader.read(source,null)));});
+if (direct.value.diagnostics.length || direct.value.definition.nodes.length !== 2797) throw new Error('Java reader failed');
+var warm=[]; for(var repeat=0; repeat<5; repeat++) warm.push(time(function(){return JSON.parse(String(Reader.read(source,null)));}).ms); warm.sort(function(a,b){return a-b});
+var oracle=time(function(){ var translated=bridge.translate(source); if(translated.diagnostics.length) throw new Error('Bridge refused'); return JSON.parse(String(engine.flowSourceValidate(JSON.stringify({name:'Example',code:translated.code,skipAnalysis:true})))); });
+if (!oracle.value.ok || oracle.value.definition.nodes.length !== 2797) throw new Error('Bridge plus v2 reader failed');
+print('v3-reader-benchmark ' + JSON.stringify({lines:lines.length,javaColdMs:direct.ms,javaWarmMedianMs:warm[2],bridgeV2Ms:oracle.ms,ratio:oracle.ms/warm[2]}));
