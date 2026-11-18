@@ -97,7 +97,7 @@
       "id": "for-of",
       "construct": "for (const item of items) {…}",
       "block": "forEach",
-      "lowering": "item read as current in its own body; one level of object destructuring"
+      "lowering": "item read as current in its own body; when a nested construct rebinds current and reads the outer item, copy it to local.item at the start of the outer body; one-level destructured fields are copied from current.field"
     },
     {
       "id": "for-counted",
@@ -189,11 +189,11 @@
     },
     {
       "id": "list-sort",
-      "construct": "xs.toSorted((a, b) => a.k - b.k) | xs.toSorted((a, b) => a.k.localeCompare(b.k)) | [...xs].sort(…)",
+      "construct": "xs.toSorted((a, b) => a.k - b.k) | xs.toSorted((a, b) => a - b) | localeCompare on matching item keys or the items themselves | [...xs].sort(…)",
       "block": "list.sort",
       "properties": {
         "items": "xs",
-        "by": "current.k",
+        "by": "current.k for a key comparator; omitted for an identity comparator (the block uses current)",
         "compare": "number (a - b) | locale (localeCompare)",
         "direction": "desc when b comes first"
       },
@@ -360,11 +360,6 @@
       "code": "FLOWSCRIPT_V3_RETURN_IN_LOOP",
       "construct": "return inside a loop",
       "rewrite": "continue, or a local and a return after the loop"
-    },
-    {
-      "code": "FLOWSCRIPT_V3_OUTER_LOOP_VARIABLE",
-      "construct": "an inner loop reads the variable of an outer loop",
-      "rewrite": "const copy = item at the top of the outer body"
     },
     {
       "code": "FLOWSCRIPT_V3_FOR_FORM",

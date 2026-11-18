@@ -351,30 +351,34 @@
 	// including paths such as fixtures/input.csv, is never an input access.
 	function inputVariablesFromDefinition(blocks, definition, env) {
 		var variables = {};
-		function expression(text) {
+		function expression(text, helperParams) {
 			try {
 				(env.inputExpressionTokens(String(text)) || []).forEach(function (token) {
 					if (token.type !== "id") return;
 					var match = /^input\.([A-Za-z_$][\w$]*)/.exec(String(token.value));
-					if (match) variables[match[1]] = true;
+					if (match && !(helperParams && helperParams[match[1]])) variables[match[1]] = true;
 				});
 			} catch (_invalidExpressionAlreadyDiagnosed) {}
 		}
-		function value(any, raw) {
+		function value(any, raw, helperParams) {
 			if (typeof any === "string") {
-				if (raw) expression(any);
-				else templateExpressions(any, env).forEach(expression);
-			} else if (Array.isArray(any)) any.forEach(function (item) { value(item, false); });
-			else if (any && typeof any === "object") Object.keys(any).forEach(function (key) { value(any[key], false); });
+				if (raw) expression(any, helperParams);
+				else templateExpressions(any, env).forEach(function (part) { expression(part, helperParams); });
+			} else if (Array.isArray(any)) any.forEach(function (item) { value(item, false, helperParams); });
+			else if (any && typeof any === "object") Object.keys(any).forEach(function (key) { value(any[key], false, helperParams); });
 		}
-		function walk(nodes) {
+		function walk(nodes, helperParams) {
 			(nodes || []).forEach(function (node) {
 				var name = env.blockName(node), descriptor = blocks[name] && env.blockCatalog(blocks[name]) || {}, props = descriptor.props || {};
-				Object.keys(node.props || {}).forEach(function (key) { value(node.props[key], props[key] && props[key].kind === "expression"); });
-				["nodes", "then", "else", "fields"].forEach(function (slot) { if (Array.isArray(node[slot])) walk(node[slot]); });
+				Object.keys(node.props || {}).forEach(function (key) { value(node.props[key], props[key] && props[key].kind === "expression", helperParams); });
+				["nodes", "then", "else", "fields"].forEach(function (slot) { if (Array.isArray(node[slot])) walk(node[slot], helperParams); });
 			});
 		}
-		(definition.helpers || []).forEach(function (helper) { walk(helper.nodes); });
+		(definition.helpers || []).forEach(function (helper) {
+			var params = Object.create(null);
+			(helper.params || []).forEach(function (name) { params[name] = true; });
+			walk(helper.nodes, params);
+		});
 		walk(definition.nodes);
 		return Object.keys(variables).sort();
 	}

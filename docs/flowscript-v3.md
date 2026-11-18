@@ -147,8 +147,10 @@ function OpenLabels({ input, config, result }) {
 }
 ```
 
-**Nested loops.** A loop variable is read in its own body. An inner loop does not read the variable of an outer
-loop (`FLOWSCRIPT_V3_OUTER_LOOP_VARIABLE`): copy it first, `const order = item` at the top of the outer body.
+**Nested loops.** Locals declared in a loop body remain available in nested loops. When an inner `for…of`, a list
+method arrow, or a `flow.forEach`/`list.*` call rebinds `current` and reads the outer `for…of` item, the bridge
+automatically copies that item to `local.<name>` at the start of the outer body. Destructured fields are already
+copied from `current.<field>` there. Other reads of the item continue to use `current`.
 
 ## 6. Expressions
 
@@ -187,6 +189,8 @@ function Active({ input, config, result }) {
 | `xs.some(x => c)`, `xs.every(x => c)` | `list.some`, `list.every` |
 | `xs.toSorted((a, b) => a.k - b.k)`, `[...xs].sort(…)` | `list.sort({ items: xs, by: current.k, compare: "number" })`; `b.k - a.k` adds `direction: "desc"` |
 | `xs.toSorted((a, b) => a.k.localeCompare(b.k))` | `list.sort({ items: xs, by: current.k, compare: "locale" })`; `b.k.localeCompare(a.k)` adds `direction: "desc"` |
+| `xs.toSorted((a, b) => a - b)` | `list.sort({ items: xs, compare: "number" })`; `b - a` adds `direction: "desc"` |
+| `xs.toSorted((a, b) => a.localeCompare(b))`, also with `String(a)` and `String(b)` | `list.sort({ items: xs, compare: "locale" })`; reversed operands add `direction: "desc"` |
 | `includes`, `slice`, `join`, `concat`, `at`, `indexOf`, `length` | expression methods, no block |
 
 - The function is an arrow with one parameter and an expression body without block call. `function (x) { return e }`

@@ -7,12 +7,12 @@ var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Eng
 function api(name, request) { return JSON.parse(String(engine[name](JSON.stringify(request)))); }
 function check(ok, message) { if (!ok) throw new Error(message); }
 function source(body) { return 'const _flow = { sourceVersion: 3 }\nfunction Example({ input, config, result }) {\n' + body + '\n}'; }
-function runs(label, body, expected) {
+function runs(label, body, expected, input) {
 	var code = source(body), translated = bridge.translate(code);
 	check(!translated.diagnostics.length, label + ' bridge: ' + JSON.stringify(translated));
 	var validation = api('flowSourceValidate', { name: 'Example', code: code });
 	check(validation.ok, label + ' validation: ' + JSON.stringify(validation).substring(0, 1200) + '\n' + translated.code);
-	var result = api('flowCodeRun', { name: 'Example', code: code, input: { items: [1, 2, 3] }, includeTrace: false });
+	var result = api('flowCodeRun', { name: 'Example', code: code, input: input || { items: [1, 2, 3] }, includeTrace: false });
 	check(result.ok, label + ' run: ' + JSON.stringify(result).substring(0, 1200));
 	check(JSON.stringify(result.result) === JSON.stringify(expected), label + ' result: ' + JSON.stringify(result.result) + '\n' + translated.code);
 }
@@ -20,6 +20,8 @@ function refuses(label, body, code, line) {
 	var result = bridge.translate(source(body));
 	check(result.diagnostics.length && result.diagnostics[0].code === code && result.diagnostics[0].line === line,
 		label + ': ' + JSON.stringify(result));
+	check(result.diagnostics[0].message.indexOf(code + ' at line') !== 0 && result.diagnostics[0].hint,
+		label + ' needs a readable rule and replacement: ' + JSON.stringify(result.diagnostics[0]));
 }
 runs('simple', '  let total = 0\n  total += 2\n  return { total }', { total: 2 });
 runs('if', '  const value = input.items.length\n  if (value > 2) {\n    return { value }\n  }\n  return { value: 0 }', { value: 3 });
@@ -71,13 +73,21 @@ refuses('error code', '  throw new Error("failed")', 'FLOWSCRIPT_V3_ERROR_CODE_C
 refuses('object condition', '  if ({ x: 1 }) { result.x = 1 }', 'FLOWSCRIPT_V3_OBJECT_CONDITION', 3);
 refuses('local alias', '  let x = 1\n  local.x = 2', 'FLOWSCRIPT_V3_LOCAL_ALIAS', 4);
 refuses('block name', '  let text = 1\n  text.trim({ text: "a" })', 'FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK', 3);
-refuses('outer loop', '  for (const x of input.items) {\n    for (const y of input.items) { result.x = x }\n  }', 'FLOWSCRIPT_V3_OUTER_LOOP_VARIABLE', 4);
+runs('nested for-of captures outer item', '  let total = 0\n  for (const x of input.items) {\n    for (const y of input.items) { total += x * y }\n  }\n  return { total }', { total: 36 });
+runs('filter arrow captures outer item', '  let total = 0\n  for (const x of input.items) {\n    const greater = input.items.filter(y => y > x)\n    total += greater.length\n  }\n  return { total }', { total: 3 });
+runs('flow.forEach captures outer item', '  let total = 0\n  for (const x of input.items) {\n    flow.forEach({ items: input.items, $$nodes() { total += x * current } })\n  }\n  return { total }', { total: 36 });
+runs('list block captures outer item', '  let total = 0\n  for (const x of input.items) {\n    const greater = list.filter({ items: input.items, where: current > x })\n    total += greater.length\n  }\n  return { total }', { total: 3 });
+runs('destructured outer item', '  let total = 0\n  for (const { id, lines } of input.orders) {\n    for (const line of lines) { total += id * line }\n  }\n  return { total }', { total: 17 }, { orders: [{ id: 2, lines: [3, 4] }, { id: 3, lines: [1] }] });
+runs('counted local in while', '  let total = 0\n  for (let i = 1; i < 4; i++) {\n    const candidate = i\n    let done = false\n    while (done == false) { total += candidate; done = true }\n  }\n  return { total }', { total: 6 });
 refuses('chain branch', '  const x = input.items.filter(item => item > 1) + 1', 'FLOWSCRIPT_V3_CHAIN', 3);
 refuses('compound expression', '  let x = 1\n  const y = x++', 'FLOWSCRIPT_V3_COMPOUND_CONTEXT', 4);
 refuses('destructuring default', '  const { x = 1 } = input.items', 'FLOWSCRIPT_V3_DESTRUCTURING', 3);
 refuses('import syntax', '  import { trim } from "text"', 'FLOWSCRIPT_V3_IMPORT_SYNTAX', 3);
 refuses('function', '  const f = x => x', 'FLOWSCRIPT_V3_FUNCTION', 3);
 refuses('list method', '  const x = input.items.reduce((a, b) => a + b, 0)', 'FLOWSCRIPT_V3_LIST_METHOD', 3);
+var inplaceSort = bridge.translate(source('  const sorted = input.items.sort((a, b) => a - b)'));
+check(inplaceSort.diagnostics.length && /sorts in place/.test(inplaceSort.diagnostics[0].message) && /toSorted/.test(inplaceSort.diagnostics[0].hint),
+	'in-place sort message names rule and replacement: ' + JSON.stringify(inplaceSort.diagnostics));
 refuses('unsupported', '  result.x = this', 'FLOWSCRIPT_V3_UNSUPPORTED', 3);
 runs('block comment', '  /* keep me */ result.x = 1', { x: 1 });
 var commentsCode = source('  /* attached\n   * second line */\n  result.x = 1\n\n  /* standalone */\n\n  result.y = 2');
@@ -95,6 +105,9 @@ var helperTranslation = bridge.translate(helperCode);
 check(!helperTranslation.diagnostics.length, 'helper translation: ' + JSON.stringify(helperTranslation));
 var helperRun = api('flowCodeRun', { name: 'Example', code: helperCode, input: { items: [1, 2, 3] }, includeTrace: false });
 check(helperRun.ok && JSON.stringify(helperRun.result) === JSON.stringify({ sum: 6 }), 'helper run: ' + JSON.stringify(helperRun).substring(0, 1100) + '\n' + helperTranslation.code);
+var helperValidation = api('flowSourceValidate', { name: 'Example', code: helperCode });
+check(!(helperValidation.diagnostics || []).some(function (diagnostic) { return diagnostic.code === 'FLOWSCRIPT_INPUT_NOT_DECLARED' && (diagnostic.missingInputs || []).indexOf('rows') >= 0; }),
+	'helper parameter is not a Flow input: ' + JSON.stringify(helperValidation).substring(0, 1000));
 refuses('nested helper', '  function inner({ rows }) { return rows }', 'FLOWSCRIPT_V3_FUNCTION', 3);
 function nodeSorted(items, comparator) {
 	var script = 'const xs = JSON.parse(process.argv[1]); process.stdout.write(JSON.stringify(xs.toSorted(' + comparator + ')))';
@@ -126,6 +139,37 @@ var textRows = [{ id: 'a', k: 'Éclair' }, { id: 'b', k: 'eclair' }, { id: 'c', 
 sortParity('locale ascending', textRows, '(a, b) => a.k.localeCompare(b.k)', false);
 sortParity('locale descending', textRows, '(a, b) => b.k.localeCompare(a.k)', false);
 sortParity('locale absent key', textRows.concat([{ id: 'e' }]), '(a, b) => String(a.k).localeCompare(String(b.k))', false);
+sortParity('identity numeric ascending', [10, 2, 1, 2], '(a, b) => a - b', false);
+sortParity('identity numeric descending', [10, 2, 1, 2], '(a, b) => b - a', false);
+sortParity('identity locale ascending', ['Éclair', 'Banane', 'banane'], '(a, b) => a.localeCompare(b)', false);
+sortParity('identity locale descending', ['Éclair', 'Banane', 'banane'], '(a, b) => b.localeCompare(a)', false);
+sortParity('identity String locale ascending', ['Éclair', 'Banane', 'banane'], '(a, b) => String(a).localeCompare(String(b))', false);
+sortParity('identity String locale descending', ['Éclair', 'Banane', 'banane'], '(a, b) => String(b).localeCompare(String(a))', false);
+var identityTranslation = bridge.translate(source('  const sorted = input.items.toSorted((a, b) => a - b)\n  return { sorted }'));
+check(/list\.sort\(\{ items: input\.items, compare: "number"/.test(identityTranslation.code) && identityTranslation.code.indexOf('by:') < 0,
+	'identity comparator omits by: ' + identityTranslation.code);
+var sampleCases = [
+	{ file: 'primes-nested-loop.flow.js', name: 'primes', input: { n: '10' }, expected: { primes: [2, 3, 5, 7], count: 4 } },
+	{ file: 'primes-helper.flow.js', name: 'primes', input: { n: '10' }, expected: { primes: [2, 3, 5, 7], count: 4 } },
+	{ file: 'stats-sort.flow.js', name: 'stats', input: { values: '3,1,4,2' }, expected: { count: 4, min: 1, max: 4, mean: 2.5, median: 2.5 } }
+];
+sampleCases.forEach(function (sample) {
+	var code = String(files.readFileToString(new java.io.File(engineDir, '../../samples-m1/' + sample.file), 'UTF-8'));
+	var lowered = bridge.translate(code);
+	check(!lowered.diagnostics.length, sample.file + ' translation: ' + JSON.stringify(lowered));
+	var result = api('flowCodeRun', { name: sample.name, code: code, input: sample.input, includeTrace: false });
+	check(result.ok && JSON.stringify(result.result) === JSON.stringify(sample.expected), sample.file + ' run: ' + JSON.stringify(result).substring(0, 1200) + '\n' + lowered.code);
+	if (sample.file === 'primes-helper.flow.js') {
+		var validation = api('flowSourceValidate', { name: sample.name, code: code });
+		check(!(validation.diagnostics || []).some(function (diagnostic) { return diagnostic.code === 'FLOWSCRIPT_INPUT_NOT_DECLARED' && (diagnostic.missingInputs || []).indexOf('value') >= 0; }),
+			'helper value is not an undeclared Flow input: ' + JSON.stringify(validation).substring(0, 1000));
+	}
+	if (sample.file === 'primes-nested-loop.flow.js') {
+		var refused = api('flowCodeSet', { name: sample.name, code: code.replace('divisor++', 'break') });
+		check(!refused.ok && refused.error.code === 'FLOWSCRIPT_V3_BREAK' && !refused.proposedPatch,
+			'v3 refusal has no v2 patch: ' + JSON.stringify(refused).substring(0, 1100));
+	}
+});
 var rejectedWrite = api('flowCodeSet', { name: 'BadExample', code: source('  while (true) {\n    break\n  }') });
 check(!rejectedWrite.ok && rejectedWrite.error.code === 'FLOWSCRIPT_V3_BREAK' && rejectedWrite.error.details.diagnostics[0].line === 4,
 	'refus API avec ligne v3: ' + JSON.stringify(rejectedWrite).substring(0, 900));

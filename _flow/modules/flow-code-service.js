@@ -297,12 +297,18 @@
 	}
 
 	function flowCodeCorrect(blocks, request, code) {
+		if (isV3Source(code)) return { code: code, fixes: [] };
 		try {
 			return env.flowScriptCorrectSource ? env.flowScriptCorrectSource(blocks, code, request) : { code: code, fixes: [] };
 		} catch (error) {
 			return { code: code, fixes: [], error: flowCodeError(String(error.code || "FLOWSCRIPT_PARSE_FAILED"),
 				String(error.message || error), error.hint || "Fix the source and retry.", flowCodeExceptionDetails(error, request)) };
 		}
+	}
+
+	function isV3Source(code) {
+		try { return !!(env.flowScriptHeader && env.flowScriptHeader(code).sourceVersion === 3); }
+		catch (_invalidSource) { return /\bconst\s+_flow\s*=\s*\{[^}]*\bsourceVersion\s*:\s*3\b/.test(String(code)); }
 	}
 
 	function flowCodeCorrections(out, corrected) {
@@ -328,6 +334,7 @@
 	// The edits left for the code the agent patches next (the working copy written, or the code checked), ready to
 	// pass unchanged to code-patch with revision; null when the resolver has nothing to say
 	function flowCodeProposal(blocks, request, code, revision) {
+		if (isV3Source(code)) return null;
 		if (!flowScriptIntuitiveResolve) {
 			return null;
 		}
@@ -400,6 +407,7 @@
 	}
 
 	function flowCodeIntuitiveReport(out, auto, proposal, code) {
+		if (isV3Source(code)) return out;
 		if (auto && auto.edits.length) {
 			out.autoCorrected = { threshold: auto.threshold, edits: auto.edits };
 			out.code = code;

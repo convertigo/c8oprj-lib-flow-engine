@@ -4,9 +4,19 @@
 	function translate(input) {
 		var source = String(input || ""), prepared = source, lines = [], lineMap = [], diagnostics = [];
 		function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
-		function pos(node) { return Number(node.getAbsolutePosition()); }
+		function pos(node) {
+			var at = Number(node.getAbsolutePosition());
+			if (kind(node) === "UnaryExpression") {
+				var operator = String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(node.getOperator()));
+				var before = source.substring(Math.max(0, at - operator.length - 3), at);
+				var match = new RegExp(operator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$").exec(before);
+				if (match) return at - match[0].length;
+			}
+			if (kind(node) === "InfixExpression" && node.getLeft && node.getLeft()) return Math.min(at, pos(node.getLeft()));
+			return at;
+		}
 		function end(node) {
-			var finish = pos(node) + Number(node.getLength());
+			var finish = Number(node.getAbsolutePosition()) + Number(node.getLength());
 			if (kind(node) === "InfixExpression" && node.getRight && node.getRight()) {
 				var rightEnd = end(node.getRight());
 				if (finish > rightEnd && /^[\s)\]}]+$/.test(source.substring(rightEnd, finish))) return rightEnd;
@@ -37,9 +47,39 @@
 		}
 		function reject(code, node, proposal) {
 			var at = typeof node === "number" ? node : pos(node);
-			var message = code + " at line " + line(at) + ".";
-			var diagnostic = { severity: "error", code: code, line: line(at), message: message,
-				hint: proposal, proposedPatch: proposal };
+			var rules = {
+				FLOWSCRIPT_V3_IMPORT_SYNTAX: "JavaScript import declarations are unavailable in FlowScript v3",
+				FLOWSCRIPT_V3_RESERVED_NAME: "This name is reserved for a Flow scope or the bridge",
+				FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK: "This local name hides a block namespace",
+				FLOWSCRIPT_V3_LOCAL_ALIAS: "A local cannot be written both by its declared name and by local.*",
+				FLOWSCRIPT_V3_OUT_OF_SCOPE: "A local can only be read inside its declaring block",
+				FLOWSCRIPT_V3_SHADOWING: "A local or import cannot be declared again in a nested scope",
+				FLOWSCRIPT_V3_CONST_ASSIGN: "A const binding cannot be reassigned",
+				FLOWSCRIPT_V3_DESTRUCTURING: "Only one-level object patterns without defaults or rest are supported",
+				FLOWSCRIPT_V3_COMPOUND_CONTEXT: "Assignments and updates must be standalone statements",
+				FLOWSCRIPT_V3_RESULT_MIXED: "A Flow must use either result fields or return an object consistently",
+				FLOWSCRIPT_V3_BREAK: "break has no equivalent in a Flow loop body",
+				FLOWSCRIPT_V3_FINALLY: "finally has no equivalent in a Flow try block",
+				FLOWSCRIPT_V3_RETURN_IN_LOOP: "return inside a loop would leave the Flow rather than the iteration",
+				FLOWSCRIPT_V3_FOR_FORM: "Only for (let i = start; i < end; i++) can be lowered as a counted loop",
+				FLOWSCRIPT_V3_SWITCH_FALLTHROUGH: "Flow switch cases must be literal, terminate explicitly, and put default last",
+				FLOWSCRIPT_V3_LOOP_FORM: "This loop form cannot be lowered to a Flow loop",
+				FLOWSCRIPT_V3_FUNCTION: "Only top-level helpers, list arrows, and slot functions are supported",
+				FLOWSCRIPT_V3_CHAIN: "A list operation in this expression cannot be lowered in its JavaScript evaluation order",
+				FLOWSCRIPT_V3_LIST_METHOD: "This list method or comparator cannot be lowered with the same JavaScript meaning",
+				FLOWSCRIPT_V3_UNTYPED_LIST: "An empty list must declare its item type before push",
+				FLOWSCRIPT_V3_GLOBAL_CALL: "This global call cannot be lowered in this expression or with these arguments",
+				FLOWSCRIPT_V3_ERROR_CODE_CHOICE: "throw new Error lacks the literal public error code required by Flow",
+				FLOWSCRIPT_V3_UNSUPPORTED: "This JavaScript construct is outside the FlowScript v3 subset",
+				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition",
+				FLOWSCRIPT_V3_PROTOTYPE_RETHROW: "Rethrowing a caught value has no faithful prototype lowering"
+			};
+			var message = (rules[code] || "This FlowScript v3 construct cannot be lowered faithfully") + " (" + code + " at line " + line(at) + ").";
+			if (code === "FLOWSCRIPT_V3_LIST_METHOD" && kind(node) === "FunctionCall" && method(node) === "sort" && !/^\s*\[/.test(raw(node.getTarget()).replace(/\.sort$/, ""))) {
+				message = "xs.sort(…) sorts in place and is refused (" + code + " at line " + line(at) + ").";
+				proposal = "Write xs.toSorted((a, b) => …).";
+			}
+			var diagnostic = { severity: "error", code: code, line: line(at), message: message, hint: proposal };
 			diagnostics.push(diagnostic);
 			throw diagnostic;
 		}
@@ -125,7 +165,6 @@
 					if (kind(parent) === "ObjectProperty" && parent.getKey() === part && raw(parent).trim() !== name) return true;
 					var binding = lookup(name, current);
 					if (!binding) { if (allNames[name] && !imports[name]) reject("FLOWSCRIPT_V3_OUT_OF_SCOPE", part, "Declare the name in the enclosing block."); return true; }
-					if (binding.loopDepth > 0 && binding.loopDepth < loopDepth) reject("FLOWSCRIPT_V3_OUTER_LOOP_VARIABLE", part, "Copy the outer item at the top of its loop body.");
 					var replacement = binding.mapped;
 					if (kind(parent) === "ObjectProperty" && raw(parent).trim() === name) replacement = name + ": " + replacement;
 					edits.push({ at: pos(part), to: end(part), value: replacement });
@@ -147,6 +186,25 @@
 		}
 		function method(call) {
 			var target = call.getTarget(); return kind(target) === "PropertyGet" ? String(target.getProperty().getIdentifier()) : "";
+		}
+		function needsOuterItemCopy(loop, name) {
+			var needed = false;
+			visit(loop.getBody(), function (part) {
+				if (kind(part) !== "Name" || String(part.getIdentifier()) !== name) return true;
+				var parent = part.getParent();
+				if (kind(parent) === "PropertyGet" && parent.getProperty() === part) return true;
+				if (kind(parent) === "ObjectProperty" && parent.getKey() === part && raw(parent).trim() !== name) return true;
+				for (var enclosing = parent; enclosing && enclosing !== loop; enclosing = enclosing.getParent()) {
+					if (kind(enclosing) === "ForInLoop" && enclosing.isForOf() && pos(part) >= pos(enclosing.getBody())) { needed = true; break; }
+					if (kind(enclosing) === "FunctionNode") {
+						var call = enclosing.getParent();
+						if (kind(call) === "FunctionCall" && ["filter", "map", "find", "some", "every"].indexOf(method(call)) >= 0) { needed = true; break; }
+					}
+					if (kind(enclosing) === "FunctionCall" && /^(?:flow\.forEach|list\.)/.test(raw(enclosing.getTarget()).replace(/\s/g, "")) && /\bcurrent\b/.test(raw(enclosing))) { needed = true; break; }
+				}
+				return !needed;
+			});
+			return needed;
 		}
 		function argument(call) { return array(call.getArguments()); }
 		function value(node, current) {
@@ -191,12 +249,14 @@
 				}
 				else if (kind(sortBody) === "InfixExpression" && String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(sortBody.getOperator())) === "-") { l = sortBody.getLeft(); r = sortBody.getRight(); }
 				else reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the same item key with subtraction or localeCompare.");
-				if (kind(l) !== "PropertyGet" || kind(r) !== "PropertyGet" || kind(l.getTarget()) !== "Name" || kind(r.getTarget()) !== "Name" || String(l.getProperty().getIdentifier()) !== String(r.getProperty().getIdentifier())) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the same item key.");
-				var leftName = String(l.getTarget().getIdentifier()), rightName = String(r.getTarget().getIdentifier());
+				var identity = kind(l) === "Name" && kind(r) === "Name";
+				var keyed = kind(l) === "PropertyGet" && kind(r) === "PropertyGet" && kind(l.getTarget()) === "Name" && kind(r.getTarget()) === "Name" && String(l.getProperty().getIdentifier()) === String(r.getProperty().getIdentifier());
+				if (!identity && !keyed) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the same item or item key.");
+				var leftName = String(identity ? l.getIdentifier() : l.getTarget().getIdentifier()), rightName = String(identity ? r.getIdentifier() : r.getTarget().getIdentifier());
 				var direction = leftName === first && rightName === second ? "asc" : leftName === second && rightName === first ? "desc" : "";
 				if (!direction) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the two callback parameters.");
 				var sortTemp = "local.__chain" + (++chain), sortBefore = prefix.before.slice();
-				sortBefore.push(sortTemp + " = list.sort({ items: " + prefix.expression + ", by: current." + String(l.getProperty().getIdentifier()) + ", compare: \"" + (locale ? "locale" : "number") + "\", direction: \"" + direction + "\" })");
+				sortBefore.push(sortTemp + " = list.sort({ items: " + prefix.expression + (keyed ? ", by: current." + String(l.getProperty().getIdentifier()) : "") + ", compare: \"" + (locale ? "locale" : "number") + "\", direction: \"" + direction + "\" })");
 				return { before: sortBefore, expression: sortTemp };
 			}
 			var globalName = receiver && kind(receiver) === "Name" ? String(receiver.getIdentifier()) + "." + name : "";
@@ -347,8 +407,10 @@
 				if (kind(targetPattern) === "Name") {
 					var item = String(targetPattern.getIdentifier()), itemBinding = declare(item, "const", targetPattern, loopScope, "current");
 					itemBinding.loopDepth = loopDepth + 1;
+					if (needsOuterItemCopy(node, item)) itemBinding.mapped = "local." + item;
 				}
 				emit("forEach({ items: " + rewritten(node.getIteratedObject(), current) + ", $$nodes() {", origin);
+				if (kind(targetPattern) === "Name" && itemBinding.mapped !== "current") emit(itemBinding.mapped + " = current", origin);
 				if (kind(targetPattern) === "ObjectLiteral") array(targetPattern.getElements()).forEach(function (field) {
 					if (kind(field) !== "ObjectProperty" || kind(field.getKey()) !== "Name" || kind(field.getValue()) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Use one-level fields without defaults or rest.");
 					var key = String(field.getKey().getIdentifier()), alias = String(field.getValue().getIdentifier());
@@ -482,7 +544,7 @@
 		} catch (error) {
 			if (!error || !error.code) {
 				var unexpected = { severity: "error", code: "FLOWSCRIPT_V3_UNSUPPORTED", line: 1,
-					message: "The prototype cannot safely translate this source: " + String(error), hint: "Rewrite as explicit Flow block calls.", proposedPatch: "Rewrite as explicit Flow block calls." };
+					message: "This JavaScript construct cannot be translated faithfully (FLOWSCRIPT_V3_UNSUPPORTED at line 1): " + String(error), hint: "Rewrite as explicit Flow block calls." };
 				diagnostics.push(unexpected);
 			}
 		}
