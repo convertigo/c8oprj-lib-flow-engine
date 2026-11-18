@@ -178,10 +178,12 @@ check(lineWitness.code.split('\n').length === lineWitness.lineMap.length &&
 	lineWitness.lineMap[lineWitness.code.split('\n').findIndex(function (line) { return line.indexOf('local.n = Number(local.n) + 1') === 0; })] === 4,
 	'correspondance des lignes: ' + JSON.stringify(lineWitness));
 var renderer = eval(String(files.readFileToString(new java.io.File(engineDir, 'modules/flow-script-renderer-service.js'), 'UTF-8')));
-var renderError = null;
-try { renderer.renderFlowScript({}, 'Example', '{}', {}, { parseSource: function () { return { flow: { sourceVersion: 3 } }; } }); }
+var renderError = null, v3Tree = function () { return { flow: { sourceVersion: 3 } }; };
+check(renderer.renderFlowScript({}, 'Example', '{}', {}, { parseSource: v3Tree, renderFlowScriptV3: function () { return { ok: true, code: 'v3 text' }; } }) === 'v3 text',
+	'rendu v3 de l’arbre v3');
+try { renderer.renderFlowScript({}, 'Example', '{}', {}, { parseSource: v3Tree, renderFlowScriptV3: function () { return { ok: false, reason: 'differs' }; } }); }
 catch (error) { renderError = error; }
-check(renderError && renderError.code === 'FLOWSCRIPT_V3_PROTOTYPE_RENDER', 'refus de rendu de l’arbre v3');
+check(renderError && renderError.code === 'FLOWSCRIPT_V3_RENDER_CHANGED_PROGRAM', 'refus d’un rendu v3 qui change la définition');
 var spec = String(files.readFileToString(new java.io.File(engineDir, '../docs/flowscript-v3.md'), 'UTF-8'));
 var examples = /```flowscript(?: refused=([^\s]+))?\n([\s\S]*?)\n```/g, match, count = 0;
 while ((match = examples.exec(spec)) !== null) {
