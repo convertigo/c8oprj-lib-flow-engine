@@ -355,3 +355,35 @@ conformance test renders it, reads the rendering back and checks the same defini
 | `R-ATTRIBUTES` | a node with a disagreeing `$$out`, an explicit name that is not a JavaScript label, or a `set` with more properties | as in v2 |
 | `R-NESTED` | a block written inside the property of another block | it is not a statement |
 | `R-NO-NATURAL` | every other block (`sql.query`, `forEachChunk`, `flow.poll`…) | it has no natural form: a call is its JavaScript |
+
+## 15. Changes after the L6 bench (L0′, 18/11/2026)
+
+The L6 bench (v3 form B against v2, ML4, Opus and gpt-6-sol, 120/120 cases in both arms) showed 15 refusals of common
+JavaScript forms. Each one below becomes accepted, with the exact JavaScript meaning, or keeps a refusal that names the
+replacement. The rules of the previous sections are amended accordingly.
+
+1. **Relational comparators.** `xs.toSorted((a, b) => a.k < b.k ? -1 : (a.k > b.k ? 1 : 0))` and its symmetric
+   spellings (`>` first, `<=`/`>=` with an equality middle, `b` before `a` for descending) lower to
+   `list.sort({ items: xs, by: current.k, compare: "natural" })`. `compare: "natural"` sorts a copy with the engine's
+   `Array.prototype.sort` and that very comparator: `left < right ? -1 : left > right ? 1 : 0` on the raw keys. The
+   identity form (`a < b ? -1 : …`) sorts by the items themselves.
+2. **Several keys.** A comparator written `c1 || c2 || …`, where each `ci` is an accepted key comparator (`a.k - b.k`,
+   `localeCompare`, relational), lowers to `list.sort` with the first key and `then: [{ by, compare, direction }, …]`
+   for the next ones. The block evaluates `c1(a, b) || c2(a, b) || …` literally, so a `0` or `NaN` falls to the next
+   key, exactly as `||` does.
+3. **`default(x, y)`.** The v2 expression function stays accepted in v3, with its v2 meaning, in any expression.
+   The guides teach `x ?? y` first.
+4. **Untyped lists.** `const rows = []` (or `let`) followed by `rows.push(v)` is accepted. If `json.array` accepts an
+   item type that admits any value, the declaration lowers to that type, which is the JavaScript meaning. Otherwise the
+   bridge infers the item type from every `push` of the Flow, and refuses with the exact `json.array({ itemType })`
+   proposal when the pushes disagree or cannot be typed.
+5. **`continue` in a counted `for`.** `for (let i = a; i < b; i++) { … continue … }` is accepted when the bound `b`
+   cannot change in the body (no assignment to a name it reads, no `push`/`[key] =` on a list or map it reads). It
+   lowers to a loop over the integer range `[a, b)` (or `[a, b]` for `<=`), where `continue` leaves the current pass.
+   When `b` may change, the refusal `FLOWSCRIPT_V3_FOR_FORM` says so and proposes a `while`.
+6. **A list method in a branch of `?:`.** When a declaration or an assignment is entirely `cond ? branch1 : branch2`
+   and a branch holds a list method chain, it lowers to `if (cond) { x = branch1 } else { x = branch2 }`, each chain
+   lowered inside its branch. Other lazy positions keep `FLOWSCRIPT_V3_CHAIN` until the nested-call unroller
+   (study of 18/11, postponed).
+7. **`xs.concat(ys)`.** It is accepted as a statement-level list method: a copy of `xs` followed by the items of `ys`
+   (`ys` a list; a non-list argument is appended as one item, as in JavaScript).
