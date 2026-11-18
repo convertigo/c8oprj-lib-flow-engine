@@ -103,7 +103,7 @@
       "id": "for-counted",
       "construct": "for (let i = a; i < b; i++) {…}",
       "block": "set + while",
-      "limits": "< or <=, step ++, no continue in body"
+      "limits": "< or <=, step ++, i not assigned in the body, no continue in body; maxIterations 1000000"
     },
     {
       "id": "switch",
@@ -197,7 +197,7 @@
         "compare": "number (a - b) | locale (localeCompare)",
         "direction": "desc when b comes first"
       },
-      "note": "compare is a new list.sort property: JavaScript comparator semantics; without it list.sort keeps its Flow order"
+      "note": "compare is a new list.sort property: a copy sorted by the engine's Array.prototype.sort with the arrow's comparator (stable; NaN compares equal); without compare list.sort keeps its Flow order"
     },
     {
       "id": "chain",
@@ -281,13 +281,18 @@
     },
     {
       "id": "comment",
-      "construct": "// text above a statement, no blank line",
-      "lowering": "node comment; standalone comment node after a blank line"
+      "construct": "// text or /* text */ above a statement, no blank line",
+      "lowering": "node comment (formatter writes // lines); standalone comment node after a blank line"
     },
     {
       "id": "disabled",
       "construct": "// @disabled in the attached comment",
       "lowering": "$$disabled: true"
+    },
+    {
+      "id": "helper",
+      "construct": "function helper({ a, b }) { … } after the Flow function, called helper({ a: 1 })",
+      "lowering": "helper block, as in v2; body under the same rules"
     }
   ],
   "refused": [
@@ -378,8 +383,8 @@
     },
     {
       "code": "FLOWSCRIPT_V3_FUNCTION",
-      "construct": "a function outside a list method or a slot, a closure",
-      "rewrite": "inline, or a project block"
+      "construct": "a function other than a top-level helper, a list arrow or a slot: nested, in an expression, a closure",
+      "rewrite": "inline, a top-level helper, or a project block"
     },
     {
       "code": "FLOWSCRIPT_V3_CHAIN",
@@ -421,7 +426,8 @@
   "valueRules": [
     "paths are null-safe (undefined instead of a TypeError)",
     "<, <=, >, >= compare two numeric texts as numbers",
-    "a template literal writes null and undefined as \"\", objects and lists as JSON"
+    "a template literal writes null and undefined as \"\", objects and lists as JSON",
+    "loops have an execution budget: while 1000 passes and 60 s unless flow.while sets other bounds; counted for 1000000 passes"
   ],
   "rendering": {
     "default": "natural JavaScript form wherever the meaning is identical, call form otherwise; author forms kept through __flowScript* node fields",
