@@ -1,6 +1,6 @@
 const _meta = {
   "sourceVersion": 2,
-  "version": 2,
+  "version": 3,
   "icon": "mdi:shield-alert-outline",
   "tags": [
     "control",
@@ -32,7 +32,7 @@ const _meta = {
       "kind": "path",
       "mode": "write",
       "default": "local.error",
-      "description": "Scope path receiving { code, message, status, hint } when try fails. The error itself stays attached to that value, hidden: throw({ error: path }) raises it again unchanged.",
+      "description": "Scope path receiving { code, message, status, hint } when try fails, and details when the error has some (the details of a throw, as JavaScript reads e.details). The error itself stays attached to that value, hidden: throw({ error: path }) raises it again unchanged.",
     },
   },
   "runtime": "rhino",
@@ -47,17 +47,20 @@ const _meta = {
 }
 
 (function () {
-	// { code, message, status, hint } of a Flow error (throw, raise) or a Java exception
+	// { code, message, status, hint } of a Flow error (throw, raise) or a Java exception, and its details when it has some:
+	// in catch (e), e.details reads the details of the thrown error as in JavaScript (absent, so undefined, when it has none).
 	function errorValue(error) {
 		var value = error && (error.flowError || error.error || error) || {};
 		var message = value.message !== undefined ? value.message
 			: error && error.javaException ? error.javaException.getMessage() : String(error);
-		return {
+		var out = {
 			code: String(value.code || (error && error.javaException ? "JAVA_EXCEPTION" : "FLOW_ERROR")),
 			message: String(message === undefined || message === null ? "" : message),
 			status: value.status === undefined || value.status === null ? null : Number(value.status),
 			hint: value.hint === undefined || value.hint === null ? "" : String(value.hint)
 		};
+		if (value.details !== undefined) out.details = value.details;
+		return out;
 	}
 
 	// The caught error stays on the value written to the error path, hidden (not enumerable: never in a result, a trace or

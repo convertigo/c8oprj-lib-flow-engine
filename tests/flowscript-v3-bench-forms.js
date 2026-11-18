@@ -560,7 +560,43 @@ check(migratedRethrow.ok && /\} catch \(failure\) \{\n\s+throw failure\n/.test(m
 var rethrowRun = api('flowCodeRun', { name: 'Example', code: migratedRethrow.code, input: {}, includeTrace: false });
 check(!rethrowRun.ok && rethrowRun.error.code === 'A', 'rendered rethrow runs: ' + JSON.stringify(rethrowRun).substring(0, 600));
 
-// Integration of the Java reader.
+// Integration of the Java reader. In catch (e), e.details are the details of the thrown error, null when it threw null,
+// undefined when it has none, as in JavaScript.
+likeNode('caught error details', [
+	'  try {',
+	'    throw { code: "LATE", message: "late", details: { ids: [1, 2], count: 2 } }',
+	'  } catch (failure) {',
+	'    result.details = failure.details',
+	'    result.count = failure.details.count',
+	'    result.code = failure.code',
+	'    result.message = failure.message',
+	'  }',
+	'  try {',
+	'    throw { code: "BARE", message: "bare" }',
+	'  } catch (bare) {',
+	'    result.missing = bare.details === undefined',
+	'    result.fallback = bare.details ?? "none"',
+	'  }',
+	'  try {',
+	'    throw { code: "EMPTY", message: "empty", details: null }',
+	'  } catch (empty) {',
+	'    result.empty = empty.details',
+	'  }'
+].join('\n'), {}, { details: { ids: [1, 2], count: 2 }, count: 2, code: 'LATE', message: 'late', missing: true, fallback: 'none', empty: null });
+// The typed contracts take the caught error with its details: a typed list and a typed map whose item type names the
+// fields of the error (an object type is open unless it says additionalProperties: false), and a declared output.
+[['typed list', '', '  const errors = json.array({ itemType: { type: "object", properties: { code: { type: "string" }, message: { type: "string" }, status: { type: "integer", nullable: true }, hint: { type: "string" } } } })', '    errors.push(failure)', '  return { errors }'],
+	['typed map', '', '  const byCode = json.map({ valueType: { type: "object", properties: { code: { type: "string" }, details: { type: "object" } } } })', '    byCode[failure.code] = failure', '  return { byCode }'],
+	['declared output', ', outputs: { failure: { type: "object", properties: { code: { type: "string" }, message: { type: "string" }, details: { type: "object" } } } }', '', '    result.failure = failure', '']
+].forEach(function (contract) {
+	cases++;
+	var code = 'const _flow = { sourceVersion: 3' + contract[1] + ' }\nfunction Example({ input, config, result }) {\n' + (contract[2] ? contract[2] + '\n' : '') +
+		'  try {\n    throw { code: "LATE", message: "late", details: { ids: [1, 2] } }\n  } catch (failure) {\n' + contract[3] + '\n  }\n' + contract[4] + '\n}';
+	var validation = api('flowSourceValidate', { name: 'Example', code: code }), run = api('flowCodeRun', { name: 'Example', code: code, input: {}, includeTrace: false });
+	var caught = { code: 'LATE', message: 'late', status: null, hint: '', details: { ids: [1, 2] } };
+	var expected = contract[0] === 'typed list' ? { errors: [caught] } : contract[0] === 'typed map' ? { byCode: { LATE: caught } } : { failure: caught };
+	check(validation.ok && run.ok && JSON.stringify(run.result) === JSON.stringify(expected), 'caught error details in a ' + contract[0] + ': ' + JSON.stringify(run).substring(0, 900));
+});
 // The readings the bridge gets wrong (flowscript-v3-reader-differential.js, acceptedBeyondBridge): a shorthand field in
 // the object pushed into a list or put into a map, and a global call as the receiver of a list method.
 likeNode('shorthand fields pushed and put', [

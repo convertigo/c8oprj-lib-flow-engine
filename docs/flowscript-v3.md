@@ -292,6 +292,8 @@ function Notify({ input, config, result }) {
   envelope), a failure of the Flow stays a failure (500). It is `throw({ error: "local.e" })`: the `try` keeps the
   caught error, hidden, on the value of its error local. `throw` of another name is refused (`FLOWSCRIPT_V3_UNSUPPORTED`),
   and so is a thrown object with an `error` field, the name of that block property.
+- In `catch (e)`, `e.code` and `e.message` are those of the caught error, and `e.details` the details of the thrown
+  error, as in JavaScript: `undefined` when it has none.
 - `throw new Error(m)` is refused (`FLOWSCRIPT_V3_ERROR_CODE_CHOICE`). The public code is a choice:
   the proposal is `throw { code: "CHOOSE_ERROR_CODE", message: m }`.
 <!-- /fragment -->
@@ -532,3 +534,5 @@ replacement. The rules of the previous sections are amended accordingly.
    - comments and blank lines: a blank line after comments makes them a comment node, and a statement after a blank
      line keeps it for the rendering; the comments that end a block are a comment node; `@disabled` is removed from
      the comment of the statement it disables.
+   In `catch (e)`, `e.details` is now the details of the thrown error (section 10); it was `undefined`. The other
+   fields of the caught error are unchanged.

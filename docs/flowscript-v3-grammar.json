@@ -191,11 +191,12 @@
       "id": "try-catch",
       "construct": "try {…} catch (e) {…}",
       "block": "try",
-      "lowering": "error = local.e, read as e inside the catch only; catch {…} declares no name: local.error, or a hidden local.__caught<N> when the Flow has its own error",
+      "lowering": "error = local.e, read as e inside the catch only, e.details the details of the thrown error (undefined without); catch {…} declares no name: local.error, or a hidden local.__caught<N> when the Flow has its own error",
       "examples": [
         "try {\n  throw { code: \"KNOWN\", message: \"x\" }\n} catch (failure) {\n  result.code = failure.code\n}",
         "try {\n  result.ok = true\n} catch {\n  result.ok = false\n}",
-        "let error = \"kept\"\ntry {\n  const parsed = JSON.parse(input.text)\n  error = parsed.value\n} catch {\n  error = error + \"!\"\n}\nreturn { error }"
+        "let error = \"kept\"\ntry {\n  const parsed = JSON.parse(input.text)\n  error = parsed.value\n} catch {\n  error = error + \"!\"\n}\nreturn { error }",
+    "try {\n  throw { code: \"LATE\", message: \"late\", details: { count: 2 } }\n} catch (failure) {\n  result.count = failure.details.count\n}"
       ]
     },
     {
