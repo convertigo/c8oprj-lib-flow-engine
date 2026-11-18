@@ -1,0 +1,174 @@
+{
+  "about": "FlowScript v3 rendering cases (section 14 of flowscript-v3.md). natural: the v2 source renders as v3; call: the call form is kept; roundtrip: a v3-only form renders back unchanged. Each case: render, read back, same definition (D2 = D3), and render(read(v3)) = v3.",
+  "status": "draft L3a 2026-11-18; executed by the v3 renderer (L2) and the conformance test (L4)",
+  "cases": [
+    {
+      "id": "N-SET",
+      "kind": "natural",
+      "why": "a set of a local or result path is an assignment; no declaration is inferred",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.total = 0\n  result.total = local.total\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.total = 0\n  result.total = local.total\n}\n"
+    },
+    {
+      "id": "N-IF-ELSEIF",
+      "kind": "natural",
+      "why": "an if alone in else is written else if",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  if (input.rows.length == 0) {\n    result.status = \"empty\"\n  } else {\n    if (input.rows.length == 1) {\n      result.status = \"single\"\n    } else {\n      result.status = \"many\"\n    }\n  }\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  if (input.rows.length == 0) {\n    result.status = \"empty\"\n  } else if (input.rows.length == 1) {\n    result.status = \"single\"\n  } else {\n    result.status = \"many\"\n  }\n}\n"
+    },
+    {
+      "id": "N-WHILE",
+      "kind": "natural",
+      "why": "default bounds",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.n = 0\n  while({\n    condition: local.n < 3,\n    $$nodes: function () {\n      local.n = local.n + 1\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.n = 0\n  while (local.n < 3) {\n    local.n = local.n + 1\n  }\n}\n"
+    },
+    {
+      "id": "N-FOREACH-CONTINUE",
+      "kind": "natural",
+      "why": "current becomes item in its own body; a bare return in a loop body goes to the next item, as continue",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.labels = json.array({ itemType: { type: \"string\" } })\n  forEach({\n    items: input.rows,\n    $$nodes: function () {\n      if (current.total == 0) {\n        return\n      }\n      json.push({ path: \"local.labels\", value: `${current.id}` })\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.labels = json.array({ itemType: { type: \"string\" } })\n  for (const item of input.rows) {\n    if (item.total == 0) {\n      continue\n    }\n    local.labels.push(`${item.id}`)\n  }\n}\n"
+    },
+    {
+      "id": "N-NESTED-NAMES",
+      "kind": "natural",
+      "why": "an inner loop takes the first free name",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.count = 0\n  forEach({\n    items: input.groups,\n    $$nodes: function () {\n      forEach({\n        items: current.rows,\n        $$nodes: function () {\n          local.count = local.count + current.qty\n        },\n      })\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.count = 0\n  for (const item of input.groups) {\n    for (const item2 of item.rows) {\n      local.count = local.count + item2.qty\n    }\n  }\n}\n"
+    },
+    {
+      "id": "N-TRY",
+      "kind": "natural",
+      "why": "the catch parameter is named after the error local, read only inside the catch",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  try({\n    error: \"local.failure\",\n    $$try: function () {\n      local.page = http.get({ url: config.api.url })\n    },\n    $$catch: function () {\n      result.message = local.failure.message\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  try {\n    local.page = http.get({ url: config.api.url })\n  } catch (failure) {\n    result.message = failure.message\n  }\n}\n"
+    },
+    {
+      "id": "N-LIST-METHODS",
+      "kind": "natural",
+      "why": "filter and map with the item as arrow parameter; an object select is parenthesized",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.active = list.filter({ items: input.rows, where: current.active })\n  local.names = list.map({ items: local.active, select: current.name })\n  local.ids = list.map({ items: local.active, select: { id: current.id } })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.active = input.rows.filter(item => item.active)\n  local.names = local.active.map(item => item.name)\n  local.ids = local.active.map(item => ({ id: item.id }))\n}\n"
+    },
+    {
+      "id": "N-SORT-COMPARE",
+      "kind": "roundtrip",
+      "why": "list.sort with compare keeps the JavaScript comparator (compare is added in L1b)",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.top = input.rows.toSorted((a, b) => b.score - a.score)\n  local.byName = input.rows.toSorted((a, b) => a.name.localeCompare(b.name))\n}\n",
+      "requires": "list.sort compare property (L1b)"
+    },
+    {
+      "id": "N-FIND-SOME-EVERY",
+      "kind": "roundtrip",
+      "why": "the new list.find, list.some and list.every blocks",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.first = input.rows.find(item => item.vip)\n  local.anyLate = input.rows.some(item => item.late)\n  local.allPaid = input.rows.every(item => item.paid)\n}\n",
+      "requires": "list.find, list.some, list.every blocks (L1b)"
+    },
+    {
+      "id": "N-COLLECTIONS",
+      "kind": "natural",
+      "why": "push and put on typed collections",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.rows = json.array({ itemType: { type: \"number\" } })\n  local.byId = json.map({ valueType: { type: \"string\" } })\n  json.push({ path: \"local.rows\", value: 1 })\n  json.put({ path: \"local.byId\", key: \"a\", value: \"x\" })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.rows = json.array({ itemType: { type: \"number\" } })\n  local.byId = json.map({ valueType: { type: \"string\" } })\n  local.rows.push(1)\n  local.byId[\"a\"] = \"x\"\n}\n"
+    },
+    {
+      "id": "N-GLOBALS",
+      "kind": "natural",
+      "why": "object.keys, object.values, json.parse and json.stringify captured by an assignment",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.keys = object.keys({ source: config.labels })\n  local.values = object.values({ source: config.labels })\n  local.data = json.parse({ text: input.json })\n  local.text = json.stringify({ value: local.data })\n  local.pretty = json.stringify({ value: local.data, pretty: true })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.keys = Object.keys(config.labels)\n  local.values = Object.values(config.labels)\n  local.data = JSON.parse(input.json)\n  local.text = JSON.stringify(local.data)\n  local.pretty = JSON.stringify(local.data, null, 2)\n}\n"
+    },
+    {
+      "id": "N-DISABLED",
+      "kind": "natural",
+      "why": "a disabled statement keeps its natural form with the directive",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.rows = json.array({ itemType: { type: \"number\" } })\n  json.push({ path: \"local.rows\", value: 1, $$disabled: true })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.rows = json.array({ itemType: { type: \"number\" } })\n  // @disabled\n  local.rows.push(1)\n}\n"
+    },
+    {
+      "id": "R-SORT-FLOW",
+      "kind": "call",
+      "why": "list.sort without compare keeps its Flow order, which no JavaScript comparator reproduces",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.sorted = list.sort({ items: input.rows, by: current.code, direction: \"asc\" })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.sorted = list.sort({ items: input.rows, by: current.code, direction: \"asc\" })\n}\n"
+    },
+    {
+      "id": "R-WHILE-BOUNDS",
+      "kind": "call",
+      "why": "bounds other than the default need the call form",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.n = 0\n  while({\n    condition: local.n < 5000,\n    maxIterations: 10000,\n    $$nodes: function () {\n      local.n = local.n + 1\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.n = 0\n  flow.while({\n    condition: local.n < 5000,\n    maxIterations: 10000,\n    $$nodes: function () {\n      local.n = local.n + 1\n    },\n  })\n}\n"
+    },
+    {
+      "id": "R-TRY-DESTINATION",
+      "kind": "call",
+      "why": "the error goes to a result path, which a catch parameter cannot name",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  try({\n    error: \"result.failure\",\n    $$try: function () {\n      local.page = http.get({ url: config.api.url })\n    },\n    $$catch: function () {\n      result.ok = false\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  flow.try({\n    error: \"result.failure\",\n    $$try: function () {\n      local.page = http.get({ url: config.api.url })\n    },\n    $$catch: function () {\n      result.ok = false\n    },\n  })\n}\n"
+    },
+    {
+      "id": "R-TRY-ESCAPE",
+      "kind": "call",
+      "why": "the error local is read after the try, where a catch parameter does not exist",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  try({\n    error: \"local.failure\",\n    $$try: function () {\n      local.page = http.get({ url: config.api.url })\n    },\n    $$catch: function () {\n      result.ok = false\n    },\n  })\n  result.reason = local.failure.message\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  flow.try({\n    error: \"local.failure\",\n    $$try: function () {\n      local.page = http.get({ url: config.api.url })\n    },\n    $$catch: function () {\n      result.ok = false\n    },\n  })\n  result.reason = local.failure.message\n}\n"
+    },
+    {
+      "id": "R-LIST-BLOCK",
+      "kind": "call",
+      "why": "a per-item block in select has no arrow form",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.names = list.map({ items: input.rows, select: text.trim({ text: current.name }) })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.names = list.map({ items: input.rows, select: text.trim({ text: current.name }) })\n}\n"
+    },
+    {
+      "id": "R-LIST-NO-WHERE",
+      "kind": "call",
+      "why": "a filter without where has no arrow to write",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.copy = list.filter({ items: input.rows })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.copy = list.filter({ items: input.rows })\n}\n"
+    },
+    {
+      "id": "R-INCOMPLETE",
+      "kind": "call",
+      "why": "a loop created without items",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  forEach({\n    $$nodes: function () {\n      local.seen = true\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  flow.forEach({\n    $$nodes: function () {\n      local.seen = true\n    },\n  })\n}\n"
+    },
+    {
+      "id": "R-OBJECT-CONDITION",
+      "kind": "call",
+      "why": "an object literal condition is always true in JavaScript",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  if({\n    condition: { ok: true },\n    $$then: function () {\n      result.ok = true\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  flow.if({\n    condition: { ok: true },\n    $$then: function () {\n      result.ok = true\n    },\n  })\n}\n"
+    },
+    {
+      "id": "R-STRINGIFY-PRETTY",
+      "kind": "call",
+      "why": "pretty given by an expression",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.text = json.stringify({ value: input.rows, pretty: input.pretty })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.text = json.stringify({ value: input.rows, pretty: input.pretty })\n}\n"
+    },
+    {
+      "id": "R-ATTRIBUTES",
+      "kind": "call",
+      "why": "an explicit name that is not a JavaScript label",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  set({ $$id: \"total-init\", path: \"local.total\", value: 0 })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  set({ $$id: \"total-init\", path: \"local.total\", value: 0 })\n}\n"
+    },
+    {
+      "id": "R-NESTED",
+      "kind": "call",
+      "why": "a block inside the property of another block is not a statement",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  email.send({ to: config.ops, subject: \"Rows\", text: json.stringify({ value: input.rows }) })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  email.send({ to: config.ops, subject: \"Rows\", text: json.stringify({ value: input.rows }) })\n}\n"
+    },
+    {
+      "id": "R-NO-NATURAL",
+      "kind": "call",
+      "why": "a block without a natural form: its call is its JavaScript",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.rows = sql.query({ connection: config.db, sql: \"select 1\" })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.rows = sql.query({ connection: config.db, sql: \"select 1\" })\n}\n"
+    }
+  ]
+}

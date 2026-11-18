@@ -4,8 +4,8 @@ Status: draft specification (lot L3a, 18/11/2026). It is the single source for t
 the conformance test and the guides: the guides take their sections from it, and the conformance test runs every
 `flowscript` example below. The machine-readable table is `flowscript-v3-grammar.json`.
 
-Not covered yet: how nodes without an author form (created in Studio, or read from a v2 source) are rendered.
-That choice is pending and will be added as its own section.
+Section 14 says how nodes without an author form (created in Studio, or read from a v2 source) are rendered:
+the natural JavaScript form wherever the meaning is identical, the call form otherwise.
 
 ## 1. Principles
 
@@ -14,9 +14,13 @@ That choice is pending and will be added as its own section.
 - The reader lowers the program to Flow blocks. A v3 source is never executed as JavaScript by Rhino:
   Rhino 1.9.2 keeps the first value of a `const` declared in a loop body.
 - **Same meaning as JavaScript.** When the JavaScript program would run without error, the Flow gives the same
-  result. Flow differs only where JavaScript would throw: paths are null-safe (`local.a.b` is `undefined` when
-  `local.a` is `null`), `Object.keys(null)` is `[]`.
-- Anything whose meaning could differ is refused at its line, with a stable code and a proposed rewrite.
+  result, with the value rules of the FlowScript expression evaluator (shared with v2, unchanged by v3):
+  - paths are null-safe: `local.a.b` is `undefined` when `local.a` is `null`, where JavaScript would throw
+    (likewise `Object.keys(null)` is `[]`);
+  - `<`, `<=`, `>`, `>=` compare two numeric texts as numbers: `"10" < "9"` is `false` (JavaScript compares the
+    texts and says `true`); inputs often arrive as text;
+  - a template literal writes `null` and `undefined` as `""`, and an object or a list as JSON.
+- Anything else whose meaning could differ is refused at its line, with a stable code and a proposed rewrite.
   It is never translated approximately.
 
 ## 2. File shape
@@ -173,7 +177,8 @@ function Active({ input, config, result }) {
 | `xs.map(x => e)` | `list.map({ items: xs, select: e })`; an object literal is written `x => ({ … })` |
 | `xs.find(x => c)` | `list.find({ items: xs, where: c })`: `undefined` when nothing matches |
 | `xs.some(x => c)`, `xs.every(x => c)` | `list.some`, `list.every` |
-| `xs.toSorted((a, b) => a.k - b.k)`, `[...xs].sort(…)` | `list.sort({ items: xs, by: current.k, direction: "asc" })`; `b.k - a.k` is `"desc"`; `a.k.localeCompare(b.k)` is `"asc"` |
+| `xs.toSorted((a, b) => a.k - b.k)`, `[...xs].sort(…)` | `list.sort({ items: xs, by: current.k, compare: "number" })`; `b.k - a.k` adds `direction: "desc"` |
+| `xs.toSorted((a, b) => a.k.localeCompare(b.k))` | `list.sort({ items: xs, by: current.k, compare: "locale" })`; `b.k.localeCompare(a.k)` adds `direction: "desc"` |
 | `includes`, `slice`, `join`, `concat`, `at`, `indexOf`, `length` | expression methods, no block |
 
 - The function is an arrow with one parameter and an expression body without block call. `function (x) { return e }`
@@ -182,6 +187,10 @@ function Active({ input, config, result }) {
   feeds the next step through a hidden local `local.__chain<N>`.
 - Refused, with a rewrite into two `const` (`FLOWSCRIPT_V3_CHAIN`): a step inside a branch of `?:`, `&&`, `||` or `??`;
   a step in an argument of an expression function; a step after a scope read of the same statement.
+- Sorting keeps the JavaScript comparator: `compare: "number"` orders by `Number(a) - Number(b)` and
+  `compare: "locale"` by `String(a).localeCompare(String(b))`, exactly as the arrow does. Without `compare`,
+  `list.sort` keeps its Flow order (numeric texts as numbers, `null` as `""`), which no JavaScript comparator
+  reproduces: it stays a call (section 14).
 - Refused: `xs.sort(…)` alone (it sorts in place, `list.sort` returns a copy: write `toSorted`), other comparators,
   `reduce`, an index parameter `(x, i)`, a parameter of an outer arrow read in an inner one
   (`FLOWSCRIPT_V3_LIST_METHOD`).
@@ -283,3 +292,49 @@ function Fail({ input, config, result }) {
   throw new Error("not ready")
 }
 ```
+
+## 14. Rendering nodes without an author form
+
+A node created in Studio or by a tool, and every node read from a v2 source by the migration, has no author form
+to keep. It is rendered in its **natural JavaScript form wherever the meaning is identical**, and in its call form
+otherwise. The author's own writing is always kept (`const` or `let`, loop variable name, call form, `+=`,
+`return { … }`, chains), through internal `__flowScript*` fields of the node that the definition comparison ignores.
+
+**Natural by default:**
+
+| Node | Rendering |
+|---|---|
+| `set` of a `local.`/`result.` path | `local.x = value`, `result.x = value` (no declaration is inferred) |
+| `if` | `if (c) { … } else { … }`, an `if` alone in `else` as `else if` |
+| `while` with default bounds | `while (c) { … }` |
+| `forEach` | `for (const item of items) { … }`, `current` renamed in its own body |
+| `next`, and a v2 bare `return` in a loop body | `continue` |
+| `try` | `try { … } catch (failure) { … }`, named after its error local |
+| `throw`, `return` | `throw { … }`, `return`, `return value` |
+| `list.filter`, `list.map`, `list.find`, `list.some`, `list.every` | `items.filter(item => c)`… |
+| `list.sort` with `compare` | `items.toSorted((a, b) => a.k - b.k)`, `… localeCompare …` |
+| `json.push`, `json.put` | `local.rows.push(v)`, `local.byId[key] = v` |
+| `object.keys`, `object.values`, `json.parse`, `json.stringify` | `Object.keys(o)`, `Object.values(o)`, `JSON.parse(t)`, `JSON.stringify(v)` / `JSON.stringify(v, null, 2)` |
+| a disabled statement | its natural form with `// @disabled` in its comment |
+
+**Names.** The variable of a `for…of` and the parameter of a list arrow are `item`; when that name is visible
+already, the first free of `item2`, `item3`… The parameter of `catch` is the name of the error local
+(`error: "local.failure"` gives `catch (failure)`).
+
+**Exceptions: the call form is kept.** Each one has its case in `flowscript-v3-rendering-cases.json`; the
+conformance test renders it, reads the rendering back and checks the same definition.
+
+| Case | Node | Why the natural form is not used |
+|---|---|---|
+| `R-SORT-FLOW` | `list.sort` without `compare` | its Flow order (numeric texts as numbers, `null` as `""`) has no exact JavaScript comparator |
+| `R-WHILE-BOUNDS` | `while` with `maxIterations` or `timeoutMs` other than the default, or with `iterations` / `completed` | `while (c)` cannot carry them: `flow.while({ … })` |
+| `R-TRY-DESTINATION` | `try` whose `error` is not a simple local `local.<name>` | `catch (e)` declares a local only |
+| `R-TRY-ESCAPE` | `try` whose error local is read or written outside its catch body, or whose name is already visible | the `catch` parameter exists only inside the catch: `flow.try({ … })` |
+| `R-LIST-BLOCK` | `list.filter`, `list.map`, `list.find`, `list.some`, `list.every` whose `where` or `select` contains a block | an arrow body has no block call |
+| `R-LIST-NO-WHERE` | `list.filter`, `list.find`, `list.some`, `list.every` without `where` | no arrow to write |
+| `R-INCOMPLETE` | a node without the property its natural form needs (`forEach` or a list method without `items`, `if` or `while` without `condition`) | the natural form would be invalid JavaScript or say something else |
+| `R-OBJECT-CONDITION` | `if` or `while` whose condition is an object literal | `if ({ … })` is always true in JavaScript: `flow.if({ … })` |
+| `R-STRINGIFY-PRETTY` | `json.stringify` whose `pretty` is an expression | only `JSON.stringify(v)` and `JSON.stringify(v, null, 2)` are exact |
+| `R-ATTRIBUTES` | a node with a disagreeing `$$out`, an explicit name that is not a JavaScript label, or a `set` with more properties | as in v2 |
+| `R-NESTED` | a block written inside the property of another block | it is not a statement |
+| `R-NO-NATURAL` | every other block (`sql.query`, `forEachChunk`, `flow.poll`…) | it has no natural form: a call is its JavaScript |
