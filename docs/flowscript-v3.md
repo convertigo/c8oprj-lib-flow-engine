@@ -371,8 +371,12 @@ replacement. The rules of the previous sections are amended accordingly.
    `localeCompare`, relational), lowers to `list.sort` with the first key and `then: [{ by, compare, direction }, …]`
    for the next ones. The block evaluates `c1(a, b) || c2(a, b) || …` literally, so a `0` or `NaN` falls to the next
    key, exactly as `||` does.
-3. **`default(x, y)`.** The v2 expression function stays accepted in v3, with its v2 meaning, in any expression.
-   The guides teach `x ?? y` first.
+3. **`flow.default(x, y)`, not `default(x, y)`.** `default` is a reserved word of JavaScript: a bare `default(` outside
+   a `switch` is not JavaScript, so it stays refused (`FLOWSCRIPT_V3_RESERVED_WORD`) with the exact rewrite
+   `flow.default(x, y)` as its proposal, which the MCP may apply as a correction. `flow.default(x, y)` is valid
+   JavaScript and keeps exactly the meaning of the v2 `default` function, in any expression. The migrator rewrites
+   v2 `default(` to `flow.default(`; it writes `x ?? y` only where the meaning is proven identical (the v2 function may
+   treat `""` as absent). The guides teach `x ?? y` first.
 4. **Untyped lists.** `const rows = []` (or `let`) followed by `rows.push(v)` is accepted. If `json.array` accepts an
    item type that admits any value, the declaration lowers to that type, which is the JavaScript meaning. Otherwise the
    bridge infers the item type from every `push` of the Flow, and refuses with the exact `json.array({ itemType })`
