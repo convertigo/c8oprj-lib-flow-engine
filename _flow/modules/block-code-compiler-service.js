@@ -18,13 +18,15 @@
 
 		function flowScriptBlockDescriptorFromMeta(name, meta, graphDefinition, code) {
 			meta = normalizeTree(meta || {});
-			if (meta.sourceVersion !== undefined && meta.sourceVersion !== 2) {
+			var runtime = blockCodeRuntimeFromMeta(meta);
+			// A FlowScript block is read by its sourceVersion, as a Flow is: 2 by the v2 parser, 3 by the Java FlowScript v3
+			// reader (its implementation then declares const _flow = { sourceVersion: 3 }). A Rhino block stays at 2.
+			if (meta.sourceVersion !== undefined && meta.sourceVersion !== 2 && !(meta.sourceVersion === 3 && runtime === "flow")) {
 				raise("FLOW_SOURCE_VERSION_UNSUPPORTED", "Unsupported block sourceVersion: " + meta.sourceVersion);
 			}
 			if (meta.name && String(meta.name) !== String(name) && String(meta.name) !== blockLocalName(name)) {
 				raise("BLOCK_NAME_MISMATCH", "FlowScript block _meta declares \"" + meta.name + "\" instead of \"" + name + "\".");
 			}
-			var runtime = blockCodeRuntimeFromMeta(meta);
 			var implementation = normalizeTree(meta.implementation || {});
 			implementation.runtime = runtime;
 			delete implementation.file;

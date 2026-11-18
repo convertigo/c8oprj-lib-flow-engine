@@ -555,3 +555,12 @@ replacement. The rules of the previous sections are amended accordingly.
      the comment of the statement it disables.
    In `catch (e)`, `e.details` is now the details of the thrown error (section 10); it was `undefined`. The other
    fields of the caught error are unchanged.
+13. **Blocks written in FlowScript v3 (19/11/2026).** A project block whose implementation is FlowScript is read by its
+   `sourceVersion`, as a Flow is: its `_meta` declares `"sourceVersion": 3` and its implementation starts with
+   `const _flow = { sourceVersion: 3 }`; the engine reads it with the Java reader, from a file of the project and through
+   the block code tools, and a descriptor edit writes it back in v3 (guarded, as a Flow). The two declarations must agree
+   (`FLOW_SOURCE_VERSION_CONFLICT`); a Rhino block stays at 2 (`FLOW_SOURCE_VERSION_UNSUPPORTED`). The migrator
+   (`tools/migrate-flowscript-v3.sh`) migrates such a block whole: the guard of a Flow on its implementation, then the
+   v3 file (the same `_meta` with `"sourceVersion": 3`, the v3 text) compiled by the engine as it loads a block, kept
+   only when it gives the contract and the definition of the v2 file. Rhino blocks, frontend blocks and blocks whose
+   `_meta` declares no `sourceVersion` are not changed.

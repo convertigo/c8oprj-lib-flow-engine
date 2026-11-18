@@ -67,7 +67,26 @@ check(read(broken, "_flow/flows/Good.flow.js") === good, "nothing is written for
 // stay text. A {{ … }} the v2 definition still holds (the text of a v2 template literal) fails the guard: that Flow stays
 // in v2. Each Flow is run before and after, with the same result.
 var __flowEngineDir = String(engineDir.getAbsolutePath());
-var __flowProjectDir = String(java.nio.file.Files.createTempDirectory("flow-v3-migrate-run-").toFile().getAbsolutePath());
+// The blocks of the project (below) are those of the engine used to run the Flows before and after the migration.
+var blockMeta = function (version, extra) {
+	return 'const _meta = {\n' + (version ? '  "sourceVersion": ' + version + ',\n' : '') + '  "description": "Proof block.",\n' + (extra || '') +
+		'  "properties": { "name": { "kind": "value", "type": "string" }, "items": { "kind": "value", "type": "array" } },\n' +
+		'  "outputs": { "out": { "type": "object" } },\n}\n\n';
+};
+var greetBlock = '// A comment above the header.\n' + blockMeta(2) + '// c8o: Flow source (FlowScript, sourceVersion 2).\n\nconst _flow = {\n  "sourceVersion": 2,\n}\n\n' +
+	'function proof_greet({ input, config, result }) {\n  local.big = list.filter({ items: input.items, where: current > 1 })\n' +
+	'  local.answer = { text: "Hello {{ input.name }}", count: local.big.length }\n  return({ $$id: "reply", value: local.answer })\n}\n';
+var chunkBlock = blockMeta(2) + 'function proof_chunks({ input, config, result }) {\n  forEachChunk({\n    source: input.items,\n    size: 2,\n' +
+	'    $$each: function ({chunk}) {\n      local.n = chunk.length\n    },\n  })\n  return({ value: { size: 2 } })\n}\n';
+var rhinoBlock = blockMeta(2, '  "runtime": "rhino",\n') + '(function(){return {run:function(ctx,node){return { rhino: true };}};}())\n';
+var bareBlock = blockMeta(0) + 'function proof_bare({ input, config, result }) {\n  return({ value: { bare: input.name } })\n}\n';
+var blocksDir = project({ Caller: 'const _flow = { sourceVersion: 2 }\n\nfunction Caller({ input, config, result }) {\n' +
+	'  result.greet = proof.greet({ name: input.x, items: [1, 2, 3] })\n  result.chunks = proof.chunks({ items: [1, 2, 3] })\n' +
+	'  result.rhino = proof.rhino({})\n  result.bare = proof.bare({ name: input.x })\n}\n' });
+[["greet", greetBlock], ["chunks", chunkBlock], ["rhino", rhinoBlock], ["bare", bareBlock]].forEach(function (block) {
+	files.writeStringToFile(new java.io.File(blocksDir, "_flow/blocks/proof/" + block[0] + ".block.js"), block[1], "UTF-8");
+});
+var __flowProjectDir = String(blocksDir.getAbsolutePath());
 var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 function run(code) {
 	var out = JSON.parse(String(engine.run(JSON.stringify({ flowSource: code, input: { x: "X", n: 2 }, includeTrace: false }))));
@@ -88,4 +107,27 @@ check(bracesV3.indexOf("template.render({ template: `a ${input.x} b ${input.n + 
 	bracesV3.indexOf('result.text = "e {{}} f"') >= 0, "the interpolated {{ }} are written as template literals: " + bracesV3);
 check(run(braces) === JSON.stringify({ body: "a X b 3", value: "c X d", text: "e {{}} f" }) && run(bracesV3) === run(braces), "same result before and after: " + run(bracesV3));
 check(read(bracesDir, "_flow/flows/Literal.flow.js") === literal && run(literal) === JSON.stringify({ value: "g X X" }), "the v2 template literal with {{ }} stays in v2");
+
+// A block written in FlowScript is migrated as a Flow is, whole: its _meta declares sourceVersion 3 and nothing else
+// changes in it, its implementation is the guarded v3 text, and the engine runs it as before. A block whose guard fails
+// stays in v2 with its cause; Rhino blocks and blocks without a declared sourceVersion are not changed.
+var callerBefore = read(blocksDir, "_flow/flows/Caller.flow.js"), resultBefore = run(callerBefore);
+check(resultBefore === JSON.stringify({ greet: { text: "Hello X", count: 2 }, chunks: { size: 2 }, rhino: { rhino: true }, bare: { bare: "X" } }), "the blocks before: " + resultBefore);
+var blockReport = migrate(blocksDir, true);
+check(blockReport.written && blockReport.flows.migrated.length === 1 && blockReport.blocks.total === 3 && blockReport.blocks.migrated.length === 1 &&
+	blockReport.blocks.migrated[0].block === "_flow/blocks/proof/greet.block.js" && blockReport.blocks.keptV2.length === 1 &&
+	blockReport.blocks.keptV2[0].block === "_flow/blocks/proof/chunks.block.js" && /FLOWSCRIPT_V3_FUNCTION/.test(blockReport.blocks.keptV2[0].reason) &&
+	blockReport.blocks.outOfScope.length === 1 && blockReport.blocks.outOfScope[0].block === "_flow/blocks/proof/bare.block.js",
+	"block migration report: " + JSON.stringify(blockReport.blocks));
+var greetV3 = read(blocksDir, "_flow/blocks/proof/greet.block.js");
+check(greetV3.indexOf('// A comment above the header.\n' + blockMeta(3) + 'const _flow = { sourceVersion: 3 }\n\nfunction proof_greet({ input, config, result }) {\n') === 0 &&
+	greetV3.indexOf("local.big = input.items.filter(item => item > 1)") >= 0 && greetV3.indexOf("local.answer = { text: `Hello ${input.name}`, count: local.big.length }") >= 0 &&
+	greetV3.indexOf("reply: return local.answer") >= 0,
+	"the v3 block: " + greetV3);
+check(read(blocksDir, "_flow/blocks/proof/chunks.block.js") === chunkBlock && read(blocksDir, "_flow/blocks/proof/rhino.block.js") === rhinoBlock &&
+	read(blocksDir, "_flow/blocks/proof/bare.block.js") === bareBlock, "the other blocks are not changed");
+var callerAfter = read(blocksDir, "_flow/flows/Caller.flow.js");
+check(callerAfter !== callerBefore && run(callerAfter) === resultBefore && run(callerBefore) === resultBefore, "the same result after the migration: " + run(callerAfter));
+var readBack = JSON.parse(String(engine.blockCodeGet(JSON.stringify({ name: "proof.greet" }))));
+check(readBack.ok && readBack.descriptor.sourceVersion === 3, "the engine reads the v3 block: " + JSON.stringify(readBack).substring(0, 600));
 print("flowscript-v3-migrate OK");
