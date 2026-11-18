@@ -1879,6 +1879,7 @@
 			"scope-path-utils.js",
 			"template-syntax.js",
 			"flow-script-parser-service.js",
+			"flowscript-v3-prototype.js",
 			"flow-repository-service.js",
 			"flow-source-service.js"
 		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).concat([fileFingerprint(new File(engineDir(), "Engine.js"))]).join("\n");
@@ -4515,6 +4516,7 @@
 
 	function flowScriptParserEnv() {
 		return {
+			v3Prototype: function () { return loadEngineModule("flowscript-v3-prototype.js"); },
 			blockCandidates: flowScriptBlockCandidates,
 			blockCandidateDecision: flowScriptBlockCandidateDecision,
 			templateSyntax: templateSyntax(),
@@ -5077,6 +5079,7 @@
 
 	function flowCodeServiceEnv() {
 		return {
+			flowScriptHeader: function (code) { return parseFlowScriptTopLevelObjectFromCode(code, "flow"); },
 			projectDir: projectDir,
 			sourceChangedLines: function (before,after) { return loadEngineModule("source-line-diff.js").changedLines(before,after); },
 			parseSource: parseSource,

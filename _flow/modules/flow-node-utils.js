@@ -66,11 +66,11 @@
 			error.code = "FLOW_CONFIG_OBJECT_REQUIRED";
 			throw error;
 		}
-		// Version 2 is the only Flow dialect; a definition without it is version 2.
-		if (out.flow && out.flow.sourceVersion !== undefined && out.flow.sourceVersion !== 2) {
+		// The v3 prototype lowers to v2 nodes while retaining the authoring version.
+		if (out.flow && out.flow.sourceVersion !== undefined && out.flow.sourceVersion !== 2 && out.flow.sourceVersion !== 3) {
 			var versionError = new Error("Unsupported Flow sourceVersion: " + out.flow.sourceVersion);
 			versionError.code = "FLOW_SOURCE_VERSION_UNSUPPORTED";
-			versionError.hint = "Flow sources use sourceVersion 2.";
+			versionError.hint = "Flow sources use sourceVersion 2 or the FlowScript v3 prototype.";
 			throw versionError;
 		}
 		if (Object.prototype.toString.call(out.nodes) === "[object Array]") {

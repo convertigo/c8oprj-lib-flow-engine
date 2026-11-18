@@ -291,6 +291,12 @@
 		request = request || {};
 		env = Object.assign({},env,{renderBlocks:blocks});
 		var definition = env.parseSource(flowSource);
+		if (definition.flow && definition.flow.sourceVersion === 3) {
+			var refusal = new Error("A FlowScript v3 source cannot be rendered from the prototype Flow tree.");
+			refusal.code = "FLOWSCRIPT_V3_PROTOTYPE_RENDER";
+			refusal.hint = "Edit the original FlowScript v3 text with code-patch or code-set.";
+			throw refusal;
+		}
 		var renderBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var lines = [];
 		if (request.includeHeader === true) {

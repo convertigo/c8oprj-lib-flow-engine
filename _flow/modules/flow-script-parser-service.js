@@ -3538,10 +3538,58 @@
 		}
 
 		function parseFlowScript(blocks, code, options) {
-			expressionSource = String(code); expressionSequence = 0;
+			var submittedCode = String(code);
+			expressionSource = submittedCode; expressionSequence = 0;
 			code = env.normalizeFlowScriptFunctionSyntax(code);
 			var split = splitFlowScriptFunctions(code);
 			var flowMeta = parseFlowScriptTopLevelObject(split.prelude, "flow");
+			if (flowMeta.sourceVersion === 3) {
+				if (options && options.sourceVersion !== undefined && options.sourceVersion !== 3) {
+					env.raise("FLOW_SOURCE_VERSION_CONFLICT", "The source header conflicts with the block sourceVersion.");
+				}
+				var translated = env.v3Prototype().translate(submittedCode);
+				if (translated.diagnostics.length) {
+					var diagnostic = translated.diagnostics[0], refusal = new Error(diagnostic.message);
+					refusal.code = diagnostic.code;
+					refusal.line = diagnostic.line;
+					refusal.hint = diagnostic.hint;
+					refusal.proposedPatch = diagnostic.proposedPatch;
+					refusal.details = [diagnostic];
+					throw refusal;
+				}
+				var parsed;
+				try { parsed = parseFlowScript(blocks, translated.code, { sourceVersion: 2 }); }
+				catch (error) {
+					function remapError(value) {
+						if (!value || typeof value !== "object") return;
+						if (Array.isArray(value)) { value.forEach(remapError); return; }
+						if (Number(value.line) > 0) value.line = translated.lineMap[Number(value.line) - 1] || value.line;
+						Object.keys(value).forEach(function (key) { if (key !== "line" && value[key] && typeof value[key] === "object") remapError(value[key]); });
+					}
+					remapError(error.details);
+					remapError(error.diagnostics);
+					var v2Line = Number(error.line || 0);
+					if (!v2Line) { var match = /\bline\s+(\d+)\b/.exec(String(error.message)); if (match) v2Line = Number(match[1]); }
+					if (v2Line && translated.lineMap[v2Line - 1]) {
+						error.line = translated.lineMap[v2Line - 1];
+						error.message = String(error.message).replace(/\bline\s+\d+\b/, "line " + error.line);
+					}
+					throw error;
+				}
+				function remap(value) {
+					if (!value || typeof value !== "object") return;
+					if (value.__flowScriptLine) value.__flowScriptLine = translated.lineMap[value.__flowScriptLine - 1] || value.__flowScriptLine;
+					Object.keys(value).forEach(function (key) {
+						if (key !== "props" && key !== "flow" && key !== "__flowScriptLine" && key !== "__flowScriptCode" && key !== "__flowScriptBody") {
+							if (Array.isArray(value[key])) value[key].forEach(remap);
+							else if (value[key] && typeof value[key] === "object") remap(value[key]);
+						}
+					});
+				}
+				remap(parsed);
+				parsed.flow = Object.assign({}, parsed.flow || {}, flowMeta, { sourceVersion: 3 });
+				return parsed;
+			}
 			if (options && options.sourceVersion !== undefined) {
 				if (flowMeta.sourceVersion !== undefined && flowMeta.sourceVersion !== options.sourceVersion) {
 					env.raise("FLOW_SOURCE_VERSION_CONFLICT", "The source header conflicts with the block sourceVersion.");
@@ -3550,7 +3598,7 @@
 			}
 			if (flowMeta.sourceVersion !== undefined && flowMeta.sourceVersion !== 2) {
 				env.raise("FLOW_SOURCE_VERSION_UNSUPPORTED", "Unsupported Flow sourceVersion: " + flowMeta.sourceVersion,
-					null, "Flow sources use sourceVersion 2: declare const _flow = { sourceVersion: 2 }.");
+					null, "Declare const _flow with sourceVersion 2 or 3.");
 			}
 			if (split.functions.length > 0) {
 				var mainIndex = mainFlowScriptFunctionIndex(split.functions);

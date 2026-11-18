@@ -1122,7 +1122,8 @@
 			draft: current && current.draft === true,
 			codeFile: current ? current.codeFile : "",
 			revision: revision,
-			modelRevision: flowCodeRevisionForSource(blocks, name, checked.validation.source, request),
+			modelRevision: checked.validation.definition && checked.validation.definition.flow && checked.validation.definition.flow.sourceVersion === 3
+				? sha256Hex(code) : flowCodeRevisionForSource(blocks, name, checked.validation.source, request),
 			warnings: checked.warnings,
 			validation: checked.validation
 		};
@@ -1247,7 +1248,8 @@
 				warnings: []
 			};
 		}
-		var corrected = flowCodeCorrect(blocks, request, current.code);
+		var draftHeader = env.flowScriptHeader ? env.flowScriptHeader(current.code) : {};
+		var corrected = draftHeader.sourceVersion === 3 ? { code: current.code, fixes: [] } : flowCodeCorrect(blocks, request, current.code);
 		var checked = corrected.error ? { error: corrected.error, validation: null, warnings: [] } : flowCodeValidate(blocks, Object.assign({}, request, { authoringCorrections: true }), name, corrected.code);
 		if (checked.error || !checked.validation || !checked.validation.ok) {
 			return {
@@ -1268,7 +1270,8 @@
 				error: flowCodeError("FLOW_CODE_DRAFT_REVISION_MISMATCH", "Working copy changed during validation.", "Read/check the current revision before promoting."), warnings: []
 			};
 		}
-		var formatted = renderFlowScript(blocks, name, checked.validation.source, {includeHeader:false, includeImplicitReturn:false});
+		var v3Source = checked.validation.definition && checked.validation.definition.flow && checked.validation.definition.flow.sourceVersion === 3;
+		var formatted = v3Source ? current.code : renderFlowScript(blocks, name, checked.validation.source, {includeHeader:false, includeImplicitReturn:false});
 		var after = {validation:flowScriptValidateRequest(blocks,Object.assign({},request,{name:name,code:formatted,skipAnalysis:true}))};
 		function comparable(source) {
 			function clean(value) {
@@ -1312,7 +1315,7 @@
 			changedLines: changedLines,
 			format: "flowscript",
 			canonical: true,
-			revision: saved && saved.codeRevision ? saved.codeRevision : flowCodeRevisionForSource(blocks, name, checked.validation.source, request),
+			revision: saved && saved.codeRevision ? saved.codeRevision : v3Source ? sha256Hex(current.code) : flowCodeRevisionForSource(blocks, name, checked.validation.source, request),
 			draftRevision: current.revision,
 			draftCleared: draftCleared,
 			file: saved ? saved.file : "",
