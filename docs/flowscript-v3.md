@@ -10,7 +10,10 @@ the natural JavaScript form wherever the meaning is identical, the call form oth
 ## 1. Principles
 
 - A v3 source is a JavaScript program. Rhino 1.9.2 parses it (ES6) without any masking. The only preparation
-  is a same-length rewrite of `const` to `let` in a `for…of` head, because Rhino 1.9.2 refuses `const` there.
+  is a same-length rewrite of each `const` declaration keyword to `let`: Rhino 1.9.2 refuses `const` in a `for…of`
+  head, and gives a `const` the scope of its whole function, so that a `const` declared again in a sibling block or a
+  later `for…of` (valid JavaScript) is a redeclaration error for its parser (conformance case `C-CONST-BLOCK-SCOPE`).
+  The reader takes `const` from the source text.
 - The reader lowers the program to Flow blocks. A v3 source is never executed as JavaScript by Rhino:
   Rhino 1.9.2 keeps the first value of a `const` declared in a block nested in a loop of the same function
   (Rhino #326, not fixed upstream). Each declaration becomes an assignment at every pass, so a `const` in a loop
@@ -97,7 +100,8 @@ function Totals({ input, config, result }) {
 - `local.x = …` remains valid. A Flow never names the same local both ways (`FLOWSCRIPT_V3_LOCAL_ALIAS`).
 - One level of object destructuring is accepted: `const { a, b: c } = o` sets `local.a = o.a` and `local.c = o.b`.
   Defaults, rest and nested patterns are refused (`FLOWSCRIPT_V3_DESTRUCTURING`).
-- `x += e`, `x -= e`, `x *= e`, `x /= e`, `x++`, `x--` are statements: `local.x = local.x + (e)`.
+- `x += e`, `x -= e`, `x *= e`, `x /= e`, `x++`, `x--` are statements: `local.x = local.x + (e)`; `x++` is
+  `local.x = Number(local.x) + 1`, since JavaScript converts `x` to a number first (`"1"` gives `2`, not `"11"`).
   They are refused inside an expression (`FLOWSCRIPT_V3_COMPOUND_CONTEXT`).
 - `result.x = …` writes one output field. `return { … }` writes the output fields and leaves the Flow.
   A Flow uses one style or the other (`FLOWSCRIPT_V3_RESULT_MIXED`), because JavaScript returns the object
@@ -120,10 +124,10 @@ function Totals({ input, config, result }) {
 | `if (c) {…} else if (d) {…} else {…}` | `if` | An `else if` is an `if` in `else`. A single statement is a body of one statement. |
 | `while (c) {…}` | `while` | `maxIterations` 1000 and `timeoutMs` 60000. Other values: `flow.while({…})` (section 11). |
 | `for (const item of items) {…}` | `forEach` | `item` reads the current element. One level of object destructuring: `for (const { id } of rows)`. |
-| `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`; `i` is not assigned in the body; no `continue` in its body. `maxIterations` 1000000. |
+| `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`; `i` is not assigned in the body. `maxIterations` 1000000. With `continue`, the counter steps before the body (section 15). |
 | `switch (x) { case "a": …; break; default: … }` | chain of `if` | Literal labels; every case ends with `break`, `return` or `throw`; `default` last. |
 | `try {…} catch (e) {…}` | `try` | The error is `local.e`, read as `e` inside the catch only. Without a parameter: `local.error`. |
-| `continue` | `next` | In a `while` or a `for…of`, without a label. |
+| `continue` | `next` | In a `while`, a `for…of` or a counted `for`, without a label. |
 | `return`, `return value`, `return {…}` | `return` | Leaves the Flow. Refused inside a loop (`FLOWSCRIPT_V3_RETURN_IN_LOOP`). |
 | `throw { code: "LITERAL", message }` | `throw` | `code` is a literal public code. |
 
@@ -162,7 +166,9 @@ The v2 expression subset is unchanged: scope paths, literals, arrays, objects, t
 - Write JavaScript methods: `name.toLowerCase()`, `text.includes(part)`, `list.length`, a template literal or `+`.
   The v2 functions (`lower`, `upper`, `trim`, `contains`, `length`, `json`) remain valid but differ on `null`
   (`lower(null)` is `""`), so sources are not rewritten.
-- `??` keeps `0`, `false` and `""`; `||` replaces them. `flow.default(a, b)` replaces `null`, `undefined` and `""`.
+- `??` keeps `0`, `false` and `""`; `||` replaces them. `flow.default(a, b)` replaces `null`, `undefined` and `""`, in
+  any expression. A bare `default(a, b)` is not JavaScript (`default` is a reserved word): it is refused
+  (`FLOWSCRIPT_V3_RESERVED_WORD`) with the rewrite `flow.default(a, b)`.
 - A regular expression literal is a block: `text.match`, `text.replace`, `text.split` (as in v2).
 
 ## 7. List methods
@@ -191,16 +197,21 @@ function Active({ input, config, result }) {
 | `xs.toSorted((a, b) => a.k.localeCompare(b.k))` | `list.sort({ items: xs, by: current.k, compare: "locale" })`; `b.k.localeCompare(a.k)` adds `direction: "desc"` |
 | `xs.toSorted((a, b) => a - b)` | `list.sort({ items: xs, compare: "number" })`; `b - a` adds `direction: "desc"` |
 | `xs.toSorted((a, b) => a.localeCompare(b))`, also with `String(a)` and `String(b)` | `list.sort({ items: xs, compare: "locale" })`; reversed operands add `direction: "desc"` |
+| `xs.toSorted((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0)` and its exact spellings | `list.sort({ items: xs, by: current.k, compare: "natural" })`; `b` first adds `direction: "desc"` |
+| `xs.toSorted((a, b) => c1 \|\| c2 \|\| …)`, each `ci` one of the comparators above | `list.sort` with the first key and `then: [{ by, compare, direction }, …]` |
 | `includes`, `slice`, `join`, `concat`, `at`, `indexOf`, `length` | expression methods, no block |
 
 - The function is an arrow with one parameter and an expression body without block call. `function (x) { return e }`
   is the same.
 - A method is written in an assignment or a `return`. Methods chain: each block method becomes a node whose result
   feeds the next step through a hidden local `local.__chain<N>`.
-- Refused, with a rewrite into two `const` (`FLOWSCRIPT_V3_CHAIN`): a step inside a branch of `?:`, `&&`, `||` or `??`;
-  a step in an argument of an expression function; a step after a scope read of the same statement.
-- Sorting keeps the JavaScript comparator: `compare: "number"` orders by `a - b` and `compare: "locale"` by
-  `String(a).localeCompare(String(b))`, on a copy sorted by the engine's `Array.prototype.sort`, exactly as the
+- Refused, with a rewrite into two `const` (`FLOWSCRIPT_V3_CHAIN`): a step inside a branch of `?:`, `&&`, `||` or `??`
+  (except a declaration or an assignment that is entirely `c ? a : b`, section 15); a step in an argument of an
+  expression function; a step after a scope read of the same statement. A step in an argument of `concat` runs before
+  it.
+- Sorting keeps the JavaScript comparator: `compare: "number"` orders by `a - b`, `compare: "locale"` by
+  `String(a).localeCompare(String(b))` and `compare: "natural"` by `a < b ? -1 : a > b ? 1 : 0` (the JavaScript `<` on
+  the raw keys), on a copy sorted by the engine's `Array.prototype.sort`, exactly as the
   arrow does: the sort is stable, and an absent key gives `NaN`, which the comparator treats as equal. With
   `compare: "locale"`, an absent key compares as the text `"undefined"`: this is the meaning of
   `String(a.k).localeCompare(String(b.k))`, while `a.k.localeCompare(b.k)` would fail in JavaScript; both forms
@@ -216,8 +227,8 @@ function Active({ input, config, result }) {
 - A list or a map is created typed: `const rows = json.array({ itemType: {…} })`, `const byId = json.map({ valueType: {…} })`.
 - `rows.push(v)` is `json.push({ path: "local.rows", value: v })`; `byId[key] = v` is `json.put({ path: "local.byId", key, value: v })`;
   `order.status = "paid"` is a `set`, as in v2.
-- `const rows = []` followed by `push` is refused (`FLOWSCRIPT_V3_UNTYPED_LIST`). The proposal is the `json.array`
-  with the item type taken from the pushed values.
+- `const rows = []` followed by `push` lowers to the `json.array` whose item type every pushed value proves, or is
+  refused (`FLOWSCRIPT_V3_UNTYPED_LIST`) with that `json.array` as its proposal (section 15).
 
 ## 9. Global functions
 
@@ -278,6 +289,7 @@ function Notify({ input, config, result }) {
 | Construct | Code | Rewrite |
 |---|---|---|
 | `break` | `FLOWSCRIPT_V3_BREAK` | a local tested by the `while` condition, or `find` / `filter` |
+| `default(x, y)` (a reserved word, not a function) | `FLOWSCRIPT_V3_RESERVED_WORD` | `flow.default(x, y)` |
 | `finally` | `FLOWSCRIPT_V3_FINALLY` | the statements after the `try` |
 | `return` inside a loop | `FLOWSCRIPT_V3_RETURN_IN_LOOP` | `continue`, or a local and a `return` after the loop |
 | a `for (;;)` other than the counted form | `FLOWSCRIPT_V3_FOR_FORM` | `for…of` or `while` |
@@ -329,7 +341,7 @@ otherwise. The author's own writing is always kept (`const` or `let`, loop varia
 | `try` | `try { … } catch (failure) { … }`, named after its error local |
 | `throw`, `return` | `throw { … }`, `return`, `return value` |
 | `list.filter`, `list.map`, `list.find`, `list.some`, `list.every` | `items.filter(item => c)`… |
-| `list.sort` with `compare` | `items.toSorted((a, b) => a.k - b.k)`, `… localeCompare …` |
+| `list.sort` with `compare` | `items.toSorted((a, b) => a.k - b.k)`, `… localeCompare …`, `a.k < b.k ? -1 : a.k > b.k ? 1 : 0`; `then` keys joined by `\|\|` |
 | `json.push`, `json.put` | `local.rows.push(v)`, `local.byId[key] = v` |
 | `object.keys`, `object.values`, `json.parse`, `json.stringify` | `Object.keys(o)`, `Object.values(o)`, `JSON.parse(t)`, `JSON.stringify(v)` / `JSON.stringify(v, null, 2)` |
 | a disabled statement | its natural form with `// @disabled` in its comment |
@@ -356,6 +368,19 @@ conformance test renders it, reads the rendering back and checks the same defini
 | `R-NESTED` | a block written inside the property of another block | it is not a statement |
 | `R-NO-NATURAL` | every other block (`sql.query`, `forEachChunk`, `flow.poll`…) | it has no natural form: a call is its JavaScript |
 
+**Call details.** The four control blocks are written `flow.while`, `flow.forEach`, `flow.if` and `flow.try`; the other
+blocks keep their name. An assignment writes the output of a call (`local.rows = sql.query({ … })`) and leaves out the
+destination it fills (`json.array`, `json.map`); a call with slots keeps its output as `$$out`, since an assignment holds
+no slot function. The v2 function `default(x, y)` is written `flow.default(x, y)` (section 15).
+
+**The guard.** A rendering is kept only when reading it back gives the same definition (the `comparable` of the code
+tools: implicit names and `__flowScript*` fields left out). Three things are not part of that comparison: blank lines,
+a property equal to the value the runtime reads when it is absent (`while` bounds 1000 and 60000, `try` error
+`local.error`, `return` value `${result}`, `list.sort` direction `asc`), and the hidden locals `local.__chain<N>`, which
+are folded into the assignment that only copies them and numbered in order. A natural form whose reading differs is
+written in its call form; when even the call forms read back differently, the rendering is refused
+(`FLOWSCRIPT_V3_RENDER_CHANGED_PROGRAM`) and nothing is written.
+
 ## 15. Changes after the L6 bench (L0′, 18/11/2026)
 
 The L6 bench (v3 form B against v2, ML4, Opus and gpt-6-sol, 120/120 cases in both arms) showed 15 refusals of common
@@ -366,24 +391,54 @@ replacement. The rules of the previous sections are amended accordingly.
    spellings (`>` first, `<=`/`>=` with an equality middle, `b` before `a` for descending) lower to
    `list.sort({ items: xs, by: current.k, compare: "natural" })`. `compare: "natural"` sorts a copy with the engine's
    `Array.prototype.sort` and that very comparator: `left < right ? -1 : left > right ? 1 : 0` on the raw keys. The
-   identity form (`a < b ? -1 : …`) sorts by the items themselves.
+   identity form (`a < b ? -1 : …`) sorts by the items themselves. *Exact spellings*: a ternary of `<`, `>`, `<=`, `>=`,
+   `==`, `!=`, `===`, `!==` tests between the two keys, with number results, is accepted when it gives the sign of that
+   comparator (or of its reverse) for every pair of keys. Each test is decided by the class of the pair: less, greater,
+   or neither, the last with `===`, with `==` only or with neither, for comparable keys and for incomparable ones
+   (`NaN`, `undefined`); the bridge checks the eight classes. `a.k === b.k ? 0 : a.k > b.k ? 1 : -1` or
+   `a.k < b.k ? -1 : 1` differ on an incomparable or loosely equal pair and stay refused (`FLOWSCRIPT_V3_LIST_METHOD`).
 2. **Several keys.** A comparator written `c1 || c2 || …`, where each `ci` is an accepted key comparator (`a.k - b.k`,
    `localeCompare`, relational), lowers to `list.sort` with the first key and `then: [{ by, compare, direction }, …]`
    for the next ones. The block evaluates `c1(a, b) || c2(a, b) || …` literally, so a `0` or `NaN` falls to the next
    key, exactly as `||` does.
-3. **`default(x, y)`.** The v2 expression function stays accepted in v3, with its v2 meaning, in any expression.
-   The guides teach `x ?? y` first.
+3. **`flow.default(x, y)`, not `default(x, y)`.** `default` is a reserved word of JavaScript: a bare `default(` outside
+   a `switch` is not JavaScript, so it stays refused (`FLOWSCRIPT_V3_RESERVED_WORD`) with the exact rewrite
+   `flow.default(x, y)` as its proposal, which the MCP may apply as a correction. `flow.default(x, y)` is valid
+   JavaScript and keeps exactly the meaning of the v2 `default` function, in any expression. The migrator rewrites
+   v2 `default(` to `flow.default(`; it writes `x ?? y` only where the meaning is proven identical (the v2 function may
+   treat `""` as absent). The guides teach `x ?? y` first.
 4. **Untyped lists.** `const rows = []` (or `let`) followed by `rows.push(v)` is accepted. If `json.array` accepts an
    item type that admits any value, the declaration lowers to that type, which is the JavaScript meaning. Otherwise the
    bridge infers the item type from every `push` of the Flow, and refuses with the exact `json.array({ itemType })`
-   proposal when the pushes disagree or cannot be typed.
-5. **`continue` in a counted `for`.** `for (let i = a; i < b; i++) { … continue … }` is accepted when the bound `b`
-   cannot change in the body (no assignment to a name it reads, no `push`/`[key] =` on a list or map it reads). It
-   lowers to a loop over the integer range `[a, b)` (or `[a, b]` for `<=`), where `continue` leaves the current pass.
-   When `b` may change, the refusal `FLOWSCRIPT_V3_FOR_FORM` says so and proposes a `while`.
+   proposal when the pushes disagree or cannot be typed. *Implementation (L0′)*: `json.array` admits no such type
+   (`unknown` is missing evidence, refused with `UNKNOWN_VALUE_TYPE`; there is no `any`). A value is typed from its
+   syntax alone, so that every run accepts it: text and template literals (`string`), finite number literals (`integer`,
+   `number`), `true`/`false`, comparisons, `!` (`boolean`), `typeof` (`string`), `null` (`nullable`), object literals
+   (`object`, whose fields of certain type become `properties`, the others unchecked), list literals, and `c ? a : b`.
+   A later `rows = []` or list literal joins the inference. A name, a path, a call or arithmetic (whose `NaN` no type
+   accepts) is refused at its line; the proposal is the `json.array` with the type proven by the other values
+   (`{ type: "number" }` for arithmetic), or `{ type: "CHOOSE_TYPE" }` when none or when they disagree.
+5. **`continue` in a counted `for`.** `for (let i = a; i < b; i++) { … continue … }` is accepted. *Implementation
+   (L0′)*: no range block is needed. The loop lowers with existing blocks to `local.__count<N> = a`, then
+   `while (local.__count<N> < b) { local.i = local.__count<N>; local.__count<N> = Number(local.__count<N>) + 1; … }`,
+   where `continue` is `next`: the counter steps before the body, so the test sees `i + 1` whether the pass ends early
+   or not, and `b` is read at every test as in JavaScript. The bound may therefore change in the body; the loop visits
+   the values of the range `[a, b)` (or `[a, b]` for `<=`) when it does not. Assigning `i` in the body stays refused
+   (`FLOWSCRIPT_V3_FOR_FORM`, proposal: a `while` with a local the body changes).
 6. **A list method in a branch of `?:`.** When a declaration or an assignment is entirely `cond ? branch1 : branch2`
    and a branch holds a list method chain, it lowers to `if (cond) { x = branch1 } else { x = branch2 }`, each chain
    lowered inside its branch. Other lazy positions keep `FLOWSCRIPT_V3_CHAIN` until the nested-call unroller
-   (study of 18/11, postponed).
+   (study of 18/11, postponed). *Implementation (L0′)*: the same holds for a field of a returned object literal (the
+   assignment of `result.x`) and for a global call lowered to a block (`Object.keys`, `JSON.parse`…) in a branch; a
+   nested `?:` in a branch is lowered the same way inside that branch; a step in the test of `?:` stays refused.
 7. **`xs.concat(ys)`.** It is accepted as a statement-level list method: a copy of `xs` followed by the items of `ys`
-   (`ys` a list; a non-list argument is appended as one item, as in JavaScript).
+   (`ys` a list; a non-list argument is appended as one item, as in JavaScript). It stays the expression method
+   (`Array.prototype.concat`); a list method chain in an argument runs before it, after the chain of `xs`, which is the
+   JavaScript order since list arrows have no effect.
+8. **`const` scope in Rhino 1.9.2.** Its parser gives a `const` the scope of its whole function: a `const agg` in a loop
+   body followed by `for (const agg of rows)` (line 91 of the L3 bench source), or two sibling blocks declaring the same
+   `const`, failed to parse (`FLOWSCRIPT_V3_UNSUPPORTED`). The preparation now writes each `const` declaration keyword
+   as `let`, same length (section 1); the `const` rules come from the source text. A `const` without a value is not
+   JavaScript and is refused (`FLOWSCRIPT_V3_UNSUPPORTED`).
+9. **`x++` on a text.** `x++` and the step of a counted `for` add 1 to `Number(x)`, as JavaScript does; `x + 1` joined a
+   numeric text (`"1"` gave `"11"`).

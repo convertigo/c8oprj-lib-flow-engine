@@ -379,7 +379,13 @@
 			var solutions = [];
 			function search(index, chosen, score) {
 				if (solutions.length >= 200) return;
-				if (index === values.length) { solutions.push({ keys: chosen.slice(), score: score, order: solutions.length }); return; }
+				if (index === values.length) {
+					// A per-item property (by, where, select) reads the items of its source property: an assignment that fills
+					// it without that source fits less (list.sort(input.rows, current.name) gives the rows to items, not then).
+					var orphan = chosen.some(function (key) { var source = props[key] && props[key].sourceProperty; return source && chosen.indexOf(source) < 0; });
+					solutions.push({ keys: chosen.slice(), score: orphan ? score * 0.7 : score, order: solutions.length });
+					return;
+				}
 				keys.forEach(function (key, k) {
 					if (weights[index][k] > 0 && chosen.indexOf(key) < 0) {
 						chosen.push(key); search(index + 1, chosen, score * weights[index][k]); chosen.pop();

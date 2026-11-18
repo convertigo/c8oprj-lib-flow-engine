@@ -27,8 +27,8 @@
       "id": "N-FOREACH-CONTINUE",
       "kind": "natural",
       "why": "current becomes item in its own body; a bare return in a loop body goes to the next item, as continue",
-      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.labels = json.array({ itemType: { type: \"string\" } })\n  forEach({\n    items: input.rows,\n    $$nodes: function () {\n      if (current.total == 0) {\n        return\n      }\n      json.push({ path: \"local.labels\", value: `${current.id}` })\n    },\n  })\n}\n",
-      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.labels = json.array({ itemType: { type: \"string\" } })\n  for (const item of input.rows) {\n    if (item.total == 0) {\n      continue\n    }\n    local.labels.push(`${item.id}`)\n  }\n}\n"
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.labels = json.array({ itemType: { type: \"string\" } })\n  forEach({\n    items: input.rows,\n    $$nodes: function () {\n      if (current.total == 0) {\n        return\n      }\n      json.push({ path: \"local.labels\", value: `${current.id} ${current.customer}` })\n    },\n  })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.labels = json.array({ itemType: { type: \"string\" } })\n  for (const item of input.rows) {\n    if (item.total == 0) {\n      continue\n    }\n    local.labels.push(`${item.id} ${item.customer}`)\n  }\n}\n"
     },
     {
       "id": "N-NESTED-NAMES",
@@ -159,9 +159,9 @@
     {
       "id": "R-NESTED",
       "kind": "call",
-      "why": "a block inside the property of another block is not a statement",
-      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  email.send({ to: config.ops, subject: \"Rows\", text: json.stringify({ value: input.rows }) })\n}\n",
-      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  email.send({ to: config.ops, subject: \"Rows\", text: json.stringify({ value: input.rows }) })\n}\n"
+      "why": "a block inside the property of another block is not a statement: json.stringify stays a call (v2 accepts a block inside a per-item property only)",
+      "v2": "const _flow = { sourceVersion: 2, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.texts = list.map({ items: input.groups, select: json.stringify({ value: current.rows }) })\n}\n",
+      "v3": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" }, groups: { type: \"array\" } } }\n\nfunction Case({ input, config, result }) {\n  local.texts = list.map({ items: input.groups, select: json.stringify({ value: current.rows }) })\n}\n"
     },
     {
       "id": "R-NO-NATURAL",

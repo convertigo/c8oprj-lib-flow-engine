@@ -4430,7 +4430,68 @@
 			sha256Hex: sha256Hex,
 			sourceFromDefinition: sourceFromDefinition,
 			flowScriptValidateRequest: flowScriptValidateRequest,
-			blocksWithFlowHelpers: blocksWithFlowHelpers
+			blocksWithFlowHelpers: blocksWithFlowHelpers,
+			renderFlowScriptV3: renderFlowScriptV3
+		};
+	}
+
+	function flowScriptV3RendererService() {
+		return loadEngineModule("flowscript-v3-renderer.js");
+	}
+
+	// The reading a v3 rendering is checked against: the reader of the code tools, today the prototype bridge
+	// followed by the v2 parser. The Java reader replaces it here, and only here.
+	function readFlowScriptV3Definition(blocks, code) {
+		return stripFlowScriptMetadata(parseFlowScript(blocks, code));
+	}
+
+	// The v3 text of a definition, kept only when reading it back gives the same definition (flowscript-v3.md, 14).
+	function renderFlowScriptV3(blocks, name, definition, request) {
+		var env = Object.assign(flowScriptRendererEnv(), {
+			v2Renderer: flowScriptRendererService(),
+			comparableDefinition: flowCodeService().comparableDefinition,
+			readV3Definition: function (_renderBlocks, _name, code) { return readFlowScriptV3Definition(blocks, code); },
+			destinationProperty: function (catalog, block) {
+				var descriptor = blockCatalog(catalog && catalog[block]) || {}, props = descriptor.props || {};
+				var keys = Object.keys(props).filter(function (key) {
+					return props[key] && props[key].declares === "out" && destinationContract().isWriteProperty(descriptor, key);
+				});
+				return keys.length === 1 ? keys[0] : "";
+			},
+			propertyBindsCurrent: function (catalog, block, key) {
+				var descriptor = blockCatalog(catalog && catalog[block]) || {};
+				var prop = descriptor.props && descriptor.props[key];
+				return !!(prop && prop.current);
+			}
+		});
+		var renderBlocks = blocksWithFlowHelpers ? blocksWithFlowHelpers(blocks, definition) : blocks;
+		env.renderBlocks = renderBlocks;
+		return flowScriptV3RendererService().renderGuarded(renderBlocks, name, definition, request || {}, env);
+	}
+
+	// FlowScript v2 to v3 (lot L2): the definition of a v2 text written in v3 and read back; nothing is saved.
+	function flowCodeMigrateV3Request(blocks, request) {
+		request = request || {};
+		var name = String(request.name || request.flowName || "Flow"), code = String(request.code || "");
+		var definition = request.definition && typeof request.definition === "object" ? request.definition : readFlowScriptV3Definition(blocks, code);
+		if (definition.flow && definition.flow.sourceVersion === 3 && request.rerender !== true) {
+			return { ok: true, name: name, sourceVersion: 3, migrated: false, code: code };
+		}
+		var target = JSON.parse(JSON.stringify(definition));
+		target.flow = Object.assign({ sourceVersion: 3 }, definition.flow || {}, { sourceVersion: 3 });
+		var rendered = renderFlowScriptV3(blocks, name, target, request);
+		return {
+			ok: rendered.ok === true,
+			name: name,
+			sourceVersion: definition.flow && definition.flow.sourceVersion === 3 ? 3 : 2,
+			migrated: rendered.ok === true,
+			code: rendered.ok ? rendered.code : "",
+			reason: rendered.ok ? "" : rendered.reason,
+			natural: rendered.natural || 0,
+			called: rendered.called || [],
+			attempts: rendered.attempts || 0,
+			// the text with every natural form, before the guard sent some back to their call form (not saved)
+			naturalCode: rendered.naturalCode !== rendered.code ? rendered.naturalCode : undefined
 		};
 	}
 
@@ -14326,6 +14387,12 @@
 		flowCodePromote: function (requestJson) {
 			return projectCall("flowCodePromote", requestJson, function (request) {
 				return flowCodePromoteRequest(loadBlocks(), request);
+			});
+		},
+
+		flowCodeMigrateV3: function (requestJson) {
+			return projectCall("flowCodeMigrateV3", requestJson, function (request) {
+				return flowCodeMigrateV3Request(loadBlocks(), request);
 			});
 		},
 

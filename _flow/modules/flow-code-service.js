@@ -1379,6 +1379,7 @@
 
 	return {
 		comparable: comparable,
+		comparableDefinition: comparable,
 		memoryDraftQNames: function (projectDir) {
 			return Object.keys(memoryDrafts()).filter(function (qname) { return memoryDrafts()[qname].projectDir === String(projectDir); }).sort();
 		},
