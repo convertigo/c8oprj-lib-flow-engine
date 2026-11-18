@@ -95,8 +95,7 @@
 				});
 				return flowScriptBlockCodeSource(name, code, meta);
 			}
-			validateBlockImplementationSource(name, implementationSource);
-			enforceRhinoImplementationPolicy(name, implementationSource);
+			// The compiler corrects Rhino loop declarations before validating the implementation.
 			return rhinoBlockCodeSource(name, implementationSource, meta);
 		}
 

@@ -354,13 +354,18 @@
 
 		function compileRhinoBlockCode(name, code, request) {
 			var extracted = extractFlowScriptBlockMeta(code);
-			var source = String(extracted.code || "").trim();
+			var corrected = correctRhinoLoopConsts(String(extracted.code || ""));
+			var source = corrected.code.trim();
 			var meta = Object.assign({}, flowScriptBlockMetaFromRequest(name, request), normalizeTree(extracted.meta || {}));
 			meta.runtime = "rhino";
 			var block = validateBlockImplementationSource(name, source);
 			var warnings = request && request.allowPrimitiveRhino === true
 				? rhinoImplementationWarnings(name, source)
 				: enforceRhinoImplementationPolicy(name, source);
+			if (corrected.fixes.length) warnings.unshift({
+				severity: "warning", code: "RHINO_CONST_IN_LOOP_CORRECTED", block: String(name),
+				message: "Const declarations inside Rhino loops were changed to let."
+			});
 			var canonicalCode = rhinoBlockCodeSource(name, source, meta);
 			var descriptor = flowScriptBlockDescriptorFromMeta(name, meta, source, canonicalCode);
 			return {
@@ -372,10 +377,56 @@
 				source: source,
 				definition: null,
 				diagnostics: [],
+				fixes: corrected.fixes,
 				warnings: warnings,
 				block: block,
 				runtime: "rhino"
 			};
+		}
+
+		function correctRhinoLoopConsts(source) {
+			if (!/\bconst\b/.test(source) || !/\b(?:for|while|do)\b/.test(source)) return { code: source, fixes: [] };
+			var options = new Packages.org.mozilla.javascript.CompilerEnvirons();
+			options.setLanguageVersion(200);
+			options.setRecordingComments(true);
+			var masked = source.replace(/"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|(\bfor\s*\(\s*)const\b/g,
+				function (token, prefix) { return prefix ? prefix + "let  " : token; });
+			var ast;
+			try {
+				ast = new Packages.org.mozilla.javascript.Parser(options).parse(masked, "rhino-block", 1);
+			} catch (_invalidSource) {
+				// The normal validator reports unsupported syntax. An uncertain AST cannot authorize a text edit.
+				return { code: source, fixes: [] };
+			}
+			var edits = [];
+			try {
+			ast.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (node) {
+				if (String(node.getClass().getSimpleName()) !== "VariableDeclaration") return true;
+				var at = Number(node.getAbsolutePosition());
+				if (source.substring(at, at + 5) !== "const" || /[\w$]/.test(source.charAt(at + 5))) return true;
+				var parent = node.getParent(), parentKind = parent && String(parent.getClass().getSimpleName());
+				if (parentKind === "ForLoop") return true; // the classic for initializer is not a loop body
+				var inLoop = parentKind === "ForInLoop";
+				for (; parent && !inLoop; parent = parent.getParent()) {
+					var kind = String(parent.getClass().getSimpleName());
+					if (kind === "FunctionNode") break;
+					if (kind === "ForLoop" || kind === "ForInLoop" || kind === "WhileLoop" || kind === "DoLoop") inLoop = true;
+				}
+				if (inLoop) edits.push(at);
+				return true;
+			} }));
+			} catch (_visitorUnavailable) {
+				// An isolated execution frame cannot create Java interface adapters. Its reload path must not edit source.
+				return { code: source, fixes: [] };
+			}
+			edits.sort(function (a, b) { return b - a; });
+			var fixes = [];
+			edits.forEach(function (at) {
+				fixes.push({ code: "RHINO_CONST_IN_LOOP_CORRECTED", line: source.substring(0, at).split(/\r\n|\r|\n/).length,
+					before: "const", after: "let" });
+				source = source.substring(0, at) + "let" + source.substring(at + 5);
+			});
+			return { code: source, fixes: fixes.reverse() };
 		}
 
 		function compileProjectBlockCode(blocks, name, code, request) {
