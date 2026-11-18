@@ -384,7 +384,7 @@
 			if (k === "BreakStatement") reject("FLOWSCRIPT_V3_BREAK", node, "Use a local tested by the while condition or find/filter.");
 			if (k === "ContinueStatement") { if (!loopDepth) reject("FLOWSCRIPT_V3_LOOP_FORM", node, "Use continue only inside a loop."); if (countedDepth) reject("FLOWSCRIPT_V3_FOR_FORM", node, "A counted for body cannot contain continue."); emit("return", origin); return; }
 			if (k === "ThrowStatement") {
-				var thrown = node.getExpression(); if (kind(thrown) === "Name") reject("FLOWSCRIPT_V3_PROTOTYPE_RETHROW", node, "Write a structured throw with a literal code.");
+				var thrown = node.getExpression(); if (kind(thrown) === "Name") reject("FLOWSCRIPT_V3_PROTOTYPE_RETHROW", node, "Raising the caught error again is not available yet: throw { code: \"LITERAL_CODE\", message: " + String(thrown.getIdentifier()) + ".message, details: " + String(thrown.getIdentifier()) + ".details }");
 				if (kind(thrown) === "NewExpression") reject("FLOWSCRIPT_V3_ERROR_CODE_CHOICE", node, "throw { code: \"CHOOSE_ERROR_CODE\", message: ... }");
 				if (kind(thrown) !== "ObjectLiteral") reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Throw an object with a literal code.");
 				emit("throw " + rewritten(thrown, current), origin); return;

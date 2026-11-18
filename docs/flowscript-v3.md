@@ -197,7 +197,10 @@ function Active({ input, config, result }) {
   a step in an argument of an expression function; a step after a scope read of the same statement.
 - Sorting keeps the JavaScript comparator: `compare: "number"` orders by `a - b` and `compare: "locale"` by
   `String(a).localeCompare(String(b))`, on a copy sorted by the engine's `Array.prototype.sort`, exactly as the
-  arrow does: the sort is stable, and an absent key gives `NaN`, which the comparator treats as equal. Without `compare`,
+  arrow does: the sort is stable, and an absent key gives `NaN`, which the comparator treats as equal. With
+  `compare: "locale"`, an absent key compares as the text `"undefined"`: this is the meaning of
+  `String(a.k).localeCompare(String(b.k))`, while `a.k.localeCompare(b.k)` would fail in JavaScript; both forms
+  give that `list.sort` (paths are null-safe, section 1). Without `compare`,
   `list.sort` keeps its Flow order (numeric texts as numbers, `null` as `""`), which no JavaScript comparator
   reproduces: it stays a call (section 14).
 - Refused: `xs.sort(…)` alone (it sorts in place, `list.sort` returns a copy: write `toSorted`), other comparators,
