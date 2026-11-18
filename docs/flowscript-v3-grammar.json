@@ -1,6 +1,6 @@
 {
   "sourceVersion": 3,
-  "status": "draft L3a 2026-11-18, amended L0′ 2026-11-18, L0′bis 2026-11-18",
+  "status": "draft L3a 2026-11-18, amended L0′ and L0′bis 2026-11-18; examples and fragments for the generated guides and the conformance test (L4)",
   "parser": {
     "engine": "rhino",
     "version": "1.9.2",
@@ -32,60 +32,105 @@
       "id": "import-named",
       "construct": "const { name, name: alias } = flow.import(\"module\")",
       "lowering": "imports[alias] = module.name",
-      "where": "top level, before functions"
+      "where": "top level, before functions",
+      "examples": [
+        "const _flow = { sourceVersion: 3 }\n\nconst { get: httpGet, post } = flow.import(\"http\")\n\nfunction Imports({ input, config, result }) {\n  const page = httpGet({ url: config.api.url })\n  return { status: page.status }\n}\n"
+      ]
     },
     {
       "id": "import-namespace",
       "construct": "const ns = flow.import(\"module\")",
       "lowering": "imports[ns.*] = module",
-      "where": "top level, before functions"
+      "where": "top level, before functions",
+      "examples": [
+        "const _flow = { sourceVersion: 3 }\n\nconst requestable = flow.import(\"requestable\")\n\nfunction Imports({ input, config, result }) {\n  const contacts = requestable.call({ requestable: \".ListContacts\", input: { limit: 10 } })\n  return { contacts }\n}\n"
+      ]
     },
     {
       "id": "declare",
       "construct": "const x = e | let x = e | let x",
       "block": "set",
-      "lowering": "local.x = e (undefined without value)"
+      "lowering": "local.x = e (undefined without value)",
+      "examples": [
+        "const total = 0\nlet count = input.items.length\nlet found\nreturn { total, count, found }"
+      ]
+    },
+    {
+      "id": "untyped-list",
+      "since": "L0'",
+      "construct": "const rows = [] | let rows = [], then rows.push(v)",
+      "lowering": "json.array({ itemType }) with the type every push proves from its syntax (literals, comparisons, object and list literals)",
+      "where": "otherwise FLOWSCRIPT_V3_UNTYPED_LIST with the json.array to write",
+      "examples": [
+        "const rows = []\nfor (const item of input.items) {\n  rows.push({ label: item.label, size: `${item.size}`, large: item.size > 10 })\n}\nreturn { rows }",
+        "let names = []\nnames.push(\"a\")\nnames.push(null)\nif (input.reset) {\n  names = []\n}\nreturn { names }"
+      ],
+      "block": "json.array"
     },
     {
       "id": "declare-destructuring",
       "construct": "const { a, b: c } = o",
       "block": "set",
       "lowering": "local.a = o.a; local.c = o.b",
-      "limits": "one level, no default, no rest"
+      "limits": "one level, no default, no rest",
+      "examples": [
+        "const { currency, limit: max } = config.billing\nreturn { currency, max }"
+      ]
     },
     {
       "id": "assign-local",
       "construct": "x = e | local.x = e | local.o.k = e",
-      "block": "set"
+      "block": "set",
+      "examples": [
+        "let x = 1\nx = 2\nlocal.o = { k: 1 }\nlocal.o.k = 3\nresult.x = x"
+      ]
     },
     {
       "id": "assign-compound",
-      "construct": "x += e | x -= e | x *= e | x /= e | x++ | x-- | o.f++ | o.f += e (a field of a local object or of result)",
+      "construct": "x += e | x -= e | x *= e | x /= e | x++ | x-- | o.f++ | o.f += e",
       "block": "set",
-      "lowering": "local.x = local.x + (e); x++ is local.x = Number(local.x) + 1 (JavaScript converts to a number first); x-- is local.x = local.x - 1; o.f++ is local.o.f = Number(local.o.f) + 1, the object being shared as in JavaScript (an object read from a map is that object)",
-      "where": "statement only"
+      "lowering": "local.x = local.x + (e); x++ is local.x = Number(local.x) + 1; o.f is a field of a local object or of result, shared as in JavaScript",
+      "where": "statement only",
+      "examples": [
+        "let x = 10\nx += 2\nx -= 1\nx *= 3\nx /= 3\nx++\nx--\nreturn { x }",
+        "const byCat = json.map({ valueType: { type: \"object\" } })\nfor (const row of input.rows) {\n  if (byCat[row.category] == null) {\n    byCat[row.category] = { count: 0, total: 0 }\n  }\n  const g = byCat[row.category]\n  g.count++\n  g.total += row.amount\n}\nreturn { byCat }"
+      ]
     },
     {
       "id": "result-field",
       "construct": "result.x = e",
-      "block": "set"
+      "block": "set",
+      "examples": [
+        "result.total = input.items.length\nresult.label = \"done\""
+      ]
     },
     {
       "id": "return-object",
       "construct": "return { a, b: e }",
       "block": "set + return",
-      "lowering": "result.a = local.a; result.b = e; return"
+      "lowering": "result.a = local.a; result.b = e; return",
+      "examples": [
+        "const total = input.items.length\nreturn { total, count: total + 1 }"
+      ]
     },
     {
       "id": "return",
       "construct": "return | return e",
-      "block": "return"
+      "block": "return",
+      "examples": [
+        "result.n = 1\nreturn",
+        "return 3"
+      ]
     },
     {
       "id": "if",
       "construct": "if (c) {…} else if (d) {…} else {…}",
       "block": "if",
-      "lowering": "a list method or a global call that the condition always evaluates (not in the right operand of && || ??, a branch of ?:, a call argument or an arrow) runs before the if in local.__chain<N>; an else if condition inside its else"
+      "examples": [
+        "if (input.items.length > 2) {\n  result.size = \"large\"\n} else if (input.items.length > 0) {\n  result.size = \"small\"\n} else {\n  result.size = \"empty\"\n}",
+        "const actor = input.actor\nif (!actor.roles.some(role => role == \"OWNER\")) {\n  return { owner: false }\n}\nif (Object.keys(input.o).length == 0) {\n  return { owner: true, empty: true }\n}\nreturn { owner: true }"
+      ],
+      "lowering": "a list method or global call the condition always evaluates runs before the if, in a hidden local"
     },
     {
       "id": "while",
@@ -95,54 +140,95 @@
         "maxIterations": 1000,
         "timeoutMs": 60000
       },
-      "where": "no list method or global call in the condition (FLOWSCRIPT_V3_CHAIN): it is evaluated before every pass"
+      "examples": [
+        "let n = 0\nwhile (n < 3) {\n  n++\n}\nreturn { n }"
+      ],
+      "where": "no list method in the condition, evaluated before every pass (FLOWSCRIPT_V3_CHAIN)"
     },
     {
       "id": "for-of",
       "construct": "for (const item of items) {…}",
       "block": "forEach",
-      "lowering": "item read as current in its own body; when a nested construct rebinds current and reads the outer item, copy it to local.item at the start of the outer body; one-level destructured fields are copied from current.field; items may be Object.keys(o), Object.values(o) or a list method chain (filter, map, toSorted, sort, concat), computed once before the loop in local.__chain<N>"
+      "lowering": "item read as current; an outer item read by a nested loop or arrow is copied to local.item; items may be Object.keys(o), Object.values(o) or a chain, computed once before the loop",
+      "examples": [
+        "let total = 0\nfor (const item of input.items) {\n  total += item.amount\n}\nfor (const { id } of input.rows) {\n  total += id\n}\nreturn { total }",
+        "const names = json.array({ itemType: { type: \"string\" } })\nfor (const key of Object.keys(input.groups)) {\n  names.push(key)\n}\nlet total = 0\nfor (const amount of Object.values(input.groups)) {\n  total += amount\n}\nfor (const row of input.rows.filter(row => row.active)) {\n  total += row.amount\n}\nreturn { names, total }"
+      ]
     },
     {
       "id": "for-counted",
       "construct": "for (let i = a; i < b; i++) {…}",
       "block": "set + while",
       "limits": "< or <=, step ++, i not assigned in the body; maxIterations 1000000",
-      "lowering": "local.i = a; while (i < b) { body; local.i = Number(local.i) + 1 }; when continue leaves the loop body: local.__count<N> = a; while (__count < b) { local.i = __count; __count = Number(__count) + 1; body } (continue is next), the bound read at every test as in JavaScript"
+      "examples": [
+        "let total = 0\nfor (let i = 0; i < 4; i++) {\n  total += i\n}\nfor (let j = 1; j <= 3; j++) {\n  total += j\n}\nreturn { total }"
+      ],
+      "lowering": "local.i = a; while (i < b) { body; local.i = Number(local.i) + 1 }"
+    },
+    {
+      "id": "for-counted-continue",
+      "since": "L0'",
+      "construct": "for (let i = a; i < b; i++) { … continue … }",
+      "block": "set + while + next",
+      "where": "i not assigned in the body",
+      "examples": [
+        "let total = 0\nfor (let i = 0; i < input.items.length; i++) {\n  if (i == 1) {\n    continue\n  }\n  total += i\n}\nreturn { total }",
+        "let n = 3\nconst seen = json.array({ itemType: { type: \"integer\" } })\nfor (let i = 1; i <= n; i++) {\n  if (i == 1) {\n    n = 5\n    continue\n  }\n  seen.push(i)\n}\nreturn { seen }"
+      ],
+      "lowering": "a hidden counter local.__count<N> steps before the body, continue is next, the bound is read at every test"
     },
     {
       "id": "switch",
       "construct": "switch (x) { case LITERAL: …; break; default: … }",
       "block": "if chain",
-      "limits": "literal labels, every case ends with break/return/throw, default last"
+      "limits": "literal labels, every case ends with break/return/throw, default last",
+      "examples": [
+        "switch (input.items.length) {\n  case 2:\n    result.value = \"two\"\n    break\n  case 3:\n    result.value = \"three\"\n    break\n  default:\n    result.value = \"other\"\n    break\n}"
+      ]
     },
     {
       "id": "try-catch",
       "construct": "try {…} catch (e) {…}",
       "block": "try",
-      "lowering": "error = local.e (local.error without parameter); e read inside catch only"
+      "lowering": "error = local.e (local.error without parameter); e read inside catch only",
+      "examples": [
+        "try {\n  throw { code: \"KNOWN\", message: \"x\" }\n} catch (failure) {\n  result.code = failure.code\n}",
+        "try {\n  result.ok = true\n} catch {\n  result.ok = false\n}"
+      ]
     },
     {
       "id": "continue",
       "construct": "continue",
       "block": "next",
-      "where": "while, for…of or counted for, no label"
+      "where": "while, for…of or counted for, no label",
+      "examples": [
+        "const kept = json.array({ itemType: { type: \"integer\" } })\nfor (const item of input.items) {\n  if (item < 2) {\n    continue\n  }\n  kept.push(item)\n}\nreturn { kept }"
+      ]
     },
     {
       "id": "throw-object",
-      "construct": "throw { code: \"LITERAL\", message, details, status }",
-      "block": "throw"
+      "construct": "throw { code: \"LITERAL\", message, details }",
+      "block": "throw",
+      "examples": [
+        "throw { code: \"NAME_REQUIRED\", message: \"name is required\", status: 400 }"
+      ]
     },
     {
       "id": "throw-rethrow",
       "construct": "throw e",
       "block": "throw",
-      "where": "e is the parameter of the enclosing catch, not assigned"
+      "where": "e is the parameter of the enclosing catch, not assigned",
+      "examples": [
+        "try {\n  result.ok = true\n} catch (failure) {\n  if (failure.code != \"SMTP_UNAVAILABLE\") {\n    throw failure\n  }\n  result.queued = true\n}"
+      ]
     },
     {
       "id": "optional-chaining",
       "construct": "a?.b | a?.[k]",
-      "lowering": "same as a.b (paths are null-safe)"
+      "lowering": "same as a.b (paths are null-safe)",
+      "examples": [
+        "return { count: input?.items?.length, first: input?.items?.[0] }"
+      ]
     },
     {
       "id": "list-filter",
@@ -151,7 +237,10 @@
       "properties": {
         "items": "xs",
         "where": "c with x as current"
-      }
+      },
+      "examples": [
+        "const active = input.rows.filter(row => row.active)\nreturn { active }"
+      ]
     },
     {
       "id": "list-map",
@@ -160,7 +249,10 @@
       "properties": {
         "items": "xs",
         "select": "e with x as current"
-      }
+      },
+      "examples": [
+        "const ids = input.rows.map(row => row.id)\nconst cards = input.rows.map(row => ({ id: row.id, name: row.name }))\nreturn { ids, cards }"
+      ]
     },
     {
       "id": "list-find",
@@ -170,7 +262,10 @@
         "items": "xs",
         "where": "c"
       },
-      "note": "new block"
+      "note": "new block",
+      "examples": [
+        "const first = input.rows.find(row => row.vip)\nreturn { first }"
+      ]
     },
     {
       "id": "list-some",
@@ -180,7 +275,10 @@
         "items": "xs",
         "where": "c"
       },
-      "note": "new block"
+      "note": "new block",
+      "examples": [
+        "const anyLate = input.rows.some(row => row.late)\nreturn { anyLate }"
+      ]
     },
     {
       "id": "list-every",
@@ -190,31 +288,85 @@
         "items": "xs",
         "where": "c"
       },
-      "note": "new block"
+      "note": "new block",
+      "examples": [
+        "const allPaid = input.rows.every(row => row.paid)\nreturn { allPaid }"
+      ]
     },
     {
       "id": "list-sort",
-      "construct": "xs.toSorted(cmp) | [...xs].sort(cmp), cmp = c1 || c2 || …, each ci: a.k - b.k | a.k.localeCompare(b.k) (String() allowed) | a.k < b.k ? -1 : a.k > b.k ? 1 : 0 and every ternary of <, >, <=, >=, ==, !=, ===, !== tests on the two keys with number results that gives its sign for every pair of values; b before a for descending; a and b alone for the items themselves",
+      "construct": "xs.toSorted((a, b) => a.k - b.k) | xs.toSorted((a, b) => a - b) | xs.toSorted((a, b) => a.k.localeCompare(b.k)) | xs.toSorted((a, b) => a.localeCompare(b)) | [...xs].sort((a, b) => b.k - a.k)",
       "block": "list.sort",
       "properties": {
         "items": "xs",
-        "by": "current.k for the first key; omitted for an identity comparator (the block uses current)",
-        "compare": "number (a - b) | locale (localeCompare) | natural (a < b ? -1 : a > b ? 1 : 0, raw keys)",
-        "direction": "desc when b comes first",
-        "then": "[{ by, compare, direction }, …] for c2, c3…, evaluated literally as c1 || c2 || … (a 0 or NaN falls to the next key)"
+        "by": "current.k for a key comparator; omitted for an identity comparator (the block uses current)",
+        "compare": "number (a - b) | locale (String(a).localeCompare(String(b)))",
+        "direction": "desc when b comes first"
       },
-      "note": "a copy sorted by the engine's Array.prototype.sort with the arrow's comparator (stable; NaN compares equal); a ternary comparator is checked on the eight classes of a pair of keys (less, greater, and equal or incomparable with ===, == only or neither); without compare list.sort keeps its Flow order"
+      "note": "a copy sorted by Array.prototype.sort with the arrow's comparator; without compare, the Flow order",
+      "examples": [
+        "const byScore = input.rows.toSorted((a, b) => a.score - b.score)\nconst top = input.rows.toSorted((a, b) => b.score - a.score)\nreturn { byScore, top }",
+        "const sorted = input.rows.toSorted((a, b) => a.name.localeCompare(b.name))\nconst reversed = input.rows.toSorted((a, b) => b.name.localeCompare(a.name))\nreturn { sorted, reversed }",
+        "const numbers = input.values.toSorted((a, b) => a - b)\nconst words = input.names.toSorted((a, b) => a.localeCompare(b))\nconst texts = input.names.toSorted((a, b) => String(a).localeCompare(String(b)))\nreturn { numbers, words, texts }",
+        "const copy = [...input.rows].sort((a, b) => b.score - a.score)\nreturn { copy }"
+      ]
+    },
+    {
+      "id": "list-sort-natural",
+      "since": "L0'",
+      "construct": "xs.toSorted((a, b) => a.k < b.k ? -1 : (a.k > b.k ? 1 : 0)), and every ternary of comparisons of the two keys with the same sign for every pair",
+      "block": "list.sort",
+      "properties": {
+        "items": "xs",
+        "by": "current.k (omitted for a < b ? …)",
+        "compare": "natural: a < b ? -1 : a > b ? 1 : 0 on the raw keys",
+        "direction": "desc when b comes first"
+      },
+      "note": "checked on the eight classes of a key pair; a.k < b.k ? -1 : 1 is refused",
+      "examples": [
+        "const sorted = input.rows.toSorted((a, b) => a.k < b.k ? -1 : (a.k > b.k ? 1 : 0))\nconst down = input.rows.toSorted((a, b) => b.k < a.k ? -1 : (b.k > a.k ? 1 : 0))\nconst same = input.rows.toSorted((a, b) => a.k <= b.k ? (a.k < b.k ? -1 : 0) : (a.k > b.k ? 1 : 0))\nconst items = input.values.toSorted((a, b) => a < b ? -1 : a > b ? 1 : 0)\nreturn { sorted, down, same, items }"
+      ]
+    },
+    {
+      "id": "list-sort-keys",
+      "since": "L0'",
+      "construct": "xs.toSorted((a, b) => c1 || c2 || …), each ci a key comparator",
+      "block": "list.sort",
+      "properties": {
+        "then": "[{ by, compare, direction }, …] for c2, c3…"
+      },
+      "note": "c1 || c2 evaluated literally: a 0 or NaN falls to the next key",
+      "examples": [
+        "const sorted = input.rows.toSorted((a, b) => a.group.localeCompare(b.group) || b.score - a.score)\nconst stats = input.rows.toSorted((a, b) => (b.sumCents - a.sumCents) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0))\nreturn { sorted, stats }"
+      ]
     },
     {
       "id": "chain",
       "construct": "xs.filter(…).map(…).join(\", \")",
       "lowering": "one node per block step, linked by local.__chain<N>",
-      "where": "assignment or return; a value that is entirely c ? a : b with a step in a branch lowers to if (c) { x = a } else { x = b }; not in other branches of ?: && || ??, not in an expression function argument, not after a scope read of the statement"
+      "where": "assignment, return, if condition; not in && || ?? branches, a ?: inside an expression, a call argument, after a scope read, a while condition",
+      "examples": [
+        "const names = input.rows.filter(row => row.active).map(row => row.name).join(\", \")\nconst late = input.rows.filter(row => row.late).length\nreturn { names, late }"
+      ]
+    },
+    {
+      "id": "chain-ternary",
+      "since": "L0'",
+      "construct": "const x = cond ? xs.filter(…).map(…) : ys",
+      "lowering": "if (cond) { x = branch1 } else { x = branch2 }, each chain lowered in its branch",
+      "where": "a declaration, assignment or returned field that is entirely the ?:",
+      "examples": [
+        "const names = input.ok ? input.rows.filter(row => row.active).map(row => row.name) : []\nconst post = input.id !== null ? input.posts.find(p => p.id === input.id) : undefined\nreturn { names, post, keys: input.o ? Object.keys(input.o) : [] }"
+      ]
     },
     {
       "id": "concat",
+      "since": "L0'",
       "construct": "xs.concat(ys, …)",
-      "lowering": "the expression method (Array.prototype.concat: a list argument is spread, another value appended as one item); list method chains in the arguments run before it, after the chain of xs"
+      "lowering": "the expression method Array.prototype.concat; a chain in an argument runs before it",
+      "examples": [
+        "const all = input.xs.concat(input.ys)\nlet items = []\nfor (const page of input.pages) {\n  items = items.concat(page.rows.map(row => ({ id: row.id })))\n}\nreturn { all, items }"
+      ]
     },
     {
       "id": "push",
@@ -224,14 +376,10 @@
         "path": "local.rows",
         "value": "v"
       },
-      "where": "rows created by json.array, or by const rows = [] / let rows = [] whose item type every push proves"
-    },
-    {
-      "id": "list-untyped",
-      "construct": "const rows = [] | let rows = [] followed by rows.push(v)",
-      "block": "json.array",
-      "lowering": "local.rows = json.array({ itemType }) with the type every pushed value has from its syntax (string and template literals, number literals, booleans, comparisons, !, typeof, null as nullable, object literals whose fields of certain type become properties, list literals); a later rows = [] or list literal joins the inference",
-      "where": "json.array admits no item type that accepts any value (unknown is refused: UNKNOWN_VALUE_TYPE); otherwise FLOWSCRIPT_V3_UNTYPED_LIST with the json.array proposal"
+      "where": "rows created by json.array, or by const rows = [] / let rows = [] whose item type every push proves",
+      "examples": [
+        "const rows = json.array({ itemType: { type: \"string\" } })\nfor (const item of input.items) {\n  rows.push(item.label)\n}\nreturn { rows }"
+      ]
     },
     {
       "id": "put",
@@ -242,7 +390,10 @@
         "key": "key",
         "value": "v"
       },
-      "where": "byId created by json.map"
+      "where": "byId created by json.map",
+      "examples": [
+        "const byId = json.map({ valueType: { type: \"integer\" } })\nbyId[\"a\"] = 3\nbyId[input.key] = 4\nreturn { byId }"
+      ]
     },
     {
       "id": "object-keys",
@@ -251,7 +402,10 @@
       "properties": {
         "source": "o"
       },
-      "where": "assignment, return, chain head, if condition, for…of list"
+      "where": "assignment, return, chain head, if condition, for…of list",
+      "examples": [
+        "const keys = Object.keys({ a: 1, b: 2 })\nreturn { keys }"
+      ]
     },
     {
       "id": "object-values",
@@ -260,7 +414,10 @@
       "properties": {
         "source": "o"
       },
-      "where": "assignment, return, chain head, if condition, for…of list"
+      "where": "assignment, return, chain head, if condition, for…of list",
+      "examples": [
+        "const values = Object.values({ a: 1, b: 2 })\nreturn { values }"
+      ]
     },
     {
       "id": "json-parse",
@@ -269,7 +426,10 @@
       "properties": {
         "text": "t"
       },
-      "where": "assignment, return, chain head, if condition"
+      "where": "assignment, return, chain head, if condition",
+      "examples": [
+        "const value = JSON.parse(\"{\\\"a\\\":1}\")\nreturn { value }"
+      ]
     },
     {
       "id": "json-stringify",
@@ -279,167 +439,217 @@
         "value": "v",
         "pretty": "true with (null, 2)"
       },
-      "where": "assignment, return, chain head, if condition"
+      "where": "assignment, return, chain head, if condition",
+      "examples": [
+        "const compact = JSON.stringify(input.rows)\nconst pretty = JSON.stringify(input.rows, null, 2)\nreturn { compact, pretty }"
+      ]
     },
     {
       "id": "default",
       "construct": "flow.default(a, b)",
       "lowering": "expression function default (null, undefined and \"\" replaced)",
+      "examples": [
+        "const name = flow.default(input.name, \"Ada\")\nconst other = input.name ?? \"Ada\"\nconst label = `[${flow.default(input.label, \"none\")}]`\nconst names = input.rows.map(row => flow.default(row.name, \"?\"))\nreturn { name, other, label, names }"
+      ],
       "where": "any expression; a bare default( is refused (FLOWSCRIPT_V3_RESERVED_WORD)"
     },
     {
       "id": "call-fallback",
       "construct": "flow.while({…}) | flow.forEach({…}) | flow.if({…}) | flow.try({…})",
       "block": "while | forEach | if | try",
-      "where": "properties beyond the JavaScript form; slots keep $$ keys, each written $$s() { … }, $$s: function () { … } or $$s: () => { … } without parameter; declared, assigned or returned, the call writes its output with $$out"
+      "where": "properties beyond the JavaScript form; a slot is $$s() {…}, $$s: function () {…} or $$s: () => {…}; assigned or returned, the call writes $$out",
+      "examples": [
+        "let n = 0\nflow.while({ condition: n < 3, maxIterations: 100000, $$nodes() {\n  n++\n} })\nflow.if({ condition: n == 3, $$then() {\n  result.n = n\n} })",
+        "let n = 0\nflow.forEach({ items: input.items, $$nodes: function () {\n  n += current\n} })\nconst loop = flow.while({ condition: n < 10, $$nodes: () => {\n  n++\n} })\nconfig.use({ overrides: { http: { timeout: 30000 } }, $$then() {\n  result.timeout = config.http.timeout\n} })\nresult.loop = loop"
+      ]
     },
     {
       "id": "label",
       "construct": "name: statement",
-      "lowering": "explicit node name"
+      "lowering": "explicit node name",
+      "examples": [
+        "checkStock: if (input.items.length > 1) {\n  result.many = true\n}"
+      ]
     },
     {
       "id": "comment",
       "construct": "// text or /* text */ above a statement, no blank line",
-      "lowering": "node comment (formatter writes // lines); standalone comment node after a blank line"
+      "lowering": "node comment (formatter writes // lines); standalone comment node after a blank line",
+      "examples": [
+        "// total of the open orders\nlet total = 0\n\n// a standalone comment node\ntotal += 1\nreturn { total }"
+      ]
     },
     {
       "id": "disabled",
       "construct": "// @disabled in the attached comment",
-      "lowering": "$$disabled: true"
+      "lowering": "$$disabled: true",
+      "examples": [
+        "// @disabled\nresult.ignored = 1\nresult.count = input.items.length"
+      ]
     },
     {
       "id": "helper",
       "construct": "function helper({ a, b }) { … } after the Flow function, called helper({ a: 1 })",
-      "lowering": "helper block, as in v2; body under the same rules"
+      "lowering": "helper block, as in v2; body under the same rules",
+      "examples": [
+        "const _flow = { sourceVersion: 3 }\n\nfunction Order({ input, config, result }) {\n  const sum = total({ rows: input.rows })\n  return { sum }\n}\n\nfunction total({ rows }) {\n  let sum = 0\n  for (const row of rows) {\n    sum += row.amount\n  }\n  return sum\n}\n"
+      ]
     }
   ],
   "refused": [
     {
       "code": "FLOWSCRIPT_V3_IMPORT_SYNTAX",
       "construct": "import … from \"…\"",
-      "rewrite": "const { … } = flow.import(\"…\")"
+      "rewrite": "const { … } = flow.import(\"…\")",
+      "parseError": true,
+      "example": "const _flow = { sourceVersion: 3 }\n\nimport { get } from \"http\"\n\nfunction Example({ input, config, result }) {\n  return { ok: true }\n}\n"
     },
     {
       "code": "FLOWSCRIPT_V3_RESERVED_NAME",
       "construct": "declaring or importing flow, a scope name, or a local starting with __",
-      "rewrite": "another name"
+      "rewrite": "another name",
+      "example": "let flow = 1"
     },
     {
       "code": "FLOWSCRIPT_V3_RESERVED_WORD",
+      "since": "L0'",
       "construct": "default(x, y) outside a switch: default is a reserved word, so this is not JavaScript",
-      "rewrite": "flow.default(x, y), with the same arguments"
+      "rewrite": "flow.default(x, y), with the same arguments",
+      "parseError": true,
+      "example": "const name = default(input.name, \"Ada\")"
     },
     {
       "code": "FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK",
       "construct": "a local named like a block namespace the Flow uses (text, list, json…)",
-      "rewrite": "another name"
+      "rewrite": "another name",
+      "example": "let text = 1\ntext.trim({ text: \"a\" })"
     },
     {
       "code": "FLOWSCRIPT_V3_LOCAL_ALIAS",
       "construct": "x and local.x in the same Flow",
-      "rewrite": "one spelling"
+      "rewrite": "one spelling",
+      "example": "let x = 1\nlocal.x = 2"
     },
     {
       "code": "FLOWSCRIPT_V3_OUT_OF_SCOPE",
       "construct": "a name read outside the block that declares it",
-      "rewrite": "declare it in the enclosing block"
+      "rewrite": "declare it in the enclosing block",
+      "example": "if (true) {\n  let x = 1\n}\nreturn { x }"
     },
     {
       "code": "FLOWSCRIPT_V3_SHADOWING",
       "construct": "a name declared again in an enclosed block, or hiding an import or a loop variable",
-      "rewrite": "another name"
+      "rewrite": "another name",
+      "example": "let x = 1\nif (true) {\n  let x = 2\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_CONST_ASSIGN",
       "construct": "assigning a const",
-      "rewrite": "let"
+      "rewrite": "let",
+      "example": "const x = 1\nx = 2"
     },
     {
       "code": "FLOWSCRIPT_V3_DESTRUCTURING",
       "construct": "destructuring with default, rest or nesting",
-      "rewrite": "one const per field"
+      "rewrite": "one const per field",
+      "example": "const { a = 1 } = input"
     },
     {
       "code": "FLOWSCRIPT_V3_COMPOUND_CONTEXT",
       "construct": "x++ or x += e inside an expression",
-      "rewrite": "a statement of its own"
+      "rewrite": "a statement of its own",
+      "example": "let x = 0\nreturn { y: x++ }"
     },
     {
       "code": "FLOWSCRIPT_V3_RESULT_MIXED",
       "construct": "result.x = … and return { … } in the same Flow",
-      "rewrite": "one style"
+      "rewrite": "one style",
+      "example": "result.x = 1\nreturn { x: 2 }"
     },
     {
       "code": "FLOWSCRIPT_V3_BREAK",
       "construct": "break",
-      "rewrite": "a local tested by the while condition, or find / filter"
+      "rewrite": "a local tested by the while condition, or find / filter",
+      "example": "while (true) {\n  break\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_FINALLY",
       "construct": "finally",
-      "rewrite": "the statements after the try"
+      "rewrite": "the statements after the try",
+      "example": "try {\n  result.x = 1\n} catch (e) {\n  result.x = 0\n} finally {\n  result.y = 2\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_RETURN_IN_LOOP",
       "construct": "return inside a loop",
-      "rewrite": "continue, or a local and a return after the loop"
+      "rewrite": "continue, or a local and a return after the loop",
+      "example": "for (const item of input.items) {\n  return { item }\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_FOR_FORM",
       "construct": "a for (;;) other than for (let i = a; i < b; i++), or a counter assigned in the body",
-      "rewrite": "for…of, or a while with a local the body changes"
+      "rewrite": "for…of, or a while with a local the body changes",
+      "example": "for (let i = 0; i < 3; i += 2) {\n  result.x = i\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_SWITCH_FALLTHROUGH",
       "construct": "switch with fall-through, non-literal case or default not last",
-      "rewrite": "if / else if"
+      "rewrite": "if / else if",
+      "example": "switch (input.items.length) {\n  case 1:\n    result.x = 1\n  case 2:\n    result.x = 2\n    break\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_LOOP_FORM",
       "construct": "do … while, for … in, labelled loop, labelled break or continue",
-      "rewrite": "while, for (const key of Object.keys(o))"
+      "rewrite": "while, for (const key of Object.keys(o))",
+      "example": "for (const key in input.items) {\n  result.x = key\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_FUNCTION",
-      "construct": "a function other than a top-level helper, a list arrow or a slot: nested, in an expression, a closure; a slot arrow with an expression body, a slot with a parameter",
-      "rewrite": "inline, a top-level helper, or a project block; a slot: $$s() { … }, $$s: function () { … } or $$s: () => { … }"
+      "construct": "a function other than a top-level helper, a list arrow or a slot (nested, in an expression, a closure); a slot with a parameter or an expression body",
+      "rewrite": "inline, a top-level helper, or a project block; a slot $$s() {…}",
+      "example": "const twice = function (x) {\n  return x * 2\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_CHAIN",
-      "construct": "a block method in a branch of ?: inside a larger expression, in a branch of && || ??, in the test of ?:, in an expression function argument, or after a scope read of the statement; a list method or global call in a while condition (proposal: a let computed before the loop and at the end of the body)",
-      "rewrite": "two const"
+      "construct": "a block method in && || ?? branches, a ?: inside an expression or its test, a call argument, after a scope read, a while condition",
+      "rewrite": "two const",
+      "example": "const found = input.ok && input.rows.filter(row => row.active).length"
     },
     {
       "code": "FLOWSCRIPT_V3_LIST_METHOD",
-      "construct": "xs.sort alone, a comparator that is not exactly one of the key orders (for instance a.k === b.k ? 0 : …, a.k < b.k ? -1 : 1), reduce, (x, i), outer arrow parameter in an inner arrow",
-      "rewrite": "toSorted with a.k - b.k, localeCompare or a.k < b.k ? -1 : a.k > b.k ? 1 : 0 joined by ||, list.sum, list.map or a loop"
+      "construct": "xs.sort alone, an inexact comparator (a.k < b.k ? -1 : 1…), reduce, (x, i), an outer arrow parameter in an inner arrow",
+      "rewrite": "toSorted with a.k - b.k, localeCompare or a.k < b.k ? -1 : a.k > b.k ? 1 : 0, joined by ||; list.sum, list.map or a loop",
+      "example": "const total = input.rows.reduce((sum, row) => sum + row.amount, 0)"
     },
     {
       "code": "FLOWSCRIPT_V3_UNTYPED_LIST",
-      "construct": "const rows = [] then rows.push(v) when a pushed or assigned value has no certain type, or the values disagree; push on a list not created by json.array or []",
-      "rewrite": "json.array({ itemType }) with the type of the pushed values (CHOOSE_TYPE when it cannot be proposed)"
+      "construct": "const rows = [] then a push of no certain type, or of different types",
+      "rewrite": "json.array({ itemType }) with the type of the pushed values",
+      "example": "const rows = []\nrows.push(1)\nrows.push(\"a\")"
     },
     {
       "code": "FLOWSCRIPT_V3_GLOBAL_CALL",
       "construct": "Object.* or JSON.* elsewhere or with other arguments, Object.entries, Date.now, new Date",
-      "rewrite": "the block (object.*, json.*, date.*)"
+      "rewrite": "the block (object.*, json.*, date.*)",
+      "example": "const pairs = Object.entries(input.items)"
     },
     {
       "code": "FLOWSCRIPT_V3_ERROR_CODE_CHOICE",
       "construct": "throw new Error(m)",
       "rewrite": "throw { code: \"CHOOSE_ERROR_CODE\", message: m }",
-      "requiresChoice": true
+      "requiresChoice": true,
+      "example": "throw new Error(\"not ready\")"
     },
     {
       "code": "FLOWSCRIPT_V3_UNSUPPORTED",
-      "construct": "async, await, generators, classes, this, new, const without a value, o.f++ on a field of a loop item or of input",
-      "rewrite": "blocks"
+      "construct": "async, await, generators, classes, this, new, const without a value, o.f++ on a loop item or input",
+      "rewrite": "blocks",
+      "example": "const self = this"
     },
     {
       "code": "FLOWSCRIPT_V3_OBJECT_CONDITION",
       "construct": "if or while whose condition is an object literal",
-      "rewrite": "flow.if({ … }) or flow.while({ … })"
+      "rewrite": "flow.if({ … }) or flow.while({ … })",
+      "example": "if ({ x: 1 }) {\n  result.x = 1\n}"
     }
   ],
   "valueRules": [

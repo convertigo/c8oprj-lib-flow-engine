@@ -185,11 +185,11 @@ try { renderer.renderFlowScript({}, 'Example', '{}', {}, { parseSource: v3Tree, 
 catch (error) { renderError = error; }
 check(renderError && renderError.code === 'FLOWSCRIPT_V3_RENDER_CHANGED_PROGRAM', 'refus d’un rendu v3 qui change la définition');
 var spec = String(files.readFileToString(new java.io.File(engineDir, '../docs/flowscript-v3.md'), 'UTF-8'));
-var examples = /```flowscript(?: refused=([^\s]+))?\n([\s\S]*?)\n```/g, match, count = 0;
+var examples = /```flowscript([^\n]*)\n([\s\S]*?)\n```/g, match, count = 0;
 while ((match = examples.exec(spec)) !== null) {
 	count++;
 	var output = bridge.translate(match[2]);
-	var refusedCode = match[1] || (count === 6 ? 'FLOWSCRIPT_V3_PROTOTYPE_RETHROW' : '');
+	var refusedCode = (/refused=(\S+)/.exec(match[1]) || [])[1] || (count === 6 ? 'FLOWSCRIPT_V3_PROTOTYPE_RETHROW' : '');
 	if (refusedCode) check(output.diagnostics.length && output.diagnostics[0].code === refusedCode,
 		'exemple ' + count + ' refus: ' + JSON.stringify(output));
 	else {

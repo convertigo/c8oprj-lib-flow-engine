@@ -22,6 +22,7 @@ the natural JavaScript form wherever the meaning is identical, the call form oth
   with `runtime: "rhino"`.
 - **Same meaning as JavaScript.** When the JavaScript program would run without error, the Flow gives the same
   result, with the value rules of the FlowScript expression evaluator (shared with v2, unchanged by v3):
+  <!-- fragment:value-rules -->
   - paths are null-safe: `local.a.b` is `undefined` when `local.a` is `null`, where JavaScript would throw
     (likewise `Object.keys(null)` is `[]`);
   - `<`, `<=`, `>`, `>=` compare two numeric texts as numbers: `"10" < "9"` is `false` (JavaScript compares the
@@ -29,12 +30,13 @@ the natural JavaScript form wherever the meaning is identical, the call form oth
   - a template literal writes `null` and `undefined` as `""`, and an object or a list as JSON;
   - loops have an execution budget: a `while` stops the run with `WHILE_ITERATION_LIMIT` after 1000 passes or
     60 s unless `flow.while` sets other bounds; a counted `for` gets the largest bound (1000000 passes, 60 s).
+  <!-- /fragment -->
 - Anything else whose meaning could differ is refused at its line, with a stable code and a proposed rewrite.
   It is never translated approximately.
 
 ## 2. File shape
 
-```flowscript
+```flowscript id=file-shape
 const _flow = { sourceVersion: 3, inputs: { name: { type: "string", default: "Ada" } } }
 
 const { trim } = flow.import("text")
@@ -57,7 +59,7 @@ function Greeting({ input, config, result }) {
 
 ## 3. Imports
 
-```flowscript
+```flowscript id=imports
 const _flow = { sourceVersion: 3 }
 
 const { get: httpGet, post } = flow.import("http")
@@ -79,7 +81,7 @@ function Imports({ input, config, result }) {
 
 ## 4. Locals, results and assignments
 
-```flowscript
+```flowscript id=locals-totals
 const _flow = { sourceVersion: 3, inputs: { items: { type: "array" } } }
 
 function Totals({ input, config, result }) {
@@ -108,6 +110,7 @@ function Totals({ input, config, result }) {
   A Flow uses one style or the other (`FLOWSCRIPT_V3_RESULT_MIXED`), because JavaScript returns the object
   alone while `result.x` accumulates.
 
+<!-- fragment:scope-rules -->
 **Scope rules** (refused otherwise):
 - a name is read only inside the block that declares it (`FLOWSCRIPT_V3_OUT_OF_SCOPE`);
 - a name is not declared again in an enclosed block, and does not hide an import or a loop variable
@@ -117,22 +120,25 @@ function Totals({ input, config, result }) {
   `trace`), nor `flow`, nor a name starting with `__`, nor the name of a block namespace the Flow uses
   (`text`, `list`, `json`, `http`…): after `let text = …`, `text.trim({…})` would be a method call in JavaScript
   (`FLOWSCRIPT_V3_RESERVED_NAME`, `FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK`).
+<!-- /fragment -->
 
 ## 5. Control flow
 
+<!-- fragment:control-flow -->
 | JavaScript | Block | Rule |
 |---|---|---|
-| `if (c) {…} else if (d) {…} else {…}` | `if` | An `else if` is an `if` in `else`. A single statement is a body of one statement. A list method or a global call that `c` always evaluates runs before the `if` (section 15). |
-| `while (c) {…}` | `while` | `maxIterations` 1000 and `timeoutMs` 60000. Other values: `flow.while({…})` (section 11). No list method in `c`. |
+| `if (c) {…} else if (d) {…} else {…}` | `if` | An `else if` is an `if` in `else`. A single statement is a body of one statement. A list method or a global call that `c` always evaluates (not after `&&`, `\|\|` or `??`, in a branch of `?:` or in a call argument) runs before the `if`, in a hidden local. |
+| `while (c) {…}` | `while` | `maxIterations` 1000 and `timeoutMs` 60000. Other values: `flow.while({…})` (call forms). No list method in `c`, evaluated before every pass (`FLOWSCRIPT_V3_CHAIN`). |
 | `for (const item of items) {…}` | `forEach` | `item` reads the current element. One level of object destructuring: `for (const { id } of rows)`. `items` may be `Object.keys(o)`, `Object.values(o)` or a list method chain, computed once before the loop. |
-| `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`; `i` is not assigned in the body. `maxIterations` 1000000. With `continue`, the counter steps before the body (section 15). |
+| `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`; `i` is not assigned in the body. `continue` is accepted, even when `b` changes in the body: the counter steps before the body, on a hidden local. `maxIterations` 1000000. |
 | `switch (x) { case "a": …; break; default: … }` | chain of `if` | Literal labels; every case ends with `break`, `return` or `throw`; `default` last. |
 | `try {…} catch (e) {…}` | `try` | The error is `local.e`, read as `e` inside the catch only. Without a parameter: `local.error`. |
 | `continue` | `next` | In a `while`, a `for…of` or a counted `for`, without a label. |
 | `return`, `return value`, `return {…}` | `return` | Leaves the Flow. Refused inside a loop (`FLOWSCRIPT_V3_RETURN_IN_LOOP`). |
 | `throw { code: "LITERAL", message }` | `throw` | `code` is a literal public code. |
+<!-- /fragment -->
 
-```flowscript
+```flowscript id=open-labels
 const _flow = { sourceVersion: 3, inputs: { orders: { type: "array" } } }
 
 function OpenLabels({ input, config, result }) {
@@ -152,10 +158,12 @@ function OpenLabels({ input, config, result }) {
 }
 ```
 
+<!-- fragment:nested-loops -->
 **Nested loops.** Locals declared in a loop body remain available in nested loops. When an inner `for…of`, a list
 method arrow, or a `flow.forEach`/`list.*` call rebinds `current` and reads the outer `for…of` item, the bridge
 automatically copies that item to `local.<name>` at the start of the outer body. Destructured fields are already
 copied from `current.<field>` there. Other reads of the item continue to use `current`.
+<!-- /fragment -->
 
 ## 6. Expressions
 
@@ -174,7 +182,7 @@ The v2 expression subset is unchanged: scope paths, literals, arrays, objects, t
 
 ## 7. List methods
 
-```flowscript
+```flowscript id=list-methods
 const _flow = { sourceVersion: 3, inputs: { rows: { type: "array" } } }
 
 function Active({ input, config, result }) {
@@ -188,6 +196,7 @@ function Active({ input, config, result }) {
 }
 ```
 
+<!-- fragment:list-table -->
 | JavaScript | Block |
 |---|---|
 | `xs.filter(x => c)` | `list.filter({ items: xs, where: c })`, `x` read as `current` |
@@ -198,44 +207,55 @@ function Active({ input, config, result }) {
 | `xs.toSorted((a, b) => a.k.localeCompare(b.k))` | `list.sort({ items: xs, by: current.k, compare: "locale" })`; `b.k.localeCompare(a.k)` adds `direction: "desc"` |
 | `xs.toSorted((a, b) => a - b)` | `list.sort({ items: xs, compare: "number" })`; `b - a` adds `direction: "desc"` |
 | `xs.toSorted((a, b) => a.localeCompare(b))`, also with `String(a)` and `String(b)` | `list.sort({ items: xs, compare: "locale" })`; reversed operands add `direction: "desc"` |
-| `xs.toSorted((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0)` and its exact spellings | `list.sort({ items: xs, by: current.k, compare: "natural" })`; `b` first adds `direction: "desc"` |
-| `xs.toSorted((a, b) => c1 \|\| c2 \|\| …)`, each `ci` one of the comparators above | `list.sort` with the first key and `then: [{ by, compare, direction }, …]` |
-| `includes`, `slice`, `join`, `concat`, `at`, `indexOf`, `length` | expression methods, no block |
+| `xs.toSorted((a, b) => a.k < b.k ? -1 : (a.k > b.k ? 1 : 0))` and its exact spellings | `list.sort({ items: xs, by: current.k, compare: "natural" })`: `left < right ? -1 : left > right ? 1 : 0` on the raw keys; `b` first adds `direction: "desc"` |
+| `xs.toSorted((a, b) => c1 \|\| c2 \|\| …)`, each `ci` one of the comparators above | `list.sort` with the first key and `then: [{ by, compare, direction }, …]`; a `0` or `NaN` falls to the next key, as `\|\|` does |
+| `includes`, `slice`, `join`, `at`, `indexOf`, `length` | expression methods, no block |
+| `xs.concat(ys)` | the expression method `Array.prototype.concat`: a copy of `xs` followed by the items of `ys` (a non-list argument is appended as one item); a list method chain in an argument runs before it |
+<!-- /fragment -->
 
+<!-- fragment:list-rules -->
 - The function is an arrow with one parameter and an expression body without block call. `function (x) { return e }`
   is the same.
 - A method is written in an assignment or a `return`. Methods chain: each block method becomes a node whose result
   feeds the next step through a hidden local `local.__chain<N>`.
-- Refused, with a rewrite into two `const` (`FLOWSCRIPT_V3_CHAIN`): a step inside a branch of `?:`, `&&`, `||` or `??`
-  (except a declaration or an assignment that is entirely `c ? a : b`, section 15); a step in an argument of an
-  expression function; a step after a scope read of the same statement. A step in an argument of `concat` runs before
-  it.
+- A declaration or an assignment that is entirely `cond ? branch1 : branch2` may hold a chain in a branch: it is lowered to
+  `if (cond) { x = branch1 } else { x = branch2 }`. The condition of an `if` may hold a chain that it always
+  evaluates: it runs before the `if`.
+- Refused, with a rewrite into two `const` (`FLOWSCRIPT_V3_CHAIN`): a step inside a branch of `&&`, `||` or `??`, or of
+  a `?:` that is not the whole statement; a step in an argument of an expression function; a step after a scope read of
+  the same statement; a step in a `while` condition.
 - Sorting keeps the JavaScript comparator: `compare: "number"` orders by `a - b`, `compare: "locale"` by
   `String(a).localeCompare(String(b))` and `compare: "natural"` by `a < b ? -1 : a > b ? 1 : 0` (the JavaScript `<` on
   the raw keys), on a copy sorted by the engine's `Array.prototype.sort`, exactly as the
   arrow does: the sort is stable, and an absent key gives `NaN`, which the comparator treats as equal. With
   `compare: "locale"`, an absent key compares as the text `"undefined"`: this is the meaning of
   `String(a.k).localeCompare(String(b.k))`, while `a.k.localeCompare(b.k)` would fail in JavaScript; both forms
-  give that `list.sort` (paths are null-safe, section 1). Without `compare`,
+  give that `list.sort` (paths are null-safe). Without `compare`,
   `list.sort` keeps its Flow order (numeric texts as numbers, `null` as `""`), which no JavaScript comparator
-  reproduces: it stays a call (section 14).
-- Refused: `xs.sort(…)` alone (it sorts in place, `list.sort` returns a copy: write `toSorted`), other comparators,
+  reproduces: it stays a call.
+- Refused: `xs.sort(…)` alone (it sorts in place, `list.sort` returns a copy: write `toSorted`), a comparator that is not an accepted key comparator,
   `reduce`, an index parameter `(x, i)`, a parameter of an outer arrow read in an inner one
   (`FLOWSCRIPT_V3_LIST_METHOD`).
+<!-- /fragment -->
 
 ## 8. Typed collections
 
+<!-- fragment:collections -->
 - A list or a map is created typed: `const rows = json.array({ itemType: {…} })`, `const byId = json.map({ valueType: {…} })`.
 - `rows.push(v)` is `json.push({ path: "local.rows", value: v })`; `byId[key] = v` is `json.put({ path: "local.byId", key, value: v })`;
   `order.status = "paid"` is a `set`, as in v2.
-- `const rows = []` followed by `push` lowers to the `json.array` whose item type every pushed value proves, or is
-  refused (`FLOWSCRIPT_V3_UNTYPED_LIST`) with that `json.array` as its proposal (section 15).
+- `const rows = []` (or `let`) followed by `push` lowers to the `json.array` whose item type every pushed value proves
+  from its syntax (text, number and boolean literals, comparisons, `null`, object and list literals); a pushed name,
+  path, call or computed number is refused (`FLOWSCRIPT_V3_UNTYPED_LIST`) with the exact `json.array({ itemType })` to
+  write as its proposal.
+<!-- /fragment -->
 
 ## 9. Global functions
 
 In an assignment, a `return`, at the head of a chain, as the list of a `for…of`, or in the condition of an `if` (section
 15):
 
+<!-- fragment:globals -->
 | JavaScript | Block |
 |---|---|
 | `Object.keys(o)`, `Object.values(o)` | `object.keys({ source: o })`, `object.values({ source: o })` |
@@ -246,10 +266,11 @@ In an assignment, a `return`, at the head of a chain, as the list of a `for…of
 - `Object.entries` is refused: `for (const key of Object.keys(o)) { const value = o[key] … }`.
 - `Date.now()` and `new Date()` are refused: use `date.now`, `date.format`… (time zone and format).
 - `JSON.*` and `Object.*` remain refused inside other expressions, as in v2.
+<!-- /fragment -->
 
 ## 10. Errors
 
-```flowscript
+```flowscript id=notify
 const _flow = { sourceVersion: 3 }
 
 function Notify({ input, config, result }) {
@@ -264,14 +285,17 @@ function Notify({ input, config, result }) {
 }
 ```
 
+<!-- fragment:errors -->
 - `throw { code: "LITERAL", message, details, status }` raises an application error, as in v2.
 - `throw e`, where `e` is the parameter of the enclosing `catch` and is not assigned, raises the caught error
   unchanged: same code, message, details and status.
 - `throw new Error(m)` is refused (`FLOWSCRIPT_V3_ERROR_CODE_CHOICE`). The public code is a choice:
   the proposal is `throw { code: "CHOOSE_ERROR_CODE", message: m }`.
+<!-- /fragment -->
 
 ## 11. Call forms
 
+<!-- fragment:call-forms -->
 - Every block is called with one object of named properties: `sql.query({ connection, sql })`.
 - A control block whose properties go beyond its JavaScript form keeps its call form, prefixed with `flow.`:
   `flow.while({ condition: …, maxIterations: 100000, $$nodes() { … } })`, `flow.forEach`, `flow.if`, `flow.try`.
@@ -280,14 +304,17 @@ function Notify({ input, config, result }) {
   without parameter. A call with a slot that is declared, assigned or returned (`const tx = sql.transaction({ …,
   $$nodes() { … } })`) writes its output with `$$out`.
 - `$$id`, `$$out`, `$$disabled` and `$$comment` stay engine attributes of a call.
+<!-- /fragment -->
 
 ## 12. Names, comments and disabled statements
 
+<!-- fragment:names -->
 - A JavaScript label gives an explicit node name: `checkStock: if (…) { … }`. Without a label, names are computed.
 - A comment directly above a statement, without a blank line, is its comment; a `/* … */` comment is read the same
   way, and the formatter writes it as `//` lines. Separated by a blank line, it is
   a standalone comment node.
 - `// @disabled` in that comment disables the statement.
+<!-- /fragment -->
 
 ## 13. Refused constructs
 
@@ -304,7 +331,7 @@ function Notify({ input, config, result }) {
 | `async`, `await`, generators, classes, `this`, `new` | `FLOWSCRIPT_V3_UNSUPPORTED` | blocks |
 | `if` or `while` whose condition is an object literal | `FLOWSCRIPT_V3_OBJECT_CONDITION` | `flow.if({ … })` |
 
-```flowscript refused=FLOWSCRIPT_V3_BREAK
+```flowscript refused=FLOWSCRIPT_V3_BREAK id=refused-break
 const _flow = { sourceVersion: 3, inputs: { items: { type: "array" } } }
 
 function FirstLarge({ input, config, result }) {
@@ -319,7 +346,7 @@ function FirstLarge({ input, config, result }) {
 }
 ```
 
-```flowscript refused=FLOWSCRIPT_V3_ERROR_CODE_CHOICE
+```flowscript refused=FLOWSCRIPT_V3_ERROR_CODE_CHOICE id=refused-error-code
 const _flow = { sourceVersion: 3 }
 
 function Fail({ input, config, result }) {
@@ -336,6 +363,7 @@ otherwise. The author's own writing is always kept (`const` or `let`, loop varia
 
 **Natural by default:**
 
+<!-- fragment:rendering-natural -->
 | Node | Rendering |
 |---|---|
 | `set` of a `local.`/`result.` path | `local.x = value`, `result.x = value` (no declaration is inferred) |
@@ -350,10 +378,13 @@ otherwise. The author's own writing is always kept (`const` or `let`, loop varia
 | `json.push`, `json.put` | `local.rows.push(v)`, `local.byId[key] = v` |
 | `object.keys`, `object.values`, `json.parse`, `json.stringify` | `Object.keys(o)`, `Object.values(o)`, `JSON.parse(t)`, `JSON.stringify(v)` / `JSON.stringify(v, null, 2)` |
 | a disabled statement | its natural form with `// @disabled` in its comment |
+<!-- /fragment -->
 
+<!-- fragment:rendering-names -->
 **Names.** The variable of a `for…of` and the parameter of a list arrow are `item`; when that name is visible
 already, the first free of `item2`, `item3`… The parameter of `catch` is the name of the error local
 (`error: "local.failure"` gives `catch (failure)`).
+<!-- /fragment -->
 
 **Exceptions: the call form is kept.** Each one has its case in `flowscript-v3-rendering-cases.json`; the
 conformance test renders it, reads the rendering back and checks the same definition.
