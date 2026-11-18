@@ -30,7 +30,7 @@ function migrate(dir, write) {
 
 var good = 'const _flow = { sourceVersion: 2, inputs: { items: { type: "array" } } }\n\n' +
 	'function Good({ input, config, result }) {\n  local.kept = list.filter({ items: input.items, where: current > 1 })\n' +
-	'  result.count = local.kept.length\n}\n';
+	'  result.count = local.kept.length\n  result.label = default(input.label, "none")\n}\n';
 var kept = 'const _flow = { sourceVersion: 2, inputs: { items: { type: "array" } } }\n\n' +
 	'function Kept({ input, config, result }) {\n  forEachChunk({\n    items: input.items,\n    size: 2,\n' +
 	'    $$each: function ({chunk}) {\n      local.n = chunk.length\n    },\n  })\n}\n';
@@ -49,7 +49,8 @@ check(dry.tests.sources === 2 && dry.tests.v2 === 1 && dry.tests.v3 === 1 && dry
 var written = migrate(dir, true);
 check(written.written && written.flows.migrated.length === 1, "write report: " + JSON.stringify(written));
 var migrated = read(dir, "_flow/flows/Good.flow.js");
-check(/^const _flow = \{ sourceVersion: 3, /.test(migrated) && migrated.indexOf("local.kept = input.items.filter(item => item > 1)") >= 0,
+check(/^const _flow = \{ sourceVersion: 3, /.test(migrated) && migrated.indexOf("local.kept = input.items.filter(item => item > 1)") >= 0
+	&& migrated.indexOf("result.label = flow.default(input.label, \"none\")") >= 0,
 	"written v3 text: " + migrated);
 check(read(dir, "_flow/flows/Kept.flow.js") === kept && read(dir, "tests/sample.js") === testSource, "only the guarded Flow is written");
 var again = migrate(dir, false);
