@@ -39,12 +39,19 @@
 
 	function hasOwn(object, key) { return Object.prototype.hasOwnProperty.call(object || {}, key); }
 
+	// Whether a property holds the value the runtime reads when it is absent (list.sort reads order before its
+	// default direction).
+	function runtimeDefault(node, key) {
+		var props = node.props || {}, defaults = RUNTIME_DEFAULTS[blockOf(node)] || {};
+		if (!hasOwn(defaults, key) || JSON.stringify(props[key]) !== JSON.stringify(defaults[key])) return false;
+		return !(blockOf(node) === "list.sort" && key === "direction" && props.order !== undefined);
+	}
+
 	// The properties a natural form must account for: those equal to their runtime default count as absent.
 	function effectiveProps(node) {
-		var props = node.props || {}, defaults = RUNTIME_DEFAULTS[blockOf(node)] || {}, out = {};
+		var props = node.props || {}, out = {};
 		Object.keys(props).forEach(function (key) {
-			if (props[key] === undefined) return;
-			if (hasOwn(defaults, key) && JSON.stringify(props[key]) === JSON.stringify(defaults[key])) return;
+			if (props[key] === undefined || runtimeDefault(node, key)) return;
 			out[key] = props[key];
 		});
 		return out;
@@ -95,7 +102,7 @@
 	}
 
 	function countOccurrences(text, needle) {
-		var count = 0, at = 0, pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w$])", "g");
+		var count = 0, pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w$])", "g");
 		while (pattern.exec(text) !== null) count++;
 		return count;
 	}
@@ -108,8 +115,9 @@
 		var names = flowNames(definition);
 		var definitionText = JSON.stringify(definition || {});
 		var natural = [];
+		// locals created by json.array or json.map: their push and put have a natural form (the bridge reads them back)
 		var typedLists = Object.create(null), typedMaps = Object.create(null);
-		(function scan(list) {
+		function scan(list) {
 			(list || []).forEach(function (node) {
 				if (!node || typeof node !== "object") return;
 				var name = simpleLocal(node.out);
@@ -117,15 +125,9 @@
 				if (name && blockOf(node) === "json.map") typedMaps[name] = true;
 				Object.keys(node).forEach(function (key) { if (key !== "props" && Array.isArray(node[key])) scan(node[key]); });
 			});
-		})(definition.nodes);
-		(definition.helpers || []).forEach(function (helper) { (function scan(list) {
-			(list || []).forEach(function (node) {
-				var name = simpleLocal(node.out);
-				if (name && blockOf(node) === "json.array") typedLists[name] = true;
-				if (name && blockOf(node) === "json.map") typedMaps[name] = true;
-				Object.keys(node).forEach(function (key) { if (key !== "props" && Array.isArray(node[key])) scan(node[key]); });
-			});
-		})(helper.nodes); });
+		}
+		scan(definition.nodes);
+		(definition.helpers || []).forEach(function (helper) { scan(helper.nodes); });
 
 		// A natural form is taken unless the guard sent it back to its call form.
 		function choose(key, kind) {
@@ -630,7 +632,7 @@
 				delete node.__flowBlankBefore;
 				var defaults = RUNTIME_DEFAULTS[blockOf(node)];
 				if (defaults && node.props) Object.keys(defaults).forEach(function (key) {
-					if (hasOwn(node.props, key) && JSON.stringify(node.props[key]) === JSON.stringify(defaults[key])) delete node.props[key];
+					if (hasOwn(node.props, key) && runtimeDefault(node, key)) delete node.props[key];
 				});
 				Object.keys(node).forEach(function (key) { if (key !== "props" && Array.isArray(node[key])) clean(node[key]); });
 			});
@@ -644,7 +646,7 @@
 			for (var i = 0; i + 1 < list.length; i++) {
 				var node = list[i], next = list[i + 1];
 				var target = node && (node.out !== undefined ? node.out : blockOf(node) === "set" ? (node.props || {}).path : undefined);
-				if (!HIDDEN_LOCAL.test(String(target || "")) || blockOf(next) !== "set" || !next.props || next.props.value !== "${" + target + "}"
+				if (!HIDDEN_LOCAL.test(String(target || "")) || node.disabled !== undefined || blockOf(next) !== "set" || !next.props || next.props.value !== "${" + target + "}"
 					|| Object.keys(next.props).length !== 2 || next.disabled !== undefined || next.out !== undefined || next.comment !== undefined
 					|| countOccurrences(text, String(target)) !== 2 || /\blocal\b(?!\s*\.)/.test(text.replace(/"(?:\\.|[^"\\])*"\s*:/g, ""))) continue;
 				if (node.out !== undefined) node.out = next.props.path;

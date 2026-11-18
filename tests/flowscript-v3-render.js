@@ -112,6 +112,13 @@ check(sortedOut.naturalCode && sortedOut.naturalCode.indexOf("local.sorted = inp
 check(sortedOut.ok && sortedOut.code.indexOf("local.sorted = list.sort({") >= 0 && sortedOut.called.length === 1 && sortedOut.called[0].kind === "sort",
 	"unread section 15 sort stays a call: " + JSON.stringify(sortedOut).substring(0, 1500));
 
+// A runtime default is left out only where the runtime reads it so: list.sort reads order before direction.
+var ordered = { version: 1, helpers: [], flow: { sourceVersion: 3, inputs: { rows: { type: "array" } } },
+	nodes: [{ block: "list.sort", out: "local.sorted", props: { items: "input.rows", by: "current.n", direction: "asc", order: "desc" } }] };
+var orderedOut = api("flowCodeMigrateV3", { name: "Ordered", definition: ordered, rerender: true });
+check(orderedOut.ok && orderedOut.code.indexOf("local.sorted = list.sort({ items: input.rows, by: current.n, direction: \"asc\", order: \"desc\" })") >= 0,
+	"direction kept beside order: " + JSON.stringify(orderedOut).substring(0, 1200));
+
 // The Studio path: a tree edit of a v3 source writes v3 text; an edit v3 cannot write is refused with its code.
 var studio = 'const _flow = { sourceVersion: 3, inputs: { items: { type: "array" } } }\n\n' +
 	'function Studio({ input, config, result }) {\n' +
