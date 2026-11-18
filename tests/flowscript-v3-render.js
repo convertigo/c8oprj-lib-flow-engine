@@ -112,4 +112,21 @@ check(sortedOut.naturalCode && sortedOut.naturalCode.indexOf("local.sorted = inp
 check(sortedOut.ok && sortedOut.code.indexOf("local.sorted = list.sort({") >= 0 && sortedOut.called.length === 1 && sortedOut.called[0].kind === "sort",
 	"unread section 15 sort stays a call: " + JSON.stringify(sortedOut).substring(0, 1500));
 
+// The Studio path: a tree edit of a v3 source writes v3 text; an edit v3 cannot write is refused with its code.
+var studio = 'const _flow = { sourceVersion: 3, inputs: { items: { type: "array" } } }\n\n' +
+	'function Studio({ input, config, result }) {\n' +
+	'  const doubled = json.array({ itemType: { type: "number" } })\n' +
+	'  for (const item of input.items) {\n    doubled.push(item * 2)\n  }\n' +
+	'  return { doubled }\n}\n';
+var studioSet = api("flowCodeSet", { name: "Studio", code: studio });
+check(studioSet.ok, "v3 source: " + JSON.stringify(studioSet).substring(0, 900));
+var edited = api("applyMutation", { target: "flow", name: "Studio", flowSource: studio, mutation: { op: "replace", path: "nodes[2].props.path", value: "result.twice" } });
+check(edited.ok && /sourceVersion: 3/.test(edited.source) && edited.source.indexOf("for (const item of input.items) {") >= 0
+	&& edited.source.indexOf("local.doubled.push(item * 2)") >= 0 && edited.source.indexOf("result.twice = local.doubled") >= 0,
+	"Studio edit writes v3: " + JSON.stringify(edited).substring(0, 1500));
+var editedRun = api("flowCodeRun", { name: "Studio", code: edited.source, input: { items: [1, 2] }, includeTrace: false });
+check(editedRun.ok && JSON.stringify(editedRun.result.twice) === "[2,4]", "edited v3 source runs: " + JSON.stringify(editedRun).substring(0, 900));
+var refused = api("applyMutation", { target: "flow", name: "Studio", flowSource: studio, mutation: { op: "replace", path: "nodes[3].disabled", value: true } });
+check(!refused.ok && refused.error && refused.error.code === "FLOWSCRIPT_V3_RENDER_CHANGED_PROGRAM",
+	"an edit v3 cannot write is refused: " + JSON.stringify(refused).substring(0, 1200));
 print("flowscript-v3-render OK");

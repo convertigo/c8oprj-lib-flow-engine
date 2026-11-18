@@ -292,10 +292,16 @@
 		env = Object.assign({},env,{renderBlocks:blocks});
 		var definition = env.parseSource(flowSource);
 		if (definition.flow && definition.flow.sourceVersion === 3) {
-			var refusal = new Error("A FlowScript v3 source cannot be rendered from the prototype Flow tree.");
-			refusal.code = "FLOWSCRIPT_V3_PROTOTYPE_RENDER";
-			refusal.hint = "Edit the original FlowScript v3 text with code-patch or code-set.";
-			throw refusal;
+			// A v3 definition is written in v3, and only when reading the text back gives the same definition.
+			var v3 = env.renderFlowScriptV3(blocks, name, definition, request);
+			if (!v3.ok) {
+				var refusal = new Error("This Flow cannot be written as FlowScript v3 without changing its definition: " + v3.reason);
+				refusal.code = "FLOWSCRIPT_V3_RENDER_CHANGED_PROGRAM";
+				refusal.hint = "Nothing was written. Edit the FlowScript v3 text with code-patch or code-set.";
+				refusal.details = { reason: v3.reason };
+				throw refusal;
+			}
+			return v3.code;
 		}
 		var renderBlocks = env.blocksWithFlowHelpers ? env.blocksWithFlowHelpers(blocks, definition) : blocks;
 		var lines = [];
