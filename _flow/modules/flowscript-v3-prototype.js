@@ -2,11 +2,15 @@
 	// A deliberately bounded bridge. Every emitted expression is still checked by
 	// the v2 compiler; syntax that cannot be lowered exactly is rejected here.
 	function translate(input) {
-		var source = String(input || ""), prepared = source, lines = [], lineMap = [], diagnostics = [], blockCommentAt = -1;
+		var source = String(input || ""), prepared = source, lines = [], lineMap = [], diagnostics = [];
 		function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
 		function pos(node) { return Number(node.getAbsolutePosition()); }
 		function end(node) {
 			var finish = pos(node) + Number(node.getLength());
+			if (kind(node) === "InfixExpression" && node.getRight && node.getRight()) {
+				var rightEnd = end(node.getRight());
+				if (finish > rightEnd && /^[\s)\]}]+$/.test(source.substring(rightEnd, finish))) return rightEnd;
+			}
 			if (kind(node) === "KeywordLiteral") {
 				var keyword = String(node.toSource()).trim();
 				if (source.substring(pos(node), pos(node) + keyword.length) === keyword) return pos(node) + keyword.length;
@@ -17,12 +21,19 @@
 		function line(at) { return source.substring(0, Math.max(0, at)).split(/\r\n|\r|\n/).length; }
 		function emit(value, origin) { String(value).split(/\r\n|\r|\n/).forEach(function (part, index) { lines.push(part); lineMap.push(origin + index); }); }
 		function trivia(from, to) {
-			var text = source.substring(Math.max(0, from), Math.max(from, to)), cursor = Math.max(0, from);
-			text.split(/(\r\n|\r|\n)/).forEach(function (part) {
-				if (/^\r\n$|^\r$|^\n$/.test(part)) { cursor += part.length; return; }
-				if (/^\s*\/\//.test(part)) emit(part.trim(), line(cursor));
-				cursor += part.length;
-			});
+			var gap = source.substring(Math.max(0, from), Math.max(from, to)), match, cursor = 0;
+			var comments = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g;
+			while ((match = comments.exec(gap)) !== null) {
+				if (/(?:\r\n|\r|\n)\s*(?:\r\n|\r|\n)/.test(gap.substring(cursor, match.index))) emit("", line(Math.max(0, from) + match.index));
+				var at = Math.max(0, from) + match.index, content = match[0];
+				if (content.substring(0, 2) === "/*") {
+					content.substring(2, content.length - 2).split(/\r\n|\r|\n/).forEach(function (part, index) {
+						emit("// " + part.replace(/^\s*\* ?/, "").trim(), line(at) + index);
+					});
+				} else emit(content.trim(), line(at));
+				cursor = comments.lastIndex;
+			}
+			if (cursor && /(?:\r\n|\r|\n)\s*(?:\r\n|\r|\n)/.test(gap.substring(cursor))) emit("", line(Math.max(0, from) + cursor));
 		}
 		function reject(code, node, proposal) {
 			var at = typeof node === "number" ? node : pos(node);
@@ -45,7 +56,7 @@
 				if (state === "block") { if (c === "*" && next === "/") { state = "code"; i += 2; } else i++; continue; }
 				if (state === "string") { if (c === "\\") i += 2; else if (c === quote) { state = "code"; i++; } else i++; continue; }
 				if (c === "/" && next === "/") { state = "line"; i += 2; continue; }
-				if (c === "/" && next === "*") { if (blockCommentAt < 0) blockCommentAt = i; state = "block"; i += 2; continue; }
+				if (c === "/" && next === "*") { state = "block"; i += 2; continue; }
 				if (c === "\"" || c === "'" || c === "`") { state = "string"; quote = c; i++; continue; }
 				if (text.substring(i, i + 3) === "for" && !/[\w$]/.test(text.charAt(i - 1)) && !/[\w$]/.test(text.charAt(i + 3))) {
 					var j = i + 3; while (/\s/.test(text.charAt(j))) j++;
@@ -61,10 +72,6 @@
 			return out.join("");
 		}
 		prepared = preparedForOf(source);
-		if (blockCommentAt >= 0) {
-			try { reject("FLOWSCRIPT_V3_UNSUPPORTED", blockCommentAt, "Use // comments; block comments are not preserved by this prototype."); } catch (_ignored) {}
-			return { code: "", lineMap: [], diagnostics: diagnostics };
-		}
 		var ast;
 		try {
 			var env = new Packages.org.mozilla.javascript.CompilerEnvirons(); env.setLanguageVersion(200); env.setRecoverFromErrors(false);
@@ -175,15 +182,21 @@
 				if (sortParts.length === 1 && kind(sortParts[0]) === "ReturnStatement") sortBody = sortParts[0].getReturnValue();
 				var locale = kind(sortBody) === "FunctionCall" && method(sortBody) === "localeCompare";
 				var l, r;
-				if (locale) { l = sortBody.getTarget().getTarget(); r = argument(sortBody)[0]; }
+				if (locale && argument(sortBody).length === 1) {
+					l = sortBody.getTarget().getTarget(); r = argument(sortBody)[0];
+					function unstring(node) {
+						return kind(node) === "FunctionCall" && raw(node.getTarget()).trim() === "String" && argument(node).length === 1 ? argument(node)[0] : node;
+					}
+					l = unstring(l); r = unstring(r);
+				}
 				else if (kind(sortBody) === "InfixExpression" && String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(sortBody.getOperator())) === "-") { l = sortBody.getLeft(); r = sortBody.getRight(); }
 				else reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the same item key with subtraction or localeCompare.");
 				if (kind(l) !== "PropertyGet" || kind(r) !== "PropertyGet" || kind(l.getTarget()) !== "Name" || kind(r.getTarget()) !== "Name" || String(l.getProperty().getIdentifier()) !== String(r.getProperty().getIdentifier())) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the same item key.");
 				var leftName = String(l.getTarget().getIdentifier()), rightName = String(r.getTarget().getIdentifier());
-				var direction = leftName === first && rightName === second ? "asc" : !locale && leftName === second && rightName === first ? "desc" : "";
+				var direction = leftName === first && rightName === second ? "asc" : leftName === second && rightName === first ? "desc" : "";
 				if (!direction) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the two callback parameters.");
 				var sortTemp = "local.__chain" + (++chain), sortBefore = prefix.before.slice();
-				sortBefore.push(sortTemp + " = list.sort({ items: " + prefix.expression + ", by: current." + String(l.getProperty().getIdentifier()) + ", direction: \"" + direction + "\" })");
+				sortBefore.push(sortTemp + " = list.sort({ items: " + prefix.expression + ", by: current." + String(l.getProperty().getIdentifier()) + ", compare: \"" + (locale ? "locale" : "number") + "\", direction: \"" + direction + "\" })");
 				return { before: sortBefore, expression: sortTemp };
 			}
 			var globalName = receiver && kind(receiver) === "Name" ? String(receiver.getIdentifier()) + "." + name : "";
@@ -271,14 +284,16 @@
 				}
 				if (ek === "FunctionCall") {
 					var controlName = raw(expression.getTarget()).replace(/\s/g, "");
-					if (/^flow\.(?:while|forEach|if|try)$/.test(controlName)) {
+					var slotArgs = argument(expression), hasSlot = slotArgs.length === 1 && kind(slotArgs[0]) === "ObjectLiteral" &&
+						array(slotArgs[0].getElements()).some(function (property) { return /^\$\$/.test(raw(property.getKey()).trim()) && kind(property.getValue()) === "FunctionNode"; });
+					if (/^flow\.(?:while|forEach|if|try)$/.test(controlName) || hasSlot) {
 						var controlArgs = argument(expression);
 						if (controlArgs.length !== 1 || kind(controlArgs[0]) !== "ObjectLiteral") reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Call flow control blocks with one object argument.");
-						emit(controlName.substring(5) + "({", origin);
+						emit((controlName.substring(0, 5) === "flow." ? controlName.substring(5) : controlName) + "({", origin);
 						array(controlArgs[0].getElements()).forEach(function (property) {
 							if (kind(property) !== "ObjectProperty") reject("FLOWSCRIPT_V3_UNSUPPORTED", property, "Use named control properties.");
 							var key = raw(property.getKey()).trim(), item = property.getValue();
-							if (/^\$\$(?:nodes|then|else|try|catch)$/.test(key)) {
+							if (/^\$\$[A-Za-z_$][\w$]*$/.test(key) && kind(item) === "FunctionNode") {
 								if (kind(item) !== "FunctionNode" || array(item.getParams()).length) reject("FLOWSCRIPT_V3_FUNCTION", property, "Use a zero-argument slot function.");
 								emit(key + "() {", line(pos(property))); body(item.getBody(), child(current)); emit("},", line(end(property) - 1));
 							} else emit(key + ": " + rewritten(item, current) + ",", line(pos(property)));
@@ -351,8 +366,17 @@
 					kind(increment) !== "UpdateExpression" || kind(increment.getOperand()) !== "Name" || String(increment.getOperand().getIdentifier()) !== counter || raw(increment).indexOf("++") < 0)
 					reject("FLOWSCRIPT_V3_FOR_FORM", node, "Use for (let i = start; i < end; i++).");
 				var countedScope = child(current), counterEntry = declare(counter, "let", vars[0].getTarget(), countedScope); counterEntry.loopDepth = loopDepth + 1;
+				visit(node.getBody(), function (part) {
+					if (kind(part) === "Assignment" || kind(part) === "UpdateExpression") {
+						var target = kind(part) === "Assignment" ? part.getLeft() : part.getOperand();
+						var direct = kind(target) === "Name" && String(target.getIdentifier()) === counter;
+						var scoped = kind(target) === "PropertyGet" && kind(target.getTarget()) === "Name" && String(target.getTarget().getIdentifier()) === "local" && String(target.getProperty().getIdentifier()) === counter;
+						if (direct || scoped) reject("FLOWSCRIPT_V3_FOR_FORM", part, "Do not assign the counted loop variable in its body.");
+					}
+					return true;
+				});
 				emit("local." + counter + " = " + rewritten(vars[0].getInitializer(), current), origin);
-				emit("while({ condition: " + rewritten(condition, countedScope) + ", maxIterations: 1000, timeoutMs: 60000, $$nodes() {", origin);
+				emit("while({ condition: " + rewritten(condition, countedScope) + ", maxIterations: 1000000, timeoutMs: 60000, $$nodes() {", origin);
 				loopDepth++; countedDepth++; body(node.getBody(), countedScope); countedDepth--; emit("local." + counter + " = local." + counter + " + 1", line(pos(increment))); loopDepth--;
 				emit("} })", line(end(node) - 1)); return;
 			}
@@ -401,11 +425,12 @@
 			reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Use a supported FlowScript v3 statement (" + k + ").");
 		}
 		try {
-			var top = children(ast), main = null;
+			var top = children(ast), main = null, helpers = [];
 			var topCursor = 0;
 			top.forEach(function (node) {
+				if (kind(node) === "FunctionNode") { if (main) helpers.push(node); else main = node; return; }
+				if (main) reject("FLOWSCRIPT_V3_FUNCTION", node, "Put helpers after the Flow function.");
 				trivia(topCursor, pos(node)); topCursor = end(node);
-				if (kind(node) === "FunctionNode") { if (main) reject("FLOWSCRIPT_V3_FUNCTION", node, "Use one Flow function and project blocks for helpers."); main = node; return; }
 				if (kind(node) !== "VariableDeclaration") reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Put metadata and imports before the function.");
 				array(node.getVariables()).forEach(function (decl) {
 					var target = decl.getTarget(), init = decl.getInitializer();
@@ -429,11 +454,31 @@
 				});
 			});
 			if (!main) reject("FLOWSCRIPT_V3_FUNCTION", 0, "Declare one Flow function.");
+			trivia(topCursor, pos(main));
 			var functionText = raw(main), open = functionText.indexOf("{", functionText.indexOf(")") + 1);
 			if (open < 0) reject("FLOWSCRIPT_V3_FUNCTION", main, "Use function Name({ input, config, result }) { ... }.");
 			emit(functionText.substring(0, open + 1), line(pos(main)));
 			body(main.getBody(), scope);
 			emit("}", line(end(main) - 1));
+			var previous = main;
+			helpers.forEach(function (helper) {
+				trivia(end(previous), pos(helper)); previous = helper;
+				var params = array(helper.getParams());
+				if (params.length !== 1 || kind(params[0]) !== "ObjectLiteral") reject("FLOWSCRIPT_V3_FUNCTION", helper, "Use one object parameter in a top-level helper.");
+				var helperScope = child(null), names = [];
+				array(params[0].getElements()).forEach(function (field) {
+					if (kind(field) !== "ObjectProperty" || kind(field.getKey()) !== "Name" || kind(field.getValue()) !== "Name") reject("FLOWSCRIPT_V3_FUNCTION", field, "Use one-level object fields without defaults or rest.");
+					var key = String(field.getKey().getIdentifier()), alias = String(field.getValue().getIdentifier());
+					declare(alias, "const", field, helperScope, "input." + key);
+					names.push(key);
+				});
+				var helperText = raw(helper), helperOpen = helperText.indexOf("{", helperText.indexOf(")") + 1);
+				if (helperOpen < 0) reject("FLOWSCRIPT_V3_FUNCTION", helper, "Use a top-level helper function.");
+				emit("function " + String(helper.getName()) + "(" + names.join(", ") + ") {", line(pos(helper)));
+				resultStyle = "";
+				body(helper.getBody(), helperScope);
+				emit("}", line(end(helper) - 1));
+			});
 		} catch (error) {
 			if (!error || !error.code) {
 				var unexpected = { severity: "error", code: "FLOWSCRIPT_V3_UNSUPPORTED", line: 1,

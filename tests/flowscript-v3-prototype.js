@@ -79,7 +79,53 @@ refuses('import syntax', '  import { trim } from "text"', 'FLOWSCRIPT_V3_IMPORT_
 refuses('function', '  const f = x => x', 'FLOWSCRIPT_V3_FUNCTION', 3);
 refuses('list method', '  const x = input.items.reduce((a, b) => a + b, 0)', 'FLOWSCRIPT_V3_LIST_METHOD', 3);
 refuses('unsupported', '  result.x = this', 'FLOWSCRIPT_V3_UNSUPPORTED', 3);
-refuses('block comment', '  /* keep me */ result.x = 1', 'FLOWSCRIPT_V3_UNSUPPORTED', 3);
+runs('block comment', '  /* keep me */ result.x = 1', { x: 1 });
+var commentsCode = source('  /* attached\n   * second line */\n  result.x = 1\n\n  /* standalone */\n\n  result.y = 2');
+var commentsTranslated = bridge.translate(commentsCode);
+check(!commentsTranslated.diagnostics.length && /\/\/ attached\n\/\/ second line\nresult.x/.test(commentsTranslated.code) &&
+	/\/\/ standalone\n\nresult.y/.test(commentsTranslated.code), 'block comment placement: ' + JSON.stringify(commentsTranslated));
+var commentsRun = api('flowCodeRun', { name: 'Example', code: commentsCode, includeTrace: false });
+check(commentsRun.ok && JSON.stringify(commentsRun.result) === JSON.stringify({ x: 1, y: 2 }), 'block comments run: ' + JSON.stringify(commentsRun).substring(0, 1000));
+runs('counted upper bound', '  let total = 0\n  for (let i = 0; i <= 3; i++) { total += i }\n  return { total }', { total: 6 });
+refuses('counted body assignment', '  for (let i = 0; i < 3; i++) { i = 2 }', 'FLOWSCRIPT_V3_FOR_FORM', 3);
+var counted = bridge.translate(source('  for (let i = 0; i < 3; i++) { result.i = i }'));
+check(counted.code.indexOf('maxIterations: 1000000') >= 0, 'counted loop bound: ' + counted.code);
+var helperCode = source('  const sum = total({ rows: input.items })\n  return { sum }') + '\nfunction total({ rows }) {\n  let sum = 0\n  for (const row of rows) { sum += row }\n  return sum\n}';
+var helperTranslation = bridge.translate(helperCode);
+check(!helperTranslation.diagnostics.length, 'helper translation: ' + JSON.stringify(helperTranslation));
+var helperRun = api('flowCodeRun', { name: 'Example', code: helperCode, input: { items: [1, 2, 3] }, includeTrace: false });
+check(helperRun.ok && JSON.stringify(helperRun.result) === JSON.stringify({ sum: 6 }), 'helper run: ' + JSON.stringify(helperRun).substring(0, 1100) + '\n' + helperTranslation.code);
+refuses('nested helper', '  function inner({ rows }) { return rows }', 'FLOWSCRIPT_V3_FUNCTION', 3);
+function nodeSorted(items, comparator) {
+	var script = 'const xs = JSON.parse(process.argv[1]); process.stdout.write(JSON.stringify(xs.toSorted(' + comparator + ')))';
+	var command = new java.util.ArrayList();
+	['node', '-e', script, JSON.stringify(items)].forEach(function (part) { command.add(new java.lang.String(String(part))); });
+	var process = new java.lang.ProcessBuilder(command).redirectErrorStream(true).start();
+	var reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream(), 'UTF-8'));
+	var output = '', part;
+	while ((part = reader.readLine()) !== null) output += String(part);
+	check(process.waitFor() === 0, 'Node comparator: ' + output);
+	return JSON.parse(output);
+}
+function sortParity(label, items, comparator, copySort) {
+	var expression = copySort ? '[...input.items].sort(' + comparator + ')' : 'input.items.toSorted(' + comparator + ')';
+	var code = source('  const sorted = ' + expression + '\n  return { sorted }');
+	var translated = bridge.translate(code);
+	check(!translated.diagnostics.length, label + ' bridge: ' + JSON.stringify(translated));
+	var before = JSON.stringify(items);
+	var result = api('flowCodeRun', { name: 'Example', code: code, input: { items: items }, includeTrace: false });
+	check(result.ok, label + ' run: ' + JSON.stringify(result).substring(0, 1000));
+	var expected = nodeSorted(items, comparator);
+	check(JSON.stringify(result.result.sorted) === JSON.stringify(expected), label + ' parity: ' + JSON.stringify(result.result.sorted) + ' vs ' + JSON.stringify(expected) + '\n' + translated.code);
+	check(JSON.stringify(items) === before, label + ' changed source');
+}
+var numericRows = [{ id: 'a', k: 10 }, { id: 'b', k: 9 }, { id: 'c', k: '10' }, { id: 'd', k: '9' }, { id: 'e' }, { id: 'f', k: 9 }];
+sortParity('numeric ascending', numericRows, '(a, b) => a.k - b.k', false);
+sortParity('numeric descending copy', numericRows, '(a, b) => b.k - a.k', true);
+var textRows = [{ id: 'a', k: 'Éclair' }, { id: 'b', k: 'eclair' }, { id: 'c', k: 'Banane' }, { id: 'd', k: 'banane' }, { id: 'f', k: 'Éclair' }];
+sortParity('locale ascending', textRows, '(a, b) => a.k.localeCompare(b.k)', false);
+sortParity('locale descending', textRows, '(a, b) => b.k.localeCompare(a.k)', false);
+sortParity('locale absent key', textRows.concat([{ id: 'e' }]), '(a, b) => String(a.k).localeCompare(String(b.k))', false);
 var rejectedWrite = api('flowCodeSet', { name: 'BadExample', code: source('  while (true) {\n    break\n  }') });
 check(!rejectedWrite.ok && rejectedWrite.error.code === 'FLOWSCRIPT_V3_BREAK' && rejectedWrite.error.details.diagnostics[0].line === 4,
 	'refus API avec ligne v3: ' + JSON.stringify(rejectedWrite).substring(0, 900));

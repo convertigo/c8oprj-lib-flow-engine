@@ -1,6 +1,6 @@
 const _meta = {
   "sourceVersion": 2,
-  "version": 1,
+  "version": 2,
   "icon": "mdi:sort",
   "tags": [
     "list",
@@ -10,6 +10,7 @@ const _meta = {
     "current",
   ],
   "description": "Sorts an array copy by a current.* expression.",
+  "longDescription": "Without compare, keeps Flow ordering: numeric text is numeric and null is empty text. With compare: number, sorts a copy using keyA - keyB; with compare: locale, uses String(keyA).localeCompare(String(keyB)). Descending reverses the comparator operands. Equal keys retain their source order.",
   "summary": "sort {{items}} by {{by}} {{direction}}",
   "outputs": {
     "out": {
@@ -48,6 +49,13 @@ const _meta = {
       "default": "asc",
       "description": "Sort direction: asc or desc, a literal or an expression such as input.sortDir.",
     },
+    "compare": {
+      "label": "Comparator",
+      "kind": "value",
+      "type": "string",
+      "enum": ["number", "locale"],
+      "description": "Optional JavaScript comparator for the sort key; omit to keep Flow ordering.",
+    },
   },
   "runtime": "rhino",
   "hooks": {
@@ -79,6 +87,26 @@ const _meta = {
 		return by === undefined ? ctx.scopes.current : ctx.expr(by);
 	}
 
+	function sorted(ctx, items, by, direction, compare, args) {
+		var decorated = [];
+		for (var index = 0; index < items.length; index++) {
+			ctx.scopes.current = items[index];
+			var key = keyOf(ctx, by);
+			if (args) args.by = key;
+			decorated.push({ item: items[index], key: compare ? key : comparable(key) });
+		}
+		decorated.sort(function (a, b) {
+			var left = direction < 0 ? b.key : a.key;
+			var right = direction < 0 ? a.key : b.key;
+			if (compare === "number") return left - right;
+			if (compare === "locale") return String(left).localeCompare(String(right));
+			if (a.key < b.key) return -1 * direction;
+			if (a.key > b.key) return direction;
+			return 0;
+		});
+		return decorated.map(function (entry) { return entry.item; });
+	}
+
 	return {
 		run: function (ctx, node) {
 			var props = ctx.props(node);
@@ -92,31 +120,9 @@ const _meta = {
 			var previous = ctx.scopes.current;
 			var direction = String(ctx.template(props.direction || props.order || "asc") || "asc").toLowerCase() === "desc" ? -1 : 1;
 			var by = byFor(ctx, node, props);
+			var compare = props.compare;
 			try {
-				var decorated = [];
-				for (var index = 0; index < items.length; index++) {
-					ctx.scopes.current = items[index];
-					decorated.push({
-						item: items[index],
-						key: comparable(keyOf(ctx, by))
-					});
-				}
-				decorated.sort(function (a, b) {
-					var left = a.key;
-					var right = b.key;
-					if (left < right) {
-						return -1 * direction;
-					}
-					if (left > right) {
-						return direction;
-					}
-					return 0;
-				});
-				var out = [];
-				for (var j = 0; j < decorated.length; j++) {
-					out.push(decorated[j].item);
-				}
-				return out;
+				return sorted(ctx, items, by, direction, compare);
 			} finally {
 				ctx.scopes.current = previous;
 			}
@@ -137,9 +143,10 @@ const _meta = {
 						? -1
 						: 1;
 				var by = byFor(ctx, node, props);
+			var compare = props.compare;
 				var args = { items: items, by: { expression: by, deferred: "per item" } };
 				Object.defineProperty(args, "__state", {
-					value: { items: items, previous: previous, direction: direction, by: by }
+				value: { items: items, previous: previous, direction: direction, by: by, compare: compare }
 				});
 				return args;
 			},
@@ -148,32 +155,8 @@ const _meta = {
 				var items = state.items;
 				var previous = state.previous;
 				var direction = state.direction;
-				var by = state.by;
 				try {
-					var decorated = [];
-					for (var index = 0; index < items.length; index++) {
-						ctx.scopes.current = items[index];
-						decorated.push({
-							item: items[index],
-							key: comparable((args.by = keyOf(ctx, by)))
-						});
-					}
-					decorated.sort(function (a, b) {
-						var left = a.key;
-						var right = b.key;
-						if (left < right) {
-							return -1 * direction;
-						}
-						if (left > right) {
-							return direction;
-						}
-						return 0;
-					});
-					var out = [];
-					for (var j = 0; j < decorated.length; j++) {
-						out.push(decorated[j].item);
-					}
-					return out;
+					return sorted(ctx, items, state.by, direction, state.compare, args);
 				} finally {
 					ctx.scopes.current = previous;
 				}
