@@ -1,3 +1,8 @@
+// FROZEN. The engine no longer reads FlowScript v3 through this bridge: sourceVersion 3 is read by the Java reader
+// com.convertigo.libflowengine.FlowScriptV3Reader (libs/src), in the code tools, the rendering guard and the migration.
+// This file only serves the tests, as the oracle of that reader (tests/flowscript-v3-reader-differential.js and the
+// refusals of flowscript-v3-prototype.js and flowscript-v3-bench-forms.js). Any new form, or any change of a reading, is
+// written in the Java reader, not here; a reading the bridge gets wrong stays listed by its cause in the differential test.
 (function () {
 	// A deliberately bounded bridge. Every emitted expression is still checked by
 	// the v2 compiler; syntax that cannot be lowered exactly is rejected here.
