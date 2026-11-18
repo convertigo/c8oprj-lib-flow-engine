@@ -27,6 +27,11 @@ check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  for (const it
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  let total = 0\n  for (const { n } of input.items) { total += n }\n  return { total }\n}');
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  let total = 0\n  for (const x of input.items) { for (const y of input.items) { total += x * y } }\n  return { total }\n}');
 check('const _flow = { sourceVersion: 3 }\nfunction Example({ input, config, result }) {\n  const sum = total({ rows: input.items })\n  return { sum }\n}\nfunction total({ rows }) {\n  let sum = 0\n  for (const row of rows) { sum += row }\n  return sum\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const kept = input.items.filter(item => item > 1)\n  const doubled = kept.map(item => item * 2)\n  const first = input.items.find(item => item > 1)\n  const any = input.items.some(item => item > 2)\n  const every = input.items.every(item => item > 0)\n  return { doubled, first, any, every }\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const sorted = input.items.toSorted((a, b) => b.k - a.k)\n  return { sorted }\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const sorted = [...input.items].sort((a, b) => a.k.localeCompare(b.k))\n  return { sorted }\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const labels = input.items.filter(item => item.active).map(item => item.name).join(", ")\n  return { labels }\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const rows = json.array({ itemType: { type: "integer" } })\n  rows.push(1)\n  return { rows }\n}');
 function refuses(body, code, line) {
 	var source = 'const _flow = { sourceVersion: 3 }\nfunction Example() {\n' + body + '\n}';
 	var oracle = bridge.translate(source).diagnostics, direct = JSON.parse(String(Reader.read(source, null))).diagnostics;

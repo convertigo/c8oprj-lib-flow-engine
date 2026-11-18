@@ -415,6 +415,103 @@ public final class FlowScriptV3Reader {
 		if (kind.equals("schema")) return literal(expression);
 		return value(expression, scope);
 	}
+	private record Lowered(List<Map<String, Object>> before, String expression) { }
+	private String method(FunctionCall call) {
+		return call.getTarget() instanceof PropertyGet property ? property.getProperty().getIdentifier() : "";
+	}
+	private AstNode arrowBody(FunctionNode fn, int count, AstNode call) {
+		if (fn.getParams().size() != count) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use " + count + " callback parameter(s).");
+		AstNode body = fn.getBody();
+		if (body instanceof org.mozilla.javascript.ast.Block || body instanceof org.mozilla.javascript.ast.Scope) {
+			var parts = children(body);
+			if (parts.size() != 1 || !(parts.get(0) instanceof org.mozilla.javascript.ast.ReturnStatement))
+				reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use an expression body.");
+			return ((org.mozilla.javascript.ast.ReturnStatement) parts.get(0)).getReturnValue();
+		}
+		return body;
+	}
+	private Map<String, Object> capture(String block, Map<String, Object> props, String path, AstNode at) {
+		var result = node(block, props, at);
+		result.put("out", path);
+		return result;
+	}
+	private Lowered lower(AstNode expression, Scope scope) {
+		if (expression instanceof PropertyGet property && property.getTarget() instanceof FunctionCall) {
+			var receiver = lower(property.getTarget(), scope);
+			return new Lowered(receiver.before, receiver.expression + "." + property.getProperty().getIdentifier());
+		}
+		if (!(expression instanceof FunctionCall call)) return new Lowered(List.of(), rewritten(expression, scope));
+		String name = method(call);
+		AstNode receiver = call.getTarget() instanceof PropertyGet property ? property.getTarget() : null;
+		var args = call.getArguments();
+		if (Set.of("reduce", "flatMap", "findIndex").contains(name)) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use filter, map, toSorted, or an explicit loop.");
+		boolean flowNamespace = receiver instanceof Name n && Set.of("list", "json", "object", "text").contains(n.getIdentifier());
+		if (receiver != null && !flowNamespace && Set.of("filter", "map", "find", "some", "every").contains(name)) {
+			if (args.size() != 1 || !(args.get(0) instanceof FunctionNode fn) || fn.getParams().size() != 1 || !(fn.getParams().get(0) instanceof Name))
+				reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use one arrow parameter and an expression body.");
+			var fn = (FunctionNode) args.get(0);
+			var prefix = lower(receiver, scope);
+			var inner = new Scope(scope);
+			declare(((Name) fn.getParams().get(0)).getIdentifier(), "const", fn, inner, "current");
+			AstNode body = arrowBody(fn, 1, call);
+			String predicate = rewritten(body, inner);
+			String path = "local.__chain" + (++chain);
+			var before = new ArrayList<Map<String, Object>>(prefix.before);
+			Map<String, Object> props;
+			if (name.equals("map")) props = map("items", prefix.expression, "select", body instanceof ObjectLiteral ? value(body, inner) : predicate);
+			else props = map("items", prefix.expression, "where", name.equals("every") ? "!(" + predicate + ")" : predicate);
+			before.add(capture(name.equals("map") ? "list.map" : "list.filter", props, path, call));
+			return new Lowered(before, name.equals("find") ? path + "[0]" : name.equals("some") ? path + ".length > 0" : name.equals("every") ? path + ".length == 0" : path);
+		}
+		if (receiver != null && (name.equals("toSorted") || name.equals("sort") && !flowNamespace)) {
+			if (name.equals("sort")) {
+				if (!(receiver instanceof org.mozilla.javascript.ast.ArrayLiteral array) || array.getElements().size() != 1 || !(array.getElements().get(0) instanceof org.mozilla.javascript.ast.Spread))
+					reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use toSorted or [...items].sort.");
+				receiver = ((org.mozilla.javascript.ast.Spread) ((org.mozilla.javascript.ast.ArrayLiteral) receiver).getElements().get(0)).getExpression();
+			}
+			if (args.size() != 1 || !(args.get(0) instanceof FunctionNode)) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use a two-parameter key comparator.");
+			var fn = (FunctionNode) args.get(0);
+			AstNode body = arrowBody(fn, 2, call);
+			String first = name(fn.getParams().get(0)), second = name(fn.getParams().get(1));
+			if (first.isEmpty() || second.isEmpty()) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use two named callback parameters.");
+			boolean locale = body instanceof FunctionCall localeCall && method(localeCall).equals("localeCompare");
+			AstNode left, right;
+			if (locale) {
+				var localeCall = (FunctionCall) body;
+				if (localeCall.getArguments().size() != 1) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the same item key with subtraction or localeCompare.");
+				left = ((PropertyGet) localeCall.getTarget()).getTarget(); right = localeCall.getArguments().get(0);
+				if (left instanceof FunctionCall wrapper && compact(raw(wrapper.getTarget())).equals("String") && wrapper.getArguments().size() == 1) left = wrapper.getArguments().get(0);
+				if (right instanceof FunctionCall wrapper && compact(raw(wrapper.getTarget())).equals("String") && wrapper.getArguments().size() == 1) right = wrapper.getArguments().get(0);
+			} else if (body instanceof org.mozilla.javascript.ast.InfixExpression infix && org.mozilla.javascript.ast.AstNode.operatorToString(infix.getOperator()).equals("-")) {
+				left = infix.getLeft(); right = infix.getRight();
+			} else { reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the same item key with subtraction or localeCompare."); throw new AssertionError(); }
+			boolean identity = left instanceof Name && right instanceof Name;
+			boolean keyed = left instanceof PropertyGet l && right instanceof PropertyGet r && l.getTarget() instanceof Name && r.getTarget() instanceof Name && l.getProperty().getIdentifier().equals(r.getProperty().getIdentifier());
+			if (!identity && !keyed) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the same item or item key.");
+			String leftName = identity ? name(left) : name(((PropertyGet) left).getTarget());
+			String rightName = identity ? name(right) : name(((PropertyGet) right).getTarget());
+			String direction = leftName.equals(first) && rightName.equals(second) ? "asc" : leftName.equals(second) && rightName.equals(first) ? "desc" : "";
+			if (direction.isEmpty()) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the two callback parameters.");
+			var prefix = lower(receiver, scope);
+			String path = "local.__chain" + (++chain);
+			var before = new ArrayList<Map<String, Object>>(prefix.before);
+			var props = map("items", prefix.expression);
+			if (keyed) props.put("by", "current." + ((PropertyGet) left).getProperty().getIdentifier());
+			props.put("compare", locale ? "locale" : "number"); props.put("direction", direction);
+			before.add(capture("list.sort", props, path, call));
+			return new Lowered(before, path);
+		}
+		if (receiver instanceof Name n && n.getIdentifier().equals("flow") && name.equals("default")) return new Lowered(List.of(), rewritten(call, scope));
+		if (receiver != null) {
+			var prefix = lower(receiver, scope);
+			if (!prefix.before.isEmpty()) {
+				var values = new ArrayList<String>();
+				for (AstNode argument : args) values.add(rewritten(argument, scope));
+				return new Lowered(prefix.before, prefix.expression + "." + name + "(" + String.join(", ", values) + ")");
+			}
+		}
+		return new Lowered(List.of(), rewritten(call, scope));
+	}
 	private String resolve(String spelling) {
 		if (spelling.startsWith("flow.") && Set.of("flow.while", "flow.forEach", "flow.if", "flow.try").contains(spelling)) return spelling.substring(5);
 		if (imports.containsKey(spelling)) return imports.get(spelling);
@@ -451,8 +548,12 @@ public final class FlowScriptV3Reader {
 	}
 
 	private void assign(List<Map<String, Object>> output, String target, AstNode rhs, Scope scope, AstNode at) {
-		if (rhs instanceof FunctionCall call && isBlockCall(call)) output.add(callNode(call, scope, target));
-		else set(output, target, rhs, scope, at);
+		if (rhs instanceof FunctionCall call && isBlockCall(call)) { output.add(callNode(call, scope, target)); return; }
+		var lowered = lower(rhs, scope);
+		if (!lowered.before.isEmpty()) {
+			output.addAll(lowered.before);
+			output.add(node("set", map("path", target, "value", "${" + lowered.expression + "}"), at));
+		} else set(output, target, rhs, scope, at);
 	}
 	private boolean isBlockCall(FunctionCall call) {
 		String target = resolve(compact(raw(call.getTarget())));
@@ -587,7 +688,6 @@ public final class FlowScriptV3Reader {
 				String type = source.substring(pos(declaration), pos(target)).trim().split("\\s+", 2)[0];
 				if (!type.equals("const") && !type.equals("let")) reject("FLOWSCRIPT_V3_UNSUPPORTED", declaration, "Use const or let for Flow locals.");
 				if (target instanceof Name n) {
-					if (init != null) rewritten(init, scope);
 					var binding = declare(n.getIdentifier(), type, target, scope, null);
 					binding.typedList = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.array");
 					binding.typedMap = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.map");
@@ -665,7 +765,11 @@ public final class FlowScriptV3Reader {
 				}
 				output.add(node("return", map(), statement));
 			} else if (value == null) output.add(node("return", map(), statement));
-			else output.add(node("return", map("value", value(value, scope)), statement));
+			else {
+				var lowered = lower(value, scope);
+				output.addAll(lowered.before);
+				output.add(node("return", map("value", lowered.before.isEmpty() ? value(value, scope) : "${" + lowered.expression + "}"), statement));
+			}
 			return;
 		}
 		if (statement instanceof org.mozilla.javascript.ast.IfStatement conditional) {
