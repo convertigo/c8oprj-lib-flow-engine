@@ -70,6 +70,8 @@ public final class FlowScriptV3Reader {
 	private final Set<String> allNames = new HashSet<>();
 	private final Set<String> blockNamespaces = new HashSet<>();
 	private final Set<String> helpers = new HashSet<>();
+	private final Set<String> typedLists = new HashSet<>();
+	private final Set<String> typedMaps = new HashSet<>();
 	private int chain;
 	private String resultStyle = "";
 
@@ -209,6 +211,8 @@ public final class FlowScriptV3Reader {
 			throw new AssertionError();
 		}
 		ast.visit(part -> {
+			if (part instanceof FunctionNode fn && fn.getFunctionType() == FunctionNode.FUNCTION_STATEMENT && !(part.getParent() instanceof AstRoot))
+				reject("FLOWSCRIPT_V3_FUNCTION", part, "Declare helpers after the Flow function.");
 			if (part instanceof VariableDeclaration declaration) for (var variable : declaration.getVariables()) {
 				if (variable.getTarget() instanceof Name n) allNames.add(n.getIdentifier());
 			}
@@ -334,7 +338,11 @@ public final class FlowScriptV3Reader {
 		int start = pos(root), end = end(root);
 		var edits = new ArrayList<Edit>();
 		root.visit(part -> {
+			if (part instanceof FunctionCall nested && part != root && Set.of("filter", "map", "find", "some", "every", "toSorted", "sort").contains(method(nested)))
+				reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
 			if (part instanceof FunctionNode) reject("FLOWSCRIPT_V3_FUNCTION", part, "Write the expression inline or use a project block.");
+			if (part instanceof FunctionCall call && compact(raw(call.getTarget())).matches("^(Object|JSON|Date)\\..*"))
+				reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
 			if (part instanceof org.mozilla.javascript.ast.Assignment && part != root || part instanceof org.mozilla.javascript.ast.UpdateExpression)
 				reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", part, "Move the assignment to its own statement.");
 			if (part instanceof org.mozilla.javascript.ast.NewExpression || raw(part).equals("this")) reject("FLOWSCRIPT_V3_UNSUPPORTED", part, "Use Flow blocks.");
@@ -352,6 +360,16 @@ public final class FlowScriptV3Reader {
 				edits.add(new Edit(pos(part), end(part), "default"));
 			if (part instanceof PropertyGet property && property.getTarget() instanceof Name n && n.getIdentifier().equals("local") && allNames.contains(property.getProperty().getIdentifier()))
 				reject("FLOWSCRIPT_V3_LOCAL_ALIAS", part, "Use one spelling for the local.");
+			if (part instanceof PropertyGet property) {
+				int targetEnd = end(property.getTarget()), propertyStart = pos(property.getProperty());
+				int optional = source.substring(Math.min(targetEnd, propertyStart), Math.max(targetEnd, propertyStart)).indexOf("?.");
+				if (optional >= 0) edits.add(new Edit(targetEnd + optional, targetEnd + optional + 2, "."));
+			}
+			if (part instanceof org.mozilla.javascript.ast.ElementGet element) {
+				int targetEnd = end(element.getTarget()), elementEnd = end(element);
+				int optional = source.substring(Math.min(targetEnd, elementEnd), Math.max(targetEnd, elementEnd)).indexOf("?.");
+				if (optional >= 0) edits.add(new Edit(targetEnd + optional, targetEnd + optional + 2, ""));
+			}
 			return true;
 		});
 		edits.sort((a, b) -> Integer.compare(b.start, a.start));
@@ -380,6 +398,10 @@ public final class FlowScriptV3Reader {
 			return result;
 		}
 		String text = raw(expression).trim();
+		if (text.length() >= 2 && text.charAt(0) == '`' && text.charAt(text.length() - 1) == '`') {
+			String rendered = rewritten(expression, scope).trim();
+			return rendered.substring(1, rendered.length() - 1).replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
+		}
 		return switch (text) { case "true" -> true; case "false" -> false; case "null" -> null; default -> "${" + rewritten(expression, scope).trim() + "}"; };
 	}
 
@@ -396,6 +418,9 @@ public final class FlowScriptV3Reader {
 	@SuppressWarnings("unchecked")
 	private String propertyKind(String block, String key) {
 		if (helpers.contains(block)) return "expression";
+		if (block.equals("throw") && key.equals("status")) return "text";
+		if ((block.equals("object.keys") || block.equals("object.values")) && key.equals("source")) return "expression";
+		if (block.equals("json.parse") && key.equals("text")) return "template";
 		var descriptor = catalog(block);
 		var props = descriptor.get("props") instanceof Map<?, ?> value ? (Map<String, Object>) value : Map.<String, Object>of();
 		var prop = props.get(key) instanceof Map<?, ?> value ? (Map<String, Object>) value : Map.<String, Object>of();
@@ -408,6 +433,16 @@ public final class FlowScriptV3Reader {
 		};
 	}
 	private Object propertyValue(String block, String key, AstNode expression, Scope scope) {
+		if (expression instanceof FunctionCall call && isBlockCall(call)) {
+			String nested = resolve(compact(raw(call.getTarget())));
+			var properties = new LinkedHashMap<String, Object>();
+			for (var member : ((ObjectLiteral) call.getArguments().get(0)).getElements()) {
+				var field = property(member);
+				String memberKey = key(field.getKey());
+				properties.put(memberKey, propertyValue(nested, memberKey, field.getValue(), scope));
+			}
+			return map("__flowBlock", nested, "properties", properties);
+		}
 		String kind = propertyKind(block, key);
 		if (kind.equals("expression")) return expression instanceof ObjectLiteral || expression instanceof org.mozilla.javascript.ast.ArrayLiteral ? value(expression, scope) : rewritten(expression, scope);
 		if (kind.equals("path")) return expression instanceof StringLiteral s ? s.getValue() : rewritten(expression, scope);
@@ -435,12 +470,43 @@ public final class FlowScriptV3Reader {
 		result.put("out", path);
 		return result;
 	}
+	private Object listSource(AstNode receiver, Scope scope, Lowered prefix) {
+		return prefix.before.isEmpty() && receiver instanceof org.mozilla.javascript.ast.ArrayLiteral ? value(receiver, scope) : prefix.expression;
+	}
+	private String globalBlock(FunctionCall call) {
+		String name = compact(raw(call.getTarget()));
+		return switch (name) {
+			case "Object.keys" -> "object.keys";
+			case "Object.values" -> "object.values";
+			case "JSON.parse" -> "json.parse";
+			case "JSON.stringify" -> "json.stringify";
+			default -> "";
+		};
+	}
+	private Map<String, Object> globalProps(FunctionCall call, Scope scope) {
+		String block = globalBlock(call);
+		var args = call.getArguments();
+		boolean pretty = block.equals("json.stringify") && args.size() == 3 &&
+			args.get(1) != null && raw(args.get(1)).trim().equals("null") && raw(args.get(2)).trim().equals("2");
+		if (block.isEmpty() || (!pretty && args.size() != 1) || args.get(0) instanceof FunctionCall)
+			reject("FLOWSCRIPT_V3_GLOBAL_CALL", call, "Call the matching object or json block in a separate statement.");
+		String key = block.equals("json.parse") ? "text" : block.equals("json.stringify") ? "value" : "source";
+		var props = map(key, propertyValue(block, key, args.get(0), scope));
+		if (pretty) props.put("pretty", true);
+		return props;
+	}
 	private Lowered lower(AstNode expression, Scope scope) {
 		if (expression instanceof PropertyGet property && property.getTarget() instanceof FunctionCall) {
 			var receiver = lower(property.getTarget(), scope);
 			return new Lowered(receiver.before, receiver.expression + "." + property.getProperty().getIdentifier());
 		}
 		if (!(expression instanceof FunctionCall call)) return new Lowered(List.of(), rewritten(expression, scope));
+		if (!globalBlock(call).isEmpty()) {
+			String path = "local.__chain" + (++chain);
+			return new Lowered(List.of(capture(globalBlock(call), globalProps(call, scope), path, call)), path);
+		}
+		if (Set.of("Object.entries", "Date.now").contains(compact(raw(call.getTarget()))))
+			reject("FLOWSCRIPT_V3_GLOBAL_CALL", call, "Use object.keys or date blocks.");
 		String name = method(call);
 		AstNode receiver = call.getTarget() instanceof PropertyGet property ? property.getTarget() : null;
 		var args = call.getArguments();
@@ -458,8 +524,8 @@ public final class FlowScriptV3Reader {
 			String path = "local.__chain" + (++chain);
 			var before = new ArrayList<Map<String, Object>>(prefix.before);
 			Map<String, Object> props;
-			if (name.equals("map")) props = map("items", prefix.expression, "select", body instanceof ObjectLiteral ? value(body, inner) : predicate);
-			else props = map("items", prefix.expression, "where", name.equals("every") ? "!(" + predicate + ")" : predicate);
+			if (name.equals("map")) props = map("items", listSource(receiver, scope, prefix), "select", body instanceof ObjectLiteral ? value(body, inner) : predicate);
+			else props = map("items", listSource(receiver, scope, prefix), "where", name.equals("every") ? "!(" + predicate + ")" : predicate);
 			before.add(capture(name.equals("map") ? "list.map" : "list.filter", props, path, call));
 			return new Lowered(before, name.equals("find") ? path + "[0]" : name.equals("some") ? path + ".length > 0" : name.equals("every") ? path + ".length == 0" : path);
 		}
@@ -495,7 +561,7 @@ public final class FlowScriptV3Reader {
 			var prefix = lower(receiver, scope);
 			String path = "local.__chain" + (++chain);
 			var before = new ArrayList<Map<String, Object>>(prefix.before);
-			var props = map("items", prefix.expression);
+			var props = map("items", listSource(receiver, scope, prefix));
 			if (keyed) props.put("by", "current." + ((PropertyGet) left).getProperty().getIdentifier());
 			props.put("compare", locale ? "locale" : "number"); props.put("direction", direction);
 			before.add(capture("list.sort", props, path, call));
@@ -548,6 +614,10 @@ public final class FlowScriptV3Reader {
 	}
 
 	private void assign(List<Map<String, Object>> output, String target, AstNode rhs, Scope scope, AstNode at) {
+		if (rhs instanceof FunctionCall global && !globalBlock(global).isEmpty()) {
+			output.add(capture(globalBlock(global), globalProps(global, scope), target, at));
+			return;
+		}
 		if (rhs instanceof FunctionCall call && isBlockCall(call)) { output.add(callNode(call, scope, target)); return; }
 		var lowered = lower(rhs, scope);
 		if (!lowered.before.isEmpty()) {
@@ -564,8 +634,43 @@ public final class FlowScriptV3Reader {
 
 	private void body(AstNode body, Scope scope, List<Map<String, Object>> output) {
 		if (body instanceof org.mozilla.javascript.ast.Block || body instanceof org.mozilla.javascript.ast.Scope) {
-			for (AstNode statement : children(body)) statement(statement, scope, output);
+			int cursor = pos(body) + 1;
+			for (AstNode item : children(body)) {
+				String comment = trivia(cursor, pos(item), output);
+				int first = output.size();
+				statement(item, scope, output);
+				if (comment != null && output.size() > first) {
+					output.get(first).put("comment", comment);
+					if (comment.matches("(?s).*@disabled\\b.*")) {
+						if (output.size() != first + 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", item, "Put $$disabled: true on each block generated by this statement.");
+						output.get(first).put("disabled", true);
+					}
+				}
+				cursor = end(item);
+			}
+			trivia(cursor, Math.max(cursor, end(body) - 1), output);
 		} else statement(body, scope, output);
+	}
+	private String trivia(int from, int to, List<Map<String, Object>> output) {
+		if (to <= from) return null;
+		String gap = source.substring(Math.max(0, from), Math.min(source.length(), to));
+		var matcher = java.util.regex.Pattern.compile("//[^\\r\\n]*|/\\*[\\s\\S]*?\\*/").matcher(gap);
+		var comments = new ArrayList<String>();
+		int end = -1;
+		while (matcher.find()) {
+			String text = matcher.group();
+			if (text.startsWith("//")) comments.add(text.substring(2).trim());
+			else for (String line : text.substring(2, text.length() - 2).split("\\r?\\n")) comments.add(line.replaceFirst("^\\s*\\* ?", "").trim());
+			end = matcher.end();
+		}
+		if (comments.isEmpty()) return null;
+		String comment = String.join("\n", comments);
+		if (gap.substring(end).matches("(?s).*(?:\\r?\\n)\\s*(?:\\r?\\n).*")) {
+			output.add(map("block", "comment", "props", map(), "__flowScriptLine", line(from)));
+			output.get(output.size() - 1).put("comment", comment);
+			return null;
+		}
+		return comment;
 	}
 	private void inBody(AstNode body, Scope scope, List<Map<String, Object>> output) {
 		loopDepth++;
@@ -588,9 +693,11 @@ public final class FlowScriptV3Reader {
 		loop.getBody().visit(part -> {
 			if (!(part instanceof Name n) || !n.getIdentifier().equals(item)) return true;
 			if (part.getParent() instanceof PropertyGet property && property.getProperty() == part) return true;
+			if (part.getParent() instanceof ObjectProperty field && field.getKey() == part && !raw(field).trim().equals(item)) return true;
 			for (var enclosing = part.getParent(); enclosing != null && enclosing != loop; enclosing = enclosing.getParent()) {
 				if (enclosing instanceof org.mozilla.javascript.ast.ForInLoop inner && inner.isForOf() && pos(part) >= pos(inner.getBody())) { needed[0] = true; break; }
-				if (enclosing instanceof FunctionNode && enclosing.getParent() instanceof FunctionCall) { needed[0] = true; break; }
+				if (enclosing instanceof FunctionNode fn && fn.getParent() instanceof FunctionCall call && Set.of("filter", "map", "find", "some", "every").contains(method(call))) { needed[0] = true; break; }
+				if (enclosing instanceof FunctionCall call && compact(raw(call.getTarget())).matches("^(flow\\.forEach|list\\.).*") && raw(call).matches("(?s).*\\bcurrent\\b.*")) { needed[0] = true; break; }
 			}
 			return !needed[0];
 		});
@@ -621,7 +728,8 @@ public final class FlowScriptV3Reader {
 			}
 		} else reject("FLOWSCRIPT_V3_DESTRUCTURING", loop, "Use a single loop variable or a one-level object pattern.");
 		inBody(loop.getBody(), inner, body);
-		output.add(control("forEach", map("items", expression(loop.getIteratedObject(), scope)), loop, "nodes", body));
+		AstNode items = loop.getIteratedObject();
+		output.add(control("forEach", map("items", items instanceof org.mozilla.javascript.ast.ArrayLiteral ? value(items, scope) : expression(items, scope)), loop, "nodes", body));
 	}
 	private void countedFor(org.mozilla.javascript.ast.ForLoop loop, Scope scope, List<Map<String, Object>> output) {
 		AstNode initializer = loop.getInitializer(), condition = loop.getCondition(), increment = loop.getIncrement();
@@ -691,6 +799,8 @@ public final class FlowScriptV3Reader {
 					var binding = declare(n.getIdentifier(), type, target, scope, null);
 					binding.typedList = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.array");
 					binding.typedMap = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.map");
+					if (binding.typedList) typedLists.add(binding.mapped);
+					if (binding.typedMap) typedMaps.add(binding.mapped);
 					if (init != null) assign(output, binding.mapped, init, scope, declaration);
 					else output.add(node("set", map("path", binding.mapped, "value", "${undefined}"), declaration));
 				} else if (target instanceof ObjectLiteral object) {
@@ -718,10 +828,10 @@ public final class FlowScriptV3Reader {
 				String target = binding != null ? binding.mapped : rewritten(left, scope);
 				if (target.startsWith("result.")) { if (resultStyle.equals("returnObject")) reject("FLOWSCRIPT_V3_RESULT_MIXED", statement, "Use one result style."); resultStyle = "resultField"; }
 				String op = org.mozilla.javascript.ast.AstNode.operatorToString(assignment.getOperator());
-				if (left instanceof org.mozilla.javascript.ast.ElementGet element && element.getTarget() instanceof Name name) {
-					var mapBinding = lookup(name.getIdentifier(), scope);
-					if (mapBinding != null && mapBinding.typedMap && op.equals("=")) {
-						output.add(node("json.put", map("path", mapBinding.mapped, "key", expression(element.getElement(), scope), "value", value(right, scope)), statement));
+				if (left instanceof org.mozilla.javascript.ast.ElementGet element) {
+					String mapPath = element.getTarget() instanceof Name n ? (lookup(n.getIdentifier(), scope) == null ? "" : lookup(n.getIdentifier(), scope).mapped) : compact(raw(element.getTarget()));
+					if (typedMaps.contains(mapPath) && op.equals("=")) {
+						output.add(node("json.put", map("path", mapPath, "key", value(element.getElement(), scope), "value", value(right, scope)), statement));
 						return;
 					}
 				}
@@ -739,11 +849,11 @@ public final class FlowScriptV3Reader {
 				return;
 			}
 			if (expression instanceof FunctionCall call) {
-				if (call.getTarget() instanceof PropertyGet property && property.getProperty().getIdentifier().equals("push") && property.getTarget() instanceof Name name) {
-					var list = lookup(name.getIdentifier(), scope);
-					if (list == null || !list.typedList) reject("FLOWSCRIPT_V3_UNTYPED_LIST", statement, "Initialize the list with json.array({ itemType }).");
+				if (call.getTarget() instanceof PropertyGet property && property.getProperty().getIdentifier().equals("push")) {
+					String path = property.getTarget() instanceof Name n ? (lookup(n.getIdentifier(), scope) == null ? "" : lookup(n.getIdentifier(), scope).mapped) : compact(raw(property.getTarget()));
+					if (!typedLists.contains(path)) reject("FLOWSCRIPT_V3_UNTYPED_LIST", statement, "Initialize the list with json.array({ itemType }).");
 					if (call.getArguments().size() != 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Push one value per statement.");
-					output.add(node("json.push", map("path", list.mapped, "value", value(call.getArguments().get(0), scope)), statement));
+					output.add(node("json.push", map("path", path, "value", value(call.getArguments().get(0), scope)), statement));
 					return;
 				}
 				output.add(callNode(call, scope, null));

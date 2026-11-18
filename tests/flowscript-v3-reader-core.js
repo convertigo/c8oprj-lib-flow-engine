@@ -7,7 +7,10 @@ var codeService = eval(String(files.readFileToString(new java.io.File(engineDir,
 var bridge = eval(String(files.readFileToString(new java.io.File(engineDir, "modules/flowscript-v3-prototype.js"), "UTF-8")));
 var Reader = Packages.com.convertigo.libflowengine.FlowScriptV3Reader;
 function check(source) {
-	var oracle = JSON.parse(String(engine.flowSourceValidate(JSON.stringify({ name: "Example", code: source, skipAnalysis: true }))));
+	var translated = bridge.translate(source);
+	if (translated.diagnostics.length) throw new Error("Bridge refused: " + JSON.stringify(translated.diagnostics));
+	var oracle = JSON.parse(String(engine.flowSourceValidate(JSON.stringify({ name: "Example", code: translated.code, skipAnalysis: true }))));
+	if (oracle.definition) oracle.definition.flow = Object.assign({}, oracle.definition.flow || {}, { sourceVersion: 3 });
 	if (!oracle.ok) throw new Error("Oracle refused: " + JSON.stringify(oracle).substring(0, 1000));
 	var direct = JSON.parse(String(Reader.read(source, null)));
 	if (direct.diagnostics.length) throw new Error("Reader refused: " + JSON.stringify(direct.diagnostics));
@@ -32,6 +35,9 @@ check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const sorted 
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const sorted = [...input.items].sort((a, b) => a.k.localeCompare(b.k))\n  return { sorted }\n}');
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const labels = input.items.filter(item => item.active).map(item => item.name).join(", ")\n  return { labels }\n}');
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const rows = json.array({ itemType: { type: "integer" } })\n  rows.push(1)\n  return { rows }\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const keys = Object.keys(input.fields)\n  const vals = Object.values(input.fields)\n  return { keys, vals }\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const parsed = JSON.parse(input.text)\n  const formatted = JSON.stringify(parsed, null, 2)\n  return { formatted }\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  // @disabled\n  result.ignored = 1\n  // a note\n  result.count = 2\n}');
 function refuses(body, code, line) {
 	var source = 'const _flow = { sourceVersion: 3 }\nfunction Example() {\n' + body + '\n}';
 	var oracle = bridge.translate(source).diagnostics, direct = JSON.parse(String(Reader.read(source, null))).diagnostics;
@@ -51,4 +57,6 @@ refuses('  for (const key in input.items) { result.x = key }', 'FLOWSCRIPT_V3_LO
 refuses('  switch (input.items.length) { case 1: result.x = 1; case 2: result.x = 2; break }', 'FLOWSCRIPT_V3_SWITCH_FALLTHROUGH', 3);
 refuses('  throw new Error("failed")', 'FLOWSCRIPT_V3_ERROR_CODE_CHOICE', 3);
 refuses('  if ({ x: 1 }) { result.x = 1 }', 'FLOWSCRIPT_V3_OBJECT_CONDITION', 3);
+var catalogProbe = JSON.parse(String(Reader.read('const _flow = { sourceVersion: 3 }\nfunction Example() { flow.while({ condition: true, $$nodes() {} }) }', function(name) { return JSON.stringify({props:{condition:{kind:'expression'}}}); })));
+if (catalogProbe.diagnostics.length || catalogProbe.definition.nodes[0].props.condition !== 'true') throw new Error('Catalog callback failed: ' + JSON.stringify(catalogProbe));
 print('flowscript-v3-reader-core OK');
