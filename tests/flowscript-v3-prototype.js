@@ -61,7 +61,7 @@ refuses('reserved', '  let flow = 1', 'FLOWSCRIPT_V3_RESERVED_NAME', 3);
 refuses('shadow', '  let x = 1\n  if (true) { let x = 2 }', 'FLOWSCRIPT_V3_SHADOWING', 4);
 refuses('scope', '  if (true) { let x = 1 }\n  return { x }', 'FLOWSCRIPT_V3_OUT_OF_SCOPE', 4);
 refuses('mixed result', '  result.x = 1\n  return { x: 2 }', 'FLOWSCRIPT_V3_RESULT_MIXED', 4);
-refuses('untyped list', '  const rows = []\n  rows.push(1)', 'FLOWSCRIPT_V3_UNTYPED_LIST', 4);
+refuses('untyped list', '  const rows = []\n  rows.push(input.items)', 'FLOWSCRIPT_V3_UNTYPED_LIST', 4);
 refuses('return in loop', '  for (const item of input.items) { return { item } }', 'FLOWSCRIPT_V3_RETURN_IN_LOOP', 3);
 refuses('for form', '  for (let i = 0; i < 3; i += 2) { result.x = i }', 'FLOWSCRIPT_V3_FOR_FORM', 3);
 refuses('finally', '  try { result.x = 1 } catch (e) {} finally { result.x = 2 }', 'FLOWSCRIPT_V3_FINALLY', 3);
@@ -175,7 +175,7 @@ check(!rejectedWrite.ok && rejectedWrite.error.code === 'FLOWSCRIPT_V3_BREAK' &&
 	'refus API avec ligne v3: ' + JSON.stringify(rejectedWrite).substring(0, 900));
 var lineWitness = bridge.translate(source('  let n = 1\n  n++\n  return { n }'));
 check(lineWitness.code.split('\n').length === lineWitness.lineMap.length &&
-	lineWitness.lineMap[lineWitness.code.split('\n').findIndex(function (line) { return line.indexOf('local.n = local.n + 1') === 0; })] === 4,
+	lineWitness.lineMap[lineWitness.code.split('\n').findIndex(function (line) { return line.indexOf('local.n = Number(local.n) + 1') === 0; })] === 4,
 	'correspondance des lignes: ' + JSON.stringify(lineWitness));
 var renderer = eval(String(files.readFileToString(new java.io.File(engineDir, 'modules/flow-script-renderer-service.js'), 'UTF-8')));
 var renderError = null;

@@ -1,14 +1,15 @@
 {
   "sourceVersion": 3,
-  "status": "draft L3a 2026-11-18",
+  "status": "draft L3a 2026-11-18, amended L0′ 2026-11-18",
   "parser": {
     "engine": "rhino",
     "version": "1.9.2",
     "languageVersion": "ES6",
     "recoverFromErrors": false,
     "preparation": [
-      "for-of-head-const-to-let-same-length"
-    ]
+      "const-declaration-keyword-to-let-same-length"
+    ],
+    "preparationWhy": "Rhino 1.9.2 refuses const in a for…of head and scopes a const to its whole function (a const declared again in a sibling block is a redeclaration error for its parser, not in JavaScript); the reader reads const from the source text"
   },
   "reservedNames": [
     "flow",
@@ -23,7 +24,8 @@
   ],
   "reservedLocalPrefix": "__",
   "hiddenLocals": {
-    "chain": "local.__chain<N>"
+    "chain": "local.__chain<N>",
+    "counter": "local.__count<N>"
   },
   "accepted": [
     {
@@ -60,7 +62,7 @@
       "id": "assign-compound",
       "construct": "x += e | x -= e | x *= e | x /= e | x++ | x--",
       "block": "set",
-      "lowering": "local.x = local.x + (e)",
+      "lowering": "local.x = local.x + (e); x++ is local.x = Number(local.x) + 1 (JavaScript converts to a number first); x-- is local.x = local.x - 1",
       "where": "statement only"
     },
     {
@@ -103,7 +105,8 @@
       "id": "for-counted",
       "construct": "for (let i = a; i < b; i++) {…}",
       "block": "set + while",
-      "limits": "< or <=, step ++, i not assigned in the body, no continue in body; maxIterations 1000000"
+      "limits": "< or <=, step ++, i not assigned in the body; maxIterations 1000000",
+      "lowering": "local.i = a; while (i < b) { body; local.i = Number(local.i) + 1 }; when continue leaves the loop body: local.__count<N> = a; while (__count < b) { local.i = __count; __count = Number(__count) + 1; body } (continue is next), the bound read at every test as in JavaScript"
     },
     {
       "id": "switch",
@@ -121,7 +124,7 @@
       "id": "continue",
       "construct": "continue",
       "block": "next",
-      "where": "while or for…of, no label"
+      "where": "while, for…of or counted for, no label"
     },
     {
       "id": "throw-object",
@@ -189,21 +192,27 @@
     },
     {
       "id": "list-sort",
-      "construct": "xs.toSorted((a, b) => a.k - b.k) | xs.toSorted((a, b) => a - b) | localeCompare on matching item keys or the items themselves | [...xs].sort(…)",
+      "construct": "xs.toSorted(cmp) | [...xs].sort(cmp), cmp = c1 || c2 || …, each ci: a.k - b.k | a.k.localeCompare(b.k) (String() allowed) | a.k < b.k ? -1 : a.k > b.k ? 1 : 0 and every ternary of <, >, <=, >=, ==, !=, ===, !== tests on the two keys with number results that gives its sign for every pair of values; b before a for descending; a and b alone for the items themselves",
       "block": "list.sort",
       "properties": {
         "items": "xs",
-        "by": "current.k for a key comparator; omitted for an identity comparator (the block uses current)",
-        "compare": "number (a - b) | locale (localeCompare)",
-        "direction": "desc when b comes first"
+        "by": "current.k for the first key; omitted for an identity comparator (the block uses current)",
+        "compare": "number (a - b) | locale (localeCompare) | natural (a < b ? -1 : a > b ? 1 : 0, raw keys)",
+        "direction": "desc when b comes first",
+        "then": "[{ by, compare, direction }, …] for c2, c3…, evaluated literally as c1 || c2 || … (a 0 or NaN falls to the next key)"
       },
-      "note": "compare is a new list.sort property: a copy sorted by the engine's Array.prototype.sort with the arrow's comparator (stable; NaN compares equal); without compare list.sort keeps its Flow order"
+      "note": "a copy sorted by the engine's Array.prototype.sort with the arrow's comparator (stable; NaN compares equal); a ternary comparator is checked on the eight classes of a pair of keys (less, greater, and equal or incomparable with ===, == only or neither); without compare list.sort keeps its Flow order"
     },
     {
       "id": "chain",
       "construct": "xs.filter(…).map(…).join(\", \")",
       "lowering": "one node per block step, linked by local.__chain<N>",
-      "where": "assignment or return; not in a branch of ?: && || ??, not in an expression function argument, not after a scope read of the statement"
+      "where": "assignment or return; a value that is entirely c ? a : b with a step in a branch lowers to if (c) { x = a } else { x = b }; not in other branches of ?: && || ??, not in an expression function argument, not after a scope read of the statement"
+    },
+    {
+      "id": "concat",
+      "construct": "xs.concat(ys, …)",
+      "lowering": "the expression method (Array.prototype.concat: a list argument is spread, another value appended as one item); list method chains in the arguments run before it, after the chain of xs"
     },
     {
       "id": "push",
@@ -213,7 +222,14 @@
         "path": "local.rows",
         "value": "v"
       },
-      "where": "rows created by json.array"
+      "where": "rows created by json.array, or by const rows = [] / let rows = [] whose item type every push proves"
+    },
+    {
+      "id": "list-untyped",
+      "construct": "const rows = [] | let rows = [] followed by rows.push(v)",
+      "block": "json.array",
+      "lowering": "local.rows = json.array({ itemType }) with the type every pushed value has from its syntax (string and template literals, number literals, booleans, comparisons, !, typeof, null as nullable, object literals whose fields of certain type become properties, list literals); a later rows = [] or list literal joins the inference",
+      "where": "json.array admits no item type that accepts any value (unknown is refused: UNKNOWN_VALUE_TYPE); otherwise FLOWSCRIPT_V3_UNTYPED_LIST with the json.array proposal"
     },
     {
       "id": "put",
@@ -266,7 +282,8 @@
     {
       "id": "default",
       "construct": "flow.default(a, b)",
-      "lowering": "expression function default (null, undefined and \"\" replaced)"
+      "lowering": "expression function default (null, undefined and \"\" replaced)",
+      "where": "any expression; a bare default( is refused (FLOWSCRIPT_V3_RESERVED_WORD)"
     },
     {
       "id": "call-fallback",
@@ -305,6 +322,11 @@
       "code": "FLOWSCRIPT_V3_RESERVED_NAME",
       "construct": "declaring or importing flow, a scope name, or a local starting with __",
       "rewrite": "another name"
+    },
+    {
+      "code": "FLOWSCRIPT_V3_RESERVED_WORD",
+      "construct": "default(x, y) outside a switch: default is a reserved word, so this is not JavaScript",
+      "rewrite": "flow.default(x, y), with the same arguments"
     },
     {
       "code": "FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK",
@@ -363,8 +385,8 @@
     },
     {
       "code": "FLOWSCRIPT_V3_FOR_FORM",
-      "construct": "a for (;;) other than for (let i = a; i < b; i++)",
-      "rewrite": "for…of or while"
+      "construct": "a for (;;) other than for (let i = a; i < b; i++), or a counter assigned in the body",
+      "rewrite": "for…of, or a while with a local the body changes"
     },
     {
       "code": "FLOWSCRIPT_V3_SWITCH_FALLTHROUGH",
@@ -383,18 +405,18 @@
     },
     {
       "code": "FLOWSCRIPT_V3_CHAIN",
-      "construct": "a block method in a branch of ?: && || ??, in an expression function argument, or after a scope read of the statement",
+      "construct": "a block method in a branch of ?: inside a larger expression, in a branch of && || ??, in the test of ?:, in an expression function argument, or after a scope read of the statement",
       "rewrite": "two const"
     },
     {
       "code": "FLOWSCRIPT_V3_LIST_METHOD",
-      "construct": "xs.sort alone, another comparator, reduce, (x, i), outer arrow parameter in an inner arrow",
-      "rewrite": "toSorted, list.sum, list.map or a loop"
+      "construct": "xs.sort alone, a comparator that is not exactly one of the key orders (for instance a.k === b.k ? 0 : …, a.k < b.k ? -1 : 1), reduce, (x, i), outer arrow parameter in an inner arrow",
+      "rewrite": "toSorted with a.k - b.k, localeCompare or a.k < b.k ? -1 : a.k > b.k ? 1 : 0 joined by ||, list.sum, list.map or a loop"
     },
     {
       "code": "FLOWSCRIPT_V3_UNTYPED_LIST",
-      "construct": "const rows = [] then rows.push",
-      "rewrite": "json.array({ itemType }) with the type of the pushed values"
+      "construct": "const rows = [] then rows.push(v) when a pushed or assigned value has no certain type, or the values disagree; push on a list not created by json.array or []",
+      "rewrite": "json.array({ itemType }) with the type of the pushed values (CHOOSE_TYPE when it cannot be proposed)"
     },
     {
       "code": "FLOWSCRIPT_V3_GLOBAL_CALL",
@@ -409,7 +431,7 @@
     },
     {
       "code": "FLOWSCRIPT_V3_UNSUPPORTED",
-      "construct": "async, await, generators, classes, this, new",
+      "construct": "async, await, generators, classes, this, new, const without a value",
       "rewrite": "blocks"
     },
     {
@@ -472,6 +494,62 @@
         ]
       },
       "rule": "run by the Flow engine from the lowered tree, never by evaluating the text with Rhino; no const is rewritten"
+    },
+    {
+      "id": "C-FLOW-DEFAULT",
+      "why": "flow.default is the v2 default function written as JavaScript: undefined, null and \"\" give the fallback, in any expression; a bare default( is a reserved word, not a call",
+      "source": "const _flow = { sourceVersion: 3, inputs: { csv: { type: \"string\" }, label: { type: \"string\" }, rows: { type: \"array\" } } }\n\nfunction DefaultValues({ input, config, result }) {\n  const csv = flow.default(input.csv, \"\")\n  const names = input.rows.map(row => flow.default(row.name, \"?\"))\n  const label = `[${flow.default(input.label, \"none\")}]`\n  return { csv, names, label, empty: flow.default(input.csv, \"\") == \"\" }\n}\n",
+      "input": {
+        "csv": null,
+        "rows": [
+          {
+            "name": "a"
+          },
+          {
+            "name": ""
+          },
+          {}
+        ]
+      },
+      "expected": {
+        "csv": "",
+        "names": [
+          "a",
+          "?",
+          "?"
+        ],
+        "label": "[none]",
+        "empty": true
+      },
+      "parsesWithoutPreparation": true,
+      "rule": "the source is read by the Rhino 1.9.2 parser (ES6) as written, without preparation or error; run by the Flow engine from the lowered tree"
+    },
+    {
+      "id": "C-CONST-BLOCK-SCOPE",
+      "why": "Rhino 1.9.2 scopes a const to its whole function: a const declared again in a sibling block or a later for…of is a redeclaration for its parser, while JavaScript scopes each one to its block (the L3 bench refusal of 18/11)",
+      "source": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" } } }\n\nfunction BlockScope({ input, config, result }) {\n  let total = 0\n  for (const row of input.rows) {\n    const value = row * 2\n    total += value\n  }\n  if (total > 0) {\n    const value = 1\n    total += value\n  }\n  const shown = json.array({ itemType: { type: \"number\" } })\n  for (const value of input.rows) {\n    shown.push(value)\n  }\n  return { total, shown }\n}\n",
+      "input": {
+        "rows": [
+          1,
+          2
+        ]
+      },
+      "expected": {
+        "total": 7,
+        "shown": [
+          1,
+          2
+        ]
+      },
+      "rule": "parsed after the same-length preparation that writes each const declaration keyword as let; each declaration keeps its const rule"
+    }
+  ],
+  "reservedWords": [
+    {
+      "word": "default",
+      "outside": "switch",
+      "code": "FLOWSCRIPT_V3_RESERVED_WORD",
+      "rewrite": "flow.default(x, y), same arguments"
     }
   ]
 }

@@ -50,6 +50,7 @@
 			var rules = {
 				FLOWSCRIPT_V3_IMPORT_SYNTAX: "JavaScript import declarations are unavailable in FlowScript v3",
 				FLOWSCRIPT_V3_RESERVED_NAME: "This name is reserved for a Flow scope or the bridge",
+				FLOWSCRIPT_V3_RESERVED_WORD: "default is a reserved word of JavaScript, not a function: the default function is flow.default",
 				FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK: "This local name hides a block namespace",
 				FLOWSCRIPT_V3_LOCAL_ALIAS: "A local cannot be written both by its declared name and by local.*",
 				FLOWSCRIPT_V3_OUT_OF_SCOPE: "A local can only be read inside its declaring block",
@@ -67,7 +68,7 @@
 				FLOWSCRIPT_V3_FUNCTION: "Only top-level helpers, list arrows, and slot functions are supported",
 				FLOWSCRIPT_V3_CHAIN: "A list operation in this expression cannot be lowered in its JavaScript evaluation order",
 				FLOWSCRIPT_V3_LIST_METHOD: "This list method or comparator cannot be lowered with the same JavaScript meaning",
-				FLOWSCRIPT_V3_UNTYPED_LIST: "An empty list must declare its item type before push",
+				FLOWSCRIPT_V3_UNTYPED_LIST: "The item type of this list cannot be proven from the values pushed into it",
 				FLOWSCRIPT_V3_GLOBAL_CALL: "This global call cannot be lowered in this expression or with these arguments",
 				FLOWSCRIPT_V3_ERROR_CODE_CHOICE: "throw new Error lacks the literal public error code required by Flow",
 				FLOWSCRIPT_V3_UNSUPPORTED: "This JavaScript construct is outside the FlowScript v3 subset",
@@ -86,10 +87,16 @@
 		function array(list) { var out = []; for (var i = 0; list && i < list.size(); i++) out.push(list.get(i)); return out; }
 		function children(node) { var out = []; for (var part = node && node.getFirstChild(); part; part = part.getNext()) out.push(part); return out; }
 		function visit(node, callback) { node.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (n) { return callback(n) !== false; } })); }
-		function preparedForOf(text) {
-			// Token scan, not a text-wide regular expression. A for…of header is the
-			// only place where Rhino's const token needs the same-length workaround.
-			var out = text.split(""), state = "code", quote = "", i = 0;
+		function prepare(text) {
+			// Token scan, not a text-wide regular expression, with same-length rewrites only, so that every AST position is
+			// a source position. Each const declaration keyword becomes let: Rhino 1.9.2 refuses const in a for…of head and
+			// gives a const the scope of the whole function, so a const declared again in a sibling block (valid JavaScript)
+			// is a redeclaration for its parser. Whether a declaration is const is read from the source text. A bare
+			// default( is recorded: default is a reserved word, not a function name.
+			var out = text.split(""), state = "code", quote = "", i = 0, defaults = [];
+			function word(at, value) {
+				return text.substring(at, at + value.length) === value && !/[\w$.]/.test(text.charAt(at - 1)) && !/[\w$]/.test(text.charAt(at + value.length));
+			}
 			while (i < text.length) {
 				var c = text.charAt(i), next = text.charAt(i + 1);
 				if (state === "line") { if (c === "\n") state = "code"; i++; continue; }
@@ -98,20 +105,44 @@
 				if (c === "/" && next === "/") { state = "line"; i += 2; continue; }
 				if (c === "/" && next === "*") { state = "block"; i += 2; continue; }
 				if (c === "\"" || c === "'" || c === "`") { state = "string"; quote = c; i++; continue; }
-				if (text.substring(i, i + 3) === "for" && !/[\w$]/.test(text.charAt(i - 1)) && !/[\w$]/.test(text.charAt(i + 3))) {
-					var j = i + 3; while (/\s/.test(text.charAt(j))) j++;
-					if (text.charAt(j) === "(") { j++; while (/\s/.test(text.charAt(j))) j++;
-						if (text.substring(j, j + 5) === "const" && !/[\w$]/.test(text.charAt(j + 5))) {
-							var tail = text.substring(j + 5), ofAt = tail.search(/\s+of\b/), closeAt = tail.indexOf(")");
-							if (ofAt >= 0 && (closeAt < 0 || ofAt < closeAt)) { out[j] = "l"; out[j + 1] = "e"; out[j + 2] = "t"; out[j + 3] = " "; out[j + 4] = " "; }
-						}
-					}
+				if (word(i, "const")) {
+					var j = i + 5; while (/\s/.test(text.charAt(j))) j++;
+					if (j > i + 5 && /[A-Za-z_$]/.test(text.charAt(j)) || /[{\[]/.test(text.charAt(j))) { out[i] = "l"; out[i + 1] = "e"; out[i + 2] = "t"; out[i + 3] = " "; out[i + 4] = " "; }
+					i += 5; continue;
+				}
+				if (word(i, "default")) {
+					var k = i + 7; while (/\s/.test(text.charAt(k))) k++;
+					if (text.charAt(k) === "(") defaults.push({ at: i, open: k });
+					i += 7; continue;
 				}
 				i++;
 			}
-			return out.join("");
+			return { text: out.join(""), defaults: defaults };
 		}
-		prepared = preparedForOf(source);
+		function closing(text, open) {
+			// The parenthesis closing the one at open, strings and comments skipped; -1 when there is none.
+			var depth = 0, state = "code", quote = "";
+			for (var i = open; i < text.length; i++) {
+				var c = text.charAt(i), next = text.charAt(i + 1);
+				if (state === "line") { if (c === "\n") state = "code"; continue; }
+				if (state === "block") { if (c === "*" && next === "/") { state = "code"; i++; } continue; }
+				if (state === "string") { if (c === "\\") i++; else if (c === quote) state = "code"; continue; }
+				if (c === "/" && next === "/") { state = "line"; i++; continue; }
+				if (c === "/" && next === "*") { state = "block"; i++; continue; }
+				if (c === "\"" || c === "'" || c === "`") { state = "string"; quote = c; continue; }
+				if (c === "(") depth++;
+				if (c === ")" && --depth === 0) return i;
+			}
+			return -1;
+		}
+		var preparation = prepare(source);
+		prepared = preparation.text;
+		if (preparation.defaults.length) {
+			var bare = preparation.defaults[0], close = closing(source, bare.open);
+			var rewrite = close < 0 ? "flow.default(x, y)" : "flow.default(" + source.substring(bare.open + 1, close) + ")";
+			try { reject("FLOWSCRIPT_V3_RESERVED_WORD", bare.at, "Write " + rewrite + "."); } catch (_ignored) {}
+			return { code: "", lineMap: [], diagnostics: diagnostics };
+		}
 		var ast;
 		try {
 			var env = new Packages.org.mozilla.javascript.CompilerEnvirons(); env.setLanguageVersion(200); env.setRecoverFromErrors(false);
@@ -126,7 +157,7 @@
 			return { code: "", lineMap: [], diagnostics: diagnostics };
 		}
 		var scope = { names: Object.create(null), parent: null }, allNames = Object.create(null), imports = Object.create(null);
-		var resultStyle = "", chain = 0, loopDepth = 0, countedDepth = 0, blockNamespaces = Object.create(null);
+		var resultStyle = "", chain = 0, counted = 0, loopDepth = 0, blockNamespaces = Object.create(null);
 		visit(ast, function (part) {
 			if (kind(part) === "VariableDeclaration") array(part.getVariables()).forEach(function (v) {
 				var target = v.getTarget();
@@ -207,6 +238,209 @@
 			return needed;
 		}
 		function argument(call) { return array(call.getArguments()); }
+		function unparen(node) { while (kind(node) === "ParenthesizedExpression") node = node.getExpression(); return node; }
+		function operator(node) { return String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(node.getOperator())); }
+		// A sort comparator, read as the list of its keys: c1 || c2 || …, each ci a key comparator on the two parameters.
+		// Returns [{ path, compare, direction }] (path "" for the items themselves), or null when a part has no exact key form.
+		function comparatorKeys(node, first, second) {
+			node = unparen(node);
+			if (kind(node) === "InfixExpression" && operator(node) === "||") {
+				var left = comparatorKeys(node.getLeft(), first, second), right = left && comparatorKeys(node.getRight(), first, second);
+				return right ? left.concat(right) : null;
+			}
+			var key = keyComparator(node, first, second);
+			return key ? [key] : null;
+		}
+		function keyComparator(node, first, second) {
+			function side(operand) {
+				var path = [], at = unparen(operand);
+				while (kind(at) === "PropertyGet") { path.unshift(String(at.getProperty().getIdentifier())); at = unparen(at.getTarget()); }
+				if (kind(at) !== "Name") return null;
+				var name = String(at.getIdentifier());
+				return name === first || name === second ? { name: name, path: path.join(".") } : null;
+			}
+			function pair(left, right) {
+				var l = side(left), r = side(right);
+				return l && r && l.path === r.path && l.name !== r.name ? { path: l.path, swapped: l.name === second } : null;
+			}
+			function unstring(operand) {
+				var at = unparen(operand);
+				return kind(at) === "FunctionCall" && raw(at.getTarget()).trim() === "String" && argument(at).length === 1 ? argument(at)[0] : operand;
+			}
+			var found;
+			if (kind(node) === "InfixExpression" && operator(node) === "-" && (found = pair(node.getLeft(), node.getRight()))) {
+				return { path: found.path, compare: "number", direction: found.swapped ? "desc" : "asc" };
+			}
+			if (kind(node) === "FunctionCall" && method(node) === "localeCompare" && argument(node).length === 1 &&
+				(found = pair(unstring(node.getTarget().getTarget()), unstring(argument(node)[0])))) {
+				return { path: found.path, compare: "locale", direction: found.swapped ? "desc" : "asc" };
+			}
+			if (kind(node) !== "ConditionalExpression") return null;
+			// A ternary of relational and equality tests between the two keys, with number literals as results. Each test
+			// is decided by the class of the pair of keys (x, y): x < y, x > y, neither with x === y, with x == y only, or
+			// with x != y, and the same three for an incomparable pair (NaN, undefined). The comparator is exact when it
+			// gives the sign of x < y ? -1 : x > y ? 1 : 0 (or of its reverse) in every class.
+			var classes = ["LT", "GT", "EQS", "EQL", "EQN", "NCS", "NCL", "NCN"], keyPath = null;
+			var truth = { "<": ["LT"], ">": ["GT"], "<=": ["LT", "EQS", "EQL", "EQN"], ">=": ["GT", "EQS", "EQL", "EQN"], "==": ["EQS", "EQL", "NCS", "NCL"], "===": ["EQS", "NCS"] };
+			var mirrored = { "<": ">", ">": "<", "<=": ">=", ">=": "<=" };
+			function holds(relation, at) {
+				if (relation === "!=") return !holds("==", at);
+				if (relation === "!==") return !holds("===", at);
+				return truth[relation].indexOf(at) >= 0;
+			}
+			function decision(part) {
+				part = unparen(part);
+				if (kind(part) === "ConditionalExpression") {
+					var test = unparen(part.getTestExpression());
+					if (kind(test) !== "InfixExpression" || ["<", ">", "<=", ">=", "==", "!=", "===", "!=="].indexOf(operator(test)) < 0) return null;
+					var tested = pair(test.getLeft(), test.getRight());
+					if (!tested || keyPath !== null && keyPath !== tested.path) return null;
+					keyPath = tested.path;
+					var relation = tested.swapped ? mirrored[operator(test)] || operator(test) : operator(test);
+					var yes = decision(part.getTrueExpression()), no = yes && decision(part.getFalseExpression());
+					return no ? function (at) { return holds(relation, at) ? yes(at) : no(at); } : null;
+				}
+				var sign = kind(part) === "UnaryExpression" && ["-", "+"].indexOf(operator(part)) >= 0 && kind(unparen(part.getOperand())) === "NumberLiteral"
+					? (operator(part) === "-" ? -1 : 1) * Number(unparen(part.getOperand()).getNumber())
+					: kind(part) === "NumberLiteral" ? Number(part.getNumber()) : NaN;
+				if (sign !== sign) return null;
+				sign = sign < 0 ? -1 : sign > 0 ? 1 : 0;
+				return function () { return sign; };
+			}
+			var decide = decision(node);
+			if (!decide) return null;
+			var ascending = classes.every(function (at) { return decide(at) === (at === "LT" ? -1 : at === "GT" ? 1 : 0); });
+			var descending = classes.every(function (at) { return decide(at) === (at === "LT" ? 1 : at === "GT" ? -1 : 0); });
+			return ascending || descending ? { path: keyPath, compare: "natural", direction: ascending ? "asc" : "desc" } : null;
+		}
+		function sortProperties(key) {
+			return (key.path ? "by: current." + key.path + ", " : "") + "compare: \"" + key.compare + "\", direction: \"" + key.direction + "\"";
+		}
+		// The type a value has whatever the data, from its syntax alone (literals, comparisons, object and list literals),
+		// or null. Object fields of no certain type are ANY: left out of the item type, so they are not checked.
+		var BOTTOM = { bottom: true }, ANY = { any: true };
+		function numberType(value) { return isFinite(value) ? { type: Math.floor(value) === value ? "integer" : "number" } : null; }
+		function staticType(node) {
+			node = unparen(node);
+			var k = kind(node);
+			if (k === "StringLiteral" || k === "TemplateLiteral") return { type: "string" };
+			if (k === "NumberLiteral") return numberType(Number(node.getNumber()));
+			if (k === "UnaryExpression") {
+				var op = operator(node), operand = unparen(node.getOperand());
+				if ((op === "-" || op === "+") && kind(operand) === "NumberLiteral") return numberType((op === "-" ? -1 : 1) * Number(operand.getNumber()));
+				return op === "!" ? { type: "boolean" } : op === "typeof" ? { type: "string" } : null;
+			}
+			if (k === "KeywordLiteral") {
+				var word = String(node.toSource()).trim();
+				return word === "true" || word === "false" ? { type: "boolean" } : word === "null" ? { type: "null" } : null;
+			}
+			if (k === "InfixExpression") return ["==", "!=", "===", "!==", "<", "<=", ">", ">="].indexOf(operator(node)) >= 0 ? { type: "boolean" } : null;
+			if (k === "ConditionalExpression") {
+				var whenTrue = staticType(node.getTrueExpression()), whenFalse = whenTrue && staticType(node.getFalseExpression());
+				return whenFalse ? mergeTypes(whenTrue, whenFalse) : null;
+			}
+			if (k === "ArrayLiteral") {
+				var items = BOTTOM, elements = array(node.getElements());
+				for (var i = 0; i < elements.length; i++) {
+					var item = kind(elements[i]) === "Spread" ? null : staticType(elements[i]);
+					items = item && mergeTypes(items, item);
+					if (!items) return null;
+				}
+				return { type: "array", items: items };
+			}
+			if (k === "ObjectLiteral") {
+				var fields = Object.create(null), exact = true;
+				array(node.getElements()).forEach(function (property) {
+					var key = kind(property) === "ObjectProperty" ? property.getKey() : null, keyKind = kind(key);
+					if (!key || ["Name", "StringLiteral", "NumberLiteral"].indexOf(keyKind) < 0 || kind(property.getValue()) === "FunctionNode") { exact = false; return; }
+					var fieldName = keyKind === "Name" ? String(key.getIdentifier()) : keyKind === "StringLiteral" ? String(key.getValue()) : String(Number(key.getNumber()));
+					fields[fieldName] = staticType(property.getValue()) || ANY;
+				});
+				return { type: "object", fields: exact ? fields : Object.create(null) };
+			}
+			return null;
+		}
+		function mergeTypes(a, b) {
+			if (a === BOTTOM) return b;
+			if (b === BOTTOM) return a;
+			if (a === ANY || b === ANY) return ANY;
+			if (a.type === "null" && b.type === "null") return a;
+			if (a.type === "null" || b.type === "null") {
+				var other = a.type === "null" ? b : a, copy = {};
+				Object.keys(other).forEach(function (key) { copy[key] = other[key]; });
+				copy.nullable = true; return copy;
+			}
+			var numeric = { integer: true, number: true };
+			var type = a.type === b.type ? a.type : numeric[a.type] && numeric[b.type] ? "number" : "";
+			if (!type) return null;
+			var merged = { type: type };
+			if (a.nullable || b.nullable) merged.nullable = true;
+			if (type === "array") { merged.items = mergeTypes(a.items, b.items); if (!merged.items) return null; }
+			if (type === "object") {
+				merged.fields = Object.create(null);
+				Object.keys(a.fields).concat(Object.keys(b.fields)).forEach(function (key) {
+					merged.fields[key] = key in a.fields && key in b.fields ? mergeTypes(a.fields[key], b.fields[key]) || ANY : key in a.fields ? a.fields[key] : b.fields[key];
+				});
+			}
+			return merged;
+		}
+		function schemaOf(type) {
+			if (!type || type === BOTTOM || type === ANY) return null;
+			var schema = { type: type.type };
+			if (type.nullable && type.type !== "null") schema.nullable = true;
+			if (type.type === "array") { schema.items = schemaOf(type.items); if (!schema.items) return null; }
+			if (type.type === "object") {
+				var properties = {}, count = 0;
+				Object.keys(type.fields).forEach(function (key) { var field = schemaOf(type.fields[key]); if (field) { properties[key] = field; count++; } });
+				if (count) schema.properties = properties;
+			}
+			return schema;
+		}
+		function literal(value) {
+			if (value && typeof value === "object" && !Array.isArray(value)) {
+				var keys = Object.keys(value);
+				return keys.length ? "{ " + keys.map(function (key) { return (/^[A-Za-z_$][\w$]*$/.test(key) ? key : JSON.stringify(key)) + ": " + literal(value[key]); }).join(", ") + " }" : "{}";
+			}
+			return JSON.stringify(value);
+		}
+		// const rows = [] (or let) followed by rows.push(v): the item type proven by every push and every later assignment
+		// of the list, or a refusal at the first value that has no certain type or disagrees.
+		function inferredList(declaration, name) {
+			var after = end(declaration), type = BOTTOM, pushes = 0, refused = null, conflict = false, likely = null;
+			function proposal() {
+				var known = conflict ? null : schemaOf(likely && type !== BOTTOM ? mergeTypes(type, likely) : likely || type);
+				return "Declare the list with the type of every value pushed into it: " + source.substring(pos(declaration), pos(declaration.getVariables().get(0).getTarget())).trim() +
+					" " + name + " = json.array({ itemType: " + (known ? literal(known) : "{ type: \"CHOOSE_TYPE\" }") + " })" +
+					(conflict ? "; the pushed values have different types, and a list has one item type." : known ? ", if the value at line " + line(pos(refused)) + " has that type." : ".");
+			}
+			function add(found, at) {
+				if (refused) return;
+				var next = found && mergeTypes(type, found);
+				if (!next) { refused = at; conflict = !!found; likely = found ? null : likelyType(at); } else type = next;
+			}
+			function likelyType(node) {
+				// For the proposal only: arithmetic gives a number, except NaN and Infinity, which no item type accepts.
+				node = unparen(node);
+				if (kind(node) === "InfixExpression" && ["-", "*", "/", "%"].indexOf(operator(node)) >= 0 || kind(node) === "UnaryExpression" && operator(node) === "-") return { type: "number" };
+				return null;
+			}
+			visit(declaration.getParent(), function (part) {
+				if (refused || pos(part) < after) return !refused;
+				if (kind(part) === "FunctionCall" && method(part) === "push" && kind(part.getTarget().getTarget()) === "Name" && String(part.getTarget().getTarget().getIdentifier()) === name) {
+					pushes++;
+					argument(part).forEach(function (pushed) { add(staticType(pushed), pushed); });
+				}
+				if (kind(part) === "Assignment" && kind(part.getLeft()) === "Name" && String(part.getLeft().getIdentifier()) === name) {
+					var assigned = staticType(part.getRight());
+					if (!assigned || assigned.type !== "array") refused = refused || part.getRight(); else add(assigned.items, part.getRight());
+				}
+				return true;
+			});
+			if (!pushes) return null;
+			if (!refused && !schemaOf(type)) refused = declaration;
+			if (refused) reject("FLOWSCRIPT_V3_UNTYPED_LIST", refused, proposal());
+			return schemaOf(type);
+		}
 		function value(node, current) {
 			if (kind(node) === "PropertyGet" && kind(node.getTarget()) === "FunctionCall") {
 				var receiverValue = value(node.getTarget(), current);
@@ -234,30 +468,24 @@
 					return { before: before, expression: name === "find" ? temp + "[0]" : name === "some" ? temp + ".length > 0" : name === "every" ? temp + ".length == 0" : temp };
 			}
 			if (receiver && (name === "toSorted" || name === "sort" && !(kind(receiver) === "Name" && String(receiver.getIdentifier()) === "list"))) {
-				if (args.length !== 1 || kind(args[0]) !== "FunctionNode" || array(args[0].getParams()).length !== 2) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Use a two-parameter key comparator.");
-				var comparator = args[0], params = array(comparator.getParams()), first = String(params[0].getIdentifier()), second = String(params[1].getIdentifier());
+				var params = args.length === 1 && kind(args[0]) === "FunctionNode" ? array(args[0].getParams()) : [];
+				if (params.length !== 2 || kind(params[0]) !== "Name" || kind(params[1]) !== "Name") reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Use a two-parameter key comparator.");
+				var comparator = args[0], first = String(params[0].getIdentifier()), second = String(params[1].getIdentifier());
 				var sortBody = comparator.getBody(), sortParts = kind(sortBody) === "Block" || kind(sortBody) === "Scope" ? children(sortBody) : [];
 				if (sortParts.length === 1 && kind(sortParts[0]) === "ReturnStatement") sortBody = sortParts[0].getReturnValue();
-				var locale = kind(sortBody) === "FunctionCall" && method(sortBody) === "localeCompare";
-				var l, r;
-				if (locale && argument(sortBody).length === 1) {
-					l = sortBody.getTarget().getTarget(); r = argument(sortBody)[0];
-					function unstring(node) {
-						return kind(node) === "FunctionCall" && raw(node.getTarget()).trim() === "String" && argument(node).length === 1 ? argument(node)[0] : node;
-					}
-					l = unstring(l); r = unstring(r);
-				}
-				else if (kind(sortBody) === "InfixExpression" && String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(sortBody.getOperator())) === "-") { l = sortBody.getLeft(); r = sortBody.getRight(); }
-				else reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the same item key with subtraction or localeCompare.");
-				var identity = kind(l) === "Name" && kind(r) === "Name";
-				var keyed = kind(l) === "PropertyGet" && kind(r) === "PropertyGet" && kind(l.getTarget()) === "Name" && kind(r.getTarget()) === "Name" && String(l.getProperty().getIdentifier()) === String(r.getProperty().getIdentifier());
-				if (!identity && !keyed) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the same item or item key.");
-				var leftName = String(identity ? l.getIdentifier() : l.getTarget().getIdentifier()), rightName = String(identity ? r.getIdentifier() : r.getTarget().getIdentifier());
-				var direction = leftName === first && rightName === second ? "asc" : leftName === second && rightName === first ? "desc" : "";
-				if (!direction) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare the two callback parameters.");
+				else if (sortParts.length) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Return the comparison from an expression body.");
+				var keys = first !== second && sortBody ? comparatorKeys(sortBody, first, second) : null;
+				if (!keys) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Compare one key of the two items with a.k - b.k, a.k.localeCompare(b.k) or a.k < b.k ? -1 : a.k > b.k ? 1 : 0 (b before a for descending), and join several keys with ||.");
 				var sortTemp = "local.__chain" + (++chain), sortBefore = prefix.before.slice();
-				sortBefore.push(sortTemp + " = list.sort({ items: " + prefix.expression + (keyed ? ", by: current." + String(l.getProperty().getIdentifier()) : "") + ", compare: \"" + (locale ? "locale" : "number") + "\", direction: \"" + direction + "\" })");
+				sortBefore.push(sortTemp + " = list.sort({ items: " + prefix.expression + ", " + sortProperties(keys[0]) +
+					(keys.length > 1 ? ", then: [" + keys.slice(1).map(function (key) { return "{ " + sortProperties(key) + " }"; }).join(", ") + "]" : "") + " })");
 				return { before: sortBefore, expression: sortTemp };
+			}
+			if (receiver && name === "concat" && !(kind(receiver) === "Name" && /^(?:list|json|object|text)$/.test(String(receiver.getIdentifier())))) {
+				// xs.concat(ys…): the expression method, JavaScript's Array.prototype.concat; a list method chain in an argument
+				// runs before it, after the chain of the receiver, in JavaScript order (list arrows have no effect).
+				var joined = prefix.before.slice(), parts = args.map(function (part) { var lowered = value(part, current); joined = joined.concat(lowered.before); return lowered.expression; });
+				if (joined.length) return { before: joined, expression: prefix.expression + ".concat(" + parts.join(", ") + ")" };
 			}
 			var globalName = receiver && kind(receiver) === "Name" ? String(receiver.getIdentifier()) + "." + name : "";
 			if (["Object.entries", "Date.now"].indexOf(globalName) >= 0) reject("FLOWSCRIPT_V3_GLOBAL_CALL", node, "Use object.keys or date blocks.");
@@ -271,7 +499,27 @@
 			if (prefix && prefix.before.length) return { before: prefix.before, expression: prefix.expression + "." + name + "(" + args.map(function (a) { return rewritten(a, current); }).join(", ") + ")" };
 			return { before: [], expression: rewritten(node, current) };
 		}
+		function holdsBlockStep(node) {
+			var found = false;
+			visit(node, function (part) {
+				if (kind(part) === "FunctionCall" && (["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0 ||
+					/^(?:Object|JSON)\./.test(raw(part.getTarget()).replace(/\s/g, "")))) found = true;
+				return !found;
+			});
+			return found;
+		}
 		function emitValue(node, current, target, origin) {
+			// A value that is entirely cond ? a : b, with a block step in a branch: if (cond) { target = a } else { target = b },
+			// each branch lowered in its own body, so that only the chosen branch runs, as in JavaScript.
+			var conditional = unparen(node);
+			if (kind(conditional) === "ConditionalExpression" && (holdsBlockStep(conditional.getTrueExpression()) || holdsBlockStep(conditional.getFalseExpression()))) {
+				emit("if (" + rewritten(conditional.getTestExpression(), current) + ") {", origin);
+				emitValue(conditional.getTrueExpression(), current, target, origin);
+				emit("} else {", origin);
+				emitValue(conditional.getFalseExpression(), current, target, origin);
+				emit("}", origin);
+				return;
+			}
 			var lowered = value(node, current);
 			lowered.before.forEach(function (item) { emit(item, origin); });
 			emit(target + " = " + lowered.expression, origin);
@@ -310,9 +558,17 @@
 						}); return;
 					}
 					if (kind(target) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Declare each field separately.");
-					var name = String(target.getIdentifier()), rhs = init ? value(init, current) : { before: [], expression: "undefined" };
+					if (type === "const" && !init) reject("FLOWSCRIPT_V3_UNSUPPORTED", target, "Give the const its value (const x = value), or declare it with let.");
+					var name = String(target.getIdentifier());
+					if (init && kind(unparen(init)) === "ConditionalExpression") {
+						emitValue(init, current, "local." + name, origin);
+						declare(name, type, target, current);
+						return;
+					}
+					var emptyList = init && kind(unparen(init)) === "ArrayLiteral" && !array(unparen(init).getElements()).length ? inferredList(node, name) : null;
+					var rhs = emptyList ? { before: [], expression: "json.array({ itemType: " + literal(emptyList) + " })" } : init ? value(init, current) : { before: [], expression: "undefined" };
 					var declared = declare(name, type, target, current);
-					declared.typedList = init && kind(init) === "FunctionCall" && raw(init.getTarget()).replace(/\s/g, "") === "json.array";
+					declared.typedList = !!emptyList || init && kind(init) === "FunctionCall" && raw(init.getTarget()).replace(/\s/g, "") === "json.array";
 					declared.typedMap = init && kind(init) === "FunctionCall" && raw(init.getTarget()).replace(/\s/g, "") === "json.map";
 					rhs.before.forEach(function (item) { emit(item, origin); }); emit("local." + name + " = " + rhs.expression, origin);
 				}); return;
@@ -340,7 +596,8 @@
 					var operand = expression.getOperand(), updateName = kind(operand) === "Name" ? String(operand.getIdentifier()) : "", update = lookup(updateName, current);
 					if (!update) reject("FLOWSCRIPT_V3_OUT_OF_SCOPE", node, "Declare the local first.");
 					if (update.type === "const") reject("FLOWSCRIPT_V3_CONST_ASSIGN", node, "Declare the variable with let.");
-					emit(update.mapped + " = " + update.mapped + (raw(expression).indexOf("++") >= 0 ? " + 1" : " - 1"), origin); return;
+					// x++ adds 1 to the number of x (ToNumeric), where + would join a text; x - 1 already converts.
+					emit(update.mapped + " = " + (raw(expression).indexOf("++") >= 0 ? "Number(" + update.mapped + ") + 1" : update.mapped + " - 1"), origin); return;
 				}
 				if (ek === "FunctionCall") {
 					var controlName = raw(expression.getTarget()).replace(/\s/g, "");
@@ -433,18 +690,37 @@
 						var target = kind(part) === "Assignment" ? part.getLeft() : part.getOperand();
 						var direct = kind(target) === "Name" && String(target.getIdentifier()) === counter;
 						var scoped = kind(target) === "PropertyGet" && kind(target.getTarget()) === "Name" && String(target.getTarget().getIdentifier()) === "local" && String(target.getProperty().getIdentifier()) === counter;
-						if (direct || scoped) reject("FLOWSCRIPT_V3_FOR_FORM", part, "Do not assign the counted loop variable in its body.");
+						if (direct || scoped) reject("FLOWSCRIPT_V3_FOR_FORM", part, "Leave the counter to i++, or write a while loop with a local the body changes: let i = start; while (i < end) { … }.");
 					}
 					return true;
 				});
+				var continued = false;
+				visit(node.getBody(), function (part) {
+					if (kind(part) === "ContinueStatement") for (var enclosing = part.getParent(); enclosing; enclosing = enclosing.getParent()) {
+						if (["WhileLoop", "ForLoop", "ForInLoop", "DoLoop"].indexOf(kind(enclosing)) >= 0) { continued = continued || enclosing === node; break; }
+					}
+					return !continued;
+				});
+				if (continued) {
+					// continue leaves the pass: the counter steps first, on a hidden local, so that the test sees i + 1 as in
+					// JavaScript whether or not the rest of the body runs; i takes the value of the pass and is never assigned.
+					var hidden = "local.__count" + (++counted), steps = { names: Object.create(null), parent: countedScope };
+					steps.names[counter] = { name: counter, type: "let", mapped: hidden, loopDepth: loopDepth + 1 };
+					emit(hidden + " = " + rewritten(vars[0].getInitializer(), current), origin);
+					emit("while({ condition: " + rewritten(condition, steps) + ", maxIterations: 1000000, timeoutMs: 60000, $$nodes() {", origin);
+					emit("local." + counter + " = " + hidden, origin);
+					emit(hidden + " = Number(" + hidden + ") + 1", line(pos(increment)));
+					loopDepth++; body(node.getBody(), countedScope); loopDepth--;
+					emit("} })", line(end(node) - 1)); return;
+				}
 				emit("local." + counter + " = " + rewritten(vars[0].getInitializer(), current), origin);
 				emit("while({ condition: " + rewritten(condition, countedScope) + ", maxIterations: 1000000, timeoutMs: 60000, $$nodes() {", origin);
-				loopDepth++; countedDepth++; body(node.getBody(), countedScope); countedDepth--; emit("local." + counter + " = local." + counter + " + 1", line(pos(increment))); loopDepth--;
+				loopDepth++; body(node.getBody(), countedScope); emit("local." + counter + " = Number(local." + counter + ") + 1", line(pos(increment))); loopDepth--;
 				emit("} })", line(end(node) - 1)); return;
 			}
 			if (k === "ForInLoop" || k === "DoLoop") reject("FLOWSCRIPT_V3_LOOP_FORM", node, "Use while or for…of.");
 			if (k === "BreakStatement") reject("FLOWSCRIPT_V3_BREAK", node, "Use a local tested by the while condition or find/filter.");
-			if (k === "ContinueStatement") { if (!loopDepth) reject("FLOWSCRIPT_V3_LOOP_FORM", node, "Use continue only inside a loop."); if (countedDepth) reject("FLOWSCRIPT_V3_FOR_FORM", node, "A counted for body cannot contain continue."); emit("return", origin); return; }
+			if (k === "ContinueStatement") { if (!loopDepth) reject("FLOWSCRIPT_V3_LOOP_FORM", node, "Use continue only inside a loop."); emit("return", origin); return; }
 			if (k === "ThrowStatement") {
 				var thrown = node.getExpression(); if (kind(thrown) === "Name") reject("FLOWSCRIPT_V3_PROTOTYPE_RETHROW", node, "Raising the caught error again is not available yet: throw { code: \"LITERAL_CODE\", message: " + String(thrown.getIdentifier()) + ".message, details: " + String(thrown.getIdentifier()) + ".details }");
 				if (kind(thrown) === "NewExpression") reject("FLOWSCRIPT_V3_ERROR_CODE_CHOICE", node, "throw { code: \"CHOOSE_ERROR_CODE\", message: ... }");
