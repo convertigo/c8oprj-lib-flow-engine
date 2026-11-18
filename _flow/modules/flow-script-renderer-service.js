@@ -472,6 +472,12 @@
 
 	return {
 		flowScriptString: flowScriptString,
+		flowScriptObjectKey: flowScriptObjectKey,
+		flowScriptCompound: flowScriptCompound,
+		sourceLiteral: sourceLiteral,
+		flowScriptTopLevelMeta: flowScriptTopLevelMeta,
+		renderFlowScriptTemplateValue: renderFlowScriptTemplateValue,
+		layoutFlowScriptLines: layoutFlowScriptLines,
 		flowScriptInlineValue: flowScriptInlineValue,
 		renderFlowScriptExpression: renderFlowScriptExpression,
 		flowScriptTemplateLiteralPart: flowScriptTemplateLiteralPart,

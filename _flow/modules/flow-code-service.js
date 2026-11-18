@@ -5,6 +5,20 @@
 		return __flowExecutionState.memoryDrafts || (__flowExecutionState.memoryDrafts = {});
 	}
 
+	// The definition a formatting must keep: implicit names and the presentation fields of the reader are left out.
+	function comparableDefinition(definition) {
+		function clean(value) {
+			if (Array.isArray(value)) return value.map(clean);
+			if (!value || typeof value !== "object") return value;
+			var out = {};
+			Object.keys(value).sort().forEach(function (key) {
+				if (key !== "__flowReturnCount" && key !== "__flowImplicitId" && key !== "__flowNameExplicit" && !(key === "id" && value.id === value.__flowImplicitId) && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
+			});
+			return out;
+		}
+		return JSON.stringify(clean(definition));
+	}
+
 	function create(env) {
 		env = env || {};
 		var raise = env.raise;
@@ -1282,16 +1296,7 @@
 		var formatted = v3Source ? current.code : renderFlowScript(blocks, name, checked.validation.source, {includeHeader:false, includeImplicitReturn:false});
 		var after = {validation:flowScriptValidateRequest(blocks,Object.assign({},request,{name:name,code:formatted,skipAnalysis:true}))};
 		function comparable(source) {
-			function clean(value) {
-				if (Array.isArray(value)) return value.map(clean);
-				if (!value || typeof value !== "object") return value;
-				var out = {};
-				Object.keys(value).sort().forEach(function (key) {
-					if (key !== "__flowReturnCount" && key !== "__flowImplicitId" && key !== "__flowNameExplicit" && !(key === "id" && value.id === value.__flowImplicitId) && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
-				});
-				return out;
-			}
-			return JSON.stringify(clean(parseSource(source)));
+			return comparableDefinition(parseSource(source));
 		}
 		if (after.error || !after.validation || !after.validation.ok || comparable(checked.validation.source) !== comparable(after.validation.source)) {
 			return {ok:false,name:name,revision:current.revision,error:flowCodeError("FLOWSCRIPT_FORMAT_CHANGED_PROGRAM",
@@ -1378,6 +1383,7 @@
 	}
 
 	return {
+		comparableDefinition: comparableDefinition,
 		memoryDraftQNames: function (projectDir) {
 			return Object.keys(memoryDrafts()).filter(function (qname) { return memoryDrafts()[qname].projectDir === String(projectDir); }).sort();
 		},

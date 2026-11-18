@@ -356,6 +356,19 @@ conformance test renders it, reads the rendering back and checks the same defini
 | `R-NESTED` | a block written inside the property of another block | it is not a statement |
 | `R-NO-NATURAL` | every other block (`sql.query`, `forEachChunk`, `flow.poll`…) | it has no natural form: a call is its JavaScript |
 
+**Call details.** The four control blocks are written `flow.while`, `flow.forEach`, `flow.if` and `flow.try`; the other
+blocks keep their name. An assignment writes the output of a call (`local.rows = sql.query({ … })`) and leaves out the
+destination it fills (`json.array`, `json.map`); a call with slots keeps its output as `$$out`, since an assignment holds
+no slot function. The v2 function `default(x, y)` is written `flow.default(x, y)` (section 15).
+
+**The guard.** A rendering is kept only when reading it back gives the same definition (the `comparable` of the code
+tools: implicit names and `__flowScript*` fields left out). Three things are not part of that comparison: blank lines,
+a property equal to the value the runtime reads when it is absent (`while` bounds 1000 and 60000, `try` error
+`local.error`, `return` value `${result}`, `list.sort` direction `asc`), and the hidden locals `local.__chain<N>`, which
+are folded into the assignment that only copies them and numbered in order. A natural form whose reading differs is
+written in its call form; when even the call forms read back differently, the rendering is refused
+(`FLOWSCRIPT_V3_RENDER_CHANGED_PROGRAM`) and nothing is written.
+
 ## 15. Changes after the L6 bench (L0′, 18/11/2026)
 
 The L6 bench (v3 form B against v2, ML4, Opus and gpt-6-sol, 120/120 cases in both arms) showed 15 refusals of common
