@@ -23,7 +23,9 @@ the natural JavaScript form wherever the meaning is identical, the call form oth
     (likewise `Object.keys(null)` is `[]`);
   - `<`, `<=`, `>`, `>=` compare two numeric texts as numbers: `"10" < "9"` is `false` (JavaScript compares the
     texts and says `true`); inputs often arrive as text;
-  - a template literal writes `null` and `undefined` as `""`, and an object or a list as JSON.
+  - a template literal writes `null` and `undefined` as `""`, and an object or a list as JSON;
+  - loops have an execution budget: a `while` stops the run with `WHILE_ITERATION_LIMIT` after 1000 passes or
+    60 s unless `flow.while` sets other bounds; a counted `for` gets the largest bound (1000000 passes, 60 s).
 - Anything else whose meaning could differ is refused at its line, with a stable code and a proposed rewrite.
   It is never translated approximately.
 
@@ -45,7 +47,9 @@ function Greeting({ input, config, result }) {
 
 - `const _flow = { sourceVersion: 3, … }` holds static literals only: `inputs`, `outputs`, `config`, `tests`,
   `accessibility`, `authenticatedContextRequired`.
-- Imports come next, then the Flow function. Other functions in the file are helpers, as in v2.
+- Imports come next, then the Flow function. A top-level function after it is a helper block, as in v2: one
+  object parameter, `function total({ rows }) { … }`, called `total({ rows: input.rows })`; its body follows the
+  same rules. A function anywhere else (nested, in an expression, a closure) is refused (`FLOWSCRIPT_V3_FUNCTION`).
 - Semicolons are optional. The formatter writes one statement per line.
 
 ## 3. Imports
@@ -116,7 +120,7 @@ function Totals({ input, config, result }) {
 | `if (c) {…} else if (d) {…} else {…}` | `if` | An `else if` is an `if` in `else`. A single statement is a body of one statement. |
 | `while (c) {…}` | `while` | `maxIterations` 1000 and `timeoutMs` 60000. Other values: `flow.while({…})` (section 11). |
 | `for (const item of items) {…}` | `forEach` | `item` reads the current element. One level of object destructuring: `for (const { id } of rows)`. |
-| `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`. No `continue` in its body. |
+| `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`; `i` is not assigned in the body; no `continue` in its body. `maxIterations` 1000000. |
 | `switch (x) { case "a": …; break; default: … }` | chain of `if` | Literal labels; every case ends with `break`, `return` or `throw`; `default` last. |
 | `try {…} catch (e) {…}` | `try` | The error is `local.e`, read as `e` inside the catch only. Without a parameter: `local.error`. |
 | `continue` | `next` | In a `while` or a `for…of`, without a label. |
@@ -191,8 +195,9 @@ function Active({ input, config, result }) {
   feeds the next step through a hidden local `local.__chain<N>`.
 - Refused, with a rewrite into two `const` (`FLOWSCRIPT_V3_CHAIN`): a step inside a branch of `?:`, `&&`, `||` or `??`;
   a step in an argument of an expression function; a step after a scope read of the same statement.
-- Sorting keeps the JavaScript comparator: `compare: "number"` orders by `Number(a) - Number(b)` and
-  `compare: "locale"` by `String(a).localeCompare(String(b))`, exactly as the arrow does. Without `compare`,
+- Sorting keeps the JavaScript comparator: `compare: "number"` orders by `a - b` and `compare: "locale"` by
+  `String(a).localeCompare(String(b))`, on a copy sorted by the engine's `Array.prototype.sort`, exactly as the
+  arrow does: the sort is stable, and an absent key gives `NaN`, which the comparator treats as equal. Without `compare`,
   `list.sort` keeps its Flow order (numeric texts as numbers, `null` as `""`), which no JavaScript comparator
   reproduces: it stays a call (section 14).
 - Refused: `xs.sort(…)` alone (it sorts in place, `list.sort` returns a copy: write `toSorted`), other comparators,
@@ -256,7 +261,8 @@ function Notify({ input, config, result }) {
 ## 12. Names, comments and disabled statements
 
 - A JavaScript label gives an explicit node name: `checkStock: if (…) { … }`. Without a label, names are computed.
-- A comment directly above a statement, without a blank line, is its comment. Separated by a blank line, it is
+- A comment directly above a statement, without a blank line, is its comment; a `/* … */` comment is read the same
+  way, and the formatter writes it as `//` lines. Separated by a blank line, it is
   a standalone comment node.
 - `// @disabled` in that comment disables the statement.
 
@@ -270,7 +276,7 @@ function Notify({ input, config, result }) {
 | a `for (;;)` other than the counted form | `FLOWSCRIPT_V3_FOR_FORM` | `for…of` or `while` |
 | `switch` with fall-through or non-literal cases | `FLOWSCRIPT_V3_SWITCH_FALLTHROUGH` | `if` / `else if` |
 | `do … while`, `for … in`, labelled loops, labelled `break` / `continue` | `FLOWSCRIPT_V3_LOOP_FORM` | `while`, `for (const key of Object.keys(o))` |
-| a function outside a list method or a slot, a closure | `FLOWSCRIPT_V3_FUNCTION` | write it inline, or a project block |
+| a function other than a top-level helper, a list arrow or a slot (nested, in an expression, a closure) | `FLOWSCRIPT_V3_FUNCTION` | write it inline, a top-level helper, or a project block |
 | `async`, `await`, generators, classes, `this`, `new` | `FLOWSCRIPT_V3_UNSUPPORTED` | blocks |
 | `if` or `while` whose condition is an object literal | `FLOWSCRIPT_V3_OBJECT_CONDITION` | `flow.if({ … })` |
 
