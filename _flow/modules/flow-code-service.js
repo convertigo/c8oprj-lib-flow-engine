@@ -4,6 +4,18 @@
 		if (typeof __flowExecutionState === "undefined") return localMemoryDrafts;
 		return __flowExecutionState.memoryDrafts || (__flowExecutionState.memoryDrafts = {});
 	}
+	function comparable(source) {
+		function clean(value) {
+			if (Array.isArray(value)) return value.map(clean);
+			if (!value || typeof value !== "object") return value;
+			var out = {};
+			Object.keys(value).sort().forEach(function (key) {
+				if (key !== "__flowReturnCount" && key !== "__flowImplicitId" && key !== "__flowNameExplicit" && !(key === "id" && value.id === value.__flowImplicitId) && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
+			});
+			return out;
+		}
+		return JSON.stringify(clean(source));
+	}
 
 	function create(env) {
 		env = env || {};
@@ -1281,19 +1293,7 @@
 		var v3Source = checked.validation.definition && checked.validation.definition.flow && checked.validation.definition.flow.sourceVersion === 3;
 		var formatted = v3Source ? current.code : renderFlowScript(blocks, name, checked.validation.source, {includeHeader:false, includeImplicitReturn:false});
 		var after = {validation:flowScriptValidateRequest(blocks,Object.assign({},request,{name:name,code:formatted,skipAnalysis:true}))};
-		function comparable(source) {
-			function clean(value) {
-				if (Array.isArray(value)) return value.map(clean);
-				if (!value || typeof value !== "object") return value;
-				var out = {};
-				Object.keys(value).sort().forEach(function (key) {
-					if (key !== "__flowReturnCount" && key !== "__flowImplicitId" && key !== "__flowNameExplicit" && !(key === "id" && value.id === value.__flowImplicitId) && key.indexOf("__flowScript") !== 0) Object.defineProperty(out,key,{value:clean(value[key]),enumerable:true});
-				});
-				return out;
-			}
-			return JSON.stringify(clean(parseSource(source)));
-		}
-		if (after.error || !after.validation || !after.validation.ok || comparable(checked.validation.source) !== comparable(after.validation.source)) {
+		if (after.error || !after.validation || !after.validation.ok || comparable(parseSource(checked.validation.source)) !== comparable(parseSource(after.validation.source))) {
 			return {ok:false,name:name,revision:current.revision,error:flowCodeError("FLOWSCRIPT_FORMAT_CHANGED_PROGRAM",
 				"Formatting changed the Flow tree; nothing was saved.","Keep the draft and report the formatter defect."),warnings:[]};
 		}
@@ -1378,6 +1378,7 @@
 	}
 
 	return {
+		comparable: comparable,
 		memoryDraftQNames: function (projectDir) {
 			return Object.keys(memoryDrafts()).filter(function (qname) { return memoryDrafts()[qname].projectDir === String(projectDir); }).sort();
 		},
