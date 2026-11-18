@@ -124,8 +124,30 @@ public final class FlowScriptV3Reader {
 		int index = Arrays.binarySearch(lineStarts, Math.max(0, Math.min(source.length(), at)));
 		return index >= 0 ? index + 1 : -index - 1;
 	}
-	private int pos(AstNode node) { return Math.max(0, node.getAbsolutePosition()); }
-	private int end(AstNode node) { return Math.min(source.length(), pos(node) + node.getLength()); }
+	private int pos(AstNode node) {
+		int at = Math.max(0, node.getAbsolutePosition());
+		if (node instanceof org.mozilla.javascript.ast.UnaryExpression unary) {
+			String operator = org.mozilla.javascript.ast.AstNode.operatorToString(unary.getOperator());
+			int cursor = at - 1;
+			while (cursor >= 0 && Character.isWhitespace(source.charAt(cursor))) cursor--;
+			if (cursor + 1 >= operator.length() && source.substring(cursor + 1 - operator.length(), cursor + 1).equals(operator))
+				return cursor + 1 - operator.length();
+		}
+		if (node instanceof org.mozilla.javascript.ast.InfixExpression infix) return Math.min(at, pos(infix.getLeft()));
+		return at;
+	}
+	private int end(AstNode node) {
+		int finish = Math.min(source.length(), Math.max(0, node.getAbsolutePosition()) + node.getLength());
+		if (node instanceof org.mozilla.javascript.ast.InfixExpression infix) {
+			int right = end(infix.getRight());
+			if (finish > right && source.substring(right, finish).matches("[\\s)\\]}]+")) return right;
+		}
+		if (node instanceof org.mozilla.javascript.ast.KeywordLiteral) {
+			String keyword = node.toSource().trim();
+			if (source.startsWith(keyword, pos(node))) return pos(node) + keyword.length();
+		}
+		return finish;
+	}
 	private String raw(AstNode node) { return source.substring(pos(node), end(node)); }
 	private static String kind(AstNode node) { return node == null ? "" : node.getClass().getSimpleName(); }
 	private static String name(AstNode node) { return node instanceof Name n ? n.getIdentifier() : ""; }
@@ -291,6 +313,7 @@ public final class FlowScriptV3Reader {
 		final Map<String, Binding> names = new HashMap<>();
 		Scope(Scope parent) { this.parent = parent; }
 	}
+	private int loopDepth, countedDepth;
 	private Binding lookup(String name, Scope scope) {
 		for (Scope current = scope; current != null; current = current.parent) if (current.names.containsKey(name)) return current.names.get(name);
 		return null;
@@ -372,6 +395,7 @@ public final class FlowScriptV3Reader {
 	}
 	@SuppressWarnings("unchecked")
 	private String propertyKind(String block, String key) {
+		if (helpers.contains(block)) return "expression";
 		var descriptor = catalog(block);
 		var props = descriptor.get("props") instanceof Map<?, ?> value ? (Map<String, Object>) value : Map.<String, Object>of();
 		var prop = props.get(key) instanceof Map<?, ?> value ? (Map<String, Object>) value : Map.<String, Object>of();
@@ -438,9 +462,123 @@ public final class FlowScriptV3Reader {
 	}
 
 	private void body(AstNode body, Scope scope, List<Map<String, Object>> output) {
-		if (body instanceof org.mozilla.javascript.ast.Block block) {
-			for (AstNode statement : children(block)) statement(statement, scope, output);
+		if (body instanceof org.mozilla.javascript.ast.Block || body instanceof org.mozilla.javascript.ast.Scope) {
+			for (AstNode statement : children(body)) statement(statement, scope, output);
 		} else statement(body, scope, output);
+	}
+	private void inBody(AstNode body, Scope scope, List<Map<String, Object>> output) {
+		loopDepth++;
+		body(body, scope, output);
+		loopDepth--;
+	}
+	private String expression(AstNode node, Scope scope) { return rewritten(node, scope); }
+	private Map<String, Object> control(String block, Map<String, Object> props, AstNode at, String slot, List<Map<String, Object>> children) {
+		var result = node(block, props, at);
+		result.put(slot, children);
+		return result;
+	}
+	private List<Map<String, Object>> branch(AstNode body, Scope parent) {
+		var children = new ArrayList<Map<String, Object>>();
+		body(body, new Scope(parent), children);
+		return children;
+	}
+	private boolean needsOuterItemCopy(org.mozilla.javascript.ast.ForInLoop loop, String item) {
+		final boolean[] needed = { false };
+		loop.getBody().visit(part -> {
+			if (!(part instanceof Name n) || !n.getIdentifier().equals(item)) return true;
+			if (part.getParent() instanceof PropertyGet property && property.getProperty() == part) return true;
+			for (var enclosing = part.getParent(); enclosing != null && enclosing != loop; enclosing = enclosing.getParent()) {
+				if (enclosing instanceof org.mozilla.javascript.ast.ForInLoop inner && inner.isForOf() && pos(part) >= pos(inner.getBody())) { needed[0] = true; break; }
+				if (enclosing instanceof FunctionNode && enclosing.getParent() instanceof FunctionCall) { needed[0] = true; break; }
+			}
+			return !needed[0];
+		});
+		return needed[0];
+	}
+	private void forOf(org.mozilla.javascript.ast.ForInLoop loop, Scope scope, List<Map<String, Object>> output) {
+		AstNode iterator = loop.getIterator();
+		if (!(iterator instanceof VariableDeclaration declaration) || declaration.getVariables().size() != 1)
+			reject("FLOWSCRIPT_V3_DESTRUCTURING", loop, "Use a single loop variable or a one-level object pattern.");
+		var decl = ((VariableDeclaration) iterator).getVariables().get(0);
+		if (!source.substring(pos(iterator), pos(decl.getTarget())).trim().equals("const")) reject("FLOWSCRIPT_V3_LOOP_FORM", loop, "Use for (const item of items).");
+		AstNode target = decl.getTarget();
+		var body = new ArrayList<Map<String, Object>>();
+		var inner = new Scope(scope);
+		if (target instanceof Name item) {
+			var binding = declare(item.getIdentifier(), "const", item, inner, "current");
+			if (needsOuterItemCopy(loop, item.getIdentifier())) {
+				binding.mapped = "local." + item.getIdentifier();
+				body.add(node("set", map("path", binding.mapped, "value", "${current}"), loop));
+			}
+		} else if (target instanceof ObjectLiteral object) {
+			for (var member : object.getElements()) {
+				var field = property(member);
+				if (!(field.getKey() instanceof Name) || !(field.getValue() instanceof Name)) reject("FLOWSCRIPT_V3_DESTRUCTURING", loop, "Use one-level fields without defaults or rest.");
+				var key = (Name) field.getKey(); var alias = (Name) field.getValue();
+				var binding = declare(alias.getIdentifier(), "const", field, inner, null);
+				body.add(node("set", map("path", binding.mapped, "value", "${current." + key.getIdentifier() + "}"), loop));
+			}
+		} else reject("FLOWSCRIPT_V3_DESTRUCTURING", loop, "Use a single loop variable or a one-level object pattern.");
+		inBody(loop.getBody(), inner, body);
+		output.add(control("forEach", map("items", expression(loop.getIteratedObject(), scope)), loop, "nodes", body));
+	}
+	private void countedFor(org.mozilla.javascript.ast.ForLoop loop, Scope scope, List<Map<String, Object>> output) {
+		AstNode initializer = loop.getInitializer(), condition = loop.getCondition(), increment = loop.getIncrement();
+		if (!(initializer instanceof VariableDeclaration declaration) || declaration.getVariables().size() != 1 ||
+			!(condition instanceof org.mozilla.javascript.ast.InfixExpression infix) || !(increment instanceof org.mozilla.javascript.ast.UpdateExpression update))
+			reject("FLOWSCRIPT_V3_FOR_FORM", loop, "Use for (let i = start; i < end; i++).");
+		var declaration = (VariableDeclaration) initializer;
+		var variable = declaration.getVariables().get(0);
+		String counter = name(variable.getTarget());
+		var infix = (org.mozilla.javascript.ast.InfixExpression) condition;
+		var update = (org.mozilla.javascript.ast.UpdateExpression) increment;
+		String operator = org.mozilla.javascript.ast.AstNode.operatorToString(infix.getOperator());
+		if (counter.isEmpty() || variable.getInitializer() == null || !source.substring(pos(initializer), pos(variable.getTarget())).trim().equals("let") ||
+			!Set.of("<", "<=").contains(operator) || !name(infix.getLeft()).equals(counter) || !name(update.getOperand()).equals(counter) || !raw(update).contains("++"))
+			reject("FLOWSCRIPT_V3_FOR_FORM", loop, "Use for (let i = start; i < end; i++).");
+		loop.getBody().visit(part -> {
+			AstNode target = part instanceof org.mozilla.javascript.ast.Assignment assignment ? assignment.getLeft() :
+				part instanceof org.mozilla.javascript.ast.UpdateExpression updatePart ? updatePart.getOperand() : null;
+			if (target != null && (name(target).equals(counter) || target instanceof PropertyGet property && name(property.getTarget()).equals("local") && name(property.getProperty()).equals(counter)))
+				reject("FLOWSCRIPT_V3_FOR_FORM", part, "Do not assign the counted loop variable in its body.");
+			return true;
+		});
+		var inner = new Scope(scope);
+		var binding = declare(counter, "let", variable.getTarget(), inner, null);
+		set(output, binding.mapped, variable.getInitializer(), scope, loop);
+		var body = new ArrayList<Map<String, Object>>();
+		loopDepth++; countedDepth++;
+		body(loop.getBody(), inner, body);
+		countedDepth--; loopDepth--;
+		body.add(node("set", map("path", binding.mapped, "value", "${" + binding.mapped + " + 1}"), increment));
+		output.add(control("while", map("condition", expression(condition, inner), "maxIterations", 1000000, "timeoutMs", 60000), loop, "nodes", body));
+	}
+	private void switchStatement(org.mozilla.javascript.ast.SwitchStatement statement, Scope scope, List<Map<String, Object>> output) {
+		String path = "local.__chain" + (++chain);
+		assign(output, path, statement.getExpression(), scope, statement);
+		List<Map<String, Object>> current = output;
+		var cases = statement.getCases();
+		for (int i = 0; i < cases.size(); i++) {
+			var item = cases.get(i);
+			var members = item.getStatements();
+			AstNode last = members == null || members.isEmpty() ? null : members.get(members.size() - 1);
+			if (last == null || !(last instanceof org.mozilla.javascript.ast.BreakStatement || last instanceof org.mozilla.javascript.ast.ReturnStatement || last instanceof org.mozilla.javascript.ast.ThrowStatement) ||
+				item.isDefault() && i != cases.size() - 1 || item.getExpression() != null && !Set.of("StringLiteral", "NumberLiteral", "KeywordLiteral").contains(kind(item.getExpression())))
+				reject("FLOWSCRIPT_V3_SWITCH_FALLTHROUGH", item, "Use literal cases ending with break, return or throw; put default last.");
+			if (!item.isDefault()) {
+				var branch = new ArrayList<Map<String, Object>>();
+				var conditional = control("if", map("condition", path + " === " + expression(item.getExpression(), scope)), item, "then", branch);
+				current.add(conditional);
+				var otherwise = new ArrayList<Map<String, Object>>();
+				conditional.put("else", otherwise);
+				current = otherwise;
+				for (int j = 0; j < members.size(); j++) if (j != members.size() - 1 || !(members.get(j) instanceof org.mozilla.javascript.ast.BreakStatement))
+					statement(members.get(j), new Scope(scope), branch);
+			} else {
+				for (int j = 0; j < members.size(); j++) if (j != members.size() - 1 || !(members.get(j) instanceof org.mozilla.javascript.ast.BreakStatement))
+					statement(members.get(j), new Scope(scope), current);
+			}
+		}
 	}
 	private void statement(AstNode statement, Scope scope, List<Map<String, Object>> output) {
 		if (statement instanceof VariableDeclaration declaration) {
@@ -455,6 +593,17 @@ public final class FlowScriptV3Reader {
 					binding.typedMap = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.map");
 					if (init != null) assign(output, binding.mapped, init, scope, declaration);
 					else output.add(node("set", map("path", binding.mapped, "value", "${undefined}"), declaration));
+				} else if (target instanceof ObjectLiteral object) {
+					if (init == null) reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Initialize the object before destructuring.");
+					String path = "local.__chain" + (++chain);
+					assign(output, path, init, scope, declaration);
+					for (var member : object.getElements()) {
+						var field = property(member);
+						if (!(field.getKey() instanceof Name) || !(field.getValue() instanceof Name)) reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Use one-level fields without defaults or rest.");
+						var key = (Name) field.getKey(); var alias = (Name) field.getValue();
+						var binding = declare(alias.getIdentifier(), type, field, scope, null);
+						output.add(node("set", map("path", binding.mapped, "value", "${" + path + "." + key.getIdentifier() + "}"), declaration));
+					}
 				} else reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Declare each field separately.");
 			}
 			return;
@@ -469,6 +618,13 @@ public final class FlowScriptV3Reader {
 				String target = binding != null ? binding.mapped : rewritten(left, scope);
 				if (target.startsWith("result.")) { if (resultStyle.equals("returnObject")) reject("FLOWSCRIPT_V3_RESULT_MIXED", statement, "Use one result style."); resultStyle = "resultField"; }
 				String op = org.mozilla.javascript.ast.AstNode.operatorToString(assignment.getOperator());
+				if (left instanceof org.mozilla.javascript.ast.ElementGet element && element.getTarget() instanceof Name name) {
+					var mapBinding = lookup(name.getIdentifier(), scope);
+					if (mapBinding != null && mapBinding.typedMap && op.equals("=")) {
+						output.add(node("json.put", map("path", mapBinding.mapped, "key", expression(element.getElement(), scope), "value", value(right, scope)), statement));
+						return;
+					}
+				}
 				if (op.equals("=")) assign(output, target, right, scope, statement);
 				else if (Set.of("+=", "-=", "*=", "/=").contains(op)) output.add(node("set", map("path", target, "value", "${" + target + " " + op.charAt(0) + " (" + rewritten(right, scope) + ")}"), statement));
 				else reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", statement, "Use a simple assignment.");
@@ -483,12 +639,20 @@ public final class FlowScriptV3Reader {
 				return;
 			}
 			if (expression instanceof FunctionCall call) {
+				if (call.getTarget() instanceof PropertyGet property && property.getProperty().getIdentifier().equals("push") && property.getTarget() instanceof Name name) {
+					var list = lookup(name.getIdentifier(), scope);
+					if (list == null || !list.typedList) reject("FLOWSCRIPT_V3_UNTYPED_LIST", statement, "Initialize the list with json.array({ itemType }).");
+					if (call.getArguments().size() != 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Push one value per statement.");
+					output.add(node("json.push", map("path", list.mapped, "value", value(call.getArguments().get(0), scope)), statement));
+					return;
+				}
 				output.add(callNode(call, scope, null));
 				return;
 			}
 			reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Use a Flow block call or an assignment.");
 		}
 		if (statement instanceof org.mozilla.javascript.ast.ReturnStatement returned) {
+			if (loopDepth > 0) reject("FLOWSCRIPT_V3_RETURN_IN_LOOP", statement, "Use continue or return after the loop.");
 			AstNode value = returned.getReturnValue();
 			if (value instanceof ObjectLiteral object) {
 				if (resultStyle.equals("resultField")) reject("FLOWSCRIPT_V3_RESULT_MIXED", statement, "Use one result style.");
@@ -504,7 +668,67 @@ public final class FlowScriptV3Reader {
 			else output.add(node("return", map("value", value(value, scope)), statement));
 			return;
 		}
-		if (statement instanceof org.mozilla.javascript.ast.Block block) { body(block, new Scope(scope), output); return; }
+		if (statement instanceof org.mozilla.javascript.ast.IfStatement conditional) {
+			if (conditional.getCondition() instanceof ObjectLiteral) reject("FLOWSCRIPT_V3_OBJECT_CONDITION", conditional.getCondition(), "Use flow.if({ ... }).");
+			var branch = control("if", map("condition", expression(conditional.getCondition(), scope)), statement, "then", branch(conditional.getThenPart(), scope));
+			if (conditional.getElsePart() != null) branch.put("else", branch(conditional.getElsePart(), scope));
+			output.add(branch);
+			return;
+		}
+		if (statement instanceof org.mozilla.javascript.ast.WhileLoop loop) {
+			if (loop.getCondition() instanceof ObjectLiteral) reject("FLOWSCRIPT_V3_OBJECT_CONDITION", loop.getCondition(), "Use flow.while({ ... }).");
+			var body = new ArrayList<Map<String, Object>>();
+			inBody(loop.getBody(), new Scope(scope), body);
+			output.add(control("while", map("condition", expression(loop.getCondition(), scope), "maxIterations", 1000, "timeoutMs", 60000), loop, "nodes", body));
+			return;
+		}
+		if (statement instanceof org.mozilla.javascript.ast.ForInLoop loop) {
+			if (!loop.isForOf()) reject("FLOWSCRIPT_V3_LOOP_FORM", loop, "Use while or for…of.");
+			forOf(loop, scope, output);
+			return;
+		}
+		if (statement instanceof org.mozilla.javascript.ast.ForLoop loop) { countedFor(loop, scope, output); return; }
+		if (statement instanceof org.mozilla.javascript.ast.DoLoop) reject("FLOWSCRIPT_V3_LOOP_FORM", statement, "Use while or for…of.");
+		if (statement instanceof org.mozilla.javascript.ast.BreakStatement) reject("FLOWSCRIPT_V3_BREAK", statement, "Use a local tested by the while condition or find/filter.");
+		if (statement instanceof org.mozilla.javascript.ast.ContinueStatement) {
+			if (loopDepth == 0) reject("FLOWSCRIPT_V3_LOOP_FORM", statement, "Use continue only inside a loop.");
+			if (countedDepth > 0) reject("FLOWSCRIPT_V3_FOR_FORM", statement, "A counted for body cannot contain continue.");
+			output.add(node("next", map(), statement));
+			return;
+		}
+		if (statement instanceof org.mozilla.javascript.ast.ThrowStatement thrown) {
+			AstNode value = thrown.getExpression();
+			if (value instanceof Name n) reject("FLOWSCRIPT_V3_PROTOTYPE_RETHROW", statement, "Raising the caught error again is not available yet: throw { code: \"LITERAL_CODE\", message: " + n.getIdentifier() + ".message, details: " + n.getIdentifier() + ".details }");
+			if (value instanceof org.mozilla.javascript.ast.NewExpression) reject("FLOWSCRIPT_V3_ERROR_CODE_CHOICE", statement, "throw { code: \"CHOOSE_ERROR_CODE\", message: ... }");
+			if (!(value instanceof ObjectLiteral)) reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Throw an object with a literal code.");
+			var props = new LinkedHashMap<String, Object>();
+			for (var member : ((ObjectLiteral) value).getElements()) { var field = property(member); props.put(key(field.getKey()), propertyValue("throw", key(field.getKey()), field.getValue(), scope)); }
+			output.add(node("throw", props, statement));
+			return;
+		}
+		if (statement instanceof org.mozilla.javascript.ast.TryStatement trial) {
+			if (trial.getFinallyBlock() != null) reject("FLOWSCRIPT_V3_FINALLY", trial.getFinallyBlock(), "Write statements after the try.");
+			if (trial.getCatchClauses().isEmpty()) reject("FLOWSCRIPT_V3_UNSUPPORTED", trial, "Use try/catch.");
+			var clause = trial.getCatchClauses().get(0);
+			String name = clause.getVarName() == null ? "error" : name(clause.getVarName());
+			var catchScope = new Scope(scope);
+			declare(name, "const", clause, catchScope, null);
+			var node = control("try", map("error", "local." + name), trial, "try", branch(trial.getTryBlock(), scope));
+			node.put("catch", branch(clause.getBody(), catchScope));
+			output.add(node);
+			return;
+		}
+		if (statement instanceof org.mozilla.javascript.ast.SwitchStatement item) { switchStatement(item, scope, output); return; }
+		if (statement instanceof org.mozilla.javascript.ast.LabeledStatement labelled) {
+			AstNode item = labelled.getStatement();
+			if (item instanceof org.mozilla.javascript.ast.WhileLoop || item instanceof org.mozilla.javascript.ast.ForLoop || item instanceof org.mozilla.javascript.ast.ForInLoop || item instanceof org.mozilla.javascript.ast.DoLoop)
+				reject("FLOWSCRIPT_V3_LOOP_FORM", labelled, "Use an unlabelled loop.");
+			int first = output.size();
+			statement(item, scope, output);
+			if (output.size() > first) output.get(first).put("id", labelled.getFirstLabel().getName());
+			return;
+		}
+		if (statement instanceof org.mozilla.javascript.ast.Block || statement instanceof org.mozilla.javascript.ast.Scope) { body(statement, new Scope(scope), output); return; }
 		if (statement instanceof org.mozilla.javascript.ast.EmptyStatement) return;
 		reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Use a supported FlowScript v3 statement (" + kind(statement) + ").");
 	}
