@@ -53,10 +53,8 @@ function catalog(name) {
   try { var metadata=eval('('+match[1]+')'); return catalogCache[name]=JSON.stringify({props:metadata.properties||{}}); }
   catch(e) { return catalogCache[name]='{}'; }
 }
-// The direct AST reader accepts four valid v3 sources that the v2 text parser
-// rejects after translation. Keep these exceptional cases explicit.
+// Keep the remaining AST-reader acceptances beyond the v2 text parser explicit.
 var acceptedBeyondV2={
-  'render:R-NESTED':'FLOWSCRIPT_EXPRESSION_UNSUPPORTED',
 	'trace:f3l3b_g6sol:csv_stats:57':'INVALID_EXPRESSION',
 	'trace:f3l3b_g6sol:csv_stats:58':'INVALID_EXPRESSION',
   'trace:f3l3b_g6sol:csv_stats:59':'INVALID_EXPRESSION',
@@ -67,7 +65,7 @@ var acceptedBeyondV2={
   'trace:f3l3b_ml4:csv_stats:66':'INVALID_EXPRESSION',
   'trace:f3m1b_g6sol:stats:88':'INVALID_EXPRESSION'
 };
-var checked=0, skipped=0, wanted=0, mismatches=[], bySource={};
+var checked=0, skipped=0, wanted=0, wantedIds=[], mismatches=[], bySource={};
 cases.forEach(function(item) {
   var translated = bridge.translate(item.source), direct = JSON.parse(String(Reader.read(item.source,catalog)));
   var expectedError = translated.diagnostics.length ? translated.diagnostics[0] : null;
@@ -86,7 +84,7 @@ cases.forEach(function(item) {
     var expectedParserCode=oracle.error && oracle.error.code || oracle.diagnostics && oracle.diagnostics[0] && oracle.diagnostics[0].code;
     var actualParserCode=integrated.error && integrated.error.code || integrated.diagnostics && integrated.diagnostics[0] && integrated.diagnostics[0].code;
     if (expectedParserCode !== actualParserCode) {
-      if (acceptedBeyondV2[item.id] === expectedParserCode && integrated.ok === true) wanted++;
+      if (acceptedBeyondV2[item.id] === expectedParserCode && integrated.ok === true) { wanted++; wantedIds.push(item.id); }
       else mismatches.push(item.id + ' parser diagnostic ' + expectedParserCode + ' != ' + actualParserCode);
     }
     checked++;
@@ -97,5 +95,5 @@ cases.forEach(function(item) {
   if (expected !== actual) mismatches.push(item.id + ' definition ' + (kind === 'trace' ? difference(JSON.parse(expected),JSON.parse(actual),'root').split(':')[0] + ' (values withheld)' : difference(JSON.parse(expected),JSON.parse(actual),'root')));
   checked++;
 });
-print('differential corpus ' + JSON.stringify({total:cases.length,bySource:bySource,checked:checked,oracleRejected:skipped,wantedDifferences:wanted,differences:mismatches.length}));
+print('differential corpus ' + JSON.stringify({total:cases.length,bySource:bySource,checked:checked,oracleRejected:skipped,wantedDifferences:wanted,wantedIds:wantedIds,differences:mismatches.length}));
 if (mismatches.length) throw new Error('Differential mismatches:\n' + mismatches.slice(0,80).join('\n'));
