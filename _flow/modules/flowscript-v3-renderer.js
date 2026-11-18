@@ -508,6 +508,14 @@
 					return;
 				}
 			}
+			// throw({ error: "local.e" }) in the catch whose parameter is e: throw e, the caught error raised again (section 10)
+			if (plain && node.disabled === undefined && type === "throw" && keys.length === 1 && keys[0] === "error" && typeof props.error === "string"
+				&& choose(key, "rethrow")) {
+				var caughtName = Object.keys(ctx.locals).filter(function (name) {
+					return String(ctx.locals[name]) === String(props.error) && ctx.visible[name] && isIdentifier(name);
+				})[0];
+				if (caughtName) { lines.push(indent + label + "throw " + caughtName); return; }
+			}
 			if (plain && node.disabled === undefined && type === "return" && (!keys.length || keys.length === 1 && keys[0] === "value")) {
 				lines.push(indent + label + "return" + (keys.length ? " " + value(node, "value", props.value, ctx, indent, (indent + label + "return ").length) : ""));
 				return;

@@ -1,17 +1,4 @@
 {
   "note": "Examples that Rhino 1.9.2 reads but that the reader of the engine (flowscript-v3-prototype.js) does not accept yet, because the rule of section 15 (L0', 18/11/2026) that allows them is implemented on another branch. They stay in the conformance test: each must still be read by Rhino, and the test reports (without failing) an entry that the reader accepts now, to be removed from this list. Ids: spec:<fence id>, grammar:<entry id>#<n> (accepted) or grammar:<code> (refused), guide:<path>#<n>.",
-  "waiting": [
-    {
-      "id": "spec:notify",
-      "reason": "section 10 (L3a): throw e in its catch; the prototype reader refuses it (FLOWSCRIPT_V3_PROTOTYPE_RETHROW)"
-    },
-    {
-      "id": "grammar:throw-rethrow#0",
-      "reason": "section 10 (L3a): throw e in its catch; the prototype reader refuses it (FLOWSCRIPT_V3_PROTOTYPE_RETHROW)"
-    },
-    {
-      "id": "grammar:try-catch#1",
-      "reason": "section 5 (L3a): catch without parameter (local.error); the prototype reader throws a NullPointerException, Rhino 1.9.2 CatchClause.visit cannot visit a missing parameter"
-    }
-  ]
+  "waiting": []
 }

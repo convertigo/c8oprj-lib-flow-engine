@@ -1,6 +1,6 @@
 {
   "sourceVersion": 3,
-  "status": "draft L3a 2026-11-18, amended L0′ and L0′bis 2026-11-18; examples and fragments for the generated guides and the conformance test (L4)",
+  "status": "draft L3a 2026-11-18, amended L0′, L0′bis and L1b 2026-11-18; examples and fragments for the generated guides and the conformance test (L4)",
   "parser": {
     "engine": "rhino",
     "version": "1.9.2",
@@ -25,7 +25,8 @@
   "reservedLocalPrefix": "__",
   "hiddenLocals": {
     "chain": "local.__chain<N>",
-    "counter": "local.__count<N>"
+    "counter": "local.__count<N>",
+    "caught": "local.__caught<N>"
   },
   "accepted": [
     {
@@ -190,10 +191,11 @@
       "id": "try-catch",
       "construct": "try {…} catch (e) {…}",
       "block": "try",
-      "lowering": "error = local.e (local.error without parameter); e read inside catch only",
+      "lowering": "error = local.e, read as e inside the catch only; catch {…} declares no name: local.error, or a hidden local.__caught<N> when the Flow has its own error",
       "examples": [
         "try {\n  throw { code: \"KNOWN\", message: \"x\" }\n} catch (failure) {\n  result.code = failure.code\n}",
-        "try {\n  result.ok = true\n} catch {\n  result.ok = false\n}"
+        "try {\n  result.ok = true\n} catch {\n  result.ok = false\n}",
+        "let error = \"kept\"\ntry {\n  const parsed = JSON.parse(input.text)\n  error = parsed.value\n} catch {\n  error = error + \"!\"\n}\nreturn { error }"
       ]
     },
     {
@@ -217,10 +219,12 @@
       "id": "throw-rethrow",
       "construct": "throw e",
       "block": "throw",
-      "where": "e is the parameter of the enclosing catch, not assigned",
+      "where": "e is the parameter of an enclosing catch (a const)",
       "examples": [
-        "try {\n  result.ok = true\n} catch (failure) {\n  if (failure.code != \"SMTP_UNAVAILABLE\") {\n    throw failure\n  }\n  result.queued = true\n}"
-      ]
+        "try {\n  result.ok = true\n} catch (failure) {\n  if (failure.code != \"SMTP_UNAVAILABLE\") {\n    throw failure\n  }\n  result.queued = true\n}",
+        "try {\n  throw { code: \"FIRST\", message: \"first\" }\n} catch (failure) {\n  try {\n    result.value = JSON.parse(input.text)\n  } catch (other) {\n    throw failure\n  }\n}"
+      ],
+      "lowering": "throw({ error: \"local.e\" }): the caught error again, unchanged (application or failure)"
     },
     {
       "id": "optional-chaining",
@@ -641,7 +645,7 @@
     },
     {
       "code": "FLOWSCRIPT_V3_UNSUPPORTED",
-      "construct": "async, await, generators, classes, this, new, const without a value, o.f++ on a loop item or input",
+      "construct": "async, await, generators, classes, this, new, const without a value, o.f++ on a loop item or input, throw of a name that is not a catch parameter, a thrown object with an error field",
       "rewrite": "blocks",
       "example": "const self = this"
     },

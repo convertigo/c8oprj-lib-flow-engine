@@ -55,7 +55,7 @@ runs('flow try', '  flow.try({ error: "local.failure", $$try() { throw { code: "
 runs('bare return', '  result.n = 3\n  return\n  result.n = 4', { n: 3 });
 runs('value return', '  return 3', 3);
 refuses('break', '  while (true) {\n    break\n  }', 'FLOWSCRIPT_V3_BREAK', 4);
-refuses('rethrow', '  throw e', 'FLOWSCRIPT_V3_PROTOTYPE_RETHROW', 3);
+refuses('throw of a name that no catch declares', '  throw e', 'FLOWSCRIPT_V3_UNSUPPORTED', 3);
 refuses('const assignment', '  const x = 1\n  x = 2', 'FLOWSCRIPT_V3_CONST_ASSIGN', 4);
 refuses('reserved', '  let flow = 1', 'FLOWSCRIPT_V3_RESERVED_NAME', 3);
 refuses('shadow', '  let x = 1\n  if (true) { let x = 2 }', 'FLOWSCRIPT_V3_SHADOWING', 4);
@@ -189,7 +189,7 @@ var examples = /```flowscript([^\n]*)\n([\s\S]*?)\n```/g, match, count = 0;
 while ((match = examples.exec(spec)) !== null) {
 	count++;
 	var output = bridge.translate(match[2]);
-	var refusedCode = (/refused=(\S+)/.exec(match[1]) || [])[1] || (count === 6 ? 'FLOWSCRIPT_V3_PROTOTYPE_RETHROW' : '');
+	var refusedCode = (/refused=(\S+)/.exec(match[1]) || [])[1] || '';
 	if (refusedCode) check(output.diagnostics.length && output.diagnostics[0].code === refusedCode,
 		'exemple ' + count + ' refus: ' + JSON.stringify(output));
 	else {

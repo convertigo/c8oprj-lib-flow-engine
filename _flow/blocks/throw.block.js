@@ -1,7 +1,7 @@
 const _meta = {
-  longDescription: "```flowscript\nthrow { code: \"INVALID\", message: \"Invalid input\" }\n```\nAny other field (line: local.line) is evaluated like a details value and placed at the top of the response error, beside code and message; path, stack, operation and names starting with __ or convertigo. are refused.",
+  longDescription: "```flowscript\nthrow { code: \"INVALID\", message: \"Invalid input\" }\n```\nAny other field (line: local.line) is evaluated like a details value and placed at the top of the response error, beside code and message; path, stack, operation and names starting with __ or convertigo. are refused. With error, the path of the error local of a try (throw({ error: \"local.failure\" }), FlowScript v3 throw failure in its catch), the block raises the caught error again as it was caught, an application error staying one and a failure of the Flow staying a failure; the other properties are not used. A path that holds no caught error gives FLOW_THROW_NOT_CAUGHT.",
   "sourceVersion": 2,
-  "version": 1,
+  "version": 2,
   "icon": "mdi:alert-circle-outline",
   "description": "Stops the Flow with a structured error.",
   "summary": "throw {{code}}: {{message}}",
@@ -33,6 +33,13 @@ const _meta = {
       "type": "object",
       "description": "Optional structured error details: each value is evaluated, a path or an expression giving its value (details: { orders: local.late, count: local.late.length }).",
     },
+    "error": {
+      "label": "Caught error",
+      "category": "Expert",
+      "kind": "path",
+      "mode": "read",
+      "description": "Optional path of the error local of a try (local.failure): raises that caught error again unchanged; the other properties are then not used.",
+    },
     "hint": {
       "label": "Hint",
       "category": "Expert",
@@ -56,6 +63,7 @@ const _meta = {
 (function () {
 	function argumentsFor(ctx,node) {
 		var props=ctx.props(node);
+		if(props.error!==undefined)return {error:String(props.error)};
 		var args={
 				code: props.code || "FLOW_THROW",
 				message: ctx.template(props.message || "Flow error"),
@@ -73,6 +81,12 @@ const _meta = {
 	// envelope (http-flow-failure.js). The mark stays on the thrown error, hidden: it never reaches the envelope.
 	var APPLICATIVE = Object.freeze({applicative:true});
 	function raise(ctx,node,args){
+		if(args.error!==undefined){
+			// The error a try caught, kept hidden on the value of its error path: raised again as it is.
+			var caught=ctx.read(args.error),original=caught&&typeof caught==="object"?caught.__flowCaughtError:undefined;
+			if(original===undefined)ctx.throwFlow({code:"FLOW_THROW_NOT_CAUGHT",message:"throw error reads "+args.error+", which holds no error caught by a try.",status:500},node);
+			throw original;
+		}
 		return ctx.throwFlow(args,node,APPLICATIVE);
 	}
 	return {

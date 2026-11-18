@@ -132,7 +132,7 @@ function Totals({ input, config, result }) {
 | `for (const item of items) {…}` | `forEach` | `item` reads the current element. One level of object destructuring: `for (const { id } of rows)`. `items` may be `Object.keys(o)`, `Object.values(o)` or a list method chain, computed once before the loop. |
 | `for (let i = a; i < b; i++) {…}` | `set` and `while` | Only this form, `<` or `<=`, step `++`; `i` is not assigned in the body. `continue` is accepted, even when `b` changes in the body: the counter steps before the body, on a hidden local. `maxIterations` 1000000. |
 | `switch (x) { case "a": …; break; default: … }` | chain of `if` | Literal labels; every case ends with `break`, `return` or `throw`; `default` last. |
-| `try {…} catch (e) {…}` | `try` | The error is `local.e`, read as `e` inside the catch only. Without a parameter: `local.error`. |
+| `try {…} catch (e) {…}` | `try` | The error is `local.e`, read as `e` inside the catch only. `catch {…}` declares no name: the error goes to `local.error`, or to a hidden local when the Flow has its own `error`. |
 | `continue` | `next` | In a `while`, a `for…of` or a counted `for`, without a label. |
 | `return`, `return value`, `return {…}` | `return` | Leaves the Flow. Refused inside a loop (`FLOWSCRIPT_V3_RETURN_IN_LOOP`). |
 | `throw { code: "LITERAL", message }` | `throw` | `code` is a literal public code. |
@@ -288,7 +288,10 @@ function Notify({ input, config, result }) {
 <!-- fragment:errors -->
 - `throw { code: "LITERAL", message, details, status }` raises an application error, as in v2.
 - `throw e`, where `e` is the parameter of the enclosing `catch` and is not assigned, raises the caught error
-  unchanged: same code, message, details and status.
+  unchanged: same code, message, details and status; an application error stays one (answered 200 with its
+  envelope), a failure of the Flow stays a failure (500). It is `throw({ error: "local.e" })`: the `try` keeps the
+  caught error, hidden, on the value of its error local. `throw` of another name is refused (`FLOWSCRIPT_V3_UNSUPPORTED`),
+  and so is a thrown object with an `error` field, the name of that block property.
 - `throw new Error(m)` is refused (`FLOWSCRIPT_V3_ERROR_CODE_CHOICE`). The public code is a choice:
   the proposal is `throw { code: "CHOOSE_ERROR_CODE", message: m }`.
 <!-- /fragment -->
@@ -498,3 +501,12 @@ replacement. The rules of the previous sections are amended accordingly.
      `FLOWSCRIPT_WRITE_SCOPE_UNSUPPORTED` for `+=`).
    - *Conditional expression end.* An `if` whose condition is a `?:` emitted one closing parenthesis too many (Rhino
      1.9.2 extends the expression over the `)` that follows it, as for an infix expression): fixed.
+11. **L1b: rethrow and `catch` without parameter (18/11/2026).** `throw e` in the `catch (e)` that caught it lowers to
+   `throw({ error: "local.e" })`. The `throw` block has an optional `error` property, the path of a try's error local:
+   it raises the error the `try` caught again, as it is. The `try` keeps that error on the value it writes, in a property
+   that is not enumerable (never in a result, a trace or a comparison), so the error keeps its code, message, details,
+   status, extra fields and its application mark: an application error answers 200 with its envelope, a failure of the
+   Flow 500 (tested through the HTTP requester). A path without a caught error gives `FLOW_THROW_NOT_CAUGHT` (500).
+   `catch { … }` declares no name (Rhino 1.9.2 cannot visit it: the reader visits its body itself); the error goes to
+   `local.error`, or to a hidden `local.__caught<N>` when the Flow has its own `error`, which the `try` must not
+   overwrite. The renderer writes a `throw` with only `error`, in the catch whose parameter holds it, as `throw e`.

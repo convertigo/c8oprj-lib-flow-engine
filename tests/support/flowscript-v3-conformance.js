@@ -92,10 +92,16 @@ function flowscriptV3Conformance(options) {
 	api.scan = function (root) {
 		var found = {};
 		function add(code) { found[code] = true; }
-		// Rhino 1.9.2 cannot visit a catch without parameter (NullPointerException): that source is then checked by the
-		// reader of the engine only, and counted in incompleteScans.
-		try { root.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (node) {
+		// Rhino 1.9.2 CatchClause.visit reads its parameter: a catch without one (catch { … }) is visited here, its body
+		// with the same visitor. A scan that still fails is counted in incompleteScans (the reader of the engine checks it).
+		var visitor;
+		try { root.visit(visitor = new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (node) {
 			var k = kind(node), up;
+			if (k === "CatchClause" && !node.getVarName()) {
+				if (node.getCatchCondition()) node.getCatchCondition().visit(visitor);
+				node.getBody().visit(visitor);
+				return false;
+			}
 			if (k === "BreakStatement") {
 				if (node.getBreakLabel() !== null) add("FLOWSCRIPT_V3_LOOP_FORM");
 				else {

@@ -473,6 +473,74 @@ same('result field update', '  result.count = 1\n  result.count++\n  result.coun
 refuses('loop item update', '  for (const item of input.items) {\n    item.count++\n  }', 'FLOWSCRIPT_V3_UNSUPPORTED', 4, 'o.count++');
 refuses('undeclared update', '  missing++', 'FLOWSCRIPT_V3_UNSUPPORTED', 3, 'Declare the local first');
 
+// L1b. throw e in its catch raises the caught error again, unchanged (an application error stays one, a failure stays a
+// failure); catch { … } without parameter declares no name.
+function rethrown(label, body, input, expected) {
+	cases++;
+	var code = program(body), lowered = translated(label, code, /throw\(\{ error: "local\.failure" \}\)/);
+	var run = api('flowCodeRun', { name: 'Example', code: code, input: input, includeTrace: false });
+	check(run.ok === false && expected(run.error) === true, label + ': ' + JSON.stringify(run).substring(0, 900) + '\n' + lowered.code);
+}
+var rethrowBody = [
+	'  try {',
+	'    if (input.app) {',
+	'      throw { code: "ORDER_NOT_FOUND", message: "No order 42", details: { id: 42 }, line: 7 }',
+	'    }',
+	'    const parsed = JSON.parse("{")',
+	'    result.parsed = parsed',
+	'  } catch (failure) {',
+	'    if (failure.code == "IGNORED") {',
+	'      return',
+	'    }',
+	'    throw failure',
+	'  }'
+].join('\n');
+rethrown('rethrow of an application error', rethrowBody, { app: true }, function (error) {
+	return error.code === 'ORDER_NOT_FOUND' && error.message === 'No order 42' && error.details.id === 42 && error.line === 7;
+});
+rethrown('rethrow of a failure', rethrowBody, { app: false }, function (error) { return error.code === 'FLOW_ENGINE_ERROR'; });
+rethrown('rethrow of an outer catch parameter', [
+	'  try {',
+	'    throw { code: "FIRST", message: "first" }',
+	'  } catch (failure) {',
+	'    try {',
+	'      throw { code: "SECOND", message: "second" }',
+	'    } catch (other) {',
+	'      throw failure',
+	'    }',
+	'  }'
+].join('\n'), {}, function (error) { return error.code === 'FIRST' && error.message === 'first'; });
+cases++;
+same('catch without parameter', [
+	'  let n = 0',
+	'  try {',
+	'    n = 1',
+	'    throw { code: "X", message: "y" }',
+	'  } catch {',
+	'    n = n + 10',
+	'  }',
+	'  return { n }'
+].join('\n'), {}, { n: 11 }, /try\(\{ error: "local\.error",/);
+cases++;
+same('catch without parameter beside an error local', [
+	'  let error = "kept"',
+	'  try {',
+	'    const parsed = JSON.parse(input.text)',
+	'    error = parsed.value',
+	'  } catch {',
+	'    error = error + "!"',
+	'  }',
+	'  return { error }'
+].join('\n'), { text: '{' }, { error: 'kept!' }, /try\(\{ error: "local\.__caught\d+",/);
+refuses('throw of a local that no catch declares', '  const failure = { code: "A", message: "b" }\n  throw failure', 'FLOWSCRIPT_V3_UNSUPPORTED', 4, 'parameter of the enclosing catch');
+
+refuses('thrown object with an error field', '  throw { code: "A", message: "b", error: "x" }', 'FLOWSCRIPT_V3_UNSUPPORTED', 3, 'throw e in its catch');
+// The rendering of a v2 rethrow is throw e in its catch, read back to the same definition.
+var migratedRethrow = api('flowCodeMigrateV3', { name: 'Example', code: 'const _flow = { sourceVersion: 2 }\nfunction Example({ input, config, result }) {\n  try({ error: "local.failure", $$try() {\n    throw { code: "A", message: "b" }\n  }, $$catch() {\n    throw({ error: "local.failure" })\n  } })\n}' });
+check(migratedRethrow.ok && /\} catch \(failure\) \{\n\s+throw failure\n/.test(migratedRethrow.code), 'rethrow rendering: ' + JSON.stringify(migratedRethrow).substring(0, 900));
+var rethrowRun = api('flowCodeRun', { name: 'Example', code: migratedRethrow.code, input: {}, includeTrace: false });
+check(!rethrowRun.ok && rethrowRun.error.code === 'A', 'rendered rethrow runs: ' + JSON.stringify(rethrowRun).substring(0, 600));
+
 // Conformance cases of the grammar: each source is lowered and run; a case marked parsesWithoutPreparation is read by the
 // Rhino 1.9.2 parser as it is written.
 var grammar = JSON.parse(String(files.readFileToString(new java.io.File(engineDir, '../docs/flowscript-v3-grammar.json'), 'UTF-8')));

@@ -74,8 +74,7 @@
 				FLOWSCRIPT_V3_GLOBAL_CALL: "This global call cannot be lowered in this expression or with these arguments",
 				FLOWSCRIPT_V3_ERROR_CODE_CHOICE: "throw new Error lacks the literal public error code required by Flow",
 				FLOWSCRIPT_V3_UNSUPPORTED: "This JavaScript construct is outside the FlowScript v3 subset",
-				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition",
-				FLOWSCRIPT_V3_PROTOTYPE_RETHROW: "Rethrowing a caught value has no faithful prototype lowering"
+				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition"
 			};
 			var message = (rules[code] || "This FlowScript v3 construct cannot be lowered faithfully") + " (" + code + " at line " + line(at) + ").";
 			if (code === "FLOWSCRIPT_V3_LIST_METHOD" && kind(node) === "FunctionCall" && method(node) === "sort" && !/^\s*\[/.test(raw(node.getTarget()).replace(/\.sort$/, ""))) {
@@ -88,7 +87,19 @@
 		}
 		function array(list) { var out = []; for (var i = 0; list && i < list.size(); i++) out.push(list.get(i)); return out; }
 		function children(node) { var out = []; for (var part = node && node.getFirstChild(); part; part = part.getNext()) out.push(part); return out; }
-		function visit(node, callback) { node.visit(new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (n) { return callback(n) !== false; } })); }
+		function visit(node, callback) {
+			var visitor = new Packages.org.mozilla.javascript.ast.NodeVisitor({ visit: function (n) {
+				var deeper = callback(n) !== false;
+				// Rhino 1.9.2 CatchClause.visit reads its parameter: a catch without one (catch { … }) is visited here
+				if (deeper && kind(n) === "CatchClause" && !n.getVarName()) {
+					if (n.getCatchCondition()) n.getCatchCondition().visit(visitor);
+					n.getBody().visit(visitor);
+					return false;
+				}
+				return deeper;
+			} });
+			node.visit(visitor);
+		}
 		function prepare(text) {
 			// Token scan, not a text-wide regular expression, with same-length rewrites only, so that every AST position is
 			// a source position. Each const declaration keyword becomes let: Rhino 1.9.2 refuses const in a for…of head and
@@ -829,17 +840,36 @@
 			if (k === "BreakStatement") reject("FLOWSCRIPT_V3_BREAK", node, "Use a local tested by the while condition or find/filter.");
 			if (k === "ContinueStatement") { if (!loopDepth) reject("FLOWSCRIPT_V3_LOOP_FORM", node, "Use continue only inside a loop."); emit("return", origin); return; }
 			if (k === "ThrowStatement") {
-				var thrown = node.getExpression(); if (kind(thrown) === "Name") reject("FLOWSCRIPT_V3_PROTOTYPE_RETHROW", node, "Raising the caught error again is not available yet: throw { code: \"LITERAL_CODE\", message: " + String(thrown.getIdentifier()) + ".message, details: " + String(thrown.getIdentifier()) + ".details }");
+				var thrown = node.getExpression();
+				if (kind(thrown) === "Name") {
+					// throw e, e the parameter of an enclosing catch (a const, never assigned): the caught error again, unchanged
+					var caught = lookup(String(thrown.getIdentifier()), current);
+					if (!caught || !caught.caught) reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Throw an object with a literal code (throw { code: \"LITERAL\", message }), or the parameter of the enclosing catch to raise the caught error again.");
+					emit("throw({ error: " + JSON.stringify(caught.mapped) + " })", origin); return;
+				}
 				if (kind(thrown) === "NewExpression") reject("FLOWSCRIPT_V3_ERROR_CODE_CHOICE", node, "throw { code: \"CHOOSE_ERROR_CODE\", message: ... }");
 				if (kind(thrown) !== "ObjectLiteral") reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Throw an object with a literal code.");
+				// error is the property of the throw block that raises a caught error again: a field of that name would not be
+				// a field of the thrown error
+				if (array(thrown.getElements()).some(function (field) { return kind(field) === "ObjectProperty" && /^["']?error["']?$/.test(raw(field.getKey()).trim()); })) {
+					reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Name that field otherwise (details: { error: … }); to raise a caught error again, write throw e in its catch.");
+				}
 				emit("throw " + rewritten(thrown, current), origin); return;
 			}
 			if (k === "TryStatement") {
 				if (node.getFinallyBlock()) reject("FLOWSCRIPT_V3_FINALLY", node.getFinallyBlock(), "Write statements after the try.");
 				var clause = array(node.getCatchClauses())[0]; if (!clause) reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Use try/catch.");
-				var errorName = clause.getVarName() ? String(clause.getVarName().getIdentifier()) : "error", catchScope = child(current);
-				declare(errorName, "const", clause, catchScope);
-				emit("try({ error: \"local." + errorName + "\", $$try() {", origin); body(node.getTryBlock(), child(current));
+				var parameter = clause.getVarName(), catchScope = child(current), errorPath;
+				if (parameter && kind(parameter) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", parameter, "Name the caught error: catch (failure) { … failure.code … }.");
+				if (parameter) {
+					var caughtBinding = declare(String(parameter.getIdentifier()), "const", clause, catchScope);
+					caughtBinding.caught = true; errorPath = caughtBinding.mapped;
+				} else {
+					// catch { … } declares no name: the error goes to local.error, or to a hidden local when the Flow has its own
+					// error local, which the try must not overwrite
+					errorPath = allNames.error || /\blocal\s*\.\s*error\b/.test(source) ? "local.__caught" + (++chain) : "local.error";
+				}
+				emit("try({ error: " + JSON.stringify(errorPath) + ", $$try() {", origin); body(node.getTryBlock(), child(current));
 				emit("}, $$catch() {", line(pos(clause))); body(clause.getBody(), catchScope); emit("} })", line(end(node) - 1)); return;
 			}
 			if (k === "SwitchStatement") {

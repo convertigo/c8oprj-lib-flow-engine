@@ -1,6 +1,6 @@
 const _meta = {
   "sourceVersion": 2,
-  "version": 1,
+  "version": 2,
   "icon": "mdi:shield-alert-outline",
   "tags": [
     "control",
@@ -32,7 +32,7 @@ const _meta = {
       "kind": "path",
       "mode": "write",
       "default": "local.error",
-      "description": "Scope path receiving { code, message, status, hint } when try fails.",
+      "description": "Scope path receiving { code, message, status, hint } when try fails. The error itself stays attached to that value, hidden: throw({ error: path }) raises it again unchanged.",
     },
   },
   "runtime": "rhino",
@@ -60,11 +60,20 @@ const _meta = {
 		};
 	}
 
+	// The caught error stays on the value written to the error path, hidden (not enumerable: never in a result, a trace or
+	// a comparison), so that throw({ error }) raises it again unchanged: code, message, details, status, and whether it
+	// is an application error (answered 200 with its envelope) or a failure of the Flow (500).
+	function caughtValue(error) {
+		var value = errorValue(error);
+		if (error !== null && error !== undefined) Object.defineProperty(value, "__flowCaughtError", { value: error });
+		return value;
+	}
+
 	function runTry(ctx, node, errorPath) {
 		try {
 			return ctx.runNodes(node["try"] || []);
 		} catch (error) {
-			ctx.write(errorPath || "local.error", errorValue(error));
+			ctx.write(errorPath || "local.error", caughtValue(error));
 			return ctx.runNodes(node["catch"] || []);
 		}
 	}

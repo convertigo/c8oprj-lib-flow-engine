@@ -49,4 +49,19 @@ expect('runtime exception',' result.value = json.parse({ text: "{" })','FLOW_ENG
 var caught=run(' try({$$try(){ throw { code: "SOFT", message: "x" } }, $$catch(){ result.code = local.error.code }})');
 if(!caught.out.result||caught.out.result.code!=='SOFT')throw Error('the caught error is the thrown one: '+caught.text);
 if(caught.out.ok!==true||caught.statuses.length!==0||/application/i.test(caught.text))throw Error('a caught throw answers its result: '+caught.text);
+// throw({ error }) in a catch raises the caught error again, unchanged: an application error stays 200 with its
+// envelope (code, message, details, extra fields), a failure of the Flow stays a failure (500).
+var rethrown=expect('rethrown application error',' try({ error: "local.failure", $$try(){ throw { code: "ORDER_NOT_FOUND", message: "No order 42", details: { id: 42 }, line: 7 } }, $$catch(){ throw({ error: "local.failure" }) }})','ORDER_NOT_FOUND',[]);
+if(rethrown.error.message!=='No order 42'||rethrown.error.details.id!==42||rethrown.error.line!==7)throw Error('the rethrown error is unchanged: '+JSON.stringify(rethrown));
+expect('rethrown application error with status',' try({ error: "local.failure", $$try(){ throw { code: "LATER", message: "x", status: 503 } }, $$catch(){ throw({ error: "local.failure" }) }})','LATER',[503]);
+expect('rethrown failure',' try({ error: "local.failure", $$try(){ result.value = json.parse({ text: "{" }) }, $$catch(){ throw({ error: "local.failure" }) }})','FLOW_ENGINE_ERROR',[500]);
+expect('rethrow of a value no try caught',' local.failure = { code: "X", message: "y" }\n throw({ error: "local.failure" })','FLOW_THROW_NOT_CAUGHT',[500]);
+var v3Source='const _flow = { sourceVersion: 3 }\nfunction Orders({ input, config, result }) {\n  try {\n    if (input.app) {\n      throw { code: "ORDER_NOT_FOUND", message: "No order 42", details: { id: 42 } }\n    }\n    result.value = JSON.parse("{")\n  } catch (failure) {\n    throw failure\n  }\n}';
+[[{app:true},'ORDER_NOT_FOUND',[]],[{app:false},'FLOW_ENGINE_ERROR',[500]]].forEach(function(c){
+ attributes.remove(String(statusAttribute.value()));
+ var text=String(engine.run(JSON.stringify({flowQName:String(flow.getQName()),flowName:'Orders',includeTrace:false,input:c[0],flowSource:v3Source})));
+ var out=JSON.parse(text),statuses=statusAttribute.get(http),codes=[];
+ if(statuses)statuses.keySet().forEach(function(code){codes.push(Number(code));});
+ if(out.ok!==false||out.error.code!==c[1]||JSON.stringify(codes)!==JSON.stringify(c[2]))throw Error('v3 throw failure in its catch: '+text+' '+JSON.stringify(codes));
+});
 print('throw-envelope-status OK');
