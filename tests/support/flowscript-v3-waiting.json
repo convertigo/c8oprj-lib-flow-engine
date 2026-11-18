@@ -1,0 +1,37 @@
+{
+  "note": "Examples that Rhino 1.9.2 reads but that the reader of the engine (flowscript-v3-prototype.js) does not accept yet, because the rule of section 15 (L0', 18/11/2026) that allows them is implemented on another branch. They stay in the conformance test: each must still be read by Rhino, and the test reports (without failing) an entry that the reader accepts now, to be removed from this list. Ids: spec:<fence id>, grammar:<entry id>#<n> (accepted) or grammar:<code> (refused), guide:<path>#<n>.",
+  "waiting": [
+    {
+      "id": "grammar:list-sort-natural#0",
+      "reason": "section 15 (L0') item 1: relational comparators (compare: \"natural\"); the reader says FLOWSCRIPT_V3_LIST_METHOD"
+    },
+    {
+      "id": "grammar:list-sort-keys#0",
+      "reason": "section 15 (L0') item 2: several sort keys (then: [...]); the reader says FLOWSCRIPT_V3_LIST_METHOD"
+    },
+    {
+      "id": "grammar:untyped-list#0",
+      "reason": "section 15 (L0') item 4: const rows = [] then push; the reader says FLOWSCRIPT_V3_UNTYPED_LIST"
+    },
+    {
+      "id": "grammar:for-counted-continue#0",
+      "reason": "section 15 (L0') item 5: continue in a counted for; the reader says FLOWSCRIPT_V3_FOR_FORM"
+    },
+    {
+      "id": "grammar:chain-ternary#0",
+      "reason": "section 15 (L0') item 6: list method chain in the branches of a whole-statement ?:; the reader says FLOWSCRIPT_V3_CHAIN"
+    },
+    {
+      "id": "spec:notify",
+      "reason": "section 10 (L3a): throw e in its catch; the prototype reader refuses it (FLOWSCRIPT_V3_PROTOTYPE_RETHROW)"
+    },
+    {
+      "id": "grammar:throw-rethrow#0",
+      "reason": "section 10 (L3a): throw e in its catch; the prototype reader refuses it (FLOWSCRIPT_V3_PROTOTYPE_RETHROW)"
+    },
+    {
+      "id": "grammar:try-catch#1",
+      "reason": "section 5 (L3a): catch without parameter (local.error); the prototype reader throws a NullPointerException, Rhino 1.9.2 CatchClause.visit cannot visit a missing parameter"
+    }
+  ]
+}
