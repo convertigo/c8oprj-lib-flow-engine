@@ -57,7 +57,13 @@ function catalog(name) {
 // rejects after translation. Keep these exceptional cases explicit.
 var acceptedBeyondV2={
   'render:R-NESTED':'FLOWSCRIPT_EXPRESSION_UNSUPPORTED',
+	'trace:f3l3b_g6sol:csv_stats:57':'INVALID_EXPRESSION',
+	'trace:f3l3b_g6sol:csv_stats:58':'INVALID_EXPRESSION',
   'trace:f3l3b_g6sol:csv_stats:59':'INVALID_EXPRESSION',
+	'trace:f3l3b_ml4:csv_stats:62':'INVALID_EXPRESSION',
+	'trace:f3l3b_ml4:csv_stats:63':'INVALID_EXPRESSION',
+	'trace:f3l3b_ml4:csv_stats:64':'INVALID_EXPRESSION',
+	'trace:f3l3b_ml4:csv_stats:65':'INVALID_EXPRESSION',
   'trace:f3l3b_ml4:csv_stats:66':'INVALID_EXPRESSION',
   'trace:f3m1b_g6sol:stats:88':'INVALID_EXPRESSION'
 };

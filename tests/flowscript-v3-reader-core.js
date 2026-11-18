@@ -38,6 +38,7 @@ check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const rows = 
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const keys = Object.keys(input.fields)\n  const vals = Object.values(input.fields)\n  return { keys, vals }\n}');
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const parsed = JSON.parse(input.text)\n  const formatted = JSON.stringify(parsed, null, 2)\n  return { formatted }\n}');
 check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  // @disabled\n  result.ignored = 1\n  // a note\n  result.count = 2\n}');
+check('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const sorted = input.items.toSorted((a, b) => (b.n - a.n) || a.id.localeCompare(b.id))\n  return { sorted }\n}');
 function refuses(body, code, line) {
 	var source = 'const _flow = { sourceVersion: 3 }\nfunction Example() {\n' + body + '\n}';
 	var oracle = bridge.translate(source).diagnostics, direct = JSON.parse(String(Reader.read(source, null))).diagnostics;

@@ -36,6 +36,7 @@ public final class FlowScriptV3Reader {
 	private static final Set<String> BLOCK_NAMESPACES = Set.of("text", "list", "json", "http", "object", "email", "sql", "date", "number", "crypto", "requestable");
 	private static final Map<String, String> RULES = Map.ofEntries(
 		Map.entry("FLOWSCRIPT_V3_IMPORT_SYNTAX", "JavaScript import declarations are unavailable in FlowScript v3"),
+		Map.entry("FLOWSCRIPT_V3_RESERVED_WORD", "default is a reserved word of JavaScript, not a function: the default function is flow.default"),
 		Map.entry("FLOWSCRIPT_V3_RESERVED_NAME", "This name is reserved for a Flow scope or the bridge"),
 		Map.entry("FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK", "This local name hides a block namespace"),
 		Map.entry("FLOWSCRIPT_V3_LOCAL_ALIAS", "A local cannot be written both by its declared name and by local.*"),
@@ -54,7 +55,7 @@ public final class FlowScriptV3Reader {
 		Map.entry("FLOWSCRIPT_V3_FUNCTION", "Only top-level helpers, list arrows, and slot functions are supported"),
 		Map.entry("FLOWSCRIPT_V3_CHAIN", "A list operation in this expression cannot be lowered in its JavaScript evaluation order"),
 		Map.entry("FLOWSCRIPT_V3_LIST_METHOD", "This list method or comparator cannot be lowered with the same JavaScript meaning"),
-		Map.entry("FLOWSCRIPT_V3_UNTYPED_LIST", "An empty list must declare its item type before push"),
+		Map.entry("FLOWSCRIPT_V3_UNTYPED_LIST", "The item type of this list cannot be proven from the values pushed into it"),
 		Map.entry("FLOWSCRIPT_V3_GLOBAL_CALL", "This global call cannot be lowered in this expression or with these arguments"),
 		Map.entry("FLOWSCRIPT_V3_ERROR_CODE_CHOICE", "throw new Error lacks the literal public error code required by Flow"),
 		Map.entry("FLOWSCRIPT_V3_UNSUPPORTED", "This JavaScript construct is outside the FlowScript v3 subset"),
@@ -129,10 +130,17 @@ public final class FlowScriptV3Reader {
 	private int pos(AstNode node) {
 		int at = Math.max(0, node.getAbsolutePosition());
 		if (node instanceof org.mozilla.javascript.ast.UnaryExpression unary) {
-			String operator = org.mozilla.javascript.ast.AstNode.operatorToString(unary.getOperator());
+			String operator = switch (unary.getOperator()) {
+				case org.mozilla.javascript.Token.NOT -> "!";
+				case org.mozilla.javascript.Token.NEG -> "-";
+				case org.mozilla.javascript.Token.POS -> "+";
+				case org.mozilla.javascript.Token.BITNOT -> "~";
+				case org.mozilla.javascript.Token.TYPEOF -> "typeof";
+				default -> "";
+			};
 			int cursor = at - 1;
 			while (cursor >= 0 && Character.isWhitespace(source.charAt(cursor))) cursor--;
-			if (cursor + 1 >= operator.length() && source.substring(cursor + 1 - operator.length(), cursor + 1).equals(operator))
+			if (!operator.isEmpty() && cursor + 1 >= operator.length() && source.substring(cursor + 1 - operator.length(), cursor + 1).equals(operator))
 				return cursor + 1 - operator.length();
 		}
 		if (node instanceof org.mozilla.javascript.ast.InfixExpression infix) return Math.min(at, pos(infix.getLeft()));
@@ -176,25 +184,47 @@ public final class FlowScriptV3Reader {
 			if (c == '/' && next == '/') { state = "line"; i += 2; continue; }
 			if (c == '/' && next == '*') { state = "block"; i += 2; continue; }
 			if (c == '"' || c == '\'' || c == '`') { state = "string"; quote = c; i++; continue; }
-			if (text.startsWith("for", i) && (i == 0 || !Character.isJavaIdentifierPart(text.charAt(i - 1))) &&
-				(i + 3 == text.length() || !Character.isJavaIdentifierPart(text.charAt(i + 3)))) {
-				int j = i + 3;
+			if (text.startsWith("const", i) && (i == 0 || !Character.isJavaIdentifierPart(text.charAt(i - 1))) &&
+				(i + 5 == text.length() || !Character.isJavaIdentifierPart(text.charAt(i + 5)))) {
+				int j = i + 5;
 				while (j < text.length() && Character.isWhitespace(text.charAt(j))) j++;
-				if (j < text.length() && text.charAt(j) == '(') {
-					j++;
-					while (j < text.length() && Character.isWhitespace(text.charAt(j))) j++;
-					if (text.startsWith("const", j) && (j + 5 == text.length() || !Character.isJavaIdentifierPart(text.charAt(j + 5)))) {
-						int close = text.indexOf(')', j + 5), of = text.indexOf(" of", j + 5);
-						if (of >= 0 && (close < 0 || of < close)) { out[j] = 'l'; out[j + 1] = 'e'; out[j + 2] = 't'; out[j + 3] = ' '; out[j + 4] = ' '; }
-					}
+				if (j > i + 5 && j < text.length() && (Character.isJavaIdentifierStart(text.charAt(j)) || text.charAt(j) == '{' || text.charAt(j) == '[')) {
+					out[i] = 'l'; out[i + 1] = 'e'; out[i + 2] = 't'; out[i + 3] = ' '; out[i + 4] = ' ';
 				}
+				i += 5; continue;
 			}
 			i++;
 		}
 		return new String(out);
 	}
+	private static String codeOnly(String text) {
+		char[] out = text.toCharArray();
+		String state = "code";
+		char quote = 0;
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i), next = i + 1 < text.length() ? text.charAt(i + 1) : 0;
+			if (state.equals("line")) { if (c == '\n') state = "code"; else out[i] = ' '; continue; }
+			if (state.equals("block")) {
+				out[i] = c == '\n' ? c : ' ';
+				if (c == '*' && next == '/') { out[++i] = ' '; state = "code"; }
+				continue;
+			}
+			if (state.equals("string")) {
+				out[i] = c == '\n' ? c : ' ';
+				if (c == '\\' && i + 1 < text.length()) out[++i] = ' ';
+				else if (c == quote) state = "code";
+				continue;
+			}
+			if (c == '/' && next == '/') { out[i] = out[++i] = ' '; state = "line"; continue; }
+			if (c == '/' && next == '*') { out[i] = out[++i] = ' '; state = "block"; continue; }
+			if (c == '"' || c == '\'' || c == '`') { out[i] = ' '; quote = c; state = "string"; }
+		}
+		return new String(out);
+	}
 
 	private Map<String, Object> parse() {
+		var bareDefault = java.util.regex.Pattern.compile("(?<![\\w$.])default\\s*\\(").matcher(codeOnly(source));
+		if (bareDefault.find()) rejectAt("FLOWSCRIPT_V3_RESERVED_WORD", bareDefault.start(), "Write flow.default(x, y).");
 		AstRoot ast;
 		try {
 			var options = new CompilerEnvirons();
@@ -317,7 +347,7 @@ public final class FlowScriptV3Reader {
 		final Map<String, Binding> names = new HashMap<>();
 		Scope(Scope parent) { this.parent = parent; }
 	}
-	private int loopDepth, countedDepth;
+	private int loopDepth, countedDepth, counted;
 	private Binding lookup(String name, Scope scope) {
 		for (Scope current = scope; current != null; current = current.parent) if (current.names.containsKey(name)) return current.names.get(name);
 		return null;
@@ -473,6 +503,242 @@ public final class FlowScriptV3Reader {
 	private Object listSource(AstNode receiver, Scope scope, Lowered prefix) {
 		return prefix.before.isEmpty() && receiver instanceof org.mozilla.javascript.ast.ArrayLiteral ? value(receiver, scope) : prefix.expression;
 	}
+	private AstNode unparen(AstNode node) {
+		while (node instanceof org.mozilla.javascript.ast.ParenthesizedExpression wrapper) node = wrapper.getExpression();
+		return node;
+	}
+	private String operator(AstNode node) {
+		return org.mozilla.javascript.ast.AstNode.operatorToString(((org.mozilla.javascript.ast.InfixExpression) node).getOperator());
+	}
+	private record Side(String name, String path) { }
+	private record PairKey(String path, boolean swapped) { }
+	private record SortKey(String path, String compare, String direction) { }
+	private Side side(AstNode operand, String first, String second) {
+		AstNode at = unparen(operand);
+		var path = new ArrayList<String>();
+		while (at instanceof PropertyGet property) {
+			path.add(0, property.getProperty().getIdentifier());
+			at = unparen(property.getTarget());
+		}
+		String name = name(at);
+		return name.equals(first) || name.equals(second) ? new Side(name, String.join(".", path)) : null;
+	}
+	private PairKey pair(AstNode left, AstNode right, String first, String second) {
+		Side a = side(left, first, second), b = side(right, first, second);
+		return a != null && b != null && a.path.equals(b.path) && !a.name.equals(b.name) ? new PairKey(a.path, a.name.equals(second)) : null;
+	}
+	private AstNode unstring(AstNode operand) {
+		AstNode at = unparen(operand);
+		return at instanceof FunctionCall call && compact(raw(call.getTarget())).equals("String") && call.getArguments().size() == 1 ? call.getArguments().get(0) : operand;
+	}
+	private static final String[] ORDER_CLASSES = { "LT", "GT", "EQS", "EQL", "EQN", "NCS", "NCL", "NCN" };
+	private boolean holds(String relation, String category) {
+		if (relation.equals("!=")) return !holds("==", category);
+		if (relation.equals("!==")) return !holds("===", category);
+		return switch (relation) {
+			case "<" -> category.equals("LT");
+			case ">" -> category.equals("GT");
+			case "<=" -> Set.of("LT", "EQS", "EQL", "EQN").contains(category);
+			case ">=" -> Set.of("GT", "EQS", "EQL", "EQN").contains(category);
+			case "==" -> Set.of("EQS", "EQL", "NCS", "NCL").contains(category);
+			case "===" -> Set.of("EQS", "NCS").contains(category);
+			default -> false;
+		};
+	}
+	private Integer comparatorSign(AstNode input, String first, String second, String category, String[] keyPath) {
+		AstNode node = unparen(input);
+		if (node instanceof org.mozilla.javascript.ast.ConditionalExpression conditional) {
+			AstNode test = unparen(conditional.getTestExpression());
+			if (!(test instanceof org.mozilla.javascript.ast.InfixExpression infix)) return null;
+			String relation = operator(infix);
+			if (!Set.of("<", ">", "<=", ">=", "==", "!=", "===", "!==").contains(relation)) return null;
+			PairKey pair = pair(infix.getLeft(), infix.getRight(), first, second);
+			if (pair == null || keyPath[0] != null && !keyPath[0].equals(pair.path)) return null;
+			keyPath[0] = pair.path;
+			if (pair.swapped) relation = switch (relation) { case "<" -> ">"; case ">" -> "<"; case "<=" -> ">="; case ">=" -> "<="; default -> relation; };
+			return comparatorSign(holds(relation, category) ? conditional.getTrueExpression() : conditional.getFalseExpression(), first, second, category, keyPath);
+		}
+		if (node instanceof org.mozilla.javascript.ast.NumberLiteral number) {
+			double value = number.getNumber();
+			return value < 0 ? -1 : value > 0 ? 1 : 0;
+		}
+		if (node instanceof org.mozilla.javascript.ast.UnaryExpression unary && (unary.getOperator() == org.mozilla.javascript.Token.POS || unary.getOperator() == org.mozilla.javascript.Token.NEG) && unparen(unary.getOperand()) instanceof org.mozilla.javascript.ast.NumberLiteral number) {
+			double value = number.getNumber();
+			if (unary.getOperator() == org.mozilla.javascript.Token.NEG) value = -value;
+			return value < 0 ? -1 : value > 0 ? 1 : 0;
+		}
+		return null;
+	}
+	private SortKey keyComparator(AstNode input, String first, String second) {
+		AstNode node = unparen(input);
+		if (node instanceof org.mozilla.javascript.ast.InfixExpression infix && operator(infix).equals("-")) {
+			PairKey found = pair(infix.getLeft(), infix.getRight(), first, second);
+			if (found != null) return new SortKey(found.path, "number", found.swapped ? "desc" : "asc");
+		}
+		if (node instanceof FunctionCall call && method(call).equals("localeCompare") && call.getArguments().size() == 1) {
+			PairKey found = pair(unstring(((PropertyGet) call.getTarget()).getTarget()), unstring(call.getArguments().get(0)), first, second);
+			if (found != null) return new SortKey(found.path, "locale", found.swapped ? "desc" : "asc");
+		}
+		if (!(node instanceof org.mozilla.javascript.ast.ConditionalExpression)) return null;
+		String[] path = { null };
+		boolean ascending = true, descending = true;
+		for (String category : ORDER_CLASSES) {
+			Integer sign = comparatorSign(node, first, second, category, path);
+			if (sign == null) return null;
+			int natural = category.equals("LT") ? -1 : category.equals("GT") ? 1 : 0;
+			if (sign != natural) ascending = false;
+			if (sign != -natural) descending = false;
+		}
+		return ascending || descending ? new SortKey(path[0], "natural", ascending ? "asc" : "desc") : null;
+	}
+	private List<SortKey> comparatorKeys(AstNode input, String first, String second) {
+		AstNode node = unparen(input);
+		if (node instanceof org.mozilla.javascript.ast.InfixExpression infix && operator(infix).equals("||")) {
+			List<SortKey> left = comparatorKeys(infix.getLeft(), first, second), right = comparatorKeys(infix.getRight(), first, second);
+			if (left == null || right == null) return null;
+			var both = new ArrayList<SortKey>(left); both.addAll(right); return both;
+		}
+		SortKey key = keyComparator(node, first, second);
+		return key == null ? null : List.of(key);
+	}
+	private Map<String, Object> sortProperties(SortKey key) {
+		var props = map("compare", key.compare, "direction", key.direction);
+		if (!key.path.isEmpty()) props.put("by", "current." + key.path);
+		return props;
+	}
+	private static final Map<String, Object> TYPE_BOTTOM = Map.of("bottom", true);
+	private static final Map<String, Object> TYPE_ANY = Map.of("any", true);
+	private String typeName(Map<String, Object> type) { return type == null ? "" : String.valueOf(type.getOrDefault("type", "")); }
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> staticType(AstNode input) {
+		AstNode node = unparen(input);
+		if (node instanceof StringLiteral || kind(node).equals("TemplateLiteral")) return map("type", "string");
+		if (node instanceof org.mozilla.javascript.ast.NumberLiteral number) return map("type", number.getNumber() == Math.floor(number.getNumber()) ? "integer" : "number");
+		if (node instanceof org.mozilla.javascript.ast.UnaryExpression unary) {
+			String spelling = raw(node).trim();
+			String op = spelling.startsWith("typeof") ? "typeof" : spelling.isEmpty() ? "" : spelling.substring(0, 1);
+			AstNode operand = unparen(unary.getOperand());
+			if ((op.equals("-") || op.equals("+")) && operand instanceof org.mozilla.javascript.ast.NumberLiteral number)
+				return map("type", number.getNumber() == Math.floor(number.getNumber()) ? "integer" : "number");
+			if (op.equals("!")) return map("type", "boolean");
+			if (op.equals("typeof")) return map("type", "string");
+		}
+		if (node instanceof org.mozilla.javascript.ast.KeywordLiteral) {
+			String word = raw(node).trim();
+			if (word.equals("true") || word.equals("false")) return map("type", "boolean");
+			if (word.equals("null")) return map("type", "null");
+		}
+		if (node.getClass() == org.mozilla.javascript.ast.InfixExpression.class && Set.of("==", "!=", "===", "!==", "<", "<=", ">", ">=").contains(operator(node))) return map("type", "boolean");
+		if (node instanceof org.mozilla.javascript.ast.ConditionalExpression conditional) {
+			var yes = staticType(conditional.getTrueExpression());
+			return yes == null ? null : mergeTypes(yes, staticType(conditional.getFalseExpression()));
+		}
+		if (node instanceof org.mozilla.javascript.ast.ArrayLiteral array) {
+			Map<String, Object> items = TYPE_BOTTOM;
+			for (AstNode element : array.getElements()) {
+				if (element instanceof org.mozilla.javascript.ast.Spread) return null;
+				items = mergeTypes(items, staticType(element));
+				if (items == null) return null;
+			}
+			return map("type", "array", "items", items);
+		}
+		if (node instanceof ObjectLiteral object) {
+			var fields = new LinkedHashMap<String, Object>();
+			for (var member : object.getElements()) {
+				if (!(member instanceof ObjectProperty field) || field.getValue() instanceof FunctionNode) return map("type", "object", "fields", map());
+				AstNode keyNode = field.getKey();
+				if (!(keyNode instanceof Name || keyNode instanceof StringLiteral || keyNode instanceof org.mozilla.javascript.ast.NumberLiteral)) return map("type", "object", "fields", map());
+				fields.put(key(keyNode), staticType(field.getValue()) == null ? TYPE_ANY : staticType(field.getValue()));
+			}
+			return map("type", "object", "fields", fields);
+		}
+		return null;
+	}
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> mergeTypes(Map<String, Object> a, Map<String, Object> b) {
+		if (a == null || b == null) return null;
+		if (a == TYPE_BOTTOM) return b;
+		if (b == TYPE_BOTTOM) return a;
+		if (a == TYPE_ANY || b == TYPE_ANY) return TYPE_ANY;
+		String left = typeName(a), right = typeName(b);
+		if (left.equals("null") && right.equals("null")) return a;
+		if (left.equals("null") || right.equals("null")) {
+			var copy = new LinkedHashMap<String, Object>(left.equals("null") ? b : a);
+			copy.put("nullable", true);
+			return copy;
+		}
+		String type = left.equals(right) ? left : Set.of("integer", "number").contains(left) && Set.of("integer", "number").contains(right) ? "number" : "";
+		if (type.isEmpty()) return null;
+		var merged = map("type", type);
+		if (Boolean.TRUE.equals(a.get("nullable")) || Boolean.TRUE.equals(b.get("nullable"))) merged.put("nullable", true);
+		if (type.equals("array")) {
+			var items = mergeTypes((Map<String, Object>) a.get("items"), (Map<String, Object>) b.get("items"));
+			if (items == null) return null;
+			merged.put("items", items);
+		}
+		if (type.equals("object")) {
+			var af = (Map<String, Object>) a.getOrDefault("fields", Map.of());
+			var bf = (Map<String, Object>) b.getOrDefault("fields", Map.of());
+			var fields = new LinkedHashMap<String, Object>();
+			for (String key : af.keySet()) fields.put(key, bf.containsKey(key) ? mergeTypes((Map<String, Object>) af.get(key), (Map<String, Object>) bf.get(key)) : af.get(key));
+			for (String key : bf.keySet()) fields.putIfAbsent(key, bf.get(key));
+			fields.replaceAll((key, value) -> value == null ? TYPE_ANY : value);
+			merged.put("fields", fields);
+		}
+		return merged;
+	}
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> schemaOf(Map<String, Object> type) {
+		if (type == null || type == TYPE_BOTTOM || type == TYPE_ANY) return null;
+		var schema = map("type", type.get("type"));
+		if (Boolean.TRUE.equals(type.get("nullable")) && !typeName(type).equals("null")) schema.put("nullable", true);
+		if (typeName(type).equals("array")) {
+			var items = schemaOf((Map<String, Object>) type.get("items"));
+			if (items == null) return null;
+			schema.put("items", items);
+		}
+		if (typeName(type).equals("object")) {
+			var fields = (Map<String, Object>) type.getOrDefault("fields", Map.of());
+			var properties = new LinkedHashMap<String, Object>();
+			for (var entry : fields.entrySet()) {
+				var field = schemaOf((Map<String, Object>) entry.getValue());
+				if (field != null) properties.put(entry.getKey(), field);
+			}
+			if (!properties.isEmpty()) schema.put("properties", properties);
+		}
+		return schema;
+	}
+	private Map<String, Object> inferredList(VariableDeclaration declaration, String name) {
+		AstNode parent = declaration.getParent();
+		final Map<String, Object>[] itemType = new Map[] { TYPE_BOTTOM };
+		final AstNode[] refused = { null };
+		final int[] pushes = { 0 };
+		parent.visit(part -> {
+			if (refused[0] != null || pos(part) < end(declaration)) return refused[0] == null;
+			if (part instanceof FunctionCall call && method(call).equals("push") && call.getTarget() instanceof PropertyGet property && name(property.getTarget()).equals(name)) {
+				pushes[0]++;
+				for (AstNode argument : call.getArguments()) {
+					itemType[0] = mergeTypes(itemType[0], staticType(argument));
+					if (itemType[0] == null) { refused[0] = argument; break; }
+				}
+			}
+			if (part instanceof org.mozilla.javascript.ast.Assignment assignment && name(assignment.getLeft()).equals(name)) {
+				var assigned = staticType(assignment.getRight());
+				if (assigned == null || !typeName(assigned).equals("array")) refused[0] = assignment.getRight();
+				else {
+					@SuppressWarnings("unchecked") var items = (Map<String, Object>) assigned.get("items");
+					itemType[0] = mergeTypes(itemType[0], items);
+					if (itemType[0] == null) refused[0] = assignment.getRight();
+				}
+			}
+			return refused[0] == null;
+		});
+		if (pushes[0] == 0) return null;
+		var schema = schemaOf(itemType[0]);
+		if (refused[0] != null || schema == null) reject("FLOWSCRIPT_V3_UNTYPED_LIST", refused[0] == null ? declaration : refused[0],
+			"Declare the list with the type of every value pushed into it: const " + name + " = json.array({ itemType: { type: \"CHOOSE_TYPE\" } }).");
+		return schema;
+	}
 	private String globalBlock(FunctionCall call) {
 		String name = compact(raw(call.getTarget()));
 		return switch (name) {
@@ -524,9 +790,12 @@ public final class FlowScriptV3Reader {
 			String path = "local.__chain" + (++chain);
 			var before = new ArrayList<Map<String, Object>>(prefix.before);
 			Map<String, Object> props;
-			if (name.equals("map")) props = map("items", listSource(receiver, scope, prefix), "select", body instanceof ObjectLiteral ? value(body, inner) : predicate);
+			if (name.equals("map")) props = map("items", listSource(receiver, scope, prefix), "select", unparen(body) instanceof ObjectLiteral ? value(unparen(body), inner) : predicate);
 			else props = map("items", listSource(receiver, scope, prefix), "where", name.equals("every") ? "!(" + predicate + ")" : predicate);
-			before.add(capture(name.equals("map") ? "list.map" : "list.filter", props, path, call));
+			var step = capture(name.equals("map") ? "list.map" : "list.filter", props, path, call);
+			step.put("__flowScriptAs", fn.getParams().get(0) instanceof Name n ? n.getIdentifier() : "item");
+			step.put("__flowScriptChain", raw(call));
+			before.add(step);
 			return new Lowered(before, name.equals("find") ? path + "[0]" : name.equals("some") ? path + ".length > 0" : name.equals("every") ? path + ".length == 0" : path);
 		}
 		if (receiver != null && (name.equals("toSorted") || name.equals("sort") && !flowNamespace)) {
@@ -540,36 +809,39 @@ public final class FlowScriptV3Reader {
 			AstNode body = arrowBody(fn, 2, call);
 			String first = name(fn.getParams().get(0)), second = name(fn.getParams().get(1));
 			if (first.isEmpty() || second.isEmpty()) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Use two named callback parameters.");
-			boolean locale = body instanceof FunctionCall localeCall && method(localeCall).equals("localeCompare");
-			AstNode left, right;
-			if (locale) {
-				var localeCall = (FunctionCall) body;
-				if (localeCall.getArguments().size() != 1) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the same item key with subtraction or localeCompare.");
-				left = ((PropertyGet) localeCall.getTarget()).getTarget(); right = localeCall.getArguments().get(0);
-				if (left instanceof FunctionCall wrapper && compact(raw(wrapper.getTarget())).equals("String") && wrapper.getArguments().size() == 1) left = wrapper.getArguments().get(0);
-				if (right instanceof FunctionCall wrapper && compact(raw(wrapper.getTarget())).equals("String") && wrapper.getArguments().size() == 1) right = wrapper.getArguments().get(0);
-			} else if (body instanceof org.mozilla.javascript.ast.InfixExpression infix && org.mozilla.javascript.ast.AstNode.operatorToString(infix.getOperator()).equals("-")) {
-				left = infix.getLeft(); right = infix.getRight();
-			} else { reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the same item key with subtraction or localeCompare."); throw new AssertionError(); }
-			boolean identity = left instanceof Name && right instanceof Name;
-			boolean keyed = left instanceof PropertyGet l && right instanceof PropertyGet r && l.getTarget() instanceof Name && r.getTarget() instanceof Name && l.getProperty().getIdentifier().equals(r.getProperty().getIdentifier());
-			if (!identity && !keyed) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the same item or item key.");
-			String leftName = identity ? name(left) : name(((PropertyGet) left).getTarget());
-			String rightName = identity ? name(right) : name(((PropertyGet) right).getTarget());
-			String direction = leftName.equals(first) && rightName.equals(second) ? "asc" : leftName.equals(second) && rightName.equals(first) ? "desc" : "";
-			if (direction.isEmpty()) reject("FLOWSCRIPT_V3_LIST_METHOD", call, "Compare the two callback parameters.");
+			List<SortKey> keys = first.equals(second) ? null : comparatorKeys(body, first, second);
+			if (keys == null) reject("FLOWSCRIPT_V3_LIST_METHOD", call,
+				"Compare one key of the two items with a.k - b.k, a.k.localeCompare(b.k) or a.k < b.k ? -1 : a.k > b.k ? 1 : 0 (b before a for descending), and join several keys with ||.");
 			var prefix = lower(receiver, scope);
 			String path = "local.__chain" + (++chain);
 			var before = new ArrayList<Map<String, Object>>(prefix.before);
 			var props = map("items", listSource(receiver, scope, prefix));
-			if (keyed) props.put("by", "current." + ((PropertyGet) left).getProperty().getIdentifier());
-			props.put("compare", locale ? "locale" : "number"); props.put("direction", direction);
+			props.putAll(sortProperties(keys.get(0)));
+			if (keys.size() > 1) {
+				var remaining = new ArrayList<Map<String, Object>>();
+				for (int i = 1; i < keys.size(); i++) {
+					var secondary = sortProperties(keys.get(i));
+					if (secondary.containsKey("by")) secondary.put("by", "${" + secondary.get("by") + "}");
+					remaining.add(secondary);
+				}
+				props.put("then", remaining);
+			}
 			before.add(capture("list.sort", props, path, call));
 			return new Lowered(before, path);
 		}
 		if (receiver instanceof Name n && n.getIdentifier().equals("flow") && name.equals("default")) return new Lowered(List.of(), rewritten(call, scope));
 		if (receiver != null) {
 			var prefix = lower(receiver, scope);
+			if (name.equals("concat") && !flowNamespace) {
+				var before = new ArrayList<Map<String, Object>>(prefix.before);
+				var values = new ArrayList<String>();
+				for (AstNode argument : args) {
+					var item = lower(argument, scope);
+					before.addAll(item.before);
+					values.add(item.expression);
+				}
+				if (!before.isEmpty()) return new Lowered(before, prefix.expression + ".concat(" + String.join(", ", values) + ")");
+			}
 			if (!prefix.before.isEmpty()) {
 				var values = new ArrayList<String>();
 				for (AstNode argument : args) values.add(rewritten(argument, scope));
@@ -592,6 +864,7 @@ public final class FlowScriptV3Reader {
 		var object = (ObjectLiteral) call.getArguments().get(0);
 		var props = new LinkedHashMap<String, Object>();
 		var result = node(block, props, call);
+		result.put("__flowScriptForm", "call");
 		for (var member : object.getElements()) {
 			var field = property(member);
 			String key = key(field.getKey());
@@ -599,6 +872,7 @@ public final class FlowScriptV3Reader {
 			if (key.startsWith("$$")) {
 				String attribute = key.substring(2);
 				if (expression instanceof FunctionNode fn) {
+					if (!fn.getParams().isEmpty()) reject("FLOWSCRIPT_V3_FUNCTION", field, "Use a zero-argument slot function.");
 					var slot = new ArrayList<Map<String, Object>>();
 					body(fn.getBody(), new Scope(scope), slot);
 					result.put(attribute, slot);
@@ -614,6 +888,23 @@ public final class FlowScriptV3Reader {
 	}
 
 	private void assign(List<Map<String, Object>> output, String target, AstNode rhs, Scope scope, AstNode at) {
+		AstNode candidate = unparen(rhs);
+		if (candidate instanceof org.mozilla.javascript.ast.ConditionalExpression conditional &&
+			(holdsBlockStep(conditional.getTrueExpression()) || holdsBlockStep(conditional.getFalseExpression()))) {
+			var yes = new ArrayList<Map<String, Object>>();
+			var no = new ArrayList<Map<String, Object>>();
+			assign(yes, target, conditional.getTrueExpression(), scope, at);
+			assign(no, target, conditional.getFalseExpression(), scope, at);
+			var branch = control("if", map("condition", expression(conditional.getTestExpression(), scope)), at, "then", yes);
+			branch.put("else", no);
+			output.add(branch);
+			return;
+		}
+		if (rhs instanceof FunctionCall collection && target.startsWith("local.")) {
+			String collectionName = compact(raw(collection.getTarget()));
+			if (collectionName.equals("json.array")) typedLists.add(target);
+			if (collectionName.equals("json.map")) typedMaps.add(target);
+		}
 		if (rhs instanceof FunctionCall global && !globalBlock(global).isEmpty()) {
 			output.add(capture(globalBlock(global), globalProps(global, scope), target, at));
 			return;
@@ -624,6 +915,15 @@ public final class FlowScriptV3Reader {
 			output.addAll(lowered.before);
 			output.add(node("set", map("path", target, "value", "${" + lowered.expression + "}"), at));
 		} else set(output, target, rhs, scope, at);
+	}
+	private boolean holdsBlockStep(AstNode value) {
+		final boolean[] found = { false };
+		value.visit(part -> {
+			if (part instanceof FunctionCall call && (Set.of("filter", "map", "find", "some", "every", "toSorted", "sort").contains(method(call)) ||
+				compact(raw(call.getTarget())).matches("(?:Object|JSON)\\..*"))) found[0] = true;
+			return !found[0];
+		});
+		return found[0];
 	}
 	private boolean isBlockCall(FunctionCall call) {
 		String target = resolve(compact(raw(call.getTarget())));
@@ -640,7 +940,8 @@ public final class FlowScriptV3Reader {
 				int first = output.size();
 				statement(item, scope, output);
 				if (comment != null && output.size() > first) {
-					output.get(first).put("comment", comment);
+					String visible = comment.replaceAll("(?m)^\\s*@disabled\\b[^\\n]*(?:\\n|$)", "").trim();
+					if (!visible.isEmpty()) output.get(first).put("comment", visible);
 					if (comment.matches("(?s).*@disabled\\b.*")) {
 						if (output.size() != first + 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", item, "Put $$disabled: true on each block generated by this statement.");
 						output.get(first).put("disabled", true);
@@ -729,7 +1030,9 @@ public final class FlowScriptV3Reader {
 		} else reject("FLOWSCRIPT_V3_DESTRUCTURING", loop, "Use a single loop variable or a one-level object pattern.");
 		inBody(loop.getBody(), inner, body);
 		AstNode items = loop.getIteratedObject();
-		output.add(control("forEach", map("items", items instanceof org.mozilla.javascript.ast.ArrayLiteral ? value(items, scope) : expression(items, scope)), loop, "nodes", body));
+		var iteration = control("forEach", map("items", items instanceof org.mozilla.javascript.ast.ArrayLiteral ? value(items, scope) : expression(items, scope)), loop, "nodes", body);
+		if (target instanceof Name item) iteration.put("__flowScriptAs", item.getIdentifier());
+		output.add(iteration);
 	}
 	private void countedFor(org.mozilla.javascript.ast.ForLoop loop, Scope scope, List<Map<String, Object>> output) {
 		AstNode initializer = loop.getInitializer(), condition = loop.getCondition(), increment = loop.getIncrement();
@@ -754,13 +1057,31 @@ public final class FlowScriptV3Reader {
 		});
 		var inner = new Scope(scope);
 		var binding = declare(counter, "let", variable.getTarget(), inner, null);
-		set(output, binding.mapped, variable.getInitializer(), scope, loop);
+		final boolean[] continued = { false };
+		loop.getBody().visit(part -> {
+			if (part instanceof org.mozilla.javascript.ast.ContinueStatement) {
+				for (AstNode enclosing = part.getParent(); enclosing != null; enclosing = enclosing.getParent()) {
+					if (enclosing instanceof org.mozilla.javascript.ast.Loop) { if (enclosing == loop) continued[0] = true; break; }
+				}
+			}
+			return !continued[0];
+		});
+		String hidden = continued[0] ? "local.__count" + (++counted) : binding.mapped;
+		set(output, hidden, variable.getInitializer(), scope, loop);
 		var body = new ArrayList<Map<String, Object>>();
+		String conditionValue;
+		if (continued[0]) {
+			var steps = new Scope(inner);
+			steps.names.put(counter, new Binding("let", hidden));
+			conditionValue = expression(condition, steps);
+			body.add(node("set", map("path", binding.mapped, "value", "${" + hidden + "}"), loop));
+			body.add(node("set", map("path", hidden, "value", "${Number(" + hidden + ") + 1}"), increment));
+		} else conditionValue = expression(condition, inner);
 		loopDepth++; countedDepth++;
 		body(loop.getBody(), inner, body);
 		countedDepth--; loopDepth--;
-		body.add(node("set", map("path", binding.mapped, "value", "${" + binding.mapped + " + 1}"), increment));
-		output.add(control("while", map("condition", expression(condition, inner), "maxIterations", 1000000, "timeoutMs", 60000), loop, "nodes", body));
+		if (!continued[0]) body.add(node("set", map("path", binding.mapped, "value", "${Number(" + binding.mapped + ") + 1}"), increment));
+		output.add(control("while", map("condition", conditionValue, "maxIterations", 1000000, "timeoutMs", 60000), loop, "nodes", body));
 	}
 	private void switchStatement(org.mozilla.javascript.ast.SwitchStatement statement, Scope scope, List<Map<String, Object>> output) {
 		String path = "local.__chain" + (++chain);
@@ -799,10 +1120,20 @@ public final class FlowScriptV3Reader {
 					var binding = declare(n.getIdentifier(), type, target, scope, null);
 					binding.typedList = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.array");
 					binding.typedMap = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.map");
+					if (init instanceof org.mozilla.javascript.ast.ArrayLiteral array && array.getElements().isEmpty()) {
+						var schema = inferredList(declaration, n.getIdentifier());
+						if (schema != null) {
+							binding.typedList = true;
+							typedLists.add(binding.mapped);
+							output.add(capture("json.array", map("itemType", schema, "path", binding.mapped), binding.mapped, declaration));
+							continue;
+						}
+					}
 					if (binding.typedList) typedLists.add(binding.mapped);
 					if (binding.typedMap) typedMaps.add(binding.mapped);
 					if (init != null) assign(output, binding.mapped, init, scope, declaration);
 					else output.add(node("set", map("path", binding.mapped, "value", "${undefined}"), declaration));
+					if (!output.isEmpty()) output.get(output.size() - 1).put("__flowScriptDeclare", type);
 				} else if (target instanceof ObjectLiteral object) {
 					if (init == null) reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Initialize the object before destructuring.");
 					String path = "local.__chain" + (++chain);
@@ -836,7 +1167,11 @@ public final class FlowScriptV3Reader {
 					}
 				}
 				if (op.equals("=")) assign(output, target, right, scope, statement);
-				else if (Set.of("+=", "-=", "*=", "/=").contains(op)) output.add(node("set", map("path", target, "value", "${" + target + " " + op.charAt(0) + " (" + rewritten(right, scope) + ")}"), statement));
+				else if (Set.of("+=", "-=", "*=", "/=").contains(op)) {
+					var changed = node("set", map("path", target, "value", "${" + target + " " + op.charAt(0) + " (" + rewritten(right, scope) + ")}"), statement);
+					changed.put("__flowScriptForm", op);
+					output.add(changed);
+				}
 				else reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", statement, "Use a simple assignment.");
 				return;
 			}
@@ -845,11 +1180,13 @@ public final class FlowScriptV3Reader {
 				Binding binding = lookup(name, scope);
 				if (binding == null) reject("FLOWSCRIPT_V3_OUT_OF_SCOPE", statement, "Declare the local first.");
 				if (binding.type.equals("const")) reject("FLOWSCRIPT_V3_CONST_ASSIGN", statement, "Declare the variable with let.");
-				output.add(node("set", map("path", binding.mapped, "value", "${" + binding.mapped + (raw(expression).contains("++") ? " + 1" : " - 1") + "}"), statement));
+				var changed = node("set", map("path", binding.mapped, "value", raw(expression).contains("++") ? "${Number(" + binding.mapped + ") + 1}" : "${" + binding.mapped + " - 1}"), statement);
+				changed.put("__flowScriptForm", raw(expression).contains("++") ? "++" : "--");
+				output.add(changed);
 				return;
 			}
 			if (expression instanceof FunctionCall call) {
-				if (call.getTarget() instanceof PropertyGet property && property.getProperty().getIdentifier().equals("push")) {
+				if (call.getTarget() instanceof PropertyGet property && property.getProperty().getIdentifier().equals("push") && !name(property.getTarget()).equals("json")) {
 					String path = property.getTarget() instanceof Name n ? (lookup(n.getIdentifier(), scope) == null ? "" : lookup(n.getIdentifier(), scope).mapped) : compact(raw(property.getTarget()));
 					if (!typedLists.contains(path)) reject("FLOWSCRIPT_V3_UNTYPED_LIST", statement, "Initialize the list with json.array({ itemType }).");
 					if (call.getArguments().size() != 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Push one value per statement.");
@@ -906,7 +1243,6 @@ public final class FlowScriptV3Reader {
 		if (statement instanceof org.mozilla.javascript.ast.BreakStatement) reject("FLOWSCRIPT_V3_BREAK", statement, "Use a local tested by the while condition or find/filter.");
 		if (statement instanceof org.mozilla.javascript.ast.ContinueStatement) {
 			if (loopDepth == 0) reject("FLOWSCRIPT_V3_LOOP_FORM", statement, "Use continue only inside a loop.");
-			if (countedDepth > 0) reject("FLOWSCRIPT_V3_FOR_FORM", statement, "A counted for body cannot contain continue.");
 			output.add(node("next", map(), statement));
 			return;
 		}
