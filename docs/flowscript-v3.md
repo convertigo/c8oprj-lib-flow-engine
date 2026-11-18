@@ -517,10 +517,11 @@ replacement. The rules of the previous sections are amended accordingly.
    builds the Flow definition from the Rhino AST directly. The prototype bridge (v3 text lowered to v2 text, then the v2
    parser) is frozen: it is only the oracle of the tests. The differential test gives the same definition, or the same
    refusal (code and line), on every source of its corpus: the examples of this specification and of the grammar, the
-   rendering cases, the guides, the bench revisions and probes of the forms below. The bridge reads two forms wrong, and
-   the reader keeps their JavaScript meaning (both tested against Node): a shorthand field in the object pushed into a
-   list or put into a map (`rows.push({ category, cents })`), and a global call as the receiver of a list method
-   (`Object.values(o).toSorted(…)`, computed before, in a hidden local). Readings aligned at the integration:
+   rendering cases, the guides, the bench revisions and probes of the forms below. The bridge reads three forms wrong,
+   and the reader keeps their JavaScript meaning (tested against Node): a shorthand field in the object pushed into a
+   list or put into a map (`rows.push({ category, cents })`), a global call as the receiver of a list method
+   (`Object.values(o).toSorted(…)`, computed before, in a hidden local), and a `//` comment on a line of an expression
+   written on several lines (ignored). Readings aligned at the integration:
    - a declared name is bound after its value is read (`let y = y + 1` is refused, `FLOWSCRIPT_V3_OUT_OF_SCOPE`), and a
      `const` without value is refused (`FLOWSCRIPT_V3_UNSUPPORTED`), as in JavaScript;
    - the statements of a `case` share one scope; a `switch` value or a destructured declaration is read as an
@@ -531,6 +532,13 @@ replacement. The rules of the previous sections are amended accordingly.
      it stands, comes first;
    - Rhino 1.9.2 counts the character after a keyword literal in it (`c ? a : null,`): the expression ends at the
      keyword;
+   - an expression written on several lines is one line (each line trimmed, the lines joined by a space), as the v2
+     reading joins them; a signed number written without space (`-1`, `+1`, `-1.5`) is that number in a value and in a
+     block property, not the expression `${-1}`;
+   - a quoted text is text, as in JavaScript: in a value its `${` is escaped (`"cost ${x}"` is those characters), in a
+     template property it is refused (`FLOWSCRIPT_QUOTED_TEMPLATE`: it would not interpolate), a fixed property
+     (`literal`, `select`…) takes it as written. The reader gave `${x}` to the Flow template, which read it as an
+     expression;
    - comments and blank lines: a blank line after comments makes them a comment node, and a statement after a blank
      line keeps it for the rendering; the comments that end a block are a comment node; `@disabled` is removed from
      the comment of the statement it disables.

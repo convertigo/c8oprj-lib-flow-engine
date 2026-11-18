@@ -632,6 +632,24 @@ likeNode('const in a case', [
 // The comma, semicolon or parenthesis after a keyword literal ending a ?: is not part of it (Rhino 1.9.2 counts it).
 likeNode('keyword literal ending a conditional', '  const total = { min: input.n > 0 ? input.m / 100 : null, max: input.n > 0 ? input.m : true }\n  return { total }',
 	{ n: 0, m: 250 }, { total: { min: null, max: true } });
+// An expression on several lines is one expression (a // comment there is ignored, as in JavaScript); a signed number
+// is that number, in a value and in a block property.
+likeNode('expression on several lines and signed numbers', [
+	'  const total = input.a +',
+	'    input.b',
+	'  if (input.a > 0 &&',
+	'    // the second test',
+	'    input.b > 0) {',
+	'    result.both = true',
+	'  }',
+	'  result.total = total',
+	'  result.signed = [-1, +2, -1.5, { n: -3 }]'
+].join('\n'), { a: 1, b: 2 }, { both: true, total: 3, signed: [-1, 2, -1.5, { n: -3 }] });
+// A quoted text is text: its ${…} is not an expression, as in JavaScript.
+likeNode('quoted text with a dollar brace', '  const label = "cost ${input.price}"\n  const rows = json.array({ itemType: { type: "string" } })\n  rows.push(\'v ${x}\')\n  return { label, rows, both: label + " / " + `${input.price}` }',
+	{ price: 3 }, { label: 'cost ${input.price}', rows: ['v ${x}'], both: 'cost ${input.price} / 3' });
+var signed = api('flowSourceValidate', { name: 'Example', code: program('  const d = date.add({ value: "2026-03-31", months: -1 })\n  result.d = d') });
+check(signed.ok && signed.definition.nodes[0].props.months === -1, 'a signed number in a block property: ' + JSON.stringify(signed).substring(0, 600));
 refuses('a let read before its declaration', '  let x = 1\n  if (input.a) {\n    let y = y + 1\n    result.y = y\n  }', 'FLOWSCRIPT_V3_OUT_OF_SCOPE', 5);
 refuses('const without value', '  const x\n  result.x = x', 'FLOWSCRIPT_V3_UNSUPPORTED', 3, 'Give the const its value');
 

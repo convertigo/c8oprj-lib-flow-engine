@@ -401,6 +401,7 @@ public final class FlowScriptV3Reader {
 			return values;
 		}
 		String text = raw(node).trim();
+		if (numberToken(text) != null) return numberToken(text);
 		return switch (text) { case "true" -> true; case "false" -> false; case "null" -> null; default -> text; };
 	}
 	private Map<String, Object> literalObject(ObjectLiteral object) {
@@ -489,7 +490,46 @@ public final class FlowScriptV3Reader {
 		edits.sort((a, b) -> Integer.compare(b.start, a.start));
 		String result = source.substring(start, end);
 		for (Edit edit : edits) if (edit.start >= start && edit.end <= end) result = result.substring(0, edit.start - start) + edit.value + result.substring(edit.end - start);
-		return result;
+		return oneLine(result);
+	}
+	// An expression written on several lines is one line for the Flow evaluator, as the v2 reading joins the lines of a
+	// statement: each line without its // comment (ignored, as in JavaScript) and trimmed, the lines joined by a space.
+	// Strings and template literals are kept as written.
+	private static String oneLine(String text) {
+		if (text.indexOf('\n') < 0 && text.indexOf('\r') < 0) return text;
+		var lines = new ArrayList<String>();
+		var current = new StringBuilder();
+		char quote = 0;
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (quote != 0) {
+				current.append(c);
+				if (c == '\\' && i + 1 < text.length()) current.append(text.charAt(++i));
+				else if (c == quote) quote = 0;
+				continue;
+			}
+			if (c == '"' || c == '\'' || c == '`') { quote = c; current.append(c); continue; }
+			if (c == '/' && i + 1 < text.length() && text.charAt(i + 1) == '/') {
+				while (i + 1 < text.length() && text.charAt(i + 1) != '\n' && text.charAt(i + 1) != '\r') i++;
+				continue;
+			}
+			if (c == '\r' || c == '\n') {
+				if (c == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n') i++;
+				lines.add(current.toString().trim());
+				current.setLength(0);
+				continue;
+			}
+			current.append(c);
+		}
+		lines.add(current.toString().trim());
+		return String.join(" ", lines);
+	}
+	// A signed number written without space (-1, +1, -1.5, 1e3, 0x1f) is that number, as the v2 reading of a value reads it;
+	// - 1 stays an expression.
+	private static final java.util.regex.Pattern NUMBER_TOKEN = java.util.regex.Pattern.compile("[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?|0[xX][0-9a-fA-F]+");
+	private static Double numberToken(String text) {
+		if (!NUMBER_TOKEN.matcher(text).matches()) return null;
+		return text.matches("0[xX].*") ? (double) Long.parseLong(text.substring(2), 16) : Double.parseDouble(text);
 	}
 
 	private Map<String, Object> node(String block, Map<String, Object> props, AstNode at) {
@@ -499,7 +539,7 @@ public final class FlowScriptV3Reader {
 		output.add(node("set", map("path", path, "value", value(value, scope)), at));
 	}
 	private Object value(AstNode expression, Scope scope) {
-		if (expression instanceof StringLiteral string) return string.getValue();
+		if (expression instanceof StringLiteral string) return literalText(string.getValue());
 		if (expression instanceof org.mozilla.javascript.ast.NumberLiteral number) return number.getNumber();
 		if (expression instanceof ObjectLiteral object) {
 			var result = new LinkedHashMap<String, Object>();
@@ -512,6 +552,7 @@ public final class FlowScriptV3Reader {
 			return result;
 		}
 		String text = raw(expression).trim();
+		if (expression instanceof org.mozilla.javascript.ast.UnaryExpression && numberToken(text) != null) return numberToken(text);
 		if (text.length() >= 2 && text.charAt(0) == '`' && text.charAt(text.length() - 1) == '`') {
 			String rendered = rewritten(expression, scope).trim();
 			return rendered.substring(1, rendered.length() - 1).replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
@@ -570,7 +611,20 @@ public final class FlowScriptV3Reader {
 		if (kind.equals("path")) return expression instanceof StringLiteral s ? s.getValue() : rewritten(expression, scope);
 		if (kind.equals("text") || kind.equals("secret")) return expression instanceof StringLiteral s ? s.getValue() : raw(expression).trim();
 		if (kind.equals("schema")) return literal(expression);
+		// A quoted text is text: in a template property, ${ in it would not interpolate, which is refused as the v2 reading
+		// refuses it; a fixed property (literal, select…) takes it as written; a value escapes its ${ (value).
+		if (kind.equals("template") && expression instanceof StringLiteral quoted && quoted.getValue().contains("${")) {
+			int line = line(pos(expression));
+			defer("FLOWSCRIPT_QUOTED_TEMPLATE", line, block + "." + key + " at line " + line + " receives quoted text containing ${...}; it will not interpolate.",
+				"Use a backtick template literal for interpolation, or escape ${ in a backtick literal for intentional text.");
+		}
+		if (!Set.of("template", "value", "binding").contains(kind) && expression instanceof StringLiteral fixed && !fixed.getValue().contains("{{")) return fixed.getValue();
 		return value(expression, scope);
+	}
+	// A quoted text written as a value stays text: each ${ is escaped (\${, with the backslashes before it doubled), so
+	// that the Flow template does not read it as an expression (template-syntax.js literal).
+	private static String literalText(String text) {
+		return java.util.regex.Pattern.compile("(\\\\*)\\$\\{").matcher(text).replaceAll(found -> java.util.regex.Matcher.quoteReplacement(found.group(1) + found.group(1) + "\\${"));
 	}
 	private record Lowered(List<Map<String, Object>> before, String expression) { }
 	private String method(FunctionCall call) {

@@ -83,6 +83,22 @@ grammar.refused.forEach(function (entry) { if (entry.example && !entry.parseErro
   ['import alias shadowed', 'let ns = 1\nreturn { ns }'],
   ['two labels', 'one: two: result.x = 1'],
   ['const without space', 'const{ a, b } = input.o\nreturn { a, b }'],
+  ['multi-line condition', 'if (input.a &&\n    input.b) {\n  result.x = 1\n}'],
+  ['multi-line value', 'const x = input.a +\n  input.b\nresult.x = x'],
+  ['multi-line object field', 'result.x = {\n  a: input.a +\n    input.b,\n  b: 2\n}'],
+  ['multi-line call argument', 'const t = text.trim({ text: input.a\t+\n\t\tinput.b })\nresult.t = t'],
+  ['multi-line index', 'result.x = input.items[\n  0\n]'],
+  ['blank line in an expression', 'if (input.a &&\n\n  input.b) {\n  result.x = 1\n}'],
+  ['comment ending an expression line', 'if (input.a && // first\n    input.b) {\n  result.x = 1\n}'],
+  ['comment line in an expression', 'if (input.a &&\n    // note\n    input.b) {\n  result.x = 1\n}'],
+  ['string with slashes on several lines', 'if (input.u == "http://x" &&   \n    input.b) {\n  result.x = 1\n}'],
+  ['signed numbers', 'const d = date.add({ value: "2026-03-31", months: -1 })\nresult.d = d\nresult.x = -1.5\nresult.y = - 2\nresult.z = [-1, +2, 1e3, 0x1f]\nresult.w = { a: -3 }'],
+  ['signed number returned', 'return -1'],
+  ['plus number in a block', 'const d = date.add({ value: "2026-03-31", months: +1 })\nresult.d = d'],
+  ['dollar brace in quoted values', 'result.a = "cost ${x}"\nresult.b = \'cost ${x}\'\nconst t = text.trim({ text: "v ${input.a}" })\nresult.t = t\nresult.c = { k: "${y}" }\nresult.d = ["${z}", "a\\\\${w}"]'],
+  ['dollar brace pushed', 'const rows = json.array({ itemType: { type: "string" } })\nrows.push("p ${q}")\nreturn { rows }'],
+  ['dollar brace in a template property', 'throw { code: "X", message: "bad ${v}" }'],
+  ['escaped dollar brace in a template', 'result.a = `cost \\${x} ${input.a}`'],
   ['const in sibling blocks', 'if (input.x) {\n  const v = 1\n  result.a = v\n} else {\n  const v = 2\n  result.a = v\n}'],
   ['const in a loop body', 'const total = json.array({ itemType: { type: "integer" } })\nfor (const x of input.items) {\n  const twice = x * 2\n  total.push(twice)\n}\nreturn { total }'],
   ['comment groups', '// a\n\n// b\nlet x = 1\n\n// c\n\nx += 1\n//  indented note  \nresult.x = x\n/* block\n * two lines */\nresult.y = 1\n// end of the body'],
@@ -133,15 +149,19 @@ function catalog(name) {
   catch(e) { return catalogCache[name]='{}'; }
 }
 // The readings the bridge gets wrong, where the Java reader keeps the JavaScript meaning (each one is run against Node
-// in flowscript-v3-bench-forms.js). The oracle refuses with INVALID_EXPRESSION only, every diagnostic of one of these
+// in flowscript-v3-bench-forms.js). Every diagnostic of the oracle has one of these
 // causes, and the Java reading is accepted by the engine:
 //   - shorthand: an object literal with a shorthand field ({ category }) as the whole value of a push or a put is
 //     rewritten by the bridge to "category: local.category" and given twice to the v2 parser ("local.category:
 //     local.category");
 //   - inline global: a global call as the receiver of a list method (Object.values(o).toSorted(…)) stays an inline
 //     object.values({ … }) call for the bridge, which the v2 parser refuses in an expression; the Java reader computes
-//     it before, in a hidden local, as for an assignment.
+//     it before, in a hidden local, as for an assignment;
+//   - comment line: a // comment on a line of an expression written on several lines, other than its first, stays in
+//     the expression for the v2 parser, which refuses it (FLOWSCRIPT_EXPRESSION_UNSUPPORTED); JavaScript ignores it, and
+//     the Java reader drops it as the v2 parser drops the comment of a first line.
 function bridgeDefect(diagnostic) {
+  if (diagnostic && diagnostic.code === 'FLOWSCRIPT_EXPRESSION_UNSUPPORTED' && /\/\/[^\n]*\n/.test(String(diagnostic.expression || ''))) return 'comment line';
   if (!diagnostic || diagnostic.code !== 'INVALID_EXPRESSION') return '';
   var shorthand = /^([\w$.]+): ([\w$.]+)$/.exec(String(diagnostic.expression || ''));
   if (shorthand && shorthand[1] === shorthand[2]) return 'shorthand';
