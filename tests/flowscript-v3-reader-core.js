@@ -60,4 +60,10 @@ refuses('  throw new Error("failed")', 'FLOWSCRIPT_V3_ERROR_CODE_CHOICE', 3);
 refuses('  if ({ x: 1 }) { result.x = 1 }', 'FLOWSCRIPT_V3_OBJECT_CONDITION', 3);
 var catalogProbe = JSON.parse(String(Reader.read('const _flow = { sourceVersion: 3 }\nfunction Example() { flow.while({ condition: true, $$nodes() {} }) }', function(name) { return JSON.stringify({props:{condition:{kind:'expression'}}}); })));
 if (catalogProbe.diagnostics.length || catalogProbe.definition.nodes[0].props.condition !== 'true') throw new Error('Catalog callback failed: ' + JSON.stringify(catalogProbe));
+var presentation = JSON.parse(String(Reader.read('const _flow = { sourceVersion: 3 }\nfunction Example() {\n  const kept = input.items.filter(row => row.ok)\n  for (const entry of kept) { result.value = entry }\n  result.other = text.upper({ value: input.name })\n}', null)));
+if (presentation.diagnostics.length) throw new Error('Presentation source refused: ' + JSON.stringify(presentation.diagnostics));
+var shown = presentation.definition.nodes;
+if (shown[0].__flowScriptAs !== 'row' || !shown[0].__flowScriptChain || shown[1].__flowScriptDeclare !== 'const' ||
+	shown[2].__flowScriptAs !== 'entry' || shown[3].__flowScriptForm !== 'call')
+	throw new Error('D2 presentation metadata missing: ' + JSON.stringify(shown));
 print('flowscript-v3-reader-core OK');
