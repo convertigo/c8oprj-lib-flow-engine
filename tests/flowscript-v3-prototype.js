@@ -22,6 +22,10 @@ function refuses(label, body, code, line) {
 		label + ': ' + JSON.stringify(result));
 	check(result.diagnostics[0].message.indexOf(code + ' at line') !== 0 && result.diagnostics[0].hint,
 		label + ' needs a readable rule and replacement: ' + JSON.stringify(result.diagnostics[0]));
+	// the Java reader of the engine refuses with the same rule, line and proposal
+	var read = JSON.parse(String(Packages.com.convertigo.libflowengine.FlowScriptV3Reader.read(source(body), null))).diagnostics[0] || {};
+	check(read.code === code && read.line === line && read.hint === result.diagnostics[0].hint && read.message === result.diagnostics[0].message,
+		label + ' (Java reader): ' + JSON.stringify(read) + ' instead of ' + JSON.stringify(result.diagnostics[0]));
 }
 runs('simple', '  let total = 0\n  total += 2\n  return { total }', { total: 2 });
 runs('if', '  const value = input.items.length\n  if (value > 2) {\n    return { value }\n  }\n  return { value: 0 }', { value: 3 });

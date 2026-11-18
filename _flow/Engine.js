@@ -1879,10 +1879,11 @@
 			"scope-path-utils.js",
 			"template-syntax.js",
 			"flow-script-parser-service.js",
-			"flowscript-v3-prototype.js",
 			"flow-repository-service.js",
 			"flow-source-service.js"
-		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).concat([fileFingerprint(new File(engineDir(), "Engine.js"))]).join("\n");
+		].map(function (name) { return fileFingerprint(engineModuleFile(name)); }).concat([fileFingerprint(new File(engineDir(), "Engine.js")),
+			// FlowScript v3 is read by the Java reader of libs/build, fingerprinted with the other classes there
+			fileFingerprint(new File(engineDir().getAbsoluteFile().getParentFile(), "libs/build/src.sha256"))]).join("\n");
 		return runtimeState.flowPlanCompilerFingerprint;
 	}
 
@@ -4576,7 +4577,6 @@
 
 	function flowScriptParserEnv() {
 		return {
-			v3Prototype: function () { return loadEngineModule("flowscript-v3-prototype.js"); },
 			blockCandidates: flowScriptBlockCandidates,
 			blockCandidateDecision: flowScriptBlockCandidateDecision,
 			templateSyntax: templateSyntax(),

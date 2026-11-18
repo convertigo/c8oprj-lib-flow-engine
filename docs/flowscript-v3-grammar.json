@@ -1,6 +1,6 @@
 {
   "sourceVersion": 3,
-  "status": "draft L3a 2026-11-18, amended L0′, L0′bis and L1b 2026-11-18; examples and fragments for the generated guides and the conformance test (L4)",
+  "status": "draft L3a 2026-11-18, amended L0′, L0′bis, L1b and the Java reader 2026-11-18; examples and fragments for the generated guides and the conformance test (L4)",
   "parser": {
     "engine": "rhino",
     "version": "1.9.2",

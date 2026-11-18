@@ -1,3 +1,8 @@
+// The Java reader (FlowScriptV3Reader) against its oracle, the frozen prototype bridge followed by the v2 parser: the same
+// definition, or the same FLOWSCRIPT_V3_* refusal (code and line), or the same parser refusal, on every source of the
+// corpus: the specification, the grammar, the rendering cases, the prototype tests, the guides, the probes below, the M1
+// samples and the bench revisions (tools/extract-v3-bench-corpus.py, kept out of Git). The only differences allowed are
+// the readings the bridge gets wrong (acceptedBeyondBridge), each named by its cause.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : '_flow').getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var __flowProjectDir = String(java.nio.file.Files.createTempDirectory('flow-v3-differential-').toFile().getAbsolutePath());
@@ -17,6 +22,73 @@ function fences(id, source) {
 fences('spec', read('docs/flowscript-v3.md'));
 var rendering = JSON.parse(read('docs/flowscript-v3-rendering-cases.json')).cases;
 rendering.forEach(function (item) { add('render:' + item.id, item.v3); });
+function complete(body) {
+  if (/^\s*(?:const _flow\s*=|function\s)/.test(body)) return body;
+  return 'const _flow = { sourceVersion: 3 }\n\nfunction Example({ input, config, result }) {\n' + body.split('\n').map(function (line) { return line ? '  ' + line : line; }).join('\n') + '\n}\n';
+}
+var grammar = JSON.parse(read('docs/flowscript-v3-grammar.json'));
+grammar.accepted.forEach(function (entry) { (entry.examples || []).forEach(function (text, index) { add('grammar:' + entry.id + '#' + index, complete(text)); }); });
+grammar.refused.forEach(function (entry) { if (entry.example && !entry.parseError) add('grammar:' + entry.code, complete(entry.example)); });
+// Probes: the forms whose reading the Java reader aligned on the bridge at the integration (order of declarations and
+// refusals, scopes, slots, rethrow, catch without parameter, conditions, keyword ends).
+[
+  ['const without value', 'const x\nreturn { x }'],
+  ['let reads itself', 'let x = 1\nif (input.a) {\n  let y = y + 1\n}\nreturn { x }'],
+  ['case scope', 'switch (input.k) {\n  case 1:\n    const label = "one"\n    result.label = label\n    break\n  default:\n    result.label = "other"\n    break\n}'],
+  ['switch over a chain', 'switch (input.items.filter(x => x > 1).length) {\n  case 2: result.n = 2; break\n  default: result.n = 0; break\n}'],
+  ['destructured chain', 'const { a, b } = input.rows.find(r => r.ok)\nreturn { a, b }'],
+  ['destructured slot', 'const { a } = flow.try({ $$try() { result.x = 1 }, $$catch() {} })'],
+  ['destructured branch step', 'const { a } = input.ok ? input.rows.find(r => r.ok) : input.other\nreturn { a }'],
+  ['while chain', 'let n = 0\nwhile (input.items.some(x => x > n)) {\n  n++\n}\nreturn { n }'],
+  ['if lazy chain', 'if (input.ok && input.items.some(x => x > 1)) {\n  result.x = 1\n}'],
+  ['if chain and global', 'if (Object.keys(input.o).length > 0 && input.items.length) {\n  result.x = 1\n}'],
+  ['else if chain', 'if (input.a) {\n  result.x = 1\n} else if (input.items.find(x => x > 1)) {\n  result.x = 2\n}'],
+  ['if includes keys', 'if (Object.keys(input.o).includes(input.k)) {\n  result.x = 1\n}'],
+  ['if ternary condition', 'if (input.a ? input.b : input.c) {\n  result.x = 1\n}'],
+  ['for of keys', 'const out = json.array({ itemType: { type: "string" } })\nfor (const k of Object.keys(input.o)) {\n  out.push(k)\n}\nreturn { out }'],
+  ['for of chain', 'let n = 0\nfor (const x of input.items.filter(v => v > 1).map(v => v * 2)) {\n  n += x\n}\nreturn { n }'],
+  ['for of concat', 'let n = 0\nfor (const x of input.a.concat(input.b)) {\n  n += x\n}\nreturn { n }'],
+  ['for of find', 'for (const x of input.items.find(v => v)) {\n  result.x = x\n}'],
+  ['for of pattern chain', 'let n = 0\nfor (const { v } of input.rows.filter(r => r.ok)) {\n  n += v\n}\nreturn { n }'],
+  ['field update', 'const g = { count: 0 }\ng.count++\ng.count--\ng.count++\nreturn { g }'],
+  ['result field update', 'result.count = 0\nresult.count++'],
+  ['item field update', 'for (const row of input.rows) {\n  row.count++\n}'],
+  ['element update', 'const m = {}\nm[input.k]++'],
+  ['update undeclared', 'n++'],
+  ['slot function', 'let n = 0\nflow.while({ condition: n < 2, $$nodes: function () { n++ } })\nreturn { n }'],
+  ['slot arrow', 'let n = 0\nflow.while({ condition: n < 2, $$nodes: () => { n++ } })\nreturn { n }'],
+  ['slot arrow expression', 'let n = 0\nflow.while({ condition: n < 2, $$nodes: () => n++ })'],
+  ['slot parameter', 'flow.while({ condition: false, $$nodes(x) { result.x = x } })'],
+  ['slot declared', 'const r = flow.try({ $$try() { result.x = 1 }, $$catch() { result.x = 2 } })\nresult.r = r'],
+  ['slot assigned', 'let r\nr = flow.try({ $$try() { result.x = 1 }, $$catch() {} })\nresult.r = r'],
+  ['slot returned', 'return flow.try({ $$try() { local.x = 1 }, $$catch() {} })'],
+  ['slot and out', 'const r = flow.try({ $$out: "local.q", $$try() {}, $$catch() {} })'],
+  ['slot on a block without slot', 'const t = text.trim({ text: "x", $$nodes() { result.a = 1 } })\nresult.t = t'],
+  ['out conflict', 'const t = text.trim({ text: "x", $$out: "local.q" })\nresult.t = t'],
+  ['out same', 'const t = text.trim({ text: "x", $$out: "local.t" })\nresult.t = t'],
+  ['rethrow', 'try {\n  throw { code: "A", message: "m" }\n} catch (failure) {\n  throw failure\n}'],
+  ['rethrow outer', 'try {\n  throw { code: "A", message: "m" }\n} catch (outer) {\n  try {\n    result.x = 1\n  } catch (inner) {\n    throw outer\n  }\n}'],
+  ['throw a local', 'const e = { code: "A", message: "m" }\nthrow e'],
+  ['throw error field', 'throw { code: "A", message: "m", error: "x" }'],
+  ['catch without parameter', 'try {\n  throw { code: "A", message: "m" }\n} catch {\n  result.caught = true\n}'],
+  ['catch without parameter and error local', 'let error = 1\ntry {\n  throw { code: "A", message: "m" }\n} catch {\n  result.caught = error\n}'],
+  ['catch pattern', 'try {\n  result.x = 1\n} catch ({ code }) {\n  result.code = code\n}'],
+  ['nested function', 'function inner({ rows }) { return rows }'],
+  ['nested function in if', 'if (input.a) {\n  function inner() {}\n}'],
+  ['keyword end in object', 'const total = { min: input.n > 0 ? input.m / 100 : null, max: input.n > 0 ? input.m : true }\nreturn { total }'],
+  ['keyword end in push', 'const rows = json.array({ itemType: { type: "object" } })\nrows.push({ a: input.n > 0 ? 1 : null, b: 2 })\nreturn { rows }'],
+  ['bare default', 'const v = default(input.a, "b")\nreturn { v }'],
+  ['new date', 'const d = new Date()\nreturn { d }'],
+  ['sort in place', 'const s = input.items.sort((a, b) => a - b)\nreturn { s }'],
+  ['import alias shadowed', 'let ns = 1\nreturn { ns }'],
+  ['two labels', 'one: two: result.x = 1'],
+  ['comment groups', '// a\n\n// b\nlet x = 1\n\n// c\n\nx += 1\n//  indented note  \nresult.x = x\n/* block\n * two lines */\nresult.y = 1\n// end of the body'],
+  ['comment ends a block', 'if (input.a) {\n  result.x = 1\n  // done\n} else {\n  // nothing\n\n  result.x = 2\n}'],
+  ['blank line opens the body', '\n// first\n\nresult.x = 1\n\nresult.y = 2'],
+  ['disabled after a blank line', 'result.a = 1\n\n// @disabled\nresult.b = 2\n// @disabled\n\nresult.c = 3']
+].forEach(function (probe) { add('probe:' + probe[0], complete(probe[1])); });
+add('probe:namespace import shadowed', 'const _flow = { sourceVersion: 3 }\nconst ns = flow.import("lib")\nfunction Example({ input, config, result }) {\n  let ns = 1\n  return { ns }\n}\n');
+add('probe:import module not literal', 'const _flow = { sourceVersion: 3 }\nconst { a } = flow.import(input.m)\nfunction Example({ input, config, result }) {\n  return { a: 1 }\n}\n');
 var testSource = read('tests/flowscript-v3-prototype.js');
 var options = new Packages.org.mozilla.javascript.CompilerEnvirons(); options.setLanguageVersion(200);
 var ast = new Packages.org.mozilla.javascript.Parser(options).parse(testSource, 'prototype-tests', 1);
@@ -38,7 +110,7 @@ if (samples.isDirectory()) { var listed = samples.listFiles(); for (var i=0; i<l
 var traceFile = new java.io.File(root,'_private/v3-trace-corpus/trace-cases.json');
 if (traceFile.isFile()) JSON.parse(String(files.readFileToString(traceFile,'UTF-8'))).forEach(function(item){add('trace:'+item.id,item.source);});
 function difference(a,b,path) {
-  if (typeof a !== typeof b || a === null || b === null || typeof a !== 'object') return JSON.stringify(a) === JSON.stringify(b) ? '' : path + ': ' + JSON.stringify(a).substring(0,120) + ' != ' + JSON.stringify(b).substring(0,120);
+  if (typeof a !== typeof b || a === null || b === null || typeof a !== 'object') return JSON.stringify(a) === JSON.stringify(b) ? '' : path + ': ' + String(JSON.stringify(a)).substring(0,120) + ' != ' + String(JSON.stringify(b)).substring(0,120);
   var keys = Object.keys(a).concat(Object.keys(b)).filter(function(v,i,all){return all.indexOf(v)===i;}).sort();
   for (var i=0;i<keys.length;i++) { var found=difference(a[keys[i]],b[keys[i]],path + '.' + keys[i]); if(found) return found; }
   return '';
@@ -50,26 +122,37 @@ function catalog(name) {
   if (!file.isFile()) return catalogCache[name]='{}';
   var match=/const _meta\s*=\s*([\s\S]*?)\n\s*\(function/.exec(String(files.readFileToString(file,'UTF-8')));
   if (!match) return catalogCache[name]='{}';
-  try { var metadata=eval('('+match[1]+')'); return catalogCache[name]=JSON.stringify({props:metadata.properties||{}}); }
+  try {
+    var metadata=eval('('+match[1]+')'), slots=[];
+    (metadata.slots||[]).forEach(function(slot){ if (slot && typeof slot==='object') { if (slot.name) slots.push(String(slot.name)); (slot.aliases||[]).forEach(function(a){slots.push(String(a));}); } else if (slot) slots.push(String(slot)); });
+    return catalogCache[name]=JSON.stringify({props:metadata.properties||{},slots:slots});
+  }
   catch(e) { return catalogCache[name]='{}'; }
 }
-// Keep the remaining AST-reader acceptances beyond the v2 text parser explicit.
-var acceptedBeyondV2={
-	'trace:f3l3b_g6sol:csv_stats:57':'INVALID_EXPRESSION',
-	'trace:f3l3b_g6sol:csv_stats:58':'INVALID_EXPRESSION',
-  'trace:f3l3b_g6sol:csv_stats:59':'INVALID_EXPRESSION',
-	'trace:f3l3b_ml4:csv_stats:62':'INVALID_EXPRESSION',
-	'trace:f3l3b_ml4:csv_stats:63':'INVALID_EXPRESSION',
-	'trace:f3l3b_ml4:csv_stats:64':'INVALID_EXPRESSION',
-	'trace:f3l3b_ml4:csv_stats:65':'INVALID_EXPRESSION',
-  'trace:f3l3b_ml4:csv_stats:66':'INVALID_EXPRESSION',
-  'trace:f3m1b_g6sol:stats:88':'INVALID_EXPRESSION'
-};
+// The readings the bridge gets wrong, where the Java reader keeps the JavaScript meaning (each one is run against Node
+// in flowscript-v3-bench-forms.js). The oracle refuses with INVALID_EXPRESSION only, every diagnostic of one of these
+// causes, and the Java reading is accepted by the engine:
+//   - shorthand: an object literal with a shorthand field ({ category }) as the whole value of a push or a put is
+//     rewritten by the bridge to "category: local.category" and given twice to the v2 parser ("local.category:
+//     local.category");
+//   - inline global: a global call as the receiver of a list method (Object.values(o).toSorted(…)) stays an inline
+//     object.values({ … }) call for the bridge, which the v2 parser refuses in an expression; the Java reader computes
+//     it before, in a hidden local, as for an assignment.
+function bridgeDefect(diagnostic) {
+  if (!diagnostic || diagnostic.code !== 'INVALID_EXPRESSION') return '';
+  var shorthand = /^([\w$.]+): ([\w$.]+)$/.exec(String(diagnostic.expression || ''));
+  if (shorthand && shorthand[1] === shorthand[2]) return 'shorthand';
+  if (/Unknown expression function: (?:object\.(?:keys|values)|json\.(?:parse|stringify))\b/.test(String(diagnostic.message || ''))) return 'inline global';
+  return '';
+}
+var acceptedBeyondBridge = {};
 var checked=0, skipped=0, wanted=0, wantedIds=[], mismatches=[], bySource={};
 cases.forEach(function(item) {
   var translated = bridge.translate(item.source), direct = JSON.parse(String(Reader.read(item.source,catalog)));
   var expectedError = translated.diagnostics.length ? translated.diagnostics[0] : null;
-  var actualError = direct.diagnostics.length ? direct.diagnostics[0] : null;
+  // A refusal of the reader under another code is a check of the v2 parser it mirrors (an unknown slot, an assignment and
+  // $$out): it is compared with the refusal of the oracle's parser below.
+  var actualError = direct.diagnostics.length && /^FLOWSCRIPT_V3_/.test(direct.diagnostics[0].code) ? direct.diagnostics[0] : null;
   var kind = item.id.split(':')[0]; bySource[kind]=(bySource[kind]||0)+1;
 
   if (expectedError || actualError) {
@@ -84,16 +167,22 @@ cases.forEach(function(item) {
     var expectedParserCode=oracle.error && oracle.error.code || oracle.diagnostics && oracle.diagnostics[0] && oracle.diagnostics[0].code;
     var actualParserCode=integrated.error && integrated.error.code || integrated.diagnostics && integrated.diagnostics[0] && integrated.diagnostics[0].code;
     if (expectedParserCode !== actualParserCode) {
-      if (acceptedBeyondV2[item.id] === expectedParserCode && integrated.ok === true) { wanted++; wantedIds.push(item.id); }
+      var oracleDiagnostics = oracle.diagnostics && oracle.diagnostics.length ? oracle.diagnostics : [oracle.error];
+      var causes = oracleDiagnostics.map(bridgeDefect).filter(function (cause, i, all) { return all.indexOf(cause) === i; });
+      if (integrated.ok === true && causes.indexOf('') < 0) {
+        wanted++; wantedIds.push(item.id + ' (' + causes.join(', ') + ')');
+        causes.forEach(function (cause) { acceptedBeyondBridge[cause] = (acceptedBeyondBridge[cause] || 0) + 1; });
+      }
       else mismatches.push(item.id + ' parser diagnostic ' + expectedParserCode + ' != ' + actualParserCode);
     }
     checked++;
     return;
   }
+  if (direct.diagnostics.length) { mismatches.push(item.id + ' reader refusal ' + direct.diagnostics[0].code + '/' + direct.diagnostics[0].line + ' of an accepted source'); checked++; return; }
   oracle.definition.flow = Object.assign({},oracle.definition.flow||{},{sourceVersion:3});
   var expected = codeService.comparableDefinition(oracle.definition), actual = codeService.comparableDefinition(direct.definition);
   if (expected !== actual) mismatches.push(item.id + ' definition ' + (kind === 'trace' ? difference(JSON.parse(expected),JSON.parse(actual),'root').split(':')[0] + ' (values withheld)' : difference(JSON.parse(expected),JSON.parse(actual),'root')));
   checked++;
 });
-print('differential corpus ' + JSON.stringify({total:cases.length,bySource:bySource,checked:checked,oracleRejected:skipped,wantedDifferences:wanted,wantedIds:wantedIds,differences:mismatches.length}));
+print('differential corpus ' + JSON.stringify({total:cases.length,bySource:bySource,checked:checked,oracleRejected:skipped,acceptedBeyondBridge:acceptedBeyondBridge,wantedDifferences:wanted,wantedIds:wantedIds,differences:mismatches.length}));
 if (mismatches.length) throw new Error('Differential mismatches:\n' + mismatches.slice(0,80).join('\n'));

@@ -4,12 +4,13 @@
 //   1. the text is read by the Rhino 1.9.2 parser of the engine (org.mozilla.javascript.Parser, ES6, no error recovery)
 //      after the only preparation of the specification: a same-length rewrite of each `const` declaration to `let`;
 //   2. it contains none of the constructs the grammar refuses: an AST scan of the syntactic refusals (below), and the
-//      reader of the engine (bridge.translate, which lowers the text to blocks and never executes it);
+//      reader of the engine (the Java FlowScriptV3Reader, options.reader, which lowers the text to blocks and never
+//      executes it; options.bridge, the frozen prototype bridge, only when no reader is given);
 //   3. it has no bare `default(` (a reserved word of JavaScript: the call is flow.default(x, y)).
 // An example the reader of the engine refuses only because a rule of the specification is not implemented yet is listed
 // in tests/support/flowscript-v3-waiting.json; it still has to be read by Rhino.
 function flowscriptV3Conformance(options) {
-	var bridge = options.bridge, files = Packages.org.apache.commons.io.FileUtils;
+	var reader = options.reader, bridge = options.bridge, files = Packages.org.apache.commons.io.FileUtils;
 	var ast = Packages.org.mozilla.javascript.ast, Token = Packages.org.mozilla.javascript.Token;
 	var api = { incompleteScans: 0 };
 
@@ -165,9 +166,10 @@ function flowscriptV3Conformance(options) {
 	};
 
 	// Diagnostic codes of the reader of the engine (lowering only, nothing is executed).
-	api.bridgeCodes = function (code) {
+	api.readerCodes = function (code) {
 		var result, codes = [];
-		try { result = bridge.translate(code); } catch (e) { return ["BRIDGE_EXCEPTION: " + String(e.message || e).substring(0, 120)]; }
+		try { result = reader ? JSON.parse(String(reader.read(code, null))) : bridge.translate(code); }
+		catch (e) { return ["READER_EXCEPTION: " + String(e.message || e).substring(0, 120)]; }
 		for (var i = 0; i < result.diagnostics.length; i++) if (codes.indexOf(result.diagnostics[i].code) < 0) codes.push(result.diagnostics[i].code);
 		return codes;
 	};
@@ -179,7 +181,7 @@ function flowscriptV3Conformance(options) {
 		var problems = [];
 		if (api.bareDefault(code)) problems.push("bare default( call (write flow.default( or ??)");
 		api.scan(parsed.root).forEach(function (c) { problems.push("uses a refused construct (" + c + ")"); });
-		api.bridgeCodes(code).forEach(function (c) { if (problems.join().indexOf(c) < 0) problems.push("the reader refuses it (" + c + ")"); });
+		api.readerCodes(code).forEach(function (c) { if (problems.join().indexOf(c) < 0) problems.push("the reader refuses it (" + c + ")"); });
 		return { parse: true, problems: problems };
 	};
 
@@ -191,8 +193,8 @@ function flowscriptV3Conformance(options) {
 			return { parse: !parsed.ok && found === expected, problems: found === expected ? [] : ["expected a parse error meaning " + expected + ", got " + (parsed.ok ? "none" : parsed.message)] };
 		}
 		if (!parsed.ok) return { parse: false, problems: ["Rhino 1.9.2 does not read it: " + parsed.message] };
-		var codes = api.bridgeCodes(code).concat(api.scan(parsed.root));
-		return { parse: true, problems: codes.indexOf(expected) >= 0 && api.bridgeCodes(code)[0] === expected ? [] : ["expected " + expected + ", the reader says " + JSON.stringify(api.bridgeCodes(code))] };
+		var codes = api.readerCodes(code).concat(api.scan(parsed.root));
+		return { parse: true, problems: codes.indexOf(expected) >= 0 && api.readerCodes(code)[0] === expected ? [] : ["expected " + expected + ", the reader says " + JSON.stringify(api.readerCodes(code))] };
 	};
 
 	// The guides and skills that teach FlowScript v3 (lib_flow_mcp/_flow/resources).

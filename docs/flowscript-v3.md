@@ -160,7 +160,7 @@ function OpenLabels({ input, config, result }) {
 
 <!-- fragment:nested-loops -->
 **Nested loops.** Locals declared in a loop body remain available in nested loops. When an inner `for…of`, a list
-method arrow, or a `flow.forEach`/`list.*` call rebinds `current` and reads the outer `for…of` item, the bridge
+method arrow, or a `flow.forEach`/`list.*` call rebinds `current` and reads the outer `for…of` item, the reader
 automatically copies that item to `local.<name>` at the start of the outer body. Destructured fields are already
 copied from `current.<field>` there. Other reads of the item continue to use `current`.
 <!-- /fragment -->
@@ -434,7 +434,7 @@ replacement. The rules of the previous sections are amended accordingly.
    `==`, `!=`, `===`, `!==` tests between the two keys, with number results, is accepted when it gives the sign of that
    comparator (or of its reverse) for every pair of keys. Each test is decided by the class of the pair: less, greater,
    or neither, the last with `===`, with `==` only or with neither, for comparable keys and for incomparable ones
-   (`NaN`, `undefined`); the bridge checks the eight classes. `a.k === b.k ? 0 : a.k > b.k ? 1 : -1` or
+   (`NaN`, `undefined`); the reader checks the eight classes. `a.k === b.k ? 0 : a.k > b.k ? 1 : -1` or
    `a.k < b.k ? -1 : 1` differ on an incomparable or loosely equal pair and stay refused (`FLOWSCRIPT_V3_LIST_METHOD`).
 2. **Several keys.** A comparator written `c1 || c2 || …`, where each `ci` is an accepted key comparator (`a.k - b.k`,
    `localeCompare`, relational), lowers to `list.sort` with the first key and `then: [{ by, compare, direction }, …]`
@@ -448,7 +448,7 @@ replacement. The rules of the previous sections are amended accordingly.
    treat `""` as absent). The guides teach `x ?? y` first.
 4. **Untyped lists.** `const rows = []` (or `let`) followed by `rows.push(v)` is accepted. If `json.array` accepts an
    item type that admits any value, the declaration lowers to that type, which is the JavaScript meaning. Otherwise the
-   bridge infers the item type from every `push` of the Flow, and refuses with the exact `json.array({ itemType })`
+   reader infers the item type from every `push` of the Flow, and refuses with the exact `json.array({ itemType })`
    proposal when the pushes disagree or cannot be typed. *Implementation (L0′)*: `json.array` admits no such type
    (`unknown` is missing evidence, refused with `UNKNOWN_VALUE_TYPE`; there is no `any`). A value is typed from its
    syntax alone, so that every run accepts it: text and template literals (`string`), finite number literals (`integer`,
@@ -510,3 +510,25 @@ replacement. The rules of the previous sections are amended accordingly.
    `catch { … }` declares no name (Rhino 1.9.2 cannot visit it: the reader visits its body itself); the error goes to
    `local.error`, or to a hidden `local.__caught<N>` when the Flow has its own `error`, which the `try` must not
    overwrite. The renderer writes a `throw` with only `error`, in the catch whose parameter holds it, as `throw e`.
+12. **Java reader (18/11/2026).** The engine reads `sourceVersion: 3` with the Java reader
+   `com.convertigo.libflowengine.FlowScriptV3Reader` (in the code tools, the rendering guard and the migration), which
+   builds the Flow definition from the Rhino AST directly. The prototype bridge (v3 text lowered to v2 text, then the v2
+   parser) is frozen: it is only the oracle of the tests. The differential test gives the same definition, or the same
+   refusal (code and line), on every source of its corpus: the examples of this specification and of the grammar, the
+   rendering cases, the guides, the bench revisions and probes of the forms below. The bridge reads two forms wrong, and
+   the reader keeps their JavaScript meaning (both tested against Node): a shorthand field in the object pushed into a
+   list or put into a map (`rows.push({ category, cents })`), and a global call as the receiver of a list method
+   (`Object.values(o).toSorted(…)`, computed before, in a hidden local). Readings aligned at the integration:
+   - a declared name is bound after its value is read (`let y = y + 1` is refused, `FLOWSCRIPT_V3_OUT_OF_SCOPE`), and a
+     `const` without value is refused (`FLOWSCRIPT_V3_UNSUPPORTED`), as in JavaScript;
+   - the statements of a `case` share one scope; a `switch` value or a destructured declaration is read as an
+     expression (a call with a slot, or a `?:` with a block step in a branch, stays refused there);
+   - a slot (a function under a `$$` name) on a block that does not declare it is refused
+     (`FLOW_SOURCE_ENGINE_ATTRIBUTE_UNKNOWN`: its body would never run), and so is an assignment of a call whose `$$out`
+     names another destination (`FLOW_SOURCE_OUTPUT_CONFLICT`), as the v2 parser does; a refusal of the subset, wherever
+     it stands, comes first;
+   - Rhino 1.9.2 counts the character after a keyword literal in it (`c ? a : null,`): the expression ends at the
+     keyword;
+   - comments and blank lines: a blank line after comments makes them a comment node, and a statement after a blank
+     line keeps it for the rendering; the comments that end a block are a comment node; `@disabled` is removed from
+     the comment of the statement it disables.

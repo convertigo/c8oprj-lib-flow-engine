@@ -3547,6 +3547,7 @@
 				if (options && options.sourceVersion !== undefined && options.sourceVersion !== 3) {
 					env.raise("FLOW_SOURCE_VERSION_CONFLICT", "The source header conflicts with the block sourceVersion.");
 				}
+				// The reader asks the catalog for the kind of each property of a block and for its slots (an unknown block has none).
 				var reader = JSON.parse(String(Packages.com.convertigo.libflowengine.FlowScriptV3Reader.read(submittedCode, function (name) {
 					var descriptor = env.blockCatalog(blocks && blocks[String(name)]) || {};
 					var props = {};
@@ -3554,7 +3555,7 @@
 						var prop = descriptor.props[key] || {};
 						props[key] = { kind: prop.kind, type: prop.type };
 					});
-					return JSON.stringify({ props: props });
+					return JSON.stringify({ props: props, slots: flowScriptBlockSlotNames(blocks, String(name)) });
 				})));
 				if (reader.diagnostics && reader.diagnostics.length) {
 					var diagnostic = reader.diagnostics[0], refusal = new Error(diagnostic.message);

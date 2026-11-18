@@ -1,11 +1,14 @@
-// FlowScript v3 forms of the L6 bench (specification section 15): each accepted form is translated by the bridge, run by
-// the engine and compared with Node running the same JavaScript; each remaining refusal names its rule and replacement.
+// FlowScript v3 forms of the L6 bench (specification section 15): each accepted form is read by the Java reader of the
+// engine, run by the engine and compared with Node running the same JavaScript (the frozen bridge, the oracle of the
+// reader, is checked to lower it the same way); each remaining refusal names its rule and replacement, the same for the
+// bridge and the Java reader.
 var engineDir = new java.io.File(arguments.length ? arguments[0] : "_flow").getCanonicalFile();
 var __flowEngineDir = String(engineDir.getAbsolutePath());
 var __flowProjectDir = String(java.nio.file.Files.createTempDirectory("flow-v3-bench-forms-").toFile().getAbsolutePath());
 var files = Packages.org.apache.commons.io.FileUtils;
 var bridge = eval(String(files.readFileToString(new java.io.File(engineDir, "modules/flowscript-v3-prototype.js"), "UTF-8")));
 var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
+var Reader = Packages.com.convertigo.libflowengine.FlowScriptV3Reader;
 function api(name, request) { return JSON.parse(String(engine[name](JSON.stringify(request)))); }
 function check(ok, message) { if (!ok) throw new Error(message); }
 function program(body, inputs) {
@@ -54,7 +57,23 @@ function refuses(label, body, code, line, hint) {
 	check(diagnostic.code === code && diagnostic.line === line, label + ': ' + JSON.stringify(result));
 	check(diagnostic.message.indexOf(code + ' at line') !== 0 && diagnostic.hint, label + ' needs a rule and a replacement: ' + JSON.stringify(diagnostic));
 	if (hint) check(diagnostic.hint.indexOf(hint) >= 0, label + ' proposal: ' + diagnostic.hint + ' (expected ' + hint + ')');
+	// the Java reader of the engine refuses with the same rule, line and proposal
+	var read = JSON.parse(String(Reader.read(program(body), null))).diagnostics[0] || {};
+	check(read.code === code && read.line === line && read.hint === diagnostic.hint && read.message === diagnostic.message,
+		label + ' (Java reader): ' + JSON.stringify(read) + ' instead of ' + JSON.stringify(diagnostic));
 	return diagnostic;
+}
+// A form read by the Java reader only (no bridge lowering): run by the engine and compared with Node.
+function likeNode(label, body, input, expected, inputs) {
+	cases++;
+	var code = program(body, inputs), validation = api('flowSourceValidate', { name: 'Example', code: code });
+	check(validation.ok, label + ' validation: ' + JSON.stringify(validation).substring(0, 1200));
+	var run = api('flowCodeRun', { name: 'Example', code: code, input: input, includeTrace: false });
+	check(run.ok, label + ' run: ' + JSON.stringify(run).substring(0, 1200));
+	var flow = JSON.stringify(run.result), javascript = node(code, input);
+	check(flow === javascript, label + ': Flow ' + flow + ' but JavaScript ' + javascript);
+	if (expected !== undefined) check(flow === JSON.stringify(expected), label + ': ' + flow + ' instead of ' + JSON.stringify(expected));
+	return flow;
 }
 function parser() {
 	var environment = new Packages.org.mozilla.javascript.CompilerEnvirons();
@@ -540,6 +559,45 @@ var migratedRethrow = api('flowCodeMigrateV3', { name: 'Example', code: 'const _
 check(migratedRethrow.ok && /\} catch \(failure\) \{\n\s+throw failure\n/.test(migratedRethrow.code), 'rethrow rendering: ' + JSON.stringify(migratedRethrow).substring(0, 900));
 var rethrowRun = api('flowCodeRun', { name: 'Example', code: migratedRethrow.code, input: {}, includeTrace: false });
 check(!rethrowRun.ok && rethrowRun.error.code === 'A', 'rendered rethrow runs: ' + JSON.stringify(rethrowRun).substring(0, 600));
+
+// Integration of the Java reader.
+// The readings the bridge gets wrong (flowscript-v3-reader-differential.js, acceptedBeyondBridge): a shorthand field in
+// the object pushed into a list or put into a map, and a global call as the receiver of a list method.
+likeNode('shorthand fields pushed and put', [
+	'  const rows = json.array({ itemType: { type: "object" } })',
+	'  const byCategory = json.map({ valueType: { type: "object" } })',
+	'  for (const item of input.items) {',
+	'    const category = item.c',
+	'    const cents = item.v * 100',
+	'    rows.push({ category, cents })',
+	'    byCategory[category] = { category, cents }',
+	'  }',
+	'  return { rows, byCategory }'
+].join('\n'), { items: [{ c: 'a', v: 1 }, { c: 'b', v: 2.5 }, { c: 'a', v: 3 }] },
+	{ rows: [{ category: 'a', cents: 100 }, { category: 'b', cents: 250 }, { category: 'a', cents: 300 }], byCategory: { a: { category: 'a', cents: 300 }, b: { category: 'b', cents: 250 } } });
+likeNode('global call before a list method', [
+	'  const sorted = Object.values(input.byCat).toSorted((a, b) => b.total - a.total)',
+	'  const names = Object.keys(input.byCat).filter(name => name != "skip")',
+	'  return { sorted, names }'
+].join('\n'), { byCat: { x: { total: 1 }, skip: { total: 3 }, y: { total: 2 } } },
+	{ sorted: [{ total: 3 }, { total: 2 }, { total: 1 }], names: ['x', 'y'] });
+// A const read in the case of a switch where it is declared (the statements of a case share a scope).
+likeNode('const in a case', [
+	'  switch (input.k) {',
+	'    case 1:',
+	'      const label = "one"',
+	'      result.label = label + "!"',
+	'      break',
+	'    default:',
+	'      result.label = "other"',
+	'      break',
+	'  }'
+].join('\n'), { k: 1 }, { label: 'one!' });
+// The comma, semicolon or parenthesis after a keyword literal ending a ?: is not part of it (Rhino 1.9.2 counts it).
+likeNode('keyword literal ending a conditional', '  const total = { min: input.n > 0 ? input.m / 100 : null, max: input.n > 0 ? input.m : true }\n  return { total }',
+	{ n: 0, m: 250 }, { total: { min: null, max: true } });
+refuses('a let read before its declaration', '  let x = 1\n  if (input.a) {\n    let y = y + 1\n    result.y = y\n  }', 'FLOWSCRIPT_V3_OUT_OF_SCOPE', 5);
+refuses('const without value', '  const x\n  result.x = x', 'FLOWSCRIPT_V3_UNSUPPORTED', 3, 'Give the const its value');
 
 // Conformance cases of the grammar: each source is lowered and run; a case marked parsesWithoutPreparation is read by the
 // Rhino 1.9.2 parser as it is written.

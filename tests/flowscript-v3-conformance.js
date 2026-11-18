@@ -10,10 +10,10 @@ var __flowEngineDir = String(engineDir.getAbsolutePath());
 var __flowProjectDir = String(java.nio.file.Files.createTempDirectory("flow-v3-conformance-").toFile().getAbsolutePath());
 var files = Packages.org.apache.commons.io.FileUtils;
 var libRoot = engineDir.getParentFile();
-var bridge = eval(String(files.readFileToString(new java.io.File(engineDir, "modules/flowscript-v3-prototype.js"), "UTF-8")));
+var reader = Packages.com.convertigo.libflowengine.FlowScriptV3Reader;
 var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
 load(new java.io.File(libRoot, "tests/support/flowscript-v3-conformance.js"));
-var v3 = flowscriptV3Conformance({ bridge: bridge, waitingFile: new java.io.File(libRoot, "tests/support/flowscript-v3-waiting.json") });
+var v3 = flowscriptV3Conformance({ reader: reader, waitingFile: new java.io.File(libRoot, "tests/support/flowscript-v3-waiting.json") });
 function api(name, request) { return JSON.parse(String(engine[name](JSON.stringify(request)))); }
 
 var failures = [], stats = { spec: 0, grammarAccepted: 0, grammarRefused: 0, guides: 0, guideRefused: 0, waiting: 0 }, seen = {}, cleared = [];
