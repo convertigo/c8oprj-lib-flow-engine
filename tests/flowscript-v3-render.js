@@ -112,6 +112,11 @@ check(sortedOut.naturalCode && sortedOut.naturalCode.indexOf("local.sorted = inp
 check(sortedOut.ok && sortedOut.code.indexOf("local.sorted = list.sort({") >= 0 && sortedOut.called.length === 1 && sortedOut.called[0].kind === "sort",
 	"unread section 15 sort stays a call: " + JSON.stringify(sortedOut).substring(0, 1500));
 
+// $$disabled: false is an attribute the natural form cannot carry: the call form keeps it, without the guard.
+var notDisabled = api("flowCodeMigrateV3", { name: "NotDisabled", code: 'const _flow = { sourceVersion: 2 }\n\nfunction NotDisabled({ input, config, result }) {\n  set({ $$disabled: false, path: "result.a", value: 1 })\n}\n' });
+check(notDisabled.ok && notDisabled.attempts === 1 && notDisabled.code.indexOf('set({ $$disabled: false, path: "result.a", value: 1 })') >= 0,
+	"$$disabled: false keeps the call form: " + JSON.stringify(notDisabled).substring(0, 1000));
+
 // A runtime default is left out only where the runtime reads it so: list.sort reads order before direction.
 var ordered = { version: 1, helpers: [], flow: { sourceVersion: 3, inputs: { rows: { type: "array" } } },
 	nodes: [{ block: "list.sort", out: "local.sorted", props: { items: "input.rows", by: "current.n", direction: "asc", order: "desc" } }] };

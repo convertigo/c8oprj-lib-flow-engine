@@ -410,8 +410,10 @@
 			var label = explicit && labelable ? node.id + ": " : "";
 			var props = node.props || {}, effective = effectiveProps(node), keys = Object.keys(effective);
 			var outPath = typeof node.out === "string" && /^(local|result|parent)(\.[A-Za-z_$][\w$]*)+$/.test(node.out) ? node.out : "";
-			var plain = node.out === undefined && labelable && node.__flowScriptForm !== "call";
-			var callable = labelable && node.__flowScriptForm !== "call";
+			// $$disabled: true is the @disabled directive; any other value of the attribute keeps the call form
+			var attributes = node.disabled === undefined || node.disabled === true;
+			var plain = attributes && node.out === undefined && labelable && node.__flowScriptForm !== "call";
+			var callable = attributes && labelable && node.__flowScriptForm !== "call";
 			var disabledLine = node.disabled === true ? (directive ? indent + "// @disabled" : null) : null;
 			function push(text) {
 				if (disabledLine) lines.push(disabledLine);
