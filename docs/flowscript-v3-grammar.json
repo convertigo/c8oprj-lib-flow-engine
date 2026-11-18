@@ -445,5 +445,32 @@
       "R-NESTED",
       "R-NO-NATURAL"
     ]
-  }
+  },
+  "conformance": [
+    {
+      "id": "C-CONST-LOOP",
+      "why": "Rhino 1.9.2 keeps the first value of a const declared in a block nested in a loop (#326); v3 lowers each declaration to an assignment at every pass",
+      "source": "const _flow = { sourceVersion: 3, inputs: { rows: { type: \"array\" } } }\n\nfunction ConstLoop({ input, config, result }) {\n  const doubled = json.array({ itemType: { type: \"number\" } })\n  for (const item of input.rows) {\n    const twice = item * 2\n    if (twice > 0) {\n      const shown = twice\n      doubled.push(shown)\n    }\n  }\n  let n = 0\n  const steps = json.array({ itemType: { type: \"number\" } })\n  while (n < 3) {\n    const next = n + 10\n    steps.push(next)\n    n++\n  }\n  return { doubled, steps }\n}\n",
+      "input": {
+        "rows": [
+          1,
+          2,
+          3
+        ]
+      },
+      "expected": {
+        "doubled": [
+          2,
+          4,
+          6
+        ],
+        "steps": [
+          10,
+          11,
+          12
+        ]
+      },
+      "rule": "run by the Flow engine from the lowered tree, never by evaluating the text with Rhino; no const is rewritten"
+    }
+  ]
 }

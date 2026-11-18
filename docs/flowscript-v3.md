@@ -12,7 +12,11 @@ the natural JavaScript form wherever the meaning is identical, the call form oth
 - A v3 source is a JavaScript program. Rhino 1.9.2 parses it (ES6) without any masking. The only preparation
   is a same-length rewrite of `const` to `let` in a `for…of` head, because Rhino 1.9.2 refuses `const` there.
 - The reader lowers the program to Flow blocks. A v3 source is never executed as JavaScript by Rhino:
-  Rhino 1.9.2 keeps the first value of a `const` declared in a loop body.
+  Rhino 1.9.2 keeps the first value of a `const` declared in a block nested in a loop of the same function
+  (Rhino #326, not fixed upstream). Each declaration becomes an assignment at every pass, so a `const` in a loop
+  body takes its new value as in JavaScript: FlowScript v3 sources need no `const` → `let` correction
+  (conformance case `C-CONST-LOOP`). The correction applies to the JavaScript Rhino runs, such as project blocks
+  with `runtime: "rhino"`.
 - **Same meaning as JavaScript.** When the JavaScript program would run without error, the Flow gives the same
   result, with the value rules of the FlowScript expression evaluator (shared with v2, unchanged by v3):
   - paths are null-safe: `local.a.b` is `undefined` when `local.a` is `null`, where JavaScript would throw
