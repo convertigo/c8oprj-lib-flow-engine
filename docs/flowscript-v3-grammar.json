@@ -195,7 +195,7 @@
     },
     {
       "id": "throw-object",
-      "construct": "throw { code: \"LITERAL\", message, details, status }",
+      "construct": "throw { code: \"LITERAL\", message, details }",
       "block": "throw",
       "examples": [
         "throw { code: \"NAME_REQUIRED\", message: \"name is required\", status: 400 }"
