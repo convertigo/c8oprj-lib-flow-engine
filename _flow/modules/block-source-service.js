@@ -49,6 +49,7 @@
 				detail: detail === "summary" ? "summary" : "compact",
 				name: block.name
 			};
+			if (block.__flowWarnings && block.__flowWarnings.length) compact.warnings = block.__flowWarnings;
 			if (args.includeMeta === true || String(args.includeMeta || "") === "true") {
 				compact.origin = block.__flowOrigin || "unknown";
 				compact.provider = block.__flowProvider || block.__flowOrigin || "unknown";
@@ -84,6 +85,7 @@
 			descriptor: publicDescriptor(descriptor, env),
 			implementationRuntime: implementation.runtime
 		};
+		if (block.__flowWarnings && block.__flowWarnings.length) out.warnings = block.__flowWarnings;
 		out.implementationSource = implementation.runtime === "rhino"
 			? String(block.__rhinoCode || "")
 			: env.sourceFromDefinition(block.__graphDefinition || { version: 1, nodes: [] });

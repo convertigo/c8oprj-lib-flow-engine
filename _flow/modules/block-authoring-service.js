@@ -116,8 +116,13 @@
 				return null;
 			}
 			var file = new File(String(hooks.file));
-			if (!file.isAbsolute()) {
-				file = new File(descriptorFile.getParentFile(), String(hooks.file));
+			var blocksDir = projectBlocksDir().getCanonicalFile();
+			if (file.isAbsolute() || String(hooks.file).split(/[\\/]/).indexOf("..") !== -1) {
+				raise("INVALID_BLOCK_HOOKS_PATH", "Block hooks.file must be relative to its blocks directory.");
+			}
+			file = new File(descriptorFile.getParentFile(), String(hooks.file)).getCanonicalFile();
+			if (!String(file.getPath()).startsWith(String(blocksDir.getPath()) + File.separator)) {
+				raise("INVALID_BLOCK_HOOKS_PATH", "Block hooks.file must stay inside its blocks directory.");
 			}
 			return file;
 		}
@@ -132,7 +137,10 @@
 			if (code.trim() === "") {
 				raise("MISSING_BLOCK_CODE", "block.code.set requires .block.js code.");
 			}
-			var compiled = compileProjectBlockCode(blocks, name, code, Object.assign({}, request, { correctSource: true }));
+			var compiled = compileProjectBlockCode(blocks, name, code,
+				Object.assign({}, request, { correctSource: true, allowPrimitiveRhino: false }));
+			// Canonical .block.js metadata can declare hooks too, even when no hooksSource is supplied.
+			hooksTargetFile(projectBlockCodeFile(name), compiled.descriptor);
 			if (request.dry === true || request.dryRun === true || String(request.dry || "") === "true" || String(request.dryRun || "") === "true") {
 				return {
 					ok: true,
@@ -289,6 +297,8 @@
 			var hooksSource = sourceInfo.hooksSource;
 			if (sourceInfo.code) {
 				var duplicatedCode = duplicateBlockCodeSource(sourceInfo.code, fromName, toName, hooksSource !== undefined && hooksSource !== null);
+				// Validate the duplicate before copying its hooks, which are written ahead of the code file.
+				compileProjectBlockCode(blocks, toName, duplicatedCode, { allowPrimitiveRhino: false });
 				if (hooksSource !== undefined && hooksSource !== null) {
 					var hooksFile = hooksTargetFile(projectBlockCodeFile(toName), {
 						name: blockLocalName(toName) || toName,

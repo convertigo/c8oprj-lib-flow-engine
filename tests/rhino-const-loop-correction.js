@@ -52,6 +52,34 @@ try {
 	assert(refused && refused.error && refused.error.code === 'RHINO_REIMPLEMENTS_HTTP', 'legacy policy: ' + JSON.stringify(refused));
 	assert(!new java.io.File(project, '_flow/blocks/proof/refused.block.js').exists() &&
 		!new java.io.File(project, '_flow/blocks/proof/refused.hooks.js').exists(), 'a refused legacy write left a file');
+	var codeFile = new java.io.File(project, '_flow/blocks/proof/loop.block.js');
+	var beforeEdit = String(files.readFileToString(codeFile, 'UTF-8'));
+	var forbiddenCode = 'const _meta = {runtime:"rhino"}\n(function () { return { run: function () { return new java.net.URL("http://example.invalid").openConnection(); } }; }())';
+	var refusedEdit = api('blockEdit', {projectDir: __flowProjectDir, name: 'proof.loop', code: forbiddenCode, allowPrimitiveRhino: true});
+	assert(refusedEdit.error && refusedEdit.error.code === 'RHINO_REIMPLEMENTS_HTTP', 'block.edit policy: ' + JSON.stringify(refusedEdit));
+	assert(String(files.readFileToString(codeFile, 'UTF-8')) === beforeEdit, 'refused block.edit changed the file');
+	var hooksOutside = new java.io.File(project, '_flow/blocks/outside.hooks.js');
+	var hooksRoot = new java.io.File(project, '_flow/blocks/proof');
+	var hooks = '(function () { return {}; }())';
+	function rejectedHooks(path, label) {
+		var response = api('blockCreate', {projectDir: __flowProjectDir, name: 'proof.' + label,
+			descriptor: {implementation: {runtime: 'rhino'}, hooks: {file: path}},
+			implementationSource: '(function () { return { run: function () { return 1; } }; }())', hooksSource: hooks});
+		assert(response.error && response.error.code === 'INVALID_BLOCK_HOOKS_PATH', label + ': ' + JSON.stringify(response));
+		assert(!new java.io.File(hooksRoot, label + '.block.js').exists(), label + ' created a code file');
+	}
+	rejectedHooks('../outside.hooks.js', 'traversal');
+	rejectedHooks(String(new java.io.File(project, 'absolute.hooks.js').getAbsolutePath()), 'absolute');
+	assert(!hooksOutside.exists() && !new java.io.File(project, 'absolute.hooks.js').exists(), 'rejected hooks created an external file');
+	var linkedOutside = new java.io.File(project, 'linked-outside');
+	linkedOutside.mkdirs();
+	java.nio.file.Files.createSymbolicLink(new java.io.File(hooksRoot, 'escape').toPath(), linkedOutside.toPath());
+	rejectedHooks('escape/symlink.hooks.js', 'symlink');
+	assert(!new java.io.File(linkedOutside, 'symlink.hooks.js').exists(), 'rejected symlink hooks created an external file');
+	var codeHooks = api('blockCodeSet', {projectDir: __flowProjectDir, name: 'proof.codehooks',
+		code: 'const _meta={runtime:"rhino",hooks:{file:"../outside.hooks.js"}}\n(function(){return {run:function(){return 1;}};}())'});
+	assert(codeHooks.error && codeHooks.error.code === 'INVALID_BLOCK_HOOKS_PATH', 'canonical hooks path: ' + JSON.stringify(codeHooks));
+	assert(!new java.io.File(hooksRoot, 'codehooks.block.js').exists(), 'canonical hooks rejection wrote a block');
 	var flow = 'const _flow={sourceVersion:2}\nfunction Check({result}) { proof.loop({$$out:"result.out"}) }';
 	var run = api('run', {projectDir: __flowProjectDir, flowSource: flow, flowName: 'Check', flowQName: 'Proof.Check'});
 	assert(run.ok, 'execution: ' + JSON.stringify(run.error));

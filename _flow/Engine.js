@@ -3590,7 +3590,7 @@
 			// the descriptor compiled from the source of a block file, by content and catalog revision
 			compiledBlockDescriptor: function (blocks, name, code, origin, provider) {
 				var catalog = catalogMemoRevision(blocks);
-				var request = { allowPrimitiveRhino: origin !== "project", catalogRevision: catalog };
+				var request = { allowPrimitiveRhino: blockFileLoaderService().primitiveRhinoAllowed(origin, provider), catalogRevision: catalog };
 				if (catalog === null) {
 					sourceMemoBypass("block-descriptor");
 					return compileProjectBlockCode(blocks, name, code, request).descriptor;
@@ -3606,6 +3606,7 @@
 			raise: raise,
 			blockIdFromDescriptorFile: blockIdFromDescriptorFile,
 			compileProjectBlockCode: compileProjectBlockCode,
+			rhinoImplementationWarnings: rhinoImplementationWarnings,
 			graphBlockFromDefinition: graphBlockFromDefinition,
 			extractFlowScriptBlockMeta: extractFlowScriptBlockMeta,
 			flowScriptBlockMetaFromRequest: flowScriptBlockMetaFromRequest,
