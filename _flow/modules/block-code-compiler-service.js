@@ -360,9 +360,7 @@
 			meta.runtime = "rhino";
 			var block = validateBlockImplementationSource(name, source);
 			var warnings = request && request.allowPrimitiveRhino === true
-				? rhinoImplementationWarnings(name, source).map(function (warning) {
-					return warning.severity === "error" ? Object.assign({}, warning, { severity: "warning" }) : warning;
-				})
+				? rhinoImplementationWarnings(name, source)
 				: enforceRhinoImplementationPolicy(name, source);
 			if (corrected.fixes.length) warnings.unshift({
 				severity: "warning", code: "RHINO_CONST_IN_LOOP_CORRECTED", block: String(name),

@@ -150,11 +150,6 @@
 		return artifact.block;
 	}
 
-	function primitiveRhinoAllowed(origin, provider) {
-		// Referenced applications remain subject to the project policy. Flow libraries use the lib_flow_ project name.
-		return origin === "core" || (origin === "reference" && /^lib_flow_[A-Za-z0-9_]+$/.test(String(provider || "")));
-	}
-
 	function loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, env) {
 		var name = nameFromBlockFile(file, blocksDir, ".block.js", env);
 		var cached = readArtifact(name, file, origin, provider, env);
@@ -164,13 +159,8 @@
 		var code = sourceForFile(file, env);
 		var descriptor = typeof env.compiledBlockDescriptor === "function"
 			? env.compiledBlockDescriptor(blocks, name, code, origin, provider)
-			: env.compileProjectBlockCode(blocks, name, code, { allowPrimitiveRhino: primitiveRhinoAllowed(origin, provider) }).descriptor;
+			: env.compileProjectBlockCode(blocks, name, code, { allowPrimitiveRhino: origin !== "project" }).descriptor;
 		var block = env.graphBlockFromDefinition(descriptor, file, origin, provider);
-		if (primitiveRhinoAllowed(origin, provider) && block.__rhinoCode && env.rhinoImplementationWarnings) {
-			block.__flowWarnings = env.rhinoImplementationWarnings(name, block.__rhinoCode).map(function (warning) {
-				return warning.severity === "error" ? Object.assign({}, warning, { severity: "warning" }) : warning;
-			});
-		}
 		ensureNotDuplicate(blocks, block.name, "Rename the project block or remove the duplicate.", env);
 		blocks[block.name] = block;
 		if (typeof env.writeBlockArtifact === "function") {
@@ -203,7 +193,6 @@
 	}
 
 	return {
-		primitiveRhinoAllowed: primitiveRhinoAllowed,
 		loadFlowScriptBlockFile: function (blocks, file, origin, provider, blocksDir, env) {
 			return loadFlowScriptBlockFile(blocks, file, origin, provider, blocksDir, env);
 		},
