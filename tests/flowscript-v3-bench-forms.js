@@ -648,6 +648,60 @@ likeNode('expression on several lines and signed numbers', [
 // A quoted text is text: its ${…} is not an expression, as in JavaScript.
 likeNode('quoted text with a dollar brace', '  const label = "cost ${input.price}"\n  const rows = json.array({ itemType: { type: "string" } })\n  rows.push(\'v ${x}\')\n  return { label, rows, both: label + " / " + `${input.price}` }',
 	{ price: 3 }, { label: 'cost ${input.price}', rows: ['v ${x}'], both: 'cost ${input.price} / 3' });
+// … and so is its {{ … }}, which the Flow template reads as its former expression notation: the reader writes such a {{
+// as the expression ${"{{"} (a {{ the template keeps as text is left as written). The text of a template literal is
+// text too, its escape sequences read as JavaScript reads them.
+likeNode('quoted text with a double brace', [
+	'  const label = "cost {{ input.price }}"',
+	'  const rows = json.array({ itemType: { type: "string" } })',
+	"  rows.push('v {{x}}')",
+	'  result.label = label',
+	'  result.rows = rows',
+	'  result.inert = "{{}} {{ a } b }} {{ c"',
+	'  result.mixed = "${{x}} \\\\{{ y }} {{ \\"}}\\" }} {{{ z }}}"',
+	'  result.object = { k: "{{ input.price }}", list: ["{{ z }}"] }',
+	'  result.template = `t {{ input.price }} ${input.price}\\\\${input.price} \\` \\\\{{x}} \\u0041`',
+	'  result.joined = `x` + `{{y}}`',
+	'  result.t = " {{ input.price }} ".trim()'
+].join('\n'), { price: 3 }, { label: 'cost {{ input.price }}', rows: ['v {{x}}'], inert: '{{}} {{ a } b }} {{ c', mixed: '${{x}} \\{{ y }} {{ "}}" }} {{{ z }}}',
+	object: { k: '{{ input.price }}', list: ['{{ z }}'] }, template: 't {{ input.price }} 3\\3 ` \\{{x}} A', joined: 'x{{y}}', t: '{{ input.price }}' });
+var blockBraces = api('flowCodeRun', { name: 'Example', code: program('  const t = text.trim({ text: " {{ input.price }} " })\n  result.t = t'), input: { price: 3 }, includeTrace: false });
+check(blockBraces.ok && blockBraces.result.t === '{{ input.price }}', 'a quoted {{ given to a block value is text: ' + JSON.stringify(blockBraces).substring(0, 600));
+// Any text written as a quoted string, or as the texts of a template literal around two substitutions, gives that text: texts
+// drawn from the characters that matter to the Flow template, many of which it would read as an expression.
+(function () {
+	var templateSyntax = eval(String(files.readFileToString(new java.io.File(engineDir, 'modules/template-syntax.js'), 'UTF-8')));
+	var seed = 20261118, alphabet = ['{{ x.y }}', '{{x}}', '{{ "}}" }}', '{{', '}}', '{', '}', '${x}', '${', '$', '\\', '\\\\', '"', "'", '`', 'a', ' '];
+	var lines = [], expected = {}, read = 0;
+	function next() { seed = (seed * 48271) % 2147483647; return seed; }
+	function templatePart(text) { return text.replace(/[\\`$]/g, function (c) { return '\\' + c; }); }
+	for (var i = 0; i < 80; i++) {
+		var text = '', size = 2 + next() % 9;
+		for (var j = 0; j < size; j++) text += alphabet[next() % alphabet.length];
+		var cut = next() % (text.length + 1), second = cut + next() % (text.length - cut + 1);
+		if (templateSyntax.hasExpression(text)) read++;
+		lines.push('  result.q' + i + ' = ' + JSON.stringify(text));
+		lines.push('  result.t' + i + ' = `' + templatePart(text.substring(0, cut)) + '${input.x}' + templatePart(text.substring(cut, second)) + '${input.x}' +
+			templatePart(text.substring(second)) + '`');
+		expected['q' + i] = text;
+		expected['t' + i] = text.substring(0, cut) + 'X' + text.substring(cut, second) + 'X' + text.substring(second);
+	}
+	check(read >= 40, 'the drawn texts hold expressions of the Flow template: ' + read);
+	likeNode('any quoted or template text', lines.join('\n'), { x: 'X' }, expected);
+})();
+// A former {{ … }} in a quoted text given to a template property is refused, as a ${…} is (FLOWSCRIPT_QUOTED_TEMPLATE): it
+// would not interpolate; the proposal is the template literal that does. A {{ the template keeps as text is accepted, and
+// a fixed property takes the quoted text as written.
+var braces = api('flowSourceValidate', { name: 'Example', code: program('  throw { code: "GREETING", message: "Hello {{ input.name }}, {{ input.n + 1 }} `x`" }') });
+var braceRefusal = braces.error && braces.error.details && braces.error.details[0] || {};
+check(!braces.ok && braceRefusal.code === 'FLOWSCRIPT_QUOTED_TEMPLATE' && braceRefusal.line === 3 &&
+	braceRefusal.hint.indexOf('Write `Hello ${input.name}, ${input.n + 1} \\`x\\`` to interpolate') === 0,
+	'a {{ … }} in a quoted template property: ' + JSON.stringify(braces).substring(0, 800));
+var proposed = api('flowCodeRun', { name: 'Example', code: program('  throw { code: "GREETING", message: `Hello ${input.name}, ${input.n + 1} \\`x\\`` }'), input: { name: 'Ada', n: 1 }, includeTrace: false });
+check(!proposed.ok && proposed.error.message === 'Hello Ada, 2 `x`', 'the proposal interpolates: ' + JSON.stringify(proposed).substring(0, 600));
+check(api('flowSourceValidate', { name: 'Example', code: program('  throw { code: "GREETING", message: "Hello {{}} {{ a } }}" }') }).ok, 'a {{ }} kept as text in a template property');
+var fixedBraces = api('flowSourceValidate', { name: 'Example', code: program('  log({ level: "{{ input.level }}", message: `m` })'), skipAnalysis: true });
+check(fixedBraces.ok && fixedBraces.definition.nodes[0].props.level === '{{ input.level }}', 'a fixed property takes a quoted {{ as written: ' + JSON.stringify(fixedBraces).substring(0, 600));
 var signed = api('flowSourceValidate', { name: 'Example', code: program('  const d = date.add({ value: "2026-03-31", months: -1 })\n  result.d = d') });
 check(signed.ok && signed.definition.nodes[0].props.months === -1, 'a signed number in a block property: ' + JSON.stringify(signed).substring(0, 600));
 refuses('a let read before its declaration', '  let x = 1\n  if (input.a) {\n    let y = y + 1\n    result.y = y\n  }', 'FLOWSCRIPT_V3_OUT_OF_SCOPE', 5);

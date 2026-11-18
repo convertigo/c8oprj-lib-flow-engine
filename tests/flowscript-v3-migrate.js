@@ -61,4 +61,31 @@ var refused = migrate(broken, true);
 check(!refused.written && refused.flows.errors.length === 1 && refused.flows.errors[0].flow === "_flow/flows/Broken.flow.js" && refused.flows.migrated.length === 1,
 	"unexpected error report: " + JSON.stringify(refused));
 check(read(broken, "_flow/flows/Good.flow.js") === good, "nothing is written for a project with an unexpected error");
+
+// A {{ … }} the v2 reading interpolated in a quoted text (a template property, a value) is interpolated by the migrated
+// Flow too: the v2 definition holds it as ${…}, which the v3 text writes as a template literal, where a quoted text would
+// stay text. A {{ … }} the v2 definition still holds (the text of a v2 template literal) fails the guard: that Flow stays
+// in v2. Each Flow is run before and after, with the same result.
+var __flowEngineDir = String(engineDir.getAbsolutePath());
+var __flowProjectDir = String(java.nio.file.Files.createTempDirectory("flow-v3-migrate-run-").toFile().getAbsolutePath());
+var engine = eval(String(files.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8")));
+function run(code) {
+	var out = JSON.parse(String(engine.run(JSON.stringify({ flowSource: code, input: { x: "X", n: 2 }, includeTrace: false }))));
+	check(out.ok, "run: " + JSON.stringify(out).substring(0, 800) + "\n" + code);
+	return JSON.stringify(out.result);
+}
+var braces = 'const _flow = { sourceVersion: 2, inputs: { x: { type: "string" }, n: { type: "integer" } } }\n\n' +
+	'function Braces({ input, config, result }) {\n  result.body = template.render({ template: "a {{ input.x }} b {{ input.n + 1 }}" })\n' +
+	'  result.value = "c {{ input.x }} d"\n  result.text = "e {{}} f"\n}\n';
+var literal = 'const _flow = { sourceVersion: 2, inputs: { x: { type: "string" } } }\n\n' +
+	'function Literal({ input, config, result }) {\n  result.value = `g {{ input.x }} ${input.x}`\n}\n';
+var bracesDir = project({ Braces: braces, Literal: literal });
+var bracesReport = migrate(bracesDir, true);
+check(bracesReport.written && bracesReport.flows.migrated.length === 1 && bracesReport.flows.migrated[0].flow === "_flow/flows/Braces.flow.js" &&
+	bracesReport.flows.keptV2.length === 1 && bracesReport.flows.keptV2[0].flow === "_flow/flows/Literal.flow.js", "{{ }} migration report: " + JSON.stringify(bracesReport.flows));
+var bracesV3 = read(bracesDir, "_flow/flows/Braces.flow.js");
+check(bracesV3.indexOf("template.render({ template: `a ${input.x} b ${input.n + 1}` })") >= 0 && bracesV3.indexOf("result.value = `c ${input.x} d`") >= 0 &&
+	bracesV3.indexOf('result.text = "e {{}} f"') >= 0, "the interpolated {{ }} are written as template literals: " + bracesV3);
+check(run(braces) === JSON.stringify({ body: "a X b 3", value: "c X d", text: "e {{}} f" }) && run(bracesV3) === run(braces), "same result before and after: " + run(bracesV3));
+check(read(bracesDir, "_flow/flows/Literal.flow.js") === literal && run(literal) === JSON.stringify({ value: "g X X" }), "the v2 template literal with {{ }} stays in v2");
 print("flowscript-v3-migrate OK");

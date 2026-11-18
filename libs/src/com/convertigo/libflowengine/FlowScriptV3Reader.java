@@ -553,10 +553,7 @@ public final class FlowScriptV3Reader {
 		}
 		String text = raw(expression).trim();
 		if (expression instanceof org.mozilla.javascript.ast.UnaryExpression && numberToken(text) != null) return numberToken(text);
-		if (text.length() >= 2 && text.charAt(0) == '`' && text.charAt(text.length() - 1) == '`') {
-			String rendered = rewritten(expression, scope).trim();
-			return rendered.substring(1, rendered.length() - 1).replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
-		}
+		if (expression instanceof org.mozilla.javascript.ast.TemplateLiteral template) return templateText(template, scope);
 		return switch (text) { case "true" -> true; case "false" -> false; case "null" -> null; default -> "${" + rewritten(expression, scope).trim() + "}"; };
 	}
 
@@ -618,13 +615,123 @@ public final class FlowScriptV3Reader {
 			defer("FLOWSCRIPT_QUOTED_TEMPLATE", line, block + "." + key + " at line " + line + " receives quoted text containing ${...}; it will not interpolate.",
 				"Use a backtick template literal for interpolation, or escape ${ in a backtick literal for intentional text.");
 		}
-		if (!Set.of("template", "value", "binding").contains(kind) && expression instanceof StringLiteral fixed && !fixed.getValue().contains("{{")) return fixed.getValue();
+		// … and so is a former {{ expression }} in it: a quoted text is text, as in JavaScript; the proposal is the template
+		// literal that interpolates it.
+		if (kind.equals("template") && expression instanceof StringLiteral quoted && hasLegacyExpression(quoted.getValue())) {
+			int line = line(pos(expression));
+			defer("FLOWSCRIPT_QUOTED_TEMPLATE", line, block + "." + key + " at line " + line + " receives quoted text containing {{...}}; it is text, as in JavaScript, and will not interpolate.",
+				"Write " + legacyTemplateProposal(quoted.getValue()) + " to interpolate, or write the text in a backtick literal to keep its {{ }}.");
+		}
+		if (!Set.of("template", "value", "binding").contains(kind) && expression instanceof StringLiteral fixed) return fixed.getValue();
 		return value(expression, scope);
 	}
-	// A quoted text written as a value stays text: each ${ is escaped (\${, with the backslashes before it doubled), so
-	// that the Flow template does not read it as an expression (template-syntax.js literal).
-	private static String literalText(String text) {
-		return java.util.regex.Pattern.compile("(\\\\*)\\$\\{").matcher(text).replaceAll(found -> java.util.regex.Matcher.quoteReplacement(found.group(1) + found.group(1) + "\\${"));
+	// A template literal as a value of the Flow template (template-syntax.js compose): its texts as JavaScript reads them
+	// (escape sequences included), each kept as text by literalText, and its substitutions as ${…} expressions. The
+	// checks of the whole template run first, as for any expression.
+	private String templateText(org.mozilla.javascript.ast.TemplateLiteral template, Scope scope) {
+		rewritten(template, scope);
+		var out = new StringBuilder();
+		var elements = template.getElements();
+		for (int i = 0; i < elements.size(); i++) {
+			AstNode element = elements.get(i);
+			if (element instanceof org.mozilla.javascript.ast.TemplateCharacters characters) {
+				String cooked = characters.getValue() != null ? characters.getValue() : characters.getRawValue();
+				boolean beforeExpression = i + 1 < elements.size() && !(elements.get(i + 1) instanceof org.mozilla.javascript.ast.TemplateCharacters);
+				out.append(literalText(cooked, beforeExpression));
+			} else out.append("${").append(rewritten(element, scope).trim()).append("}");
+		}
+		return out.toString();
+	}
+	private static String literalText(String text) { return literalText(text, false); }
+	// A text (a quoted string, or the text of a template literal) stays that text in the Flow template
+	// (template-syntax.js literal): each ${ is escaped as \${, and each {{ the template would read as a former
+	// {{ expression }} is written as the expression ${"{{"}, the backslashes before them doubled; before an expression,
+	// the backslashes ending the text are doubled too. A {{ the template keeps as text ({{}}, a lone } before any }}, no
+	// closing }} in a text that ends the value) is left as written; when the text is followed by an expression, a {{
+	// whose closing is not found in the text is escaped, since the template would look for it in what follows.
+	private static String literalText(String text, boolean beforeExpression) {
+		var out = new StringBuilder();
+		int i = 0;
+		while (i < text.length()) {
+			char c = text.charAt(i);
+			if (c == '\\') {
+				int run = 0;
+				while (i + run < text.length() && text.charAt(i + run) == '\\') run++;
+				boolean escaped = text.startsWith("${", i + run) || text.startsWith("{{", i + run) && legacyExpression(text, i + run, beforeExpression)
+					|| beforeExpression && i + run == text.length();
+				out.append("\\".repeat(escaped ? 2 * run : run));
+				i += run;
+			} else if (text.startsWith("${", i)) {
+				out.append("\\${");
+				i += 2;
+			} else if (text.startsWith("{{", i) && legacyExpression(text, i, beforeExpression)) {
+				out.append("${\"{{\"}");
+				i += 2;
+			} else {
+				out.append(c);
+				i++;
+			}
+		}
+		return out.toString();
+	}
+	// Whether the template reads the {{ at index at of a text as a former {{ expression }} (template-syntax.js parts): a }}
+	// closes it (legacyClosing) around something other than spaces; open: the text is followed by an expression, where the
+	// template would go on looking for the closing }}.
+	private static boolean legacyExpression(String text, int at, boolean open) {
+		int end = legacyClosing(text, at);
+		return end == -2 ? open : end >= 0 && !jsBlank(text.substring(at + 2, end));
+	}
+	// The index of the }} closing the {{ at index at outside its strings (template-syntax.js closingLegacy), -1 when a lone }
+	// comes first, -2 when the text ends before.
+	private static int legacyClosing(String text, int at) {
+		char quote = 0;
+		for (int i = at + 2; i < text.length() - 1; i++) {
+			char c = text.charAt(i);
+			if (quote != 0) {
+				if (c == '\\') i++;
+				else if (c == quote) quote = 0;
+				continue;
+			}
+			if (c == '"' || c == '\'' || c == '`') quote = c;
+			else if (c == '}') return text.charAt(i + 1) == '}' ? i : -1;
+		}
+		return -2;
+	}
+	// Only spaces for String.prototype.trim (white space and line terminators).
+	private static boolean jsBlank(String text) {
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (!(c == '\t' || c == '\u000B' || c == '\f' || c == '\n' || c == '\r' || c == '\u2028' || c == '\u2029' || c == '\uFEFF'
+				|| Character.getType(c) == Character.SPACE_SEPARATOR)) return false;
+		}
+		return true;
+	}
+	// The former {{ expression }} parts of a quoted text written as a template literal: the proposal of the refusal of a
+	// quoted text in a template property.
+	private static String legacyTemplateProposal(String text) {
+		var out = new StringBuilder("`");
+		int i = 0;
+		while (i < text.length()) {
+			if (text.startsWith("{{", i) && legacyExpression(text, i, false)) {
+				int end = legacyClosing(text, i);
+				out.append("${").append(text.substring(i + 2, end).trim()).append("}");
+				i = end + 2;
+				continue;
+			}
+			char c = text.charAt(i);
+			if (c == '\\' || c == '`') out.append('\\').append(c);
+			else if (c == '$' && i + 1 < text.length() && text.charAt(i + 1) == '{') out.append("\\$");
+			else if (c == '\n') out.append("\\n");
+			else if (c == '\r') out.append("\\r");
+			else if (c == '\t') out.append("\\t");
+			else out.append(c);
+			i++;
+		}
+		return out.append('`').toString();
+	}
+	private static boolean hasLegacyExpression(String text) {
+		for (int i = text.indexOf("{{"); i >= 0; i = text.indexOf("{{", i + 1)) if (legacyExpression(text, i, false)) return true;
+		return false;
 	}
 	private record Lowered(List<Map<String, Object>> before, String expression) { }
 	private String method(FunctionCall call) {

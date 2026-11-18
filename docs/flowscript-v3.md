@@ -539,6 +539,17 @@ replacement. The rules of the previous sections are amended accordingly.
      template property it is refused (`FLOWSCRIPT_QUOTED_TEMPLATE`: it would not interpolate), a fixed property
      (`literal`, `select`…) takes it as written. The reader gave `${x}` to the Flow template, which read it as an
      expression;
+   - the same holds for `{{ … }}`, the former expression notation the Flow template still reads (and the v2 reading of
+     a quoted text, behind the bridge): in a value, each `{{` the template would read as an expression is written as the
+     expression `${"{{"}` (`"cost {{ x }}"` is those characters; a `{{` the template keeps as text, such as `{{}}`, is
+     left as written); in a template property a quoted `{{ x }}` is refused (`FLOWSCRIPT_QUOTED_TEMPLATE`), with the
+     template literal that interpolates it as the proposal (`` `cost ${x}` ``); a fixed property takes it as written.
+     The text of a template literal is text too (`` `a {{ x }} ${y}` ``), with its escape sequences read as JavaScript
+     reads them (`\\`, `` \` ``, `A`; `\\` stayed two backslashes) and its substitutions as expressions, so that
+     `` `x` + `y` `` is a concatenation (it was read as one template literal). The migration keeps the meaning of a v2
+     Flow: a `{{ x }}` the v2 reading interpolated is in its definition as `${x}`, which the renderer writes as a
+     template literal; a v2 definition that still holds a `{{` read as an expression (the text of a v2 template literal)
+     is written `${…}` and fails the guard, so that Flow stays in v2;
    - comments and blank lines: a blank line after comments makes them a comment node, and a statement after a blank
      line keeps it for the rendering; the comments that end a block are a comment node; `@disabled` is removed from
      the comment of the statement it disables.

@@ -99,6 +99,16 @@ grammar.refused.forEach(function (entry) { if (entry.example && !entry.parseErro
   ['dollar brace pushed', 'const rows = json.array({ itemType: { type: "string" } })\nrows.push("p ${q}")\nreturn { rows }'],
   ['dollar brace in a template property', 'throw { code: "X", message: "bad ${v}" }'],
   ['escaped dollar brace in a template', 'result.a = `cost \\${x} ${input.a}`'],
+  ['double brace in quoted values', 'result.a = "cost {{ input.a }}"\nresult.b = \'x {{ y }}\'\nconst t = text.trim({ text: "v {{ input.a }}" })\nresult.t = t\nresult.c = { k: "{{ input.b }}" }\nresult.d = ["{{ z }}", "a\\\\{{ w }}", "${{ v }}"]'],
+  ['double brace kept as text', 'result.a = "{{}} {{ a } b }} {{ c"\nresult.b = `{{ }} ${input.a}`'],
+  ['double brace pushed', 'const rows = json.array({ itemType: { type: "string" } })\nrows.push("p {{ q }}")\nreturn { rows }'],
+  ['double brace in a template property', 'throw { code: "X", message: "bad {{ input.v }}" }'],
+  ['double brace kept in a template property', 'throw { code: "X", message: "bad {{}}" }'],
+  ['double brace in a fixed property', 'log({ level: "{{ input.level }}", message: `m` })'],
+  ['double brace in a template literal', 'result.a = `t {{ input.a }} ${input.a} {{ x`'],
+  ['double brace in an expression', 'result.a = "a {{ input.a }}" + input.b'],
+  ['template literal escapes', 'result.a = `a\\\\b \\` \\u0041 ${input.a}\\\\`'],
+  ['template literal spaced substitution', 'result.a = `a ${ input.a } b`'],
   ['const in sibling blocks', 'if (input.x) {\n  const v = 1\n  result.a = v\n} else {\n  const v = 2\n  result.a = v\n}'],
   ['const in a loop body', 'const total = json.array({ itemType: { type: "integer" } })\nfor (const x of input.items) {\n  const twice = x * 2\n  total.push(twice)\n}\nreturn { total }'],
   ['comment groups', '// a\n\n// b\nlet x = 1\n\n// c\n\nx += 1\n//  indented note  \nresult.x = x\n/* block\n * two lines */\nresult.y = 1\n// end of the body'],
@@ -150,7 +160,8 @@ function catalog(name) {
 }
 // The readings the bridge gets wrong, where the Java reader keeps the JavaScript meaning (each one is run against Node
 // in flowscript-v3-bench-forms.js). Every diagnostic of the oracle has one of these
-// causes, and the Java reading is accepted by the engine:
+// causes, and the Java reading is accepted by the engine (for the double brace, the oracle accepts the source and reads
+// it otherwise):
 //   - shorthand: an object literal with a shorthand field ({ category }) as the whole value of a push or a put is
 //     rewritten by the bridge to "category: local.category" and given twice to the v2 parser ("local.category:
 //     local.category");
@@ -160,6 +171,11 @@ function catalog(name) {
 //   - comment line: a // comment on a line of an expression written on several lines, other than its first, stays in
 //     the expression for the v2 parser, which refuses it (FLOWSCRIPT_EXPRESSION_UNSUPPORTED); JavaScript ignores it, and
 //     the Java reader drops it as the v2 parser drops the comment of a first line.
+//   - double brace: a {{ … }} in a quoted text or in the text of a template literal is text in JavaScript, and for the Java
+//     reader, which writes such a {{ as the expression ${"{{"} where the Flow template would read it as its former
+//     {{ expression }} notation (and refuses it in a quoted template property, FLOWSCRIPT_QUOTED_TEMPLATE, as it refuses
+//     ${…}); the bridge hands the text to the v2 parser, which reads it as that notation. Recognized when the reader and
+//     the oracle agree once each {{ of the source is written { { (withoutDoubleBraces).
 function bridgeDefect(diagnostic) {
   if (diagnostic && diagnostic.code === 'FLOWSCRIPT_EXPRESSION_UNSUPPORTED' && /\/\/[^\n]*\n/.test(String(diagnostic.expression || ''))) return 'comment line';
   if (!diagnostic || diagnostic.code !== 'INVALID_EXPRESSION') return '';
@@ -170,41 +186,55 @@ function bridgeDefect(diagnostic) {
 }
 var acceptedBeyondBridge = {};
 var checked=0, skipped=0, wanted=0, wantedIds=[], mismatches=[], bySource={};
-cases.forEach(function(item) {
-  var translated = bridge.translate(item.source), direct = JSON.parse(String(Reader.read(item.source,catalog)));
+// The reading of a source by the reader and by the oracle: { problem } when they differ, { causes } when the difference
+// is a reading the bridge gets wrong (bridgeDefect), { oracleRejected } when the oracle refuses the source.
+function compare(source, kind) {
+  var translated = bridge.translate(source), direct = JSON.parse(String(Reader.read(source,catalog)));
   var expectedError = translated.diagnostics.length ? translated.diagnostics[0] : null;
   // A refusal of the reader under another code is a check of the v2 parser it mirrors (an unknown slot, an assignment and
-  // $$out): it is compared with the refusal of the oracle's parser below.
+  // $$out, a quoted template): it is compared with the refusal of the oracle's parser below.
   var actualError = direct.diagnostics.length && /^FLOWSCRIPT_V3_/.test(direct.diagnostics[0].code) ? direct.diagnostics[0] : null;
-  var kind = item.id.split(':')[0]; bySource[kind]=(bySource[kind]||0)+1;
-
   if (expectedError || actualError) {
     if (!expectedError || !actualError || expectedError.code !== actualError.code || expectedError.line !== actualError.line)
-      mismatches.push(item.id + ' diagnostic ' + (expectedError && expectedError.code + '/' + expectedError.line) + ' != ' + (actualError && actualError.code + '/' + actualError.line));
-    checked++; return;
+      return { problem: 'diagnostic ' + (expectedError && expectedError.code + '/' + expectedError.line) + ' != ' + (actualError && actualError.code + '/' + actualError.line) };
+    return {};
   }
   var oracle = JSON.parse(String(engine.flowSourceValidate(JSON.stringify({name:'Example',code:translated.code,skipAnalysis:true}))));
   if (!oracle.ok) {
-    skipped++;
-    var integrated=JSON.parse(String(engine.flowSourceValidate(JSON.stringify({name:'Example',code:item.source,skipAnalysis:true}))));
+    var integrated=JSON.parse(String(engine.flowSourceValidate(JSON.stringify({name:'Example',code:source,skipAnalysis:true}))));
     var expectedParserCode=oracle.error && oracle.error.code || oracle.diagnostics && oracle.diagnostics[0] && oracle.diagnostics[0].code;
     var actualParserCode=integrated.error && integrated.error.code || integrated.diagnostics && integrated.diagnostics[0] && integrated.diagnostics[0].code;
-    if (expectedParserCode !== actualParserCode) {
-      var oracleDiagnostics = oracle.diagnostics && oracle.diagnostics.length ? oracle.diagnostics : [oracle.error];
-      var causes = oracleDiagnostics.map(bridgeDefect).filter(function (cause, i, all) { return all.indexOf(cause) === i; });
-      if (integrated.ok === true && causes.indexOf('') < 0) {
-        wanted++; wantedIds.push(item.id + ' (' + causes.join(', ') + ')');
-        causes.forEach(function (cause) { acceptedBeyondBridge[cause] = (acceptedBeyondBridge[cause] || 0) + 1; });
-      }
-      else mismatches.push(item.id + ' parser diagnostic ' + expectedParserCode + ' != ' + actualParserCode);
-    }
-    checked++;
-    return;
+    if (expectedParserCode === actualParserCode) return { oracleRejected: true };
+    var oracleDiagnostics = oracle.diagnostics && oracle.diagnostics.length ? oracle.diagnostics : [oracle.error];
+    var causes = oracleDiagnostics.map(bridgeDefect).filter(function (cause, i, all) { return all.indexOf(cause) === i; });
+    if (integrated.ok === true && causes.indexOf('') < 0) return { oracleRejected: true, causes: causes };
+    return { oracleRejected: true, problem: 'parser diagnostic ' + expectedParserCode + ' != ' + actualParserCode };
   }
-  if (direct.diagnostics.length) { mismatches.push(item.id + ' reader refusal ' + direct.diagnostics[0].code + '/' + direct.diagnostics[0].line + ' of an accepted source'); checked++; return; }
+  if (direct.diagnostics.length) return { problem: 'reader refusal ' + direct.diagnostics[0].code + '/' + direct.diagnostics[0].line + ' of an accepted source' };
   oracle.definition.flow = Object.assign({},oracle.definition.flow||{},{sourceVersion:3});
   var expected = codeService.comparableDefinition(oracle.definition), actual = codeService.comparableDefinition(direct.definition);
-  if (expected !== actual) mismatches.push(item.id + ' definition ' + (kind === 'trace' ? difference(JSON.parse(expected),JSON.parse(actual),'root').split(':')[0] + ' (values withheld)' : difference(JSON.parse(expected),JSON.parse(actual),'root')));
+  if (expected !== actual) return { problem: 'definition ' + (kind === 'trace' ? difference(JSON.parse(expected),JSON.parse(actual),'root').split(':')[0] + ' (values withheld)' : difference(JSON.parse(expected),JSON.parse(actual),'root')) };
+  return {};
+}
+// The source with each {{ written { {: the same JavaScript code, and texts that no reading takes for an expression.
+function withoutDoubleBraces(source) {
+  while (source.indexOf('{{') >= 0) source = source.replace(/\{\{/g, '{ {');
+  return source;
+}
+cases.forEach(function(item) {
+  var kind = item.id.split(':')[0]; bySource[kind]=(bySource[kind]||0)+1;
+  var found = compare(item.source, kind), causes = found.causes || [];
+  if (found.oracleRejected) skipped++;
+  // double brace: a {{ … }} in a quoted text or in the text of a template literal (see bridgeDefect)
+  if (found.problem && item.source.indexOf('{{') >= 0) {
+    var neutral = compare(withoutDoubleBraces(item.source), kind);
+    if (!neutral.problem) { found = neutral; causes = (neutral.causes || []).concat(['double brace']); }
+  }
+  if (found.problem) mismatches.push(item.id + ' ' + found.problem);
+  else if (causes.length) {
+    wanted++; wantedIds.push(item.id + ' (' + causes.join(', ') + ')');
+    causes.forEach(function (cause) { acceptedBeyondBridge[cause] = (acceptedBeyondBridge[cause] || 0) + 1; });
+  }
   checked++;
 });
 print('differential corpus ' + JSON.stringify({total:cases.length,bySource:bySource,checked:checked,oracleRejected:skipped,acceptedBeyondBridge:acceptedBeyondBridge,wantedDifferences:wanted,wantedIds:wantedIds,differences:mismatches.length}));
