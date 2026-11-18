@@ -44,6 +44,14 @@ try {
 	var legacyFile = new java.io.File(project, '_flow/blocks/proof/legacy.block.js');
 	assert(legacyFile.isFile() && String(files.readFileToString(legacyFile, 'UTF-8')).indexOf('for (let value of') >= 0,
 		'legacy writer did not compile the corrected source');
+	// The legacy writer applies the Rhino policy before writing any file, whatever the request says.
+	var refused = api('blockCreate', {projectDir: __flowProjectDir, name: 'proof.refused', allowPrimitiveRhino: true,
+		descriptor: {description: 'Refused write.', implementation: {runtime: 'rhino'}, hooks: {file: 'refused.hooks.js'}},
+		hooksSource: '(function () { return {}; }())',
+		implementationSource: '(function () { return { run: function () { return new java.net.URL("http://example.invalid").openStream(); } }; }())'});
+	assert(refused && refused.error && refused.error.code === 'RHINO_REIMPLEMENTS_HTTP', 'legacy policy: ' + JSON.stringify(refused));
+	assert(!new java.io.File(project, '_flow/blocks/proof/refused.block.js').exists() &&
+		!new java.io.File(project, '_flow/blocks/proof/refused.hooks.js').exists(), 'a refused legacy write left a file');
 	var flow = 'const _flow={sourceVersion:2}\nfunction Check({result}) { proof.loop({$$out:"result.out"}) }';
 	var run = api('run', {projectDir: __flowProjectDir, flowSource: flow, flowName: 'Check', flowQName: 'Proof.Check'});
 	assert(run.ok, 'execution: ' + JSON.stringify(run.error));

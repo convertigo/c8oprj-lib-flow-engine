@@ -95,8 +95,11 @@
 				});
 				return flowScriptBlockCodeSource(name, code, meta);
 			}
-			// The compiler corrects Rhino loop declarations before validating the implementation.
-			return rhinoBlockCodeSource(name, implementationSource, meta);
+			// The compiler corrects Rhino loop declarations, then validates the implementation and applies the Rhino
+			// policy, before any file of the block is written. A request never relaxes the policy on this path.
+			var rhinoCode = rhinoBlockCodeSource(name, implementationSource, meta);
+			compileProjectBlockCode(blocks, name, rhinoCode, { allowPrimitiveRhino: false });
+			return rhinoCode;
 		}
 
 		function hooksTargetFile(descriptorFile, definition) {
@@ -243,7 +246,8 @@
 			}
 			return setProjectBlockCode(blocks, name, Object.assign({}, request, {
 				code: code,
-				overwrite: overwrite
+				overwrite: overwrite,
+				allowPrimitiveRhino: false
 			})).block;
 		}
 
