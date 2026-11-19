@@ -14,6 +14,8 @@ The other four entry points use this Engine's `tools/run-library-tests.cjs`.
 Apply the Engine runner commit too when importing their incremental bundles.
 No Docker, server, npm global install, or production database is needed.
 
+`tests/block-meta-java-reader.js` compares the Java `_meta` reader with the JavaScript one on every block of the sibling libraries (at least 400 headers); with only this library checked out, it compares its own 150 or so.
+
 ## Prerequisites
 
 Use Node 24 (tested with 24.18.1), npm, and a JDK able to load your runtime JARs.

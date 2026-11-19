@@ -53,8 +53,50 @@
 		return -1;
 	}
 
+	// The header read by the Java reader of libs/build (BlockMetaReader), which answers null for anything it does not read,
+	// an invalid header included: the JavaScript reading below then reads it with its own messages. Without the class, as
+	// with an engine that does not load libs/build, every header is read by the JavaScript.
+	var metaReads = { java: 0, fallback: 0 };
+
+	// The class of the class path of the project of the call, by its full name: Packages.com.convertigo.libflowengine.X would
+	// also look up com.convertigo and com.convertigo.libflowengine as classes (as lib/rows.js rowsKernel).
+	function metaReaderClass() {
+		var found = typeof flowProjectClass === "function" ? flowProjectClass("com.convertigo.libflowengine.BlockMetaReader")
+			: Packages["com.convertigo.libflowengine.BlockMetaReader"];
+		return typeof found === "function" ? found : null;
+	}
+
 	function extractMeta(code, env) {
 		var text = String(code || "");
+		var found = extractMetaJava(text);
+		if (found) {
+			metaReads.java++;
+			return found;
+		}
+		metaReads.fallback++;
+		return extractMetaJs(text, env);
+	}
+
+	function extractMetaJava(text) {
+		try {
+			var reader = metaReaderClass();
+			if (!reader) return null;
+			var answer = reader.extract(text);
+			if (answer === null || answer === undefined) return null;
+			var read = JSON.parse(String(answer));
+			if (read.none) return { meta: {}, code: text };
+			// Blank the declaration rather than shifting body line numbers.
+			return {
+				meta: read.meta,
+				code: text.substring(0, read.start) + text.substring(read.start, read.end).replace(/[^\r\n]/g, " ") + text.substring(read.end),
+				header: { start: read.start, end: read.end }
+			};
+		} catch (unavailable) {
+			return null;
+		}
+	}
+
+	function extractMetaJs(text, env) {
 		// Headers are declarations in the prelude, not text found inside a
 		// comment, string or implementation. The body remains opaque here.
 		var start = skipTrivia(text, 0, env);
@@ -286,6 +328,8 @@
 		balancedObjectEnd: balancedObjectEnd,
 		commentEnd: commentEnd,
 		extractMeta: extractMeta,
+		extractMetaJs: extractMetaJs,
+		metaReads: function () { return { java: metaReads.java, fallback: metaReads.fallback }; },
 		blockMetaSource: blockMetaSource,
 		unwrapFlowScriptBlockEnvelope: unwrapFlowScriptBlockEnvelope,
 		flowScriptBlockFunctionName: flowScriptBlockFunctionName,

@@ -30,7 +30,8 @@ try {
 	assert(second.input === "B" && second.value === "saved", "Inputs cannot travel with a shared plan");
 	assert(first === 1 && total("execution-snapshot") === first, "Second runtime rebuilt the plan");
 	assert(descriptors > 0 && total("block-catalog") === descriptors, "Second runtime rebuilt descriptors");
-	assert(headers > 0 && total("block-header") === headers, "Second runtime reparsed immutable block headers");
+	// the headers are read in Java (BlockMetaReader), without this snapshot, or by the JavaScript through it: never twice
+	assert(total("block-header") === headers, "Second runtime reparsed immutable block headers");
 	var drafts = {}; drafts[file] = block("draft");
 	assert(run(a, { sourceDrafts: drafts }).value === "draft", "Hot plan ignored a draft");
 	assert(total("execution-snapshot") === first, "Draft plan entered shared registry");
