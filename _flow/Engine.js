@@ -11211,6 +11211,10 @@
 		if (!output || !output.staging.isDirectory()) {
 			throw new Error("The staged Svelte production output is missing.");
 		}
+		var envFile = new File(output.staging, "env.json");
+		var env = JSON.parse(String(FileUtils.readFileToString(envFile, "UTF-8")));
+		env.appGenerationTime = new Date().getTime();
+		FileUtils.writeStringToFile(envFile, JSON.stringify(env), "UTF-8");
 		var backedUp = false;
 		try {
 			if (output.target.exists()) {
@@ -13365,15 +13369,20 @@
 	}
 
 	/**
-	 * Whether the production output holds a build: the application folder SvelteKit writes (_app), which the page of
-	 * an unbuilt application delivered with a project has not. A server builds the applications delivered without it.
+	 * Whether the production output holds a completed build, marked in its env.json at publication.
 	 */
 	function frontendBuildOutputBuilt(projectRoot, buildOutput) {
 		if (!projectRoot) {
 			return false;
 		}
 		var output = fileForProjectPath(projectRoot, String(buildOutput || "DisplayObjects/mobile").replace(/^\/+/, ""));
-		return !!output && new File(output, "_app").isDirectory();
+		try {
+			return Object.prototype.hasOwnProperty.call(
+				JSON.parse(String(FileUtils.readFileToString(new File(output, "env.json"), "UTF-8"))),
+				"appGenerationTime");
+		} catch (e) {
+			return false;
+		}
 	}
 
 	function frontendBuilderCommands(info, available, dev) {

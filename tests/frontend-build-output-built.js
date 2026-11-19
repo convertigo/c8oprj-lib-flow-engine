@@ -1,5 +1,4 @@
-// The builders tell whether their production output holds a build: the _app folder of SvelteKit, which the page of an
-// unbuilt application delivered with a project has not. A server builds the applications delivered without it.
+// The builders tell whether their production output holds a completed build marked in env.json.
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
 var File = java.io.File;
@@ -31,7 +30,11 @@ try {
 	FileUtils.writeStringToFile(new File(mobile, "index.html"), "This is an unbuilt application", "UTF-8");
 	assertEqual(frontendBuildOutputBuilt(project, ""), false, "the page of an unbuilt application is not a build");
 	new File(mobile, "_app/immutable").mkdirs();
-	assertEqual(frontendBuildOutputBuilt(project, ""), true, "a SvelteKit build in the default output");
+	assertEqual(frontendBuildOutputBuilt(project, ""), false, "_app alone is not a completed build");
+	FileUtils.writeStringToFile(new File(mobile, "env.json"), '{"projectName":"test"}', "UTF-8");
+	assertEqual(frontendBuildOutputBuilt(project, ""), false, "env without the stamp is incomplete");
+	FileUtils.writeStringToFile(new File(mobile, "env.json"), '{"appGenerationTime":1791450000000}', "UTF-8");
+	assertEqual(frontendBuildOutputBuilt(project, ""), true, "a stamped build in the default output");
 	assertEqual(frontendBuildOutputBuilt(project, "/DisplayObjects/mobile"), true, "a leading slash is ignored");
 	assertEqual(frontendBuildOutputBuilt(project, "DisplayObjects/web"), false, "another output");
 	print("frontend-build-output-built OK");

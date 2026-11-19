@@ -25,7 +25,12 @@ try {
 	staging.mkdirs();
 	FileUtils.writeStringToFile(new File(target, "version.txt"), "old", "UTF-8");
 	FileUtils.writeStringToFile(new File(staging, "version.txt"), "new", "UTF-8");
+	FileUtils.writeStringToFile(new File(staging, "env.json"), '{"projectName":"test"}', "UTF-8");
 	frontendPromoteBuildOutput({ target: target, staging: staging, backup: backup });
+	var env = JSON.parse(String(FileUtils.readFileToString(new File(target, "env.json"), "UTF-8")));
+	assertTrue(typeof env.appGenerationTime === "number" && env.appGenerationTime > 0,
+		"published output must carry its build time");
+	assertTrue(env.projectName === "test", "publication must preserve runtime environment");
 	assertTrue(String(FileUtils.readFileToString(new File(target, "version.txt"), "UTF-8")) === "new",
 		"published output must replace the old output");
 	assertTrue(!backup.exists() && !staging.exists(), "temporary output directories must be removed");
@@ -40,6 +45,19 @@ try {
 	assertTrue(failed, "missing staged output must reject publication");
 	assertTrue(String(FileUtils.readFileToString(new File(target, "version.txt"), "UTF-8")) === "new",
 		"failed publication must preserve the last good output");
+
+	var invalid = new File(root, ".mobile.invalid");
+	invalid.mkdirs();
+	FileUtils.writeStringToFile(new File(invalid, "env.json"), "{", "UTF-8");
+	failed = false;
+	try {
+		frontendPromoteBuildOutput({ target: target, staging: invalid, backup: new File(root, ".mobile.invalid-backup") });
+	} catch (expected) {
+		failed = true;
+	}
+	assertTrue(failed, "an invalid staged environment must reject publication");
+	assertTrue(String(FileUtils.readFileToString(new File(target, "version.txt"), "UTF-8")) === "new",
+		"invalid environment must preserve the last good output");
 } finally {
 	FileUtils.deleteDirectory(root);
 }
