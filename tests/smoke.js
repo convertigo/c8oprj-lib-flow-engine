@@ -4914,9 +4914,21 @@ var persistentFrontendTree = JSON.parse(engineAfterFrontendRestart.authoringTree
 	includeFlowCatalog: false
 })));
 var persistentFrontendCacheInfo = JSON.parse(engineAfterFrontendRestart.cacheInfo()).caches.persistentFrontendDocuments;
+// An engine with an authoring cache keeps the front documents there, and only there: outside a running engine it is
+// off, nothing is kept (its own tests cover it). An older engine: in the temporary folder.
+var engineKeepsAuthoringDocuments = (function () {
+	try {
+		return typeof Packages.com.twinsoft.convertigo.engine.flow.FlowStudioSupport.keepAuthoringDocument === "function";
+	} catch (e) {
+		return false;
+	}
+}());
 assertTrue(persistentFrontendTree.childCount === leanFlowSvelteAuthoringTree.childCount &&
-	persistentFrontendCacheInfo.hits > 0 && persistentFrontendCacheInfo.errors === 0,
+	(engineKeepsAuthoringDocuments
+		? persistentFrontendCacheInfo.hits === 0 && persistentFrontendCacheInfo.writes === 0 && !persistentFrontendCacheDir.isDirectory()
+		: persistentFrontendCacheInfo.hits > 0) && persistentFrontendCacheInfo.errors === 0,
 	"a new Flow runtime should reuse the persistent frontend document cache: " + JSON.stringify({
+		engineKeepsAuthoringDocuments: engineKeepsAuthoringDocuments,
 		initialChildCount: leanFlowSvelteAuthoringTree.childCount,
 		restartedChildCount: persistentFrontendTree.childCount,
 		cache: persistentFrontendCacheInfo

@@ -15,7 +15,7 @@ const file = { getAbsolutePath: () => '/fixture/Component.flow.svelte', delete()
 let memory, disk, calls = 0, keys = [], failure;
 // The producer and the cached entry it enriches are evaluated together.
 const project = vm.runInNewContext('(function () {' + source.slice(start, end) + '\nreturn describeFrontendDocument; }())', {
-  frontendPerformanceMark() {}, frontendRequestSourceFile: () => file,
+  frontendPerformanceMark() {}, JavaSystem: { nanoTime: () => 0 }, frontendRequestSourceFile: () => file,
   frontendSvelteResourceRoot: () => file, fileForProjectPath: () => file,
   File: Object.assign(function () {}, { createTempFile: () => file }),
   FileUtils: { writeStringToFile() {} }, projectNameForRoot: () => 'Fixture',

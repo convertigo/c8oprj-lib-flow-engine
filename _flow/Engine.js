@@ -7592,9 +7592,14 @@
 				sourceFileFingerprint = "";
 			}
 		}
+		// marked apart: the catalog fingerprint is measured from here, not since the call began
+		var blocksKey = blocksCacheKey();
+		frontendPerformanceMark("tree.fingerprint.blocks");
+		var typesKey = typesCacheKey();
+		frontendPerformanceMark("tree.fingerprint.types");
 		return [
-				blocksCacheKey(),
-				typesCacheKey(),
+				blocksKey,
+				typesKey,
 				request.target === "engine" ? frontendCatalogFingerprintForRequest(request) : "",
 				request.target === "engine" ? frontendModelFingerprintForRequest(request) : "",
 				sourceFileFingerprint,
@@ -8035,9 +8040,12 @@
 				reuseKey = "";
 			}
 			frontendPerformanceMark("frontend.document.providerPrepare");
+			var providerStartedAt = JavaSystem.nanoTime();
+			var answered = {};
 			// FRONTBUILDER_DOCUMENT_REUSE_KEY: an environment variable an older provider ignores
 			var result = frontendDescribeDocument(resourceRoot, cliArgs,
-				reuseKey ? { FRONTBUILDER_DOCUMENT_REUSE_KEY: reuseKey } : null);
+				reuseKey ? { FRONTBUILDER_DOCUMENT_REUSE_KEY: reuseKey } : null, answered);
+			var providerNanos = JavaSystem.nanoTime() - providerStartedAt;
 			frontendPerformanceMark("frontend.document.provider");
 			if (!result || !result.model) {
 				var error = new Error("Svelte front document did not return a valid model.");
@@ -8053,7 +8061,7 @@
 			}
 			var cachedResult = writeRuntimeMapCache(cache, key, fingerprint, result, "Svelte front documents");
 			if (persistentCacheEligible) {
-				writePersistentFrontendDocument(key, fingerprint, cachedResult);
+				writePersistentFrontendDocument(key, fingerprint, cachedResult, answered.text, providerNanos);
 			}
 			frontendPerformanceMark("frontend.document.cacheStore");
 			return documentEntry(cachedResult);
@@ -8108,8 +8116,40 @@
 			sha256Hex(String(key) + "\n" + String(fingerprint)) + ".json");
 	}
 
+	// The front documents are kept with the authoring responses, in the authoring cache of the engine (its local
+	// working directory, else its workspace): one store on disk, cleared and bounded with them. An engine without it
+	// keeps them in its temporary folder.
+	function authoringDocumentStore() {
+		try {
+			var support = Packages.com.twinsoft.convertigo.engine.flow.FlowStudioSupport;
+			return typeof support.keepAuthoringDocument === "function" ? support : null;
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function authoringDocumentKey(key, fingerprint) {
+		return sha256Hex("frontend-document-v1\n" + String(key) + "\n" + String(fingerprint));
+	}
+
 	function readPersistentFrontendDocument(key, fingerprint) {
 		var stats = runtimeState.persistentFrontendDocuments;
+		var store = authoringDocumentStore();
+		if (store) {
+			var answer = null;
+			try {
+				var text = store.authoringDocument(authoringDocumentKey(key, fingerprint));
+				answer = text === null || text === undefined ? null : JSON.parse(String(text));
+			} catch (e) {
+				stats.errors++;
+			}
+			if (answer && answer.result && answer.result.model) {
+				stats.hits++;
+				return answer.result;
+			}
+			stats.misses++;
+			return null;
+		}
 		var file = persistentFrontendDocumentFile(key, fingerprint);
 		if (!file.isFile()) {
 			stats.misses++;
@@ -8158,8 +8198,22 @@
 		}
 	}
 
-	function writePersistentFrontendDocument(key, fingerprint, result) {
+	// text: the document as its provider answered it, kept without serializing it again
+	function writePersistentFrontendDocument(key, fingerprint, result, text, computeNanos) {
 		var stats = runtimeState.persistentFrontendDocuments;
+		var store = authoringDocumentStore();
+		if (store) {
+			try {
+				// the request does not wait: the writer of the authoring cache compresses and writes it
+				if (store.keepAuthoringDocument(authoringDocumentKey(key, fingerprint),
+						text ? String(text) : JSON.stringify({ result: result }), Math.round(Number(computeNanos) || 0))) {
+					stats.writes++;
+				}
+			} catch (e) {
+				stats.errors++;
+			}
+			return;
+		}
 		var file = persistentFrontendDocumentFile(key, fingerprint);
 		var temporary = null;
 		try {
@@ -8921,7 +8975,8 @@
 						frontendStudioLog("[Svelte front document server] " + line);
 						continue;
 					}
-					var response = JSON.parse(line.substring("__C8O_FRONT_DOCUMENT__".length));
+					var responseText = line.substring("__C8O_FRONT_DOCUMENT__".length);
+					var response = JSON.parse(responseText);
 					if (String(response.id || "") !== id) {
 						continue;
 					}
@@ -8943,6 +8998,10 @@
 					if (!response.result || !response.result.model) {
 						throw new Error("Svelte front document server returned an invalid model.");
 					}
+					if (options.capture) {
+						// the text as answered: the persistent cache keeps it without serializing the document again
+						options.capture.text = responseText;
+					}
 					return response.result;
 				}
 				if (!server.process.isAlive()) {
@@ -8959,9 +9018,9 @@
 		}
 	}
 
-	function frontendDescribeDocument(resourceRoot, cliArgs, env) {
+	function frontendDescribeDocument(resourceRoot, cliArgs, env, capture) {
 		try {
-			return frontendRunDocumentServer(resourceRoot, cliArgs, undefined, env ? { env: env } : undefined);
+			return frontendRunDocumentServer(resourceRoot, cliArgs, undefined, { env: env || undefined, capture: capture });
 		} catch (e) {
 			runtimeState.frontendDocumentServerStats.errors++;
 			runtimeState.frontendDocumentServerStats.lastError = String(e && e.message || e);
