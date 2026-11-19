@@ -1,4 +1,4 @@
-// Offline witnesses: the diagnostic changes, the catalog and load refusal do not.
+// Offline witnesses: the diagnostic changes; the catalog does not, and a saved source stays readable but invalid.
 var engineDir = new java.io.File(arguments[0]).getCanonicalFile();
 var __flowEngineDir = String(engineDir);
 var project = java.nio.file.Files.createTempDirectory("out-capture-diagnostic-").toFile();
@@ -28,7 +28,9 @@ try {
     files.writeStringToFile(new java.io.File(project, '_flow/flows/Capture.flow.js'), source(body), 'UTF-8');
     engine.cacheClear();
     var loaded = api('flowCodeGet', { name: 'Capture', draft: false });
-    assert(!loaded.ok && loaded.error.code === 'FLOWSCRIPT_CANONICAL_INVALID', name + ': canonical load refusal');
+    // a saved source that no longer compiles stays readable, to be repaired: invalid, with the diagnostic naming out
+    var named = (loaded.diagnostics || []).some(function (item) { return item.code === 'UNKNOWN_BLOCK_PROPERTY' && item.property === 'out'; });
+    assert(loaded.ok === true && loaded.valid === false && named, name + ': saved source read as invalid, out named');
     assert(check(name + '({ ' + args + ', $$out: "local.value" })').ok, name + ': explicit capture');
     assert(check('local.value = ' + name + '({ ' + args + ' })').ok, name + ': assignment capture');
   });
