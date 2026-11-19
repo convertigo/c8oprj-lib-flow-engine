@@ -1,4 +1,4 @@
-const _flow = { sourceVersion: 3 }
+const _flow = { sourceVersion: 3, accessibility: "private" }
 
 function sample_json_object_output({ input, config, result }) {
   local.news = { title: "Flow samples are executable", count: 3 }

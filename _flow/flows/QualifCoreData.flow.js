@@ -1,4 +1,4 @@
-const _flow = { sourceVersion: 3 }
+const _flow = { sourceVersion: 3, accessibility: "private" }
 
 function QualifCoreData({ input, config, result }) {
   local.profile = { city: "Paris", metrics: { temperature: 38, unit: "C" } }

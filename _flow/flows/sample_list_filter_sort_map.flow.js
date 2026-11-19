@@ -1,4 +1,4 @@
-const _flow = { sourceVersion: 3 }
+const _flow = { sourceVersion: 3, accessibility: "private" }
 
 function sample_list_filter_sort_map({ input, config, result }) {
   local.cities = [

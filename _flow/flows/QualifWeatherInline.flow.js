@@ -1,4 +1,4 @@
-const _flow = { sourceVersion: 3 }
+const _flow = { sourceVersion: 3, accessibility: "private" }
 
 function QualifWeatherInline({ input, config, result }) {
   fetchWeather: local.weather = http.request({
