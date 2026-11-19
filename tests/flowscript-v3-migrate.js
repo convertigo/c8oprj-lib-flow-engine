@@ -108,6 +108,19 @@ check(bracesV3.indexOf("template.render({ template: `a ${input.x} b ${input.n + 
 check(run(braces) === JSON.stringify({ body: "a X b 3", value: "c X d", text: "e {{}} f" }) && run(bracesV3) === run(braces), "same result before and after: " + run(bracesV3));
 check(read(bracesDir, "_flow/flows/Literal.flow.js") === literal && run(literal) === JSON.stringify({ value: "g X X" }), "the v2 template literal with {{ }} stays in v2");
 
+// Nested prefix operators (!!x, - -x) are migrated with their meaning: the v3 text, read back as !!x and not !x, passes
+// the guard, and the Flow gives the same result before and after.
+var negations = 'const _flow = { sourceVersion: 2, inputs: { x: { type: "string" }, n: { type: "integer" } } }\n\n' +
+	'function Negations({ input, config, result }) {\n  result.set = !!input.x\n  result.unset = !!(input.n - 2)\n  result.n = - -input.n\n' +
+	'  result.flags = [{ name: "--x", enabled: !!input.x }, { name: "--y", enabled: !input.n && !!input.x }]\n}\n';
+var negationsDir = project({ Negations: negations });
+var negationsReport = migrate(negationsDir, true);
+check(negationsReport.written && negationsReport.flows.migrated.length === 1 && !negationsReport.flows.keptV2.length, "nested prefix operators: " + JSON.stringify(negationsReport.flows));
+var negationsV3 = read(negationsDir, "_flow/flows/Negations.flow.js");
+check(negationsV3.indexOf("result.set = !!input.x") >= 0 && negationsV3.indexOf("enabled: !input.n && !!input.x") >= 0, "the v3 text keeps !!: " + negationsV3);
+check(run(negations) === JSON.stringify({ set: true, unset: false, n: 2, flags: [{ name: "--x", enabled: true }, { name: "--y", enabled: false }] }) &&
+	run(negationsV3) === run(negations), "same result before and after: " + run(negationsV3) + "\n" + negationsV3);
+
 // A block written in FlowScript is migrated as a Flow is, whole: its _meta declares sourceVersion 3 and nothing else
 // changes in it, its implementation is the guarded v3 text, and the engine runs it as before. A block whose guard fails
 // stays in v2 with its cause; Rhino blocks and blocks without a declared sourceVersion are not changed.

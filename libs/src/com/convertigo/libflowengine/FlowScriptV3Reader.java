@@ -158,6 +158,9 @@ public final class FlowScriptV3Reader {
 				case org.mozilla.javascript.Token.TYPEOF -> "typeof";
 				default -> "";
 			};
+			// Rhino 1.9.2 places a prefix unary expression at its operand: nested ones (!!x, - -x, typeof typeof x) share
+			// one position, so the operator is looked for before the start of the operand, its own operator included
+			if (!operator.isEmpty() && unary.getOperand() != null) at = Math.min(at, pos(unary.getOperand()));
 			int cursor = at - 1;
 			while (cursor >= 0 && Character.isWhitespace(source.charAt(cursor))) cursor--;
 			if (!operator.isEmpty() && cursor + 1 >= operator.length() && source.substring(cursor + 1 - operator.length(), cursor + 1).equals(operator))

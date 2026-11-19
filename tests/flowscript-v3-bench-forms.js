@@ -645,6 +645,23 @@ likeNode('expression on several lines and signed numbers', [
 	'  result.total = total',
 	'  result.signed = [-1, +2, -1.5, { n: -3 }]'
 ].join('\n'), { a: 1, b: 2 }, { both: true, total: 3, signed: [-1, 2, -1.5, { n: -3 }] });
+// Nested prefix operators keep each operator (Rhino 1.9.2 places them all at their operand): !!x is not !x, in a value,
+// an object field, a condition and a test.
+likeNode('nested prefix operators', [
+	'  result.notNot = !!input.s',
+	'  result.spaced = ! !input.z',
+	'  result.parens = !(!input.s)',
+	'  result.both = !input.z && !!input.s',
+	'  result.negNeg = - -input.n',
+	'  result.notNeg = !-input.n',
+	'  result.types = typeof typeof input.n',
+	'  result.flags = [{ name: "--a", enabled: !!input.s }, { name: "--b", enabled: !input.all && !!input.z }]',
+	'  result.picked = !!input.z ? "z" : "s"',
+	'  if (!!input.s) {',
+	'    result.branch = "then"',
+	'  }'
+].join('\n'), { s: 'x', z: '', n: 2, all: false }, { notNot: true, spaced: false, parens: true, both: true, negNeg: 2, notNeg: false, types: 'string',
+	flags: [{ name: '--a', enabled: true }, { name: '--b', enabled: false }], picked: 's', branch: 'then' });
 // A quoted text is text: its ${…} is not an expression, as in JavaScript.
 likeNode('quoted text with a dollar brace', '  const label = "cost ${input.price}"\n  const rows = json.array({ itemType: { type: "string" } })\n  rows.push(\'v ${x}\')\n  return { label, rows, both: label + " / " + `${input.price}` }',
 	{ price: 3 }, { label: 'cost ${input.price}', rows: ['v ${x}'], both: 'cost ${input.price} / 3' });
