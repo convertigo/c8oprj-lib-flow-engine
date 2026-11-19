@@ -652,7 +652,8 @@
 			var hasProjectGroup = false;
 			var projectProvider = env.flowProviderName(new env.File(env.projectDir(), env.sourcePaths.root), "project");
 			for (var i = 0; i < groups.length; i++) {
-				if (groups[i].origin === "project") {
+				// a group of that provider already there (the engine project itself, whose blocks are the core group)
+				if (groups[i].origin === "project" || groups[i].provider === projectProvider) {
 					hasProjectGroup = true;
 					break;
 				}
