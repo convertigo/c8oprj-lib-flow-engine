@@ -31,9 +31,10 @@ function migrate(dir, write) {
 var good = 'const _flow = { sourceVersion: 2, inputs: { items: { type: "array" } } }\n\n' +
 	'function Good({ input, config, result }) {\n  local.kept = list.filter({ items: input.items, where: current > 1 })\n' +
 	'  result.count = local.kept.length\n  result.label = default(input.label, "none")\n}\n';
-var kept = 'const _flow = { sourceVersion: 2, inputs: { items: { type: "array" } } }\n\n' +
-	'function Kept({ input, config, result }) {\n  forEachChunk({\n    items: input.items,\n    size: 2,\n' +
-	'    $$each: function ({chunk}) {\n      local.n = chunk.length\n    },\n  })\n}\n';
+// The guard refuses this one: the v2 definition holds the {{ }} of the text of a template literal, which a v3 template
+// literal would interpolate.
+var kept = 'const _flow = { sourceVersion: 2, inputs: { x: { type: "string" } } }\n\n' +
+	'function Kept({ input, config, result }) {\n  result.value = `g {{ input.x }} ${input.x}`\n}\n';
 var testSource = "var a = 'const _flow = { sourceVersion: 2 }\\nfunction A({ input, config, result }) {\\n  result.a = 1\\n}'\n" +
 	"var b = `const _flow = { sourceVersion: 3 }\nfunction B({ input, config, result }) {\n  return { b: 1 }\n}`\n" +
 	"var c = /function X\\(\\{ input/.test(a) ? 'not a source' : ''\n";
@@ -41,7 +42,7 @@ var dir = project({ Good: good, Kept: kept }, { "sample.js": testSource });
 
 var dry = migrate(dir, false);
 check(dry.mode === "dry-run" && !dry.written && dry.flows.total === 2 && dry.flows.migrated.length === 1 && dry.flows.migrated[0].flow === "_flow/flows/Good.flow.js"
-	&& dry.flows.keptV2.length === 1 && dry.flows.keptV2[0].flow === "_flow/flows/Kept.flow.js" && /FLOWSCRIPT_V3_FUNCTION/.test(dry.flows.keptV2[0].reason),
+	&& dry.flows.keptV2.length === 1 && dry.flows.keptV2[0].flow === "_flow/flows/Kept.flow.js" && /^definition differs/.test(dry.flows.keptV2[0].reason),
 	"dry run report: " + JSON.stringify(dry));
 check(read(dir, "_flow/flows/Good.flow.js") === good && read(dir, "_flow/flows/Kept.flow.js") === kept, "a dry run writes nothing");
 check(dry.tests.sources === 2 && dry.tests.v2 === 1 && dry.tests.v3 === 1 && dry.tests.files.length === 1, "test strings counted: " + JSON.stringify(dry.tests));
@@ -77,13 +78,14 @@ var greetBlock = '// A comment above the header.\n' + blockMeta(2) + '// c8o: Fl
 	'function proof_greet({ input, config, result }) {\n  local.big = list.filter({ items: input.items, where: current > 1 })\n' +
 	'  local.answer = { text: "Hello {{ input.name }}", count: local.big.length }\n  return({ $$id: "reply", value: local.answer })\n}\n';
 var chunkBlock = blockMeta(2) + 'function proof_chunks({ input, config, result }) {\n  forEachChunk({\n    source: input.items,\n    size: 2,\n' +
-	'    $$each: function ({chunk}) {\n      local.n = chunk.length\n    },\n  })\n  return({ value: { size: 2 } })\n}\n';
+	'    $$each: function ({chunk}) {\n      local.n = chunk.length\n    },\n  })\n  local.out = { size: 2 }\n  return({ value: local.out })\n}\n';
+var literalBlock = blockMeta(2) + 'function proof_literal({ input, config, result }) {\n  return({ value: { text: `g {{ input.name }} ${input.name}` } })\n}\n';
 var rhinoBlock = blockMeta(2, '  "runtime": "rhino",\n') + '(function(){return {run:function(ctx,node){return { rhino: true };}};}())\n';
 var bareBlock = blockMeta(0) + 'function proof_bare({ input, config, result }) {\n  return({ value: { bare: input.name } })\n}\n';
 var blocksDir = project({ Caller: 'const _flow = { sourceVersion: 2 }\n\nfunction Caller({ input, config, result }) {\n' +
 	'  result.greet = proof.greet({ name: input.x, items: [1, 2, 3] })\n  result.chunks = proof.chunks({ items: [1, 2, 3] })\n' +
-	'  result.rhino = proof.rhino({})\n  result.bare = proof.bare({ name: input.x })\n}\n' });
-[["greet", greetBlock], ["chunks", chunkBlock], ["rhino", rhinoBlock], ["bare", bareBlock]].forEach(function (block) {
+	'  result.literal = proof.literal({ name: input.x })\n  result.rhino = proof.rhino({})\n  result.bare = proof.bare({ name: input.x })\n}\n' });
+[["greet", greetBlock], ["chunks", chunkBlock], ["literal", literalBlock], ["rhino", rhinoBlock], ["bare", bareBlock]].forEach(function (block) {
 	files.writeStringToFile(new java.io.File(blocksDir, "_flow/blocks/proof/" + block[0] + ".block.js"), block[1], "UTF-8");
 });
 var __flowProjectDir = String(blocksDir.getAbsolutePath());
@@ -121,15 +123,33 @@ check(negationsV3.indexOf("result.set = !!input.x") >= 0 && negationsV3.indexOf(
 check(run(negations) === JSON.stringify({ set: true, unset: false, n: 2, flags: [{ name: "--x", enabled: true }, { name: "--y", enabled: false }] }) &&
 	run(negationsV3) === run(negations), "same result before and after: " + run(negationsV3) + "\n" + negationsV3);
 
+// The slots of a block that declares names for them (forEachChunk: chunk in each, acc and value in reduce) are written
+// without parameter, as section 11 requires; their bodies read these names as they are. The Flow migrates and gives the
+// same result before and after.
+var slots = 'const _flow = { sourceVersion: 2 }\n\n' +
+	'function Slots({ input, config, result }) {\n  local.best = forEachChunk({\n    source: [3, 1, 4, 1, 5, 9, 2, 6],\n    size: 3,\n' +
+	'    $$each: function ({chunk}) {\n      local.sorted = list.sort({ items: chunk.rows, by: current, direction: "desc" })\n      return local.sorted[0]\n    },\n' +
+	'    $$reduce: function ({acc, value}) {\n      if ({ condition: acc === null || value > acc, $$then: function () { return value }, $$else: function () { return acc } })\n    },\n' +
+	'  })\n  result.best = local.best\n}\n';
+var slotsDir = project({ Slots: slots });
+var slotsReport = migrate(slotsDir, true);
+check(slotsReport.written && slotsReport.flows.migrated.length === 1 && !slotsReport.flows.keptV2.length, "slots with parameters: " + JSON.stringify(slotsReport.flows));
+var slotsV3 = read(slotsDir, "_flow/flows/Slots.flow.js");
+check(slotsV3.indexOf("$$each: function () {") >= 0 && slotsV3.indexOf("$$reduce: function () {") >= 0 && slotsV3.indexOf("chunk.rows") >= 0 &&
+	!/function \(\{/.test(slotsV3), "the v3 slots have no parameter: " + slotsV3);
+check(run(slots) === JSON.stringify({ best: 9 }) && run(slotsV3) === run(slots), "same result before and after: " + run(slotsV3) + "\n" + slotsV3);
+
 // A block written in FlowScript is migrated as a Flow is, whole: its _meta declares sourceVersion 3 and nothing else
 // changes in it, its implementation is the guarded v3 text, and the engine runs it as before. A block whose guard fails
 // stays in v2 with its cause; Rhino blocks and blocks without a declared sourceVersion are not changed.
 var callerBefore = read(blocksDir, "_flow/flows/Caller.flow.js"), resultBefore = run(callerBefore);
-check(resultBefore === JSON.stringify({ greet: { text: "Hello X", count: 2 }, chunks: { size: 2 }, rhino: { rhino: true }, bare: { bare: "X" } }), "the blocks before: " + resultBefore);
+check(resultBefore === JSON.stringify({ greet: { text: "Hello X", count: 2 }, chunks: { size: 2 }, literal: { text: "g X X" }, rhino: { rhino: true }, bare: { bare: "X" } }),
+	"the blocks before: " + resultBefore);
 var blockReport = migrate(blocksDir, true);
-check(blockReport.written && blockReport.flows.migrated.length === 1 && blockReport.blocks.total === 3 && blockReport.blocks.migrated.length === 1 &&
-	blockReport.blocks.migrated[0].block === "_flow/blocks/proof/greet.block.js" && blockReport.blocks.keptV2.length === 1 &&
-	blockReport.blocks.keptV2[0].block === "_flow/blocks/proof/chunks.block.js" && /FLOWSCRIPT_V3_FUNCTION/.test(blockReport.blocks.keptV2[0].reason) &&
+check(blockReport.written && blockReport.flows.migrated.length === 1 && blockReport.blocks.total === 4 && blockReport.blocks.migrated.length === 2 &&
+	blockReport.blocks.migrated[0].block === "_flow/blocks/proof/chunks.block.js" && blockReport.blocks.migrated[1].block === "_flow/blocks/proof/greet.block.js" &&
+	blockReport.blocks.keptV2.length === 1 &&
+	blockReport.blocks.keptV2[0].block === "_flow/blocks/proof/literal.block.js" && /^definition differs/.test(blockReport.blocks.keptV2[0].reason) &&
 	blockReport.blocks.outOfScope.length === 1 && blockReport.blocks.outOfScope[0].block === "_flow/blocks/proof/bare.block.js",
 	"block migration report: " + JSON.stringify(blockReport.blocks));
 var greetV3 = read(blocksDir, "_flow/blocks/proof/greet.block.js");
@@ -137,7 +157,9 @@ check(greetV3.indexOf('// A comment above the header.\n' + blockMeta(3) + 'const
 	greetV3.indexOf("local.big = input.items.filter(item => item > 1)") >= 0 && greetV3.indexOf("local.answer = { text: `Hello ${input.name}`, count: local.big.length }") >= 0 &&
 	greetV3.indexOf("reply: return local.answer") >= 0,
 	"the v3 block: " + greetV3);
-check(read(blocksDir, "_flow/blocks/proof/chunks.block.js") === chunkBlock && read(blocksDir, "_flow/blocks/proof/rhino.block.js") === rhinoBlock &&
+var chunksV3 = read(blocksDir, "_flow/blocks/proof/chunks.block.js");
+check(chunksV3.indexOf("    $$each: function () {\n      local.n = chunk.length\n    },") >= 0, "the v3 block writes its slot without parameter: " + chunksV3);
+check(read(blocksDir, "_flow/blocks/proof/literal.block.js") === literalBlock && read(blocksDir, "_flow/blocks/proof/rhino.block.js") === rhinoBlock &&
 	read(blocksDir, "_flow/blocks/proof/bare.block.js") === bareBlock, "the other blocks are not changed");
 var callerAfter = read(blocksDir, "_flow/flows/Caller.flow.js");
 check(callerAfter !== callerBefore && run(callerAfter) === resultBefore && run(callerBefore) === resultBefore, "the same result after the migration: " + run(callerAfter));

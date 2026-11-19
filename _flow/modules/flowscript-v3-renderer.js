@@ -571,9 +571,9 @@
 			var slotCtx = ctx.nested({ loop: false });
 			if (!(type === "if" || type === "while" || type === "try")) slotCtx = ctx.nested({ loop: false, locals: withoutTarget(ctx.locals, "current") });
 			slots.forEach(function (slot) {
-				var params = env.childSlotParams ? env.childSlotParams(blocks, node, slot) : [];
-				lines.push(indent + "  " + v2.flowScriptObjectKey(codec.encode("engine", slot)) + ": function ("
-					+ (params.length ? "{" + params.join(", ") + "}" : "") + ") {");
+				// a slot is written without parameter (section 11): the names its block declares for it (chunk, acc,
+				// value) are read in its body as they are
+				lines.push(indent + "  " + v2.flowScriptObjectKey(codec.encode("engine", slot)) + ": function () {");
 				renderNodes(node[slot], depth + 2, lines, slotCtx, key + "." + slot);
 				lines.push(indent + "  },");
 			});
