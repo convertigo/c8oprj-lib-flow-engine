@@ -40,6 +40,7 @@ function frontendAtomicBuildOutput() { return null; }
 function frontendExecutable(name) { return "/usr/bin/" + name; }
 function frontendExecutablePathPrefix() { return "/usr/bin:"; }
 function frontendCatalogCacheKey() { return ""; }
+function frontendPrivateCallsStep() { return null; }
 function frontendRunStep(stepAction) {
 	if (stepAction !== "build") {
 		return { action: stepAction, ok: true, exitCode: 0, skipped: false, durationMs: 0 };

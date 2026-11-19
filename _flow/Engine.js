@@ -10875,6 +10875,15 @@
 					ok = false;
 					break;
 				}
+				var privateCalls = currentStepAction === "generate" && actions.indexOf("build") >= 0
+					? frontendPrivateCallsStep(generatedRoot, request, info) : null;
+				if (privateCalls) {
+					steps.push(privateCalls);
+					if (privateCalls.ok === false) {
+						ok = false;
+						break;
+					}
+				}
 			}
 			if (ok && atomicOutput) {
 				currentStepAction = "publish";
@@ -13430,6 +13439,56 @@
 	/**
 	 * Whether the production output holds a completed build, marked in its env.json at publication.
 	 */
+	// After the generation of a build, the calls of the whole application (backendCalls of src/lib/projectConfig.ts in
+	// the generated project) that reach a private Flow: a browser is refused. Said in the build log and its steps; the
+	// frontbuilder setting refusePrivateCalls: true stops the build (off by default). null when none or unreadable; its own failure never fails a build.
+	function frontendPrivateCallsStep(generatedRoot, request, info) {
+		try {
+			return frontendPrivateCallsStepUnchecked(generatedRoot, request, info);
+		} catch (advisory) {
+			return null;
+		}
+	}
+
+	function frontendPrivateCallsStepUnchecked(generatedRoot, request, info) {
+		var startedAt = JavaSystem.nanoTime();
+		var calls = [];
+		try {
+			var file = new File(generatedRoot, "src/lib/projectConfig.ts");
+			var text = file.isFile() ? String(FileUtils.readFileToString(file, "UTF-8")) : "";
+			var match = /export const backendCalls = ([\s\S]*?) satisfies /.exec(text);
+			var declared = match ? JSON.parse(match[1]) : {};
+			Object.keys(declared || {}).forEach(function (id) {
+				calls.push(declared[id]);
+			});
+		} catch (unreadable) {
+			return null;
+		}
+		var diagnostics = flowTreeService().frontendPrivateCallDiagnostics(calls, request, "", flowTreeServiceEnv());
+		if (!diagnostics.length) {
+			return null;
+		}
+		var refuse = !!(info && info.settings && info.settings.refusePrivateCalls === true);
+		var message = "The application calls private Flows, refused to a browser: " + diagnostics.map(function (diagnostic) {
+			return diagnostic.requestable;
+		}).join(", ") + ". Declare accessibility: \"public\" or \"hidden\" in their _flow header" +
+			(refuse ? " (refusePrivateCalls: the build stops)." : ".");
+		frontendStudioLog("[Svelte frontbuilder] " + message, true);
+		return {
+			action: "privateCalls",
+			command: "",
+			cwd: String(generatedRoot.getAbsolutePath()),
+			exitCode: refuse ? 1 : 0,
+			stdout: message,
+			stderr: "",
+			ok: !refuse,
+			skipped: false,
+			code: "FRONTEND_CALLS_PRIVATE_FLOW",
+			diagnostics: diagnostics,
+			durationMs: frontendDurationMs(startedAt)
+		};
+	}
+
 	function frontendBuildOutputBuilt(projectRoot, buildOutput) {
 		if (!projectRoot) {
 			return false;

@@ -919,6 +919,14 @@
 					contractDiagnostics.push(diagnostic);
 				});
 			});
+			var reportedCalls = {};
+			contractDiagnostics.forEach(function (diagnostic) {
+				if (diagnostic.code === "FRONTEND_CALLSEQUENCE_PRIVATE") {
+					reportedCalls[String(diagnostic.requestable)] = true;
+				}
+			});
+			contractDiagnostics = contractDiagnostics.concat(frontendPrivateCallDiagnostics(described.model.backendCalls, request,
+				String(file.getAbsolutePath()), reportedCalls));
 			described.diagnostics = mergeFrontendDiagnostics(described.diagnostics, contractDiagnostics);
 			return normalizeTree(described);
 		}
@@ -2091,6 +2099,47 @@
 			(node && node.children || []).forEach(visit);
 		}
 		visit(root);
+		return diagnostics;
+	}
+
+	// The other calls of a front document (actions, data blocks, _meta.backendCalls) reach a private Flow the same way:
+	// a browser is refused, while the MCP and an administrator run it. A warning; a CallSequence already reported keeps
+	// its error alone. URL Mapper paths (/api/...) and FullSync (fs://) are out of scope.
+	function frontendPrivateCallDiagnostics(calls, request, sourcePath, reported) {
+		var diagnostics = [];
+		var seen = {};
+		(calls || []).forEach(function (call) {
+			var requestable = String(call && call.requestable || "").trim();
+			if (!requestable || seen[requestable] || reported && reported[requestable]
+					|| requestable.indexOf("fs://") === 0 || requestable.charAt(0) === "/") {
+				return;
+			}
+			seen[requestable] = true;
+			var contract = null;
+			try {
+				contract = requestableInputContract(requestable, request || {});
+			} catch (_unavailableContract) {
+			}
+			if (!contract || String(contract.accessibility || "").toLowerCase() !== "private") {
+				return;
+			}
+			var target = contract.target && contract.target.qname ? contract.target.qname : requestable;
+			var diagnostic = {
+				level: "warning",
+				severity: "warning",
+				code: "FRONTEND_CALLS_PRIVATE_FLOW",
+				message: "The frontend calls " + target + ", which is private: a browser is refused (\"Unable to execute the requested " +
+					"requestable\"), only an administrator and the MCP run it.",
+				requestable: requestable,
+				accessibility: String(contract.accessibility),
+				hint: "Declare accessibility: \"public\" (listed) or \"hidden\" (not listed) in the _flow header of " + target +
+					", with the authorization checks it needs inside."
+			};
+			if (sourcePath) {
+				diagnostic.sourcePath = sourcePath;
+			}
+			diagnostics.push(diagnostic);
+		});
 		return diagnostics;
 	}
 
@@ -8403,6 +8452,7 @@
 			authoringTransferMutationFromTreeRequest: authoringTransferMutationFromTreeRequest,
 			authoringMoveFromTreeRequest: authoringMoveFromTreeRequest,
 			authoringInsertTargetFromTreeRequest: authoringInsertTargetFromTreeRequest,
+			frontendPrivateCallDiagnostics: frontendPrivateCallDiagnostics,
 			authoringReplaceSelectionTargetFromTreeRequest: authoringReplaceSelectionTargetFromTreeRequest,
 			authoringProposedSubtreeFromTreeRequest: authoringProposedSubtreeFromTreeRequest,
 			authoringMutateRequest: authoringMutateRequest,
@@ -8507,6 +8557,9 @@
 		},
 		searchSnippet: function (text, needle, env) {
 			return create(env).searchSnippet(text, needle);
+		},
+		frontendPrivateCallDiagnostics: function (calls, request, sourcePath, env) {
+			return create(env).frontendPrivateCallDiagnostics(calls, request, sourcePath, {});
 		},
 		childSlotNamesForMutation: function (blocks, node, env) {
 			return childSlotNames(blocks, node, env.blockName, env.blockCatalog);
