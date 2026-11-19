@@ -22,5 +22,11 @@ try {
 	});
 	var own = catalog.groups.filter(function (group) { return group.provider === "lib_flow_engine"; })[0];
 	assert(own && own.blocks.length > 20, "the lib_flow_engine group holds the blocks: " + (own ? own.blocks.length : "missing"));
+	// the project Catalog of the Studio tree (origin project): in the engine project, its own blocks are the core ones
+	var projectCatalog = api("catalog", { detail: "full", origin: "project" });
+	var ownGroups = projectCatalog.groups.filter(function (group) { return group.provider === "lib_flow_engine"; });
+	assert(ownGroups.length === 1 && ownGroups[0].blocks.length > 20,
+		"the project Catalog of the engine project lists its blocks: " + JSON.stringify(projectCatalog.groups.map(function (group) {
+			return group.provider + ":" + group.origin + ":" + group.blocks.length; })));
 	print("catalog-own-provider-group OK (" + checks + " checks, " + catalog.groups.length + " groups)");
 } finally { files.deleteDirectory(temp); }

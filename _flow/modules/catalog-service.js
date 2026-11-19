@@ -436,19 +436,34 @@
 		};
 	}
 
+	function engineProjectItself(env) {
+		try {
+			var project = env.projectDir && env.projectDir();
+			var engine = env.engineDir && env.engineDir();
+			if (!project || !engine) return false;
+			var projectFile = typeof project.getCanonicalPath === "function" ? project : new env.File(String(project));
+			return String(projectFile.getCanonicalPath()) === String(engine.getParentFile().getCanonicalPath());
+		} catch (e) {
+			return false;
+		}
+	}
+
 	function catalogPage(blocks, options, mapper, env) {
 		// A catalog restricted to one origin (the project Catalog) does not build the
 		// descriptors of the other blocks (reading and parsing every core block source);
 		// descriptors are still filtered below, as a block catalog may declare its origin.
 		var origin = String(options && options.origin || "").trim();
+		// the engine project itself: its own blocks are the core blocks, its project Catalog shows them
+		var ownCore = origin === "project" && engineProjectItself(env);
 		var descriptors = Object.keys(blocks).sort().filter(function (name) {
 			var blockOrigin = blocks[name] && blocks[name].__flowOrigin;
-			return !origin || !blockOrigin || blockOrigin === origin;
+			return !origin || !blockOrigin || blockOrigin === origin || ownCore && blockOrigin === "core";
 		}).map(function (name) {
 			return blockDescriptor(blocks[name], env, options);
 		});
 		descriptors = filterVisibleDescriptors(descriptors, options);
-		descriptors = filterCatalogDescriptors(descriptors, options);
+		// the origin is filtered above, own core blocks of the engine project included
+		descriptors = filterCatalogDescriptors(descriptors, ownCore ? Object.assign({}, options, { origin: "" }) : options);
 		var signature = {
 			service: "catalog",
 			revision: env.sha256Hex(JSON.stringify(descriptors.map(function (descriptor) {
