@@ -65,6 +65,9 @@ try {
  });
  ['html','jar','bin','class'].forEach(function(ext){denied('tests/a.'+ext,'RESOURCE_PATH_NOT_ALLOWED');});
  denied('tests/../x.py','INVALID_RESOURCE_PATH');
+ // the entity model is refused with its own tools
+ var inner=patch('data/model.yaml','text');
+ assert(!inner.ok&&inner.error.code==='RESOURCE_PATH_NOT_ALLOWED'&&String(inner.error.hint||'').indexOf('flow-entity-model-get')!==-1,JSON.stringify(inner));
  ['resources','_flow/resources'].forEach(function(target,i){
   write(target+'/a.md','original');link('tests/linked'+i,target);
   denied('tests/linked'+i+'/new.md','RESOURCE_PATH_NOT_ALLOWED');

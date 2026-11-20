@@ -18,6 +18,11 @@
 					null, normalized + " is a configuration key, not a file: read it in path " + env.sourcePaths.root + "/engine.yaml" +
 					", or with authoring-tree surface:\"backend\" focusPath:\"" + normalized + "\".");
 			}
+			// The entity model is not a resource: it has its own tools
+			if (/(^|\/)data\/model\.ya?ml$/.test(normalized)) {
+				env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
+					null, "The entity model (" + env.sourcePaths.root + "/data/model.yaml) is read with flow-entity-model-get and changed with flow-entity-model-set.");
+			}
 			env.raise("RESOURCE_PATH_NOT_ALLOWED", "Flow resource path is not editable through this API: " + normalized,
 				null, "Use resource.list to discover editable sources under " + env.sourcePaths.root + ", public resources/, project documents docs/ or the Java sources libs/src/ (*.java). Use the flowCode* APIs for Flow sources.");
 		}
