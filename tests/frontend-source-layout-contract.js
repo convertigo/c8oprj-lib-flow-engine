@@ -33,8 +33,22 @@ try {
 			+ 'page:{id:"home",route:"/"},builder:{id:"svelte",generatedRoot:"_private/svelte",buildOutput:"DisplayObjects/mobile"}};</script>\n'
 			+ '<FlowComponent $$id="home"><Structure><Input $$id="editor" id="business" disabled={false} /></Structure></FlowComponent>';
 		write(sourceFile, source);
+		// The generation installs the builder's packages in the local working directory, which sets aside then removes
+		// the node_modules of the builder project: a copy of that project (without node_modules), not the real one.
+		var builderProject = new File(providerRoot).getCanonicalFile();
+		while (builderProject && !new File(builderProject, "c8oProject.yaml").isFile()) {
+			builderProject = builderProject.getParentFile();
+		}
+		assert(builderProject, "The provider is in a library project");
+		var builderCopy = new File(base, builderProject.getName());
+		files.copyDirectory(builderProject, builderCopy, new java.io.FileFilter({ accept: function (file) {
+			var name = String(file.getName());
+			return name !== "node_modules" && name !== "_private" && name !== ".git";
+		} }));
+		var copiedProvider = new File(builderCopy, String(builderProject.toPath().relativize(
+			new File(providerRoot).getCanonicalFile().toPath())));
 		var engineSource = "version: 1\nconfig:\n  frontbuilder:\n    svelte:\n      target: svelte5\n"
-			+ "      resourceRoot: " + providerRoot + "\n      modelPath: "
+			+ "      resourceRoot: " + copiedProvider.getAbsolutePath() + "\n      modelPath: "
 			+ paths.path("frontbuilder/svelte/model/LayoutFrontend/src/routes/+page.flow.svelte")
 			+ "\n      privateDir: _private/svelte\n      buildOutput: DisplayObjects/mobile\n";
 		write(new File(project, paths.path("engine.yaml")), engineSource);
