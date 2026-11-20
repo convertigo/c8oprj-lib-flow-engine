@@ -8,8 +8,8 @@ function api(name, request) { return JSON.parse(String(engine[name](JSON.stringi
 function check(ok, message) { if (!ok) throw new Error(message); }
 var root = new java.io.File(engineDir, "../../lib_flow_mcp/_flow/resources").getCanonicalFile();
 var paths = [
-	"guide/authoring.md", "guide/authoring-collections.md", "guide/authoring-data.md",
-	"guide/authoring-source.md", "guide/authoring-blocks.md", "guide/authoring/dialect.md",
+	"guide/authoring.md", "guide/authoring/collections.md", "guide/authoring/data.md",
+	"guide/authoring/source.md", "guide/authoring/blocks.md", "guide/authoring/dialect.md",
 	"guide/authoring/expressions.md", "guide/start.md", "guide/start/syntax.md",
 	"skills/convertigo-flow-backend/SKILL.md", "skills/convertigo-flow-mcp/SKILL.md"
 ];

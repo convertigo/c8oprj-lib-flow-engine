@@ -199,8 +199,8 @@ function flowscriptV3Conformance(options) {
 
 	// The guides and skills that teach FlowScript v3 (lib_flow_mcp/_flow/resources).
 	api.guidePaths = [
-		"guide/authoring.md", "guide/authoring-collections.md", "guide/authoring-data.md",
-		"guide/authoring-source.md", "guide/authoring-blocks.md", "guide/authoring/dialect.md",
+		"guide/authoring.md", "guide/authoring/collections.md", "guide/authoring/data.md",
+		"guide/authoring/source.md", "guide/authoring/blocks.md", "guide/authoring/dialect.md",
 		"guide/authoring/expressions.md", "guide/authoring/forms.md", "guide/start.md", "guide/start/syntax.md",
 		"skills/convertigo-flow-backend/SKILL.md", "skills/convertigo-flow-mcp/SKILL.md"
 	];
