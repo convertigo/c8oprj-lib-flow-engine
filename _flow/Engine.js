@@ -8680,6 +8680,22 @@
 		);
 	}
 
+	// Node keeps the compiled code of the provider between its starts (after a restart of the engine, the document
+	// server parses its bundle again otherwise); Node checks the source of each entry, a stale entry is compiled again.
+	function frontendNodeCompileCache(builder) {
+		var env = builder.environment();
+		if (env.containsKey("NODE_COMPILE_CACHE") || env.containsKey("NODE_DISABLE_COMPILE_CACHE")) {
+			return;
+		}
+		var workspace = workspaceDir();
+		var dir = workspace
+			? new File(workspace, "cache/flow-node-compile")
+			: new File(JavaSystem.getProperty("java.io.tmpdir"), "convertigo-flow-cache/flow-node-compile");
+		if (dir.isDirectory() || dir.mkdirs()) {
+			env.put("NODE_COMPILE_CACHE", String(dir.getAbsolutePath()));
+		}
+	}
+
 	function frontendProcessBuilder(args, cwd) {
 		var pb = new Packages.java.lang.ProcessBuilder(javaStringList(args));
 		pb.directory(cwd);
@@ -8876,12 +8892,16 @@
 				registry.remove(key);
 				stopFrontendDocumentServer(existing);
 			}
-			phaseStartedAt = JavaSystem.nanoTime();
-			ensureFrontendDocumentDependencies(toolRoot);
-			frontendPerformanceDuration("frontend.provider.start.dependencies", JavaSystem.nanoTime() - phaseStartedAt);
-			phaseStartedAt = JavaSystem.nanoTime();
-			selection = frontendProviderCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
-			frontendPerformanceDuration("frontend.provider.start.selectionAfterDependencies", JavaSystem.nanoTime() - phaseStartedAt);
+			// a provider bundle carrying its packages starts with no node_modules: no npm install before the first
+			// document of an engine (the tsx fallback installs them when the bundle fails)
+			if (!(selection.kind === "compiled" && selection.selfContained === true)) {
+				phaseStartedAt = JavaSystem.nanoTime();
+				ensureFrontendDocumentDependencies(toolRoot);
+				frontendPerformanceDuration("frontend.provider.start.dependencies", JavaSystem.nanoTime() - phaseStartedAt);
+				phaseStartedAt = JavaSystem.nanoTime();
+				selection = frontendProviderCommand(resourceRoot, "src-builder/frontDocumentCli.ts", ["--server"]);
+				frontendPerformanceDuration("frontend.provider.start.selectionAfterDependencies", JavaSystem.nanoTime() - phaseStartedAt);
+			}
 			var args = selection.command;
 			frontendStudioLog("[Svelte front document server] > " + args.join(" "));
 			var process;
@@ -8889,6 +8909,7 @@
 				phaseStartedAt = JavaSystem.nanoTime();
 				var serverBuilder = frontendProcessBuilder(args, toolRoot);
 				serverBuilder.environment().put("FLOW_FRONT_DOCUMENT_IDLE_MS", "0");
+				frontendNodeCompileCache(serverBuilder);
 				process = serverBuilder.start();
 				frontendPerformanceDuration("frontend.provider.start.process", JavaSystem.nanoTime() - phaseStartedAt);
 			} catch (launchError) {

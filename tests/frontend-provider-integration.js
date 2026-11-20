@@ -328,6 +328,30 @@ async function runCase(name, mutate, expected) {
 		document: "compiled:valid", mutation: "compiled:valid",
 		documentFallback: true, mutationFallback: true
 	}));
+	// a bundle carrying its packages answers the same with no node_modules beside it (a published library before any
+	// npm install): the engine starts it directly
+	const builtManifest = JSON.parse(await fsp.readFile(sourceManifestFile, "utf8"));
+	if (builtManifest.build.packages === "bundle") {
+		const fixture = await copyProviderRoot();
+		try {
+			const baseline = await runDirectTsx(fixture);
+			await fsp.unlink(path.join(fixture.root, "node_modules"));
+			const state = {};
+			const selected = await runSelected(fixture, state);
+			assert.deepEqual(selected.response, baseline, "self-contained bundle response differs from tsx");
+			assert.deepEqual(selected.selection, compiled, "self-contained bundle needs node_modules");
+			assert.equal(service.select(fs.realpathSync(fixture.root), "src-builder/frontDocumentCli.ts", state, env)
+				.selfContained, true);
+			results.push({
+				name: "self-contained",
+				selection: selected.selection,
+				documentHash: responseHash(selected.response.document, fixture.root),
+				mutationHash: responseHash(selected.response.mutation, fixture.root)
+			});
+		} finally {
+			await fsp.rm(fixture.root, { recursive: true, force: true });
+		}
+	}
 	const documentHashes = new Set(results.map((result) => result.documentHash));
 	const mutationHashes = new Set(results.map((result) => result.mutationHash));
 	assert.equal(documentHashes.size, 1, "document hashes differ across fallback scenarios");

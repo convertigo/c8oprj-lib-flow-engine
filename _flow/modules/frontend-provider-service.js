@@ -94,7 +94,7 @@
 		var build = manifest.build || {};
 		if (build.tool !== "esbuild" || !String(build.toolVersion || "") || build.bundle !== true
 				|| build.platform !== "node" || build.moduleFormat !== "esm"
-				|| build.target !== "node20" || build.packages !== "external") {
+				|| build.target !== "node20" || (build.packages !== "external" && build.packages !== "bundle")) {
 			return "unsupported provider build contract";
 		}
 		var entries = build.entryPoints || {};
@@ -265,6 +265,8 @@
 			details: "",
 			bundle: env.resolve(root, manifest.providers[provider.name].path),
 			signature: manifest.payloadSha256,
+			// a bundle carrying its packages runs with no node_modules: no npm install before it starts
+			selfContained: (manifest.build || {}).packages === "bundle",
 			provider: provider.name,
 			rejectionKey: rejectionKey
 		};

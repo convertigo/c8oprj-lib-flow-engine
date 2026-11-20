@@ -99,10 +99,11 @@ const env = {
 const state = {};
 
 try {
-	writeManifest();
+	const externalManifest = writeManifest();
 	const document = service.select(root, "src-builder/frontDocumentCli.ts", state, env);
 	assert.equal(document.kind, "compiled");
 	assert.equal(document.reason, "valid");
+	assert.equal(document.selfContained, false, "a bundle with external packages needs the node_modules of the builder");
 	assert.equal(document.bundle, fs.realpathSync(path.join(root, "provider-dist/frontDocumentCli.mjs")));
 	const mutation = service.select(root, "src-builder/sourceMutateCli.ts", state, env);
 	assert.equal(mutation.kind, "compiled");
@@ -143,6 +144,18 @@ try {
 	assert.equal(rejected.kind, "tsx");
 	assert.equal(rejected.reason, "launchRejected");
 	assert.match(rejected.details, /synthetic launch failure/);
+
+	// a bundle carrying its packages starts with no node_modules (no npm install before the document server)
+	service.clear(state);
+	writeManifest({ build: { ...externalManifest.build, packages: "bundle" } });
+	const bundled = service.select(root, "src-builder/frontDocumentCli.ts", state, env);
+	assert.equal(bundled.kind, "compiled");
+	assert.equal(bundled.selfContained, true);
+	writeManifest({ build: { ...externalManifest.build, packages: "partial" } });
+	const unknownPackaging = service.select(root, "src-builder/frontDocumentCli.ts", state, env);
+	assert.equal(unknownPackaging.kind, "tsx");
+	assert.match(unknownPackaging.details, /build contract/);
+	writeManifest();
 
 	write("provider-dist/provider-manifest.json", "{broken\n");
 	assert.equal(service.select(root, "src-builder/frontDocumentCli.ts", state, env).reason, "corrupt");
