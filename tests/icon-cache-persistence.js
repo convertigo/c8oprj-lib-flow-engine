@@ -76,6 +76,22 @@ try {
 	var again = { icon: "mdi:test-icon" };
 	bareService.resolveBlockIcon({ __flowFile: blockFile.getAbsolutePath() }, again, env(project, bare));
 	assertTrue(again.iconFile === bareDescriptor.iconFile, "the SVG rendering is then served from the cache");
+	// Outside the Eclipse Studio (env.rasterize false), no bitmap is rendered: the tinted SVG is the rendering, and
+	// the next resolution finds it complete.
+	var web = new java.io.File(root, "web-cache/flow-icons-v2");
+	FileUtils.writeStringToFile(new java.io.File(web, "iconify/mdi/test-icon.svg"), '<svg><path fill="currentColor"/></svg>', "UTF-8");
+	var webEnv = env(project, web);
+	webEnv.rasterize = false;
+	var webDescriptor = { icon: "mdi:test-icon" };
+	service.resolveBlockIcon({ __flowFile: blockFile.getAbsolutePath() }, webDescriptor, webEnv);
+	assertTrue(/\.svg$/.test(String(webDescriptor.iconFile)) && !webDescriptor.iconFile16
+		&& !new java.io.File(web, "studio/iconify/mdi/test-icon_16x16.png").exists()
+		&& !new java.io.File(web, "studio/.raster-unavailable").exists(),
+		"the web Studio rendering is the tinted SVG, without bitmap: " + JSON.stringify(webDescriptor));
+	var webAgain = { icon: "mdi:test-icon" };
+	service.resolveBlockIcon({ __flowFile: blockFile.getAbsolutePath() }, webAgain, webEnv);
+	assertTrue(webAgain.iconFile === webDescriptor.iconFile && webAgain.iconSvg === webDescriptor.iconSvg,
+		"the SVG rendering is complete for the web Studio");
 	print("icon-cache-persistence OK");
 } finally {
 	FileUtils.deleteDirectory(root);

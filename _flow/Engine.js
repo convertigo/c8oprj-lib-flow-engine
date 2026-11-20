@@ -6177,8 +6177,18 @@
 			: new File(Packages.java.lang.System.getProperty("java.io.tmpdir"), "convertigo-flow-cache/flow-icons-v2");
 	}
 
+	// The Eclipse Studio draws the tree with PNG icons; the web Studio (a server, the Electron Studio) shows the SVG.
+	var ICONS_RASTERIZED = (function () {
+		try {
+			return Packages.com.twinsoft.convertigo.engine.Engine.isStudioMode() === true;
+		} catch (standalone) {
+			return false;
+		}
+	}());
+
 	function iconServiceEnv() {
 		return {
+			rasterize: ICONS_RASTERIZED,
 			sourcePaths: sourcePaths(),
 			File: File,
 			Arrays: Arrays,

@@ -218,7 +218,8 @@
 		}
 	}
 
-	// Studio rendering: tinted SVG plus 16/32 PNG, derived into the server cache.
+	// Studio rendering: tinted SVG plus 16/32 PNG, derived into the server cache. The PNG are for the Eclipse Studio
+	// only (env.rasterize): the web Studio shows the tinted SVG, so a server renders no bitmap.
 	function studioRendering(descriptor, raw, family, provider, name, extension, env) {
 		var dir = sharedDir("studio/" + family, provider, env);
 		if (!dir || !raw) {
@@ -238,8 +239,10 @@
 					return false;
 				}
 			}
-			rasterizeSvg(svg, png16, 16, env);
-			rasterizeSvg(svg, png32, 32, env);
+			if (env.rasterize !== false) {
+				rasterizeSvg(svg, png16, 16, env);
+				rasterizeSvg(svg, png32, 32, env);
+			}
 			descriptor.iconSvg = env.canonicalPath(svg);
 		} else if (extension !== "bin") {
 			descriptor.iconFile = env.canonicalPath(raw);
@@ -271,7 +274,7 @@
 			return false;
 		}
 		if (!png16.isFile() || !png32.isFile()) {
-			if (!isRasterUnavailable(env)) {
+			if (env.rasterize !== false && !isRasterUnavailable(env)) {
 				return false;
 			}
 			descriptor.iconSvg = env.canonicalPath(svg);
