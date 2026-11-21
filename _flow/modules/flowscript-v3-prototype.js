@@ -396,6 +396,49 @@
 				"(" + (names.length ? "{ " + names.join(", ") + " }" : "{}") + ") { … }, called " + call + " in its own statement " +
 				"(const r = " + call + " for its value): a helper reads only its parameters.";
 		}
+		// xs.sort((a, b) => …) as a statement (sortInPlace of the Java reader): list.sort into the local itself, on a list the
+		// Flow builds, never assigned and never read whole before the sort or in a loop around it.
+		function sortInPlace(call, list, current, statement) {
+			var name = String(list.getIdentifier()), args = argument(call), binding = lookup(name, current);
+			var comparator = args.length === 1 ? spelled(args[0]) : "(a, b) => …";
+			if (!binding || !binding.typedList || binding.fn || sortAliased(name, statement))
+				reject("FLOWSCRIPT_V3_LIST_METHOD", statement, name + ".sort(…) sorts " + name + " in place: write const sorted = " + name + ".toSorted(" + comparator + ") and read sorted. " +
+					"In place, it is lowered only on a list the Flow builds (const " + name + " = [] or json.array), never assigned and never read whole before the sort.");
+			if (args.length !== 1 || kind(args[0]) !== "FunctionNode") reject("FLOWSCRIPT_V3_LIST_METHOD", statement, "Use a two-parameter key comparator.");
+			var params = array(args[0].getParams());
+			if (params.length !== 2) reject("FLOWSCRIPT_V3_LIST_METHOD", statement, "Use 2 callback parameter(s).");
+			var body = args[0].getBody();
+			if (kind(body) === "Block" || kind(body) === "Scope") {
+				var parts = children(body);
+				if (parts.length !== 1 || kind(parts[0]) !== "ReturnStatement") reject("FLOWSCRIPT_V3_LIST_METHOD", statement, "Use an expression body.");
+				body = parts[0].getReturnValue();
+			}
+			if (kind(params[0]) !== "Name" || kind(params[1]) !== "Name") reject("FLOWSCRIPT_V3_LIST_METHOD", statement, "Use two named callback parameters.");
+			var first = String(params[0].getIdentifier()), second = String(params[1].getIdentifier());
+			var keys = first !== second && body ? comparatorKeys(body, first, second) : null;
+			if (!keys) reject("FLOWSCRIPT_V3_LIST_METHOD", statement, "Compare one key of the two items with a.k - b.k, a.k.localeCompare(b.k) or a.k < b.k ? -1 : a.k > b.k ? 1 : 0 (b before a for descending), and join several keys with ||.");
+			return binding.mapped + " = list.sort({ items: " + binding.mapped + ", " + sortProperties(keys[0]) +
+				(keys.length > 1 ? ", then: [" + keys.slice(1).map(function (key) { return "{ " + sortProperties(key) + " }"; }).join(", ") + "]" : "") + " })";
+		}
+		function sortAliased(name, statement) {
+			var fn = statement, loops = [], aliased = false;
+			while (fn && kind(fn) !== "FunctionNode") fn = fn.getParent();
+			for (var at = statement.getParent(); at && at !== fn; at = at.getParent()) if (["WhileLoop", "ForLoop", "ForInLoop", "DoLoop"].indexOf(kind(at)) >= 0) loops.push(at);
+			visit(fn || ast, function (part) {
+				if (aliased || kind(part) !== "Name" || String(part.getIdentifier()) !== name) return !aliased;
+				var parent = part.getParent(), k = kind(parent);
+				if (k === "PropertyGet" && (parent.getProperty() === part || parent.getTarget() === part)) return true;
+				if (k === "ElementGet" && parent.getTarget() === part) return true;
+				if (k === "ObjectProperty" && parent.getKey() === part && raw(parent).trim() !== name) return true;
+				if (k === "VariableInitializer" && parent.getTarget() === part) return true;
+				if (k === "ForInLoop" && parent.getIteratedObject() === part) return true;
+				if (k === "Assignment" && parent.getLeft() === part) { aliased = true; return false; }
+				if (pos(part) < pos(statement)) aliased = true;
+				for (var up = parent; up && !aliased; up = up.getParent()) if (loops.indexOf(up) >= 0) aliased = true;
+				return !aliased;
+			});
+			return aliased;
+		}
 		function needsOuterItemCopy(loop, name) {
 			var needed = false;
 			visit(loop.getBody(), function (part) {
@@ -1030,6 +1073,7 @@
 						}
 						emit("json.push({ path: " + JSON.stringify(list.mapped) + ", value: " + rewritten(pushed[0], current) + " })", origin); return;
 					}
+					if (method(expression) === "sort" && kind(expression.getTarget().getTarget()) === "Name") { emit(sortInPlace(expression, expression.getTarget().getTarget(), current, node), origin); return; }
 					if (raw(expression.getTarget()).replace(/\s/g, "") === "Object.assign") reject("FLOWSCRIPT_V3_GLOBAL_CALL", node, ASSIGN_HINT);
 					var callee = kind(expression.getTarget()) === "Name" ? lookup(String(expression.getTarget().getIdentifier()), current) : null;
 					if (callee && callee.fn) reject("FLOWSCRIPT_V3_FUNCTION", node, "A local function gives a value and does nothing else: read it in an expression (const ok = " + callee.name + "(…)), " +

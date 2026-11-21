@@ -354,6 +354,19 @@
       ]
     },
     {
+      "id": "list-sort-in-place",
+      "construct": "xs.sort((a, b) => a.k - b.k) as a statement",
+      "block": "list.sort",
+      "properties": {
+        "items": "local.xs",
+        "out": "local.xs"
+      },
+      "where": "xs a list the Flow builds (const xs = [] or json.array), never assigned nor read whole before the sort or in a loop around it; elsewhere FLOWSCRIPT_V3_LIST_METHOD with xs.toSorted",
+      "examples": [
+        "const lines = json.array({ itemType: { type: \"object\" } })\nfor (const row of input.rows) {\n  lines.push({ id: row.id })\n}\nlines.sort((a, b) => (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0)))\nreturn { lines }"
+      ]
+    },
+    {
       "id": "chain",
       "construct": "xs.filter(…).map(…).join(\", \")",
       "lowering": "one node per block step, linked by local.__chain<N>",
@@ -672,7 +685,7 @@
     },
     {
       "code": "FLOWSCRIPT_V3_LIST_METHOD",
-      "construct": "xs.sort alone, an inexact comparator (a.k < b.k ? -1 : 1…), reduce, (x, i), an outer arrow parameter in an inner arrow",
+      "construct": "xs.sort inside an expression or on a list the Flow does not build (an input, a list read whole before), an inexact comparator (a.k < b.k ? -1 : 1…), reduce, (x, i), an outer arrow parameter in an inner arrow",
       "rewrite": "toSorted with a.k - b.k, localeCompare or a.k < b.k ? -1 : a.k > b.k ? 1 : 0, joined by ||; list.sum, list.map or a loop",
       "example": "const total = input.rows.reduce((sum, row) => sum + row.amount, 0)"
     },

@@ -1717,6 +1717,61 @@ public final class FlowScriptV3Reader {
 			"(" + (names.isEmpty() ? "{}" : "{ " + String.join(", ", names) + " }") + ") { … }, called " + call + " in its own statement " +
 			"(const r = " + call + " for its value): a helper reads only its parameters.";
 	}
+	// xs.sort((a, b) => …) as a statement sorts the list xs in place: on a list the Flow builds (const xs = [] or json.array),
+	// never assigned and never read whole before (an alias would see the order change in JavaScript), it is list.sort into
+	// the local itself, the comparators of toSorted. Any other list.sort statement is refused with the toSorted to write.
+	private Map<String, Object> sortInPlace(FunctionCall call, Name list, Scope scope, AstNode statement) {
+		String name = list.getIdentifier();
+		var args = call.getArguments();
+		String comparator = args.size() == 1 ? spelled(args.get(0)) : "(a, b) => …";
+		Binding binding = lookup(name, scope);
+		if (binding == null || !binding.typedList || binding.function != null || sortAliased(name, statement))
+			reject("FLOWSCRIPT_V3_LIST_METHOD", statement, name + ".sort(…) sorts " + name + " in place: write const sorted = " + name + ".toSorted(" + comparator + ") and read sorted. " +
+				"In place, it is lowered only on a list the Flow builds (const " + name + " = [] or json.array), never assigned and never read whole before the sort.");
+		if (args.size() != 1 || !(args.get(0) instanceof FunctionNode)) reject("FLOWSCRIPT_V3_LIST_METHOD", statement, "Use a two-parameter key comparator.");
+		var fn = (FunctionNode) args.get(0);
+		AstNode body = arrowBody(fn, 2, statement);
+		String first = name(fn.getParams().get(0)), second = name(fn.getParams().get(1));
+		if (first.isEmpty() || second.isEmpty()) reject("FLOWSCRIPT_V3_LIST_METHOD", statement, "Use two named callback parameters.");
+		List<SortKey> keys = first.equals(second) ? null : comparatorKeys(body, first, second);
+		if (keys == null) reject("FLOWSCRIPT_V3_LIST_METHOD", statement,
+			"Compare one key of the two items with a.k - b.k, a.k.localeCompare(b.k) or a.k < b.k ? -1 : a.k > b.k ? 1 : 0 (b before a for descending), and join several keys with ||.");
+		var props = map("items", binding.mapped);
+		props.putAll(sortProperties(keys.get(0)));
+		if (keys.size() > 1) {
+			var remaining = new ArrayList<Map<String, Object>>();
+			for (int i = 1; i < keys.size(); i++) {
+				var secondary = sortProperties(keys.get(i));
+				if (secondary.containsKey("by")) secondary.put("by", "${" + secondary.get("by") + "}");
+				remaining.add(secondary);
+			}
+			props.put("then", remaining);
+		}
+		return capture("list.sort", props, binding.mapped, call);
+	}
+	// Whether the list name is assigned, or read whole (not xs.f, xs[i] or the list of a for…of) before the sort statement or
+	// in a loop around it: that value may be shared with what reads it.
+	private boolean sortAliased(String name, AstNode statement) {
+		AstNode function = statement;
+		while (function != null && !(function instanceof FunctionNode)) function = function.getParent();
+		var loops = new ArrayList<AstNode>();
+		for (AstNode at = statement.getParent(); at != null && at != function; at = at.getParent()) if (at instanceof org.mozilla.javascript.ast.Loop) loops.add(at);
+		final boolean[] aliased = { false };
+		visit(function == null ? root : function, part -> {
+			if (aliased[0] || !(part instanceof Name n) || !n.getIdentifier().equals(name)) return !aliased[0];
+			AstNode parent = part.getParent();
+			if (parent instanceof PropertyGet property && (property.getProperty() == part || property.getTarget() == part)) return true;
+			if (parent instanceof org.mozilla.javascript.ast.ElementGet element && element.getTarget() == part) return true;
+			if (parent instanceof ObjectProperty field && field.getKey() == part && !raw(field).trim().equals(name)) return true;
+			if (parent instanceof VariableInitializer variable && variable.getTarget() == part) return true;
+			if (parent instanceof org.mozilla.javascript.ast.ForInLoop loop && loop.getIteratedObject() == part) return true;
+			if (parent instanceof org.mozilla.javascript.ast.Assignment assignment && assignment.getLeft() == part) { aliased[0] = true; return false; }
+			if (pos(part) < pos(statement)) aliased[0] = true;
+			for (AstNode at = parent; at != null && !aliased[0]; at = at.getParent()) if (loops.contains(at)) aliased[0] = true;
+			return !aliased[0];
+		});
+		return aliased[0];
+	}
 	private boolean needsOuterItemCopy(org.mozilla.javascript.ast.ForInLoop loop, String item) {
 		final boolean[] needed = { false };
 		visit(loop.getBody(), part -> {
@@ -2006,6 +2061,10 @@ public final class FlowScriptV3Reader {
 						return;
 					}
 					output.add(node("json.push", map("path", path, "value", value(call.getArguments().get(0), scope)), statement));
+					return;
+				}
+				if (method(call).equals("sort") && call.getTarget() instanceof PropertyGet sorted && sorted.getTarget() instanceof Name list) {
+					output.add(sortInPlace(call, list, scope, statement));
 					return;
 				}
 				if (compact(raw(call.getTarget())).equals("Object.assign")) reject("FLOWSCRIPT_V3_GLOBAL_CALL", statement, ASSIGN_HINT);
