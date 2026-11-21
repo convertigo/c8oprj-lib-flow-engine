@@ -26,7 +26,7 @@ const _meta = {
       "label": "Input variables",
       "kind": "template",
       "type": "object",
-      "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary. Any other key starting with __ or convertigo., apart from __nativeCall, is refused (REQUESTABLE_RESERVED_INPUT): the requestable and its context come from the definition.",
+      "description": "Input variables passed to the requestable. Cache controls __responseExpiryDate and __nocache preserve the regular Convertigo requestable boundary. Any other key starting with __ or convertigo., apart from __nativeCall, is refused (REQUESTABLE_RESERVED_INPUT): the requestable and its context come from the definition. A CouchDB or FullSync transaction takes its declared variables only, under their declared names (view and query variables start with _use_: _use_key, _use_startkey, _use_docid; a postDocument takes its field variables or the whole document as _use_json_base when declared): any other key is refused (REQUESTABLE_UNDECLARED_INPUT), never dropped.",
     },
     "onError": {
       "label": "On error",
@@ -162,6 +162,61 @@ const _meta = {
 					"Accepted controls: __responseExpiryDate, __nocache, __nativeCall."
 			}, node);
 		}
+	}
+
+	// A CouchDB or FullSync transaction builds its document and its query from its declared variables only: an input key
+	// it does not declare is dropped without a word (a postDocument then writes an empty document, a view without its
+	// key returns every row). Such a key is refused with the declared names and the spelling to write.
+	function declaredVariableNames(dbo) {
+		var names = [];
+		try {
+			var list = dbo && dbo.getVariablesList ? dbo.getVariablesList() : null;
+			for (var i = 0; list && i < list.size(); i++) names.push(String(list.get(i).getName()));
+		} catch (e) {
+		}
+		return names;
+	}
+
+	function isDeclaredVariable(dbo, key) {
+		try {
+			return !!(dbo && dbo.getVariable && dbo.getVariable(String(key)));
+		} catch (e) {
+			return false;
+		}
+	}
+
+	function checkDeclaredInput(ctx, node, target, input) {
+		var dbo = target && target.kind === "transaction" ? target.dbo : null;
+		var className = "";
+		try {
+			className = dbo ? String(dbo.getClass().getName()) : "";
+		} catch (e) {
+		}
+		if (className.indexOf(".beans.transactions.couchdb.") === -1) return;
+		var keys = Object.keys(input || {}).filter(function (key) {
+			key = String(key);
+			return key.indexOf("__") !== 0 && key.indexOf("convertigo.") !== 0 && !isDeclaredVariable(dbo, key);
+		});
+		if (!keys.length) return;
+		var declared = declaredVariableNames(dbo), qname = qnameFor(target);
+		var renamed = keys.filter(function (key) { return key.indexOf("_use_") !== 0 && isDeclaredVariable(dbo, "_use_" + key); });
+		var advice = [];
+		if (renamed.length) advice.push("Its view and query variables start with _use_: write " + renamed.map(function (key) {
+			return key + " as _use_" + key;
+		}).join(", ") + ".");
+		if (/\.PostDocumentTransaction$/.test(className)) advice.push("A document is written from the declared field variables, " +
+			"or whole from _use_json_base (an object) when the transaction declares it: flow-fullsync-scaffold declares " +
+			"_use_json_base on postDocument, or add a variable per field (transactions[].variables).");
+		else advice.push("Declare the variable on the transaction (flow-fullsync-scaffold transactions[].variables) or give only the declared ones.");
+		ctx.throwFlow({
+			code: "REQUESTABLE_UNDECLARED_INPUT",
+			message: "The CouchDB transaction " + qname + " does not declare " + keys.join(", ") +
+				": an undeclared variable is not sent to CouchDB, so its value would be lost. Declared: " +
+				(declared.length ? declared.join(", ") : "none") + ".",
+			status: 400,
+			details: { requestable: qname, keys: keys, declared: declared },
+			hint: advice.join(" ")
+		}, node);
 	}
 
 	function currentProject(ctx) {
@@ -421,6 +476,7 @@ const _meta = {
 		if (!target || !target.project || !target.requestable) {
 			ctx.raise("INVALID_REQUESTABLE_TARGET", "Invalid requestable target.");
 		}
+		checkDeclaredInput(ctx, node, target, input);
 		if (!nativeBoundaryAvailable && canRunFlowDirect(ctx, target, input)) {
 			return runFlowDirect(ctx, target, input);
 		}
