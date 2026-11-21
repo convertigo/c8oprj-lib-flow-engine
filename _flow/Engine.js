@@ -13258,6 +13258,18 @@
 	}
 
 	function frontendSyncDev(request, blocks) {
+		// The routes that failed the smoke check, each with its HTTP status (or no answer) and the reason the check gave:
+		// "A generated route failed its HTTP smoke check" named neither, and a client reading only the text of the error
+		// did not know which page to fix (L28F, 21/11).
+		function failedRoutes(smoke) {
+			var failed = (smoke && smoke.routes || []).filter(function (item) { return item && item.status === "failed"; });
+			var named = failed.slice(0, 5).map(function (item) {
+				var why = [item.httpStatus !== undefined && item.httpStatus !== null ? "HTTP " + item.httpStatus : "no HTTP answer"];
+				if (item.message) why.push(String(item.message).replace(/\.$/, ""));
+				return String(item.route) + " (" + why.join(": ") + ")";
+			});
+			return {count: failed.length, text: named.join(", ") + (failed.length > named.length ? " and " + (failed.length - named.length) + " more in smoke.routes" : "")};
+		}
 		var info = frontbuilderSettingsForRequest(request);
 		var entry = frontendDevEntry(request, info);
 		if (!entry) {
@@ -13390,9 +13402,13 @@
 					details: generated.smoke,
 					hint: "Read smoke.modules and smoke.logTail. A [TSCONFIG_ERROR] comes from the dev server, not from the page: call dev.stop, then dev.ensure, then dev.sync again."};
 			} else if (!generated.smoke.ok) {
+				var failing = failedRoutes(generated.smoke);
 				generated.ok = false;
-				generated.error = {code: "FRONTEND_DEV_ROUTE_FAILED", message: "A generated route failed its HTTP smoke check.",
-					details: generated.smoke, hint: "Fix the route named in smoke.routes using smoke.logTail, then call dev.sync again."};
+				generated.error = {code: "FRONTEND_DEV_ROUTE_FAILED",
+					message: failing.count > 1 ? "Generated routes failed their HTTP smoke check: " + failing.text + "."
+						: failing.count ? "The generated route " + failing.text + " failed its HTTP smoke check."
+						: "A generated route failed its HTTP smoke check.",
+					details: generated.smoke, hint: "Fix the page of each failed route using smoke.logTail, then call dev.sync again."};
 			}
 		}
 		generated.title = "Svelte dev mode";
@@ -13403,7 +13419,7 @@
 		generated.message = generated.ok === false
 			? generated.error && generated.error.code === "FRONTEND_DEV_MODULE_FAILED" ? "Svelte sources generated, but the dev server failed to transform the root layout. Read smoke.modules and smoke.logTail."
 				: generated.error && generated.error.code === "FRONTEND_DEV_UNREACHABLE" ? "Svelte sources generated, but the dev server did not answer yet: call dev.sync again."
-				: generated.smoke && !generated.smoke.ok ? "Svelte sources generated, but a route failed its HTTP smoke check. Read smoke.routes and smoke.logTail."
+				: generated.smoke && !generated.smoke.ok ? "Svelte sources generated, but the HTTP smoke check failed" + (failedRoutes(generated.smoke).count ? " on " + failedRoutes(generated.smoke).text : "") + ". Read smoke.routes and smoke.logTail."
 				: generated.error && generated.error.code === "FRONTBUILDER_DEV_TSCONFIG_MISSING" ? "Svelte sources generated, but node_modules/$app/tsconfig.json could not be written back." : "Svelte dev source update failed."
 			: dependenciesChanged
 				? "Svelte dev source updated; dependencies installed and dev mode restarted."
