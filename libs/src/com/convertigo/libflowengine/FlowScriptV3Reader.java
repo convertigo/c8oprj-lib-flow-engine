@@ -445,9 +445,9 @@ public final class FlowScriptV3Reader {
 	/** A name imported by flow.import, named (const { a } = …) or as a namespace (const ns = …). */
 	private boolean imported(String name) { return imports.containsKey(name) || imports.containsKey(name + ".*"); }
 	private Binding declare(String name, String type, AstNode node, Scope scope, String mapped) {
-		if (RESERVED.contains(name) || name.startsWith("__")) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name.");
-		if (blockNamespaces.contains(name) && BLOCK_NAMESPACES.contains(name) && !imported(name)) reject("FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK", node, "Choose a name different from the block namespace.");
-		if (lookup(name, scope) != null || imported(name)) reject("FLOWSCRIPT_V3_SHADOWING", node, "Choose another local name.");
+		if (RESERVED.contains(name) || name.startsWith("__")) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than " + name + ".");
+		if (blockNamespaces.contains(name) && BLOCK_NAMESPACES.contains(name) && !imported(name)) reject("FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK", node, "Choose a name different from the block namespace " + name + ".");
+		if (lookup(name, scope) != null || imported(name)) reject("FLOWSCRIPT_V3_SHADOWING", node, "Choose another local name than " + name + ".");
 		var binding = new Binding(type, mapped == null ? "local." + name : mapped);
 		scope.names.put(name, binding);
 		allNames.add(name);

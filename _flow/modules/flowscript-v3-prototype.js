@@ -203,9 +203,9 @@
 		function lookup(name, current) { for (var s = current; s; s = s.parent) if (s.names[name]) return s.names[name]; return null; }
 		function child(parent) { return { names: Object.create(null), parent: parent }; }
 		function declare(name, type, node, current, mapped) {
-			if (reserved.test(name)) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name.");
-			if (blockNamespaces[name] && /^(?:text|list|json|http|object|email|sql|date|number|crypto|requestable)$/.test(name) && !imports[name]) reject("FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK", node, "Choose a name different from the block namespace.");
-			if (lookup(name, current) || imports[name]) reject("FLOWSCRIPT_V3_SHADOWING", node, "Choose another local name.");
+			if (reserved.test(name)) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than " + name + ".");
+			if (blockNamespaces[name] && /^(?:text|list|json|http|object|email|sql|date|number|crypto|requestable)$/.test(name) && !imports[name]) reject("FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK", node, "Choose a name different from the block namespace " + name + ".");
+			if (lookup(name, current) || imports[name]) reject("FLOWSCRIPT_V3_SHADOWING", node, "Choose another local name than " + name + ".");
 			var entry = { name: name, type: type, mapped: mapped || "local." + name, loopDepth: loopDepth };
 			current.names[name] = entry; allNames[name] = true; return entry;
 		}
