@@ -64,7 +64,8 @@ public final class FlowScriptV3Reader {
 		Map.entry("FLOWSCRIPT_V3_GLOBAL_CALL", "This global call cannot be lowered in this expression or with these arguments"),
 		Map.entry("FLOWSCRIPT_V3_ERROR_CODE_CHOICE", "throw new Error lacks the literal public error code required by Flow"),
 		Map.entry("FLOWSCRIPT_V3_UNSUPPORTED", "This JavaScript construct is outside the FlowScript v3 subset"),
-		Map.entry("FLOWSCRIPT_V3_OBJECT_CONDITION", "An object literal is not a Flow if or while condition")
+		Map.entry("FLOWSCRIPT_V3_OBJECT_CONDITION", "An object literal is not a Flow if or while condition"),
+		Map.entry("FLOWSCRIPT_V3_PATTERN", "A regular expression literal is lowered to its text block only as a whole value or in an if condition")
 	);
 	private static final Set<String> LIST_STEPS = Set.of("filter", "map", "find", "some", "every", "toSorted", "sort");
 	private static final Set<String> FLOW_NAMESPACES = Set.of("list", "json", "object", "text");
@@ -471,6 +472,7 @@ public final class FlowScriptV3Reader {
 			if (part instanceof FunctionCall nested && part != root && LIST_STEPS.contains(method(nested)))
 				reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
 			if (part instanceof FunctionNode) reject("FLOWSCRIPT_V3_FUNCTION", part, "Write the expression inline or use a project block.");
+			if (part instanceof org.mozilla.javascript.ast.RegExpLiteral literal) reject("FLOWSCRIPT_V3_PATTERN", part, patternHint(literal));
 			if (part instanceof org.mozilla.javascript.ast.Assignment && part != root || part instanceof org.mozilla.javascript.ast.UpdateExpression)
 				reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", part, "Move the assignment to its own statement.");
 			if (part instanceof org.mozilla.javascript.ast.NewExpression && raw(part).matches("(?s)new\\s+Date\\b.*")) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Use date blocks.");
@@ -1067,7 +1069,12 @@ public final class FlowScriptV3Reader {
 			var receiver = lower(property.getTarget(), scope);
 			return new Lowered(receiver.before, receiver.expression + "." + property.getProperty().getIdentifier());
 		}
-		if (!(expression instanceof FunctionCall call)) return new Lowered(List.of(), rewritten(expression, scope));
+		if (!(expression instanceof FunctionCall call)) {
+			var steps = lifted(expression, scope, false);
+			return new Lowered(steps.before(), steps.expression());
+		}
+		var pattern = patternStep(call);
+		if (pattern != null) return patternLowered(pattern, call, scope);
 		if (!globalBlock(call).isEmpty()) {
 			String path = "local.__chain" + (++chain);
 			return new Lowered(List.of(capture(globalBlock(call), globalProps(call, scope), path, call)), path);
@@ -1280,11 +1287,13 @@ public final class FlowScriptV3Reader {
 	// The condition of an if is evaluated once, whole, before its branches: each block step it always evaluates (not in the
 	// right operand of && || ??, a branch of ?:, an arrow or an argument of a call) runs before the statement, in a hidden
 	// local, which is the JavaScript order since expressions have no effect. A step in a lazy place stays refused.
-	private Lifted liftedCondition(AstNode condition, Scope scope) {
+	private Lifted liftedCondition(AstNode condition, Scope scope) { return lifted(condition, scope, true); }
+	// … and so does each pattern step a value always evaluates (const invalid = !/^[0-9]+$/.test(v)).
+	private Lifted lifted(AstNode condition, Scope scope, boolean blockSteps) {
 		var before = new ArrayList<Map<String, Object>>();
 		var replaced = new IdentityHashMap<AstNode, String>();
 		visit(condition, part -> {
-			if (!blockStep(part)) return true;
+			if (!(blockSteps && blockStep(part)) && patternStep(part) == null) return true;
 			for (AstNode child = part, parent = part.getParent(); child != condition && parent != null; child = parent, parent = parent.getParent()) {
 				if (parent instanceof FunctionNode) return true;
 				if (parent.getClass() == InfixExpression.class && Set.of("&&", "||", "??").contains(operator(parent)) && ((InfixExpression) parent).getRight() == child) return true;
@@ -1303,11 +1312,113 @@ public final class FlowScriptV3Reader {
 		final boolean[] found = { false };
 		visit(value, part -> {
 			if (part instanceof FunctionCall call && (LIST_STEPS.contains(method(call)) ||
-				compact(raw(call.getTarget())).matches("(?:Object|JSON)\\..*"))) found[0] = true;
+				compact(raw(call.getTarget())).matches("(?:Object|JSON)\\..*") || patternStep(call) != null)) found[0] = true;
 			return !found[0];
 		});
 		return found[0];
 	}
+	// A pattern step, as the v2 reading of an assignment reads it: /p/f.test(s), s.match(/p/f), s.replace(/p/f, y),
+	// s.replaceAll(/p/g, y) or s.split(/p/f), flags among g, i, m and s. It is the text block that does the same (text.match,
+	// text.replace or text.split with regex: true), run before the statement in a hidden local; the literal is refused
+	// anywhere else (FLOWSCRIPT_V3_PATTERN), with that block as the proposal.
+	private record PatternStep(String method, AstNode text, AstNode replacement, String pattern, String flags) { }
+	private PatternStep patternStep(AstNode part) {
+		if (part == null || part.getClass() != FunctionCall.class || !(((FunctionCall) part).getTarget() instanceof PropertyGet property)) return null;
+		var args = ((FunctionCall) part).getArguments();
+		String method = property.getProperty().getIdentifier();
+		org.mozilla.javascript.ast.RegExpLiteral literal;
+		AstNode text, replacement = null;
+		if (method.equals("test") && unparen(property.getTarget()) instanceof org.mozilla.javascript.ast.RegExpLiteral regex && args.size() == 1) {
+			literal = regex;
+			text = args.get(0);
+		} else if (Set.of("match", "replace", "replaceAll", "split").contains(method) && !args.isEmpty() && args.get(0) instanceof org.mozilla.javascript.ast.RegExpLiteral regex) {
+			literal = regex;
+			text = property.getTarget();
+			if (method.startsWith("replace")) {
+				if (args.size() != 2 || args.get(1) instanceof FunctionNode) return null;
+				replacement = args.get(1);
+			} else if (args.size() != 1) return null;
+		} else return null;
+		String pattern = literal.getValue(), flags = literal.getFlags() == null ? "" : literal.getFlags();
+		if (!flags.matches("(?!.*(.).*\\1)[gims]*") || pattern.contains("${") || pattern.contains("{{") || method.equals("replaceAll") && flags.indexOf('g') < 0) return null;
+		return new PatternStep(method, text, replacement, pattern, flags);
+	}
+	private Lowered patternLowered(PatternStep step, FunctionCall call, Scope scope) {
+		// the text of a method is read first, a chain before it (s.replace(/p/g, " ").trim().split(/q/))
+		var before = new ArrayList<Map<String, Object>>();
+		Object text;
+		if (step.method.equals("test")) text = "${String(" + rewritten(step.text, scope) + ")}";
+		else {
+			var receiver = lower(step.text, scope);
+			before.addAll(receiver.before);
+			text = receiver.before.isEmpty() ? value(step.text, scope) : "${" + receiver.expression + "}";
+		}
+		String path = "local.__chain" + (++chain), plain = step.flags.replace("g", ""), block;
+		var props = new LinkedHashMap<String, Object>();
+		if (step.method.equals("test") || step.method.equals("match")) {
+			block = "text.match";
+			props.put("text", text);
+			props.put("pattern", step.pattern);
+			if (!step.flags.isEmpty()) props.put("flags", step.flags);
+		} else if (step.method.equals("split")) {
+			block = "text.split";
+			props.put("text", text);
+			props.put("separator", step.pattern);
+			props.put("regex", true);
+			props.put("trim", false);
+			props.put("removeEmpty", false);
+			if (!plain.isEmpty()) props.put("flags", plain);
+		} else {
+			block = "text.replace";
+			props.put("text", text);
+			props.put("search", step.pattern);
+			props.put("replacement", value(step.replacement, scope));
+			props.put("regex", true);
+			if (step.flags.indexOf('g') < 0) props.put("all", false);
+			if (!plain.isEmpty()) props.put("flags", plain);
+		}
+		String expression = step.method.equals("test") ? path + ".matched" : step.method.equals("match") ? "(" + path + ".matched ? " + path + ".groups : null)" : path;
+		before.add(capture(block, props, path, call));
+		return new Lowered(before, expression);
+	}
+	// The proposal of a refused regular expression literal: the block that does what its call does, written with the
+	// operands of the source (the prototype bridge writes the same text).
+	private String patternHint(org.mozilla.javascript.ast.RegExpLiteral literal) {
+		String pattern = literal.getValue(), flags = literal.getFlags() == null ? "" : literal.getFlags();
+		String method = "", operand = "value", replacement = "\"\"";
+		AstNode parent = literal.getParent();
+		if (parent instanceof PropertyGet property && property.getTarget() == literal && parent.getParent() instanceof FunctionCall call && call.getTarget() == parent) {
+			method = property.getProperty().getIdentifier();
+			if (!call.getArguments().isEmpty()) operand = spelled(call.getArguments().get(0));
+		} else if (parent instanceof FunctionCall call && !call.getArguments().isEmpty() && call.getArguments().get(0) == literal && call.getTarget() instanceof PropertyGet property) {
+			method = property.getProperty().getIdentifier();
+			operand = spelled(property.getTarget());
+			if (call.getArguments().size() > 1) replacement = spelled(call.getArguments().get(1));
+		}
+		var named = java.util.regex.Pattern.compile("([A-Za-z_$][\\w$]*)\\s*(?:\\(\\s*\\))?\\s*$").matcher(operand);
+		String name = named.find() ? named.group(1) : "text", quoted = quoted(pattern), all = flags.replaceAll("[^gims]", ""), plain = all.replace("g", "");
+		String example, block;
+		if (method.equals("replace") || method.equals("replaceAll")) {
+			block = "text.replace";
+			example = "const " + name + "Replaced = text.replace({ text: " + operand + ", search: " + quoted + ", replacement: " + replacement + ", regex: true" +
+				(all.indexOf('g') < 0 ? ", all: false" : "") + (plain.isEmpty() ? "" : ", flags: " + quoted(plain)) + " }), then read " + name + "Replaced";
+		} else if (method.equals("split")) {
+			block = "text.split";
+			example = "const " + name + "Parts = text.split({ text: " + operand + ", separator: " + quoted + ", regex: true, trim: false, removeEmpty: false" +
+				(plain.isEmpty() ? "" : ", flags: " + quoted(plain)) + " }), then read " + name + "Parts";
+		} else {
+			block = "text.match";
+			example = "const " + name + "Match = text.match({ text: String(" + operand + "), pattern: " + quoted + (all.isEmpty() ? "" : ", flags: " + quoted(all)) +
+				" }), then read " + name + "Match.matched where the " + (method.isEmpty() || method.equals("exec") ? "test" : method) + " was (" + name + "Match.groups holds " +
+				(all.indexOf('g') < 0 ? "the whole match then the captured groups" : "every whole match") + ")";
+		}
+		return (flags.matches("(?!.*(.).*\\1)[gims]*") ? "" : "The flags of a pattern are g, i, m and s; " + quoted(flags) + " has others. ") +
+			"Write the " + block + " block in its own statement, the pattern as a quoted text (backslashes doubled): " + example + ". " +
+			"As the whole value of a declaration, an assignment or a return, or always evaluated in an if condition, /p/.test(s), s.match(/p/), " +
+			"s.replace(/p/, y), s.replaceAll(/p/g, y) and s.split(/p/) are lowered to that block.";
+	}
+	private String spelled(AstNode node) { return raw(node).trim().replaceAll("\\s*[\\r\\n]+\\s*", " "); }
+	private static String quoted(String text) { return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; }
 	private boolean isBlockCall(FunctionCall call) {
 		String target = resolve(compact(raw(call.getTarget())));
 		if (target.equals("flow.default") || target.equals("default") || target.equals("String") || target.equals("Number") || target.startsWith("Math.")) return false;
@@ -1428,11 +1539,14 @@ public final class FlowScriptV3Reader {
 			itemBinding = declare(item.getIdentifier(), "const", item, inner, "current");
 			if (needsOuterItemCopy(loop, item.getIdentifier())) itemBinding.mapped = "local." + item.getIdentifier();
 		}
-		// for (const key of Object.keys(o)), or of a list method chain: the list is computed once, before the loop, in a
-		// hidden local, as JavaScript evaluates the iterated expression once.
+		// for (const key of Object.keys(o)), of a list method chain or of a pattern step that gives a list (s.split(/p/),
+		// s.match(/p/g)): the list is computed once, before the loop, in a hidden local, as JavaScript evaluates the iterated
+		// expression once.
 		AstNode items = loop.getIteratedObject(), iterated = unparen(items);
 		Object list;
-		if (iterated != null && iterated.getClass() == FunctionCall.class && (blockStep(iterated) || method((FunctionCall) iterated).equals("concat")) &&
+		var pattern = patternStep(iterated);
+		if (iterated != null && iterated.getClass() == FunctionCall.class && (blockStep(iterated) || method((FunctionCall) iterated).equals("concat") ||
+			pattern != null && Set.of("split", "match").contains(pattern.method())) &&
 			!Set.of("find", "some", "every").contains(method((FunctionCall) iterated)) && !compact(raw(((FunctionCall) iterated).getTarget())).startsWith("JSON.")) {
 			var listed = lower(iterated, scope);
 			output.addAll(listed.before);

@@ -82,7 +82,8 @@
 				FLOWSCRIPT_V3_GLOBAL_CALL: "This global call cannot be lowered in this expression or with these arguments",
 				FLOWSCRIPT_V3_ERROR_CODE_CHOICE: "throw new Error lacks the literal public error code required by Flow",
 				FLOWSCRIPT_V3_UNSUPPORTED: "This JavaScript construct is outside the FlowScript v3 subset",
-				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition"
+				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition",
+				FLOWSCRIPT_V3_PATTERN: "A regular expression literal is lowered to its text block only as a whole value or in an if condition"
 			};
 			var message = (rules[code] || "This FlowScript v3 construct cannot be lowered faithfully") + " (" + code + " at line " + line(at) + ").";
 			if (code === "FLOWSCRIPT_V3_LIST_METHOD" && kind(node) === "FunctionCall" && method(node) === "sort" && !/^\s*\[/.test(raw(node.getTarget()).replace(/\.sort$/, ""))) {
@@ -222,6 +223,7 @@
 				if (k === "FunctionCall" && /^(?:Object|JSON|Date)\.[A-Za-z_$][\w$]*$/.test(raw(part.getTarget()).replace(/\s/g, ""))) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
 				if (k === "FunctionCall" && part !== node && ["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0) reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
 				if (k === "FunctionNode") reject("FLOWSCRIPT_V3_FUNCTION", part, "Write the expression inline or use a project block.");
+				if (k === "RegExpLiteral") reject("FLOWSCRIPT_V3_PATTERN", part, patternHint(part));
 				if (k === "Assignment" && part !== node || k === "UpdateExpression") reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", part, "Move the assignment to its own statement.");
 				if (k === "NewExpression" && /^new\s+Date\b/.test(raw(part))) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Use date blocks.");
 				if (k === "NewExpression" || k === "ThisLiteral" || k === "AwaitExpression" || k === "Yield" || raw(part) === "this") reject("FLOWSCRIPT_V3_UNSUPPORTED", part, "Use Flow blocks.");
@@ -481,7 +483,9 @@
 				var receiverValue = value(node.getTarget(), current);
 				return { before: receiverValue.before, expression: receiverValue.expression + "." + String(node.getProperty().getIdentifier()) };
 			}
-			if (kind(node) !== "FunctionCall") return { before: [], expression: rewritten(node, current) };
+			if (kind(node) !== "FunctionCall") return lifted(node, current, false);
+			var pattern = patternStep(node);
+			if (pattern) return patternLowered(pattern, current);
 			var target = node.getTarget(), name = method(node), receiver = kind(target) === "PropertyGet" ? target.getTarget() : null;
 			var args = argument(node), prefix = receiver ? value(receiver, current) : null;
 			if (["reduce", "flatMap", "findIndex"].indexOf(name) >= 0) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Use filter, map, toSorted, or an explicit loop.");
@@ -536,6 +540,77 @@
 			if (prefix && prefix.before.length) return { before: prefix.before, expression: prefix.expression + "." + name + "(" + args.map(function (a) { return rewritten(a, current); }).join(", ") + ")" };
 			return { before: [], expression: rewritten(node, current) };
 		}
+		// A pattern step (patternStep of the Java reader): /p/f.test(s), s.match(/p/f), s.replace(/p/f, y), s.replaceAll(/p/g, y)
+		// or s.split(/p/f), flags among g, i, m and s, lowered to its text block in a hidden local; the literal is refused
+		// anywhere else (FLOWSCRIPT_V3_PATTERN), with the same proposal as the Java reader.
+		function patternStep(part) {
+			if (kind(part) !== "FunctionCall" || kind(part.getTarget()) !== "PropertyGet") return null;
+			var target = part.getTarget(), args = argument(part), name = String(target.getProperty().getIdentifier()), literal, text, replacement = null;
+			if (name === "test" && kind(unparen(target.getTarget())) === "RegExpLiteral" && args.length === 1) {
+				literal = unparen(target.getTarget());
+				text = args[0];
+			} else if (["match", "replace", "replaceAll", "split"].indexOf(name) >= 0 && args.length && kind(args[0]) === "RegExpLiteral") {
+				literal = args[0];
+				text = target.getTarget();
+				if (/^replace/.test(name)) {
+					if (args.length !== 2 || kind(args[1]) === "FunctionNode") return null;
+					replacement = args[1];
+				} else if (args.length !== 1) return null;
+			} else return null;
+			var pattern = String(literal.getValue()), flags = literal.getFlags() == null ? "" : String(literal.getFlags());
+			if (!/^(?!.*(.).*\1)[gims]*$/.test(flags) || pattern.indexOf("${") >= 0 || pattern.indexOf("{{") >= 0 || name === "replaceAll" && flags.indexOf("g") < 0) return null;
+			return { method: name, text: text, replacement: replacement, pattern: pattern, flags: flags };
+		}
+		function patternLowered(step, current) {
+			// the text of a method is read first, a chain before it (s.replace(/p/g, " ").trim().split(/q/))
+			var receiver = step.method === "test" ? { before: [], expression: "String(" + rewritten(step.text, current) + ")" } : value(step.text, current);
+			var hidden = "local.__chain" + (++chain), plain = step.flags.replace(/g/g, ""), call, text = receiver.expression;
+			if (step.method === "test" || step.method === "match") {
+				call = "text.match({ text: " + text + ", pattern: " + JSON.stringify(step.pattern) + (step.flags ? ", flags: " + JSON.stringify(step.flags) : "") + " })";
+			} else if (step.method === "split") {
+				call = "text.split({ text: " + text + ", separator: " + JSON.stringify(step.pattern) + ", regex: true, trim: false, removeEmpty: false" +
+					(plain ? ", flags: " + JSON.stringify(plain) : "") + " })";
+			} else {
+				call = "text.replace({ text: " + text + ", search: " + JSON.stringify(step.pattern) + ", replacement: " + rewritten(step.replacement, current) +
+					", regex: true" + (step.flags.indexOf("g") < 0 ? ", all: false" : "") + (plain ? ", flags: " + JSON.stringify(plain) : "") + " })";
+			}
+			return { before: receiver.before.concat([hidden + " = " + call]),
+				expression: step.method === "test" ? hidden + ".matched" : step.method === "match" ? "(" + hidden + ".matched ? " + hidden + ".groups : null)" : hidden };
+		}
+		function spelled(node) { return raw(node).trim().replace(/\s*[\r\n]+\s*/g, " "); }
+		function quoted(text) { return '"' + text.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'; }
+		function patternHint(literal) {
+			var pattern = String(literal.getValue()), flags = literal.getFlags() == null ? "" : String(literal.getFlags());
+			var method = "", operand = "value", replacement = '""', parent = literal.getParent();
+			if (kind(parent) === "PropertyGet" && parent.getTarget() === literal && kind(parent.getParent()) === "FunctionCall" && parent.getParent().getTarget() === parent) {
+				method = String(parent.getProperty().getIdentifier());
+				if (argument(parent.getParent()).length) operand = spelled(argument(parent.getParent())[0]);
+			} else if (kind(parent) === "FunctionCall" && argument(parent).length && argument(parent)[0] === literal && kind(parent.getTarget()) === "PropertyGet") {
+				method = String(parent.getTarget().getProperty().getIdentifier());
+				operand = spelled(parent.getTarget().getTarget());
+				if (argument(parent).length > 1) replacement = spelled(argument(parent)[1]);
+			}
+			var named = /([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*$/.exec(operand), name = named ? named[1] : "text";
+			var all = flags.replace(/[^gims]/g, ""), plain = all.replace(/g/g, ""), example, block;
+			if (method === "replace" || method === "replaceAll") {
+				block = "text.replace";
+				example = "const " + name + "Replaced = text.replace({ text: " + operand + ", search: " + quoted(pattern) + ", replacement: " + replacement + ", regex: true" +
+					(all.indexOf("g") < 0 ? ", all: false" : "") + (plain ? ", flags: " + quoted(plain) : "") + " }), then read " + name + "Replaced";
+			} else if (method === "split") {
+				block = "text.split";
+				example = "const " + name + "Parts = text.split({ text: " + operand + ", separator: " + quoted(pattern) + ", regex: true, trim: false, removeEmpty: false" +
+					(plain ? ", flags: " + quoted(plain) : "") + " }), then read " + name + "Parts";
+			} else {
+				block = "text.match";
+				example = "const " + name + "Match = text.match({ text: String(" + operand + "), pattern: " + quoted(pattern) + (all ? ", flags: " + quoted(all) : "") +
+					" }), then read " + name + "Match.matched where the " + (!method || method === "exec" ? "test" : method) + " was (" + name + "Match.groups holds " +
+					(all.indexOf("g") < 0 ? "the whole match then the captured groups" : "every whole match") + ")";
+			}
+			return (/^(?!.*(.).*\1)[gims]*$/.test(flags) ? "" : "The flags of a pattern are g, i, m and s; " + quoted(flags) + " has others. ") +
+				"Write the " + block + " block in its own statement, the pattern as a quoted text (backslashes doubled): " + example + ". " +
+				"As the whole value of a declaration, an assignment or a return, or always evaluated in an if condition, /p/.test(s), s.match(/p/), " +
+				"s.replace(/p/, y), s.replaceAll(/p/g, y) and s.split(/p/) are lowered to that block.";
+		}
 		// A block step of a condition: a list method with an arrow, or a global call lowered to a block.
 		function blockStep(part) {
 			if (kind(part) !== "FunctionCall") return false;
@@ -547,10 +622,12 @@
 		// The condition of an if is evaluated once, whole, before its branches: each block step it always evaluates (not in
 		// the right operand of && || ??, a branch of ?:, an arrow or an argument of a call) runs before the statement, in a
 		// hidden local, which is the JavaScript order since expressions have no effect. A step in a lazy place stays refused.
-		function liftedCondition(condition, current) {
+		function liftedCondition(condition, current) { return lifted(condition, current, true); }
+		// … and so does each pattern step a value always evaluates (const invalid = !/^[0-9]+$/.test(v)).
+		function lifted(condition, current, blockSteps) {
 			var before = [], replaced = [];
 			visit(condition, function (part) {
-				if (!blockStep(part)) return true;
+				if (!(blockSteps && blockStep(part)) && !patternStep(part)) return true;
 				for (var child = part, parent = part.getParent(); child !== condition && parent; child = parent, parent = parent.getParent()) {
 					var k = kind(parent);
 					if (k === "FunctionNode") return true;
@@ -611,7 +688,7 @@
 			var found = false;
 			visit(node, function (part) {
 				if (kind(part) === "FunctionCall" && (["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0 ||
-					/^(?:Object|JSON)\./.test(raw(part.getTarget()).replace(/\s/g, "")))) found = true;
+					/^(?:Object|JSON)\./.test(raw(part.getTarget()).replace(/\s/g, "")) || patternStep(part))) found = true;
 				return !found;
 			});
 			return found;
@@ -795,10 +872,12 @@
 					itemBinding.loopDepth = loopDepth + 1;
 					if (needsOuterItemCopy(node, item)) itemBinding.mapped = "local." + item;
 				}
-				// for (const key of Object.keys(o)), or of a list method chain: the list is computed once, before the loop, in a
-				// hidden local, as JavaScript evaluates the iterated expression once.
-				var iterated = unparen(node.getIteratedObject()), items;
-				if (kind(iterated) === "FunctionCall" && (blockStep(iterated) || method(iterated) === "concat") && ["find", "some", "every"].indexOf(method(iterated)) < 0 &&
+				// for (const key of Object.keys(o)), of a list method chain or of a pattern step that gives a list (s.split(/p/),
+				// s.match(/p/g)): the list is computed once, before the loop, in a hidden local, as JavaScript evaluates the
+				// iterated expression once.
+				var iterated = unparen(node.getIteratedObject()), items, listPattern = patternStep(iterated);
+				if (kind(iterated) === "FunctionCall" && (blockStep(iterated) || method(iterated) === "concat" || listPattern && ["split", "match"].indexOf(listPattern.method) >= 0) &&
+					["find", "some", "every"].indexOf(method(iterated)) < 0 &&
 					!/^JSON\./.test(raw(iterated.getTarget()).replace(/\s/g, ""))) {
 					var listed = value(iterated, current);
 					listed.before.forEach(function (before) { emit(before, origin); });

@@ -452,6 +452,17 @@
       ]
     },
     {
+      "id": "pattern",
+      "construct": "/p/f.test(s) | s.match(/p/f) | s.replace(/p/f, y) | s.replaceAll(/p/g, y) | s.split(/p/f)",
+      "block": "text.match | text.replace | text.split",
+      "lowering": "the block in local.__chain<N> before the statement: text.match({ text: String(s), pattern: \"p\", flags }) read as .matched (test) or .matched ? .groups : null (match); text.replace and text.split with regex: true",
+      "where": "whole value of a declaration, an assignment or a return, a branch of a whole ?:, a place a value or an if condition always evaluates, the list of a for…of (split, match); flags among g, i, m and s; elsewhere FLOWSCRIPT_V3_PATTERN",
+      "examples": [
+        "const ok = /^[0-9]+$/.test(input.code)\nif (/^[0-9]{1,2}$/.test(input.day)) {\n  result.day = Number(input.day)\n}\nresult.ok = ok",
+        "const words = input.text.replace(/\\s+/g, \" \").trim().split(/ /)\nconst invalid = !/^[a-z]+$/i.test(input.name)\nreturn { words, invalid }"
+      ]
+    },
+    {
       "id": "default",
       "construct": "flow.default(a, b)",
       "lowering": "expression function default (null, undefined and \"\" replaced)",
@@ -657,6 +668,12 @@
       "construct": "if or while whose condition is an object literal",
       "rewrite": "flow.if({ … }) or flow.while({ … })",
       "example": "if ({ x: 1 }) {\n  result.x = 1\n}"
+    },
+    {
+      "code": "FLOWSCRIPT_V3_PATTERN",
+      "construct": "a regular expression literal in a lazy place (after && || ??, in a list arrow, an argument, a while condition) or in another form",
+      "rewrite": "const m = text.match({ text: String(s), pattern: \"p\" }) before the statement, then m.matched",
+      "example": "const ok = input.name != \"\" && /^[a-z]+$/.test(input.name)"
     }
   ],
   "valueRules": [

@@ -178,7 +178,15 @@ The v2 expression subset is unchanged: scope paths, literals, arrays, objects, t
 - `??` keeps `0`, `false` and `""`; `||` replaces them. `flow.default(a, b)` replaces `null`, `undefined` and `""`, in
   any expression. A bare `default(a, b)` is not JavaScript (`default` is a reserved word): it is refused
   (`FLOWSCRIPT_V3_RESERVED_WORD`) with the rewrite `flow.default(a, b)`.
-- A regular expression literal is a block: `text.match`, `text.replace`, `text.split` (as in v2).
+- A regular expression literal is a block (`text.match`, `text.replace`, `text.split`), in the forms v2 rewrites:
+  `/p/f.test(s)` is `text.match({ text: String(s), pattern: "p", flags: "f" })` read as `.matched`; `s.match(/p/f)` reads
+  `.matched ? .groups : null` (an unmatched group is `""`, where JavaScript gives `undefined`); `s.replace(/p/f, y)`,
+  `s.replaceAll(/p/g, y)` and `s.split(/p/f)` are `text.replace` and `text.split` with `regex: true`. Flags are among
+  `g`, `i`, `m` and `s`. The block runs before the statement, in a hidden local `local.__chain<N>`, where the value is
+  the whole value of a declaration, an assignment or a return, a branch of a whole `?:`, a place the value or the
+  condition of an `if` always evaluates (`const ok = /^[0-9]+$/.test(v)`, `!/x/.test(v)`, `if (/^[0-9]{1,2}$/.test(v))`),
+  or the list of a `for…of` (`split`, `match`). Elsewhere (after `&&`, `||` or `??`, in a list arrow, an argument or a
+  `while` condition) the literal is refused (`FLOWSCRIPT_V3_PATTERN`), with the block to write in its own statement.
 
 ## 7. List methods
 
@@ -335,6 +343,7 @@ function Notify({ input, config, result }) {
 | a function other than a top-level helper, a list arrow or a slot (nested, in an expression, a closure) | `FLOWSCRIPT_V3_FUNCTION` | write it inline, a top-level helper, or a project block |
 | `async`, `await`, generators, classes, `this`, `new` | `FLOWSCRIPT_V3_UNSUPPORTED` | blocks |
 | `if` or `while` whose condition is an object literal | `FLOWSCRIPT_V3_OBJECT_CONDITION` | `flow.if({ … })` |
+| a regular expression literal in a lazy place (after `&&`, `\|\|`, `??`, in a list arrow, an argument, a `while` condition) or in another form | `FLOWSCRIPT_V3_PATTERN` | `const m = text.match({ text: String(s), pattern: "p" })` before the statement, then `m.matched` |
 
 ```flowscript refused=FLOWSCRIPT_V3_BREAK id=refused-break
 const _flow = { sourceVersion: 3, inputs: { items: { type: "array" } } }
@@ -568,3 +577,7 @@ replacement. The rules of the previous sections are amended accordingly.
    - *`return block({ … })`.* `return entity.read({ … })` returns the result of the call, as
      `const row = entity.read({ … }); return row` does: the call writes a hidden local `local.__chain<N>`, returned. It was
      read as an expression, where a block call is refused (`INVALID_EXPRESSION`).
+   - *Regular expressions.* `const ok = /^[0-9]+$/.test(v)` and `if (/^[0-9]{1,2}$/.test(v))` were refused while the
+     diagnostic said such a literal is rewritten to `text.match`: the v3 reader left the literal in the expression. The
+     forms v2 rewrites are now lowered to their block (section 6), also where a value or an `if` condition always evaluates
+     them; another place is refused with `FLOWSCRIPT_V3_PATTERN` and the block to write, with the names of the source.
