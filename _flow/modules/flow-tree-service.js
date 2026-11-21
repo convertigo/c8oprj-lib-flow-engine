@@ -2156,9 +2156,67 @@
 		return out;
 	}
 
-	function flowSvelteLiteBindingDiagnostics(root) {
+	// The client action values the frontbuilder composes (portableExpression.ts): literals, statically known paths of the
+	// visible sources, comparison, logical and arithmetic operators, ?:, template literals, arrays, objects of written keys,
+	// and String, Number, Boolean, JSON.stringify, Array.isArray or encodeURIComponent. A spread, a computed key, a method, an
+	// accessor, __proto__ or any other call stays refused. Read with the Rhino parser, never run.
+	var FLOW_SVELTE_PORTABLE_CALLS = { "String": true, "Number": true, "Boolean": true, "JSON.stringify": true, "Array.isArray": true, "encodeURIComponent": true };
+	var FLOW_SVELTE_PORTABLE_OPERATORS = /^(?:===|!==|==|!=|<=|>=|<|>|\+|-|\*|\/|%|\*\*|&&|\|\||\?\?)$/;
+	function flowSvelteLitePortableExpression(expression, visible) {
+		var text = "(" + String(expression) + "\n)", root;
+		try {
+			var environment = new Packages.org.mozilla.javascript.CompilerEnvirons();
+			environment.setLanguageVersion(200);
+			environment.setRecoverFromErrors(false);
+			root = new Packages.org.mozilla.javascript.Parser(environment).parse(text, "action-value", 1);
+		} catch (_notJavaScript) {
+			return false;
+		}
+		function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
+		function spelled(node) { var at = node.getAbsolutePosition(); return text.substring(at, at + node.getLength()).trim(); }
+		function list(values) { var out = []; for (var i = 0; values && i < values.size(); i++) out.push(values.get(i)); return out; }
+		function operator(node) { return String(Packages.org.mozilla.javascript.ast.AstNode.operatorToString(node.getOperator())); }
+		function portable(node) {
+			var k = kind(node);
+			if (k === "ParenthesizedExpression") return portable(node.getExpression());
+			if (k === "StringLiteral" || k === "NumberLiteral") return true;
+			if (k === "KeywordLiteral") return /^(?:true|false|null)$/.test(spelled(node));
+			if (k === "Name" || k === "PropertyGet" || k === "ElementGet") {
+				var path = spelled(node);
+				return /^[A-Za-z_$][\w$]*(?:(?:\??\.[A-Za-z_$][\w$]*)|\[\d+\])*$/.test(path) && visible(path.match(/^[A-Za-z_$][\w$]*/)[0]);
+			}
+			if (k === "InfixExpression") return FLOW_SVELTE_PORTABLE_OPERATORS.test(operator(node)) && portable(node.getLeft()) && portable(node.getRight());
+			if (k === "UnaryExpression") return /^[!+-]$/.test(operator(node)) && portable(node.getOperand());
+			if (k === "ConditionalExpression") return portable(node.getTestExpression()) && portable(node.getTrueExpression()) && portable(node.getFalseExpression());
+			if (k === "TemplateLiteral") return list(node.getElements()).every(function (part) { return kind(part) === "TemplateCharacters" || portable(part); });
+			if (k === "ArrayLiteral") return list(node.getElements()).every(function (item) { return kind(item) !== "Spread" && kind(item) !== "EmptyExpression" && portable(item); });
+			if (k === "ObjectLiteral") return list(node.getElements()).every(function (property) {
+				if (kind(property) !== "ObjectProperty" || kind(property.getValue()) === "FunctionNode") return false;
+				var key = property.getKey(), keyKind = kind(key);
+				var name = keyKind === "Name" ? String(key.getIdentifier()) : keyKind === "StringLiteral" ? String(key.getValue()) : keyKind === "NumberLiteral" ? spelled(key) : null;
+				return name !== null && name !== "__proto__" && portable(property.getValue());
+			});
+			if (k === "FunctionCall") return FLOW_SVELTE_PORTABLE_CALLS[spelled(node.getTarget()).replace(/\s/g, "")] === true &&
+				list(node.getArguments()).every(function (argument) { return kind(argument) !== "Spread" && portable(argument); });
+			return false;
+		}
+		var statement = root.getFirstChild();
+		return kind(statement) === "ExpressionStatement" && !statement.getNext() && portable(statement.getExpression());
+	}
+
+	// The parameters of the {#snippet name(a, b)} of a source: an action placed in that snippet reads them.
+	function flowSvelteLiteSnippetParameters(source) {
+		var names = {}, pattern = /\{#snippet\s+[A-Za-z_$][\w$]*\s*\(([^)]*)\)/g, match;
+		while ((match = pattern.exec(String(source || ""))) !== null) {
+			(match[1].match(/[A-Za-z_$][\w$]*/g) || []).forEach(function (name) { names[name] = true; });
+		}
+		return names;
+	}
+
+	function flowSvelteLiteBindingDiagnostics(root, source) {
 		var diagnostics = [];
 		var actionIds = {};
+		var snippetParameters = flowSvelteLiteSnippetParameters(source);
 		function collectActions(node) {
 			var kind = String(node && node.props && node.props.kind || "");
 			if (kind === "callSequence" || kind === "setValue" || /^fullSync(?:Get|View|Sync|Reset)$/.test(kind)) {
@@ -2221,6 +2279,14 @@
 					var value = node.props[property];
 					if (property === "marker" || !value || typeof value !== "object" || value.mode !== "expression") return;
 					var expression = String(value.expression || "").trim();
+					// a value the frontbuilder composes from the sources visible here (event, page, layout, route, a call by its
+					// $$id, a ForEach item, a snippet parameter) runs in actions
+					if (flowSvelteLitePortableExpression(expression, function (first) {
+						return first === "event" || first === "page" || first === "layout" || first === "route" || actionIds[first] === true ||
+							snippetParameters[first] === true || (scopes || []).some(function (scope) {
+								return first === scope.id || first === scope.item || first === scope.index;
+							});
+					})) return;
 					var suggestedReference = /^[A-Za-z_$][A-Za-z0-9_$]*(?:(?:\.[A-Za-z_$][A-Za-z0-9_$]*)|(?:\[\d+\]))*$/.test(expression)
 						? "@" + expression : "";
 					var propertyPath = String(node.sourceMutationPath || "") + ".props." + property;
@@ -5875,10 +5941,8 @@
 	}
 
 	function descriptorPropertyContract(properties, descriptor) {
-		var traits = descriptor && descriptor.traits || [];
-		// If has both visual and action uses: the shared contract advertises their common value syntax.
-		var action = traits.indexOf("ui.action") >= 0 || traits.indexOf("ui.action.variable") >= 0 ||
-			String(descriptor && (descriptor.tag || descriptor.insert && descriptor.insert.tag) || "").toLowerCase() === "if";
+		// A binding takes a literal, an @source or an expression in braces: free in visual content, composed from the visible
+		// sources in actions (the value of an action, If.test), as the description of the property says.
 		var out = {};
 		Object.keys(properties || {}).sort().forEach(function (name) {
 			var definition = properties[name] || {};
@@ -5887,7 +5951,7 @@
 				kind: kind,
 				type: String(definition.type || kind || "unknown"),
 				intents: kind === "binding" || String(definition.type || "") === "binding"
-					? action ? ["literal", "source"] : ["literal", "expression", "source"]
+					? ["literal", "expression", "source"]
 					: ["literal"]
 			};
 			if (definition.default !== undefined) {
@@ -8433,7 +8497,7 @@
 			embeddedFlowSvelteDocument: function (sourcePath, source) {
 				var root = flowSvelteLiteComponentRoot(sourcePath, source);
 				return { root: root, diagnostics: root ? mergeFrontendDiagnostics(
-					flowSvelteLiteBindingDiagnostics(root), flowSvelteCallContractDiagnostics(root, {})) : [] };
+					flowSvelteLiteBindingDiagnostics(root, source), flowSvelteCallContractDiagnostics(root, {})) : [] };
 			},
 			slotDefinitions: slotDefinitions,
 			activeSlots: activeSlots,

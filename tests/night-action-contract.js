@@ -3,10 +3,11 @@ var start=source.indexOf('function descriptorPropertyContract('),end=source.inde
 var descriptorPropertyContract=eval('('+source.substring(start,end).trim()+')');
 function normalizeTree(value){return JSON.parse(JSON.stringify(value));}
 var fields={value:{kind:'binding',type:'binding'}};
-for each(var trait in ['ui.action','ui.action.variable']){
- var contract=descriptorPropertyContract(fields,{traits:[trait]});
- if(contract.value.intents.indexOf('expression')>=0 || contract.value.intents.indexOf('source')<0)throw Error('Action contracts must not advertise free expressions: '+JSON.stringify(contract));
+// An action value and If.test take an expression in braces too (frontbuilder 973b12c, 76db082, 06e295c): composed from the
+// visible sources in actions, free in visual content, as the description of the property says.
+for each(var traits in [['ui.action'],['ui.action.variable'],['ui.control'],['ui.component']]){
+ var contract=descriptorPropertyContract(fields,{tag:traits[0]==='ui.control'?'If':'',traits:traits});
+ if(contract.value.intents.join('|')!=='literal|expression|source')throw Error('A binding takes a literal, an expression or a source: '+JSON.stringify(contract));
 }
-if(descriptorPropertyContract(fields,{tag:'If',traits:['ui.control']}).value.intents.indexOf('expression')>=0)throw Error('If shared contract must describe action-safe values');
-if(descriptorPropertyContract(fields,{traits:['ui.component']}).value.intents.indexOf('expression')<0)throw Error('Visible bindings retain browser expressions');
+if(descriptorPropertyContract({label:{kind:'text',type:'string'}},{traits:['ui.action']}).label.intents.join('|')!=='literal')throw Error('A text property takes a literal');
 print('night-action-contract OK');
