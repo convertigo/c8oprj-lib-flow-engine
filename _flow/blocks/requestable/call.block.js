@@ -459,7 +459,7 @@ const _meta = {
 		// an application error of the called Flow stays one (200 with its envelope when it has no status); its internal
 		// failure stays 500, as flow.call, which lets the error of the called Flow through
 		var status = Number(error.status), explicit = Number.isInteger(status) && status >= 400 && status <= 599;
-		return ctx.throwFlow({
+		var raised = {
 			code: String(error.code || "FLOW_REQUESTABLE_FAILED"),
 			message: String(error.message || "The called requestable failed."),
 			status: explicit ? status : value.applicative ? undefined : 500,
@@ -468,7 +468,14 @@ const _meta = {
 			// it is kept first, never replaced by the generic way of catching it
 			hint: (error.hint ? String(error.hint) + " " : "") + "Raised by " + qnameFor(target) + (error.path ? " at " + error.path : "")
 				+ (error.hint ? "." : ". Catch it with try, or set onError: \"return\" to get { error } instead.")
-		}, node, value.applicative ? APPLICATIVE : undefined);
+		};
+		// The other fields of a Flow's error (throw { code, message, field }) stay on the error raised here, as through
+		// flow.call: a catch of the caller reads e.field. Only the envelope of a Flow run has them; an error document of
+		// the engine (no operation) keeps its own keys out.
+		if (String(error.operation) === "run") Object.keys(error).forEach(function (key) {
+			if (!Object.prototype.hasOwnProperty.call(raised, key) && key !== "operation" && key !== "path") raised[key] = error[key];
+		});
+		return ctx.throwFlow(raised, node, value.applicative ? APPLICATIVE : undefined);
 	}
 
 	function runInternal(ctx, node, target, input) {

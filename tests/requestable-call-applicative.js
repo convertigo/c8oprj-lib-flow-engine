@@ -63,6 +63,18 @@ expect("regular, child internal failure", regular({ code: "FLOW_ENGINE_ERROR", o
 	{ code: "FLOW_ENGINE_ERROR", status: 500, applicative: false });
 expect("regular, error document of the engine", regular({ type: "c8o", code: "-1", message: "Unable to run" }),
 	{ code: "-1", status: 500, applicative: false });
+// The other fields of the called Flow's error (throw { code, message, field }) stay on the raised error, as through flow.call;
+// the keys of an error document of the engine (no operation) do not.
+function optionsOf(error) {
+	answer = { document: { error: error, attr: {} }, failed: true };
+	try { implementation.run(context(), { props: { requestable: "ChildProject.Child", input: {} } }); } catch (thrown) { return thrown.options || {}; }
+	return {};
+}
+var fielded = optionsOf({ code: "AMOUNT_INVALID", operation: "run", path: "throw", message: "No", hint: "", field: "amount", limits: { max: 3 } });
+expect("the fields of the called Flow's error are raised", [fielded.code, fielded.field, fielded.limits && fielded.limits.max, fielded.operation, fielded.path],
+	["AMOUNT_INVALID", "amount", 3, undefined, undefined]);
+var document = optionsOf({ type: "c8o", code: "-1", message: "Unable to run", stacktrace: "at x" });
+expect("the keys of an engine error document are not raised", [document.code, document.type, document.stacktrace], ["-1", undefined, undefined]);
 answer = { document: { error: { code: "CHILD_REFUSED", operation: "run", path: "throw", message: "No", hint: "" }, attr: {} }, failed: true };
 var returned = implementation.run(context(), { props: { requestable: "ChildProject.Child", input: {}, onError: "return" } });
 expect("onError return", returned && returned.error && [returned.error.code, returned.error.operation], ["CHILD_REFUSED", undefined]);

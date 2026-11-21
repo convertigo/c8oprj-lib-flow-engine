@@ -32,7 +32,7 @@ const _meta = {
       "kind": "path",
       "mode": "write",
       "default": "local.error",
-      "description": "Scope path receiving { code, message, status, hint } when try fails, and details when the error has some (the details of a throw, as JavaScript reads e.details). The error itself stays attached to that value, hidden: throw({ error: path }) raises it again unchanged.",
+      "description": "Scope path receiving { code, message, status, hint } when try fails, details when the error has some (the details of a throw, as JavaScript reads e.details), and the other fields of the thrown object (throw { code, message, field: \"amount\" } gives e.field). The error itself stays attached to that value, hidden: throw({ error: path }) raises it again unchanged.",
     },
   },
   "runtime": "rhino",
@@ -49,6 +49,8 @@ const _meta = {
 (function () {
 	// { code, message, status, hint } of a Flow error (throw, raise) or a Java exception, and its details when it has some:
 	// in catch (e), e.details reads the details of the thrown error as in JavaScript (absent, so undefined, when it has none).
+	// The other fields of the thrown object (throw { code, message, field: "amount" }) stay on it, as in JavaScript:
+	// e.field reads "amount". The envelope names (path, stack, operation, __*, convertigo.*) are never fields.
 	function errorValue(error) {
 		var value = error && (error.flowError || error.error || error) || {};
 		var message = value.message !== undefined ? value.message
@@ -60,6 +62,10 @@ const _meta = {
 			hint: value.hint === undefined || value.hint === null ? "" : String(value.hint)
 		};
 		if (value.details !== undefined) out.details = value.details;
+		var fields = value.fields;
+		if (fields && typeof fields === "object") Object.keys(fields).forEach(function (key) {
+			if (!Object.prototype.hasOwnProperty.call(out, key) && fields[key] !== undefined) out[key] = fields[key];
+		});
 		return out;
 	}
 
