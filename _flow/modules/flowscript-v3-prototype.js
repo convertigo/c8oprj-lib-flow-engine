@@ -18,6 +18,9 @@
 				if (match) return at - match[0].length;
 			}
 			if (kind(node) === "InfixExpression" && node.getLeft && node.getLeft()) return Math.min(at, pos(node.getLeft()));
+			// The oracle shares this position with the Java reader: a conditional expression starts at its test, with the
+			// prefix operator of that test (typeof x === "string" ? …, !x ? …), which Rhino 1.9.2 leaves before it
+			if (kind(node) === "ConditionalExpression") return Math.min(at, pos(node.getTestExpression()));
 			return at;
 		}
 		function end(node) {

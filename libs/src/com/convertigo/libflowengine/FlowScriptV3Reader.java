@@ -167,6 +167,8 @@ public final class FlowScriptV3Reader {
 				return cursor + 1 - operator.length();
 		}
 		if (node instanceof org.mozilla.javascript.ast.InfixExpression infix) return Math.min(at, pos(infix.getLeft()));
+		// … and a conditional expression at its test, whose prefix operator (typeof x === "string" ? …, !x ? …) starts it
+		if (node instanceof ConditionalExpression conditional) return Math.min(at, pos(conditional.getTestExpression()));
 		return at;
 	}
 	private int end(AstNode node) {
