@@ -86,6 +86,8 @@ public final class FlowScriptV3Reader {
 	private final Set<String> allNames = new HashSet<>();
 	private final Set<String> blockNamespaces = new HashSet<>();
 	private final Set<String> helpers = new HashSet<>();
+	// the names of the local functions of the source (const f = (a, b) => e): a call of one is no block call
+	private final Set<String> localFunctions = new HashSet<>();
 	private final Set<String> typedLists = new HashSet<>();
 	private final Set<String> typedMaps = new HashSet<>();
 	private int chain;
@@ -340,6 +342,8 @@ public final class FlowScriptV3Reader {
 		visit(ast, part -> {
 			if (part instanceof VariableDeclaration declaration) for (var variable : declaration.getVariables()) {
 				if (variable.getTarget() instanceof Name n) allNames.add(n.getIdentifier());
+				if (variable.getTarget() instanceof Name n && variable.getInitializer() != null && unparen(variable.getInitializer()) instanceof FunctionNode)
+					localFunctions.add(n.getIdentifier());
 			}
 			if (part instanceof FunctionCall call && call.getTarget() instanceof PropertyGet property && property.getTarget() instanceof Name n)
 				blockNamespaces.add(n.getIdentifier());
@@ -443,6 +447,10 @@ public final class FlowScriptV3Reader {
 		boolean typedList, typedMap;
 		// the parameter of a catch: throw of this name raises the caught error again
 		boolean caught;
+		// a local function (const f = (a, b) => e): its expression, read in the scope of its declaration, replaces each call
+		FunctionNode function;
+		AstNode body;
+		Scope declared;
 		Binding(String type, String mapped) { this.type = type; this.mapped = mapped; }
 	}
 	private static final class Scope {
@@ -494,6 +502,9 @@ public final class FlowScriptV3Reader {
 		visit(root, part -> {
 			String lifted = replaced.get(part);
 			if (lifted != null) { edits.add(new Edit(pos(part), end(part), lifted)); return false; }
+			// a call of a local function is its expression, each parameter replaced by its argument
+			Binding called = part instanceof FunctionCall call && call.getClass() == FunctionCall.class && call.getTarget() instanceof Name callee ? lookup(callee.getIdentifier(), scope) : null;
+			if (called != null && called.function != null) { edits.add(new Edit(pos(part), end(part), inlined(called, (FunctionCall) part, scope))); return false; }
 			if (part instanceof FunctionCall call && compact(raw(call.getTarget())).matches("(?:Object|JSON|Date)\\.[A-Za-z_$][\\w$]*"))
 				reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
 			if (part != root && readCall(part, scope)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint((FunctionCall) part, false));
@@ -512,6 +523,7 @@ public final class FlowScriptV3Reader {
 				if (parent instanceof ObjectProperty field && field.getKey() == part && !raw(field).trim().equals(n.getIdentifier())) return true;
 				var binding = lookup(n.getIdentifier(), scope);
 				if (binding == null) { if (allNames.contains(n.getIdentifier()) && !imported(n.getIdentifier())) reject("FLOWSCRIPT_V3_OUT_OF_SCOPE", part, "Declare the name in the enclosing block."); return true; }
+				if (binding.function != null) reject("FLOWSCRIPT_V3_FUNCTION", part, "Call the local function " + n.getIdentifier() + "(…): it is inlined where it is called, never passed as a value.");
 				String replacement = binding.mapped;
 				if (parent instanceof ObjectProperty field && field.getKey() == part && raw(field).trim().equals(n.getIdentifier())) replacement = n.getIdentifier() + ": " + replacement;
 				edits.add(new Edit(pos(part), end(part), replacement));
@@ -1490,6 +1502,7 @@ public final class FlowScriptV3Reader {
 		String target = resolve(compact(raw(call.getTarget())));
 		if (target.equals("flow.default") || target.equals("default") || target.equals("String") || target.equals("Number") || target.startsWith("Math.")) return false;
 		if (target.startsWith("input.") || target.startsWith("local.") || target.startsWith("result.") || target.startsWith("current.")) return false;
+		if (localFunctions.contains(target)) return false;
 		return call.getArguments().size() == 1 && call.getArguments().get(0) instanceof ObjectLiteral;
 	}
 
@@ -1577,6 +1590,62 @@ public final class FlowScriptV3Reader {
 		body(body, new Scope(parent), children);
 		return children;
 	}
+	// const f = (a, b) => e, const f = function (a, b) { return e }: a local function whose body is one expression, without
+	// block call. It writes no node: each call f(x, y) is that expression, a parameter replaced by its argument, read with the
+	// names of the declaration (a local it reads is read when it is called, as JavaScript does). Its refusals are raised here.
+	private void localFunction(String type, Name target, FunctionNode fn, Scope scope) {
+		String name = target.getIdentifier();
+		String hint = localFunctionHint(name, fn);
+		if (!type.equals("const") || fn.isGenerator()) reject("FLOWSCRIPT_V3_FUNCTION", fn, hint);
+		for (AstNode parameter : fn.getParams()) if (!(parameter instanceof Name)) reject("FLOWSCRIPT_V3_FUNCTION", fn, hint);
+		AstNode body = fn.getBody(), expression = null;
+		if (body instanceof org.mozilla.javascript.ast.Block || body instanceof org.mozilla.javascript.ast.Scope) {
+			var parts = children(body);
+			if (parts.size() == 1 && parts.get(0) instanceof org.mozilla.javascript.ast.ReturnStatement returned) expression = returned.getReturnValue();
+		}
+		if (expression == null) reject("FLOWSCRIPT_V3_FUNCTION", fn, hint);
+		final AstNode value = expression;
+		visit(value, part -> {
+			if (part instanceof Name n && n.getIdentifier().equals(name) && !(part.getParent() instanceof PropertyGet property && property.getProperty() == part))
+				reject("FLOWSCRIPT_V3_FUNCTION", part, "A local function does not call itself: write a loop.");
+			if (part instanceof FunctionCall call && call.getClass() == FunctionCall.class && isBlockCall(call) && !compact(raw(call.getTarget())).matches("(?:Object|JSON|Date)\\..*"))
+				reject("FLOWSCRIPT_V3_FUNCTION", part, "A local function computes one expression: call " + compact(raw(call.getTarget())) + " in its own statement, then pass its result.");
+			return true;
+		});
+		// read once, each parameter standing for itself: a refusal of the expression is raised at its line
+		var inner = new Scope(scope);
+		for (AstNode parameter : fn.getParams()) declare(name(parameter), "const", parameter, inner, "(" + name(parameter) + ")");
+		rewritten(value, inner);
+		var binding = declare(name, "const", target, scope, null);
+		binding.function = fn;
+		binding.body = value;
+		binding.declared = scope;
+	}
+	private String inlined(Binding function, FunctionCall call, Scope scope) {
+		var inner = new Scope(function.declared);
+		var params = function.function.getParams();
+		var args = call.getArguments();
+		for (AstNode argument : args) if (argument instanceof org.mozilla.javascript.ast.Spread)
+			reject("FLOWSCRIPT_V3_FUNCTION", argument, "Pass each argument of a local function: f(a, b).");
+		for (int i = 0; i < args.size(); i++) {
+			String argument = rewritten(args.get(i), scope);
+			if (i < params.size()) inner.names.put(name(params.get(i)), new Binding("const", "(" + argument + ")"));
+		}
+		for (int i = args.size(); i < params.size(); i++) inner.names.put(name(params.get(i)), new Binding("const", "undefined"));
+		return "(" + rewritten(function.body, inner) + ")";
+	}
+	// The proposal for a function the reader does not inline: a const arrow whose body is one expression, or a top-level helper.
+	private String localFunctionHint(String name, FunctionNode fn) {
+		var names = new ArrayList<String>();
+		for (AstNode parameter : fn.getParams()) names.add(parameter instanceof Name n ? n.getIdentifier() : "value");
+		var passed = new ArrayList<String>();
+		for (String parameter : names) passed.add(parameter + ": …");
+		String call = name + "(" + (passed.isEmpty() ? "{}" : "{ " + String.join(", ", passed) + " }") + ")";
+		return "Write a local function as a const arrow whose body is one expression, const " + name + " = (" + String.join(", ", names) + ") => …, " +
+			"inlined where it is called; for statements, write a top-level helper after the Flow function, function " + name +
+			"(" + (names.isEmpty() ? "{}" : "{ " + String.join(", ", names) + " }") + ") { … }, called " + call + " in its own statement " +
+			"(const r = " + call + " for its value): a helper reads only its parameters.";
+	}
 	private boolean needsOuterItemCopy(org.mozilla.javascript.ast.ForInLoop loop, String item) {
 		final boolean[] needed = { false };
 		visit(loop.getBody(), part -> {
@@ -1586,6 +1655,8 @@ public final class FlowScriptV3Reader {
 			for (var enclosing = part.getParent(); enclosing != null && enclosing != loop; enclosing = enclosing.getParent()) {
 				if (enclosing instanceof org.mozilla.javascript.ast.ForInLoop inner && inner.isForOf() && pos(part) >= pos(inner.getBody())) { needed[0] = true; break; }
 				if (enclosing instanceof FunctionNode fn && fn.getParent() instanceof FunctionCall call && Set.of("filter", "map", "find", "some", "every").contains(method(call))) { needed[0] = true; break; }
+				// a local function is inlined where it is called, a list arrow or an inner loop included
+				if (enclosing instanceof FunctionNode fn && fn.getParent() instanceof VariableInitializer) { needed[0] = true; break; }
 				if (enclosing instanceof FunctionCall call && compact(raw(call.getTarget())).matches("^(flow\\.forEach|list\\.).*") && raw(call).matches("(?s).*\\bcurrent\\b.*")) { needed[0] = true; break; }
 			}
 			return !needed[0];
@@ -1743,6 +1814,7 @@ public final class FlowScriptV3Reader {
 					continue;
 				}
 				if (!(target instanceof Name)) reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Declare each field separately.");
+				if (init != null && unparen(init) instanceof FunctionNode fn) { localFunction(type, (Name) target, fn, scope); continue; }
 				if (type.equals("const") && init == null) reject("FLOWSCRIPT_V3_UNSUPPORTED", target, "Give the const its value (const x = value), or declare it with let.");
 				// The name is declared after its value is read: let x = x + 1 reads no x, as in JavaScript (a value read before
 				// its declaration is an error there).
@@ -1849,6 +1921,9 @@ public final class FlowScriptV3Reader {
 					output.add(node("json.push", map("path", path, "value", value(call.getArguments().get(0), scope)), statement));
 					return;
 				}
+				if (call.getTarget() instanceof Name callee && lookup(callee.getIdentifier(), scope) != null && lookup(callee.getIdentifier(), scope).function != null)
+					reject("FLOWSCRIPT_V3_FUNCTION", statement, "A local function gives a value and does nothing else: read it in an expression (const ok = " + callee.getIdentifier() + "(…)), " +
+						"or write the statements in a top-level helper after the Flow function.");
 				output.add(callNode(call, scope, null));
 				return;
 			}
@@ -1971,7 +2046,7 @@ public final class FlowScriptV3Reader {
 			return;
 		}
 		// a FunctionNode is a Rhino Scope: refused before the blocks
-		if (statement instanceof FunctionNode) reject("FLOWSCRIPT_V3_FUNCTION", statement, "Write a project block.");
+		if (statement instanceof FunctionNode fn) reject("FLOWSCRIPT_V3_FUNCTION", statement, localFunctionHint(fn.getName(), fn));
 		if (statement instanceof org.mozilla.javascript.ast.Block || statement instanceof org.mozilla.javascript.ast.Scope) { body(statement, new Scope(scope), output); return; }
 		if (statement instanceof org.mozilla.javascript.ast.EmptyStatement) return;
 		reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Use a supported FlowScript v3 statement (" + kind(statement) + ").");

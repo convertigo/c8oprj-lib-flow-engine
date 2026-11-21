@@ -181,6 +181,8 @@
 			return { code: "", lineMap: [], diagnostics: diagnostics };
 		}
 		var scope = { names: Object.create(null), parent: null }, allNames = Object.create(null), imports = Object.create(null);
+		// the names of the local functions of the source (const f = (a, b) => e): a call of one is no block call
+		var localFunctions = Object.create(null);
 		var resultStyle = "", chain = 0, counted = 0, loopDepth = 0, blockNamespaces = Object.create(null);
 		// local.<name> paths created by json.array or json.map: local.rows.push(v) and local.byId[key] = v on them
 		// are json.push and json.put, as on a declared name (section 14).
@@ -198,6 +200,7 @@
 			if (kind(part) === "VariableDeclaration") array(part.getVariables()).forEach(function (v) {
 				var target = v.getTarget();
 				if (kind(target) === "Name") allNames[String(target.getIdentifier())] = true;
+				if (kind(target) === "Name" && v.getInitializer() && kind(unparen(v.getInitializer())) === "FunctionNode") localFunctions[String(target.getIdentifier())] = true;
 			});
 			if (kind(part) === "FunctionCall" && kind(part.getTarget()) === "PropertyGet") {
 				var receiver = part.getTarget().getTarget();
@@ -249,6 +252,9 @@
 				var k = kind(part), parent = part.getParent();
 				// a step lifted before the statement (liftedCondition) reads its hidden local
 				for (var r = 0; replaced && r < replaced.length; r++) if (replaced[r].node === part) { edits.push({ at: pos(part), to: end(part), value: replaced[r].value }); return false; }
+				// a call of a local function is its expression, each parameter replaced by its argument (inlined of the Java reader)
+				var called = k === "FunctionCall" && kind(part.getTarget()) === "Name" ? lookup(String(part.getTarget().getIdentifier()), current) : null;
+				if (called && called.fn) { edits.push({ at: pos(part), to: end(part), value: inlined(called, part, current) }); return false; }
 				if (k === "FunctionCall" && /^(?:Object|JSON|Date)\.[A-Za-z_$][\w$]*$/.test(raw(part.getTarget()).replace(/\s/g, ""))) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
 				if (part !== node && readCall(part, current)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint(part, false));
 				if (k === "FunctionCall" && part !== node && ["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0) reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
@@ -263,6 +269,7 @@
 					if (kind(parent) === "ObjectProperty" && parent.getKey() === part && raw(parent).trim() !== name) return true;
 					var binding = lookup(name, current);
 					if (!binding) { if (allNames[name] && !imports[name]) reject("FLOWSCRIPT_V3_OUT_OF_SCOPE", part, "Declare the name in the enclosing block."); return true; }
+					if (binding.fn) reject("FLOWSCRIPT_V3_FUNCTION", part, "Call the local function " + name + "(…): it is inlined where it is called, never passed as a value.");
 					var replacement = binding.mapped;
 					if (kind(parent) === "ObjectProperty" && raw(parent).trim() === name) replacement = name + ": " + replacement;
 					edits.push({ at: pos(part), to: end(part), value: replacement });
@@ -294,6 +301,49 @@
 		function method(call) {
 			var target = call.getTarget(); return kind(target) === "PropertyGet" ? String(target.getProperty().getIdentifier()) : "";
 		}
+		// const f = (a, b) => e, const f = function (a, b) { return e } (localFunction of the Java reader): a local function whose
+		// body is one expression, without block call, inlined where it is called; it emits nothing.
+		function localFunction(type, target, fn, current) {
+			var name = String(target.getIdentifier()), hint = localFunctionHint(name, fn), params = array(fn.getParams());
+			if (type !== "const" || fn.isGenerator()) reject("FLOWSCRIPT_V3_FUNCTION", fn, hint);
+			params.forEach(function (parameter) { if (kind(parameter) !== "Name") reject("FLOWSCRIPT_V3_FUNCTION", fn, hint); });
+			var body = fn.getBody(), expression = null, parts = kind(body) === "Block" || kind(body) === "Scope" ? children(body) : [];
+			if (parts.length === 1 && kind(parts[0]) === "ReturnStatement") expression = parts[0].getReturnValue();
+			if (!expression) reject("FLOWSCRIPT_V3_FUNCTION", fn, hint);
+			visit(expression, function (part) {
+				var parent = part.getParent();
+				if (kind(part) === "Name" && String(part.getIdentifier()) === name && !(kind(parent) === "PropertyGet" && parent.getProperty() === part))
+					reject("FLOWSCRIPT_V3_FUNCTION", part, "A local function does not call itself: write a loop.");
+				if (kind(part) === "FunctionCall" && returnedBlockCall(part) && !/^Date\./.test(raw(part.getTarget()).replace(/\s/g, "")))
+					reject("FLOWSCRIPT_V3_FUNCTION", part, "A local function computes one expression: call " + raw(part.getTarget()).replace(/\s/g, "") + " in its own statement, then pass its result.");
+				return true;
+			});
+			// read once, each parameter standing for itself: a refusal of the expression is raised at its line
+			var inner = child(current);
+			params.forEach(function (parameter) { declare(String(parameter.getIdentifier()), "const", parameter, inner, "(" + String(parameter.getIdentifier()) + ")"); });
+			rewritten(expression, inner);
+			var binding = declare(name, "const", target, current);
+			binding.fn = fn; binding.body = expression; binding.declared = current;
+		}
+		function inlined(binding, call, current) {
+			var inner = child(binding.declared), params = array(binding.fn.getParams()), args = argument(call);
+			args.forEach(function (arg) { if (kind(arg) === "Spread") reject("FLOWSCRIPT_V3_FUNCTION", arg, "Pass each argument of a local function: f(a, b)."); });
+			args.forEach(function (arg, index) {
+				var text = rewritten(arg, current);
+				if (index < params.length) inner.names[String(params[index].getIdentifier())] = { name: String(params[index].getIdentifier()), type: "const", mapped: "(" + text + ")" };
+			});
+			for (var i = args.length; i < params.length; i++) inner.names[String(params[i].getIdentifier())] = { name: String(params[i].getIdentifier()), type: "const", mapped: "undefined" };
+			return "(" + rewritten(binding.body, inner) + ")";
+		}
+		// The proposal for a function the bridge does not inline (localFunctionHint of the Java reader).
+		function localFunctionHint(name, fn) {
+			var names = array(fn.getParams()).map(function (parameter) { return kind(parameter) === "Name" ? String(parameter.getIdentifier()) : "value"; });
+			var call = name + "(" + (names.length ? "{ " + names.map(function (parameter) { return parameter + ": …"; }).join(", ") + " }" : "{}") + ")";
+			return "Write a local function as a const arrow whose body is one expression, const " + name + " = (" + names.join(", ") + ") => …, " +
+				"inlined where it is called; for statements, write a top-level helper after the Flow function, function " + name +
+				"(" + (names.length ? "{ " + names.join(", ") + " }" : "{}") + ") { … }, called " + call + " in its own statement " +
+				"(const r = " + call + " for its value): a helper reads only its parameters.";
+		}
 		function needsOuterItemCopy(loop, name) {
 			var needed = false;
 			visit(loop.getBody(), function (part) {
@@ -306,6 +356,8 @@
 					if (kind(enclosing) === "FunctionNode") {
 						var call = enclosing.getParent();
 						if (kind(call) === "FunctionCall" && ["filter", "map", "find", "some", "every"].indexOf(method(call)) >= 0) { needed = true; break; }
+						// a local function is inlined where it is called, a list arrow or an inner loop included
+						if (kind(call) === "VariableInitializer") { needed = true; break; }
 					}
 					if (kind(enclosing) === "FunctionCall" && /^(?:flow\.forEach|list\.)/.test(raw(enclosing.getTarget()).replace(/\s/g, "")) && /\bcurrent\b/.test(raw(enclosing))) { needed = true; break; }
 				}
@@ -706,7 +758,7 @@
 		function returnedBlockCall(call) {
 			if (kind(call) !== "FunctionCall") return false;
 			var target = raw(call.getTarget()).replace(/\s/g, ""), args = argument(call);
-			if (/^(?:flow\.default|default|String|Number)$|^(?:Math|Object|JSON|input|local|result|current)\./.test(target)) return false;
+			if (/^(?:flow\.default|default|String|Number)$|^(?:Math|Object|JSON|input|local|result|current)\./.test(target) || localFunctions[target]) return false;
 			return args.length === 1 && kind(args[0]) === "ObjectLiteral";
 		}
 		function emitSlotted(call, current, origin, out) {
@@ -828,6 +880,7 @@
 						}); return;
 					}
 					if (kind(target) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", target, "Declare each field separately.");
+					if (init && kind(unparen(init)) === "FunctionNode") { localFunction(type, target, unparen(init), current); return; }
 					if (type === "const" && !init) reject("FLOWSCRIPT_V3_UNSUPPORTED", target, "Give the const its value (const x = value), or declare it with let.");
 					var name = String(target.getIdentifier());
 					if (init && (kind(unparen(init)) === "ConditionalExpression" || slotted(init))) {
@@ -909,6 +962,9 @@
 						var pushed = argument(expression); if (pushed.length !== 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Push one value per statement.");
 						emit("json.push({ path: " + JSON.stringify(list.mapped) + ", value: " + rewritten(pushed[0], current) + " })", origin); return;
 					}
+					var callee = kind(expression.getTarget()) === "Name" ? lookup(String(expression.getTarget().getIdentifier()), current) : null;
+					if (callee && callee.fn) reject("FLOWSCRIPT_V3_FUNCTION", node, "A local function gives a value and does nothing else: read it in an expression (const ok = " + callee.name + "(…)), " +
+						"or write the statements in a top-level helper after the Flow function.");
 					var call = value(expression, current); call.before.forEach(function (item) { emit(item, origin); }); emit(call.expression, origin); return;
 				}
 				reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Use a Flow block call or an assignment.");
@@ -1088,7 +1144,7 @@
 				if (lines.length > firstLine) lines[firstLine] = String(labels[0].getName()) + ": " + lines[firstLine];
 				return;
 			}
-			if (k === "FunctionNode") reject("FLOWSCRIPT_V3_FUNCTION", node, "Write a project block.");
+			if (k === "FunctionNode") reject("FLOWSCRIPT_V3_FUNCTION", node, localFunctionHint(String(node.getName()), node));
 			if (k === "EmptyStatement") return;
 			reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Use a supported FlowScript v3 statement (" + k + ").");
 		}

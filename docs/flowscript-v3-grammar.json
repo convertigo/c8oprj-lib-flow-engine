@@ -523,6 +523,16 @@
       ]
     },
     {
+      "id": "local-function",
+      "construct": "const f = (a, b) => e | const f = function (a, b) { return e }",
+      "lowering": "no node: each call f(x, y) is (e) with a and b replaced by (x) and (y), the names of e read as at the declaration",
+      "where": "a const whose body is one expression, without block call, never passed as a value; elsewhere FLOWSCRIPT_V3_FUNCTION",
+      "examples": [
+        "const blank = v => v === undefined || v === null || v === \"\"\nconst label = (row, suffix) => `${row.name}${suffix}`\nconst named = input.rows.filter(row => !blank(row.name))\nconst labels = named.map(row => label(row, \"!\"))\nreturn { empty: blank(input.name), labels }",
+        "const twice = function (n) { return n * 2 }\nreturn { four: twice(2) }"
+      ]
+    },
+    {
       "id": "helper",
       "construct": "function helper({ a, b }) { … } after the Flow function, called helper({ a: 1 })",
       "lowering": "helper block, as in v2; body under the same rules",
@@ -639,9 +649,9 @@
     },
     {
       "code": "FLOWSCRIPT_V3_FUNCTION",
-      "construct": "a function other than a top-level helper, a list arrow or a slot (nested, in an expression, a closure); a slot with a parameter or an expression body",
-      "rewrite": "inline, a top-level helper, or a project block; a slot $$s() {…}",
-      "example": "const twice = function (x) {\n  return x * 2\n}"
+      "construct": "a function other than a top-level helper, a list arrow, a slot or a const local function of one expression (statements, let, passed as a value, calling a block, nested declaration); a slot with a parameter or an expression body",
+      "rewrite": "const f = (a, b) => expression; a top-level helper function f({ a, b }) { … } called in its own statement; a slot $$s() {…}",
+      "example": "const fail = function (message) {\n  throw { code: \"INVALID\", message }\n}"
     },
     {
       "code": "FLOWSCRIPT_V3_CHAIN",

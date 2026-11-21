@@ -87,7 +87,8 @@ refuses('chain branch', '  const x = input.items.filter(item => item > 1) + 1', 
 refuses('compound expression', '  let x = 1\n  const y = x++', 'FLOWSCRIPT_V3_COMPOUND_CONTEXT', 4);
 refuses('destructuring default', '  const { x = 1 } = input.items', 'FLOWSCRIPT_V3_DESTRUCTURING', 3);
 refuses('import syntax', '  import { trim } from "text"', 'FLOWSCRIPT_V3_IMPORT_SYNTAX', 3);
-refuses('function', '  const f = x => x', 'FLOWSCRIPT_V3_FUNCTION', 3);
+refuses('function', '  const f = x => {\n    const y = x\n    return y\n  }', 'FLOWSCRIPT_V3_FUNCTION', 3);
+runs('local function', '  const twice = x => x * 2\n  const bigger = input.items.filter(item => twice(item) > 3)\n  return { bigger, six: twice(3) }', { bigger: [2, 3], six: 6 });
 refuses('list method', '  const x = input.items.reduce((a, b) => a + b, 0)', 'FLOWSCRIPT_V3_LIST_METHOD', 3);
 var inplaceSort = bridge.translate(source('  const sorted = input.items.sort((a, b) => a - b)'));
 check(inplaceSort.diagnostics.length && /sorts in place/.test(inplaceSort.diagnostics[0].message) && /toSorted/.test(inplaceSort.diagnostics[0].hint),

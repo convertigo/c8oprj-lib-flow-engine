@@ -155,7 +155,11 @@ function flowscriptV3Conformance(options) {
 				var asArrow = false, asSlot = false;
 				if (parent && kind(parent) === "FunctionCall" && LIST_METHODS[targetName(parent)]) asArrow = true;
 				if (parent && kind(parent) === "ObjectProperty" && /^\$\$/.test(String(parent.getKey().toSource()).replace(/^["']/, ""))) asSlot = true;
-				if (!topLevel && !asArrow && !asSlot) add("FLOWSCRIPT_V3_FUNCTION");
+				// a const local function whose body is one expression (const f = v => e): inlined where it is called
+				var body = node.getBody(), parts = [], asLocal = false;
+				for (var part = body && body.getFirstChild(); part; part = part.getNext()) parts.push(part);
+				if (parent && kind(parent) === "VariableInitializer" && parts.length === 1 && kind(parts[0]) === "ReturnStatement" && parts[0].getReturnValue()) asLocal = true;
+				if (!topLevel && !asArrow && !asSlot && !asLocal) add("FLOWSCRIPT_V3_FUNCTION");
 			} else if (k === "FunctionCall") {
 				var callee = String(node.getTarget().toSource());
 				if (callee === "Object.entries" || callee === "Date.now") add("FLOWSCRIPT_V3_GLOBAL_CALL");

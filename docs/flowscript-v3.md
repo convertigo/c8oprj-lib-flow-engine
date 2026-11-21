@@ -54,7 +54,8 @@ function Greeting({ input, config, result }) {
   `accessibility`, `authenticatedContextRequired`.
 - Imports come next, then the Flow function. A top-level function after it is a helper block, as in v2: one
   object parameter, `function total({ rows }) { … }`, called `total({ rows: input.rows })`; its body follows the
-  same rules. A function anywhere else (nested, in an expression, a closure) is refused (`FLOWSCRIPT_V3_FUNCTION`).
+  same rules. A local function whose body is one expression is inlined (section 6). Any other function (nested, with
+  statements, a closure passed as a value) is refused (`FLOWSCRIPT_V3_FUNCTION`).
 - Semicolons are optional. The formatter writes one statement per line.
 
 ## 3. Imports
@@ -190,6 +191,14 @@ The v2 expression subset is unchanged: scope paths, literals, arrays, objects, t
   condition of an `if` always evaluates (`const ok = /^[0-9]+$/.test(v)`, `!/x/.test(v)`, `if (/^[0-9]{1,2}$/.test(v))`),
   or the list of a `for…of` (`split`, `match`). Elsewhere (after `&&`, `||` or `??`, in a list arrow, an argument or a
   `while` condition) the literal is refused (`FLOWSCRIPT_V3_PATTERN`), with the block to write in its own statement.
+- A local function is a `const` arrow or function whose body is one expression, without block call:
+  `const blank = v => v === undefined || v === null || v === ""`, `const label = (row, suffix) => …`,
+  `const twice = function (n) { return n * 2 }`. It writes no node: each call `blank(input.sort)` is its expression, each
+  parameter replaced by its argument, so it is read wherever an expression is (after `&&`, in a list arrow, a template). It
+  reads the names visible where it is declared, at the time it is called, as JavaScript does. A function with statements, a
+  `let`, a function passed as a value, a block call in its body or a call standing as a statement are refused
+  (`FLOWSCRIPT_V3_FUNCTION`), with the arrow to write or the top-level helper with its parameters
+  (`function fail({ message }) { … }`, called `fail({ message: … })` in its own statement).
 - A field of a block call result is read in the same expression: `const total = flow.call({ … }).total`,
   `if (entity.read({ … }).values.active)`, `text.split({ … })[1]`, `text.trim({ … }).toUpperCase()`. The call runs
   before the statement and writes a hidden local `local.__chain<N>`, whose field the expression reads, as
@@ -355,7 +364,7 @@ function Notify({ input, config, result }) {
 | a `for (;;)` other than the counted form | `FLOWSCRIPT_V3_FOR_FORM` | `for…of` or `while` |
 | `switch` with fall-through or non-literal cases | `FLOWSCRIPT_V3_SWITCH_FALLTHROUGH` | `if` / `else if` |
 | `do … while`, `for … in`, labelled loops, labelled `break` / `continue` | `FLOWSCRIPT_V3_LOOP_FORM` | `while`, `for (const key of Object.keys(o))` |
-| a function other than a top-level helper, a list arrow or a slot (nested, in an expression, a closure) | `FLOWSCRIPT_V3_FUNCTION` | write it inline, a top-level helper, or a project block |
+| a function other than a top-level helper, a list arrow, a slot or a `const` local function of one expression (statements, `let`, passed as a value, calling a block) | `FLOWSCRIPT_V3_FUNCTION` | `const f = (a, b) => expression`, a top-level helper `function f({ a, b }) { … }` called in its own statement, or a project block |
 | `async`, `await`, generators, classes, `this`, `new` | `FLOWSCRIPT_V3_UNSUPPORTED` | blocks |
 | `if` or `while` whose condition is an object literal | `FLOWSCRIPT_V3_OBJECT_CONDITION` | `flow.if({ … })` |
 | a regular expression literal in a lazy place (after `&&`, `\|\|`, `??`, in a list arrow, an argument, a `while` condition) or in another form | `FLOWSCRIPT_V3_PATTERN` | `const m = text.match({ text: String(s), pattern: "p" })` before the statement, then `m.matched` |
