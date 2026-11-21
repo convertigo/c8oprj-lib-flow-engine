@@ -57,8 +57,10 @@ const _meta = {
 
 	return {
 		run: function (ctx, node) {
-			var props = ctx.props(node);
-			return write(ctx.convertigoContext().httpSession, String(ctx.template(props.key || "")), ctx.input(props));
+			// the value, the session, then the key: the order of the debugger (debug.resolve)
+			var props = ctx.props(node), value = ctx.input(props);
+			var session = ctx.convertigoContext().httpSession;
+			return write(session, String(ctx.template(props.key || "")), value);
 		},
 		debug: {
 			resolve: function (ctx, node) {
