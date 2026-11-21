@@ -17,11 +17,16 @@
     "config",
     "local",
     "result",
-    "request",
-    "current",
-    "parent",
-    "trace"
+    "request"
   ],
+  "scopeNamesAsLocals": {
+    "names": [
+      "current",
+      "parent",
+      "trace"
+    ],
+    "note": "a local of one of these names is read as local.<name>, never as the scope; current stays refused when a list.* or flow.forEach call of the Flow reads current as its item"
+  },
   "reservedLocalPrefix": "__",
   "hiddenLocals": {
     "chain": "local.__chain<N>",
@@ -53,7 +58,8 @@
       "block": "set",
       "lowering": "local.x = e (undefined without value)",
       "examples": [
-        "const total = 0\nlet count = input.items.length\nlet found\nreturn { total, count, found }"
+        "const total = 0\nlet count = input.items.length\nlet found\nreturn { total, count, found }",
+        "const current = input.rows[0]\nconst others = input.rows.filter(row => row.id !== current.id)\nreturn { current, others }"
       ]
     },
     {
@@ -198,7 +204,7 @@
         "try {\n  throw { code: \"KNOWN\", message: \"x\" }\n} catch (failure) {\n  result.code = failure.code\n}",
         "try {\n  result.ok = true\n} catch {\n  result.ok = false\n}",
         "let error = \"kept\"\ntry {\n  const parsed = JSON.parse(input.text)\n  error = parsed.value\n} catch {\n  error = error + \"!\"\n}\nreturn { error }",
-    "try {\n  throw { code: \"LATE\", message: \"late\", details: { count: 2 } }\n} catch (failure) {\n  result.count = failure.details.count\n}"
+        "try {\n  throw { code: \"LATE\", message: \"late\", details: { count: 2 } }\n} catch (failure) {\n  result.count = failure.details.count\n}"
       ]
     },
     {
@@ -535,7 +541,7 @@
     },
     {
       "code": "FLOWSCRIPT_V3_RESERVED_NAME",
-      "construct": "declaring or importing flow, a scope name, or a local starting with __",
+      "construct": "declaring or importing flow, input, config, local, result, request or a name starting with __; a local current where a list.* or flow.forEach call reads current as its item",
       "rewrite": "another name",
       "example": "let flow = 1"
     },

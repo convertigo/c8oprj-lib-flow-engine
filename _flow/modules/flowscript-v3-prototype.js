@@ -206,10 +206,37 @@
 			return true;
 		});
 		var reserved = /^(?:flow|input|config|local|result|request|current|parent|trace|__.*)$/;
+		// Scope names a local may take (LOCAL_SCOPE_NAMES of the Java reader): every read of a local is local.<name>.
+		var localReserved = /^(?:flow|input|config|local|result|request|__.*)$/;
+		// The block an import alias names (resolve of the Java reader): alias -> module.name, namespace.* -> module.
+		var importTargets = Object.create(null);
+		function resolved(spelling) {
+			if (/^flow\.(?:while|forEach|if|try)$/.test(spelling)) return spelling.substring(5);
+			if (importTargets[spelling]) return importTargets[spelling];
+			var dot = spelling.indexOf(".");
+			return dot >= 0 && importTargets[spelling.substring(0, dot) + ".*"] ? importTargets[spelling.substring(0, dot) + ".*"] + spelling.substring(dot) : spelling;
+		}
+		// The first list.* or flow.forEach call of the source that reads current (its item): a local current stays refused.
+		function itemCall() {
+			var found = null;
+			visit(ast, function (part) {
+				if (!found && kind(part) === "FunctionCall") {
+					var block = resolved(raw(part.getTarget()).replace(/\s/g, ""));
+					if ((block === "forEach" || block.indexOf("list.") === 0) && /\bcurrent\b/.test(raw(part))) found = part;
+				}
+				return !found;
+			});
+			return found;
+		}
 		function lookup(name, current) { for (var s = current; s; s = s.parent) if (s.names[name]) return s.names[name]; return null; }
 		function child(parent) { return { names: Object.create(null), parent: parent }; }
 		function declare(name, type, node, current, mapped) {
-			if (reserved.test(name)) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than " + name + ".");
+			if (localReserved.test(name)) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than " + name + ".");
+			if (name === "current") {
+				var item = itemCall();
+				if (item) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than current: current is the item of the " +
+					resolved(raw(item.getTarget()).replace(/\s/g, "")) + " call at line " + line(pos(item)) + ".");
+			}
 			if (blockNamespaces[name] && /^(?:text|list|json|http|object|email|sql|date|number|crypto|requestable)$/.test(name) && !imports[name]) reject("FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK", node, "Choose a name different from the block namespace " + name + ".");
 			if (lookup(name, current) || imports[name]) reject("FLOWSCRIPT_V3_SHADOWING", node, "Choose another local name than " + name + ".");
 			var entry = { name: name, type: type, mapped: mapped || "local." + name, loopDepth: loopDepth };
@@ -1080,13 +1107,14 @@
 					if (!init || kind(init) !== "FunctionCall" || raw(init.getTarget()).replace(/\s/g, "") !== "flow.import") reject("FLOWSCRIPT_V3_IMPORT_SYNTAX", node, "Use const { name } = flow.import(\"module\").");
 					var args = argument(init); if (args.length !== 1 || kind(args[0]) !== "StringLiteral") reject("FLOWSCRIPT_V3_IMPORT_SYNTAX", node, "Use a literal module name.");
 					var moduleName = String(args[0].getValue());
-					if (kind(target) === "Name") { var namespace = String(target.getIdentifier()); if (reserved.test(namespace)) reject("FLOWSCRIPT_V3_RESERVED_NAME", target, "Choose another import alias."); imports[namespace] = true; emit("import * as " + namespace + " from " + JSON.stringify(moduleName), line(pos(node))); }
+					if (kind(target) === "Name") { var namespace = String(target.getIdentifier()); if (reserved.test(namespace)) reject("FLOWSCRIPT_V3_RESERVED_NAME", target, "Choose another import alias."); imports[namespace] = true; importTargets[namespace + ".*"] = moduleName; emit("import * as " + namespace + " from " + JSON.stringify(moduleName), line(pos(node))); }
 					else if (kind(target) === "ObjectLiteral") {
 						var named = array(target.getElements()).map(function (field) {
 							if (kind(field) !== "ObjectProperty" || kind(field.getKey()) !== "Name" || kind(field.getValue()) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Use one-level named imports.");
 							var original = String(field.getKey().getIdentifier()), alias = String(field.getValue().getIdentifier());
 							if (reserved.test(alias)) reject("FLOWSCRIPT_V3_RESERVED_NAME", field, "Choose another import alias.");
 							imports[alias] = true;
+							importTargets[alias] = moduleName + "." + original;
 							return original === alias ? original : original + " as " + alias;
 						});
 						emit("import { " + named.join(", ") + " } from " + JSON.stringify(moduleName), line(pos(node)));

@@ -38,6 +38,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class FlowScriptV3Reader {
 	private static final ObjectMapper JSON = new ObjectMapper();
 	private static final Set<String> RESERVED = Set.of("flow", "input", "config", "local", "result", "request", "current", "parent", "trace");
+	// Scope names a local may take: the reader writes every read of a local as local.<name>, so a local current, parent or
+	// trace is never read as the scope. current stays refused where a list.* or flow.forEach call of the source reads it.
+	private static final Set<String> LOCAL_SCOPE_NAMES = Set.of("current", "parent", "trace");
 	private static final Set<String> BLOCK_NAMESPACES = Set.of("text", "list", "json", "http", "object", "email", "sql", "date", "number", "crypto", "requestable");
 	private static final Map<String, String> RULES = Map.ofEntries(
 		Map.entry("FLOWSCRIPT_V3_IMPORT_SYNTAX", "JavaScript import declarations are unavailable in FlowScript v3"),
@@ -86,6 +89,7 @@ public final class FlowScriptV3Reader {
 	private final Set<String> typedLists = new HashSet<>();
 	private final Set<String> typedMaps = new HashSet<>();
 	private int chain;
+	private AstRoot root;
 	private String resultStyle = "";
 	// A refusal of the v2 checks of a block call (an unknown slot, an assignment and $$out): raised when the whole source
 	// is read, so that a FlowScript v3 refusal, wherever it stands, comes first.
@@ -331,6 +335,7 @@ public final class FlowScriptV3Reader {
 				importSyntax ? "Use const { name } = flow.import(\"module\")." : loopSyntax ? "Use for (const key of Object.keys(o))." : "Use a JavaScript form from the FlowScript v3 grammar.");
 			throw new AssertionError();
 		}
+		root = ast;
 		// A function declared in a body is refused where it stands (statement), in the order of the source.
 		visit(ast, part -> {
 			if (part instanceof VariableDeclaration declaration) for (var variable : declaration.getVariables()) {
@@ -450,10 +455,27 @@ public final class FlowScriptV3Reader {
 		for (Scope current = scope; current != null; current = current.parent) if (current.names.containsKey(name)) return current.names.get(name);
 		return null;
 	}
+	/** The first list.* or flow.forEach call of the source that reads current (its item), or null. */
+	private FunctionCall itemCall() {
+		final FunctionCall[] found = { null };
+		visit(root, part -> {
+			if (found[0] == null && part instanceof FunctionCall call && call.getClass() == FunctionCall.class) {
+				String block = resolve(compact(raw(call.getTarget())));
+				if ((block.equals("forEach") || block.startsWith("list.")) && raw(call).matches("(?s).*\\bcurrent\\b.*")) found[0] = call;
+			}
+			return found[0] == null;
+		});
+		return found[0];
+	}
 	/** A name imported by flow.import, named (const { a } = …) or as a namespace (const ns = …). */
 	private boolean imported(String name) { return imports.containsKey(name) || imports.containsKey(name + ".*"); }
 	private Binding declare(String name, String type, AstNode node, Scope scope, String mapped) {
-		if (RESERVED.contains(name) || name.startsWith("__")) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than " + name + ".");
+		if (RESERVED.contains(name) && !LOCAL_SCOPE_NAMES.contains(name) || name.startsWith("__")) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than " + name + ".");
+		if (name.equals("current")) {
+			FunctionCall item = itemCall();
+			if (item != null) reject("FLOWSCRIPT_V3_RESERVED_NAME", node, "Choose another local name than current: current is the item of the " +
+				resolve(compact(raw(item.getTarget()))) + " call at line " + line(pos(item)) + ".");
+		}
 		if (blockNamespaces.contains(name) && BLOCK_NAMESPACES.contains(name) && !imported(name)) reject("FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK", node, "Choose a name different from the block namespace " + name + ".");
 		if (lookup(name, scope) != null || imported(name)) reject("FLOWSCRIPT_V3_SHADOWING", node, "Choose another local name than " + name + ".");
 		var binding = new Binding(type, mapped == null ? "local." + name : mapped);

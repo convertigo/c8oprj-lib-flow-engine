@@ -116,10 +116,13 @@ function Totals({ input, config, result }) {
 - a name is not declared again in an enclosed block, and does not hide an import or a loop variable
   (`FLOWSCRIPT_V3_SHADOWING`);
 - a `const` is not assigned again; its object or list may still change (`FLOWSCRIPT_V3_CONST_ASSIGN`);
-- a local takes neither the name of a scope (`input`, `config`, `local`, `result`, `request`, `current`, `parent`,
-  `trace`), nor `flow`, nor a name starting with `__`, nor the name of a block namespace the Flow uses
-  (`text`, `list`, `json`, `http`…): after `let text = …`, `text.trim({…})` would be a method call in JavaScript
-  (`FLOWSCRIPT_V3_RESERVED_NAME`, `FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK`).
+- a local takes neither the name of a scope (`input`, `config`, `local`, `result`, `request`), nor `flow`, nor a
+  name starting with `__`, nor the name of a block namespace the Flow uses (`text`, `list`, `json`, `http`…): after
+  `let text = …`, `text.trim({…})` would be a method call in JavaScript (`FLOWSCRIPT_V3_RESERVED_NAME`,
+  `FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK`);
+- a local may be named `current`, `parent` or `trace`: it is read as `local.current`, never as the scope. `current` stays
+  refused when a `list.*` or `flow.forEach` call of the Flow reads `current` as its item (`FLOWSCRIPT_V3_RESERVED_NAME`,
+  with that call).
 <!-- /fragment -->
 
 ## 5. Control flow
