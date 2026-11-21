@@ -66,8 +66,12 @@ public final class FlowScriptV3Reader {
 		Map.entry("FLOWSCRIPT_V3_UNSUPPORTED", "This JavaScript construct is outside the FlowScript v3 subset"),
 		Map.entry("FLOWSCRIPT_V3_OBJECT_CONDITION", "An object literal is not a Flow if or while condition"),
 		Map.entry("FLOWSCRIPT_V3_PATTERN", "A regular expression literal is lowered to its text block only as a whole value or in an if condition"),
-		Map.entry("FLOWSCRIPT_V3_CALL_RESULT", "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it")
+		Map.entry("FLOWSCRIPT_V3_CALL_RESULT", "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it"),
+		Map.entry("FLOWSCRIPT_V3_COMPUTED_WRITE", "A value under a computed key is written only on a local object or map")
 	);
+	private static final String COMPUTED_WRITE_HINT = "Write a computed key on a local object: const groups = {} (or json.map({ valueType })), then groups[key] = value, "
+		+ "groups[key] += n or groups[key]++, and assign the object where it goes (result.groups = groups). A list item is replaced by building a new list.";
+	private static final String COMPUTED_PUSH_HINT = "Replace the list under the key: groups[key] = groups[key].concat([value]), on a local object (const groups = {}).";
 	private static final Set<String> LIST_STEPS = Set.of("filter", "map", "find", "some", "every", "toSorted", "sort");
 	private static final Set<String> FLOW_NAMESPACES = Set.of("list", "json", "object", "text");
 
@@ -1688,6 +1692,15 @@ public final class FlowScriptV3Reader {
 			}
 		}
 	}
+	/** The path of the local object or map written by target[key]: a name declared with {} or json.map, or a local.* path made by json.map; null otherwise. */
+	private String elementMap(org.mozilla.javascript.ast.ElementGet element, Scope scope) {
+		if (element.getTarget() instanceof Name n) {
+			Binding bound = lookup(n.getIdentifier(), scope);
+			return bound != null && (bound.typedMap || typedMaps.contains(bound.mapped)) ? bound.mapped : null;
+		}
+		String path = compact(raw(element.getTarget()));
+		return path.startsWith("local.") && typedMaps.contains(path) ? path : null;
+	}
 	private void statement(AstNode statement, Scope scope, List<Map<String, Object>> output) {
 		if (statement instanceof VariableDeclaration declaration) {
 			for (VariableInitializer variable : declaration.getVariables()) {
@@ -1723,7 +1736,8 @@ public final class FlowScriptV3Reader {
 					}
 				}
 				boolean typedList = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.array");
-				boolean typedMap = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.map");
+				// a local object literal (const groups = {}) is a map too: groups[key] = v is json.put, as on json.map
+				boolean typedMap = init instanceof FunctionCall call && compact(raw(call.getTarget())).equals("json.map") || initial instanceof ObjectLiteral;
 				if (init != null) assign(output, mapped, init, scope, declaration);
 				else output.add(node("set", map("path", mapped, "value", "${undefined}"), declaration));
 				var binding = declare(name, type, target, scope, null);
@@ -1745,11 +1759,17 @@ public final class FlowScriptV3Reader {
 				String target = binding != null ? binding.mapped : rewritten(left, scope);
 				String op = org.mozilla.javascript.ast.AstNode.operatorToString(assignment.getOperator());
 				if (left instanceof org.mozilla.javascript.ast.ElementGet element) {
-					String mapPath = element.getTarget() instanceof Name n ? (lookup(n.getIdentifier(), scope) == null ? "" : lookup(n.getIdentifier(), scope).mapped) : compact(raw(element.getTarget()));
-					if (typedMaps.contains(mapPath) && op.equals("=")) {
+					// map[key] = v and map[key] += v on a local object or map are json.put; any other computed key is refused
+					String mapPath = elementMap(element, scope);
+					if (mapPath == null) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", left, COMPUTED_WRITE_HINT);
+					if (op.equals("=")) {
 						output.add(node("json.put", map("path", mapPath, "key", value(element.getElement(), scope), "value", value(right, scope)), statement));
 						return;
 					}
+					if (!Set.of("+=", "-=", "*=", "/=").contains(op)) reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", statement, "Use a simple assignment.");
+					output.add(node("json.put", map("path", mapPath, "key", value(element.getElement(), scope),
+						"value", "${" + target + " " + op.charAt(0) + " (" + rewritten(right, scope) + ")}"), statement));
+					return;
 				}
 				if (target.startsWith("result.")) { if (resultStyle.equals("returnObject")) reject("FLOWSCRIPT_V3_RESULT_MIXED", statement, "Use one result style."); resultStyle = "resultField"; }
 				if (op.equals("=")) assign(output, target, right, scope, statement);
@@ -1765,6 +1785,15 @@ public final class FlowScriptV3Reader {
 				AstNode operand = update.getOperand();
 				boolean increment = raw(expression).contains("++");
 				String form = increment ? "++" : "--";
+				if (operand instanceof org.mozilla.javascript.ast.ElementGet element) {
+					// map[key]++ on a local object or map: json.put of the number plus one, as x++ on a local
+					String mapPath = elementMap(element, scope);
+					if (mapPath == null) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", statement, COMPUTED_WRITE_HINT);
+					String field = rewritten(operand, scope);
+					output.add(node("json.put", map("path", mapPath, "key", value(element.getElement(), scope),
+						"value", increment ? "${Number(" + field + ") + 1}" : "${" + field + " - 1}"), statement));
+					return;
+				}
 				if (operand instanceof PropertyGet) {
 					// o.count++ on a field of a local object (or of result): the object is shared as in JavaScript (an object
 					// read from a map is that object), so the field changes wherever the object is read.
@@ -1791,6 +1820,7 @@ public final class FlowScriptV3Reader {
 			}
 			if (expression instanceof FunctionCall call) {
 				if (call.getTarget() instanceof PropertyGet property && property.getProperty().getIdentifier().equals("push") && !name(property.getTarget()).equals("json")) {
+					if (property.getTarget() instanceof org.mozilla.javascript.ast.ElementGet) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", statement, COMPUTED_PUSH_HINT);
 					String path = property.getTarget() instanceof Name n ? (lookup(n.getIdentifier(), scope) == null ? "" : lookup(n.getIdentifier(), scope).mapped) : compact(raw(property.getTarget()));
 					if (!typedLists.contains(path)) reject("FLOWSCRIPT_V3_UNTYPED_LIST", statement, "Initialize the list with json.array({ itemType }).");
 					if (call.getArguments().size() != 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Push one value per statement.");

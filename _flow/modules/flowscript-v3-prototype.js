@@ -84,7 +84,8 @@
 				FLOWSCRIPT_V3_UNSUPPORTED: "This JavaScript construct is outside the FlowScript v3 subset",
 				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition",
 				FLOWSCRIPT_V3_PATTERN: "A regular expression literal is lowered to its text block only as a whole value or in an if condition",
-				FLOWSCRIPT_V3_CALL_RESULT: "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it"
+				FLOWSCRIPT_V3_CALL_RESULT: "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it",
+				FLOWSCRIPT_V3_COMPUTED_WRITE: "A value under a computed key is written only on a local object or map"
 			};
 			var message = (rules[code] || "This FlowScript v3 construct cannot be lowered faithfully") + " (" + code + " at line " + line(at) + ").";
 			if (code === "FLOWSCRIPT_V3_LIST_METHOD" && kind(node) === "FunctionCall" && method(node) === "sort" && !/^\s*\[/.test(raw(node.getTarget()).replace(/\.sort$/, ""))) {
@@ -253,6 +254,15 @@
 			var output = source.substring(start, finish);
 			edits.forEach(function (edit) { output = output.substring(0, edit.at - start) + edit.value + output.substring(edit.to - start); });
 			return output;
+		}
+		var COMPUTED_WRITE_HINT = "Write a computed key on a local object: const groups = {} (or json.map({ valueType })), then groups[key] = value, " +
+			"groups[key] += n or groups[key]++, and assign the object where it goes (result.groups = groups). A list item is replaced by building a new list.";
+		var COMPUTED_PUSH_HINT = "Replace the list under the key: groups[key] = groups[key].concat([value]), on a local object (const groups = {}).";
+		// The local object or map written by target[key]: a name declared with {} or json.map, or a local.* path made by json.map
+		function elementMap(element, current) {
+			var target = element.getTarget();
+			if (kind(target) === "Name") { var bound = lookup(String(target.getIdentifier()), current); return bound && bound.typedMap ? bound : null; }
+			return typedLocals.map[localName(target)] ? { mapped: "local." + localName(target), typedMap: true } : null;
 		}
 		function method(call) {
 			var target = call.getTarget(); return kind(target) === "PropertyGet" ? String(target.getProperty().getIdentifier()) : "";
@@ -802,7 +812,9 @@
 					var rhs = emptyList ? { before: [], expression: "json.array({ itemType: " + literal(emptyList) + " })" } : init ? value(init, current) : { before: [], expression: "undefined" };
 					var declared = declare(name, type, target, current);
 					declared.typedList = !!emptyList || init && kind(init) === "FunctionCall" && raw(init.getTarget()).replace(/\s/g, "") === "json.array";
-					declared.typedMap = init && kind(init) === "FunctionCall" && raw(init.getTarget()).replace(/\s/g, "") === "json.map";
+					// a local object literal (const groups = {}) is a map too: groups[key] = v is json.put, as on json.map
+					declared.typedMap = init && kind(init) === "FunctionCall" && raw(init.getTarget()).replace(/\s/g, "") === "json.map" ||
+						!!init && kind(unparen(init)) === "ObjectLiteral";
 					rhs.before.forEach(function (item) { emit(item, origin); }); emit("local." + name + " = " + rhs.expression, origin);
 				}); return;
 			}
@@ -814,13 +826,18 @@
 					if (binding && binding.type === "const") reject("FLOWSCRIPT_V3_CONST_ASSIGN", left, "Declare the variable with let.");
 					if (name && !binding) reject(allNames[name] ? "FLOWSCRIPT_V3_OUT_OF_SCOPE" : "FLOWSCRIPT_V3_UNSUPPORTED", left, "Declare the local first.");
 					var target = binding ? binding.mapped : rewritten(left, current);
-					if (kind(left) === "ElementGet" && (kind(left.getTarget()) === "Name" || typedLocals.map[localName(left.getTarget())])) {
-						var mapName = kind(left.getTarget()) === "Name" ? String(left.getTarget().getIdentifier()) : "", map = mapName ? lookup(mapName, current)
-							: { mapped: "local." + localName(left.getTarget()), typedMap: true };
-						if (map && map.typedMap && op === "=") {
+					if (kind(left) === "ElementGet") {
+						// map[key] = v and map[key] += v on a local object or map are json.put; any other computed key is refused
+						var map = elementMap(left, current);
+						if (!map) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", left, COMPUTED_WRITE_HINT);
+						if (op === "=") {
 							emit("json.put({ path: " + JSON.stringify(map.mapped) + ", key: " + rewritten(left.getElement(), current) + ", value: " + rewritten(right, current) + " })", origin); return;
 						}
+						if (!["+=", "-=", "*=", "/="].includes(op)) reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", node, "Use a simple assignment.");
+						emit("json.put({ path: " + JSON.stringify(map.mapped) + ", key: " + rewritten(left.getElement(), current) + ", value: " + target + " " + op.charAt(0) + " (" + rewritten(right, current) + ") })", origin); return;
 					}
+					// m = json.map({ … }) makes the local m a map from this statement on, as the Java reader reads it
+					if (binding && op === "=" && kind(right) === "FunctionCall" && raw(right.getTarget()).replace(/\s/g, "") === "json.map") binding.typedMap = true;
 					if (target.indexOf("result.") === 0) { if (resultStyle === "returnObject") reject("FLOWSCRIPT_V3_RESULT_MIXED", node, "Use one result style."); resultStyle = "resultField"; }
 					if (op !== "=") { if (!["+=", "-=", "*=", "/="].includes(op)) reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", node, "Use a simple assignment."); emit(target + " = " + target + " " + op.charAt(0) + " (" + rewritten(right, current) + ")", origin); }
 					else emitValue(right, current, target, origin);
@@ -828,6 +845,14 @@
 				}
 				if (ek === "UpdateExpression") {
 					var operand = expression.getOperand(), increment = raw(expression).indexOf("++") >= 0;
+					if (kind(operand) === "ElementGet") {
+						// map[key]++ on a local object or map: json.put of the number plus one, as x++ on a local
+						var updatedMap = elementMap(operand, current);
+						if (!updatedMap) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", node, COMPUTED_WRITE_HINT);
+						var elementPath = rewritten(operand, current);
+						emit("json.put({ path: " + JSON.stringify(updatedMap.mapped) + ", key: " + rewritten(operand.getElement(), current) + ", value: " +
+							(increment ? "Number(" + elementPath + ") + 1" : elementPath + " - 1") + " })", origin); return;
+					}
 					if (kind(operand) === "PropertyGet") {
 						// o.count++ on a field of a local object (or of result): the object is shared as in JavaScript (an
 						// object read from a map is that object), so the field changes wherever the object is read.
@@ -850,6 +875,7 @@
 					var namespacePush = pushReceiver && kind(pushReceiver) === "Name" && !lookup(String(pushReceiver.getIdentifier()), current)
 						&& !allNames[String(pushReceiver.getIdentifier())];
 					if (pushReceiver && !namespacePush) {
+						if (kind(pushReceiver) === "ElementGet") reject("FLOWSCRIPT_V3_COMPUTED_WRITE", node, COMPUTED_PUSH_HINT);
 						var rec = pushReceiver, recName = kind(rec) === "Name" ? String(rec.getIdentifier()) : "", list = recName ? lookup(recName, current)
 							: typedLocals.list[localName(rec)] ? { mapped: "local." + localName(rec), typedList: true } : null;
 						if (!list || !list.typedList) reject("FLOWSCRIPT_V3_UNTYPED_LIST", node, "Initialize the list with json.array({ itemType }).");

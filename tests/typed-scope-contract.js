@@ -29,7 +29,12 @@ api.put('local.map','Paris',18);
 assert.throws(()=>api.put('local.map','Paris','bad'),{code:'VALUE_TYPE_MISMATCH'});
 assert.equal(read('local.map').Paris,18);
 assert.throws(()=>write('local.map.Lyon','bad'),{code:'VALUE_TYPE_MISMATCH'});
-for (const key of ['__proto__','constructor','prototype','',1]) assert.throws(()=>api.put('local.map',key,2),{code:'INVALID_MAP_KEY'});
+for (const key of ['__proto__','constructor','prototype','',null,true,Infinity,NaN,{}]) assert.throws(()=>api.put('local.map',key,2),{code:'INVALID_MAP_KEY'});
+// A finite number key is its text, as in JavaScript (byId[row.id] = row)
+api.put('local.map',1,2);
+api.put('local.map',-0.5,3);
+assert.equal(read('local.map')['1'],2);
+assert.equal(read('local.map')['-0.5'],3);
 assert.throws(()=>api.declare('input.items',items,[]),{code:'INVALID_DESTINATION'});
 assert.throws(()=>api.declare('local.unknown',{type:'array',items:{type:'unknown'}},[]),{code:'UNKNOWN_VALUE_TYPE'});
 // Graph execution swaps local scope objects: same path does not share declarations.

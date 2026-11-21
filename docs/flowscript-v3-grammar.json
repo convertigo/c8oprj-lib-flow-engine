@@ -390,16 +390,17 @@
     },
     {
       "id": "put",
-      "construct": "byId[key] = v",
+      "construct": "byId[key] = v | byId[key] += v | byId[key]++",
       "block": "json.put",
       "properties": {
         "path": "local.byId",
         "key": "key",
         "value": "v"
       },
-      "where": "byId created by json.map",
+      "where": "byId created by json.map or declared with an object literal (const groups = {}); a finite number key is its text, as in JavaScript; any other computed key is FLOWSCRIPT_V3_COMPUTED_WRITE",
       "examples": [
-        "const byId = json.map({ valueType: { type: \"integer\" } })\nbyId[\"a\"] = 3\nbyId[input.key] = 4\nreturn { byId }"
+        "const byId = json.map({ valueType: { type: \"integer\" } })\nbyId[\"a\"] = 3\nbyId[input.key] = 4\nreturn { byId }",
+        "const groups = {}\nconst counts = {}\nfor (const item of input.items) {\n  if (groups[item.tag] === undefined) {\n    groups[item.tag] = []\n  }\n  groups[item.tag] = groups[item.tag].concat([item.name])\n  counts[item.id] = (counts[item.id] || 0) + 1\n  counts[item.id] += 0\n}\nreturn { groups, counts }"
       ]
     },
     {
@@ -690,6 +691,12 @@
       "construct": "a field of a block call result read in a lazy place (after && || ??, a branch of a ?: inside an expression, an argument, a list arrow, a while condition, a for…of list)",
       "rewrite": "const r = block({ … }) in its own statement, then r.field",
       "example": "const size = input.name != \"\" && text.trim({ text: input.name }).length"
+    },
+    {
+      "code": "FLOWSCRIPT_V3_COMPUTED_WRITE",
+      "construct": "a write under a computed key elsewhere than on a local object or map (result[k], a loop item, a list item, a nested field, an input), groups[k].push(v)",
+      "rewrite": "const groups = {} then groups[k] = v, and result.groups = groups; groups[k] = groups[k].concat([v])",
+      "example": "result[input.k] = 1"
     }
   ],
   "valueRules": [

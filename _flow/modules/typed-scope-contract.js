@@ -168,7 +168,9 @@
 		}
 		function put(path, key, value) {
 			parts(path);
-			if (typeof key !== "string" || !key || ["__proto__", "prototype", "constructor"].indexOf(key) >= 0) fail("INVALID_MAP_KEY", "Choose a non-empty map key (reserved prototype names are not allowed).");
+			// A finite number key is its text, as JavaScript reads map[1] as map["1"] (byId[row.id] = row).
+			if (typeof key === "number" && isFinite(key)) key = String(key);
+			if (typeof key !== "string" || !key || ["__proto__", "prototype", "constructor"].indexOf(key) >= 0) fail("INVALID_MAP_KEY", "Choose a non-empty map key, a text or a finite number (reserved prototype names are not allowed).");
 			var target = env.read(path), schema = schemaFor(path);
 			if (!target || typeof target !== "object" || Array.isArray(target)) fail("COLLECTION_REQUIRED", "Choose a map destination: " + path);
 			var scopes = env.scopes(), direct = schema ? entrySchema(schema, key) : undefined;

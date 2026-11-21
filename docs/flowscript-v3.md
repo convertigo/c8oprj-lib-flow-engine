@@ -259,6 +259,11 @@ function Active({ input, config, result }) {
 - A list or a map is created typed: `const rows = json.array({ itemType: {…} })`, `const byId = json.map({ valueType: {…} })`.
 - `rows.push(v)` is `json.push({ path: "local.rows", value: v })`; `byId[key] = v` is `json.put({ path: "local.byId", key, value: v })`;
   `order.status = "paid"` is a `set`, as in v2.
+- A local declared with an object literal is a map too: `const groups = {}` then `groups[key] = v`, `groups[key] += v`
+  and `groups[key]++` are `json.put`; a finite number key is its text, as in JavaScript. A computed key elsewhere
+  (`result[k]`, a loop item, a list item, a nested field, an input) and `groups[k].push(v)` are refused
+  (`FLOWSCRIPT_V3_COMPUTED_WRITE`) with the form to write: the local object, then `result.groups = groups`;
+  `groups[k] = groups[k].concat([v])`.
 - `const rows = []` (or `let`) followed by `push` lowers to the `json.array` whose item type every pushed value proves
   from its syntax (text, number and boolean literals, comparisons, `null`, object and list literals); a pushed name,
   path, call or computed number is refused (`FLOWSCRIPT_V3_UNTYPED_LIST`) with the exact `json.array({ itemType })` to
