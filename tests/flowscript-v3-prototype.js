@@ -113,6 +113,16 @@ var helperValidation = api('flowSourceValidate', { name: 'Example', code: helper
 check(!(helperValidation.diagnostics || []).some(function (diagnostic) { return diagnostic.code === 'FLOWSCRIPT_INPUT_NOT_DECLARED' && (diagnostic.missingInputs || []).indexOf('rows') >= 0; }),
 	'helper parameter is not a Flow input: ' + JSON.stringify(helperValidation).substring(0, 1000));
 refuses('nested helper', '  function inner({ rows }) { return rows }', 'FLOWSCRIPT_V3_FUNCTION', 3);
+// a helper before the Flow function: refused with the order to write, by both readers (L15F, 20/11)
+(function () {
+	var code = 'const _flow = { sourceVersion: 3 }\nfunction csvField({ value }) {\n  return value\n}\nfunction Example({ input, config, result }) {\n  return result\n}';
+	var translated = bridge.translate(code), first = translated.diagnostics[0] || {};
+	check(first.code === 'FLOWSCRIPT_V3_FUNCTION' && first.line === 2 && /Put the Flow function Example first/.test(String(first.hint)),
+		'helper before the Flow function: ' + JSON.stringify(translated));
+	var read = JSON.parse(String(Packages.com.convertigo.libflowengine.FlowScriptV3Reader.read(code, null))).diagnostics[0] || {};
+	check(read.code === first.code && read.line === first.line && read.hint === first.hint && read.message === first.message,
+		'helper before the Flow function (Java reader): ' + JSON.stringify(read) + ' instead of ' + JSON.stringify(first));
+}());
 function nodeSorted(items, comparator) {
 	var script = 'const xs = JSON.parse(process.argv[1]); process.stdout.write(JSON.stringify(xs.toSorted(' + comparator + ')))';
 	var command = new java.util.ArrayList();

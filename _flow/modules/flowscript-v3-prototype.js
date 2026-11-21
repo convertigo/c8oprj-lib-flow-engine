@@ -934,6 +934,15 @@
 				});
 			});
 			if (!main) reject("FLOWSCRIPT_V3_FUNCTION", 0, "Declare one Flow function.");
+			// the Flow function is the first one: a helper declared before it would take its place (L15F, 20/11)
+			var readsFlowScopes = function (fn) {
+				var params = array(fn.getParams());
+				return params.length === 1 && kind(params[0]) === "ObjectLiteral" && array(params[0].getElements()).some(function (field) {
+					return kind(field) === "ObjectProperty" && kind(field.getKey()) === "Name" && /^(?:input|config|result)$/.test(String(field.getKey().getIdentifier()));
+				});
+			};
+			var flowFunction = readsFlowScopes(main) ? null : helpers.filter(readsFlowScopes)[0];
+			if (flowFunction) reject("FLOWSCRIPT_V3_FUNCTION", main, "Put the Flow function " + String(flowFunction.getName()) + " first, then its helpers.");
 			trivia(topCursor, pos(main));
 			var functionText = raw(main), open = functionText.indexOf("{", functionText.indexOf(")") + 1);
 			if (open < 0) reject("FLOWSCRIPT_V3_FUNCTION", main, "Use function Name({ input, config, result }) { ... }.");

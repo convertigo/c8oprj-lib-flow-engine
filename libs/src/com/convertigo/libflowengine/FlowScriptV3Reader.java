@@ -194,6 +194,13 @@ public final class FlowScriptV3Reader {
 	private String raw(AstNode node) { return source.substring(pos(node), end(node)); }
 	private static String kind(AstNode node) { return node == null ? "" : node.getClass().getSimpleName(); }
 	private static String name(AstNode node) { return node instanceof Name n ? n.getIdentifier() : ""; }
+	private static boolean readsFlowScopes(FunctionNode function) {
+		if (function.getParams().size() != 1 || !(function.getParams().get(0) instanceof ObjectLiteral literal)) return false;
+		for (var element : literal.getElements())
+			if (element instanceof ObjectProperty field && field.getKey() instanceof Name name
+					&& Set.of("input", "config", "result").contains(name.getIdentifier())) return true;
+		return false;
+	}
 	private ObjectProperty property(AbstractObjectProperty node) {
 		if (node instanceof ObjectProperty field) return field;
 		reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Use one-level object fields.");
@@ -362,6 +369,9 @@ public final class FlowScriptV3Reader {
 			}
 		}
 		if (main == null) rejectAt("FLOWSCRIPT_V3_FUNCTION", 0, "Declare one Flow function.");
+		// the Flow function is the first one: a helper declared before it would take its place (L15F, 20/11)
+		if (!readsFlowScopes(main)) for (FunctionNode helper : helperNodes)
+			if (readsFlowScopes(helper)) reject("FLOWSCRIPT_V3_FUNCTION", main, "Put the Flow function " + helper.getName() + " first, then its helpers.");
 		var definition = map("version", 1, "helpers", new ArrayList<>(), "nodes", new ArrayList<>());
 		if (!flow.isEmpty()) { flow.put("sourceVersion", 3); definition.put("flow", flow); }
 		@SuppressWarnings("unchecked") var nodes = (List<Map<String, Object>>) definition.get("nodes");
