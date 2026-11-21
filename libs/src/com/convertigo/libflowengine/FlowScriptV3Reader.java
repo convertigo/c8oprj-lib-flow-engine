@@ -65,7 +65,8 @@ public final class FlowScriptV3Reader {
 		Map.entry("FLOWSCRIPT_V3_ERROR_CODE_CHOICE", "throw new Error lacks the literal public error code required by Flow"),
 		Map.entry("FLOWSCRIPT_V3_UNSUPPORTED", "This JavaScript construct is outside the FlowScript v3 subset"),
 		Map.entry("FLOWSCRIPT_V3_OBJECT_CONDITION", "An object literal is not a Flow if or while condition"),
-		Map.entry("FLOWSCRIPT_V3_PATTERN", "A regular expression literal is lowered to its text block only as a whole value or in an if condition")
+		Map.entry("FLOWSCRIPT_V3_PATTERN", "A regular expression literal is lowered to its text block only as a whole value or in an if condition"),
+		Map.entry("FLOWSCRIPT_V3_CALL_RESULT", "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it")
 	);
 	private static final Set<String> LIST_STEPS = Set.of("filter", "map", "find", "some", "every", "toSorted", "sort");
 	private static final Set<String> FLOW_NAMESPACES = Set.of("list", "json", "object", "text");
@@ -469,6 +470,7 @@ public final class FlowScriptV3Reader {
 			if (lifted != null) { edits.add(new Edit(pos(part), end(part), lifted)); return false; }
 			if (part instanceof FunctionCall call && compact(raw(call.getTarget())).matches("(?:Object|JSON|Date)\\.[A-Za-z_$][\\w$]*"))
 				reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
+			if (part != root && readCall(part, scope)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint((FunctionCall) part, false));
 			if (part instanceof FunctionCall nested && part != root && LIST_STEPS.contains(method(nested)))
 				reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
 			if (part instanceof FunctionNode) reject("FLOWSCRIPT_V3_FUNCTION", part, "Write the expression inline or use a project block.");
@@ -1075,6 +1077,12 @@ public final class FlowScriptV3Reader {
 		}
 		var pattern = patternStep(call);
 		if (pattern != null) return patternLowered(pattern, call, scope);
+		if (readCall(call, scope)) {
+			// flow.call({ … }).total: the call writes a hidden local, whose field the expression reads, as
+			// const r = flow.call({ … }); const total = r.total
+			String hidden = "local.__chain" + (++chain);
+			return new Lowered(List.of(callNode(call, scope, hidden)), hidden);
+		}
 		if (!globalBlock(call).isEmpty()) {
 			String path = "local.__chain" + (++chain);
 			return new Lowered(List.of(capture(globalBlock(call), globalProps(call, scope), path, call)), path);
@@ -1231,7 +1239,7 @@ public final class FlowScriptV3Reader {
 	private void assign(List<Map<String, Object>> output, String target, AstNode rhs, Scope scope, AstNode at) {
 		AstNode candidate = unparen(rhs);
 		if (candidate instanceof org.mozilla.javascript.ast.ConditionalExpression conditional &&
-			(holdsBlockStep(conditional.getTrueExpression()) || holdsBlockStep(conditional.getFalseExpression()))) {
+			(holdsBlockStep(conditional.getTrueExpression(), scope) || holdsBlockStep(conditional.getFalseExpression(), scope))) {
 			var yes = new ArrayList<Map<String, Object>>();
 			var no = new ArrayList<Map<String, Object>>();
 			assign(yes, target, conditional.getTrueExpression(), scope, at);
@@ -1262,7 +1270,7 @@ public final class FlowScriptV3Reader {
 	private String hiddenValue(List<Map<String, Object>> output, AstNode value, Scope scope, AstNode at) {
 		AstNode candidate = unparen(value);
 		if (slotted(value) || candidate instanceof ConditionalExpression conditional &&
-			(holdsBlockStep(conditional.getTrueExpression()) || holdsBlockStep(conditional.getFalseExpression()))) lower(value, scope);
+			(holdsBlockStep(conditional.getTrueExpression(), scope) || holdsBlockStep(conditional.getFalseExpression(), scope))) lower(value, scope);
 		if (value instanceof FunctionCall call && (!globalBlock(call).isEmpty() || isBlockCall(call))) {
 			String path = "local.__chain" + (++chain);
 			assign(output, path, value, scope, at);
@@ -1293,7 +1301,9 @@ public final class FlowScriptV3Reader {
 		var before = new ArrayList<Map<String, Object>>();
 		var replaced = new IdentityHashMap<AstNode, String>();
 		visit(condition, part -> {
-			if (!(blockSteps && blockStep(part)) && patternStep(part) == null) return true;
+			// … and so does each block call whose result they read (if (entity.read({ … }).values.active))
+			boolean read = readCall(part, scope);
+			if (!read && !(blockSteps && blockStep(part)) && patternStep(part) == null) return true;
 			for (AstNode child = part, parent = part.getParent(); child != condition && parent != null; child = parent, parent = parent.getParent()) {
 				if (parent instanceof FunctionNode) return true;
 				if (parent.getClass() == InfixExpression.class && Set.of("&&", "||", "??").contains(operator(parent)) && ((InfixExpression) parent).getRight() == child) return true;
@@ -1302,20 +1312,51 @@ public final class FlowScriptV3Reader {
 			}
 			var lowered = lower(part, scope);
 			before.addAll(lowered.before);
-			// a global call is its hidden local; a list method is the expression of its steps
-			replaced.put(part, globalBlock((FunctionCall) part).isEmpty() ? "(" + lowered.expression + ")" : lowered.expression);
+			// a global call or a read block call is its hidden local; a list method is the expression of its steps
+			replaced.put(part, read || !globalBlock((FunctionCall) part).isEmpty() ? lowered.expression : "(" + lowered.expression + ")");
 			return false;
 		});
 		return new Lifted(before, rewritten(condition, scope, replaced));
 	}
-	private boolean holdsBlockStep(AstNode value) {
+	private boolean holdsBlockStep(AstNode value, Scope scope) {
 		final boolean[] found = { false };
 		visit(value, part -> {
 			if (part instanceof FunctionCall call && (LIST_STEPS.contains(method(call)) ||
-				compact(raw(call.getTarget())).matches("(?:Object|JSON)\\..*") || patternStep(call) != null)) found[0] = true;
+				compact(raw(call.getTarget())).matches("(?:Object|JSON)\\..*") || patternStep(call) != null || readCall(call, scope))) found[0] = true;
 			return !found[0];
 		});
 		return found[0];
+	}
+	// A block call whose result the expression reads: flow.call({ … }).total, entity.read({ … }).values.active, a method of
+	// its result. Not a global, a pattern step, a call with a slot, an expression function, nor a method of a local.
+	private boolean readCall(AstNode part, Scope scope) {
+		if (part == null || part.getClass() != FunctionCall.class) return false;
+		var call = (FunctionCall) part;
+		AstNode parent = call.getParent();
+		boolean read = parent instanceof PropertyGet property && property.getTarget() == call ||
+			parent instanceof org.mozilla.javascript.ast.ElementGet element && element.getTarget() == call;
+		String target = compact(raw(call.getTarget()));
+		if (!read || target.matches("(?:Object|JSON|Date|Math)\\..*") || patternStep(call) != null || slotted(call) || !isBlockCall(call)) return false;
+		return lookup(target.split("\\.", 2)[0], scope) == null;
+	}
+	// The proposal for a block call whose result is read where it cannot run before the statement: the call in its own
+	// statement, then the read of its local (const r = flow.call({ … }); const total = r.total). A while condition is
+	// evaluated before every pass: the call runs before the loop and again at the end of its body.
+	private String callResultHint(FunctionCall call, boolean everyPass) {
+		AstNode read = call;
+		while (true) {
+			AstNode parent = read.getParent();
+			if (parent instanceof org.mozilla.javascript.ast.ElementGet element && element.getTarget() == read) read = parent;
+			else if (parent instanceof PropertyGet property && property.getTarget() == read &&
+				!(property.getParent() instanceof FunctionCall method && method.getTarget() == property)) read = parent;
+			else break;
+		}
+		String block = compact(raw(call.getTarget())), path = compact(source.substring(end(call), end(read))).replace("?.[", "[").replace("?.", ".");
+		String field = read instanceof PropertyGet property ? property.getProperty().getIdentifier() : "value";
+		if (everyPass) return "A while condition is evaluated before every pass: keep the result in a let, computed before the loop and again at the end of " +
+			"the body (let r = " + block + "({ … }); while (… r" + path + " …) { …; r = " + block + "({ … }) }).";
+		return "Call " + block + " in its own statement, then read its result from that local: const r = " + block + "({ … }); " +
+			(path.isEmpty() ? "then r where the call was." : "const " + field + " = r" + path + ".");
 	}
 	// A pattern step, as the v2 reading of an assignment reads it: /p/f.test(s), s.match(/p/f), s.replace(/p/f, y),
 	// s.replaceAll(/p/g, y) or s.split(/p/f), flags among g, i, m and s. It is the text block that does the same (text.match,
@@ -1799,6 +1840,7 @@ public final class FlowScriptV3Reader {
 		if (statement instanceof org.mozilla.javascript.ast.WhileLoop loop) {
 			if (loop.getCondition() instanceof ObjectLiteral) reject("FLOWSCRIPT_V3_OBJECT_CONDITION", loop.getCondition(), "Use flow.while({ ... }).");
 			visit(loop.getCondition(), part -> {
+				if (readCall(part, scope)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint((FunctionCall) part, true));
 				if (blockStep(part)) reject("FLOWSCRIPT_V3_CHAIN", part, "A while condition is evaluated before every pass, so its list method cannot run once before the loop: " +
 					"keep its value in a let, computed before the loop and again at the end of the body (let pending = xs.some(…); while (pending) { …; pending = xs.some(…) }).");
 				return true;

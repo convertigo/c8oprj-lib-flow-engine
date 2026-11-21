@@ -83,7 +83,8 @@
 				FLOWSCRIPT_V3_ERROR_CODE_CHOICE: "throw new Error lacks the literal public error code required by Flow",
 				FLOWSCRIPT_V3_UNSUPPORTED: "This JavaScript construct is outside the FlowScript v3 subset",
 				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition",
-				FLOWSCRIPT_V3_PATTERN: "A regular expression literal is lowered to its text block only as a whole value or in an if condition"
+				FLOWSCRIPT_V3_PATTERN: "A regular expression literal is lowered to its text block only as a whole value or in an if condition",
+				FLOWSCRIPT_V3_CALL_RESULT: "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it"
 			};
 			var message = (rules[code] || "This FlowScript v3 construct cannot be lowered faithfully") + " (" + code + " at line " + line(at) + ").";
 			if (code === "FLOWSCRIPT_V3_LIST_METHOD" && kind(node) === "FunctionCall" && method(node) === "sort" && !/^\s*\[/.test(raw(node.getTarget()).replace(/\.sort$/, ""))) {
@@ -221,6 +222,7 @@
 				// a step lifted before the statement (liftedCondition) reads its hidden local
 				for (var r = 0; replaced && r < replaced.length; r++) if (replaced[r].node === part) { edits.push({ at: pos(part), to: end(part), value: replaced[r].value }); return false; }
 				if (k === "FunctionCall" && /^(?:Object|JSON|Date)\.[A-Za-z_$][\w$]*$/.test(raw(part.getTarget()).replace(/\s/g, ""))) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
+				if (part !== node && readCall(part, current)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint(part, false));
 				if (k === "FunctionCall" && part !== node && ["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0) reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
 				if (k === "FunctionNode") reject("FLOWSCRIPT_V3_FUNCTION", part, "Write the expression inline or use a project block.");
 				if (k === "RegExpLiteral") reject("FLOWSCRIPT_V3_PATTERN", part, patternHint(part));
@@ -486,6 +488,12 @@
 			if (kind(node) !== "FunctionCall") return lifted(node, current, false);
 			var pattern = patternStep(node);
 			if (pattern) return patternLowered(pattern, current);
+			if (readCall(node, current)) {
+				// flow.call({ … }).total: the call writes a hidden local, whose field the expression reads, as
+				// const r = flow.call({ … }); const total = r.total (lower of the Java reader)
+				var called = "local.__chain" + (++chain);
+				return { before: [called + " = " + rewritten(node, current)], expression: called };
+			}
 			var target = node.getTarget(), name = method(node), receiver = kind(target) === "PropertyGet" ? target.getTarget() : null;
 			var args = argument(node), prefix = receiver ? value(receiver, current) : null;
 			if (["reduce", "flatMap", "findIndex"].indexOf(name) >= 0) reject("FLOWSCRIPT_V3_LIST_METHOD", node, "Use filter, map, toSorted, or an explicit loop.");
@@ -627,7 +635,9 @@
 		function lifted(condition, current, blockSteps) {
 			var before = [], replaced = [];
 			visit(condition, function (part) {
-				if (!(blockSteps && blockStep(part)) && !patternStep(part)) return true;
+				// … and so does each block call whose result they read (if (entity.read({ … }).values.active))
+				var read = readCall(part, current);
+				if (!read && !(blockSteps && blockStep(part)) && !patternStep(part)) return true;
 				for (var child = part, parent = part.getParent(); child !== condition && parent; child = parent, parent = parent.getParent()) {
 					var k = kind(parent);
 					if (k === "FunctionNode") return true;
@@ -637,7 +647,8 @@
 				}
 				var lowered = value(part, current);
 				before = before.concat(lowered.before);
-				if (lowered.before.length) replaced.push({ node: part, value: "(" + lowered.expression + ")" });
+				if (read) replaced.push({ node: part, value: lowered.expression });
+				else if (lowered.before.length) replaced.push({ node: part, value: "(" + lowered.expression + ")" });
 				else { var hidden = "local.__chain" + (++chain); before.push(hidden + " = " + lowered.expression); replaced.push({ node: part, value: hidden }); }
 				return false;
 			});
@@ -684,21 +695,49 @@
 			});
 			emit("})", line(end(call) - 1));
 		}
-		function holdsBlockStep(node) {
+		function holdsBlockStep(node, current) {
 			var found = false;
 			visit(node, function (part) {
 				if (kind(part) === "FunctionCall" && (["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0 ||
-					/^(?:Object|JSON)\./.test(raw(part.getTarget()).replace(/\s/g, "")) || patternStep(part))) found = true;
+					/^(?:Object|JSON)\./.test(raw(part.getTarget()).replace(/\s/g, "")) || patternStep(part) || readCall(part, current))) found = true;
 				return !found;
 			});
 			return found;
+		}
+		// A block call whose result the expression reads (readCall of the Java reader): flow.call({ … }).total,
+		// entity.read({ … }).values.active, a method of its result. Not a global, a pattern step, a call with a slot, an
+		// expression function, nor a method of a local.
+		function readCall(part, current) {
+			if (kind(part) !== "FunctionCall") return false;
+			var parent = part.getParent(), target = raw(part.getTarget()).replace(/\s/g, "");
+			var read = kind(parent) === "PropertyGet" && parent.getTarget() === part || kind(parent) === "ElementGet" && parent.getTarget() === part;
+			if (!read || /^(?:Object|JSON|Date|Math)\./.test(target) || patternStep(part) || slotted(part) || !returnedBlockCall(part)) return false;
+			return !lookup(target.split(".")[0], current);
+		}
+		// The proposal for a block call whose result is read where it cannot run before the statement (callResultHint of the
+		// Java reader): the call in its own statement, then the read of its local. A while condition is evaluated before
+		// every pass: the call runs before the loop and again at the end of its body.
+		function callResultHint(call, everyPass) {
+			var read = call;
+			while (true) {
+				var parent = read.getParent();
+				if (kind(parent) === "ElementGet" && parent.getTarget() === read) read = parent;
+				else if (kind(parent) === "PropertyGet" && parent.getTarget() === read && !(kind(parent.getParent()) === "FunctionCall" && parent.getParent().getTarget() === parent)) read = parent;
+				else break;
+			}
+			var block = raw(call.getTarget()).replace(/\s/g, ""), path = source.substring(end(call), end(read)).replace(/\s/g, "").split("?.[").join("[").split("?.").join(".");
+			var field = kind(read) === "PropertyGet" ? String(read.getProperty().getIdentifier()) : "value";
+			if (everyPass) return "A while condition is evaluated before every pass: keep the result in a let, computed before the loop and again at the end of " +
+				"the body (let r = " + block + "({ … }); while (… r" + path + " …) { …; r = " + block + "({ … }) }).";
+			return "Call " + block + " in its own statement, then read its result from that local: const r = " + block + "({ … }); " +
+				(!path ? "then r where the call was." : "const " + field + " = r" + path + ".");
 		}
 		function emitValue(node, current, target, origin) {
 			if (slotted(node)) { emitSlotted(node, current, origin, target); return; }
 			// A value that is entirely cond ? a : b, with a block step in a branch: if (cond) { target = a } else { target = b },
 			// each branch lowered in its own body, so that only the chosen branch runs, as in JavaScript.
 			var conditional = unparen(node);
-			if (kind(conditional) === "ConditionalExpression" && (holdsBlockStep(conditional.getTrueExpression()) || holdsBlockStep(conditional.getFalseExpression()))) {
+			if (kind(conditional) === "ConditionalExpression" && (holdsBlockStep(conditional.getTrueExpression(), current) || holdsBlockStep(conditional.getFalseExpression(), current))) {
 				emit("if (" + rewritten(conditional.getTestExpression(), current) + ") {", origin);
 				emitValue(conditional.getTrueExpression(), current, target, origin);
 				emit("} else {", origin);
@@ -856,6 +895,7 @@
 			if (k === "WhileLoop") {
 				if (kind(node.getCondition()) === "ObjectLiteral") reject("FLOWSCRIPT_V3_OBJECT_CONDITION", node.getCondition(), "Use flow.while({ ... }).");
 				visit(node.getCondition(), function (part) {
+					if (readCall(part, current)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint(part, true));
 					if (blockStep(part)) reject("FLOWSCRIPT_V3_CHAIN", part, "A while condition is evaluated before every pass, so its list method cannot run once before the loop: keep its value in a let, computed before the loop and again at the end of the body (let pending = xs.some(…); while (pending) { …; pending = xs.some(…) }).");
 					return true;
 				});

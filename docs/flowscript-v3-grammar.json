@@ -463,6 +463,16 @@
       ]
     },
     {
+      "id": "call-result",
+      "construct": "block({ … }).field | block({ … }).a.b | block({ … })[i] | block({ … }).field.method(…)",
+      "lowering": "the call writes local.__chain<N> before the statement, then the expression reads local.__chain<N>.field (as const r = block({ … }); const field = r.field)",
+      "where": "whole value of a declaration, an assignment or a return, a branch of a whole ?:, a place a value or an if condition always evaluates; elsewhere FLOWSCRIPT_V3_CALL_RESULT",
+      "examples": [
+        "const size = text.trim({ text: input.name }).length\nif (text.trim({ text: input.name }).length > 3) {\n  result.long = true\n}\nresult.size = size",
+        "const second = text.split({ text: input.csv, separator: \",\" })[1]\nreturn { second, upper: text.trim({ text: input.name }).toUpperCase() }"
+      ]
+    },
+    {
       "id": "default",
       "construct": "flow.default(a, b)",
       "lowering": "expression function default (null, undefined and \"\" replaced)",
@@ -674,6 +684,12 @@
       "construct": "a regular expression literal in a lazy place (after && || ??, in a list arrow, an argument, a while condition) or in another form",
       "rewrite": "const m = text.match({ text: String(s), pattern: \"p\" }) before the statement, then m.matched",
       "example": "const ok = input.name != \"\" && /^[a-z]+$/.test(input.name)"
+    },
+    {
+      "code": "FLOWSCRIPT_V3_CALL_RESULT",
+      "construct": "a field of a block call result read in a lazy place (after && || ??, a branch of a ?: inside an expression, an argument, a list arrow, a while condition, a for…of list)",
+      "rewrite": "const r = block({ … }) in its own statement, then r.field",
+      "example": "const size = input.name != \"\" && text.trim({ text: input.name }).length"
     }
   ],
   "valueRules": [

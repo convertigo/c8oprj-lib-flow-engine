@@ -187,6 +187,13 @@ The v2 expression subset is unchanged: scope paths, literals, arrays, objects, t
   condition of an `if` always evaluates (`const ok = /^[0-9]+$/.test(v)`, `!/x/.test(v)`, `if (/^[0-9]{1,2}$/.test(v))`),
   or the list of a `for…of` (`split`, `match`). Elsewhere (after `&&`, `||` or `??`, in a list arrow, an argument or a
   `while` condition) the literal is refused (`FLOWSCRIPT_V3_PATTERN`), with the block to write in its own statement.
+- A field of a block call result is read in the same expression: `const total = flow.call({ … }).total`,
+  `if (entity.read({ … }).values.active)`, `text.split({ … })[1]`, `text.trim({ … }).toUpperCase()`. The call runs
+  before the statement and writes a hidden local `local.__chain<N>`, whose field the expression reads, as
+  `const r = flow.call({ … }); const total = r.total` does. This holds in the same places as a pattern step: the whole
+  value of a declaration, an assignment or a return, a branch of a whole `?:`, a place the value or the condition of an
+  `if` always evaluates. Elsewhere (after `&&`, `||` or `??`, in a `?:` inside an expression, an argument, a list arrow,
+  a `while` condition or the list of a `for…of`) the read is refused (`FLOWSCRIPT_V3_CALL_RESULT`), with those two statements as the proposal.
 
 ## 7. List methods
 
@@ -344,6 +351,7 @@ function Notify({ input, config, result }) {
 | `async`, `await`, generators, classes, `this`, `new` | `FLOWSCRIPT_V3_UNSUPPORTED` | blocks |
 | `if` or `while` whose condition is an object literal | `FLOWSCRIPT_V3_OBJECT_CONDITION` | `flow.if({ … })` |
 | a regular expression literal in a lazy place (after `&&`, `\|\|`, `??`, in a list arrow, an argument, a `while` condition) or in another form | `FLOWSCRIPT_V3_PATTERN` | `const m = text.match({ text: String(s), pattern: "p" })` before the statement, then `m.matched` |
+| a field of a block call result read in a lazy place (after `&&`, `\|\|`, `??`, in an argument, a list arrow, a `while` condition, the list of a `for…of`) | `FLOWSCRIPT_V3_CALL_RESULT` | `const r = block({ … })` in its own statement, then `r.field` |
 
 ```flowscript refused=FLOWSCRIPT_V3_BREAK id=refused-break
 const _flow = { sourceVersion: 3, inputs: { items: { type: "array" } } }
@@ -581,3 +589,7 @@ replacement. The rules of the previous sections are amended accordingly.
      diagnostic said such a literal is rewritten to `text.match`: the v3 reader left the literal in the expression. The
      forms v2 rewrites are now lowered to their block (section 6), also where a value or an `if` condition always evaluates
      them; another place is refused with `FLOWSCRIPT_V3_PATTERN` and the block to write, with the names of the source.
+   - *Field of a call result.* `const total = flow.call({ … }).total` and `if (entity.read({ … }).values.active)` were
+     read as expressions, where a block call is refused (`INVALID_EXPRESSION`). The call now writes a hidden local
+     `local.__chain<N>` before the statement, as for `return block({ … })`, and the expression reads its field (section 6);
+     a lazy place is refused with `FLOWSCRIPT_V3_CALL_RESULT` and the two statements to write.
