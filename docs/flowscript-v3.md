@@ -261,7 +261,8 @@ function Active({ input, config, result }) {
   give that `list.sort` (paths are null-safe). Without `compare`,
   `list.sort` keeps its Flow order (numeric texts as numbers, `null` as `""`), which no JavaScript comparator
   reproduces: it stays a call.
-- Refused: `xs.sort(…)` alone (it sorts in place, `list.sort` returns a copy: write `toSorted`), a comparator that is not an accepted key comparator,
+- Refused: `xs.sort(…)` inside an expression, or as a statement on a list the Flow does not build (it sorts in place what
+  shares the list: write `toSorted`), a comparator that is not an accepted key comparator,
   `reduce`, an index parameter `(x, i)`, a parameter of an outer arrow read in an inner one
   (`FLOWSCRIPT_V3_LIST_METHOD`).
 <!-- /fragment -->
