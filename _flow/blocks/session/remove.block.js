@@ -31,6 +31,8 @@ const _meta = {
 			var key = String(ctx.template(props.key || ""));
 			var existed = session.getAttribute(key) !== null;
 			session.removeAttribute(key);
+			// and the mark of a JSON value written by session.set
+			session.removeAttribute("__flowSessionJson:" + key);
 			return existed;
 		},
 		debug: {
@@ -43,6 +45,7 @@ const _meta = {
 			run: function (ctx, node, args) {
 				var existed = args.session.getAttribute(args.key) !== null;
 				args.session.removeAttribute(args.key);
+				args.session.removeAttribute("__flowSessionJson:" + args.key);
 				return existed;
 			}
 		}
