@@ -6698,18 +6698,34 @@
 					// the values they receive (EntityTable declares only these: its contract showed no slot, L27F of 13/11)
 					snippets: descriptorSnippets(descriptor),
 					// the handlers of the events the block raises (OnClick, OnSelectionChange...)
-					events: descriptorEventHandlers(descriptor)
+					events: descriptorEventHandlers(descriptor),
+					eventDescriptions: descriptorEventDescriptions(descriptor)
 				};
 			})
 		};
 	}
 
+	// The named snippets of a widget, each with its description and the values it receives: a parameter whose schema
+	// declares fields (the context of the Toolbar of EntityTable, of the Related1 slot of EntityView) gives each field with
+	// its description, else its type.
 	function descriptorSnippets(descriptor) {
 		var snippets = descriptor && descriptor.snippets, out = {};
 		if (!snippets || typeof snippets !== "object" || Array.isArray(snippets)) return out;
 		Object.keys(snippets).forEach(function (name) {
-			var parameters = snippets[name] && snippets[name].parameters;
-			out[name] = { parameters: Array.isArray(parameters) ? parameters.map(function (p) { return { name: String(p && p.name || p) }; }) : [] };
+			var snippet = snippets[name] || {}, parameters = snippet.parameters;
+			out[name] = { parameters: Array.isArray(parameters) ? parameters.map(function (p) {
+				var parameter = { name: String(p && p.name || p) }, schema = p && p.schema;
+				if (schema && schema.description) parameter.description = String(schema.description);
+				if (schema && schema.properties && typeof schema.properties === "object") {
+					parameter.fields = {};
+					Object.keys(schema.properties).forEach(function (field) {
+						var definition = schema.properties[field] || {};
+						parameter.fields[field] = String(definition.description || [].concat(definition.type || "unknown").join("|"));
+					});
+				}
+				return parameter;
+			}) : [] };
+			if (snippet.description) out[name].description = String(snippet.description);
 		});
 		return out;
 	}
@@ -6718,6 +6734,17 @@
 		var events = descriptor && descriptor.events;
 		if (!events || typeof events !== "object" || Array.isArray(events)) return [];
 		return Object.keys(events).map(function (name) { return "On" + name.charAt(0).toUpperCase() + name.substring(1); });
+	}
+
+	// The description of each event that has one, by handler (OnLoaded: what @event.value holds).
+	function descriptorEventDescriptions(descriptor) {
+		var events = descriptor && descriptor.events, out = {};
+		if (!events || typeof events !== "object" || Array.isArray(events)) return out;
+		Object.keys(events).forEach(function (name) {
+			var event = events[name];
+			if (event && typeof event === "object" && event.description) out["On" + name.charAt(0).toUpperCase() + name.substring(1)] = String(event.description);
+		});
+		return out;
 	}
 
 	function authoringTransferMutationFromTreeRequest(request, blocks, tree) {
