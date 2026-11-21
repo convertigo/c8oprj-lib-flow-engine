@@ -576,6 +576,14 @@
 			return /^flow\.(?:while|forEach|if|try)$/.test(raw(call.getTarget()).replace(/\s/g, "")) || args.length === 1 && kind(args[0]) === "ObjectLiteral" &&
 				array(args[0].getElements()).some(function (property) { return kind(property) === "ObjectProperty" && /^\$\$/.test(raw(property.getKey()).trim()) && kind(property.getValue()) === "FunctionNode"; });
 		}
+		// A returned block call (isBlockCall of the Java reader): one object argument, not an expression function, a scope
+		// method or a global call.
+		function returnedBlockCall(call) {
+			if (kind(call) !== "FunctionCall") return false;
+			var target = raw(call.getTarget()).replace(/\s/g, ""), args = argument(call);
+			if (/^(?:flow\.default|default|String|Number)$|^(?:Math|Object|JSON|input|local|result|current)\./.test(target)) return false;
+			return args.length === 1 && kind(args[0]) === "ObjectLiteral";
+		}
 		function emitSlotted(call, current, origin, out) {
 			call = unparen(call);
 			var controlName = raw(call.getTarget()).replace(/\s/g, ""), controlArgs = argument(call);
@@ -752,6 +760,11 @@
 					}); emit("return", origin); return;
 				}
 				if (returned && slotted(returned)) { var output = "local.__chain" + (++chain); emitSlotted(returned, current, origin, output); emit("return " + output, origin); }
+				else if (returned && returnedBlockCall(returned)) {
+					// return entity.read({ … }): the call writes a hidden local, returned, as the Java reader lowers it
+					var called = "local.__chain" + (++chain), call = value(returned, current);
+					call.before.forEach(function (item) { emit(item, origin); }); emit(called + " = " + call.expression, origin); emit("return " + called, origin);
+				}
 				else if (returned) { var v = value(returned, current); v.before.forEach(function (item) { emit(item, origin); }); emit("return " + v.expression, origin); }
 				else emit("return", origin); return;
 			}

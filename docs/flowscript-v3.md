@@ -134,7 +134,7 @@ function Totals({ input, config, result }) {
 | `switch (x) { case "a": …; break; default: … }` | chain of `if` | Literal labels; every case ends with `break`, `return` or `throw`; `default` last. |
 | `try {…} catch (e) {…}` | `try` | The error is `local.e`, read as `e` inside the catch only. `catch {…}` declares no name: the error goes to `local.error`, or to a hidden local when the Flow has its own `error`. |
 | `continue` | `next` | In a `while`, a `for…of` or a counted `for`, without a label. |
-| `return`, `return value`, `return {…}` | `return` | Leaves the Flow. Refused inside a loop (`FLOWSCRIPT_V3_RETURN_IN_LOOP`). |
+| `return`, `return value`, `return {…}` | `return` | Leaves the Flow. Refused inside a loop (`FLOWSCRIPT_V3_RETURN_IN_LOOP`). `return block({…})` returns the result of the call, written to a hidden local first. |
 | `throw { code: "LITERAL", message }` | `throw` | `code` is a literal public code. |
 <!-- /fragment -->
 
@@ -564,3 +564,7 @@ replacement. The rules of the previous sections are amended accordingly.
    v3 file (the same `_meta` with `"sourceVersion": 3`, the v3 text) compiled by the engine as it loads a block, kept
    only when it gives the contract and the definition of the v2 file. Rhino blocks, frontend blocks and blocks whose
    `_meta` declares no `sourceVersion` are not changed.
+14. **Bench frictions (21/11/2026).**
+   - *`return block({ … })`.* `return entity.read({ … })` returns the result of the call, as
+     `const row = entity.read({ … }); return row` does: the call writes a hidden local `local.__chain<N>`, returned. It was
+     read as an expression, where a block call is refused (`INVALID_EXPRESSION`).

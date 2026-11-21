@@ -116,11 +116,13 @@
     },
     {
       "id": "return",
-      "construct": "return | return e",
+      "construct": "return | return e | return block({ … })",
       "block": "return",
+      "lowering": "return block({ … }): the call writes local.__chain<N>, then return local.__chain<N> (as const row = block({ … }); return row)",
       "examples": [
         "result.n = 1\nreturn",
-        "return 3"
+        "return 3",
+        "return text.trim({ text: input.name })"
       ]
     },
     {

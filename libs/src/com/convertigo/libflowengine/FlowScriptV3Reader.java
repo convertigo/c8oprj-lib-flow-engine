@@ -1660,8 +1660,9 @@ public final class FlowScriptV3Reader {
 				}
 				output.add(node("return", map(), statement));
 			} else if (value == null) output.add(node("return", map(), statement));
-			else if (slotted(value)) {
-				// return flow.try({ … }) or a call with a slot: its output goes to a hidden local, returned
+			else if (slotted(value) || value instanceof FunctionCall call && call.getClass() == FunctionCall.class && globalBlock(call).isEmpty() && isBlockCall(call)) {
+				// return flow.try({ … }), a call with a slot or a block call (return entity.read({ … })): its output goes to a
+				// hidden local, returned, as const row = entity.read({ … }); return row
 				String hidden = "local.__chain" + (++chain);
 				output.add(callNode((FunctionCall) unparen(value), scope, hidden));
 				output.add(node("return", map("value", "${" + hidden + "}"), statement));
