@@ -121,9 +121,8 @@ function Totals({ input, config, result }) {
   name starting with `__`, nor the name of a block namespace the Flow uses (`text`, `list`, `json`, `http`…): after
   `let text = …`, `text.trim({…})` would be a method call in JavaScript (`FLOWSCRIPT_V3_RESERVED_NAME`,
   `FLOWSCRIPT_V3_NAME_SHADOWS_BLOCK`);
-- a local may be named `current`, `parent` or `trace`: it is read as `local.current`, never as the scope. `current` stays
-  refused when a `list.*` or `flow.forEach` call of the Flow reads `current` as its item (`FLOWSCRIPT_V3_RESERVED_NAME`,
-  with that call).
+- a local may be named `current`, `parent` or `trace` (read as `local.current`), but not `current` when a `list.*` or
+  `flow.forEach` call reads `current` as its item.
 <!-- /fragment -->
 
 ## 5. Control flow
@@ -301,10 +300,9 @@ In an assignment, a `return`, at the head of a chain, as the list of a `for…of
 - `Object.entries` is refused: `for (const key of Object.keys(o)) { const value = o[key] … }`.
 - `Date.now()` and `new Date()` are refused: use `date.now`, `date.format`… (time zone and format).
 - `JSON.*` and `Object.*` remain refused inside other expressions, as in v2.
-- An object spread or `Object.assign({}, …)` is also the whole value of a `push` or of `groups[k] = …`, and a branch of
-  such a `?:`. Elsewhere (an argument, inside an expression) it is refused (`FLOWSCRIPT_V3_SPREAD`), with the statement to
-  write: `const merged = { ...a, k: v }`, then `merged`. A spread of a value that is not an object (`null`, a list, a
-  text) adds no field. `Object.assign(o, …)` changes `o` and is refused (`FLOWSCRIPT_V3_GLOBAL_CALL`).
+- An object spread or `Object.assign({}, …)` is also the whole value of a `push`, of `groups[k] = …` or of a branch of
+  such a `?:`; elsewhere it is refused (`FLOWSCRIPT_V3_SPREAD`). A spread of a non-object adds no field;
+  `Object.assign(o, …)` changes `o` (`FLOWSCRIPT_V3_GLOBAL_CALL`).
 <!-- /fragment -->
 
 ## 10. Errors
