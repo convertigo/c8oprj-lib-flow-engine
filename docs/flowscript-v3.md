@@ -293,11 +293,16 @@ In an assignment, a `return`, at the head of a chain, as the list of a `for…of
 | `Object.keys(o)`, `Object.values(o)` | `object.keys({ source: o })`, `object.values({ source: o })` |
 | `JSON.parse(t)` | `json.parse({ text: t })` |
 | `JSON.stringify(v)`, `JSON.stringify(v, null, 2)` | `json.stringify({ value: v })`, with `pretty: true` |
+| `{ ...a, k: v, ...b }`, `Object.assign({}, a, { k: v })` | `object.merge({ target: a, source: { k: v } })`, one per part after the first, in hidden locals |
 
 - Elsewhere, and with other arguments (replacer, reviver, other indent), they are refused (`FLOWSCRIPT_V3_GLOBAL_CALL`).
 - `Object.entries` is refused: `for (const key of Object.keys(o)) { const value = o[key] … }`.
 - `Date.now()` and `new Date()` are refused: use `date.now`, `date.format`… (time zone and format).
 - `JSON.*` and `Object.*` remain refused inside other expressions, as in v2.
+- An object spread or `Object.assign({}, …)` is also the whole value of a `push` or of `groups[k] = …`, and a branch of
+  such a `?:`. Elsewhere (an argument, inside an expression) it is refused (`FLOWSCRIPT_V3_SPREAD`), with the statement to
+  write: `const merged = { ...a, k: v }`, then `merged`. A spread of a value that is not an object (`null`, a list, a
+  text) adds no field. `Object.assign(o, …)` changes `o` and is refused (`FLOWSCRIPT_V3_GLOBAL_CALL`).
 <!-- /fragment -->
 
 ## 10. Errors
@@ -368,6 +373,7 @@ function Notify({ input, config, result }) {
 | `async`, `await`, generators, classes, `this`, `new` | `FLOWSCRIPT_V3_UNSUPPORTED` | blocks |
 | `if` or `while` whose condition is an object literal | `FLOWSCRIPT_V3_OBJECT_CONDITION` | `flow.if({ … })` |
 | a regular expression literal in a lazy place (after `&&`, `\|\|`, `??`, in a list arrow, an argument, a `while` condition) or in another form | `FLOWSCRIPT_V3_PATTERN` | `const m = text.match({ text: String(s), pattern: "p" })` before the statement, then `m.matched` |
+| `{ ...a }` or `Object.assign({}, …)` in an argument or inside an expression | `FLOWSCRIPT_V3_SPREAD` | `const merged = { ...a, k: v }` in its own statement, then `merged` |
 | a field of a block call result read in a lazy place (after `&&`, `\|\|`, `??`, in an argument, a list arrow, a `while` condition, the list of a `for…of`) | `FLOWSCRIPT_V3_CALL_RESULT` | `const r = block({ … })` in its own statement, then `r.field` |
 
 ```flowscript refused=FLOWSCRIPT_V3_BREAK id=refused-break

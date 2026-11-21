@@ -459,6 +459,17 @@
       ]
     },
     {
+      "id": "object-merge",
+      "construct": "{ ...a, k: v, ...b } | Object.assign({}, a, { k: v })",
+      "block": "object.merge",
+      "lowering": "one object.merge({ target, source }) per part after the first into local.__chain<N> (a lone part merged with {}), then the statement reads the last one",
+      "where": "the whole value of a declaration, an assignment, a return, a push or a write under a key, or a branch of such a ?:; elsewhere FLOWSCRIPT_V3_SPREAD",
+      "examples": [
+        "const next = { ...input.options, search: null }\nconst copy = Object.assign({}, input.options, { limit: 10 })\nreturn { next, copy }",
+        "const rows = []\nfor (const row of input.rows) {\n  rows.push({ ...row, seen: true })\n}\nreturn { rows }"
+      ]
+    },
+    {
       "id": "pattern",
       "construct": "/p/f.test(s) | s.match(/p/f) | s.replace(/p/f, y) | s.replaceAll(/p/g, y) | s.split(/p/f)",
       "block": "text.match | text.replace | text.split",
@@ -667,14 +678,14 @@
     },
     {
       "code": "FLOWSCRIPT_V3_UNTYPED_LIST",
-      "construct": "const rows = [] then a push of no certain type, or of different types",
+      "construct": "const rows = [] then a push of no certain type, or of different types; a push into a list of no declared type",
       "rewrite": "json.array({ itemType }) with the type of the pushed values",
       "example": "const rows = []\nrows.push(1)\nrows.push(\"a\")"
     },
     {
       "code": "FLOWSCRIPT_V3_GLOBAL_CALL",
-      "construct": "Object.* or JSON.* elsewhere or with other arguments, Object.entries, Date.now, new Date",
-      "rewrite": "the block (object.*, json.*, date.*)",
+      "construct": "Object.* or JSON.* elsewhere or with other arguments, Object.assign(o, …) on another object than {}, Object.entries, Date.now, new Date",
+      "rewrite": "the block (object.*, json.*, date.*); { ...o, …} for a copy",
       "example": "const pairs = Object.entries(input.items)"
     },
     {
@@ -701,6 +712,12 @@
       "construct": "a regular expression literal in a lazy place (after && || ??, in a list arrow, an argument, a while condition) or in another form",
       "rewrite": "const m = text.match({ text: String(s), pattern: \"p\" }) before the statement, then m.matched",
       "example": "const ok = input.name != \"\" && /^[a-z]+$/.test(input.name)"
+    },
+    {
+      "code": "FLOWSCRIPT_V3_SPREAD",
+      "construct": "{ ...a } or Object.assign({}, …) in an argument or inside an expression",
+      "rewrite": "const merged = { ...a, k: v } in its own statement, then merged",
+      "example": "const t = text.trim({ text: \"a\", ...input.options })"
     },
     {
       "code": "FLOWSCRIPT_V3_CALL_RESULT",

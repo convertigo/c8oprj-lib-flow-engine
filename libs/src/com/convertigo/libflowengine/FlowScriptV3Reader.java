@@ -70,11 +70,14 @@ public final class FlowScriptV3Reader {
 		Map.entry("FLOWSCRIPT_V3_OBJECT_CONDITION", "An object literal is not a Flow if or while condition"),
 		Map.entry("FLOWSCRIPT_V3_PATTERN", "A regular expression literal is lowered to its text block only as a whole value or in an if condition"),
 		Map.entry("FLOWSCRIPT_V3_CALL_RESULT", "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it"),
-		Map.entry("FLOWSCRIPT_V3_COMPUTED_WRITE", "A value under a computed key is written only on a local object or map")
+		Map.entry("FLOWSCRIPT_V3_COMPUTED_WRITE", "A value under a computed key is written only on a local object or map"),
+		Map.entry("FLOWSCRIPT_V3_SPREAD", "An object spread or Object.assign({}, …) is lowered to object.merge only as the whole value of a declaration, an assignment, a return or a push")
 	);
 	private static final String COMPUTED_WRITE_HINT = "Write a computed key on a local object: const groups = {} (or json.map({ valueType })), then groups[key] = value, "
 		+ "groups[key] += n or groups[key]++, and assign the object where it goes (result.groups = groups). A list item is replaced by building a new list.";
 	private static final String COMPUTED_PUSH_HINT = "Replace the list under the key: groups[key] = groups[key].concat([value]), on a local object (const groups = {}).";
+	private static final String SPREAD_HINT = "Build the object in its own statement, const merged = { ...a, k: v } (or Object.assign({}, a, { k: v })), lowered to object.merge, then use merged.";
+	private static final String ASSIGN_HINT = "Object.assign changes its first argument: write const merged = { ...a, ...b } or Object.assign({}, a, b).";
 	private static final Set<String> LIST_STEPS = Set.of("filter", "map", "find", "some", "every", "toSorted", "sort");
 	private static final Set<String> FLOW_NAMESPACES = Set.of("list", "json", "object", "text");
 
@@ -217,6 +220,9 @@ public final class FlowScriptV3Reader {
 	}
 	private ObjectProperty property(AbstractObjectProperty node) {
 		if (node instanceof ObjectProperty field) return field;
+		// { ...a } outside the places where it is lowered (a pattern, the parameter of a helper, stays a destructuring)
+		if (node instanceof org.mozilla.javascript.ast.SpreadObjectProperty && !(node.getParent() != null && node.getParent().getParent() instanceof FunctionNode))
+			reject("FLOWSCRIPT_V3_SPREAD", node.getParent(), SPREAD_HINT);
 		reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Use one-level object fields.");
 		throw new AssertionError();
 	}
@@ -505,6 +511,9 @@ public final class FlowScriptV3Reader {
 			// a call of a local function is its expression, each parameter replaced by its argument
 			Binding called = part instanceof FunctionCall call && call.getClass() == FunctionCall.class && call.getTarget() instanceof Name callee ? lookup(callee.getIdentifier(), scope) : null;
 			if (called != null && called.function != null) { edits.add(new Edit(pos(part), end(part), inlined(called, (FunctionCall) part, scope))); return false; }
+			if (part instanceof ObjectLiteral object && spread(object)) reject("FLOWSCRIPT_V3_SPREAD", part, SPREAD_HINT);
+			if (part instanceof FunctionCall call && compact(raw(call.getTarget())).equals("Object.assign"))
+				reject(mergeable(call) ? "FLOWSCRIPT_V3_SPREAD" : "FLOWSCRIPT_V3_GLOBAL_CALL", part, mergeable(call) ? SPREAD_HINT : ASSIGN_HINT);
 			if (part instanceof FunctionCall call && compact(raw(call.getTarget())).matches("(?:Object|JSON|Date)\\.[A-Za-z_$][\\w$]*"))
 				reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
 			if (part != root && readCall(part, scope)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint((FunctionCall) part, false));
@@ -650,7 +659,7 @@ public final class FlowScriptV3Reader {
 		};
 	}
 	private Object propertyValue(String block, String key, AstNode expression, Scope scope) {
-		if (expression instanceof FunctionCall call && isBlockCall(call)) {
+		if (expression instanceof FunctionCall call && isBlockCall(call) && !merge(call)) {
 			String nested = resolve(compact(raw(call.getTarget())));
 			var properties = new LinkedHashMap<String, Object>();
 			for (var member : ((ObjectLiteral) call.getArguments().get(0)).getElements()) {
@@ -1104,7 +1113,68 @@ public final class FlowScriptV3Reader {
 		if (pretty) props.put("pretty", true);
 		return props;
 	}
+	// { ...a, k: v, ...b } and Object.assign({}, a, { k: v }): a shallow copy of each object in turn, as object.merge makes
+	// it, one object.merge per part after the first into a hidden local (a lone part is merged with {}, a copy), each
+	// part read in the order of the source. A spread of a value that is not an object (null, a list, a text) adds no field.
+	private static boolean spread(ObjectLiteral object) {
+		for (var member : object.getElements()) if (member instanceof org.mozilla.javascript.ast.SpreadObjectProperty) return true;
+		return false;
+	}
+	private boolean merge(AstNode node) {
+		AstNode bare = unparen(node);
+		return bare instanceof ObjectLiteral object && spread(object) || bare instanceof FunctionCall call && call.getClass() == FunctionCall.class && compact(raw(call.getTarget())).equals("Object.assign");
+	}
+	/** Object.assign({}, …): a new object; any other first argument would be changed in place. */
+	private static boolean mergeable(FunctionCall call) {
+		var args = call.getArguments();
+		if (args.isEmpty() || !(args.get(0) instanceof ObjectLiteral first) || !first.getElements().isEmpty()) return false;
+		for (AstNode argument : args) if (argument instanceof org.mozilla.javascript.ast.Spread) return false;
+		return true;
+	}
+	private Lowered mergeLowered(AstNode node, Scope scope) {
+		var before = new ArrayList<Map<String, Object>>();
+		var parts = new ArrayList<Object>();
+		if (node instanceof FunctionCall call) {
+			if (!mergeable(call)) reject("FLOWSCRIPT_V3_GLOBAL_CALL", call, ASSIGN_HINT);
+			var args = call.getArguments();
+			for (int i = 1; i < args.size(); i++) {
+				AstNode argument = args.get(i);
+				if (argument instanceof ObjectLiteral object && !spread(object)) parts.add(value(object, scope));
+				else {
+					var lowered = lower(argument, scope);
+					before.addAll(lowered.before);
+					parts.add(lowered.expression);
+				}
+			}
+		} else {
+			LinkedHashMap<String, Object> fields = null;
+			for (var member : ((ObjectLiteral) node).getElements()) {
+				if (member instanceof org.mozilla.javascript.ast.SpreadObjectProperty spread) {
+					if (fields != null) { parts.add(fields); fields = null; }
+					var lowered = lower(spread.getSpreadNode().getExpression(), scope);
+					before.addAll(lowered.before);
+					parts.add(lowered.expression);
+				} else {
+					var field = property(member);
+					if (fields == null) fields = new LinkedHashMap<>();
+					fields.put(key(field.getKey()), value(field.getValue(), scope));
+				}
+			}
+			if (fields != null) parts.add(fields);
+		}
+		if (parts.isEmpty()) parts.add(map());
+		if (parts.size() == 1) parts.add(map());
+		Object target = parts.get(0);
+		String path = "";
+		for (int i = 1; i < parts.size(); i++) {
+			path = "local.__chain" + (++chain);
+			before.add(capture("object.merge", map("target", target, "source", parts.get(i)), path, node));
+			target = path;
+		}
+		return new Lowered(before, path);
+	}
 	private Lowered lower(AstNode expression, Scope scope) {
+		if (merge(expression)) return mergeLowered(unparen(expression), scope);
 		if (expression instanceof PropertyGet property && property.getTarget() instanceof FunctionCall) {
 			var receiver = lower(property.getTarget(), scope);
 			return new Lowered(receiver.before, receiver.expression + "." + property.getProperty().getIdentifier());
@@ -1296,7 +1366,7 @@ public final class FlowScriptV3Reader {
 			output.add(capture(globalBlock(global), globalProps(global, scope), target, at));
 			return;
 		}
-		if (rhs instanceof FunctionCall call && isBlockCall(call)) { output.add(callNode(call, scope, target)); return; }
+		if (rhs instanceof FunctionCall call && isBlockCall(call) && !merge(call)) { output.add(callNode(call, scope, target)); return; }
 		var lowered = lower(rhs, scope);
 		if (!lowered.before.isEmpty()) {
 			output.addAll(lowered.before);
@@ -1309,7 +1379,7 @@ public final class FlowScriptV3Reader {
 		AstNode candidate = unparen(value);
 		if (slotted(value) || candidate instanceof ConditionalExpression conditional &&
 			(holdsBlockStep(conditional.getTrueExpression(), scope) || holdsBlockStep(conditional.getFalseExpression(), scope))) lower(value, scope);
-		if (value instanceof FunctionCall call && (!globalBlock(call).isEmpty() || isBlockCall(call))) {
+		if (value instanceof FunctionCall call && !merge(call) && (!globalBlock(call).isEmpty() || isBlockCall(call))) {
 			String path = "local.__chain" + (++chain);
 			assign(output, path, value, scope, at);
 			return path;
@@ -1361,6 +1431,7 @@ public final class FlowScriptV3Reader {
 		visit(value, part -> {
 			if (part instanceof FunctionCall call && (LIST_STEPS.contains(method(call)) ||
 				compact(raw(call.getTarget())).matches("(?:Object|JSON)\\..*") || patternStep(call) != null || readCall(call, scope))) found[0] = true;
+			if (part instanceof ObjectLiteral object && spread(object)) found[0] = true;
 			return !found[0];
 		});
 		return found[0];
@@ -1857,6 +1928,12 @@ public final class FlowScriptV3Reader {
 					String mapPath = elementMap(element, scope);
 					if (mapPath == null) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", left, COMPUTED_WRITE_HINT);
 					if (op.equals("=")) {
+						if (merge(right)) {
+							var merged = lower(right, scope);
+							output.addAll(merged.before);
+							output.add(node("json.put", map("path", mapPath, "key", value(element.getElement(), scope), "value", "${" + merged.expression + "}"), statement));
+							return;
+						}
 						output.add(node("json.put", map("path", mapPath, "key", value(element.getElement(), scope), "value", value(right, scope)), statement));
 						return;
 					}
@@ -1916,11 +1993,22 @@ public final class FlowScriptV3Reader {
 				if (call.getTarget() instanceof PropertyGet property && property.getProperty().getIdentifier().equals("push") && !name(property.getTarget()).equals("json")) {
 					if (property.getTarget() instanceof org.mozilla.javascript.ast.ElementGet) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", statement, COMPUTED_PUSH_HINT);
 					String path = property.getTarget() instanceof Name n ? (lookup(n.getIdentifier(), scope) == null ? "" : lookup(n.getIdentifier(), scope).mapped) : compact(raw(property.getTarget()));
-					if (!typedLists.contains(path)) reject("FLOWSCRIPT_V3_UNTYPED_LIST", statement, "Initialize the list with json.array({ itemType }).");
+					if (!typedLists.contains(path)) {
+						String list = spelled(property.getTarget());
+						reject("FLOWSCRIPT_V3_UNTYPED_LIST", statement, "Initialize " + list + " with the type of its items: " + list + " = json.array({ itemType: { type: \"CHOOSE_TYPE\" } }), " +
+							"or declare const " + list.substring(list.lastIndexOf('.') + 1) + " = [] when every value pushed into it has a certain type.");
+					}
 					if (call.getArguments().size() != 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", statement, "Push one value per statement.");
+					if (merge(call.getArguments().get(0))) {
+						var merged = lower(call.getArguments().get(0), scope);
+						output.addAll(merged.before);
+						output.add(node("json.push", map("path", path, "value", "${" + merged.expression + "}"), statement));
+						return;
+					}
 					output.add(node("json.push", map("path", path, "value", value(call.getArguments().get(0), scope)), statement));
 					return;
 				}
+				if (compact(raw(call.getTarget())).equals("Object.assign")) reject("FLOWSCRIPT_V3_GLOBAL_CALL", statement, ASSIGN_HINT);
 				if (call.getTarget() instanceof Name callee && lookup(callee.getIdentifier(), scope) != null && lookup(callee.getIdentifier(), scope).function != null)
 					reject("FLOWSCRIPT_V3_FUNCTION", statement, "A local function gives a value and does nothing else: read it in an expression (const ok = " + callee.getIdentifier() + "(…)), " +
 						"or write the statements in a top-level helper after the Flow function.");
@@ -1932,7 +2020,7 @@ public final class FlowScriptV3Reader {
 		if (statement instanceof org.mozilla.javascript.ast.ReturnStatement returned) {
 			if (loopDepth > 0) reject("FLOWSCRIPT_V3_RETURN_IN_LOOP", statement, "Use continue or return after the loop.");
 			AstNode value = returned.getReturnValue();
-			if (value instanceof ObjectLiteral object) {
+			if (value instanceof ObjectLiteral object && !spread(object)) {
 				if (resultStyle.equals("resultField")) reject("FLOWSCRIPT_V3_RESULT_MIXED", statement, "Use one result style.");
 				resultStyle = "returnObject";
 				for (var member : object.getElements()) {
@@ -1942,7 +2030,7 @@ public final class FlowScriptV3Reader {
 				}
 				output.add(node("return", map(), statement));
 			} else if (value == null) output.add(node("return", map(), statement));
-			else if (slotted(value) || value instanceof FunctionCall call && call.getClass() == FunctionCall.class && globalBlock(call).isEmpty() && isBlockCall(call)) {
+			else if (slotted(value) || value instanceof FunctionCall call && call.getClass() == FunctionCall.class && globalBlock(call).isEmpty() && isBlockCall(call) && !merge(call)) {
 				// return flow.try({ … }), a call with a slot or a block call (return entity.read({ … })): its output goes to a
 				// hidden local, returned, as const row = entity.read({ … }); return row
 				String hidden = "local.__chain" + (++chain);

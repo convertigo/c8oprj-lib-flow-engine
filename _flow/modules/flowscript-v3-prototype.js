@@ -85,7 +85,8 @@
 				FLOWSCRIPT_V3_OBJECT_CONDITION: "An object literal is not a Flow if or while condition",
 				FLOWSCRIPT_V3_PATTERN: "A regular expression literal is lowered to its text block only as a whole value or in an if condition",
 				FLOWSCRIPT_V3_CALL_RESULT: "A field of a block call result is read before the statement only as a whole value or where a value or an if condition always evaluates it",
-				FLOWSCRIPT_V3_COMPUTED_WRITE: "A value under a computed key is written only on a local object or map"
+				FLOWSCRIPT_V3_COMPUTED_WRITE: "A value under a computed key is written only on a local object or map",
+				FLOWSCRIPT_V3_SPREAD: "An object spread or Object.assign({}, …) is lowered to object.merge only as the whole value of a declaration, an assignment, a return or a push"
 			};
 			var message = (rules[code] || "This FlowScript v3 construct cannot be lowered faithfully") + " (" + code + " at line " + line(at) + ").";
 			if (code === "FLOWSCRIPT_V3_LIST_METHOD" && kind(node) === "FunctionCall" && method(node) === "sort" && !/^\s*\[/.test(raw(node.getTarget()).replace(/\.sort$/, ""))) {
@@ -255,6 +256,9 @@
 				// a call of a local function is its expression, each parameter replaced by its argument (inlined of the Java reader)
 				var called = k === "FunctionCall" && kind(part.getTarget()) === "Name" ? lookup(String(part.getTarget().getIdentifier()), current) : null;
 				if (called && called.fn) { edits.push({ at: pos(part), to: end(part), value: inlined(called, part, current) }); return false; }
+				if (k === "ObjectLiteral" && spread(part)) reject("FLOWSCRIPT_V3_SPREAD", part, SPREAD_HINT);
+				if (k === "FunctionCall" && raw(part.getTarget()).replace(/\s/g, "") === "Object.assign")
+					reject(mergeable(part) ? "FLOWSCRIPT_V3_SPREAD" : "FLOWSCRIPT_V3_GLOBAL_CALL", part, mergeable(part) ? SPREAD_HINT : ASSIGN_HINT);
 				if (k === "FunctionCall" && /^(?:Object|JSON|Date)\.[A-Za-z_$][\w$]*$/.test(raw(part.getTarget()).replace(/\s/g, ""))) reject("FLOWSCRIPT_V3_GLOBAL_CALL", part, "Move the global call into its own assignment or return.");
 				if (part !== node && readCall(part, current)) reject("FLOWSCRIPT_V3_CALL_RESULT", part, callResultHint(part, false));
 				if (k === "FunctionCall" && part !== node && ["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0) reject("FLOWSCRIPT_V3_CHAIN", part, "Split the chain into two const declarations.");
@@ -291,6 +295,54 @@
 		}
 		var COMPUTED_WRITE_HINT = "Write a computed key on a local object: const groups = {} (or json.map({ valueType })), then groups[key] = value, " +
 			"groups[key] += n or groups[key]++, and assign the object where it goes (result.groups = groups). A list item is replaced by building a new list.";
+		var SPREAD_HINT = "Build the object in its own statement, const merged = { ...a, k: v } (or Object.assign({}, a, { k: v })), lowered to object.merge, then use merged.";
+		var ASSIGN_HINT = "Object.assign changes its first argument: write const merged = { ...a, ...b } or Object.assign({}, a, b).";
+		// { ...a, k: v, ...b } and Object.assign({}, a, { k: v }) (mergeLowered of the Java reader): one object.merge per part
+		// after the first into a hidden local, a lone part merged with {} (a copy), each part read in the order of the source.
+		function spread(node) { return kind(node) === "ObjectLiteral" && array(node.getElements()).some(function (member) { return kind(member) === "SpreadObjectProperty"; }); }
+		function merge(node) {
+			node = unparen(node);
+			return spread(node) || kind(node) === "FunctionCall" && raw(node.getTarget()).replace(/\s/g, "") === "Object.assign";
+		}
+		function mergeable(call) {
+			var args = argument(call);
+			return args.length > 0 && kind(args[0]) === "ObjectLiteral" && !array(args[0].getElements()).length && !args.some(function (arg) { return kind(arg) === "Spread"; });
+		}
+		function mergeValue(node, current) {
+			var before = [], parts = [];
+			if (kind(node) === "FunctionCall") {
+				if (!mergeable(node)) reject("FLOWSCRIPT_V3_GLOBAL_CALL", node, ASSIGN_HINT);
+				argument(node).slice(1).forEach(function (arg) {
+					if (kind(arg) === "ObjectLiteral" && !spread(arg)) { parts.push(rewritten(arg, current)); return; }
+					var lowered = value(arg, current);
+					before = before.concat(lowered.before); parts.push(lowered.expression);
+				});
+			} else {
+				var fields = null;
+				array(node.getElements()).forEach(function (member) {
+					if (kind(member) === "SpreadObjectProperty") {
+						if (fields) { parts.push("{ " + fields.join(", ") + " }"); fields = null; }
+						var lowered = value(member.getSpreadNode().getExpression(), current);
+						before = before.concat(lowered.before); parts.push(lowered.expression);
+						return;
+					}
+					if (kind(member) !== "ObjectProperty") reject("FLOWSCRIPT_V3_DESTRUCTURING", member, "Use one-level object fields.");
+					// a shorthand field ({ total }) is its name and its value, written once
+				var shorthand = kind(member.getKey()) === "Name" && raw(member).trim() === String(member.getKey().getIdentifier());
+				(fields = fields || []).push(shorthand ? rewritten(member.getValue(), current) : rewritten(member, current));
+				});
+				if (fields) parts.push("{ " + fields.join(", ") + " }");
+			}
+			if (!parts.length) parts.push("{}");
+			if (parts.length === 1) parts.push("{}");
+			var target = parts[0], path = "";
+			for (var i = 1; i < parts.length; i++) {
+				path = "local.__chain" + (++chain);
+				before.push(path + " = object.merge({ target: " + target + ", source: " + parts[i] + " })");
+				target = path;
+			}
+			return { before: before, expression: path };
+		}
 		var COMPUTED_PUSH_HINT = "Replace the list under the key: groups[key] = groups[key].concat([value]), on a local object (const groups = {}).";
 		// The local object or map written by target[key]: a name declared with {} or json.map, or a local.* path made by json.map
 		function elementMap(element, current) {
@@ -570,6 +622,7 @@
 			return schemaOf(type);
 		}
 		function value(node, current) {
+			if (merge(node)) return mergeValue(unparen(node), current);
 			if (kind(node) === "PropertyGet" && kind(node.getTarget()) === "FunctionCall") {
 				var receiverValue = value(node.getTarget(), current);
 				return { before: receiverValue.before, expression: receiverValue.expression + "." + String(node.getProperty().getIdentifier()) };
@@ -789,6 +842,7 @@
 			visit(node, function (part) {
 				if (kind(part) === "FunctionCall" && (["filter", "map", "find", "some", "every", "toSorted", "sort"].indexOf(method(part)) >= 0 ||
 					/^(?:Object|JSON)\./.test(raw(part.getTarget()).replace(/\s/g, "")) || patternStep(part) || readCall(part, current))) found = true;
+				if (spread(part)) found = true;
 				return !found;
 			});
 			return found;
@@ -911,6 +965,11 @@
 						var map = elementMap(left, current);
 						if (!map) reject("FLOWSCRIPT_V3_COMPUTED_WRITE", left, COMPUTED_WRITE_HINT);
 						if (op === "=") {
+							if (merge(right)) {
+								var putMerge = value(right, current);
+								putMerge.before.forEach(function (item) { emit(item, origin); });
+								emit("json.put({ path: " + JSON.stringify(map.mapped) + ", key: " + rewritten(left.getElement(), current) + ", value: " + putMerge.expression + " })", origin); return;
+							}
 							emit("json.put({ path: " + JSON.stringify(map.mapped) + ", key: " + rewritten(left.getElement(), current) + ", value: " + rewritten(right, current) + " })", origin); return;
 						}
 						if (!["+=", "-=", "*=", "/="].includes(op)) reject("FLOWSCRIPT_V3_COMPOUND_CONTEXT", node, "Use a simple assignment.");
@@ -958,10 +1017,20 @@
 						if (kind(pushReceiver) === "ElementGet") reject("FLOWSCRIPT_V3_COMPUTED_WRITE", node, COMPUTED_PUSH_HINT);
 						var rec = pushReceiver, recName = kind(rec) === "Name" ? String(rec.getIdentifier()) : "", list = recName ? lookup(recName, current)
 							: typedLocals.list[localName(rec)] ? { mapped: "local." + localName(rec), typedList: true } : null;
-						if (!list || !list.typedList) reject("FLOWSCRIPT_V3_UNTYPED_LIST", node, "Initialize the list with json.array({ itemType }).");
+						if (!list || !list.typedList) {
+							var spelledList = spelled(rec);
+							reject("FLOWSCRIPT_V3_UNTYPED_LIST", node, "Initialize " + spelledList + " with the type of its items: " + spelledList + " = json.array({ itemType: { type: \"CHOOSE_TYPE\" } }), " +
+								"or declare const " + spelledList.substring(spelledList.lastIndexOf(".") + 1) + " = [] when every value pushed into it has a certain type.");
+						}
 						var pushed = argument(expression); if (pushed.length !== 1) reject("FLOWSCRIPT_V3_UNSUPPORTED", node, "Push one value per statement.");
+						if (merge(pushed[0])) {
+							var pushedMerge = value(pushed[0], current);
+							pushedMerge.before.forEach(function (item) { emit(item, origin); });
+							emit("json.push({ path: " + JSON.stringify(list.mapped) + ", value: " + pushedMerge.expression + " })", origin); return;
+						}
 						emit("json.push({ path: " + JSON.stringify(list.mapped) + ", value: " + rewritten(pushed[0], current) + " })", origin); return;
 					}
+					if (raw(expression.getTarget()).replace(/\s/g, "") === "Object.assign") reject("FLOWSCRIPT_V3_GLOBAL_CALL", node, ASSIGN_HINT);
 					var callee = kind(expression.getTarget()) === "Name" ? lookup(String(expression.getTarget().getIdentifier()), current) : null;
 					if (callee && callee.fn) reject("FLOWSCRIPT_V3_FUNCTION", node, "A local function gives a value and does nothing else: read it in an expression (const ok = " + callee.name + "(…)), " +
 						"or write the statements in a top-level helper after the Flow function.");
@@ -972,7 +1041,7 @@
 			if (k === "ReturnStatement") {
 				if (loopDepth) reject("FLOWSCRIPT_V3_RETURN_IN_LOOP", node, "Use continue or return after the loop.");
 				var returned = node.getReturnValue();
-				if (kind(returned) === "ObjectLiteral") {
+				if (kind(returned) === "ObjectLiteral" && !spread(returned)) {
 					if (resultStyle === "resultField") reject("FLOWSCRIPT_V3_RESULT_MIXED", node, "Use one result style."); resultStyle = "returnObject";
 					array(returned.getElements()).forEach(function (field) {
 						if (kind(field) !== "ObjectProperty" || kind(field.getKey()) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Write explicit result fields.");
