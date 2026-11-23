@@ -10994,6 +10994,22 @@
 				durationMs: frontendDurationMs(actionStartedAt)
 			}
 		};
+		// The warnings that a generation says without failing (a link to a Page not written yet, FLOW_PAGE_LINK_UNKNOWN):
+		// the output of a step that succeeded is not kept, so its "Warning: CODE: message" lines are the warnings of the result.
+		var generationWarnings = [];
+		steps.forEach(function (step) {
+			if (step && step.ok !== false && String(step.action || "") === "generate") {
+				String(step.stdout || "").split("\n").forEach(function (line) {
+					var found = /^Warning: ([A-Z][A-Z0-9_]{2,}): (.+)$/.exec(String(line).trim());
+					if (found) {
+						generationWarnings.push({ code: found[1], severity: "warning", message: found[2] });
+					}
+				});
+			}
+		});
+		if (generationWarnings.length) {
+			response.warnings = generationWarnings;
+		}
 		if (ok && action === "build") {
 			var productionInfo = frontbuilderSettingsForRequest(request);
 			var currentProductionFingerprint = frontendProductionFingerprint(request, productionInfo);
