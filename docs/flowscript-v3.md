@@ -107,7 +107,9 @@ function Totals({ input, config, result }) {
   `local.x = Number(local.x) + 1`, since JavaScript converts `x` to a number first (`"1"` gives `2`, not `"11"`).
   The same applies to a field of a local object or of `result`: `o.count++` is `local.o.count = Number(local.o.count) + 1`.
   They are refused inside an expression (`FLOWSCRIPT_V3_COMPOUND_CONTEXT`).
-- `result.x = …` writes one output field. `return { … }` writes the output fields and leaves the Flow.
+- `result.x = …` writes one output field. `return { … }` writes the output fields and leaves the Flow; a quoted key
+  (`return { "ok": true }`) is the field of that name, and an object with a key that is not a name
+  (`{ "amount-eur": 1 }`) is returned whole.
   A Flow uses one style or the other (`FLOWSCRIPT_V3_RESULT_MIXED`), because JavaScript returns the object
   alone while `result.x` accumulates.
 

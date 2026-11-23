@@ -446,6 +446,11 @@ public final class FlowScriptV3Reader {
 		return value;
 	}
 	private String key(AstNode node) { return node instanceof Name n ? n.getIdentifier() : node instanceof StringLiteral s ? s.getValue() : raw(node); }
+	/** The result field of a key of a returned object: a name, or a quoted name ("ok"); null for any other key. */
+	private static String resultKey(AstNode node) {
+		if (node instanceof Name n) return n.getIdentifier();
+		return node instanceof StringLiteral s && s.getValue().matches("[A-Za-z_$][\\w$]*") ? s.getValue() : null;
+	}
 
 	private static final class Binding {
 		final String type;
@@ -2079,13 +2084,17 @@ public final class FlowScriptV3Reader {
 		if (statement instanceof org.mozilla.javascript.ast.ReturnStatement returned) {
 			if (loopDepth > 0) reject("FLOWSCRIPT_V3_RETURN_IN_LOOP", statement, "Use continue or return after the loop.");
 			AstNode value = returned.getReturnValue();
-			if (value instanceof ObjectLiteral object && !spread(object)) {
+			// return { a: …, "b": … }: one result field per key, a quoted key as its bare name (FlowScript is a subset of
+			// JavaScript, 23/11). A key that is not a name ("amount-eur", 1) makes the object a value returned whole.
+			if (value instanceof ObjectLiteral literal && !spread(literal))
+				for (var member : literal.getElements())
+					if (!(member instanceof ObjectProperty)) reject("FLOWSCRIPT_V3_DESTRUCTURING", statement, "Write explicit result fields.");
+			if (value instanceof ObjectLiteral object && !spread(object) && object.getElements().stream().allMatch(member -> resultKey(((ObjectProperty) member).getKey()) != null)) {
 				if (resultStyle.equals("resultField")) reject("FLOWSCRIPT_V3_RESULT_MIXED", statement, "Use one result style.");
 				resultStyle = "returnObject";
 				for (var member : object.getElements()) {
-					if (!(member instanceof ObjectProperty field) || !(field.getKey() instanceof Name)) reject("FLOWSCRIPT_V3_DESTRUCTURING", statement, "Write explicit result fields.");
 					var field = (ObjectProperty) member;
-					assign(output, "result." + ((Name) field.getKey()).getIdentifier(), field.getValue(), scope, statement);
+					assign(output, "result." + resultKey(field.getKey()), field.getValue(), scope, statement);
 				}
 				output.add(node("return", map(), statement));
 			} else if (value == null) output.add(node("return", map(), statement));

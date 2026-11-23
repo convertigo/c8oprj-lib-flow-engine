@@ -9,6 +9,11 @@
 	function translate(input) {
 		var source = String(input || ""), prepared = source, lines = [], lineMap = [], diagnostics = [];
 		function kind(node) { return node ? String(node.getClass().getSimpleName()) : ""; }
+		// The result field of a key of a returned object: a name, or a quoted name ("ok"); null for any other key.
+		function resultKey(key) {
+			if (kind(key) === "Name") return String(key.getIdentifier());
+			return kind(key) === "StringLiteral" && /^[A-Za-z_$][\w$]*$/.test(String(key.getValue())) ? String(key.getValue()) : null;
+		}
 		function pos(node) {
 			var at = Number(node.getAbsolutePosition());
 			if (kind(node) === "UnaryExpression") {
@@ -1085,11 +1090,15 @@
 			if (k === "ReturnStatement") {
 				if (loopDepth) reject("FLOWSCRIPT_V3_RETURN_IN_LOOP", node, "Use continue or return after the loop.");
 				var returned = node.getReturnValue();
-				if (kind(returned) === "ObjectLiteral" && !spread(returned)) {
+				// return { a: …, "b": … }: one result field per key, a quoted key as its bare name, as the Java reader does; a key
+				// that is not a name makes the object a value returned whole
+				if (kind(returned) === "ObjectLiteral" && !spread(returned)) array(returned.getElements()).forEach(function (field) {
+					if (kind(field) !== "ObjectProperty") reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Write explicit result fields.");
+				});
+				if (kind(returned) === "ObjectLiteral" && !spread(returned) && array(returned.getElements()).every(function (field) { return resultKey(field.getKey()) !== null; })) {
 					if (resultStyle === "resultField") reject("FLOWSCRIPT_V3_RESULT_MIXED", node, "Use one result style."); resultStyle = "returnObject";
 					array(returned.getElements()).forEach(function (field) {
-						if (kind(field) !== "ObjectProperty" || kind(field.getKey()) !== "Name") reject("FLOWSCRIPT_V3_DESTRUCTURING", node, "Write explicit result fields.");
-						var key = String(field.getKey().getIdentifier()), val = field.getValue();
+						var key = resultKey(field.getKey()), val = field.getValue();
 						if (raw(field).trim() === key) {
 							if (!lookup(key, current) && allNames[key] && !imports[key]) reject("FLOWSCRIPT_V3_OUT_OF_SCOPE", field, "Declare the name in the enclosing block.");
 							emit("result." + key + " = " + (lookup(key, current) ? lookup(key, current).mapped : key), origin);
