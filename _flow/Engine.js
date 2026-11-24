@@ -5884,6 +5884,14 @@
 		return requestableService().inputContract(request, target, requestableServiceEnv());
 	}
 
+	function requestableTargetUnknown(target, request) {
+		request = Object.assign({}, request || currentActiveRequest() || {});
+		if (!currentProjectName(request)) {
+			request.project = projectNameForRoot(projectDir());
+		}
+		return requestableService().targetUnknown(request, target, requestableServiceEnv()) === true;
+	}
+
 	function requestableTargetQName(target) {
 		return requestableService().targetQName(target);
 	}
@@ -6768,6 +6776,7 @@
 			schemaSummary: schemaSummary,
 				objectSchema: objectSchema,
 				requestableInputContract: requestableInputContract,
+				requestableTargetUnknown: requestableTargetUnknown,
 				frontendBlocksForSettings: frontendBlocksForSettings,
 				frontendCreateDescriptorsForSettings: frontendCreateDescriptorsForSettings,
 				frontendCreateDescriptorsForConfig: frontendCreateDescriptorsForConfig,

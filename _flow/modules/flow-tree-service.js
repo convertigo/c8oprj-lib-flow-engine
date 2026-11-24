@@ -118,6 +118,7 @@
 		var schemaSummary = env.schemaSummary;
 		var objectSchema = env.objectSchema;
 		var requestableInputContract = env.requestableInputContract || function () { return null; };
+		var requestableTargetUnknown = env.requestableTargetUnknown || function () { return false; };
 		var frontendBlocksForSettings = env.frontendBlocksForSettings || function () { return []; };
 		var frontendCreateDescriptorsForSettings = env.frontendCreateDescriptorsForSettings || function () { return []; };
 		var frontendCreateDescriptorsForConfig = env.frontendCreateDescriptorsForConfig || function () { return []; };
@@ -2040,6 +2041,34 @@
 	}
 
 	// Browser calls use HTTP: Private requestables are internal implementation details.
+	function flowSvelteCallTargetUnknown(requestable, request) {
+		try {
+			return requestableTargetUnknown(requestable, request || {}) === true;
+		} catch (_cannotTell) {
+			return false;
+		}
+	}
+
+	// A CallSequence to a Flow that does not exist: accepted, as a link to a Page not written yet (the Flow may come
+	// after its Page, flow://guide/plan), but said; the call answered an error and the page showed nothing, silently
+	// (scripted scenario of the plan, 24/11).
+	function flowSvelteCallUnknownDiagnostic(node, requestable) {
+		return {
+			level: "warning",
+			severity: "warning",
+			code: "FRONTEND_CALLS_UNKNOWN_FLOW",
+			message: "CallSequence calls " + requestable + ", which does not exist: until a Flow of that name is written, the call answers " +
+				"an error and the page shows nothing from it.",
+			path: String(node && node.sourceMutationPath || "") + ".props.requestable",
+			property: "requestable",
+			sourcePath: node.sourcePath,
+			line: node.sourceLine,
+			column: node.sourceColumn,
+			requestable: requestable,
+			hint: "Write the Flow with this name (\".name\" calls a Flow of this project), or correct the name: flow-list lists the Flows."
+		};
+	}
+
 	function flowSvelteCallPrivateDiagnostic(node, requestable, contract) {
 		var path = String(node && node.sourceMutationPath || "") + ".props.requestable";
 		var target = contract.target && contract.target.qname ? contract.target.qname : requestable;
@@ -2081,6 +2110,9 @@
 				}
 				if (contract && String(contract.accessibility || "").toLowerCase() === "private") {
 					diagnostics.push(flowSvelteCallPrivateDiagnostic(node, requestable, contract));
+				}
+				if (!contract && flowSvelteCallTargetUnknown(requestable, request)) {
+					diagnostics.push(flowSvelteCallUnknownDiagnostic(node, requestable));
 				}
 				var schema = contract && contract.schema ? contract.schema : contract;
 				if (schema && schema.properties && typeof schema.properties === "object" &&
@@ -8544,6 +8576,7 @@
 			authoringMoveFromTreeRequest: authoringMoveFromTreeRequest,
 			authoringInsertTargetFromTreeRequest: authoringInsertTargetFromTreeRequest,
 			frontendPrivateCallDiagnostics: frontendPrivateCallDiagnostics,
+			flowSvelteCallContractDiagnostics: flowSvelteCallContractDiagnostics,
 			authoringReplaceSelectionTargetFromTreeRequest: authoringReplaceSelectionTargetFromTreeRequest,
 			authoringProposedSubtreeFromTreeRequest: authoringProposedSubtreeFromTreeRequest,
 			authoringMutateRequest: authoringMutateRequest,
@@ -8651,6 +8684,9 @@
 		},
 		frontendPrivateCallDiagnostics: function (calls, request, sourcePath, env) {
 			return create(env).frontendPrivateCallDiagnostics(calls, request, sourcePath, {});
+		},
+		frontendCallContractDiagnostics: function (root, request, env) {
+			return create(env).flowSvelteCallContractDiagnostics(root, request);
 		},
 		childSlotNamesForMutation: function (blocks, node, env) {
 			return childSlotNames(blocks, node, env.blockName, env.blockCatalog);

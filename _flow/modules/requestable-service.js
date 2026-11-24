@@ -387,6 +387,36 @@
 		}
 	}
 
+	// A frontend target that names no requestable: each project it may name is loaded and has none of that name (true).
+	// false when it resolves, and when it cannot be told here: no Convertigo objects, a project that is not loaded, a
+	// FullSync or URL Mapper target. The page warns, the call does not fail its write: the Flow may be written after it.
+	function targetUnknown(request, targetText, env) {
+		request = request || {};
+		var text = String(targetText || "").trim();
+		if (!text || text.indexOf("fs://") === 0 || text.charAt(0) === "/") {
+			return false;
+		}
+		try {
+			if (resolveTarget(request, text, env)) {
+				return false;
+			}
+			var candidates = targetCandidates(request, text, env);
+			return candidates.length > 0 && candidates.every(function (candidate) {
+				return projectLoaded(candidate.project, env);
+			});
+		} catch (_cannotTell) {
+			return false;
+		}
+	}
+
+	function projectLoaded(name, env) {
+		if (env && typeof env.projectLoaded === "function") {
+			return env.projectLoaded(String(name)) === true;
+		}
+		var dbom = Packages.com.twinsoft.convertigo.engine.Engine.theApp.databaseObjectsManager;
+		return !!dbom && dbom.getOriginalProjectByName(String(name), false) != null;
+	}
+
 	function targetQName(target) {
 		target = target || {};
 		return target.project + "." + (target.connector ? target.connector + "." : "") + target.requestable;
@@ -763,6 +793,7 @@
 	return {
 		outputSchema: outputSchema,
 		inputContract: inputContract,
+		targetUnknown: targetUnknown,
 		inputSchemaForVariables: inputSchemaForVariables,
 		targetQName: targetQName,
 		targetPublic: targetPublic,
