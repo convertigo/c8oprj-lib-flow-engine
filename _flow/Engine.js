@@ -9808,6 +9808,47 @@
 		}
 	}
 
+	// What the packages of an application depend on beyond its exact key: base, the toolchain and settings two
+	// installations must share to start one from the other, and its declared dependencies. @return null when unknown
+	function frontendSharedAppModulesProfile(root, npm) {
+		try {
+			var manifest = JSON.parse(String(FileUtils.readFileToString(new File(root, "package.json"), "UTF-8")));
+			var npmFile = new File(String(npm || ""));
+			var npmIdentity = frontendToolIdentity(npmFile, false);
+			var nodeIdentity = frontendToolIdentity(new File(npmFile.getParentFile(), "node"), true);
+			if (!npmIdentity || !nodeIdentity) {
+				return null;
+			}
+			var npmrc = new File(root, ".npmrc");
+			var entries = [
+				"version\n1",
+				"platform\n" + JavaSystem.getProperty("os.name") + "\n" + JavaSystem.getProperty("os.arch"),
+				"npm\n" + npmIdentity,
+				"node\n" + nodeIdentity,
+				".npmrc\n" + (npmrc.isFile() ? sha256FileHex(npmrc) : ""),
+				"overrides\n" + JSON.stringify(manifest.overrides || {})
+			];
+			var dependencies = {};
+			["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].forEach(function (section) {
+				var declared = manifest[section] || {};
+				Object.keys(declared).sort().forEach(function (name) {
+					var spec = String(declared[name]);
+					dependencies[section + "/" + name] = spec;
+					if (spec.indexOf("file:") === 0) {
+						// a local tarball rewritten under the same name: npm may keep the copied package, so its
+						// content belongs to base, and an entry installed from another content is never a start
+						var path = spec.substring(5);
+						var tarball = (new File(path).isAbsolute() ? new File(path) : new File(root, path)).toPath().normalize().toFile();
+						entries.push("file\n" + name + "\n" + (tarball.isFile() ? sha256FileHex(tarball) : ""));
+					}
+				});
+			});
+			return { base: sha256Hex(entries.join("\n")), dependencies: dependencies };
+		} catch (e) {
+			return null;
+		}
+	}
+
 	// @return whether a folder, or else its nearest existing parent, is on local storage
 	function frontendLocalStorage(file) {
 		try {
@@ -9822,7 +9863,7 @@
 		}
 	}
 
-	// @return {store, key} for an application without node_modules whose packages are shared, else null
+	// @return {store, key, profile} for an application without node_modules whose packages are shared, else null
 	function frontendSharedAppModules(resourceRoot, generatedRoot, npm) {
 		if (!generatedRoot || java.nio.file.Files.exists(new File(generatedRoot, "node_modules").toPath(),
 				java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
@@ -9833,7 +9874,7 @@
 			return null;
 		}
 		var key = frontendSharedAppModulesKey(generatedRoot, npm);
-		return key ? { store: store, key: key } : null;
+		return key ? { store: store, key: key, profile: frontendSharedAppModulesProfile(generatedRoot, npm) } : null;
 	}
 
 	var frontendCloneFileHandle = null;
@@ -9932,8 +9973,46 @@
 		}
 	}
 
-	// Keeps the packages npm has just installed in root, which had none, as the entry key, unless the store has it
-	function frontendKeepSharedAppModules(root, store, key) {
+	// Starts root, an application without node_modules nor lockfile, from the entry of the store whose dependencies are
+	// nearest to its own, with the same toolchain and settings (profile.base): npm then installs only the difference.
+	// Entries kept without a profile are left out. @return the key of that entry, or ""
+	function frontendSeedSharedAppModules(root, store, profile) {
+		if (!profile || !store || new File(root, "package-lock.json").exists() || new File(root, "npm-shrinkwrap.json").exists()) {
+			return "";
+		}
+		var wanted = profile.dependencies || {};
+		var names = Object.keys(wanted);
+		var best = null;
+		(store.listFiles() || []).forEach(function (folder) {
+			var name = String(folder.getName());
+			var description = new File(folder, "entry.json");
+			if (name.charAt(0) === "." || !description.isFile() || !new File(folder, "node_modules").isDirectory()) {
+				return;
+			}
+			var entry = null;
+			try {
+				entry = JSON.parse(String(FileUtils.readFileToString(description, "UTF-8")));
+			} catch (e) {
+				return;
+			}
+			if (!entry || entry.base !== profile.base || !entry.dependencies || typeof entry.dependencies !== "object") {
+				return;
+			}
+			var shared = names.filter(function (dependency) {
+				return entry.dependencies[dependency] === wanted[dependency];
+			}).length;
+			var differences = names.length + Object.keys(entry.dependencies).length - 2 * shared;
+			var used = description.lastModified();
+			if (shared > 0 && (!best || differences < best.differences || (differences === best.differences && used > best.used))) {
+				best = { key: name, differences: differences, used: used };
+			}
+		});
+		return best && frontendRestoreSharedAppModules(root, store, best.key) ? best.key : "";
+	}
+
+	// Keeps the packages npm has just installed in root, which had none, as the entry key, unless the store has it;
+	// with the profile of the application, a next one with close dependencies can start from them
+	function frontendKeepSharedAppModules(root, store, key, profile) {
 		var Files = java.nio.file.Files;
 		var entry = new File(store, key);
 		if (new File(entry, "entry.json").isFile()) {
@@ -9958,11 +10037,16 @@
 			if (lock.isFile()) {
 				FileUtils.copyFile(lock, new File(temporary, "package-lock.json"));
 			}
-			FileUtils.writeStringToFile(new File(temporary, "entry.json"), JSON.stringify({
+			var description = {
 				version: 1,
 				key: key,
 				createdAt: new Date().toISOString()
-			}), "UTF-8");
+			};
+			if (profile && profile.base && profile.dependencies) {
+				description.base = profile.base;
+				description.dependencies = profile.dependencies;
+			}
+			FileUtils.writeStringToFile(new File(temporary, "entry.json"), JSON.stringify(description), "UTF-8");
 			// fails when another build kept it first: an entry is never replaced
 			Files.move(temporary.toPath(), entry.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE);
 			frontendStudioLog("[Svelte frontbuilder] App dependencies kept for the next applications with the same dependencies.");
@@ -10459,6 +10543,9 @@
 				durationMs: frontendDurationMs(startedAt)
 			};
 		}
+		if (appModules && frontendSeedSharedAppModules(generatedRoot, appModules.store, appModules.profile)) {
+			frontendStudioLog("[Svelte frontbuilder] App dependencies started from an application with close dependencies; npm installs the difference.");
+		}
 		if (stepAction === "generate") {
 			var companionStep = frontendCompanionGenerateStep(npm, resourceRoot, projectRoot, projectName,
 				modelPath, generationMode, envValues, startedAt);
@@ -10501,7 +10588,7 @@
 				runtimeState.frontendDependencyFingerprints = {};
 			}
 			if (appModules) {
-				frontendKeepSharedAppModules(generatedRoot, appModules.store, appModules.key);
+				frontendKeepSharedAppModules(generatedRoot, appModules.store, appModules.key, appModules.profile);
 			}
 		}
 		return {
@@ -12833,6 +12920,8 @@
 			restored = !!appModules && frontendRestoreSharedAppModules(generatedRoot, appModules.store, appModules.key);
 			if (restored) {
 				writeFrontendDependencyInstallStamp(generatedRoot, frontendDependencyFingerprint(generatedRoot, npm), "app");
+			} else if (appModules && frontendSeedSharedAppModules(generatedRoot, appModules.store, appModules.profile)) {
+				frontendStudioLog("[Svelte dev] App dependencies started from an application with close dependencies; npm installs the difference.");
 			}
 		} finally {
 			projectLock.unlock();
@@ -12978,7 +13067,7 @@
 				if (appModules) {
 					// before Vite starts and writes in node_modules
 					entry.sharedAppModules = null;
-					frontendKeepSharedAppModules(entry.setupRoot, appModules.store, appModules.key);
+					frontendKeepSharedAppModules(entry.setupRoot, appModules.store, appModules.key, appModules.profile);
 				}
 				entry.status = "prepared";
 				frontendStudioLog("[Svelte dev] " + (entry.setupKind === "app" ? "App" : "Builder") +

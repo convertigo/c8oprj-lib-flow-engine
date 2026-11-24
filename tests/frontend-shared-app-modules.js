@@ -1,7 +1,8 @@
 // Generated applications with the same dependencies share the packages npm installed for the first one: the next ones
 // receive a copy from the store. Applications whose dependencies differ (package.json, lockfile, local tarballs,
-// toolchain) never share; an entry is never replaced, concurrent writers leave one complete entry, and the store
-// keeps the entries used last.
+// toolchain) never share exactly, but one with close dependencies and the same toolchain starts from the nearest
+// entry, npm installing the difference. An entry is never replaced, concurrent writers leave one complete entry, and
+// the store keeps the entries used last.
 var engineDir = String(new java.io.File(arguments.length > 0 ? arguments[0] : "_flow").getAbsolutePath());
 var source = String(Packages.org.apache.commons.io.FileUtils.readFileToString(new java.io.File(engineDir, "Engine.js"), "UTF-8"));
 var File = java.io.File;
@@ -67,11 +68,13 @@ var projectRootAbove = extract("projectRootAbove");
 var frontendSharedAppModulesStore = extract("frontendSharedAppModulesStore");
 var frontendToolIdentity = extract("frontendToolIdentity");
 var frontendSharedAppModulesKey = extract("frontendSharedAppModulesKey");
+var frontendSharedAppModulesProfile = extract("frontendSharedAppModulesProfile");
 var frontendLocalStorage = extract("frontendLocalStorage");
 var frontendSharedAppModules = extract("frontendSharedAppModules");
 var frontendCloneFileCall = extract("frontendCloneFileCall");
 var frontendCopyFolder = extract("frontendCopyFolder");
 var frontendRestoreSharedAppModules = extract("frontendRestoreSharedAppModules");
+var frontendSeedSharedAppModules = extract("frontendSeedSharedAppModules");
 var frontendKeepSharedAppModules = extract("frontendKeepSharedAppModules");
 var frontendCleanSharedAppModules = extract("frontendCleanSharedAppModules");
 
@@ -368,6 +371,92 @@ try {
 	var third = application("Third");
 	assertTrue(frontendRestoreSharedAppModules(third, store, firstKey), "a third application receives the packages");
 	assertTrue(JavaSystem.currentTimeMillis() - touched.lastModified() < 60000, "its entry is marked in use");
+
+	// an application whose dependencies differ a little starts from the nearest entry: npm installs the difference
+	var nearStore = new File(base, "near-store");
+	function keptApp(name, change, owner, ageMs) {
+		var root = application(name, change);
+		var key = frontendSharedAppModulesKey(root, npm);
+		var profile = frontendSharedAppModulesProfile(root, npm);
+		install(root, owner || name);
+		frontendKeepSharedAppModules(root, nearStore, key, profile);
+		if (ageMs) {
+			new File(nearStore, key + "/entry.json").setLastModified(JavaSystem.currentTimeMillis() - ageMs);
+		}
+		return { root: root, key: key, profile: profile };
+	}
+	var plain = keptApp("NearPlain", null, null, 60000);
+	assertTrue(plain.profile && /^[0-9a-f]{64}$/.test(plain.profile.base), "an application has a profile");
+	assertEqual(plain.profile.dependencies["devDependencies/vite"], "8.3.4", "with its declared dependencies");
+	var plainEntry = JSON.parse(read(new File(nearStore, plain.key + "/entry.json")));
+	assertEqual([plainEntry.base, plainEntry.dependencies], [plain.profile.base, plain.profile.dependencies],
+		"an entry keeps the profile of its application");
+	var grid = keptApp("NearGrid", function (value) {
+		value.dependencies["ag-grid-community"] = "31.3.4";
+		value.dependencies.marked = "18.0.7";
+	});
+	function withIcons(value) { value.dependencies.ionicons = "7.4.0"; }
+	var icons = application("NearIcons", withIcons);
+	var iconsKey = frontendSharedAppModulesKey(icons, npm);
+	var iconsProfile = frontendSharedAppModulesProfile(icons, npm);
+	assertTrue(!frontendRestoreSharedAppModules(icons, nearStore, iconsKey), "no entry has exactly its dependencies");
+	assertEqual(frontendSeedSharedAppModules(icons, nearStore, iconsProfile), plain.key,
+		"it starts from the entry nearest to its dependencies, even used earlier than another one");
+	assertEqual(read(new File(icons, "node_modules/owner.txt")), "NearPlain", "with the packages of that entry");
+	assertEqual(read(new File(icons, "package-lock.json")), read(new File(nearStore, plain.key + "/package-lock.json")),
+		"and its lockfile, from which npm installs only the difference");
+	assertEqual(names(icons).filter(function (name) { return name.indexOf("shared-") >= 0; }), [], "no temporary copy is left");
+	assertTrue(JavaSystem.currentTimeMillis() - new File(nearStore, plain.key + "/entry.json").lastModified() < 60000,
+		"the entry it starts from is marked in use");
+	write(new File(icons, "node_modules/ionicons/index.js"), "ionicons"); // what npm adds
+	frontendKeepSharedAppModules(icons, nearStore, iconsKey, iconsProfile);
+	assertTrue(new File(nearStore, iconsKey + "/entry.json").isFile(), "once npm has installed, its own entry is kept");
+	var twin = application("NearTwin", withIcons);
+	assertTrue(frontendRestoreSharedAppModules(twin, nearStore, iconsKey), "and the next application like it gets an exact copy");
+	assertEqual(read(new File(twin, "node_modules/ionicons/index.js")), "ionicons", "with the difference npm installed");
+	var both = application("NearBoth", function (value) {
+		withIcons(value);
+		value.dependencies.marked = "18.0.7";
+	});
+	assertEqual(frontendSeedSharedAppModules(both, nearStore, frontendSharedAppModulesProfile(both, npm)), iconsKey,
+		"the entry with the fewest differences wins");
+	// one dependency away from both NearPlain (marked missing) and NearGrid (ag-grid-community more)
+	new File(nearStore, plain.key + "/entry.json").setLastModified(JavaSystem.currentTimeMillis() - 120000);
+	new File(nearStore, grid.key + "/entry.json").setLastModified(JavaSystem.currentTimeMillis() - 1000);
+	var marked = application("NearMarked", function (value) { value.dependencies.marked = "18.0.7"; });
+	assertEqual(frontendSeedSharedAppModules(marked, nearStore, frontendSharedAppModulesProfile(marked, npm)), grid.key,
+		"between entries as near, the one used last");
+
+	// never over a lockfile, nor across toolchains or settings, nor from an entry kept without a profile
+	var lockedNear = application("NearLocked", withIcons, "{\"lockfileVersion\":3,\"packages\":{}}");
+	assertEqual(frontendSeedSharedAppModules(lockedNear, nearStore, frontendSharedAppModulesProfile(lockedNear, npm)), "",
+		"an application with its own lockfile is left to npm");
+	assertTrue(!new File(lockedNear, "node_modules").exists() && read(new File(lockedNear, "package-lock.json")).indexOf("packages") > 0,
+		"with its lockfile as is");
+	nodeVersion("v24.10.0");
+	var otherNode = application("NearOtherNode", withIcons);
+	assertEqual(frontendSeedSharedAppModules(otherNode, nearStore, frontendSharedAppModulesProfile(otherNode, npm)), "",
+		"another Node.js does not start from these packages");
+	nodeVersion("v24.0.0");
+	var registry = application("NearRegistry", withIcons);
+	write(new File(registry, ".npmrc"), "registry=https://example.invalid/\n");
+	assertEqual(frontendSeedSharedAppModules(registry, nearStore, frontendSharedAppModulesProfile(registry, npm)), "",
+		"nor another .npmrc");
+	write(new File(base, "projects/vendor/sdk.tgz"), "tarball 3");
+	var retarred = application("NearRetarred", withIcons);
+	assertEqual(frontendSeedSharedAppModules(retarred, nearStore, frontendSharedAppModulesProfile(retarred, npm)), "",
+		"nor another content of a local tarball under the same name");
+	write(new File(base, "projects/vendor/sdk.tgz"), "tarball 1");
+	var legacyStore = new File(base, "legacy-store");
+	var legacy = application("NearLegacy");
+	var legacyKey = frontendSharedAppModulesKey(legacy, npm);
+	install(legacy, "NearLegacy");
+	frontendKeepSharedAppModules(legacy, legacyStore, legacyKey);
+	var afterLegacy = application("NearAfterLegacy", withIcons);
+	assertEqual(frontendSeedSharedAppModules(afterLegacy, legacyStore, frontendSharedAppModulesProfile(afterLegacy, npm)), "",
+		"an entry kept without a profile only serves exact copies");
+	assertEqual(frontendSeedSharedAppModules(afterLegacy, nearStore, null), "", "nor without a profile of the application");
+	assertTrue(!new File(afterLegacy, "node_modules").exists(), "npm installs everything then");
 
 	// without clonefile (another system, a Java without the foreign function interface), cp copies
 	frontendCloneFileHandle = false;
