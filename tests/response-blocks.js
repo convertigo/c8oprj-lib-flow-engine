@@ -65,6 +65,11 @@ try{
   r=run(' response.status({ code: 201 })\n response.status({ code: 202 })');
   check(JSON.stringify(r.statuses)==='[202]','a later status replaces the earlier one',r);
  });
+ point('exact HTTP error body',function(){
+  var r=run(' response.status({ code: 422 })\n return { problem: "invalid" }');
+  check(r.out.ok===true && JSON.stringify(r.out.result)==='{"problem":"invalid"}' &&
+   JSON.stringify(r.statuses)==='[422]', 'explicit status and return preserve the exact body',r);
+ });
  point('b child called over HTTP',function(){
   var r=run(' result.value = flow.call({ flow: "Child" })');
   check(r.out.ok===true&&r.out.result.value.child===true&&JSON.stringify(r.statuses)==='[418]'&&r.header('X-Child')==='yes','a child sets the status and a header of the HTTP response',r);

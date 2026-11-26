@@ -141,10 +141,11 @@
 		return score;
 	}
 
-	function blockCandidates(blocks, wanted, limit, env) {
+	function blockCandidates(blocks, wanted, limit, env, publicOnly) {
 		limit = limit || 5;
-		var candidates = Object.keys(blocks || {}).map(function (name) {
-			var descriptor = env.blockDescriptor(blocks[name]);
+		var descriptors = Object.keys(blocks || {}).map(function (name) { return env.blockDescriptor(blocks[name]); });
+		if (publicOnly) descriptors = env.filterVisibleDescriptors(descriptors);
+		var candidates = descriptors.map(function (descriptor) {
 			var score = blockCandidateScore(descriptor, wanted, env);
 			return {
 				block: descriptor.blockId,

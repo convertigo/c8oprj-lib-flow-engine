@@ -3730,7 +3730,7 @@
 
 	function blockSourceEnv() {
 		return {
-			blockCandidates: flowScriptBlockCandidates,
+			blockCandidates: function (blocks, wanted, limit) { return flowScriptBlockCandidates(blocks, wanted, limit, true); },
 			sources: sourceView(currentActiveRequest()),
 			File: File,
 			FileUtils: FileUtils,
@@ -4835,6 +4835,7 @@
 		return {
 			addUnique: addUnique,
 			blockDescriptor: blockDescriptor,
+			filterVisibleDescriptors: catalogService().filterVisibleDescriptors,
 			blockSignature: blockSignature,
 			summaryPropertyDescriptor: summaryPropertyDescriptor
 		};
@@ -4844,8 +4845,8 @@
 		return flowScriptIntentUtils().stripMetadata(value);
 	}
 
-	function flowScriptBlockCandidates(blocks, wanted, limit) {
-		return flowScriptIntentUtils().blockCandidates(blocks, wanted, limit, flowScriptIntentEnv());
+	function flowScriptBlockCandidates(blocks, wanted, limit, publicOnly) {
+		return flowScriptIntentUtils().blockCandidates(blocks, wanted, limit, flowScriptIntentEnv(), publicOnly === true);
 	}
 
 	function flowScriptBlockCandidateDecision(candidates) {

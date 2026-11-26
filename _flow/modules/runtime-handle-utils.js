@@ -93,6 +93,8 @@
 
 	function sanitizeValue(value, env, seen, rejectWhere) {
 		value = jsValue(value, env);
+		// Rhino can unwrap java.math.BigInteger as a JavaScript bigint.
+		if (typeof value === "bigint") return Number(value);
 		if (value === null || (typeof value !== "object" && typeof value !== "function")) {
 			return value;
 		}
