@@ -35,5 +35,22 @@ assert(restarting.ok && tries===4 && restarting.modules[0].status==='passed','a 
 now=0;tries=0;
 var down=module.check([],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(){tries++;throw Error('Connection refused');},logTail:function(){return '';}},['src/routes/+layout.ts']);
 assert(!down.ok && down.modules[0].status==='unreachable' && now>=8000 && now<=8250,'a dev server that never answers is unreachable after 8 s, not a failed transform: '+JSON.stringify(down)+' '+now);
+// A new route SvelteKit has not added yet answers 404 (cligate 26/11, /deals/ one second after its sync): it is requested
+// again until it is served, for up to 8 s; a route still 404 after that, or answered 404 without sleep, fails.
+now=0;tries=0;
+var fresh=module.check(['/','/deals/'],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(path){return path==='/deals/'&&++tries<3?404:200;},logTail:function(){return '';}});
+assert(fresh.ok && tries===3 && fresh.routes[1].status==='passed' && fresh.routes[1].servedAfterMs===300 && fresh.routes[0].servedAfterMs===undefined,'a new route served within 8 s passes: '+JSON.stringify(fresh));
+now=0;tries=0;
+var missing=module.check(['/gone/'],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(){tries++;return 404;},logTail:function(){return 'log';}});
+assert(!missing.ok && missing.routes[0].httpStatus===404 && missing.routes[0].waitedMs>=8000 && missing.routes[0].waitedMs<8150 && missing.logTail==='log','a route still 404 after 8 s fails: '+JSON.stringify(missing));
+now=0;tries=0;
+var once404=module.check(['/gone/'],{now:function(){return now;},probe:function(){tries++;return 404;},logTail:function(){return '';}});
+assert(!once404.ok && tries===1,'without sleep a route is requested once');
+now=0;tries=0;
+var broken500=module.check(['/draft/'],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(){tries++;return 500;},logTail:function(){return '';}});
+assert(!broken500.ok && tries===1 && now===0,'a page error (500) is not waited for');
+now=0;tries=0;
+var refused=module.check(['/'],{now:function(){return now;},sleep:function(ms){now+=ms;},probe:function(){if(++tries<3)throw Error('Connection refused');return 200;},logTail:function(){return '';}});
+assert(refused.ok && tries===3,'a route without answer (Vite restarting) is requested again');
 assert(result.modules===undefined,'without modules the result keeps its shape');
 print('frontend-dev-smoke OK');
